@@ -247,8 +247,8 @@ impl WasmSdk {
     /// Seed the contract cache with a contract the caller already holds: a
     /// snapshot bundled with the app, or one it just published. Queries against
     /// it then need no contract fetch, and it is persisted like a fetched one.
-    /// Pair with `getDataContractsLatestVersionsUnproved` to learn whether the
-    /// held contract is still the network's current version.
+    /// Pair with `getDataContractsLatestVersions` (off the critical path) to
+    /// learn whether the held contract is still the network's current version.
     ///
     /// Returns false when the SDK has no trusted context to cache into.
     #[wasm_bindgen(js_name = "addKnownContract")]

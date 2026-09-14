@@ -132,30 +132,6 @@ describe('Data Contract Queries', function describeDataContractQueries() {
     });
   });
 
-  describe('getDataContractsLatestVersionsUnproved()', () => {
-    it('should return versions only, undefined for an unknown id', async () => {
-      const unknownId = new Uint8Array(32).fill(7);
-      const res = await client.getDataContractsLatestVersionsUnproved({ contractIds: [dpnsContractId, unknownId] });
-      expect(res).to.be.instanceOf(Map);
-      expect(res.size).to.equal(2);
-      const dpns = res.get(dpnsContractId);
-      expect(dpns).to.be.ok();
-      expect(dpns.version).to.be.at.least(1);
-      expect(dpns.dataContract).to.be.undefined();
-    });
-
-    it('should refuse includeContracts', async () => {
-      let failed = false;
-      try {
-        await client.getDataContractsLatestVersionsUnproved({ contractIds: [dpnsContractId], includeContracts: true });
-      } catch (e) {
-        failed = true;
-        expect(String(e)).to.match(/includeContracts/);
-      }
-      expect(failed).to.be(true);
-    });
-  });
-
   describe('addKnownContract()', () => {
     it('should accept a contract the caller holds', async () => {
       const contract = await client.getDataContract(dpnsContractId);

@@ -158,26 +158,27 @@ A branching `in` cannot combine with a non-zero `offset`: rank-skip is attested 
 
 ## Contracts the app already holds
 
-An app knows its contracts at build time. Instead of fetching them on every load, bundle a snapshot (`contract.toBytes()`), seed the SDK with it, and ask the network only whether the snapshot is still current:
+An app knows its contracts at build time. Instead of fetching them on every load, bundle a snapshot (`contract.toBase64(platformVersion)`), seed the SDK with it, and confirm off the critical path that the snapshot is still current:
 
 ```ts
 import { DataContract, PlatformVersion } from '@dashevo/evo-sdk';
 
-// Seed: no round trip, and the seeded contracts are persisted like fetched ones.
+// Seed: no round trip before the first document query, and the seeded
+// contracts are persisted like fetched ones.
 for (const { bytes } of bundledContracts) {
-  await sdk.contracts.addKnown(DataContract.fromBytes(bytes, true, PlatformVersion.latest()));
+  await sdk.contracts.addKnown(DataContract.fromBase64(bytes, true, PlatformVersion.latest()));
 }
 
-// Revalidate off the critical path: unproved, a few bytes per id.
-const latest = await sdk.contracts.getLatestVersionsUnproved({ contractIds: bundledContracts.map((c) => c.id) });
+// Revalidate after first paint, proved. Versions only: the contracts come
+// back only for the ids that changed.
+const latest = await sdk.contracts.getLatestVersions({ contractIds: bundledContracts.map((c) => c.id) });
 const stale = bundledContracts.filter((c) => latest.get(c.id)?.version !== c.version).map((c) => c.id);
 if (stale.length > 0) {
-  // Proved: the only way contracts enter the cache.
-  await sdk.contracts.getLatestVersions({ contractIds: stale, includeContracts: true });
+  await sdk.contracts.getMany(stale); // replaces the seeded entries in the cache
 }
 ```
 
-The unproved answer is the node's word, checked for freshness but not for content. A node overstating a version costs one proved fetch; one understating it leaves the app on its held contract, which the SDK drops on the first document stamped with a newer `$contractVersion` (see the contract cache note above). `includeContracts` is refused unproved for the same reason.
+A seeded contract that the network has since updated is also caught without the check: the SDK drops a cached contract on the first document stamped with a newer `$contractVersion` (see the contract cache note above), and the next query fetches the current one.
 
 ## Document references (`refersTo`)
 
