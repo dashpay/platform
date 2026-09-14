@@ -1,8 +1,9 @@
 mod accessors;
 mod evaluate_interval;
+mod max_cycle_moment;
 mod validation;
 
-use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_CYCLES_PARAM};
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use crate::prelude::{BlockHeightInterval, DataContract, EpochInterval, TimestampMillisInterval};
 use bincode::{Decode, Encode, DecodeUntrusted};
 #[cfg(feature = "json-conversion")]
@@ -142,65 +143,6 @@ impl RewardDistributionType {
             }
         }
     }
-
-    /// Determines the maximum cycle moment allowed based on the last paid moment,
-    /// the current cycle moment, and the maximum allowed token redemption cycles.
-    ///
-    /// This function calculates a capped distribution moment (`RewardDistributionMoment`) by limiting
-    /// the range between the `last_paid_moment` (or start) and the `current_cycle_moment` to the
-    /// maximum allowed number of redemption cycles (`max_cycles`).
-    ///
-    /// # Arguments
-    /// - `last_paid_moment`: Optional last moment at which tokens were claimed.
-    /// - `current_cycle_moment`: The current cycle moment as of the current block.
-    /// - `max_cycles`: The maximum number of redemption cycles permitted per claim.
-    ///
-    /// # Returns
-    /// - `RewardDistributionMoment`: The maximum allowed cycle moment capped by `max_cycles`.
-    pub fn max_cycle_moment(
-        &self,
-        start_moment: RewardDistributionMoment,
-        current_cycle_moment: RewardDistributionMoment,
-        max_non_fixed_amount_cycles: u32,
-    ) -> Result<RewardDistributionMoment, ProtocolError> {
-        let max_cycles = if matches!(self.function(), DistributionFunction::FixedAmount { .. }) {
-            // This is much easier to calculate as it's always fixed, so we can have a near unlimited amount of cycles
-            //
-            MAX_DISTRIBUTION_CYCLES_PARAM
-        } else {
-            max_non_fixed_amount_cycles as u64
-        };
-        let interval = self.interval();
-
-        // Calculate maximum allowed moment based on distribution type
-        match (start_moment, interval, current_cycle_moment) {
-            (
-                RewardDistributionMoment::BlockBasedMoment(start),
-                RewardDistributionMoment::BlockBasedMoment(step),
-                RewardDistributionMoment::BlockBasedMoment(current),
-            ) => Ok(RewardDistributionMoment::BlockBasedMoment(
-                (start + step.saturating_mul(max_cycles)).min(current),
-            )),
-            (
-                RewardDistributionMoment::TimeBasedMoment(start),
-                RewardDistributionMoment::TimeBasedMoment(step),
-                RewardDistributionMoment::TimeBasedMoment(current),
-            ) => Ok(RewardDistributionMoment::TimeBasedMoment(
-                (start + step.saturating_mul(max_cycles)).min(current),
-            )),
-            (
-                RewardDistributionMoment::EpochBasedMoment(start),
-                RewardDistributionMoment::EpochBasedMoment(step),
-                RewardDistributionMoment::EpochBasedMoment(current),
-            ) => Ok(RewardDistributionMoment::EpochBasedMoment(
-                // For an epoch reward, if you are in epoch 3 you can't get rewarded for epoch 3, but only epoch 2
-                (start + step.saturating_mul(max_cycles as u16)).min(current.saturating_sub(1)),
-            )),
-            _ => Err(ProtocolError::CorruptedCodeExecution(
-                "Mismatch moment types".to_string(),
-            )),
-        }
-    }
 }
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
@@ -318,76 +260,6 @@ mod tests {
             DistributionFunction::FixedAmount { amount } => assert_eq!(*amount, 5),
             _ => panic!("unexpected function"),
         }
-    }
-
-    // ----- max_cycle_moment -----
-
-    #[test]
-    fn test_max_cycle_moment_block_capped_by_current() {
-        let dt = block_based();
-        let start = RewardDistributionMoment::BlockBasedMoment(1000);
-        let current = RewardDistributionMoment::BlockBasedMoment(1500);
-        // max_cycles*interval = 10*100=1000. start+1000=2000 > current=1500 so capped at current
-        let result = dt.max_cycle_moment(start, current, 10).unwrap();
-        assert_eq!(result, RewardDistributionMoment::BlockBasedMoment(1500));
-    }
-
-    #[test]
-    fn test_max_cycle_moment_block_capped_by_max_cycles_non_fixed() {
-        use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
-        let dt = RewardDistributionType::BlockBasedDistribution {
-            interval: 100,
-            function: DistributionFunction::Random { min: 1, max: 10 },
-        };
-        let start = RewardDistributionMoment::BlockBasedMoment(0);
-        let current = RewardDistributionMoment::BlockBasedMoment(u64::MAX);
-        // max_cycles = 3 (non-fixed) => 0 + 100*3 = 300
-        let result = dt.max_cycle_moment(start, current, 3).unwrap();
-        assert_eq!(result, RewardDistributionMoment::BlockBasedMoment(300));
-    }
-
-    #[test]
-    fn test_max_cycle_moment_time_capped_by_current() {
-        let dt = time_based();
-        let start = RewardDistributionMoment::TimeBasedMoment(0);
-        let current = RewardDistributionMoment::TimeBasedMoment(100_000);
-        // max_cycles*interval could exceed current; should cap
-        let result = dt.max_cycle_moment(start, current, 5).unwrap();
-        // fixed amount cycles = MAX_DISTRIBUTION_CYCLES_PARAM => huge, cap by current
-        assert_eq!(result, RewardDistributionMoment::TimeBasedMoment(100_000));
-    }
-
-    #[test]
-    fn test_max_cycle_moment_epoch_subtracts_one() {
-        let dt = epoch_based();
-        let start = RewardDistributionMoment::EpochBasedMoment(0);
-        let current = RewardDistributionMoment::EpochBasedMoment(3);
-        let result = dt.max_cycle_moment(start, current, 10).unwrap();
-        // Since fixed amount: huge max_cycles, saturating_mul on u16 -> u16::MAX;
-        // min(start + step*max, current - 1) = current - 1 = 2
-        assert_eq!(result, RewardDistributionMoment::EpochBasedMoment(2));
-    }
-
-    #[test]
-    fn test_max_cycle_moment_epoch_current_zero_saturates() {
-        let dt = epoch_based();
-        let start = RewardDistributionMoment::EpochBasedMoment(0);
-        let current = RewardDistributionMoment::EpochBasedMoment(0);
-        // current - 1 saturates to 0
-        let result = dt.max_cycle_moment(start, current, 10).unwrap();
-        assert_eq!(result, RewardDistributionMoment::EpochBasedMoment(0));
-    }
-
-    #[test]
-    fn test_max_cycle_moment_type_mismatch() {
-        let dt = block_based();
-        let start = RewardDistributionMoment::BlockBasedMoment(0);
-        let current = RewardDistributionMoment::TimeBasedMoment(50);
-        let result = dt.max_cycle_moment(start, current, 10);
-        assert!(matches!(
-            result,
-            Err(ProtocolError::CorruptedCodeExecution(_))
-        ));
     }
 
     // ----- Display -----

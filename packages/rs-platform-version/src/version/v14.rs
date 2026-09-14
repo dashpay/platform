@@ -211,6 +211,34 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    item binding lets a prover return different item bytes under the same
 ///    authenticated root; every live network has emitted V1 envelopes since
 ///    v13 (grove version 3), so no honest response is affected.
+/// 8. **Epoch-based perpetual distribution claims stop wrapping**:
+///    `RewardDistributionType::max_cycle_moment` (the cap on how far one claim
+///    may redeem, selected by
+///    `TOKEN_VERSIONS_V3.reward_distribution_max_cycle_moment_version` 1)
+///    computes `start + interval * cycles` in `u64` with saturating
+///    arithmetic and narrows back to `EpochIndex` only after capping at the
+///    last completed cycle moment (`current cycle moment - interval`, the
+///    previous epoch for an interval of one as before; for wider intervals the
+///    same cycles are paid, but the cap now sits on a cycle boundary, the only
+///    shape in which `evaluate_interval`'s fixed-amount step count and its
+///    per-cycle loop agree). Up to v13 the sum was taken in `u16`: a
+///    fixed-amount function allows 32,767 cycles, so any epoch interval of
+///    three or more with a nonzero start (or two with a start at epoch two
+///    or later) pushed the cap past `u16::MAX`. Release builds wrap, the cap landed below the
+///    start, `evaluate_interval` saw an empty range and the claim was
+///    refused with `InvalidTokenClaimNoCurrentRewards` on every attempt. The
+///    v0 arithmetic is kept, wrapping explicitly, so those refusals replay.
+/// 9. **Evonode reward cycles weighted by the epochs they span**: the
+///    per-cycle evaluator in `DistributionFunction::evaluate_interval` asks
+///    the participation ratio for the epochs a cycle covers
+///    (`TOKEN_VERSIONS_V3.distribution_function_cycle_epochs_version` 1:
+///    `cycle moment - interval + 1 ..= cycle moment`). Up to v13 it passed the
+///    cycle's step index as if it were an epoch, which coincides only for an
+///    interval of one; for a wider interval it named epochs before the
+///    distribution started, outside the epoch window the claim loads, and an
+///    `EvonodesByParticipation` claim with a function other than a fixed
+///    amount failed as an internal error (reachable only once item 8 let the
+///    cap stop wrapping). Interval-one distributions are unchanged.
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
@@ -260,7 +288,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
-        token_versions: TOKEN_VERSIONS_V3, // changed: distribution_function_evaluate v1 — deterministic libm for token reward math
+        token_versions: TOKEN_VERSIONS_V3, // changed: distribution_function_evaluate v1 — deterministic libm for token reward math; reward_distribution_max_cycle_moment v1: the epoch claim cap no longer wraps; distribution_function_cycle_epochs v1: evonode cycles weighted by the epochs they span
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
         factory_versions: DPP_FACTORY_VERSIONS_V1,

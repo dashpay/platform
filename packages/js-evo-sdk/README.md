@@ -156,6 +156,30 @@ A branching `in` cannot combine with a non-zero `offset`: rank-skip is attested 
 
 `sdk.documents.having()` bounds the same axis by value instead of by position (`{ operator: '>', value: 100 }`), and `rankedWithProof` / `havingWithProof` return the proof and block metadata alongside the result.
 
+## Contracts the app already holds
+
+An app knows its contracts at build time. Instead of fetching them on every load, bundle a snapshot (`contract.toBase64(platformVersion)`), seed the SDK with it, and confirm off the critical path that the snapshot is still current:
+
+```ts
+import { DataContract, PlatformVersion } from '@dashevo/evo-sdk';
+
+// Seed: no round trip before the first document query, and the seeded
+// contracts are persisted like fetched ones.
+for (const { bytes } of bundledContracts) {
+  await sdk.contracts.addKnown(DataContract.fromBase64(bytes, true, PlatformVersion.latest()));
+}
+
+// Revalidate after first paint, proved. Versions only: the contracts come
+// back only for the ids that changed.
+const latest = await sdk.contracts.getLatestVersions({ contractIds: bundledContracts.map((c) => c.id) });
+const stale = bundledContracts.filter((c) => latest.get(c.id)?.version !== c.version).map((c) => c.id);
+if (stale.length > 0) {
+  await sdk.contracts.getMany(stale); // replaces the seeded entries in the cache
+}
+```
+
+A seeded contract that the network has since updated is also caught without the check: the SDK drops a cached contract on the first document stamped with a newer `$contractVersion` (see the contract cache note above), and the next query fetches the current one.
+
 ## Document references (`refersTo`)
 
 Also from protocol version 14, an identifier property can declare what it points at. This is a write-time consensus constraint — nothing resolves a reference for a reader — but a fetched contract can be asked what it declares:

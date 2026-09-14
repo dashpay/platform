@@ -132,6 +132,13 @@ describe('Data Contract Queries', function describeDataContractQueries() {
     });
   });
 
+  describe('addKnownContract()', () => {
+    it('should accept a contract the caller holds', async () => {
+      const contract = await client.getDataContract(dpnsContractId);
+      expect(client.addKnownContract(contract)).to.be(true);
+    });
+  });
+
   describe('getDataContractsLatestVersionsWithProofInfo()', () => {
     it('should return proof info for the versions', async () => {
       const res = await client.getDataContractsLatestVersionsWithProofInfo({ contractIds: [dpnsContractId] });
