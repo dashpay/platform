@@ -33,6 +33,9 @@
 
 pub mod activity;
 pub mod activity_recorder;
+pub mod balance;
+#[cfg(test)]
+mod balance_tests;
 pub mod coordinator;
 pub mod file_store;
 pub mod fund_from_asset_lock;
@@ -50,6 +53,10 @@ pub use activity::{
     compute_activity_id, derive_activity_from_scan_data, sort_activity_for_display,
     ScanDeriveInput, ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
     ShieldedDirection,
+};
+pub use balance::{
+    ShieldedBalanceSource, ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
+    ShieldedLocalBalanceState,
 };
 pub use coordinator::NetworkShieldedCoordinator;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};

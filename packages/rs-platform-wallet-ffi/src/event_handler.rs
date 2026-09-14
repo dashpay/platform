@@ -393,15 +393,22 @@ impl PlatformEventHandler for FFIEventHandler {
         let mut owned_errors = Vec::new();
         let mut results = Vec::with_capacity(summary.wallet_results.len());
         for (&wallet_id, outcome) in &summary.wallet_results {
-            match outcome {
+            // Conversion can reject a wallet-wide sum even when each account
+            // balance was valid. Report it through the existing error outcome
+            // and retain its message for the entire callback invocation.
+            let result = match outcome {
                 WalletShieldedOutcome::Ok(result) => {
-                    results.push(ShieldedSyncWalletResultFFI::ok(wallet_id, result));
+                    ShieldedSyncWalletResultFFI::ok(wallet_id, result).map_err(|e| e.to_string())
                 }
                 WalletShieldedOutcome::Skipped => {
-                    results.push(ShieldedSyncWalletResultFFI::skipped(wallet_id));
+                    Ok(ShieldedSyncWalletResultFFI::skipped(wallet_id))
                 }
-                WalletShieldedOutcome::Err(error) => {
-                    let error_message = std::ffi::CString::new(error.as_str()).ok();
+                WalletShieldedOutcome::Err(error) => Err(error.clone()),
+            };
+            match result {
+                Ok(result) => results.push(result),
+                Err(error) => {
+                    let error_message = std::ffi::CString::new(error).ok();
                     let error_ptr = error_message
                         .as_ref()
                         .map_or(std::ptr::null(), |message| message.as_ptr());
@@ -447,6 +454,90 @@ impl PlatformEventHandler for FFIEventHandler {
 #[cfg(test)]
 mod release_tests {
     use super::*;
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_report_wallet_balance_overflow_through_the_sync_callback() {
+        use platform_wallet::wallet::shielded::ShieldedSyncSummary;
+        use std::collections::BTreeMap;
+        use std::ffi::CStr;
+
+        type Received = Vec<([u8; 32], bool, u64, Option<String>)>;
+        unsafe extern "C" fn capture(
+            context: *mut c_void,
+            results: *const ShieldedSyncWalletResultFFI,
+            count: usize,
+            _: u64,
+        ) {
+            let received = &mut *(context as *mut Received);
+            for result in std::slice::from_raw_parts(results, count) {
+                received.push((
+                    result.wallet_id,
+                    result.success,
+                    result.balance,
+                    (!result.error_message.is_null()).then(|| {
+                        CStr::from_ptr(result.error_message)
+                            .to_string_lossy()
+                            .into_owned()
+                    }),
+                ));
+            }
+        }
+        let mut received = Received::new();
+        let handler = FFIEventHandler::new(
+            EventHandlerCallbacks {
+                context: &mut received as *mut Received as *mut c_void,
+                on_wallet_event_fn: None,
+                on_error_fn: None,
+                on_platform_address_sync_completed_fn: None,
+                on_shielded_sync_completed_fn: Some(capture),
+                on_shielded_sync_progress_fn: None,
+                on_shielded_tree_progress_fn: None,
+                release_fn: None,
+            },
+            None,
+        );
+        handler.on_shielded_sync_completed(&ShieldedSyncPassSummary {
+            wallet_results: BTreeMap::from([
+                (
+                    [1; 32],
+                    WalletShieldedOutcome::Ok(ShieldedSyncSummary {
+                        balances: BTreeMap::from([(0, u64::MAX), (1, 1)]),
+                        ..Default::default()
+                    }),
+                ),
+                (
+                    [2; 32],
+                    WalletShieldedOutcome::Ok(ShieldedSyncSummary {
+                        balances: BTreeMap::from([(0, u64::MAX - 1), (1, 1)]),
+                        ..Default::default()
+                    }),
+                ),
+                (
+                    [3; 32],
+                    WalletShieldedOutcome::Err("other wallet failed".to_string()),
+                ),
+            ]),
+            sync_unix_seconds: 100,
+        });
+        assert_eq!(received.len(), 3);
+        assert_eq!(received[0].0, [1; 32]);
+        assert!(
+            !received[0].1,
+            "overflow must not publish a successful zero balance"
+        );
+        assert_eq!(received[0].2, 0);
+        assert!(received[0]
+            .3
+            .as_ref()
+            .unwrap()
+            .contains("wallet-wide shielded balance exceeds u64"));
+        assert_eq!(received[1], ([2; 32], true, u64::MAX, None));
+        assert_eq!(
+            received[2],
+            ([3; 32], false, 0, Some("other wallet failed".to_string()))
+        );
+    }
 
     /// Mirror of the persister-level test: the event context is released
     /// exactly once, only when the last `Arc<dyn PlatformEventHandler>`

@@ -593,6 +593,25 @@ do {
 
 ---
 
+## Local shielded balance snapshots
+
+After configuring and binding shielded state, call
+`await manager.localShieldedBalanceSnapshot(walletId:)` to read the local,
+reservation-aware account balances without starting a network scan. Each
+invocation performs one native read. `unbound` and `restoreIncomplete` do not
+provide a numeric balance; `ready` includes each bound account and its scan
+provenance. A `noHistory` zero does not establish that the wallet has no funds.
+
+If a successful bind overlaps Swift delivery, the call throws
+`ShieldedLocalBalanceReadError.bindingChanged`. The host owns whether and when
+to request another snapshot, including its launch retry budget. This error is
+specific to a read and does not report a failed transaction. Clear, stop,
+failed bind, and task cancellation discard obsolete delivery with
+`CancellationError`; native failures retain their existing error mapping.
+Retain the last usable amount when a read fails. Starting shutdown rejects
+new reads, including caller-requested retries, and drains admitted reads before
+releasing the native handle.
+
 ## Identity-funded shield recovery
 
 An unresolved identity-funded shield blocks another debit from the same identity
