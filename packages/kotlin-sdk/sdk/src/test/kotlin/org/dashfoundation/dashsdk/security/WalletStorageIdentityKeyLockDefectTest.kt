@@ -229,6 +229,32 @@ class WalletStorageIdentityKeyLockDefectTest {
     }
 
     @Test
+    fun shouldScrubIdentityKeyWhenTheDefectLookupItselfThrows() {
+        runBlocking {
+            storage.storePrivateKey(pubkeyHex, privateKey)
+            recordDefectViaMnemonicWrite()
+        }
+        fake.lastIdentityDecryptRef = null
+
+        // isMasterKeyLockBindingDefectObserved() is consulted AFTER the
+        // decrypt and reaches both DataStore and the Keystore. A fault (or a
+        // cancellation) there exits before the plaintext reaches the caller,
+        // and migrateToPolicyAlias's own scrub cannot help because it is
+        // never entered.
+        fake.throwOnWitnessProbe = true
+
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { storage.retrievePrivateKey(pubkeyHex) }
+        }
+        val buf = fake.lastIdentityDecryptRef
+        assertNotNull("expected the identity-key plaintext to have been captured", buf)
+        assertTrue(
+            "decrypted identity key must be zeroed when it cannot be returned",
+            buf!!.all { it == 0.toByte() },
+        )
+    }
+
+    @Test
     fun shouldKeepStrandedKeyIntactWhenRewrapFails() = runBlocking {
         storage.storePrivateKey(pubkeyHex, privateKey)
         recordDefectViaMnemonicWrite()
@@ -293,7 +319,13 @@ private class DeviceBoundLockDefectFakeKeystore :
     /** The buffer the last identity decrypt handed back (scrub evidence). */
     var lastIdentityDecryptRef: ByteArray? = null
 
-    override fun hasUnboundMasterKey(): Boolean = unboundMasterKeyProvisioned
+    /** Model a Keystore/provider fault in the witness presence check. */
+    var throwOnWitnessProbe = false
+
+    override fun hasUnboundMasterKey(): Boolean {
+        if (throwOnWitnessProbe) error("simulated Keystore provider fault")
+        return unboundMasterKeyProvisioned
+    }
 
     override fun effectiveKeySecurityPolicy(): KeySecurityPolicy = keySecurityPolicy
 

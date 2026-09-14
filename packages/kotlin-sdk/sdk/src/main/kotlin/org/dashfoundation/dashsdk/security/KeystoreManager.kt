@@ -381,8 +381,9 @@ open class KeystoreManager(
 
     /**
      * Map a Keystore device-locked denial on a lock-bound NON-auth-gated
-     * alias (the [MASTER_ALIAS] AES path — `setUnlockedDeviceRequired(true)`
-     * on lock-screen devices, no `setUserAuthenticationRequired`) to the
+     * alias — [MASTER_ALIAS] (AES) or [KEYS_ALIAS_DEVICE_BOUND] (the RSA
+     * identity keypair), both carrying `setUnlockedDeviceRequired(true)` on
+     * lock-screen devices and NO `setUserAuthenticationRequired` — to the
      * typed, retryable [KeystoreDeviceLockedException]; every other
      * exception is rethrown unchanged. The `KeyguardManager` lock state is
      * sampled HERE, at throw time, so the exception records whether the OS
@@ -391,17 +392,23 @@ open class KeystoreManager(
      * lock-state tracking stuck; hit on two QA devices during wallet
      * creation).
      *
-     * ONLY [MASTER_ALIAS] classifies — its key's contract guarantees no
-     * `setUserAuthenticationRequired` gate, which is what makes a
-     * `UserNotAuthenticatedException` from it unambiguous. Every other
+     * ONLY the [UNAMBIGUOUS_LOCK_BOUND_ALIASES] classify — their contracts
+     * guarantee no `setUserAuthenticationRequired` gate, which is what makes
+     * a `UserNotAuthenticatedException` from them unambiguous. Every other
      * alias rethrows unchanged, enforced HERE and not just at the call
-     * sites: the generic AES branches of [encrypt]/[decrypt] accept
-     * arbitrary aliases, and a host-provisioned auth-gated AES alias
-     * throws the same `UserNotAuthenticatedException` to mean "auth window
-     * closed" — classifying that as device-locked would strand the
-     * caller's prompt-and-retry handling (exactly the `BiometricGate`
-     * contract the auth-gated RSA aliases depend on; those return before
-     * reaching this mapping, see [decrypt]).
+     * sites, and the exclusions are deliberate in both directions:
+     *
+     *  - [KEYS_ALIAS_AUTH_GATED] carries BOTH gates, so the same exception
+     *    may equally mean "auth window closed" — and only that reading is
+     *    fixable by prompting. Classifying it would strand the
+     *    `BiometricGate` prompt-and-retry contract it depends on (that path
+     *    returns before reaching this mapping, see [decrypt]).
+     *  - The `*_UNBOUND` aliases carry NEITHER gate, so a denial there is
+     *    not a lock denial at all and must not promise a retry that no
+     *    unlock can satisfy.
+     *  - The generic AES branches of [encrypt]/[decrypt] accept arbitrary
+     *    caller aliases, and a host-provisioned auth-gated AES alias throws
+     *    the same exception to mean "auth window closed".
      */
     internal fun rethrowClassifyingDeviceLockedDenial(
         e: Exception,
@@ -1144,15 +1151,15 @@ open class KeystoreManager(
          * [isNoSecureLockScreenKeyGenFailure] style:
          *
          *  - any `UserNotAuthenticatedException` in the chain. Correct ONLY
-         *    for keys with no `setUserAuthenticationRequired` gate (the
-         *    [MASTER_ALIAS] AES key): with no auth gate to be "not
-         *    authenticated" against, Keystore throws it solely for the
-         *    unlocked-device requirement.
+         *    for keys with no `setUserAuthenticationRequired` gate — the
+         *    [MASTER_ALIAS] AES key and the [KEYS_ALIAS_DEVICE_BOUND] RSA
+         *    keypair: with no auth gate to be "not authenticated" against,
+         *    Keystore throws it solely for the unlocked-device requirement.
          *    [rethrowClassifyingDeviceLockedDenial] guarantees this — it
-         *    classifies [MASTER_ALIAS] only, never an arbitrary caller
-         *    alias (which may carry an auth gate) and never the auth-gated
-         *    RSA aliases, where the same exception means "auth window
-         *    closed".
+         *    classifies only [UNAMBIGUOUS_LOCK_BOUND_ALIASES], never an
+         *    arbitrary caller alias (which may carry an auth gate) and never
+         *    [KEYS_ALIAS_AUTH_GATED], where the same exception may mean
+         *    "auth window closed".
          *  - a `KeyStoreException` / `InvalidKeyException` in the chain
          *    whose message explicitly names the locked device ("device
          *    locked" / "device is locked" / "unlocked device") — the

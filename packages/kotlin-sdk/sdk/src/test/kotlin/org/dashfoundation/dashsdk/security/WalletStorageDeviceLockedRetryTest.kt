@@ -438,6 +438,27 @@ class WalletStorageDeviceLockedRetryTest {
         assertEquals(0, fake.unboundEncryptCalls)
     }
 
+    @Test
+    fun shouldScrubMnemonicWhenTheWitnessProbeItselfThrows() {
+        runBlocking {
+            storage.storeMnemonic(walletId, mnemonic)
+            fake.failMasterEncrypts = Int.MAX_VALUE
+            storage.storeMnemonic(siblingWalletId, mnemonic)
+            fake.failMasterEncrypts = 0
+        }
+        fake.lastMasterDecryptRef = null
+
+        // The witness probe is cheap and non-suspending, but it still talks to
+        // a Keystore provider that can fail. It is evaluated AFTER the decrypt,
+        // so a fault there exits without returning the plaintext.
+        fake.throwOnWitnessProbe = true
+
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { storage.retrieveMnemonicUtf8(walletId) }
+        }
+        assertBufferScrubbed(fake.lastMasterDecryptRef)
+    }
+
     // ── re-wrap must never outrun a concurrent write ─────────────────────
 
     /** Put the defect on record without disturbing [walletId]'s own blob. */
@@ -655,7 +676,13 @@ private class FalseLockedFakeKeystoreManager : KeystoreManager() {
 
     override fun sampleDeviceLockState(): DeviceLockState = lockState
 
-    override fun hasUnboundMasterKey(): Boolean = unboundKeyProvisioned
+    /** Model a Keystore/provider fault in the witness presence check. */
+    var throwOnWitnessProbe = false
+
+    override fun hasUnboundMasterKey(): Boolean {
+        if (throwOnWitnessProbe) error("simulated Keystore provider fault")
+        return unboundKeyProvisioned
+    }
 
     override fun encrypt(plaintext: ByteArray, alias: String): EncryptedBlob = when (alias) {
         MASTER_ALIAS -> {

@@ -624,24 +624,25 @@ class WalletStorage(
         // the witness first makes that impossible. hasUnboundMasterKey is a
         // non-suspending Keystore presence check, so the hot path still pays
         // no second DataStore read.
-        if (alias == KeystoreManager.MASTER_ALIAS &&
-            prefs[MASTER_LOCK_DEFECT_KEY] == true &&
-            keystore.hasUnboundMasterKey()
-        ) {
-            try {
+        // Everything from here to the return is inside the ownership guard,
+        // the CONDITION included. The caller owns [plain] and scrubs it, but
+        // only ever receives it by RETURN, so any exit that is not that return
+        // must zero it first: rewrapMnemonicUnbound deliberately rethrows
+        // CancellationException (never swallow structured concurrency), and
+        // hasUnboundMasterKey — cheap and non-suspending though it is — still
+        // talks to a Keystore provider that can fail. Evaluating the condition
+        // outside the guard left exactly that hole. Ordinary re-wrap failures
+        // never reach the catch; they stay best-effort inside the helper.
+        try {
+            if (alias == KeystoreManager.MASTER_ALIAS &&
+                prefs[MASTER_LOCK_DEFECT_KEY] == true &&
+                keystore.hasUnboundMasterKey()
+            ) {
                 rewrapMnemonicUnbound(walletId, plain, encoded)
-            } catch (t: Throwable) {
-                // The caller owns [plain] and scrubs it — but only ever
-                // receives it by RETURN. rewrapMnemonicUnbound deliberately
-                // rethrows CancellationException (never swallow structured
-                // concurrency), so a cancellation inside its suspending
-                // store.edit would unwind past the return and strand decrypted
-                // seed bytes on the heap with nobody left to zero them. Scrub
-                // here before propagating. Ordinary re-wrap failures never
-                // reach this — they stay best-effort inside the helper.
-                plain.fill(0)
-                throw t
             }
+        } catch (t: Throwable) {
+            plain.fill(0)
+            throw t
         }
         return plain
     }
@@ -1129,10 +1130,24 @@ class WalletStorage(
                 // effective write alias (now the never-lock-bound one) is the
                 // same best-effort, conditional rewrite the legacy migration
                 // uses, so a failure simply retries on the next read.
-                if (recordedAlias == KeystoreManager.KEYS_ALIAS_DEVICE_BOUND &&
-                    isMasterKeyLockBindingDefectObserved()
-                ) {
-                    migrateToPolicyAlias(pubkeyHex, plain, encoded)
+                //
+                // The CONDITION is inside the ownership guard, not just the
+                // migration: isMasterKeyLockBindingDefectObserved suspends on
+                // store.data.first(), so a cancellation or DataStore fault
+                // there exits before [plain] reaches the caller — and
+                // migrateToPolicyAlias's own scrub cannot help, because it was
+                // never entered. Without this, such an exit would also be
+                // caught by the GeneralSecurityException arm below and routed
+                // into the recovery ladder with the buffer still live.
+                try {
+                    if (recordedAlias == KeystoreManager.KEYS_ALIAS_DEVICE_BOUND &&
+                        isMasterKeyLockBindingDefectObserved()
+                    ) {
+                        migrateToPolicyAlias(pubkeyHex, plain, encoded)
+                    }
+                } catch (t: Throwable) {
+                    plain.fill(0)
+                    throw t
                 }
                 plain
             } catch (e: KeystoreDeviceLockedException) {
