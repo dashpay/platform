@@ -881,9 +881,11 @@ public class PlatformWalletManager: ObservableObject {
         drainingNativeHandle = h
         handle = NULL_HANDLE
         isConfigured = false
-        // Poll cancellation is independent of admitted local-read generations.
-        // Stop remaining queued poll reads before the blocking shielded stop.
+        // Poll/reconcile cancellation is independent of admitted local-read
+        // generations. Stop remaining reads and reconcile persistence steps
+        // before the blocking shielded stop.
         pollEpoch.bump()
+        coreTxoReconcileEpoch.bump()
         progressPollTask?.cancel()
         walletPollTask?.cancel()
         SDKLogger.event(
@@ -916,7 +918,6 @@ public class PlatformWalletManager: ObservableObject {
             shieldedSyncGeneration.bump()
             platformAddressSyncGeneration.bump()
             dpnsSyncGeneration.bump()
-            coreTxoReconcileEpoch.bump()
 
             // Let poll work that is merely mid-flight finish before the
             // native teardown starts; see `pollDrainTimeout` for why these

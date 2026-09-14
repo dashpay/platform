@@ -907,45 +907,58 @@ impl NetworkShieldedCoordinator {
     /// Read a wallet's local ledger without networking. Lifecycle serialization
     /// prevents Clear/rebind from changing the account set or hydration halfway
     /// through the read; one store guard keeps balances and coverage coherent
-    /// with concurrent syncs and spend reservations.
+    /// with concurrent syncs and spend reservations. A contended store wait
+    /// releases lifecycle, then retries both guards in their original order.
     pub async fn local_balance_snapshot(
         &self,
         wallet_id: WalletId,
     ) -> Result<ShieldedLocalBalanceState, PlatformWalletError> {
-        let _install = self.begin_install(wallet_id).await;
-        let account_ids: Vec<SubwalletId> = self
-            .accounts
-            .read()
-            .await
-            .keys()
-            .filter(|id| id.wallet_id == wallet_id)
-            .copied()
-            .collect();
-        if account_ids.is_empty() {
-            return Ok(ShieldedLocalBalanceState::Unbound);
-        }
-        let hydrated = self.is_hydrated_locked(wallet_id).await;
-        let store = self.store.read().await;
-        let mut accounts = BTreeMap::new();
-        for id in account_ids {
-            let balance = store
-                .local_account_balance(id)
-                .map_err(|error| PlatformWalletError::ShieldedStoreError(error.to_string()))?;
-            // A bind racing Clear deliberately skips its stale host snapshot;
-            // a failed Clear also invalidates hydration while retaining the
-            // registration. A complete scan can establish each live account's
-            // ledger independently. Do not mark host hydration complete here:
-            // a later bind must still be able to restore host-only metadata.
-            // Successful Clear purges the source with the subwallet, and a
-            // newly added/unscanned account cannot inherit another's coverage.
-            if !hydrated && balance.source != ShieldedBalanceSource::ScannedThisSession {
-                return Ok(ShieldedLocalBalanceState::RestoreIncomplete);
+        loop {
+            let install = self.begin_install(wallet_id).await;
+            let account_ids: Vec<SubwalletId> = self
+                .accounts
+                .read()
+                .await
+                .keys()
+                .filter(|id| id.wallet_id == wallet_id)
+                .copied()
+                .collect();
+            if account_ids.is_empty() {
+                return Ok(ShieldedLocalBalanceState::Unbound);
             }
-            accounts.insert(id.account_index, balance);
+            let Ok(store) = self.store.try_read() else {
+                // A network scan can hold the store writer for minutes. Do not
+                // make store-free lifecycle operations wait behind this read.
+                drop(install);
+                // Wait only for readiness, then drop the temporary store guard
+                // BEFORE reacquiring lifecycle. Keeping it would invert the
+                // lifecycle -> store order used by Clear/bind and deadlock.
+                drop(self.store.read().await);
+                // Registration/hydration may have changed during this wait.
+                continue;
+            };
+            let hydrated = self.is_hydrated_locked(wallet_id).await;
+            let mut accounts = BTreeMap::new();
+            for id in account_ids {
+                let balance = store
+                    .local_account_balance(id)
+                    .map_err(|error| PlatformWalletError::ShieldedStoreError(error.to_string()))?;
+                // A bind racing Clear deliberately skips its stale host snapshot;
+                // a failed Clear also invalidates hydration while retaining the
+                // registration. A complete scan can establish each live account's
+                // ledger independently. Do not mark host hydration complete here:
+                // a later bind must still be able to restore host-only metadata.
+                // Successful Clear purges the source with the subwallet, and a
+                // newly added/unscanned account cannot inherit another's coverage.
+                if !hydrated && balance.source != ShieldedBalanceSource::ScannedThisSession {
+                    return Ok(ShieldedLocalBalanceState::RestoreIncomplete);
+                }
+                accounts.insert(id.account_index, balance);
+            }
+            return Ok(ShieldedLocalBalanceState::Ready(
+                ShieldedLocalBalanceSnapshot { accounts },
+            ));
         }
-        Ok(ShieldedLocalBalanceState::Ready(
-            ShieldedLocalBalanceSnapshot { accounts },
-        ))
     }
 
     /// Rehydrate per-subwallet state from a host-persisted

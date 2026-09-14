@@ -99,6 +99,8 @@ impl From<ShieldedLocalBalanceState> for ShieldedLocalBalanceSnapshotFFI {
 /// reservations, without starting sync or resolving a mnemonic. Waits at most
 /// 100 ms for the coordinator lifecycle/store locks. On contention, returns
 /// ErrorWalletOperation with an empty output; retain the last balance and retry.
+/// A store wait releases the lifecycle guard before parking, so unrelated
+/// store-free binds can proceed. The account set is revalidated on reacquisition.
 /// Check the returned result code before interpreting any output fields. Only
 /// Success makes the status authoritative; an error's reset Unbound value is
 /// allocation cleanup state, not a statement that the wallet is unbound.
@@ -875,9 +877,10 @@ mod local_balance_tests {
     fn should_allow_registry_writer_and_stop_while_local_balance_snapshot_is_parked() {
         let (handle, wallet_id, coordinator, path) = bound_manager();
         let unrelated_handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
-        // Model a scan owning the real store lock. The FFI snapshot must
-        // enter its lifecycle transaction and park on this guard.
+        // Model a scan owning the real store lock. Once the FFI snapshot has
+        // cloned this coordinator, it cannot finish until this guard drops.
         let store_guard = runtime().block_on(coordinator.store().write());
+        let coordinator_refs = Arc::strong_count(&coordinator);
         let snapshot_thread = std::thread::spawn(move || unsafe {
             let mut snapshot = ShieldedLocalBalanceSnapshotFFI::default();
             let mut result = local_shielded_balance_snapshot_with_budget(
@@ -891,17 +894,16 @@ mod local_balance_tests {
             crate::platform_wallet_ffi_result_free(&mut result);
             outcome
         });
-        // is_hydrated takes only the lifecycle mutex. Pending proves the
-        // snapshot has reached that mutex, rather than merely being queued
-        // on its OS thread. No writer is started until this is observed.
+        // Observe the actual entrypoint's owned coordinator, not elapsed time
+        // or the lifecycle mutex (which a contended snapshot now releases).
+        // In the regressed with_item implementation this clone occurs while
+        // holding the registry guard; the store writer prevents that call from
+        // returning before the unrelated registry writer below is attempted.
         let deadline = Instant::now() + Duration::from_secs(5);
-        let snapshot_parked = loop {
-            let pending = runtime().block_on(poll_fn(|cx| {
-                let mut probe = std::pin::pin!(coordinator.is_hydrated(wallet_id));
-                Poll::Ready(probe.as_mut().poll(cx).is_pending())
-            }));
-            if pending || Instant::now() >= deadline {
-                break pending;
+        let snapshot_entered = loop {
+            let entered = Arc::strong_count(&coordinator) > coordinator_refs;
+            if entered || Instant::now() >= deadline {
+                break entered;
             }
             std::thread::yield_now();
         };
@@ -938,8 +940,8 @@ mod local_balance_tests {
         std::fs::remove_file(path).expect("remove test store");
 
         assert!(
-            snapshot_parked,
-            "snapshot never entered its lifecycle transaction"
+            snapshot_entered,
+            "snapshot never acquired its owned coordinator"
         );
         assert_eq!(writer_result, Ok(PlatformWalletFFIResultCode::Success));
         assert_eq!(stop_result, Ok(PlatformWalletFFIResultCode::Success));
@@ -956,10 +958,15 @@ mod local_balance_tests {
     fn assert_snapshot_contention_is_bounded(hold_lifecycle: bool) {
         let (handle, wallet_id, coordinator, path) = bound_manager();
         let store_guard = runtime().block_on(coordinator.store().write());
-        // A Rust read has no FFI deadline. Polling it while the store is
-        // locked deterministically holds the lifecycle mutex for the second
-        // case, so the exported read must bound either kind of contention.
-        let mut lifecycle_holder = Box::pin(coordinator.local_balance_snapshot(wallet_id));
+        // A fresh registration checks durable pending rows under the store
+        // lock while holding lifecycle. Poll it once to park that transaction
+        // before any registry mutation, then test the exported read's deadline.
+        let other_wallet = [0xf3; 32];
+        let mut lifecycle_holder = Box::pin(coordinator.register_wallet(
+            other_wallet,
+            BTreeMap::new(),
+            WalletPersister::new(other_wallet, Arc::new(NoPlatformPersistence)),
+        ));
         if hold_lifecycle {
             let pending = runtime().block_on(poll_fn(|cx| {
                 Poll::Ready(lifecycle_holder.as_mut().poll(cx).is_pending())

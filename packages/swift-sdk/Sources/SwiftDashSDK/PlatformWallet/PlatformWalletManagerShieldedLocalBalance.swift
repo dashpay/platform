@@ -124,6 +124,11 @@ extension PlatformWalletManager {
     /// delivery throws `ShieldedLocalBalanceReadError.bindingChanged`; the host
     /// decides whether and when to request a fresh read. Clear, stop, failed bind,
     /// and task cancellation discard obsolete delivery with `CancellationError`.
+    /// For Clear, stop, or failed bind, this cancels the obsolete read even if
+    /// `Task.isCancelled` is false. The owner of that lifecycle operation must
+    /// apply its outcome to the display (for example, clear only after a
+    /// successful Clear) and request a new snapshot after rebind/restart.
+    /// Cancellation is not a signal to rebind or restart sync automatically.
     ///
     /// Native failures throw; unbound wallets and ledgers lacking complete
     /// restoration or scan coverage do not produce numeric balances. Retain

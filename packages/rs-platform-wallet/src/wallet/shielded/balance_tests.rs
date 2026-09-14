@@ -430,6 +430,49 @@ async fn local_balance_restores_funds_and_durable_pending_reservations_offline()
 }
 
 #[tokio::test]
+async fn should_release_lifecycle_while_snapshot_waits_for_store_and_revalidate_registration() {
+    let path = tree_path();
+    let coordinator = coordinator(&path);
+    let wallet = [14; 32];
+    let other_wallet = [15; 32];
+    register(&coordinator, wallet, &[0]).await;
+    register(&coordinator, other_wallet, &[0]).await;
+    coordinator.mark_hydrated(wallet, true).await;
+
+    let mut store = coordinator.store().write().await;
+    let mut read = Box::pin(coordinator.local_balance_snapshot(wallet));
+    assert!(matches!(futures::poll!(&mut read), Poll::Pending));
+    // The actual snapshot is now parked behind a scan's store writer. An
+    // unrelated wallet's idempotent registration must keep its store-free path.
+    let mut rebind = Box::pin(register(&coordinator, other_wallet, &[0]));
+    assert!(matches!(futures::poll!(&mut rebind), Poll::Ready(())));
+
+    // Registration may also change while the snapshot waits. Its eventual
+    // read must re-enumerate accounts and re-check the invalidated hydration.
+    let mut add_account = Box::pin(register(&coordinator, wallet, &[0, 1]));
+    assert!(matches!(futures::poll!(&mut add_account), Poll::Ready(())));
+    store
+        .save_note(SubwalletId::new(wallet, 0), &note(1, 100, false))
+        .unwrap();
+    store
+        .save_note(SubwalletId::new(wallet, 1), &note(2, 200, false))
+        .unwrap();
+    store
+        .set_last_synced_note_index(SubwalletId::new(wallet, 0), 1)
+        .unwrap();
+    drop(store);
+    assert_eq!(
+        read.await.unwrap(),
+        ShieldedLocalBalanceState::RestoreIncomplete
+    );
+    coordinator.mark_hydrated(wallet, true).await;
+    let snapshot = ready(&coordinator, wallet).await;
+    assert_eq!(snapshot.accounts.len(), 2);
+    assert_eq!(snapshot.accounts[&0].spendable_credits, 100);
+    assert_eq!(snapshot.accounts[&1].spendable_credits, 200);
+}
+
+#[tokio::test]
 async fn local_balance_waits_for_atomic_store_and_lifecycle_updates() {
     let path = tree_path();
     let coordinator = coordinator(&path);
@@ -457,6 +500,10 @@ async fn local_balance_waits_for_atomic_store_and_lifecycle_updates() {
     let install = coordinator.begin_install(wallet).await;
     let mut read = Box::pin(coordinator.local_balance_snapshot(wallet));
     assert!(matches!(futures::poll!(&mut read), Poll::Pending));
+    assert!(
+        coordinator.store().try_write().is_ok(),
+        "a snapshot waiting for lifecycle must not hold the store lock"
+    );
     install.mark_hydrated(false).await;
     drop(install);
     assert_eq!(
