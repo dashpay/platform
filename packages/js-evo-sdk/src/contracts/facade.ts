@@ -65,6 +65,27 @@ export class ContractsFacade {
     return w.getDataContractsByRangeWithProofInfo(query);
   }
 
+  /**
+   * The current versions of contracts: the cheap check that contracts held locally are still
+   * current. One entry per requested id, `undefined` for an id no contract has; the contracts
+   * themselves come back only with `includeContracts`.
+   */
+  async getLatestVersions(
+    query: wasm.DataContractsLatestVersionsQuery,
+  ): Promise<Map<string, wasm.DataContractLatestVersion | undefined>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDataContractsLatestVersions(query);
+  }
+
+  async getLatestVersionsWithProof(
+    query: wasm.DataContractsLatestVersionsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<string, wasm.DataContractLatestVersion | undefined>
+  >> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDataContractsLatestVersionsWithProofInfo(query);
+  }
+
   async publish(options: wasm.ContractPublishOptions): Promise<wasm.DataContract> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.contractPublish(options);
