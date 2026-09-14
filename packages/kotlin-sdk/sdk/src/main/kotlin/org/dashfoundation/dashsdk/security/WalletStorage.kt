@@ -1440,13 +1440,30 @@ class WalletStorage(
         val storedFingerprint = prefs[privateKeyFingerprintKey(pubkeyHex)]
         val unaeProvesRecoverable = storedFingerprint != null &&
             storedFingerprint == keystore.keysAliasFingerprintOrNull(recordedAlias)
+        // The legacy rung needs its OWN ownership evidence, for the same reason
+        // the policy rung above does. The retained former keypair at
+        // [KeystoreManager.KEYS_ALIAS] is auth-gated, so a closed window throws
+        // `UserNotAuthenticatedException` at cipher.init — before the ciphertext
+        // is examined — and a bare default of `true` would vouch for a blob that
+        // key does not own. After the alias has been regenerated, that reported a
+        // stale blob as healthy and suppressed the re-derive the key-health sheet
+        // exists to offer. Pre-alias-split blobs carry the FORMER key's
+        // fingerprint (see [retrievePrivateKey]'s rung 3), so comparing against
+        // that alias's current certificate is exactly the ownership test; a blob
+        // predating fingerprint recording has no evidence and is treated as
+        // strandable, which errs toward offering a repair for a key that is
+        // deterministically re-derivable anyway.
+        val legacyRsaProvesRecoverable = storedFingerprint != null &&
+            storedFingerprint == keystore.keysAliasFingerprintOrNull(KeystoreManager.KEYS_ALIAS)
         return (
             keystore.hasIdentityKeysKey(recordedAlias) &&
                 probeOpensBlob(unaeProvesRecoverable) { keystore.decrypt(blob, recordedAlias) }
             ) ||
             (
                 keystore.hasLegacyRsaKeysKey() &&
-                    probeOpensBlob { keystore.decryptLegacyRsaKeysBlob(blob) }
+                    probeOpensBlob(legacyRsaProvesRecoverable) {
+                        keystore.decryptLegacyRsaKeysBlob(blob)
+                    }
                 )
     }
 
