@@ -38,6 +38,14 @@ pub struct Platform<C> {
     pub checkpoint_platform_states: ArcSwap<BTreeMap<BlockHeight, Arc<PlatformState>>>,
     /// block height guard
     pub committed_block_height_guard: AtomicU64,
+    /// Block time of the last GroveDB checkpoint attempt, successful or not; 0 before
+    /// the first attempt.
+    ///
+    /// Every node checkpoints at the first block after a checkpoint interval boundary,
+    /// so a failed attempt is skipped for the rest of its interval instead of being
+    /// retried at a later block, which would give this node a checkpoint height the
+    /// rest of the network does not have. `should_checkpoint` reads it.
+    pub last_checkpoint_attempt_block_time_ms: AtomicU64,
     /// Configuration
     pub config: PlatformConfig,
     /// Core RPC Client
@@ -256,6 +264,7 @@ impl<C> Platform<C> {
             checkpoint_platform_states: ArcSwap::from_pointee(checkpoint_platform_states),
             state: ArcSwap::new(Arc::new(platform_state)),
             committed_block_height_guard: AtomicU64::from(height),
+            last_checkpoint_attempt_block_time_ms: AtomicU64::new(0),
             config,
             core_rpc,
             check_tx_proof_verifier: CheckTxProofVerifier::default(),
@@ -290,6 +299,7 @@ impl<C> Platform<C> {
             checkpoint_platform_states: ArcSwap::from_pointee(BTreeMap::new()),
             state: ArcSwap::new(Arc::new(platform_state)),
             committed_block_height_guard: AtomicU64::from(height),
+            last_checkpoint_attempt_block_time_ms: AtomicU64::new(0),
             config,
             core_rpc,
             check_tx_proof_verifier: CheckTxProofVerifier::default(),

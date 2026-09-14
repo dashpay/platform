@@ -140,11 +140,23 @@ where
     // committed state). Checkpoints are restore points, auxiliary to the block: the
     // block is final once the commit above succeeded, and the transaction and block
     // execution context are already consumed, so a checkpoint failure must not be
-    // reported as a failed block. A failed attempt leaves nothing behind, and
-    // `should_checkpoint` keeps asking for a checkpoint until one lands, so the
-    // next block retries it.
+    // reported as a failed block. Every node checkpoints at the same heights, so a
+    // failed attempt is retried once right here, at this height, and otherwise the
+    // checkpoint is skipped: the attempt leaves nothing behind and counts as this
+    // interval's, so `should_checkpoint` does not ask again before the next one.
     if block_finalization_outcome.checkpoint_needed {
-        match app.platform().create_grovedb_checkpoint(platform_version) {
+        let platform = app.platform();
+        let result = platform
+            .create_grovedb_checkpoint(platform_version)
+            .or_else(|error| {
+                tracing::warn!(
+                    ?error,
+                    block_height,
+                    "failed to create grovedb checkpoint; retrying once"
+                );
+                platform.create_grovedb_checkpoint(platform_version)
+            });
+        match result {
             Ok(()) => {
                 crate::metrics::abci_last_checkpoint_height(block_height);
                 tracing::debug!(block_height, "created grovedb checkpoint");
@@ -154,8 +166,8 @@ where
                 tracing::error!(
                     ?error,
                     block_height,
-                    "failed to create grovedb checkpoint after committing the block; the \
-                     block is final and the checkpoint will be retried on the next block"
+                    "failed to create grovedb checkpoint twice after committing the block; \
+                     the block is final and this checkpoint is skipped"
                 );
             }
         }
@@ -419,6 +431,12 @@ mod tests {
         fn events(&self) -> Vec<(tracing::Level, String)> {
             self.0.lock().unwrap().clone()
         }
+
+        fn has(&self, level: tracing::Level, needle: &str) -> bool {
+            self.events()
+                .iter()
+                .any(|(event_level, message)| *event_level == level && message.contains(needle))
+        }
     }
 
     impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for CapturedLogs {
@@ -619,6 +637,31 @@ mod tests {
         config
     }
 
+    fn checkpointing_platform() -> TempPlatform<MockCoreRPCLike> {
+        TestPlatformBuilder::new()
+            .with_config(checkpointing_config())
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state()
+    }
+
+    fn inject_checkpoint_faults(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        faults: impl IntoIterator<Item = CheckpointStep>,
+    ) {
+        platform
+            .config
+            .testing_configs
+            .checkpoint_faults
+            .lock()
+            .unwrap()
+            .extend(faults);
+    }
+
+    fn registered_checkpoint_heights(platform: &TempPlatform<MockCoreRPCLike>) -> Vec<u64> {
+        platform.drive.checkpoints.load().keys().copied().collect()
+    }
+
     fn now_ms() -> u64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -626,37 +669,46 @@ mod tests {
             .as_millis() as u64
     }
 
-    /// The checkpoint runs after the commit, so whichever of its steps fails, the block
-    /// must still be reported as finalized: the commit stands, the committed-height
-    /// guard follows it, the failure is logged, the failed attempt leaves nothing
-    /// behind, and the next block retries the checkpoint successfully.
+    /// Block times for three blocks: two inside the current checkpoint interval and
+    /// one at the same offset into the next. They sit a minute past the interval
+    /// start, so neither the clock advancing during the test nor the boundary
+    /// itself can move a block into the neighbouring interval, and none of them is
+    /// old enough to count as history.
+    fn block_times_around_a_checkpoint_interval() -> [u64; 3] {
+        let interval_ms = PlatformVersion::latest()
+            .drive_abci
+            .checkpoints
+            .frequency_seconds as u64
+            * 1000;
+        let now = now_ms();
+        let first = now - now % interval_ms + 60_000;
+        [first, first + 1_000, first + interval_ms]
+    }
+
+    const ALL_CHECKPOINT_STEPS: [CheckpointStep; 4] = [
+        CheckpointStep::CreateDirectory,
+        CheckpointStep::CreateCheckpoint,
+        CheckpointStep::WriteState,
+        CheckpointStep::OpenCheckpoint,
+    ];
+
+    /// The checkpoint runs after the commit, so a failing step must not fail the
+    /// block. A transient failure is retried once at the same height, which keeps
+    /// this node's checkpoint heights aligned with the rest of the network, and the
+    /// retry's checkpoint spends the interval like any other.
     #[test]
-    fn finalize_block_succeeds_when_checkpoint_fails_after_commit() {
-        for step in [
-            CheckpointStep::CreateDirectory,
-            CheckpointStep::CreateCheckpoint,
-            CheckpointStep::WriteState,
-            CheckpointStep::OpenCheckpoint,
-        ] {
-            let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
-                .with_config(checkpointing_config())
-                .with_latest_protocol_version()
-                .build_with_mock_rpc()
-                .set_genesis_state();
+    fn finalize_block_retries_a_failed_checkpoint_once_at_the_same_height() {
+        for step in ALL_CHECKPOINT_STEPS {
+            let platform = checkpointing_platform();
             let app = FullAbciApplication::new(&platform.platform);
             let checkpoints_path = platform.config.db_path.join("checkpoints");
+            let [first_time, second_time, _] = block_times_around_a_checkpoint_interval();
 
-            *platform
-                .config
-                .testing_configs
-                .checkpoint_fault
-                .lock()
-                .unwrap() = Some(step);
+            inject_checkpoint_faults(&platform, [step]);
 
-            let first_block_time_ms = now_ms();
             let logs = CapturedLogs::default();
             let response = logs
-                .capture(|| finalize_real_block(&platform, &app, 1, first_block_time_ms, None))
+                .capture(|| finalize_real_block(&platform, &app, 1, first_time, None))
                 .unwrap_or_else(|error| {
                     panic!("{step:?}: the block is committed, so it must succeed: {error:?}")
                 });
@@ -672,64 +724,159 @@ mod tests {
                 "{step:?}"
             );
 
-            // The failed attempt registers nothing and leaves nothing on disk
-            assert!(platform.drive.checkpoints.load().is_empty(), "{step:?}");
-            assert!(
-                platform.checkpoint_platform_states.load().is_empty(),
-                "{step:?}"
-            );
-            assert!(!checkpoints_path.join("1").exists(), "{step:?}");
-
-            // The failure is observable
-            assert!(
-                logs.events().iter().any(|(level, message)| {
-                    *level == tracing::Level::ERROR
-                        && message.contains("failed to create grovedb checkpoint")
-                }),
-                "{step:?}: {:?}",
-                logs.events()
-            );
-
-            // The next block retries the checkpoint, which now succeeds
-            finalize_real_block(
-                &platform,
-                &app,
-                2,
-                first_block_time_ms + 1_000,
-                Some(first_block_time_ms),
-            )
-            .unwrap_or_else(|error| panic!("{step:?}: second block: {error:?}"));
-
+            // The retry created the checkpoint at this block's height
             assert_eq!(
-                platform
-                    .committed_block_height_guard
-                    .load(Ordering::Relaxed),
-                2,
-                "{step:?}"
-            );
-            assert_eq!(
-                platform
-                    .drive
-                    .checkpoints
-                    .load()
-                    .keys()
-                    .copied()
-                    .collect::<Vec<_>>(),
-                vec![2],
+                registered_checkpoint_heights(&platform),
+                vec![1],
                 "{step:?}"
             );
             assert_eq!(
                 platform
                     .checkpoint_platform_states
                     .load()
-                    .get(&2)
+                    .get(&1)
                     .map(|state| state.last_committed_block_height()),
-                Some(2),
+                Some(1),
                 "{step:?}"
             );
             assert!(
                 checkpoints_path
-                    .join("2")
+                    .join("1")
+                    .join("platform_state.bin")
+                    .is_file(),
+                "{step:?}"
+            );
+
+            // The first failure is observable, and no checkpoint was skipped
+            assert!(
+                logs.has(tracing::Level::WARN, "retrying once"),
+                "{step:?}: {:?}",
+                logs.events()
+            );
+            assert!(
+                !logs.has(tracing::Level::ERROR, "checkpoint"),
+                "{step:?}: {:?}",
+                logs.events()
+            );
+
+            // The next block in the same interval does not checkpoint again
+            finalize_real_block(&platform, &app, 2, second_time, Some(first_time))
+                .unwrap_or_else(|error| panic!("{step:?}: second block: {error:?}"));
+            assert_eq!(
+                registered_checkpoint_heights(&platform),
+                vec![1],
+                "{step:?}"
+            );
+            assert!(!checkpoints_path.join("2").exists(), "{step:?}");
+        }
+    }
+
+    /// When the immediate retry fails too, the checkpoint is skipped rather than
+    /// retried at a later block: the block still succeeds, the failed attempts
+    /// leave nothing behind, the failure is logged, the rest of the interval makes
+    /// no attempt, and the next interval boundary checkpoints again.
+    #[test]
+    fn finalize_block_skips_a_checkpoint_that_fails_twice() {
+        for step in ALL_CHECKPOINT_STEPS {
+            let platform = checkpointing_platform();
+            let app = FullAbciApplication::new(&platform.platform);
+            let checkpoints_path = platform.config.db_path.join("checkpoints");
+            let [first_time, second_time, next_interval_time] =
+                block_times_around_a_checkpoint_interval();
+
+            inject_checkpoint_faults(&platform, [step, step]);
+
+            let logs = CapturedLogs::default();
+            let response = logs
+                .capture(|| finalize_real_block(&platform, &app, 1, first_time, None))
+                .unwrap_or_else(|error| {
+                    panic!("{step:?}: the block is committed, so it must succeed: {error:?}")
+                });
+            assert_eq!(response.retain_height, 0);
+
+            // The commit stands and the committed-height guard follows it
+            assert_eq!(platform.state.load().last_committed_block_height(), 1);
+            assert_eq!(
+                platform
+                    .committed_block_height_guard
+                    .load(Ordering::Relaxed),
+                1,
+                "{step:?}"
+            );
+
+            // Both attempts ran, registered nothing, and left nothing on disk
+            assert!(
+                platform
+                    .config
+                    .testing_configs
+                    .checkpoint_faults
+                    .lock()
+                    .unwrap()
+                    .is_empty(),
+                "{step:?}: both injected faults must have been consumed"
+            );
+            assert!(
+                registered_checkpoint_heights(&platform).is_empty(),
+                "{step:?}"
+            );
+            assert!(
+                platform.checkpoint_platform_states.load().is_empty(),
+                "{step:?}"
+            );
+            assert!(!checkpoints_path.join("1").exists(), "{step:?}");
+
+            // The skip is observable
+            assert!(
+                logs.has(tracing::Level::ERROR, "this checkpoint is skipped"),
+                "{step:?}: {:?}",
+                logs.events()
+            );
+
+            // The rest of the interval makes no attempt at all
+            let logs = CapturedLogs::default();
+            logs.capture(|| finalize_real_block(&platform, &app, 2, second_time, Some(first_time)))
+                .unwrap_or_else(|error| panic!("{step:?}: second block: {error:?}"));
+            assert!(
+                registered_checkpoint_heights(&platform).is_empty(),
+                "{step:?}"
+            );
+            assert!(!checkpoints_path.join("2").exists(), "{step:?}");
+            assert!(
+                !logs
+                    .events()
+                    .iter()
+                    .any(|(_, message)| message.contains("checkpoint")),
+                "{step:?}: no attempt expected in the same interval: {:?}",
+                logs.events()
+            );
+
+            // The next interval boundary checkpoints again
+            finalize_real_block(&platform, &app, 3, next_interval_time, Some(second_time))
+                .unwrap_or_else(|error| panic!("{step:?}: third block: {error:?}"));
+            assert_eq!(
+                platform
+                    .committed_block_height_guard
+                    .load(Ordering::Relaxed),
+                3,
+                "{step:?}"
+            );
+            assert_eq!(
+                registered_checkpoint_heights(&platform),
+                vec![3],
+                "{step:?}"
+            );
+            assert_eq!(
+                platform
+                    .checkpoint_platform_states
+                    .load()
+                    .get(&3)
+                    .map(|state| state.last_committed_block_height()),
+                Some(3),
+                "{step:?}"
+            );
+            assert!(
+                checkpoints_path
+                    .join("3")
                     .join("platform_state.bin")
                     .is_file(),
                 "{step:?}"

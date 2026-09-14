@@ -910,11 +910,14 @@ pub struct PlatformTestConfig {
     pub disable_contested_documents_is_allowed_validation: bool,
     /// Disable checkpoint creation during tests
     pub disable_checkpoints: bool,
-    /// Fails the given step of the next checkpoint attempt, for fault-injection tests.
+    /// Steps to fail on the next checkpoint attempts, one entry per attempt in order,
+    /// for fault-injection tests.
     ///
-    /// The attempt that hits the fault consumes it, so the attempt after it runs
-    /// normally and exercises the retry path.
-    pub checkpoint_fault: std::sync::Arc<std::sync::Mutex<Option<CheckpointStep>>>,
+    /// Each attempt consumes the front entry, so `[step]` fails once and the immediate
+    /// retry succeeds, while `[step, step]` fails both attempts and the checkpoint is
+    /// skipped.
+    pub checkpoint_faults:
+        std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<CheckpointStep>>>,
 }
 
 #[cfg(feature = "testing-config")]
@@ -928,7 +931,7 @@ impl PlatformTestConfig {
             disable_instant_lock_signature_verification: true,
             disable_contested_documents_is_allowed_validation: true,
             disable_checkpoints: true,
-            checkpoint_fault: Default::default(),
+            checkpoint_faults: Default::default(),
         }
     }
 }
@@ -943,7 +946,7 @@ impl Default for PlatformTestConfig {
             disable_instant_lock_signature_verification: false,
             disable_contested_documents_is_allowed_validation: true,
             disable_checkpoints: true,
-            checkpoint_fault: Default::default(),
+            checkpoint_faults: Default::default(),
         }
     }
 }

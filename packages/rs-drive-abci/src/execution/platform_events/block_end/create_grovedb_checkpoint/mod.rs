@@ -16,8 +16,9 @@ where
     /// captures the committed state.
     ///
     /// Checkpoints are auxiliary to the block, so the caller treats a failure as
-    /// best-effort: the failed attempt leaves nothing behind and the next block
-    /// retries it.
+    /// best-effort: it retries once at the same height and otherwise skips this
+    /// checkpoint. A failed attempt leaves nothing behind and counts as this
+    /// interval's attempt for `should_checkpoint`.
     ///
     /// # Arguments
     ///

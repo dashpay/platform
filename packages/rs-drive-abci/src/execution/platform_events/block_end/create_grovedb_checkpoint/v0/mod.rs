@@ -10,6 +10,7 @@ use drive::error::Error::IOErrorWithInfoString;
 use drive::grovedb::GroveDb;
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 impl<C> Platform<C>
@@ -22,10 +23,13 @@ where
     /// captures the committed state. It also saves the platform state to the
     /// checkpoint directory and updates the checkpoint_platform_states cache.
     ///
-    /// A failed attempt leaves nothing behind so that the next block can retry it:
-    /// a checkpoint directory this attempt created is removed again, while a
-    /// directory it did not create (RocksDB refuses an existing target) is left
-    /// alone. Nothing is registered in the caches until the checkpoint is complete.
+    /// Every attempt, successful or not, is recorded as this interval's checkpoint
+    /// attempt so that `should_checkpoint` does not ask again before the next
+    /// interval boundary. A failed attempt leaves nothing behind so that the
+    /// caller's immediate retry starts clean: a checkpoint directory this attempt
+    /// created is removed again, while a directory it did not create (RocksDB
+    /// refuses an existing target) is left alone. Nothing is registered in the
+    /// caches until the checkpoint is complete.
     ///
     /// # Arguments
     ///
@@ -43,6 +47,11 @@ where
         let platform_state = self.state.load();
         let block_height = platform_state.last_committed_block_height();
         let block_time = platform_state.last_committed_block_time_ms().unwrap_or(0);
+
+        // Record the attempt before anything that can fail: a checkpoint that fails is
+        // skipped for the rest of its interval, not retried at a later block.
+        self.last_checkpoint_attempt_block_time_ms
+            .store(block_time, Ordering::Relaxed);
 
         let keep_n = platform_version.drive_abci.checkpoints.num_checkpoints as usize;
 
@@ -134,15 +143,15 @@ where
     }
 
     /// The step a test asked to fail on this attempt, consumed so the next attempt
-    /// runs normally.
+    /// takes the next injected fault, or none.
     #[cfg(feature = "testing-config")]
     fn take_injected_checkpoint_fault(&self) -> Option<CheckpointStep> {
         self.config
             .testing_configs
-            .checkpoint_fault
+            .checkpoint_faults
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
+            .pop_front()
     }
 
     #[cfg(not(feature = "testing-config"))]
@@ -217,12 +226,13 @@ mod tests {
     }
 
     fn inject_fault(platform: &TempPlatform<MockCoreRPCLike>, step: CheckpointStep) {
-        *platform
+        platform
             .config
             .testing_configs
-            .checkpoint_fault
+            .checkpoint_faults
             .lock()
-            .unwrap() = Some(step);
+            .unwrap()
+            .push_back(step);
     }
 
     fn create_checkpoint(platform: &TempPlatform<MockCoreRPCLike>) -> Result<(), Error> {
