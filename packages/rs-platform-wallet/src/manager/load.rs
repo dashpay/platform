@@ -503,54 +503,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     return;
                 }
                 for tx in txs {
-                    let txid = tx.txid();
-                    // The lifecycle gate, held across the liveness check AND
-                    // the network step — that pairing is the whole contract
-                    // (`WalletGeneration::payment_guard`). A bare
-                    // `Arc::ptr_eq` is a point-in-time observation, and
-                    // teardown can take the exclusive side between it and the
-                    // broadcast, so a removed wallet's transaction would still
-                    // go out. Re-taken per transaction rather than once around
-                    // the loop: each broadcast waits for an acceptance signal,
-                    // and holding the gate across all of them would stall a
-                    // removal for as long as the whole batch takes.
-                    //
-                    // Lock order is the one the gate documents: this first,
-                    // the wallet-manager read lock second, never the reverse.
-                    let _payment = generation.payment_guard().await;
-                    let still_live = {
-                        let wm = wallet_manager.read().await;
-                        wm.get_wallet_info(&wallet_id)
-                            .is_some_and(|info| Arc::ptr_eq(&info.generation, &generation))
-                    };
-                    if !still_live {
-                        tracing::info!(
-                            wallet_id = %hex::encode(wallet_id),
-                            "load: wallet no longer registered; abandoning the re-dispatch"
-                        );
+                    if resend_one(
+                        &wallet_id,
+                        &generation,
+                        &wallet_manager,
+                        broadcaster.as_ref(),
+                        &tx,
+                    )
+                    .await
+                        == ResendOutcome::Abandoned
+                    {
                         return;
-                    }
-                    match broadcaster.broadcast(&tx).await {
-                        Ok(_) => tracing::info!(
-                            %txid,
-                            "load: re-dispatched unconfirmed send, accepted"
-                        ),
-                        // Expected for the orphaned case: sent, no acceptance
-                        // signal, now owned by the rebroadcast timer.
-                        Err(BroadcastError::MaybeSent { reason }) => tracing::info!(
-                            %txid,
-                            %reason,
-                            "load: re-dispatched unconfirmed send, no acceptance signal yet — \
-                             handed to the rebroadcast timer"
-                        ),
-                        // Provably never sent: worth a warning, since nothing
-                        // carried it and the next launch is the only remaining
-                        // chance.
-                        Err(e) => tracing::warn!(
-                            %txid,
-                            error = ?e,
-                            "load: re-dispatch was not sent"
-                        ),
                     }
                 }
             });
@@ -558,6 +521,76 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         Ok(())
     }
+}
+
+/// What one re-dispatch attempt did, so a caller — and a test — can tell the
+/// two apart without reading logs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ResendOutcome {
+    /// The transaction was handed to the broadcaster. Whether the network
+    /// accepted it is deliberately not part of this answer: an unconfirmed
+    /// send with no acceptance signal is the case this path exists for.
+    Dispatched,
+    /// The wallet this transaction belongs to is no longer the live
+    /// registration, so nothing was sent and the rest of the batch is moot.
+    Abandoned,
+}
+
+/// Re-dispatch one unconfirmed send, under the wallet's lifecycle gate.
+///
+/// Split out of the spawn loop so the part that has to be right can be tested
+/// directly: the gate is held across BOTH the liveness check and the network
+/// step, which is the whole contract of
+/// [`WalletGeneration::payment_guard`](crate::wallet::core::WalletGeneration::payment_guard).
+/// A bare `Arc::ptr_eq` is a point-in-time observation, and teardown can take
+/// the exclusive side between it and the broadcast, so a removed wallet's
+/// transaction would still go out.
+///
+/// Taken per transaction rather than once around a batch: each broadcast waits
+/// for an acceptance signal, and holding the gate across a whole batch would
+/// stall a removal for as long as the batch takes.
+///
+/// Lock order is the one the gate documents — gate first, wallet-manager read
+/// lock second, never the reverse.
+pub(super) async fn resend_one(
+    wallet_id: &WalletId,
+    generation: &Arc<WalletGeneration>,
+    wallet_manager: &Arc<
+        tokio::sync::RwLock<key_wallet_manager::WalletManager<PlatformWalletInfo>>,
+    >,
+    broadcaster: &dyn TransactionBroadcaster,
+    tx: &dashcore::Transaction,
+) -> ResendOutcome {
+    let _payment = generation.payment_guard().await;
+    let still_live = {
+        let wm = wallet_manager.read().await;
+        wm.get_wallet_info(wallet_id)
+            .is_some_and(|info| Arc::ptr_eq(&info.generation, generation))
+    };
+    if !still_live {
+        tracing::info!(
+            wallet_id = %hex::encode(wallet_id),
+            "load: wallet no longer registered; abandoning the re-dispatch"
+        );
+        return ResendOutcome::Abandoned;
+    }
+
+    let txid = tx.txid();
+    match broadcaster.broadcast(tx).await {
+        Ok(_) => tracing::info!(%txid, "load: re-dispatched unconfirmed send, accepted"),
+        // Expected for the orphaned case: sent, no acceptance signal, now
+        // owned by the rebroadcast timer.
+        Err(BroadcastError::MaybeSent { reason }) => tracing::info!(
+            %txid,
+            %reason,
+            "load: re-dispatched unconfirmed send, no acceptance signal yet — \
+             handed to the rebroadcast timer"
+        ),
+        // Provably never sent: worth a warning, since nothing carried it and
+        // the next launch is the only remaining chance.
+        Err(e) => tracing::warn!(%txid, error = ?e, "load: re-dispatch was not sent"),
+    }
+    ResendOutcome::Dispatched
 }
 
 /// Of the registrations this load published, the ones a rollback may still
@@ -767,6 +800,160 @@ mod idempotent_load_tests {
             Arc::new(persister),
             event_handler,
         ))
+    }
+
+    use crate::broadcaster::BroadcastError;
+    use std::time::Duration;
+
+    /// Broadcaster that records what it was asked to send, so a test can
+    /// assert on the absence of a broadcast rather than on log output.
+    struct CountingBroadcaster {
+        sent: Arc<std::sync::Mutex<Vec<dashcore::Txid>>>,
+    }
+
+    impl CountingBroadcaster {
+        fn new() -> Self {
+            Self {
+                sent: Arc::new(std::sync::Mutex::new(Vec::new())),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for CountingBroadcaster {
+        async fn broadcast(
+            &self,
+            transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, BroadcastError> {
+            let txid = transaction.txid();
+            self.sent.lock().expect("sent mutex").push(txid);
+            // The answer the orphaned case actually gets: the bytes went out
+            // and nothing echoed them back. `resend_one` must treat this as a
+            // dispatch, not a failure.
+            Err(BroadcastError::MaybeSent {
+                reason: "test: no acceptance signal".to_string(),
+            })
+        }
+
+        async fn wait_until_ready(&self, _timeout: Duration) -> bool {
+            true
+        }
+    }
+
+    /// A wallet still registered under the generation the resend was created
+    /// for gets its transaction put on the wire. `MaybeSent` is the expected
+    /// answer here and still counts as dispatched — treating it as a failure
+    /// is what made the healthy path look broken in the logs.
+    #[tokio::test]
+    async fn resend_dispatches_while_the_wallet_is_still_registered() {
+        let ctx = TestWalletContext::new_random();
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let manager = make_manager(SingleWalletPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+        });
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+        let generation = Arc::clone(
+            manager
+                .get_wallet(&wallet_id)
+                .await
+                .expect("registered")
+                .generation(),
+        );
+
+        let broadcaster = CountingBroadcaster::new();
+        let sent = Arc::clone(&broadcaster.sent);
+        let tx = spend_to(
+            dashcore::OutPoint {
+                txid: "0000000000000000000000000000000000000000000000000000000000000001"
+                    .parse()
+                    .expect("static txid"),
+                vout: 0,
+            },
+            10_000,
+        );
+
+        let outcome = super::resend_one(
+            &wallet_id,
+            &generation,
+            &manager.wallet_manager,
+            &broadcaster,
+            &tx,
+        )
+        .await;
+
+        assert_eq!(outcome, super::ResendOutcome::Dispatched);
+        assert_eq!(
+            *sent.lock().expect("sent mutex"),
+            vec![tx.txid()],
+            "the transaction must reach the broadcaster"
+        );
+    }
+
+    /// The guard this exists for: a wallet removed while the resend was
+    /// waiting must not have its transaction broadcast.
+    ///
+    /// Without the liveness check — or with it taken outside the lifecycle
+    /// gate, where teardown can slip past it — this sends on behalf of a
+    /// wallet the manager no longer has. Asserting on the broadcaster rather
+    /// than on a log line is the point: the check can be deleted and every
+    /// other test here still passes.
+    #[tokio::test]
+    async fn resend_is_abandoned_once_the_wallet_is_gone() {
+        let ctx = TestWalletContext::new_random();
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let manager = make_manager(SingleWalletPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+        });
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+        let generation = Arc::clone(
+            manager
+                .get_wallet(&wallet_id)
+                .await
+                .expect("registered")
+                .generation(),
+        );
+
+        // The registration the resend was created for is gone.
+        manager
+            .wallet_manager
+            .write()
+            .await
+            .remove_wallet(&wallet_id);
+
+        let broadcaster = CountingBroadcaster::new();
+        let sent = Arc::clone(&broadcaster.sent);
+        let tx = spend_to(
+            dashcore::OutPoint {
+                txid: "0000000000000000000000000000000000000000000000000000000000000002"
+                    .parse()
+                    .expect("static txid"),
+                vout: 0,
+            },
+            10_000,
+        );
+
+        let outcome = super::resend_one(
+            &wallet_id,
+            &generation,
+            &manager.wallet_manager,
+            &broadcaster,
+            &tx,
+        )
+        .await;
+
+        assert_eq!(outcome, super::ResendOutcome::Abandoned);
+        assert!(
+            sent.lock().expect("sent mutex").is_empty(),
+            "nothing may be broadcast for a wallet that is no longer registered"
+        );
     }
 
     /// A send the host still holds as unconfirmed has to be replayed at
