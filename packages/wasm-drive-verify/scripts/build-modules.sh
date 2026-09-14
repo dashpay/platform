@@ -208,7 +208,8 @@ EOF
 cat > dist/contract.js << 'EOF'
 import init, {
   verify_contract,
-  verify_contract_history
+  verify_contract_history,
+  verify_contracts_by_range
 } from '../pkg/wasm_drive_verify.js';
 
 let initialized = false;
@@ -228,6 +229,11 @@ export async function verifyContract(proof, contractId, platformVersion) {
 export async function verifyContractHistory(proof, contractId, limit, offset, startAtMs, platformVersion) {
   await ensureInitialized();
   return verify_contract_history(proof, contractId, limit, offset, startAtMs, platformVersion);
+}
+
+export async function verifyContractsByRange(proof, startAfter, startAt, limit, idsOnly, platformVersion) {
+  await ensureInitialized();
+  return verify_contracts_by_range(proof, startAfter, startAt, limit, idsOnly, platformVersion);
 }
 EOF
 

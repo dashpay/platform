@@ -45,6 +45,26 @@ export class ContractsFacade {
     return w.getDataContractsWithProofInfo(contractIds);
   }
 
+  /**
+   * One page of every contract on Platform, ordered by ascending contract id.
+   * Pass `{}` for the first page and the last key of a page as `startAfter` for the next.
+   */
+  async getByRange(
+    query: wasm.DataContractsByRangeQuery,
+  ): Promise<Map<string, wasm.DataContract | undefined>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDataContractsByRange(query);
+  }
+
+  async getByRangeWithProof(
+    query: wasm.DataContractsByRangeQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<string, wasm.DataContract | undefined>
+  >> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDataContractsByRangeWithProofInfo(query);
+  }
+
   async publish(options: wasm.ContractPublishOptions): Promise<wasm.DataContract> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.contractPublish(options);
