@@ -25,7 +25,7 @@ mod dpns_tests {
             PlatformVersion::latest().protocol_version,
             // v14: GroveDB V4 writes through the Merk node it retains from
             // reading the old value, billing one fewer seek than the V3 path
-            6_006_380,
+            6_008_600, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -90,7 +90,7 @@ mod dpns_tests {
             None,
             None::<fn(&mut DataContract)>,
             None,
-            None,
+            Some(platform_version),
         );
 
         let card_game = setup_contract(
@@ -100,7 +100,7 @@ mod dpns_tests {
             None,
             None::<fn(&mut DataContract)>,
             None,
-            None,
+            Some(platform_version),
         );
 
         let dpns_contract = setup_contract(
@@ -110,7 +110,7 @@ mod dpns_tests {
             None,
             None::<fn(&mut DataContract)>,
             None,
-            None,
+            Some(platform_version),
         );
 
         let preorder = dpns_contract
