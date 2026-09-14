@@ -7,7 +7,8 @@ use dapi_grpc::core::v0::{
     GetTransactionResponse, TransactionsWithProofsRequest, TransactionsWithProofsResponse,
 };
 use dpp::dashcore::consensus::Decodable;
-use dpp::dashcore::{Address, InstantLock, MerkleBlock, OutPoint, Transaction, Txid};
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{Address, BlockHash, InstantLock, MerkleBlock, OutPoint, Transaction, Txid};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
@@ -27,6 +28,11 @@ pub struct FetchedCoreTransaction {
     pub transaction: Transaction,
     /// Height of the block the transaction was mined in (0 if unconfirmed).
     pub height: u32,
+    /// Hash of the block the transaction was mined in, as the node reported
+    /// it; `None` when unconfirmed or when the reported bytes are not a
+    /// 32-byte hash. Self-reported by the queried node: a caller that builds
+    /// anything on it should check it against a header chain it verified.
+    pub block_hash: Option<BlockHash>,
     /// Whether the transaction's block is ChainLocked.
     pub is_chain_locked: bool,
     /// Whether the transaction is InstantSend-locked. Deliberately surfaced but
@@ -46,6 +52,15 @@ fn error_is_not_found(err: &Error) -> bool {
         Error::NoAvailableAddressesToRetry(inner) => error_is_not_found(inner),
         _ => false,
     }
+}
+
+/// DAPI fills `GetTransactionResponse.block_hash` by hex-decoding Core's
+/// display string, so the bytes arrive reversed relative to the hash's
+/// internal order.
+fn block_hash_from_display_bytes(bytes: &[u8]) -> Option<BlockHash> {
+    let mut hash: [u8; 32] = bytes.try_into().ok()?;
+    hash.reverse();
+    Some(BlockHash::from_byte_array(hash))
 }
 
 impl Sdk {
@@ -84,6 +99,7 @@ impl Sdk {
 
         let GetTransactionResponse {
             transaction,
+            block_hash,
             height,
             is_chain_locked,
             is_instant_locked,
@@ -100,6 +116,7 @@ impl Sdk {
         Ok(Some(FetchedCoreTransaction {
             transaction,
             height,
+            block_hash: block_hash_from_display_bytes(&block_hash),
             is_chain_locked,
             is_instant_locked,
         }))

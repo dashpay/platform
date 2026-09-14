@@ -1026,6 +1026,29 @@ pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
     )
 }
 
+/// Check whether an SDK error is Platform rejecting a ChainLock asset-lock
+/// proof because the funding transaction is not in a block at or below the
+/// proof's height (`InvalidAssetLockProofTransactionHeightError`) — the proof
+/// named a height the transaction was not mined at.
+pub fn is_asset_lock_proof_transaction_height_invalid(error: &dash_sdk::Error) -> bool {
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
+
+    let consensus_error = match error {
+        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
+            broadcast_err.cause.as_ref()
+        }
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
+        _ => None,
+    };
+    matches!(
+        consensus_error,
+        Some(ConsensusError::BasicError(
+            BasicError::InvalidAssetLockProofTransactionHeightError(_),
+        ))
+    )
+}
+
 /// Check whether a platform-wallet error represents a *Core-side*
 /// InstantSend lock timeout (the asset-lock manager waited the full
 /// timeout for an IS-lock proof and never observed one).

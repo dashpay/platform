@@ -61,6 +61,10 @@ use crate::wallet::asset_lock::manager::AssetLockManager;
 /// (`upgrade_to_chain_lock_proof(None)`), because a ChainLock is
 /// deterministic finality that will eventually cover any broadcast
 /// asset-lock tx — so a broadcast lock is *pending*, never *failed*.
+/// That wait does not hinge on the funding record being promoted: for a
+/// record without a height it looks the transaction's block up and checks it
+/// against the SPV header chain on every lock event and periodic re-check
+/// (see `sync::locate`), so it ends once the transaction is locatable.
 ///
 /// Only the shielded seed pool consumes this, so it is `shielded`-gated
 /// to avoid a dead-code warning in builds without that feature.

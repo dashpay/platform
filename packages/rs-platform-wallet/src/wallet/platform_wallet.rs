@@ -688,14 +688,24 @@ impl PlatformWallet {
         // broadcaster type across the stack.
         let dashpay_broadcaster = Arc::clone(&broadcaster);
 
-        let asset_locks = Arc::new(AssetLockManager::new(
-            Arc::clone(&sdk),
-            Arc::clone(&wallet_manager),
-            wallet_id,
-            lock_notify,
-            broadcaster,
-            wallet_persister.clone(),
-        ));
+        let mined_height_locator = Arc::new(
+            crate::wallet::asset_lock::sync::locate::DapiSpvLocator::new(
+                Arc::clone(&sdk),
+                Arc::clone(&broadcaster)
+                    as Arc<dyn crate::wallet::asset_lock::sync::locate::BlockHeaderSource>,
+            ),
+        );
+        let asset_locks = Arc::new(
+            AssetLockManager::new(
+                Arc::clone(&sdk),
+                Arc::clone(&wallet_manager),
+                wallet_id,
+                lock_notify,
+                broadcaster,
+                wallet_persister.clone(),
+            )
+            .with_mined_height_locator(mined_height_locator),
+        );
 
         let identity: IdentityWallet<SpvBroadcaster> = IdentityWallet {
             sdk: Arc::clone(&sdk),
