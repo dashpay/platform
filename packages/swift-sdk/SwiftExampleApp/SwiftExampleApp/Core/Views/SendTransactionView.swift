@@ -265,34 +265,26 @@ struct SendTransactionView: View {
                             // be the one that was last created.
                             let managed = walletManager.wallet(for: wallet.walletId)
                             let platformAddressWallet = try? managed?.platformAddressWallet()
-                            // Resolve the account that FUNDS the send. Two
-                            // consumers read `senderAccountIndex`, in two
-                            // DISTINCT account namespaces:
+                            // Pick the account that will FUND a platform →
+                            // platform transfer. The Rust Auto selector
+                            // resolves the source via
+                            // `platform_payment_managed_account_at_index`
+                            // (key class 0) and selects its inputs WITHIN
+                            // that single account — it does not span
+                            // accounts. `canSend` only gates on the
+                            // aggregate platform balance, so with multiple
+                            // key-class-0 Platform Payment accounts we must
+                            // choose an account whose OWN balance covers the
+                            // requested amount + fee; otherwise we'd enable a
+                            // send Rust rejects. The selection is factored
+                            // into the pure, unit-tested
+                            // `PlatformPaymentAccountSelection` helper.
                             //
-                            // • platform → platform: a key-class-0 Platform
-                            //   Payment account. The Rust Auto selector
-                            //   resolves the source via
-                            //   `platform_payment_managed_account_at_index`
-                            //   and selects inputs WITHIN that single account
-                            //   (it does not span accounts). `canSend` gates
-                            //   only on the aggregate platform balance, so we
-                            //   must pick an account whose OWN balance covers
-                            //   amount + fee, else Rust rejects the send —
-                            //   done by the unit-tested
-                            //   `PlatformPaymentAccountSelection` helper.
-                            //
-                            // • core → core: a BIP44 Core account index, fed
-                            //   into `CoreTransactionBuilder.setFunding(
-                            //   accountType: .bip44, ...)`. That namespace is
-                            //   SEPARATE from key-class Platform Payment
-                            //   accounts — a Platform-Payment index must never
-                            //   leak into it. The Core send UI has no account
-                            //   picker and funds the default BIP44 account, so
-                            //   resolve to account 0.
-                            //
-                            // Every other flow (shielded / platform → shielded
-                            // / core → shielded) ignores this value and
-                            // resolves its own funding, so 0 is harmless there.
+                            // Only the platform → platform path needs this
+                            // coverage-aware pick; every other flow ignores
+                            // `senderAccountIndex`, so the prior
+                            // "first key-class-0 positive balance, else 0"
+                            // behaviour is preserved for them.
                             let senderAccountIndex: UInt32
                             if viewModel.detectedFlow == .platformToPlatform {
                                 guard let resolved = resolvePlatformSenderAccountIndex() else {
@@ -301,7 +293,10 @@ struct SendTransactionView: View {
                                 }
                                 senderAccountIndex = resolved
                             } else {
-                                senderAccountIndex = 0
+                                senderAccountIndex = addressBalances
+                                    .filter { $0.account?.keyClass == 0 }
+                                    .first(where: { $0.balance > 0 })?
+                                    .accountIndex ?? 0
                             }
                             // Input selection and surplus handling are owned
                             // by the Rust Auto path (surplus stays on the
