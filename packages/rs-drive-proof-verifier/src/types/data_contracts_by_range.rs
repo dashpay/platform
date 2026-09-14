@@ -18,9 +18,10 @@ impl DataContractsByRange {
         self.0.keys().last().copied()
     }
 
-    /// Whether no contract follows this page for the requested `limit`: a page shorter
-    /// than the limit is the last page.
-    pub fn is_last_page(&self, limit: usize) -> bool {
+    /// Whether this page is shorter than the requested `limit`, which means no contract
+    /// follows it. A full page carries no lookahead: it may or may not be the last one,
+    /// and only the empty page that follows it settles that.
+    pub fn is_short_page(&self, limit: usize) -> bool {
         self.0.len() < limit
     }
 }

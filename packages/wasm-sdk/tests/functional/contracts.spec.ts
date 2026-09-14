@@ -74,7 +74,10 @@ describe('Data Contract Queries', function describeDataContractQueries() {
       const nextPage = await client.getDataContractsByRange({ limit: 1, startAfter: firstId });
       expect(nextPage.size).to.equal(1);
       const [nextId] = nextPage.keys();
-      expect(nextId > firstId).to.be.true();
+      // Base58 strings do not sort like the raw id bytes the query orders by, so check the
+      // cursor against a two-item page instead of comparing the strings.
+      const firstTwo = await client.getDataContractsByRange({ limit: 2 });
+      expect([...firstTwo.keys()]).to.deep.equal([firstId, nextId]);
 
       const fromFirst = await client.getDataContractsByRange({ limit: 1, startAt: firstId });
       expect([...fromFirst.keys()]).to.deep.equal([firstId]);

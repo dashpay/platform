@@ -158,6 +158,6 @@ async fn test_data_contracts_by_range_past_end() {
     let page = fetch_page(&sdk, query.clone()).await;
 
     assert!(page.0.is_empty());
-    assert!(page.is_last_page(10));
+    assert!(page.is_short_page(10));
     assert!(query.next_page(&page).is_none());
 }

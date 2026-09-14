@@ -61,7 +61,10 @@ impl Query<GetDataContractsByRangeRequest> for DataContractsByRangeQuery {
     ) -> Result<GetDataContractsByRangeRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "getDataContractsByRange is only served with a proof; enable proofs in the query settings"
+                    .to_string(),
+            ));
         }
 
         let start = self.start.map(|start| match start {
