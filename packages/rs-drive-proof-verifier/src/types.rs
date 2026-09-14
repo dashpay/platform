@@ -11,6 +11,8 @@
 
 /// Data contracts by range (the paginated contract enumeration)
 pub mod data_contracts_by_range;
+/// The current versions of data contracts
+pub mod data_contracts_latest_versions;
 /// Evonode status
 pub mod evonode_status;
 /// Groups

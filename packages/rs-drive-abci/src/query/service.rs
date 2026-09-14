@@ -23,6 +23,7 @@ use dapi_grpc::platform::v0::{
     GetContestedResourcesRequest, GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest,
     GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
     GetDataContractRequest, GetDataContractResponse, GetDataContractsByRangeRequest,
+    GetDataContractsLatestVersionsRequest, GetDataContractsLatestVersionsResponse,
     GetDataContractsRequest, GetDataContractsResponse, GetDocumentHistoryRequest,
     GetDocumentHistoryResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
     GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
@@ -399,6 +400,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_data_contracts_by_range,
             "get_data_contracts_by_range",
+        )
+        .await
+    }
+
+    async fn get_data_contracts_latest_versions(
+        &self,
+        request: Request<GetDataContractsLatestVersionsRequest>,
+    ) -> Result<Response<GetDataContractsLatestVersionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_data_contracts_latest_versions,
+            "get_data_contracts_latest_versions",
         )
         .await
     }
