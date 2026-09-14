@@ -15,6 +15,10 @@ where
     /// This should be called AFTER the transaction is committed, so the checkpoint
     /// captures the committed state.
     ///
+    /// Checkpoints are auxiliary to the block, so the caller treats a failure as
+    /// best-effort: the failed attempt leaves nothing behind and the next block
+    /// retries it.
+    ///
     /// # Arguments
     ///
     /// * `platform_version` - The platform version.

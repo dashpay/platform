@@ -866,6 +866,34 @@ impl PlatformConfig {
     }
 }
 
+/// A step of checkpoint creation, in execution order.
+///
+/// Names the failing step in checkpoint errors and, with the `testing-config`
+/// feature, the step a fault-injection test wants to fail.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CheckpointStep {
+    /// Creating the `checkpoints` directory under the database path.
+    CreateDirectory,
+    /// Taking the GroveDB checkpoint into its own directory.
+    CreateCheckpoint,
+    /// Writing the platform state file into the checkpoint directory.
+    WriteState,
+    /// Opening the finished checkpoint database.
+    OpenCheckpoint,
+}
+
+impl CheckpointStep {
+    /// What the step was doing, for error messages.
+    pub fn description(self) -> &'static str {
+        match self {
+            CheckpointStep::CreateDirectory => "trying to create checkpoints directory",
+            CheckpointStep::CreateCheckpoint => "trying to create grovedb checkpoint",
+            CheckpointStep::WriteState => "trying to write checkpoint platform state",
+            CheckpointStep::OpenCheckpoint => "trying to open grovedb checkpoint",
+        }
+    }
+}
+
 #[cfg(feature = "testing-config")]
 /// Configs that should only happen during testing
 #[derive(Clone, Debug)]
@@ -882,6 +910,11 @@ pub struct PlatformTestConfig {
     pub disable_contested_documents_is_allowed_validation: bool,
     /// Disable checkpoint creation during tests
     pub disable_checkpoints: bool,
+    /// Fails the given step of the next checkpoint attempt, for fault-injection tests.
+    ///
+    /// The attempt that hits the fault consumes it, so the attempt after it runs
+    /// normally and exercises the retry path.
+    pub checkpoint_fault: std::sync::Arc<std::sync::Mutex<Option<CheckpointStep>>>,
 }
 
 #[cfg(feature = "testing-config")]
@@ -895,6 +928,7 @@ impl PlatformTestConfig {
             disable_instant_lock_signature_verification: true,
             disable_contested_documents_is_allowed_validation: true,
             disable_checkpoints: true,
+            checkpoint_fault: Default::default(),
         }
     }
 }
@@ -909,6 +943,7 @@ impl Default for PlatformTestConfig {
             disable_instant_lock_signature_verification: false,
             disable_contested_documents_is_allowed_validation: true,
             disable_checkpoints: true,
+            checkpoint_fault: Default::default(),
         }
     }
 }

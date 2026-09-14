@@ -136,9 +136,29 @@ where
         }
     }
 
-    // Create GroveDB checkpoint after the transaction is committed (so it captures committed state)
+    // Create GroveDB checkpoint after the transaction is committed (so it captures
+    // committed state). Checkpoints are restore points, auxiliary to the block: the
+    // block is final once the commit above succeeded, and the transaction and block
+    // execution context are already consumed, so a checkpoint failure must not be
+    // reported as a failed block. A failed attempt leaves nothing behind, and
+    // `should_checkpoint` keeps asking for a checkpoint until one lands, so the
+    // next block retries it.
     if block_finalization_outcome.checkpoint_needed {
-        app.platform().create_grovedb_checkpoint(platform_version)?;
+        match app.platform().create_grovedb_checkpoint(platform_version) {
+            Ok(()) => {
+                crate::metrics::abci_last_checkpoint_height(block_height);
+                tracing::debug!(block_height, "created grovedb checkpoint");
+            }
+            Err(error) => {
+                crate::metrics::abci_checkpoint_failed();
+                tracing::error!(
+                    ?error,
+                    block_height,
+                    "failed to create grovedb checkpoint after committing the block; the \
+                     block is final and the checkpoint will be retried on the next block"
+                );
+            }
+        }
     }
 
     Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
@@ -148,25 +168,27 @@ where
 mod tests {
     use super::*;
     use crate::abci::app::{FullAbciApplication, TransactionalApplication};
-    use crate::config::PlatformConfig;
+    use crate::config::{CheckpointStep, PlatformConfig};
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::execution::types::block_execution_context::BlockExecutionContext;
     use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
     use crate::platform_types::epoch_info::v0::EpochInfoV0;
     use crate::platform_types::epoch_info::EpochInfo;
     use crate::platform_types::platform::Platform;
+    use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::version::PlatformVersion;
     use drive::grovedb::Transaction;
-    use std::sync::RwLock;
+    use std::sync::{Arc, Mutex, RwLock};
     use tenderdash_abci::proto::abci::CommitInfo;
     use tenderdash_abci::proto::google::protobuf::Timestamp;
     use tenderdash_abci::proto::types::{
         Block, BlockId, Data, EvidenceList, Header, PartSetHeader,
     };
     use tenderdash_abci::proto::version::Consensus;
+    use tracing_subscriber::layer::SubscriberExt;
 
     /// An ABCI application whose `commit_transaction` always fails.
     ///
@@ -213,6 +235,98 @@ mod tests {
         }
     }
 
+    const BLOCK_HASH: [u8; 32] = [1u8; 32];
+    const APP_HASH: [u8; 32] = [2u8; 32];
+
+    /// The block execution context `finalize_block` expects for a block at `height`.
+    fn block_execution_context(
+        platform_state: PlatformState,
+        height: u64,
+        block_time_ms: u64,
+        previous_block_time_ms: Option<u64>,
+    ) -> BlockExecutionContext {
+        BlockExecutionContextV0 {
+            block_state_info: BlockStateInfoV0 {
+                height,
+                round: 0,
+                block_time_ms,
+                previous_block_time_ms,
+                proposer_pro_tx_hash: [0u8; 32],
+                core_chain_locked_height: 1,
+                block_hash: Some(BLOCK_HASH),
+                app_hash: Some(APP_HASH),
+            }
+            .into(),
+            epoch_info: EpochInfo::V0(EpochInfoV0 {
+                current_epoch_index: 0,
+                previous_epoch_index: None,
+                is_epoch_change: false,
+            }),
+            unsigned_withdrawal_transactions: UnsignedWithdrawalTxs::default(),
+            block_address_balance_changes: Default::default(),
+            block_platform_state: platform_state,
+            proposer_results: None,
+        }
+        .into()
+    }
+
+    /// The finalize request for the block [`block_execution_context`] describes.
+    fn finalize_block_request(
+        chain_id: String,
+        quorum_hash: [u8; 32],
+        height: u64,
+        block_time_ms: u64,
+    ) -> proto::RequestFinalizeBlock {
+        proto::RequestFinalizeBlock {
+            commit: Some(CommitInfo {
+                round: 0,
+                quorum_hash: quorum_hash.to_vec(),
+                block_signature: vec![0u8; 96],
+                threshold_vote_extensions: vec![],
+            }),
+            misbehavior: vec![],
+            hash: BLOCK_HASH.to_vec(),
+            height: height as i64,
+            round: 0,
+            block: Some(Block {
+                header: Some(Header {
+                    version: Some(Consensus { block: 0, app: 1 }),
+                    chain_id,
+                    height: height as i64,
+                    time: Some(Timestamp {
+                        seconds: (block_time_ms / 1000) as i64,
+                        nanos: 0,
+                    }),
+                    last_block_id: None,
+                    last_commit_hash: vec![0u8; 32],
+                    data_hash: vec![0u8; 32],
+                    validators_hash: vec![0u8; 32],
+                    next_validators_hash: vec![0u8; 32],
+                    consensus_hash: vec![0u8; 32],
+                    next_consensus_hash: vec![0u8; 32],
+                    app_hash: APP_HASH.to_vec(),
+                    results_hash: vec![0u8; 32],
+                    evidence_hash: vec![],
+                    proposed_app_version: 1,
+                    proposer_pro_tx_hash: vec![0u8; 32],
+                    core_chain_locked_height: 1,
+                }),
+                data: Some(Data { txs: vec![] }),
+                evidence: Some(EvidenceList { evidence: vec![] }),
+                last_commit: None,
+                core_chain_lock: None,
+            }),
+            block_id: Some(BlockId {
+                hash: BLOCK_HASH.to_vec(),
+                part_set_header: Some(PartSetHeader {
+                    total: 0,
+                    hash: vec![0u8; 32],
+                }),
+                state_id: vec![0u8; 32],
+            }),
+        }
+    }
+
     /// Runs `finalize_block` at `height` against a platform configured with `config`, with a
     /// commit that is guaranteed to fail.
     fn finalize_block_with_failing_commit(
@@ -237,87 +351,103 @@ mod tests {
 
         let platform_state = (**platform.state.load()).clone();
         let quorum_hash: [u8; 32] = platform_state.current_validator_set_quorum_hash().into();
-
-        let block_hash = [1u8; 32];
-        let app_hash = [2u8; 32];
         let block_time_ms = 1_700_000_000_000u64;
 
-        app.block_execution_context.write().unwrap().replace(
-            BlockExecutionContextV0 {
-                block_state_info: BlockStateInfoV0 {
-                    height,
-                    round: 0,
-                    block_time_ms,
-                    previous_block_time_ms: None,
-                    proposer_pro_tx_hash: [0u8; 32],
-                    core_chain_locked_height: 1,
-                    block_hash: Some(block_hash),
-                    app_hash: Some(app_hash),
-                }
-                .into(),
-                epoch_info: EpochInfo::V0(EpochInfoV0 {
-                    current_epoch_index: 0,
-                    previous_epoch_index: None,
-                    is_epoch_change: false,
-                }),
-                unsigned_withdrawal_transactions: UnsignedWithdrawalTxs::default(),
-                block_address_balance_changes: Default::default(),
-                block_platform_state: platform_state,
-                proposer_results: None,
-            }
-            .into(),
+        app.block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context(
+                platform_state,
+                height,
+                block_time_ms,
+                None,
+            ));
+
+        let request = finalize_block_request(
+            platform.config.abci.chain_id.clone(),
+            quorum_hash,
+            height,
+            block_time_ms,
         );
 
-        let request = proto::RequestFinalizeBlock {
-            commit: Some(CommitInfo {
-                round: 0,
-                quorum_hash: quorum_hash.to_vec(),
-                block_signature: vec![0u8; 96],
-                threshold_vote_extensions: vec![],
-            }),
-            misbehavior: vec![],
-            hash: block_hash.to_vec(),
-            height: height as i64,
-            round: 0,
-            block: Some(Block {
-                header: Some(Header {
-                    version: Some(Consensus { block: 0, app: 1 }),
-                    chain_id: platform.config.abci.chain_id.clone(),
-                    height: height as i64,
-                    time: Some(Timestamp {
-                        seconds: (block_time_ms / 1000) as i64,
-                        nanos: 0,
-                    }),
-                    last_block_id: None,
-                    last_commit_hash: vec![0u8; 32],
-                    data_hash: vec![0u8; 32],
-                    validators_hash: vec![0u8; 32],
-                    next_validators_hash: vec![0u8; 32],
-                    consensus_hash: vec![0u8; 32],
-                    next_consensus_hash: vec![0u8; 32],
-                    app_hash: app_hash.to_vec(),
-                    results_hash: vec![0u8; 32],
-                    evidence_hash: vec![],
-                    proposed_app_version: 1,
-                    proposer_pro_tx_hash: vec![0u8; 32],
-                    core_chain_locked_height: 1,
-                }),
-                data: Some(Data { txs: vec![] }),
-                evidence: Some(EvidenceList { evidence: vec![] }),
-                last_commit: None,
-                core_chain_lock: None,
-            }),
-            block_id: Some(BlockId {
-                hash: block_hash.to_vec(),
-                part_set_header: Some(PartSetHeader {
-                    total: 0,
-                    hash: vec![0u8; 32],
-                }),
-                state_id: vec![0u8; 32],
-            }),
-        };
-
         finalize_block::<_, MockCoreRPCLike>(&app, request)
+    }
+
+    /// Runs a block through `finalize_block` on `app`, committing it into `platform` for real.
+    fn finalize_real_block<'a>(
+        platform: &'a TempPlatform<MockCoreRPCLike>,
+        app: &FullAbciApplication<'a, MockCoreRPCLike>,
+        height: u64,
+        block_time_ms: u64,
+        previous_block_time_ms: Option<u64>,
+    ) -> Result<proto::ResponseFinalizeBlock, Error> {
+        app.start_transaction();
+
+        let platform_state = (**platform.state.load()).clone();
+        let quorum_hash: [u8; 32] = platform_state.current_validator_set_quorum_hash().into();
+
+        app.block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context(
+                platform_state,
+                height,
+                block_time_ms,
+                previous_block_time_ms,
+            ));
+
+        let request = finalize_block_request(
+            platform.config.abci.chain_id.clone(),
+            quorum_hash,
+            height,
+            block_time_ms,
+        );
+
+        finalize_block::<_, MockCoreRPCLike>(app, request)
+    }
+
+    /// Records the events emitted while `capture` runs, to assert a failure is observable.
+    #[derive(Clone, Default)]
+    struct CapturedLogs(Arc<Mutex<Vec<(tracing::Level, String)>>>);
+
+    impl CapturedLogs {
+        fn capture<T>(&self, f: impl FnOnce() -> T) -> T {
+            let subscriber = tracing_subscriber::registry().with(self.clone());
+            tracing::subscriber::with_default(subscriber, f)
+        }
+
+        fn events(&self) -> Vec<(tracing::Level, String)> {
+            self.0.lock().unwrap().clone()
+        }
+    }
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for CapturedLogs {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            struct Message(String);
+
+            impl tracing::field::Visit for Message {
+                fn record_debug(
+                    &mut self,
+                    field: &tracing::field::Field,
+                    value: &dyn std::fmt::Debug,
+                ) {
+                    if field.name() == "message" {
+                        self.0 = format!("{value:?}");
+                    }
+                }
+            }
+
+            let mut message = Message(String::new());
+            event.record(&mut message);
+            self.0
+                .lock()
+                .unwrap()
+                .push((*event.metadata().level(), message.0));
+        }
     }
 
     fn mainnet_evo1_config() -> PlatformConfig {
@@ -480,5 +610,130 @@ mod tests {
             ),
             "Expected CorruptedCodeExecution error, got: {result:?}"
         );
+    }
+
+    fn checkpointing_config() -> PlatformConfig {
+        let mut config = PlatformConfig::default_testnet();
+        config.testing_configs.block_commit_signature_verification = false;
+        config.testing_configs.disable_checkpoints = false;
+        config
+    }
+
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock is before the unix epoch")
+            .as_millis() as u64
+    }
+
+    /// The checkpoint runs after the commit, so whichever of its steps fails, the block
+    /// must still be reported as finalized: the commit stands, the committed-height
+    /// guard follows it, the failure is logged, the failed attempt leaves nothing
+    /// behind, and the next block retries the checkpoint successfully.
+    #[test]
+    fn finalize_block_succeeds_when_checkpoint_fails_after_commit() {
+        for step in [
+            CheckpointStep::CreateDirectory,
+            CheckpointStep::CreateCheckpoint,
+            CheckpointStep::WriteState,
+            CheckpointStep::OpenCheckpoint,
+        ] {
+            let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
+                .with_config(checkpointing_config())
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let app = FullAbciApplication::new(&platform.platform);
+            let checkpoints_path = platform.config.db_path.join("checkpoints");
+
+            *platform
+                .config
+                .testing_configs
+                .checkpoint_fault
+                .lock()
+                .unwrap() = Some(step);
+
+            let first_block_time_ms = now_ms();
+            let logs = CapturedLogs::default();
+            let response = logs
+                .capture(|| finalize_real_block(&platform, &app, 1, first_block_time_ms, None))
+                .unwrap_or_else(|error| {
+                    panic!("{step:?}: the block is committed, so it must succeed: {error:?}")
+                });
+            assert_eq!(response.retain_height, 0);
+
+            // The commit stands and the committed-height guard follows it
+            assert_eq!(platform.state.load().last_committed_block_height(), 1);
+            assert_eq!(
+                platform
+                    .committed_block_height_guard
+                    .load(Ordering::Relaxed),
+                1,
+                "{step:?}"
+            );
+
+            // The failed attempt registers nothing and leaves nothing on disk
+            assert!(platform.drive.checkpoints.load().is_empty(), "{step:?}");
+            assert!(
+                platform.checkpoint_platform_states.load().is_empty(),
+                "{step:?}"
+            );
+            assert!(!checkpoints_path.join("1").exists(), "{step:?}");
+
+            // The failure is observable
+            assert!(
+                logs.events().iter().any(|(level, message)| {
+                    *level == tracing::Level::ERROR
+                        && message.contains("failed to create grovedb checkpoint")
+                }),
+                "{step:?}: {:?}",
+                logs.events()
+            );
+
+            // The next block retries the checkpoint, which now succeeds
+            finalize_real_block(
+                &platform,
+                &app,
+                2,
+                first_block_time_ms + 1_000,
+                Some(first_block_time_ms),
+            )
+            .unwrap_or_else(|error| panic!("{step:?}: second block: {error:?}"));
+
+            assert_eq!(
+                platform
+                    .committed_block_height_guard
+                    .load(Ordering::Relaxed),
+                2,
+                "{step:?}"
+            );
+            assert_eq!(
+                platform
+                    .drive
+                    .checkpoints
+                    .load()
+                    .keys()
+                    .copied()
+                    .collect::<Vec<_>>(),
+                vec![2],
+                "{step:?}"
+            );
+            assert_eq!(
+                platform
+                    .checkpoint_platform_states
+                    .load()
+                    .get(&2)
+                    .map(|state| state.last_committed_block_height()),
+                Some(2),
+                "{step:?}"
+            );
+            assert!(
+                checkpoints_path
+                    .join("2")
+                    .join("platform_state.bin")
+                    .is_file(),
+                "{step:?}"
+            );
+        }
     }
 }
