@@ -17,6 +17,7 @@ mod contested_resource_polls_by_ts;
 mod contested_resource_vote_state;
 mod contested_resource_voters;
 mod data_contract;
+mod data_contracts_by_range;
 mod document;
 mod document_count;
 mod document_query_v0_v1;

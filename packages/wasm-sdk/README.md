@@ -170,6 +170,8 @@ const r = sdk.derive_key_from_seed_with_path(m, undefined, "m/44'/5'/0'/0/0", 'm
 let b = sdk.WasmSdkBuilder.testnetTrusted();
 const client = await b.withSettings(5000, 10000, 3, true).withLogs('info').build();
 const status = await client.getStatus();
+// Enumerate contracts one page at a time, ascending by id (pass the last key as startAfter)
+const contracts = await client.getDataContractsByRange({ limit: 100 });
 client.free();
 ```
 

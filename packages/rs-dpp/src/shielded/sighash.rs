@@ -138,6 +138,44 @@ pub fn unshield_extra_sighash_data_v0(output_address: &[u8], unshielding_amount:
     data
 }
 
+/// Builds the transparent `extra_data` bound into an `IdentityTopUpFromShieldedPool`'s platform
+/// sighash, with the byte layout `identity_id (32) || top_up_amount (u64 LE)`.
+///
+/// Like `Unshield`, the transition carries no platform signature, so the state-determining
+/// transparent fields (which identity is credited, and the gross amount leaving the pool) must be
+/// committed into the Orchard binding sighash; otherwise a relayer could take a valid spend bundle
+/// and re-point it at a different identity. The client builder and the consensus verifier both
+/// call this single function.
+pub fn identity_top_up_from_shielded_extra_sighash_data(
+    identity_id: &[u8; 32],
+    top_up_amount: u64,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(identity_top_up_from_shielded_extra_sighash_data_v0(
+            identity_id,
+            top_up_amount,
+        )),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "identity_top_up_from_shielded_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// v0 byte layout of [`identity_top_up_from_shielded_extra_sighash_data`]. Frozen: never mutate;
+/// a layout change requires a new `_v1` + version bump.
+pub fn identity_top_up_from_shielded_extra_sighash_data_v0(
+    identity_id: &[u8; 32],
+    top_up_amount: u64,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(32 + 8);
+    data.extend_from_slice(identity_id);
+    data.extend_from_slice(&top_up_amount.to_le_bytes());
+    data
+}
+
 /// Builds the transparent `extra_data` bound into an `IdentityCreateFromShieldedPool`'s platform
 /// sighash, with the byte layout
 /// `identity_id (32) || denomination (u64 LE)

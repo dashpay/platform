@@ -35,6 +35,8 @@ service Platform {
       returns (GetDataContractHistoryResponse);
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
+  rpc getDataContractsByRange(GetDataContractsByRangeRequest)
+      returns (GetDataContractsResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
       returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
@@ -504,6 +506,28 @@ message GetDataContractsRequest {
     bool prove = 2; // Flag to request a proof as the response
   }
   oneof version { GetDataContractsRequestV0 v0 = 1; }
+}
+
+// Enumerates every data contract on Platform, one page at a time, in
+// ascending contract id order. Answered with `GetDataContractsResponse`:
+// each `DataContractEntry` carries the contract id and, unless `ids_only`
+// is set, the serialized contract. An empty page (no more contracts) is an
+// empty `data_contract_entries` list, never NotFound. A page shorter than
+// `limit` is the last page; otherwise pass the last entry's identifier as
+// `start_after` to fetch the next one.
+message GetDataContractsByRangeRequest {
+  message GetDataContractsByRangeRequestV0 {
+    optional uint32 limit =
+        1; // Maximum number of contracts to return, 1..=100; absent means 100
+    oneof start {
+      bytes start_after = 2; // 32-byte contract id; the page starts after it
+      bytes start_at = 3;    // 32-byte contract id; the page starts at it
+    }
+    bool ids_only =
+        4; // When set, entries carry only `identifier`; `data_contract` is unset
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetDataContractsByRangeRequestV0 v0 = 1; }
 }
 
 message GetDataContractsResponse {

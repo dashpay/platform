@@ -61,6 +61,11 @@ pub(crate) mod ranked_index_tree_type;
 #[cfg(feature = "server")]
 pub(crate) mod index_level_tree_types;
 
+/// Shared TTL semantics for time-range indexes — see
+/// `book/src/drive/time-range-ttl.md`.
+#[cfg(feature = "server")]
+pub(crate) mod time_range_ttl;
+
 /// indexOnly entry probes: entry path/key derivation shared by the write
 /// path and the ABCI state-validation probes
 #[cfg(feature = "server")]
@@ -76,6 +81,7 @@ pub use index_only_row_commitment::index_only_row_commitment;
 #[cfg(feature = "server")]
 pub use index_only_row_commitment::index_only_row_commitment_with_preimage_size;
 #[cfg(any(feature = "server", feature = "verify"))]
+pub use index_only_row_commitment::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 pub use index_only_row_commitment::INDEX_ONLY_ROW_COMMITMENT_SIZE;
 
 /// How many document history entries to fetch at once. This mirrors contract history

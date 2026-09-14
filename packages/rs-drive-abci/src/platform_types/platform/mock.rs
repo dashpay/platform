@@ -4,7 +4,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::MockCoreRPCLike;
 use dpp::dashcore::BlockHash;
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::PlatformVersionCurrentVersion;
 use dpp::version::{PlatformVersion, ProtocolVersion};
 use serde_json::json;
@@ -55,7 +55,7 @@ impl Platform<MockCoreRPCLike> {
         // Reload checkpoint platform states from disk
         let mut checkpoint_platform_states = BTreeMap::new();
         let checkpoints = self.drive.checkpoints.load();
-        for (&block_height, _checkpoint_info) in checkpoints.iter() {
+        for &block_height in checkpoints.keys() {
             let checkpoint_state_path = self
                 .config
                 .db_path
@@ -66,7 +66,7 @@ impl Platform<MockCoreRPCLike> {
             if checkpoint_state_path.exists() {
                 if let Ok(state_bytes) = std::fs::read(&checkpoint_state_path) {
                     if let Ok(state) =
-                        PlatformState::versioned_deserialize(&state_bytes, platform_version)
+                        PlatformState::versioned_deserialize_trusted(&state_bytes, platform_version)
                     {
                         checkpoint_platform_states.insert(block_height, Arc::new(state));
                     }

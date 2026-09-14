@@ -36,7 +36,7 @@ async-trait = "0.1"
 
 # Bincode used to serialize RootExtendedPubKey / ExtendedPubKey across
 # FFI for watch-only restore. Same version pinned elsewhere in workspace.
-bincode = { version = "=2.0.1" }
+bincode = { workspace = true }
 
 # Hex used for error diagnostics that include a wallet_id.
 hex = "0.4"

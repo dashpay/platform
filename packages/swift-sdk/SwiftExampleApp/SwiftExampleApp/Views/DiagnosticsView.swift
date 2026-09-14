@@ -223,7 +223,7 @@ struct DiagnosticsView: View {
                     )
                 }),
 
-                // Data Contract Queries (3 queries)
+                // Data Contract Queries (4 queries)
                 ("getDataContract", "Get Data Contract", "Data Contract", {
                     try await sdk.dataContractGet(id: TestData.dpnsContractId)
                 }),
@@ -234,6 +234,10 @@ struct DiagnosticsView: View {
 
                 ("getDataContracts", "Get Data Contracts", "Data Contract", {
                     try await sdk.dataContractGetMultiple(ids: [TestData.dpnsContractId])
+                }),
+
+                ("getDataContractsByRange", "Get Data Contracts by Range", "Data Contract", {
+                    try await sdk.getDataContractsByRange(limit: 5)
                 }),
 
                 // Document Queries (2 queries)

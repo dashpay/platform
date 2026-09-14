@@ -25,7 +25,7 @@ use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel, Timestam
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use hex;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -361,7 +361,7 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityPublicKeyWasm> {
-        let public_key = IdentityPublicKey::deserialize_from_bytes(bytes.as_slice())?;
+        let public_key = IdentityPublicKey::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(IdentityPublicKeyWasm(public_key))
     }
@@ -371,7 +371,7 @@ impl IdentityPublicKeyWasm {
         let bytes =
             decode(&hex, Hex).map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        let public_key = IdentityPublicKey::deserialize_from_bytes(bytes.as_slice())?;
+        let public_key = IdentityPublicKey::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(IdentityPublicKeyWasm(public_key))
     }
@@ -381,7 +381,7 @@ impl IdentityPublicKeyWasm {
         let bytes =
             decode(&hex, Base64).map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        let public_key = IdentityPublicKey::deserialize_from_bytes(bytes.as_slice())?;
+        let public_key = IdentityPublicKey::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(IdentityPublicKeyWasm(public_key))
     }

@@ -14,7 +14,7 @@ use crate::document::serialization_traits::{
 };
 
 use crate::serialization::{
-    PlatformDeserializableWithBytesLenFromVersionedStructure,
+    PlatformDeserializableWithBytesLenFromVersionedStructureUntrusted,
     PlatformSerializableWithPlatformVersion,
 };
 use crate::version::PlatformVersion;
@@ -56,7 +56,7 @@ impl ExtendedDocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // first we deserialize the contract
-        let (data_contract, offset) = DataContract::versioned_deserialize_with_bytes_len(
+        let (data_contract, offset) = DataContract::versioned_deserialize_with_bytes_len_untrusted(
             serialized_extended_document,
             true, //since this would only happen on the client, we should validate
             platform_version,

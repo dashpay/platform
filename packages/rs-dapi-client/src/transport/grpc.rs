@@ -276,6 +276,15 @@ impl_transport_request_grpc!(
     get_data_contract
 );
 
+// rpc getDataContractsByRange(GetDataContractsByRangeRequest) returns (GetDataContractsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetDataContractsByRangeRequest,
+    platform_proto::GetDataContractsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_data_contracts_by_range
+);
+
 impl_transport_request_grpc!(
     platform_proto::GetConsensusParamsRequest,
     platform_proto::GetConsensusParamsResponse,

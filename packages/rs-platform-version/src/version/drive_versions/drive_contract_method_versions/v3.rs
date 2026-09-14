@@ -21,6 +21,7 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V3: DriveContractMethodVersions =
             prove_contract: 0,
             prove_contract_history: 0,
             prove_contracts: 0,
+            prove_contracts_by_range: 0,
         },
         apply: DriveContractApplyMethodVersions {
             apply_contract: 0,

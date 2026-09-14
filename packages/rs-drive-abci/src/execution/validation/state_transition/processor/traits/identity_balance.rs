@@ -60,6 +60,9 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             StateTransition::IdentityCreditTransferToAddresses(st) => st
                 .validate_estimated_fee(balance, platform_version)
                 .map_err(Error::Protocol),
+            StateTransition::ShieldFromIdentity(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
             StateTransition::DataContractCreate(st) => st
                 .validate_estimated_fee(balance, platform_version)
                 .map_err(Error::Protocol),
@@ -79,6 +82,7 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             | StateTransition::AddressCreditWithdrawal(_)
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
+            | StateTransition::IdentityTopUpFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)
@@ -97,6 +101,7 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
                 | StateTransition::DataContractUpdate(_)
                 | StateTransition::Batch(_)
                 | StateTransition::IdentityUpdate(_)
+                | StateTransition::ShieldFromIdentity(_)
                 | StateTransition::IdentityCreditTransferToAddresses(_)
         )
     }

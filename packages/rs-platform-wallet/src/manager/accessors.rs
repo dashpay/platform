@@ -351,7 +351,7 @@ pub fn wallet_utxos_page(
         // tag or a new watch-only account type cannot repoint the gate.
         .filter(|(account_type, _)| !is_watch_only_contact(account_type))
         .collect();
-    accounts.sort_by(|a, b| a.0.cmp(&b.0));
+    accounts.sort_by_key(|account| account.0);
 
     let mut rows = Vec::with_capacity(limit);
     let mut has_more = false;

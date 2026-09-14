@@ -77,6 +77,7 @@ Static helpers are also exported:
 
 - `await EvoSDK.setLogLevel(filter)` — configure the underlying Wasm SDK's tracing globally.
 - `await EvoSDK.getLatestVersionNumber()` — return the latest Platform protocol version supported by the bundled Wasm SDK.
+- `sdk.version()` — the protocol version this SDK currently uses. Unpinned SDKs seed at a per-network floor (13 on mainnet, testnet and local; 14 on devnets) and ratchet upward from verified response metadata. On mainnet and testnet the Wasm SDK persists the learned version in `localStorage` under `dash-sdk.protocol-version.<network>` and seeds the next SDK with it, so the first proved request of a later page load already runs at the network's version. Passing `version` pins the SDK and disables both the ratchet and the persistence.
 - `await EvoSDK.maxRankedLimit()` — the hard ceiling on a [ranked / having-range](#ranked-queries) `limit`.
 - `await EvoSDK.rankedAverageScale()` — the fixed-point divisor for the `avg` axis of a ranked / having-range result.
 - `await EvoSDK.maxPrefixInBranches()` — the hard ceiling on the element count of a branching `in` [prefix pin](#ranked-queries).

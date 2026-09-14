@@ -159,6 +159,7 @@ impl_wire_query!(
     proto::GetCurrentQuorumsInfoRequest,
     proto::GetDataContractHistoryRequest,
     proto::GetDataContractRequest,
+    proto::GetDataContractsByRangeRequest,
     proto::GetDataContractsRequest,
     proto::GetDocumentHistoryRequest,
     proto::GetDocumentsRequest,

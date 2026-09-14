@@ -64,6 +64,48 @@ describe('Data Contract Queries', function describeDataContractQueries() {
     });
   });
 
+  describe('getDataContractsByRange()', () => {
+    it('should page through contracts in ascending id order', async () => {
+      const firstPage = await client.getDataContractsByRange({ limit: 1 });
+      expect(firstPage).to.be.instanceOf(Map);
+      expect(firstPage.size).to.equal(1);
+      const [firstId] = firstPage.keys();
+
+      const nextPage = await client.getDataContractsByRange({ limit: 1, startAfter: firstId });
+      expect(nextPage.size).to.equal(1);
+      const [nextId] = nextPage.keys();
+      // Base58 strings do not sort like the raw id bytes the query orders by, so check the
+      // cursor against a two-item page instead of comparing the strings.
+      const firstTwo = await client.getDataContractsByRange({ limit: 2 });
+      expect([...firstTwo.keys()]).to.deep.equal([firstId, nextId]);
+
+      const fromFirst = await client.getDataContractsByRange({ limit: 1, startAt: firstId });
+      expect([...fromFirst.keys()]).to.deep.equal([firstId]);
+    });
+
+    it('should include the DPNS contract in the full first page', async () => {
+      const page = await client.getDataContractsByRange({});
+      expect(page.has(dpnsContractId)).to.be.true();
+      expect(page.get(dpnsContractId)).to.be.instanceOf(sdk.DataContract);
+    });
+
+    it('should return ids only when requested', async () => {
+      const page = await client.getDataContractsByRange({ idsOnly: true });
+      expect(page.size).to.be.at.least(1);
+      expect([...page.values()].every((value) => value === undefined)).to.be.true();
+    });
+  });
+
+  describe('getDataContractsByRangeWithProofInfo()', () => {
+    it('should return proof info for a page of contracts', async () => {
+      const res = await client.getDataContractsByRangeWithProofInfo({ limit: 2 });
+      expect(res).to.be.ok();
+      expect(res.data).to.be.instanceOf(Map);
+      expect(res.metadata).to.be.ok();
+      expect(res.proof).to.be.ok();
+    });
+  });
+
   describe('getDataContractHistory()', () => {
     // TODO: Fix proof verification error: dash drive: proof: corrupted error:
     // we did not get back an element for the correct path for the historical contract

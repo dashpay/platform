@@ -784,7 +784,7 @@ fn build_asset_lock_transaction(
         .list_unspent(Some(1), None, None, None, None)
         .map_err(|e| format!("listunspent failed: {e}"))?;
     // Largest first, so we cover the target with as few inputs as possible.
-    utxos.sort_by(|a, b| b.amount.to_sat().cmp(&a.amount.to_sat()));
+    utxos.sort_by_key(|utxo| std::cmp::Reverse(utxo.amount.to_sat()));
 
     let mut inputs = Vec::new();
     let mut change_script: Option<ScriptBuf> = None;

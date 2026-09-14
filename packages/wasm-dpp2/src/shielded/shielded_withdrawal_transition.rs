@@ -7,7 +7,7 @@ use crate::utils::try_from_options;
 use crate::utils::try_vec_to_fixed_bytes;
 use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
 use dpp::identity::core_script::CoreScript;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
 use dpp::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
@@ -227,7 +227,7 @@ impl ShieldedWithdrawalTransitionWasm {
 
     #[wasm_bindgen(js_name = fromBytes)]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<ShieldedWithdrawalTransitionWasm> {
-        let st = StateTransition::deserialize_from_bytes(&bytes)?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(&bytes)?;
         match st {
             StateTransition::ShieldedWithdrawal(inner) => Ok(inner.into()),
             _ => Err(WasmDppError::invalid_argument(

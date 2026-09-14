@@ -34,6 +34,8 @@ use platform_wallet::changeset::{
     ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
+#[cfg(feature = "shielded")]
+use platform_wallet::wallet::shielded::ShieldedActivityStatus;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
 use std::collections::BTreeMap;
 use std::ffi::CString;
@@ -89,6 +91,14 @@ use std::ffi::CStr;
 /// `Mempool` vs no-evidence); see each match's comment.
 pub(crate) const TX_CONTEXT_RAW_IN_BLOCK: u32 = 2;
 pub(crate) const TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK: u32 = 3;
+
+/// Byte budget for decoding a host-supplied account extended public key.
+///
+/// The upstream `key-wallet` xpub decoders do not implement
+/// `DecodeUntrusted`, so every decode of persisted `account_xpub_bytes`
+/// (ECDSA, BLS, EdDSA) runs under this explicit limit instead; a complete
+/// xpub of any of the three kinds is under 200 bytes.
+pub(crate) const ACCOUNT_XPUB_DECODE_LIMIT_BYTES: usize = 1024;
 
 /// Versioned C projection of [`PersistenceCapabilities`].
 ///
@@ -2879,6 +2889,12 @@ impl PlatformWalletPersistence for FFIPersister {
                             let (identity_id, has_identity_id) = match &e.kind {
                                 platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityCreate {
                                     identity_id,
+                                }
+                                | platform_wallet::wallet::shielded::ShieldedActivityKind::ShieldFromIdentity {
+                                    identity_id,
+                                }
+                                | platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityTopUp {
+                                    identity_id,
                                 } => (*identity_id, 1u8),
                                 _ => ([0u8; 32], 0u8),
                             };
@@ -3109,8 +3125,8 @@ impl PlatformWalletPersistence for FFIPersister {
             use crate::shielded_persistence::*;
             use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
             use platform_wallet::wallet::shielded::{
-                ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
-                ShieldedDirection, ShieldedNote, ShieldedOutgoingNote, SubwalletId,
+                ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection, ShieldedNote,
+                ShieldedOutgoingNote, SubwalletId,
             };
 
             let mut shielded_state = ShieldedSyncStartState::default();
@@ -3328,6 +3344,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             .entry(id)
                             .or_insert_with(ShieldedSubwalletStartState::default);
                         entry.last_synced_index = ffi.last_synced_index;
+                        entry.has_sync_state = true;
                     }
                 }
             }
@@ -3390,6 +3407,12 @@ impl PlatformWalletPersistence for FFIPersister {
                             6 => ShieldedActivityKind::IdentityCreate {
                                 identity_id: ffi.identity_id,
                             },
+                            8 => ShieldedActivityKind::ShieldFromIdentity {
+                                identity_id: ffi.identity_id,
+                            },
+                            9 => ShieldedActivityKind::IdentityTopUp {
+                                identity_id: ffi.identity_id,
+                            },
                             // 7 and any unknown tag fall back to the
                             // residual — a forward-compat tag we don't yet
                             // model still loads as an opaque spend rather
@@ -3414,21 +3437,7 @@ impl PlatformWalletPersistence for FFIPersister {
                                 ShieldedDirection::SelfTransfer
                             }
                         };
-                        let status = match ffi.status {
-                            0 => ShieldedActivityStatus::Pending,
-                            1 => ShieldedActivityStatus::Confirmed,
-                            2 => ShieldedActivityStatus::Failed,
-                            other => {
-                                // Failed is materially distinct from
-                                // Pending/Confirmed — never let a stray
-                                // byte silently mark an operation failed.
-                                tracing::warn!(
-                                    status = other,
-                                    "unknown shielded-activity status byte on load; folding to Pending so a scan can re-confirm it"
-                                );
-                                ShieldedActivityStatus::Pending
-                            }
-                        };
+                        let status = activity_status_from_tag(ffi.status);
                         let counterparty = if ffi.counterparty_ptr.is_null()
                             || ffi.counterparty_len == 0
                         {
@@ -3886,11 +3895,9 @@ impl PlatformWalletPersistence for FFIPersister {
         let flags = unsafe { slice::from_raw_parts(flags_ptr, count) };
 
         let mut out = Vec::with_capacity(count);
-        for (chunk, flag) in raw.chunks_exact(32).zip(flags) {
-            let mut bytes = [0u8; 32];
-            bytes.copy_from_slice(chunk);
+        for (chunk, flag) in raw.as_chunks::<32>().0.iter().zip(flags) {
             out.push(ListedCoreTxid {
-                txid: dashcore::Txid::from_byte_array(bytes),
+                txid: dashcore::Txid::from_byte_array(*chunk),
                 spends_wallet_input: flag & 0x01 != 0,
             });
         }
@@ -3930,10 +3937,7 @@ unsafe fn decode_cmx_array(ptr: *const u8, count: usize) -> Vec<[u8; 32]> {
         return Vec::new();
     };
     let bytes = slice::from_raw_parts(ptr, byte_len);
-    bytes
-        .chunks_exact(32)
-        .filter_map(|c| <[u8; 32]>::try_from(c).ok())
-        .collect()
+    bytes.as_chunks::<32>().0.to_vec()
 }
 
 /// Discriminant byte for a `ShieldedDirection` (FFI: 0 In, 1 Out, 2 Self).
@@ -3948,14 +3952,51 @@ fn activity_direction_tag(d: &platform_wallet::wallet::shielded::ShieldedDirecti
 }
 
 /// Discriminant byte for a `ShieldedActivityStatus` (FFI: 0 Pending,
-/// 1 Confirmed, 2 Failed).
+/// 1 Confirmed, 2 Failed, 3 Unknown).
 #[cfg(feature = "shielded")]
-fn activity_status_tag(s: &platform_wallet::wallet::shielded::ShieldedActivityStatus) -> u8 {
-    use platform_wallet::wallet::shielded::ShieldedActivityStatus::*;
+fn activity_status_tag(s: &ShieldedActivityStatus) -> u8 {
     match s {
-        Pending => 0,
-        Confirmed => 1,
-        Failed => 2,
+        ShieldedActivityStatus::Pending => 0,
+        ShieldedActivityStatus::Confirmed => 1,
+        ShieldedActivityStatus::Failed => 2,
+        ShieldedActivityStatus::Unknown => 3,
+    }
+}
+
+/// Decode the persisted status byte without treating an abandoned payment as failed.
+#[cfg(feature = "shielded")]
+fn activity_status_from_tag(tag: u8) -> ShieldedActivityStatus {
+    match tag {
+        0 => ShieldedActivityStatus::Pending,
+        1 => ShieldedActivityStatus::Confirmed,
+        2 => ShieldedActivityStatus::Failed,
+        3 => ShieldedActivityStatus::Unknown,
+        other => {
+            tracing::warn!(
+                status = other,
+                "unknown shielded-activity status byte on load; folding to Pending so a scan can re-confirm it"
+            );
+            ShieldedActivityStatus::Pending
+        }
+    }
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod activity_status_tests {
+    use super::{activity_status_from_tag, activity_status_tag};
+    use platform_wallet::wallet::shielded::ShieldedActivityStatus;
+
+    #[test]
+    fn should_roundtrip_abandoned_activity_as_unknown_and_preserve_existing_status_bytes() {
+        for (status, tag) in [
+            (ShieldedActivityStatus::Pending, 0),
+            (ShieldedActivityStatus::Confirmed, 1),
+            (ShieldedActivityStatus::Failed, 2),
+            (ShieldedActivityStatus::Unknown, 3),
+        ] {
+            assert_eq!(activity_status_tag(&status), tag);
+            assert_eq!(activity_status_from_tag(tag), status);
+        }
     }
 }
 
@@ -4999,21 +5040,22 @@ fn build_wallet_start_state(
         // and show stale operator / platform-node keys until it's deleted
         // and re-imported — an accepted, transient dev-only state.
         //
-        // INTENTIONAL(unmaintained-bincode-decoder): the three account-xpub
-        // decodes below run bincode 2.0.1 (RUSTSEC-2025-0141: development
-        // ceased, no CVE, no fix version) over host-supplied bytes. Accepted:
-        // no defect today, and the migration is tracked as its own
-        // supply-chain item, to be paired with the trailing-byte validation
-        // the `flush` decode boundary already defers.
+        // The three account-xpub decodes below run upstream `key-wallet`
+        // decoders that do not implement `DecodeUntrusted` over host-supplied
+        // bytes, so each one carries the explicit
+        // `ACCOUNT_XPUB_DECODE_LIMIT_BYTES` budget. Trailing bytes are still
+        // ignored, the same deferral as the `flush` decode boundary.
         match account_type {
             AccountType::ProviderOperatorKeys => {
-                let (bls_pubkey, _): (ExtendedBLSPubKey, usize) =
-                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                        PersistenceError::backend(format!(
-                            "failed to decode provider BLS xpub: {}",
-                            e
-                        ))
-                    })?;
+                // The BLS decoder reads a Vec<u8> before validating the public
+                // key, so the budget is what bounds its allocation.
+                let (bls_pubkey, _): (ExtendedBLSPubKey, usize) = bincode::decode_from_slice(
+                    xpub_bytes,
+                    config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!("failed to decode provider BLS xpub: {}", e))
+                })?;
                 let bls_account = BLSAccount::new(
                     Some(entry.wallet_id.to_vec()),
                     account_type,
@@ -5032,13 +5074,16 @@ fn build_wallet_start_state(
                 continue;
             }
             AccountType::ProviderPlatformKeys => {
-                let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) =
-                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                        PersistenceError::backend(format!(
-                            "failed to decode provider EdDSA xpub: {}",
-                            e
-                        ))
-                    })?;
+                let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) = bincode::decode_from_slice(
+                    xpub_bytes,
+                    config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "failed to decode provider EdDSA xpub: {}",
+                        e
+                    ))
+                })?;
                 let eddsa_account = EdDSAAccount::new(
                     Some(entry.wallet_id.to_vec()),
                     account_type,
@@ -5064,10 +5109,11 @@ fn build_wallet_start_state(
             _ => {}
         }
 
-        let (account_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                PersistenceError::backend(format!("failed to decode account xpub: {}", e))
-            })?;
+        let (account_xpub, _): (ExtendedPubKey, usize) = bincode::decode_from_slice(
+            xpub_bytes,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+        )
+        .map_err(|e| PersistenceError::backend(format!("failed to decode account xpub: {}", e)))?;
         let account =
             Account::from_xpub(Some(entry.wallet_id), account_type, account_xpub, network)
                 .map_err(|e| {
@@ -5663,10 +5709,8 @@ fn build_unused_asset_locks(
             // SAFETY: Same lifetime contract as `transaction_bytes`.
             let proof_bytes =
                 unsafe { slice::from_raw_parts(spec.proof_bytes, spec.proof_bytes_len) };
-            // INTENTIONAL(unmaintained-bincode-decoder): host-supplied bytes
-            // through bincode 2.0.1 (RUSTSEC-2025-0141, unmaintained). Same
-            // accepted risk as the account-xpub decodes in
-            // `build_wallet_start_state`.
+            // The host persisted these bytes from an entry this wallet
+            // wrote, so they decode as our own data.
             let (proof, _) = dpp::bincode::decode_from_slice::<dpp::prelude::AssetLockProof, _>(
                 proof_bytes,
                 config::standard(),
@@ -6788,6 +6832,82 @@ mod tests {
         *out_entries = std::ptr::null();
         *out_count = 0;
         0
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn local_balance_restore_preserves_explicit_zero_sync_row_presence() {
+        use crate::shielded_persistence::ShieldedSubwalletSyncStateFFI;
+        use platform_wallet::wallet::shielded::SubwalletId;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        unsafe extern "C" fn load_wallet(
+            _context: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            *entries = Box::into_raw(Box::new(WalletRestoreEntryFFI {
+                wallet_id: [42; 32],
+                ..Default::default()
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_wallet(
+            context: *mut c_void,
+            entries: *const WalletRestoreEntryFFI,
+            _count: usize,
+        ) {
+            drop(Box::from_raw(entries.cast_mut()));
+            (*(context as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        }
+        unsafe extern "C" fn load_state(
+            _context: *mut c_void,
+            entries: *mut *const ShieldedSubwalletSyncStateFFI,
+            count: *mut usize,
+        ) -> i32 {
+            *entries = Box::into_raw(Box::new(ShieldedSubwalletSyncStateFFI {
+                wallet_id: [42; 32],
+                account_index: 7,
+                last_synced_index: 0,
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_state(
+            context: *mut c_void,
+            entries: *const ShieldedSubwalletSyncStateFFI,
+            _count: usize,
+        ) {
+            drop(Box::from_raw(entries.cast_mut()));
+            (*(context as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        }
+        let releases = AtomicUsize::new(0);
+        let persister = FFIPersister::new(PersistenceCallbacks {
+            context: (&releases as *const AtomicUsize).cast_mut().cast(),
+            on_load_wallet_list_fn: Some(load_wallet),
+            on_load_wallet_list_free_fn: Some(free_wallet),
+            on_load_shielded_sync_states_fn: Some(load_state),
+            on_load_shielded_sync_states_free_fn: Some(free_state),
+            ..Default::default()
+        });
+        let snapshot = persister.load().expect("host snapshot");
+        let account = &snapshot.shielded.per_subwallet[&SubwalletId::new([42; 32], 7)];
+        assert_eq!(account.last_synced_index, 0);
+        assert!(
+            account.has_sync_state,
+            "a persisted zero is known scan history"
+        );
+        assert!(account.notes.is_empty());
+        assert!(!snapshot
+            .shielded
+            .per_subwallet
+            .contains_key(&SubwalletId::new([42; 32], 8)));
+        assert_eq!(
+            releases.load(Ordering::SeqCst),
+            2,
+            "both host allocations freed"
+        );
     }
     unsafe extern "C" fn noop_free_wallets(
         _ctx: *mut c_void,
@@ -8965,8 +9085,11 @@ mod tests {
         let restored_type =
             account_type_from_spec(&spec).expect("account type tag round-trips through the spec");
         let raw = unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
-        let (decoded_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(raw, config::standard()).expect("decode account xpub");
+        let (decoded_xpub, _): (ExtendedPubKey, usize) = bincode::decode_from_slice(
+            raw,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+        )
+        .expect("decode account xpub");
         assert_eq!(
             decoded_xpub, expected_xpub,
             "the bincode round-trip must preserve the account xpub byte-for-byte"
@@ -8981,6 +9104,41 @@ mod tests {
         assert_eq!(
             restored.account_xpub, expected_xpub,
             "the restored account's xpub must equal the original — the key verify_seed_binds binds against"
+        );
+    }
+
+    /// The BLS xpub decoder is the only account-xpub graph with a
+    /// length-prefixed field (the public key bytes). A host-supplied blob
+    /// whose prefix claims a gigabyte must fail on the decode budget, before
+    /// the decoder reserves memory for the claimed payload.
+    #[test]
+    fn should_reject_inflated_bls_xpub_length_under_the_decode_budget() {
+        use key_wallet::bip32::ChildNumber;
+
+        // network, depth, parent fingerprint, child number: the fixed-width
+        // header every extended key starts with.
+        let mut bytes = bincode::encode_to_vec(
+            (
+                Network::Testnet,
+                0u8,
+                [0u8; 4],
+                ChildNumber::Normal { index: 0 },
+            ),
+            config::standard(),
+        )
+        .expect("encode xpub header");
+        // Vec<u8> length prefix claiming 1 GiB (bincode varint u32 marker),
+        // followed by a single byte of payload.
+        bytes.extend_from_slice(&[0xFC, 0x00, 0x00, 0x00, 0x40, 0x00]);
+
+        let error = bincode::decode_from_slice::<ExtendedBLSPubKey, _>(
+            &bytes,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+        )
+        .expect_err("a BLS xpub claiming a 1 GiB public key must not decode");
+        assert!(
+            matches!(error, bincode::error::DecodeError::LimitExceeded),
+            "the decode budget must reject the claimed length, got {error:?}"
         );
     }
 

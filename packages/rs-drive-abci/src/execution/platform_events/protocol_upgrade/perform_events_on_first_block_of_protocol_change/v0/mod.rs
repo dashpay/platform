@@ -8,7 +8,7 @@ use dpp::dashcore::hashes::Hash;
 use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
@@ -306,8 +306,9 @@ impl<C> Platform<C> {
                 let contested_document_resource_vote_poll_bytes = element
                     .into_item_bytes()
                     .map_err(drive::error::Error::from)?;
-                let vote_poll =
-                    VotePoll::deserialize_from_bytes(&contested_document_resource_vote_poll_bytes)?;
+                let vote_poll = VotePoll::deserialize_from_bytes_trusted(
+                    &contested_document_resource_vote_poll_bytes,
+                )?;
                 match vote_poll {
                     VotePoll::ContestedDocumentResourceVotePoll(contested) => {
                         contested.specialized_balance_id().map_err(Error::Protocol)

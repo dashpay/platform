@@ -217,6 +217,43 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testShouldPreserveShieldedRecoveryErrorsFromFFI() {
+        let corrupted = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_RECOVERY_CORRUPTED
+        )
+        let keysRequired = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_RECOVERY_KEYS_REQUIRED
+        )
+        XCTAssertEqual(corrupted.rawValue, 56)
+        XCTAssertEqual(keysRequired.rawValue, 57)
+        let detail = "Cannot read durable identity recovery record"
+        guard case .shieldedRecoveryCorrupted(let corruptedMessage) = PlatformWalletError(
+            code: corrupted, message: detail
+        ) else { return XCTFail("lost typed corruption error") }
+        guard case .shieldedRecoveryKeysRequired(let keyMessage) = PlatformWalletError(
+            code: keysRequired, message: detail
+        ) else { return XCTFail("lost typed keys-required error") }
+        XCTAssertEqual(corruptedMessage, detail)
+        XCTAssertEqual(keyMessage, detail)
+    }
+
+    func testShouldPreserveShieldedIdentityDebitPendingFFIResult() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_DEBIT_PENDING
+        )
+        XCTAssertEqual(code, .errorShieldedIdentityDebitPending)
+        XCTAssertEqual(code.rawValue, 55)
+
+        let rendered = "Identity has an unresolved shielded debit; "
+            + "this request was not started. Wait for shielded sync"
+        let error = PlatformWalletError(code: code, message: rendered)
+        guard case .shieldedIdentityDebitPending(let message) = error else {
+            return XCTFail("expected typed shieldedIdentityDebitPending error")
+        }
+        XCTAssertEqual(message, rendered)
+        XCTAssertEqual(error.errorDescription, rendered)
+    }
+
     func testShieldedInsufficientBalanceFFIResultMapping() {
         XCTAssertEqual(
             PlatformWalletResultCode(
