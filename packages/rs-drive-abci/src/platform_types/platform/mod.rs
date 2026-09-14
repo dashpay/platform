@@ -1,3 +1,4 @@
+mod checkpoint_attempt;
 #[cfg(any(feature = "mocks", test))]
 mod mock;
 
@@ -38,6 +39,15 @@ pub struct Platform<C> {
     pub checkpoint_platform_states: ArcSwap<BTreeMap<BlockHeight, Arc<PlatformState>>>,
     /// block height guard
     pub committed_block_height_guard: AtomicU64,
+    /// Block time of the last GroveDB checkpoint attempt, successful or not; 0 before
+    /// the first attempt.
+    ///
+    /// Every node checkpoints at the first block after a checkpoint interval boundary,
+    /// so a failed attempt is skipped for the rest of its interval instead of being
+    /// retried at a later block, which would give this node a checkpoint height the
+    /// rest of the network does not have. `should_checkpoint` reads it, every attempt
+    /// records it, and it is persisted beside the checkpoints so a restart keeps it.
+    pub last_checkpoint_attempt_block_time_ms: AtomicU64,
     /// Configuration
     pub config: PlatformConfig,
     /// Core RPC Client
@@ -251,11 +261,15 @@ impl<C> Platform<C> {
 
         PlatformVersion::set_current(platform_version);
 
+        let last_checkpoint_attempt =
+            checkpoint_attempt::load_last_checkpoint_attempt(&config.db_path);
+
         let platform: Platform<C> = Platform {
             drive,
             checkpoint_platform_states: ArcSwap::from_pointee(checkpoint_platform_states),
             state: ArcSwap::new(Arc::new(platform_state)),
             committed_block_height_guard: AtomicU64::from(height),
+            last_checkpoint_attempt_block_time_ms: AtomicU64::new(last_checkpoint_attempt),
             config,
             core_rpc,
             check_tx_proof_verifier: CheckTxProofVerifier::default(),
@@ -285,11 +299,15 @@ impl<C> Platform<C> {
 
         PlatformVersion::set_current(PlatformVersion::get(current_protocol_version_in_consensus)?);
 
+        let last_checkpoint_attempt =
+            checkpoint_attempt::load_last_checkpoint_attempt(&config.db_path);
+
         Ok(Platform {
             drive,
             checkpoint_platform_states: ArcSwap::from_pointee(BTreeMap::new()),
             state: ArcSwap::new(Arc::new(platform_state)),
             committed_block_height_guard: AtomicU64::from(height),
+            last_checkpoint_attempt_block_time_ms: AtomicU64::new(last_checkpoint_attempt),
             config,
             core_rpc,
             check_tx_proof_verifier: CheckTxProofVerifier::default(),
