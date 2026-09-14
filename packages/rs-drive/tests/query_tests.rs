@@ -6925,7 +6925,14 @@ mod tests {
             })
             .collect();
 
-        let a_names = ["amalle".to_string(), "anna-diane".to_string()];
+        // The page is full: the cursor's own label key holds nothing after
+        // the cursor, and the lowering no longer lets that empty subtree
+        // consume a slot of the limit.
+        let a_names = [
+            "amalle".to_string(),
+            "anna-diane".to_string(),
+            "atalanta".to_string(),
+        ];
 
         assert_eq!(names, a_names);
 
@@ -7425,11 +7432,14 @@ mod tests {
             })
             .collect();
 
-        // We only get back 2 values, even though we put limit 3 because the time with status 0 is an
-        // empty tree and consumes a limit
+        // All 3 values come back: the cursor's time key holds nothing after
+        // the cursor, and the lowering no longer lets that empty subtree
+        // consume a slot of the limit (it did before protocol version 14,
+        // returning 2 values for a limit of 3).
         let a_names = [
             "DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou".to_string(),
             "2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu".to_string(),
+            "74giZJn9fNczYRsxxh3wVnktJS1vzTiRWYinKK1rRcyj".to_string(),
         ];
 
         assert_eq!(names, a_names);
@@ -7530,11 +7540,14 @@ mod tests {
             })
             .collect();
 
-        // We only get back 2 values, even though we put limit 3 because the time with status 0 is an
-        // empty tree and consumes a limit
+        // All 3 values come back: the cursor's time key holds nothing after
+        // the cursor, and the lowering no longer lets that empty subtree
+        // consume a slot of the limit (it did before protocol version 14,
+        // returning 2 values for a limit of 3).
         let a_names = [
             "DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou".to_string(),
             "CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD".to_string(),
+            "5ikeRNwvFekr6ex32B4dLEcCaSsgXXHJBx5rJ2rwuhEV".to_string(),
         ];
 
         assert_eq!(names, a_names);
