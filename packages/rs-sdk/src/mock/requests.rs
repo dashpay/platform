@@ -25,6 +25,7 @@ use dpp::{
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
 use drive::grovedb::Element;
+use drive_proof_verifier::types::data_contracts_by_range::DataContractsByRange;
 use drive_proof_verifier::types::evonode_status::EvoNodeStatus;
 use drive_proof_verifier::types::groups::GroupActions;
 use drive_proof_verifier::types::identity_token_balance::{
@@ -310,6 +311,21 @@ impl MockResponse for ProposerBlockCounts {
     {
         let data = RetrievedValues::<Identifier, u64>::mock_deserialize(sdk, buf);
         ProposerBlockCounts(data)
+    }
+}
+
+impl MockResponse for DataContractsByRange {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.0.mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        DataContractsByRange(
+            IndexMap::<Identifier, Option<DataContract>>::mock_deserialize(sdk, buf),
+        )
     }
 }
 

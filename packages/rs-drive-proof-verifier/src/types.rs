@@ -9,6 +9,8 @@
 //! formats explicitly retain ordinary decoding for foreign Core types; network
 //! responses go through the proof verification and request conversion paths.
 
+/// Data contracts by range (the paginated contract enumeration)
+pub mod data_contracts_by_range;
 /// Evonode status
 pub mod evonode_status;
 /// Groups
