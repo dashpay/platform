@@ -502,18 +502,53 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     );
                     return;
                 }
-                for tx in txs {
-                    if resend_one(
+                let total = txs.len();
+                for (position, tx) in txs.into_iter().enumerate() {
+                    let mut outcome = resend_one(
                         &wallet_id,
                         &generation,
                         &wallet_manager,
                         broadcaster.as_ref(),
                         &tx,
                     )
-                    .await
-                        == ResendOutcome::Abandoned
+                    .await;
+
+                    // Peers can go away between the readiness gate and the
+                    // send. Nothing owns a transaction that never left, so
+                    // wait for the transport once more and try again rather
+                    // than deferring it to the next launch.
+                    if outcome == ResendOutcome::NotSent
+                        && broadcaster
+                            .wait_until_ready(RESEND_TRANSPORT_READY_WAIT)
+                            .await
                     {
-                        return;
+                        outcome = resend_one(
+                            &wallet_id,
+                            &generation,
+                            &wallet_manager,
+                            broadcaster.as_ref(),
+                            &tx,
+                        )
+                        .await;
+                    }
+
+                    match outcome {
+                        ResendOutcome::Dispatched => {}
+                        ResendOutcome::Abandoned => return,
+                        // Stop the batch. A later transaction may spend this
+                        // one's change, and dispatching it against an output
+                        // the network has never seen would put a transaction
+                        // on the wire that cannot be accepted. The remainder
+                        // is offered again at the next launch.
+                        ResendOutcome::NotSent => {
+                            tracing::warn!(
+                                wallet_id = %hex::encode(wallet_id),
+                                deferred = total - position,
+                                "load: transport refused the send; leaving the rest of the \
+                                 batch for the next launch"
+                            );
+                            return;
+                        }
                     }
                 }
             });
@@ -534,6 +569,12 @@ pub(super) enum ResendOutcome {
     /// The wallet this transaction belongs to is no longer the live
     /// registration, so nothing was sent and the rest of the batch is moot.
     Abandoned,
+    /// The broadcaster proved no bytes reached the network — peers went away
+    /// between the readiness gate and the send. Nothing is tracking this
+    /// transaction, so the rest of the batch must not proceed: anything
+    /// spending its change would be built on an output the network has never
+    /// seen.
+    NotSent,
 }
 
 /// Re-dispatch one unconfirmed send, under the wallet's lifecycle gate.
@@ -586,9 +627,13 @@ pub(super) async fn resend_one(
             "load: re-dispatched unconfirmed send, no acceptance signal yet — \
              handed to the rebroadcast timer"
         ),
-        // Provably never sent: worth a warning, since nothing carried it and
-        // the next launch is the only remaining chance.
-        Err(e) => tracing::warn!(%txid, error = ?e, "load: re-dispatch was not sent"),
+        // Provably never sent, so the timer never took ownership. Matched by
+        // name rather than as a catch-all: a variant added later should make
+        // this a compile error, not silently inherit "nothing was sent".
+        Err(e @ BroadcastError::Rejected { .. }) => {
+            tracing::warn!(%txid, error = ?e, "load: re-dispatch was not sent");
+            return ResendOutcome::NotSent;
+        }
     }
     ResendOutcome::Dispatched
 }
@@ -891,6 +936,79 @@ mod idempotent_load_tests {
             vec![tx.txid()],
             "the transaction must reach the broadcaster"
         );
+    }
+
+    /// A broadcaster that proves nothing was sent must not be reported as a
+    /// dispatch.
+    ///
+    /// `Rejected` means no bytes reached the network, so dash-spv never took
+    /// the transaction into its rebroadcast set and nothing will retry it on
+    /// its own. Reporting it as dispatched would also let the caller continue
+    /// a dependent batch against an output the network has never seen.
+    #[tokio::test]
+    async fn resend_reports_not_sent_when_the_broadcaster_refuses() {
+        let ctx = TestWalletContext::new_random();
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let manager = make_manager(SingleWalletPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+        });
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+        let generation = Arc::clone(
+            manager
+                .get_wallet(&wallet_id)
+                .await
+                .expect("registered")
+                .generation(),
+        );
+
+        let broadcaster = RejectingBroadcaster;
+        let tx = spend_to(
+            dashcore::OutPoint {
+                txid: "0000000000000000000000000000000000000000000000000000000000000003"
+                    .parse()
+                    .expect("static txid"),
+                vout: 0,
+            },
+            10_000,
+        );
+
+        let outcome = super::resend_one(
+            &wallet_id,
+            &generation,
+            &manager.wallet_manager,
+            &broadcaster,
+            &tx,
+        )
+        .await;
+
+        assert_eq!(
+            outcome,
+            super::ResendOutcome::NotSent,
+            "a provably unsent transaction has no owner and must say so"
+        );
+    }
+
+    /// Broadcaster that refuses every send the way zero connected peers does.
+    struct RejectingBroadcaster;
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for RejectingBroadcaster {
+        async fn broadcast(
+            &self,
+            _transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, BroadcastError> {
+            Err(BroadcastError::Rejected {
+                reason: "test: no connected peers".to_string(),
+            })
+        }
+
+        async fn wait_until_ready(&self, _timeout: Duration) -> bool {
+            true
+        }
     }
 
     /// The guard this exists for: a wallet removed while the resend was
