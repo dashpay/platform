@@ -2,6 +2,9 @@ use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
+use dash_sdk::platform::data_contracts_by_range::{
+    DataContractsByRange, DataContractsByRangeQuery, DataContractsByRangeStart,
+};
 use dash_sdk::platform::query::LimitQuery;
 use dash_sdk::platform::{DataContract, Fetch, FetchMany, Identifier};
 use drive_proof_verifier::types::{DataContractHistory, DataContracts};
@@ -10,7 +13,7 @@ use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::{IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierWasm};
-use wasm_dpp2::utils::try_to_vec;
+use wasm_dpp2::utils::{try_from_options_optional, try_to_vec};
 use wasm_dpp2::DataContractWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -91,6 +94,90 @@ fn build_limit_query(params: &DataContractHistoryQueryParsed) -> LimitQuery<(Ide
     }
 }
 
+#[wasm_bindgen(typescript_custom_section)]
+const DATA_CONTRACTS_BY_RANGE_QUERY_TS: &'static str = r#"
+/**
+ * Query parameters for one page of the contract enumeration (`getDataContractsByRange`).
+ *
+ * Pages are ordered by ascending contract id. Pass `{}` for the first page, then the last
+ * key of each page as `startAfter` until a page comes back shorter than `limit`.
+ */
+export interface DataContractsByRangeQuery {
+  /**
+   * Maximum number of contracts in the page, 1..=100.
+   * @default 100
+   */
+  limit?: number;
+
+  /**
+   * Contract id to resume after (exclusive). Mutually exclusive with `startAt`.
+   * @default undefined
+   */
+  startAfter?: IdentifierLike;
+
+  /**
+   * Contract id to start at (inclusive). Mutually exclusive with `startAfter`.
+   * @default undefined
+   */
+  startAt?: IdentifierLike;
+
+  /**
+   * Return contract ids only: every map value is `undefined` and the proof is much smaller.
+   * @default false
+   */
+  idsOnly?: boolean;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DataContractsByRangeQuery")]
+    pub type DataContractsByRangeQueryJs;
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DataContractsByRangeQueryInput {
+    #[serde(default)]
+    limit: Option<u32>,
+    #[serde(default)]
+    ids_only: bool,
+}
+
+fn parse_data_contracts_by_range_query(
+    query: DataContractsByRangeQueryJs,
+) -> Result<DataContractsByRangeQuery, WasmSdkError> {
+    let query_js: JsValue = query.into();
+
+    // Extract the cursors before serde: IdentifierLike accepts a string, a Uint8Array or an
+    // Identifier object, none of which serde reads.
+    let start_after: Option<IdentifierWasm> = try_from_options_optional(&query_js, "startAfter")?;
+    let start_at: Option<IdentifierWasm> = try_from_options_optional(&query_js, "startAt")?;
+
+    let start = match (start_after, start_at) {
+        (Some(_), Some(_)) => {
+            return Err(WasmSdkError::invalid_argument(
+                "startAfter and startAt are mutually exclusive".to_string(),
+            ))
+        }
+        (Some(after), None) => Some(DataContractsByRangeStart::After(after.into())),
+        (None, Some(at)) => Some(DataContractsByRangeStart::At(at.into())),
+        (None, None) => None,
+    };
+
+    let input: DataContractsByRangeQueryInput = deserialize_required_query(
+        query_js,
+        "Query object is required; pass {} for the first page",
+        "data contracts by range query",
+    )?;
+
+    Ok(DataContractsByRangeQuery {
+        start,
+        limit: input.limit,
+        ids_only: input.ids_only,
+    })
+}
+
 impl WasmSdk {
     /// Fetch one contract (proved) and seed the trusted-context cache
     /// with it, so the document queries that follow find it there
@@ -119,6 +206,24 @@ impl WasmSdk {
             self.cache_contract(contract.clone());
         }
         Ok(contracts)
+    }
+
+    /// Turns one page of the contract enumeration into a JS `Map` keyed by base58 contract
+    /// id, in page (ascending id) order, seeding the trusted-context cache with every
+    /// contract the page carries. Ids-only pages map to `undefined` values.
+    pub(crate) fn data_contracts_page_to_map(&self, page: DataContractsByRange) -> Map {
+        let contracts_map = Map::new();
+
+        for (id, contract) in page.0 {
+            let key: JsValue = IdentifierWasm::from(id).to_base58().into();
+            let value = contract.map(|contract| {
+                self.cache_contract(contract.clone());
+                DataContractWasm::from(contract)
+            });
+            contracts_map.set(&key, &JsValue::from(value));
+        }
+
+        contracts_map
     }
 }
 
@@ -221,6 +326,25 @@ impl WasmSdk {
         Ok(contracts_map)
     }
 
+    /// One page of the contract enumeration, ordered by ascending contract id.
+    /// Pass `{}` for the first page; the last key of a page is the next `startAfter`.
+    #[wasm_bindgen(
+        js_name = "getDataContractsByRange",
+        unchecked_return_type = "Map<string, DataContract | undefined>"
+    )]
+    pub async fn get_data_contracts_by_range(
+        &self,
+        query: DataContractsByRangeQueryJs,
+    ) -> Result<Map, WasmSdkError> {
+        let query = parse_data_contracts_by_range_query(query)?;
+
+        let page = DataContractsByRange::fetch(self.as_ref(), query)
+            .await?
+            .unwrap_or_default();
+
+        Ok(self.data_contracts_page_to_map(page))
+    }
+
     // Proof info versions for data contract queries
 
     #[wasm_bindgen(
@@ -284,6 +408,29 @@ impl WasmSdk {
 
             contracts_map.set(&key, &JsValue::from(value));
         }
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            contracts_map,
+            metadata,
+            proof,
+        ))
+    }
+
+    /// One page of the contract enumeration together with its proof and metadata.
+    #[wasm_bindgen(
+        js_name = "getDataContractsByRangeWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, DataContract | undefined>>"
+    )]
+    pub async fn get_data_contracts_by_range_with_proof_info(
+        &self,
+        query: DataContractsByRangeQueryJs,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let query = parse_data_contracts_by_range_query(query)?;
+
+        let (page, metadata, proof) =
+            DataContractsByRange::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
+
+        let contracts_map = self.data_contracts_page_to_map(page.unwrap_or_default());
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             contracts_map,

@@ -453,16 +453,14 @@ impl TokenConfigUpdateTransitionActionStateValidationV0 for TokenConfigUpdateTra
             | TokenConfigurationChangeItem::EmergencyAction(AuthorizedActionTakers::MainGroup)
             | TokenConfigurationChangeItem::EmergencyActionAdminGroup(
                 AuthorizedActionTakers::MainGroup,
-            ) => {
-                if token_configuration.main_control_group().is_none() {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        ConsensusError::StateError(
-                            StateError::NewAuthorizedActionTakerMainGroupNotSetError(
-                                NewAuthorizedActionTakerMainGroupNotSetError::new(),
-                            ),
+            ) if token_configuration.main_control_group().is_none() => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(
+                        StateError::NewAuthorizedActionTakerMainGroupNotSetError(
+                            NewAuthorizedActionTakerMainGroupNotSetError::new(),
                         ),
-                    ));
-                }
+                    ),
+                ));
             }
             _ => {}
         }

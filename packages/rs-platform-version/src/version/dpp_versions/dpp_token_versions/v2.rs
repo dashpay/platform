@@ -6,4 +6,5 @@ pub const TOKEN_VERSIONS_V2: DPPTokenVersions = DPPTokenVersions {
     token_contract_info_default_structure_version: 0,
     token_config_update_action_id_version: 1,
     token_set_price_action_id_version: 1,
+    distribution_function_evaluate_version: 0,
 };

@@ -34,6 +34,8 @@ use platform_wallet::changeset::{
     ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
+#[cfg(feature = "shielded")]
+use platform_wallet::wallet::shielded::ShieldedActivityStatus;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
 use std::collections::BTreeMap;
 use std::ffi::CString;
@@ -49,7 +51,8 @@ use crate::contact_persistence::{
 };
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI, KeyTypeTagFFI};
 use crate::core_wallet_types::{
-    build_sweep_batches_for_callback, free_wallet_changeset_ffi, SweepBatchFFI, WalletChangeSetFFI,
+    build_sweep_batches_for_callback, build_utxo_credit_verdicts_for_callback,
+    free_wallet_changeset_ffi, SweepBatchFFI, UtxoCreditVerdictFFI, WalletChangeSetFFI,
 };
 use crate::dashpay_payment::{build_payment_persist_entries, DashpayPaymentPersistEntryFFI};
 use crate::dpns_name_state_persistence::{
@@ -88,6 +91,14 @@ use std::ffi::CStr;
 /// `Mempool` vs no-evidence); see each match's comment.
 pub(crate) const TX_CONTEXT_RAW_IN_BLOCK: u32 = 2;
 pub(crate) const TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK: u32 = 3;
+
+/// Byte budget for decoding a host-supplied account extended public key.
+///
+/// The upstream `key-wallet` xpub decoders do not implement
+/// `DecodeUntrusted`, so every decode of persisted `account_xpub_bytes`
+/// (ECDSA, BLS, EdDSA) runs under this explicit limit instead; a complete
+/// xpub of any of the three kinds is under 200 bytes.
+pub(crate) const ACCOUNT_XPUB_DECODE_LIMIT_BYTES: usize = 1024;
 
 /// Versioned C projection of [`PersistenceCapabilities`].
 ///
@@ -223,6 +234,26 @@ pub type PersistWalletChangesetSweepsFn = unsafe extern "C" fn(
 pub type PersistWalletChangesetChainLockHeightFn =
     unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8, chain_lock_height: u32) -> i32;
 
+/// Carries the engine's credit verdicts for the round — every `Received` /
+/// `Change` output of the round's records that the engine did NOT credit
+/// to the owning account, with the reason (see [`UtxoCreditVerdictFFI`]).
+/// Fired inside the round's begin/end bracket, BEFORE
+/// `on_persist_wallet_changeset_fn`, so a persister that derives its UTXO
+/// rows from record roles can consult the verdicts while it applies the
+/// round's `utxos_added` entries — after the changeset callback would be
+/// too late, the row would already be staged as unspent. Fired only on
+/// rounds that carry at least one verdict; a round where every output was
+/// credited never fires it, so ignoring the slot is exactly today's
+/// behaviour. A non-zero return fails the round like any other per-kind
+/// callback: a verdict silently dropped leaves a phantom coin the store
+/// hands back to the engine at the next load.
+pub type PersistWalletChangesetUtxoVerdictsFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    verdicts: *const UtxoCreditVerdictFFI,
+    verdicts_count: usize,
+) -> i32;
+
 /// Size- and version-tagged additive persistence callbacks.
 ///
 /// `context` is the context in the accompanying [`PersistenceCallbacks`]
@@ -319,6 +350,21 @@ pub struct PersistenceCallbacksExtension {
             chain_lock_height: u32,
         ) -> i32,
     >,
+    /// The round's credit verdicts (see
+    /// [`PersistWalletChangesetUtxoVerdictsFn`]). Appended under the same
+    /// version for the same reason as the two slots above: `struct_size`
+    /// proves whether a host allocated it, and a host that did not simply
+    /// never has it read — which is exactly today's behaviour, since a
+    /// verdict only ever refines what the changeset callback would have
+    /// written on its own.
+    pub on_persist_wallet_changeset_utxo_verdicts_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            verdicts: *const UtxoCreditVerdictFFI,
+            verdicts_count: usize,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -333,6 +379,7 @@ impl Default for PersistenceCallbacksExtension {
             on_load_tracked_masternodes_free_fn: None,
             on_persist_wallet_changeset_sweeps_fn: None,
             on_persist_wallet_changeset_chain_lock_height_fn: None,
+            on_persist_wallet_changeset_utxo_verdicts_fn: None,
         }
     }
 }
@@ -348,6 +395,7 @@ pub struct PersistenceExtensionCallbacks {
     pub load_tracked_masternodes_free: Option<FreeTrackedMasternodesFn>,
     pub wallet_changeset_sweeps: Option<PersistWalletChangesetSweepsFn>,
     pub wallet_changeset_chain_lock_height: Option<PersistWalletChangesetChainLockHeightFn>,
+    pub wallet_changeset_utxo_verdicts: Option<PersistWalletChangesetUtxoVerdictsFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1273,6 +1321,12 @@ pub struct FFIPersister {
     /// without it simply never collects sweep tombstones (safe — held, not
     /// leaked to the unspent set).
     wallet_changeset_chain_lock_height_callback: Option<PersistWalletChangesetChainLockHeightFn>,
+    /// `Some` only when the host's extension `struct_size` proved the slot
+    /// was allocated. Carries the engine's credit verdicts for the round's
+    /// `Received` / `Change` outputs it did not credit; a host without it
+    /// materialises those rows unspent, as every host did before the slot
+    /// existed.
+    wallet_changeset_utxo_verdicts_callback: Option<PersistWalletChangesetUtxoVerdictsFn>,
     /// Additive tracked-masternode persistence trio (persist / load /
     /// free), likewise extension-negotiated.
     tracked_masternodes_callbacks: PersistenceExtensionCallbacks,
@@ -1394,6 +1448,7 @@ impl FFIPersister {
             wallet_changeset_sweeps_callback: extensions.wallet_changeset_sweeps,
             wallet_changeset_chain_lock_height_callback: extensions
                 .wallet_changeset_chain_lock_height,
+            wallet_changeset_utxo_verdicts_callback: extensions.wallet_changeset_utxo_verdicts,
             tracked_masternodes_callbacks: extensions,
             declared_capabilities,
             round_lock: Mutex::new(RoundGuardState::default()),
@@ -1964,6 +2019,37 @@ impl PlatformWalletPersistence for FFIPersister {
                             eprintln!("Failed to encode marked-used address pool entries: {}", e);
                             outcome.record_fatal();
                         }
+                    }
+                }
+            }
+
+            // The engine's credit verdicts ride their own size-negotiated
+            // extension slot (see the layout note on `WalletChangeSetFFI`)
+            // and are fired BEFORE the changeset callback: a persister that
+            // derives its UTXO rows from record roles needs the verdicts in
+            // hand while it materialises this round's `utxos_added`
+            // entries, or it stages the very phantom row the verdict exists
+            // to prevent. Fired only when the round carries a verdict, so a
+            // host without the slot — or a round where every output was
+            // credited — behaves exactly as before.
+            if !core_cs.utxo_credit_verdicts.is_empty() {
+                if let Some(cb) = self.wallet_changeset_utxo_verdicts_callback {
+                    let verdicts = build_utxo_credit_verdicts_for_callback(core_cs);
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            verdicts.as_ptr(),
+                            verdicts.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Wallet changeset credit-verdict persistence callback returned error \
+                             code {}",
+                            result
+                        );
+                        outcome.record(result);
                     }
                 }
             }
@@ -2803,6 +2889,12 @@ impl PlatformWalletPersistence for FFIPersister {
                             let (identity_id, has_identity_id) = match &e.kind {
                                 platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityCreate {
                                     identity_id,
+                                }
+                                | platform_wallet::wallet::shielded::ShieldedActivityKind::ShieldFromIdentity {
+                                    identity_id,
+                                }
+                                | platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityTopUp {
+                                    identity_id,
                                 } => (*identity_id, 1u8),
                                 _ => ([0u8; 32], 0u8),
                             };
@@ -3033,8 +3125,8 @@ impl PlatformWalletPersistence for FFIPersister {
             use crate::shielded_persistence::*;
             use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
             use platform_wallet::wallet::shielded::{
-                ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
-                ShieldedDirection, ShieldedNote, ShieldedOutgoingNote, SubwalletId,
+                ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection, ShieldedNote,
+                ShieldedOutgoingNote, SubwalletId,
             };
 
             let mut shielded_state = ShieldedSyncStartState::default();
@@ -3252,6 +3344,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             .entry(id)
                             .or_insert_with(ShieldedSubwalletStartState::default);
                         entry.last_synced_index = ffi.last_synced_index;
+                        entry.has_sync_state = true;
                     }
                 }
             }
@@ -3314,6 +3407,12 @@ impl PlatformWalletPersistence for FFIPersister {
                             6 => ShieldedActivityKind::IdentityCreate {
                                 identity_id: ffi.identity_id,
                             },
+                            8 => ShieldedActivityKind::ShieldFromIdentity {
+                                identity_id: ffi.identity_id,
+                            },
+                            9 => ShieldedActivityKind::IdentityTopUp {
+                                identity_id: ffi.identity_id,
+                            },
                             // 7 and any unknown tag fall back to the
                             // residual — a forward-compat tag we don't yet
                             // model still loads as an opaque spend rather
@@ -3338,21 +3437,7 @@ impl PlatformWalletPersistence for FFIPersister {
                                 ShieldedDirection::SelfTransfer
                             }
                         };
-                        let status = match ffi.status {
-                            0 => ShieldedActivityStatus::Pending,
-                            1 => ShieldedActivityStatus::Confirmed,
-                            2 => ShieldedActivityStatus::Failed,
-                            other => {
-                                // Failed is materially distinct from
-                                // Pending/Confirmed — never let a stray
-                                // byte silently mark an operation failed.
-                                tracing::warn!(
-                                    status = other,
-                                    "unknown shielded-activity status byte on load; folding to Pending so a scan can re-confirm it"
-                                );
-                                ShieldedActivityStatus::Pending
-                            }
-                        };
+                        let status = activity_status_from_tag(ffi.status);
                         let counterparty = if ffi.counterparty_ptr.is_null()
                             || ffi.counterparty_len == 0
                         {
@@ -3810,11 +3895,9 @@ impl PlatformWalletPersistence for FFIPersister {
         let flags = unsafe { slice::from_raw_parts(flags_ptr, count) };
 
         let mut out = Vec::with_capacity(count);
-        for (chunk, flag) in raw.chunks_exact(32).zip(flags) {
-            let mut bytes = [0u8; 32];
-            bytes.copy_from_slice(chunk);
+        for (chunk, flag) in raw.as_chunks::<32>().0.iter().zip(flags) {
             out.push(ListedCoreTxid {
-                txid: dashcore::Txid::from_byte_array(bytes),
+                txid: dashcore::Txid::from_byte_array(*chunk),
                 spends_wallet_input: flag & 0x01 != 0,
             });
         }
@@ -3854,10 +3937,7 @@ unsafe fn decode_cmx_array(ptr: *const u8, count: usize) -> Vec<[u8; 32]> {
         return Vec::new();
     };
     let bytes = slice::from_raw_parts(ptr, byte_len);
-    bytes
-        .chunks_exact(32)
-        .filter_map(|c| <[u8; 32]>::try_from(c).ok())
-        .collect()
+    bytes.as_chunks::<32>().0.to_vec()
 }
 
 /// Discriminant byte for a `ShieldedDirection` (FFI: 0 In, 1 Out, 2 Self).
@@ -3872,14 +3952,51 @@ fn activity_direction_tag(d: &platform_wallet::wallet::shielded::ShieldedDirecti
 }
 
 /// Discriminant byte for a `ShieldedActivityStatus` (FFI: 0 Pending,
-/// 1 Confirmed, 2 Failed).
+/// 1 Confirmed, 2 Failed, 3 Unknown).
 #[cfg(feature = "shielded")]
-fn activity_status_tag(s: &platform_wallet::wallet::shielded::ShieldedActivityStatus) -> u8 {
-    use platform_wallet::wallet::shielded::ShieldedActivityStatus::*;
+fn activity_status_tag(s: &ShieldedActivityStatus) -> u8 {
     match s {
-        Pending => 0,
-        Confirmed => 1,
-        Failed => 2,
+        ShieldedActivityStatus::Pending => 0,
+        ShieldedActivityStatus::Confirmed => 1,
+        ShieldedActivityStatus::Failed => 2,
+        ShieldedActivityStatus::Unknown => 3,
+    }
+}
+
+/// Decode the persisted status byte without treating an abandoned payment as failed.
+#[cfg(feature = "shielded")]
+fn activity_status_from_tag(tag: u8) -> ShieldedActivityStatus {
+    match tag {
+        0 => ShieldedActivityStatus::Pending,
+        1 => ShieldedActivityStatus::Confirmed,
+        2 => ShieldedActivityStatus::Failed,
+        3 => ShieldedActivityStatus::Unknown,
+        other => {
+            tracing::warn!(
+                status = other,
+                "unknown shielded-activity status byte on load; folding to Pending so a scan can re-confirm it"
+            );
+            ShieldedActivityStatus::Pending
+        }
+    }
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod activity_status_tests {
+    use super::{activity_status_from_tag, activity_status_tag};
+    use platform_wallet::wallet::shielded::ShieldedActivityStatus;
+
+    #[test]
+    fn should_roundtrip_abandoned_activity_as_unknown_and_preserve_existing_status_bytes() {
+        for (status, tag) in [
+            (ShieldedActivityStatus::Pending, 0),
+            (ShieldedActivityStatus::Confirmed, 1),
+            (ShieldedActivityStatus::Failed, 2),
+            (ShieldedActivityStatus::Unknown, 3),
+        ] {
+            assert_eq!(activity_status_tag(&status), tag);
+            assert_eq!(activity_status_from_tag(tag), status);
+        }
     }
 }
 
@@ -4923,21 +5040,22 @@ fn build_wallet_start_state(
         // and show stale operator / platform-node keys until it's deleted
         // and re-imported — an accepted, transient dev-only state.
         //
-        // INTENTIONAL(unmaintained-bincode-decoder): the three account-xpub
-        // decodes below run bincode 2.0.1 (RUSTSEC-2025-0141: development
-        // ceased, no CVE, no fix version) over host-supplied bytes. Accepted:
-        // no defect today, and the migration is tracked as its own
-        // supply-chain item, to be paired with the trailing-byte validation
-        // the `flush` decode boundary already defers.
+        // The three account-xpub decodes below run upstream `key-wallet`
+        // decoders that do not implement `DecodeUntrusted` over host-supplied
+        // bytes, so each one carries the explicit
+        // `ACCOUNT_XPUB_DECODE_LIMIT_BYTES` budget. Trailing bytes are still
+        // ignored, the same deferral as the `flush` decode boundary.
         match account_type {
             AccountType::ProviderOperatorKeys => {
-                let (bls_pubkey, _): (ExtendedBLSPubKey, usize) =
-                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                        PersistenceError::backend(format!(
-                            "failed to decode provider BLS xpub: {}",
-                            e
-                        ))
-                    })?;
+                // The BLS decoder reads a Vec<u8> before validating the public
+                // key, so the budget is what bounds its allocation.
+                let (bls_pubkey, _): (ExtendedBLSPubKey, usize) = bincode::decode_from_slice(
+                    xpub_bytes,
+                    config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!("failed to decode provider BLS xpub: {}", e))
+                })?;
                 let bls_account = BLSAccount::new(
                     Some(entry.wallet_id.to_vec()),
                     account_type,
@@ -4956,13 +5074,16 @@ fn build_wallet_start_state(
                 continue;
             }
             AccountType::ProviderPlatformKeys => {
-                let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) =
-                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                        PersistenceError::backend(format!(
-                            "failed to decode provider EdDSA xpub: {}",
-                            e
-                        ))
-                    })?;
+                let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) = bincode::decode_from_slice(
+                    xpub_bytes,
+                    config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+                )
+                .map_err(|e| {
+                    PersistenceError::backend(format!(
+                        "failed to decode provider EdDSA xpub: {}",
+                        e
+                    ))
+                })?;
                 let eddsa_account = EdDSAAccount::new(
                     Some(entry.wallet_id.to_vec()),
                     account_type,
@@ -4988,10 +5109,11 @@ fn build_wallet_start_state(
             _ => {}
         }
 
-        let (account_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                PersistenceError::backend(format!("failed to decode account xpub: {}", e))
-            })?;
+        let (account_xpub, _): (ExtendedPubKey, usize) = bincode::decode_from_slice(
+            xpub_bytes,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+        )
+        .map_err(|e| PersistenceError::backend(format!("failed to decode account xpub: {}", e)))?;
         let account =
             Account::from_xpub(Some(entry.wallet_id), account_type, account_xpub, network)
                 .map_err(|e| {
@@ -5587,10 +5709,8 @@ fn build_unused_asset_locks(
             // SAFETY: Same lifetime contract as `transaction_bytes`.
             let proof_bytes =
                 unsafe { slice::from_raw_parts(spec.proof_bytes, spec.proof_bytes_len) };
-            // INTENTIONAL(unmaintained-bincode-decoder): host-supplied bytes
-            // through bincode 2.0.1 (RUSTSEC-2025-0141, unmaintained). Same
-            // accepted risk as the account-xpub decodes in
-            // `build_wallet_start_state`.
+            // The host persisted these bytes from an entry this wallet
+            // wrote, so they decode as our own data.
             let (proof, _) = dpp::bincode::decode_from_slice::<dpp::prelude::AssetLockProof, _>(
                 proof_bytes,
                 config::standard(),
@@ -6713,6 +6833,82 @@ mod tests {
         *out_count = 0;
         0
     }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn local_balance_restore_preserves_explicit_zero_sync_row_presence() {
+        use crate::shielded_persistence::ShieldedSubwalletSyncStateFFI;
+        use platform_wallet::wallet::shielded::SubwalletId;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        unsafe extern "C" fn load_wallet(
+            _context: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            *entries = Box::into_raw(Box::new(WalletRestoreEntryFFI {
+                wallet_id: [42; 32],
+                ..Default::default()
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_wallet(
+            context: *mut c_void,
+            entries: *const WalletRestoreEntryFFI,
+            _count: usize,
+        ) {
+            drop(Box::from_raw(entries.cast_mut()));
+            (*(context as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        }
+        unsafe extern "C" fn load_state(
+            _context: *mut c_void,
+            entries: *mut *const ShieldedSubwalletSyncStateFFI,
+            count: *mut usize,
+        ) -> i32 {
+            *entries = Box::into_raw(Box::new(ShieldedSubwalletSyncStateFFI {
+                wallet_id: [42; 32],
+                account_index: 7,
+                last_synced_index: 0,
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_state(
+            context: *mut c_void,
+            entries: *const ShieldedSubwalletSyncStateFFI,
+            _count: usize,
+        ) {
+            drop(Box::from_raw(entries.cast_mut()));
+            (*(context as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        }
+        let releases = AtomicUsize::new(0);
+        let persister = FFIPersister::new(PersistenceCallbacks {
+            context: (&releases as *const AtomicUsize).cast_mut().cast(),
+            on_load_wallet_list_fn: Some(load_wallet),
+            on_load_wallet_list_free_fn: Some(free_wallet),
+            on_load_shielded_sync_states_fn: Some(load_state),
+            on_load_shielded_sync_states_free_fn: Some(free_state),
+            ..Default::default()
+        });
+        let snapshot = persister.load().expect("host snapshot");
+        let account = &snapshot.shielded.per_subwallet[&SubwalletId::new([42; 32], 7)];
+        assert_eq!(account.last_synced_index, 0);
+        assert!(
+            account.has_sync_state,
+            "a persisted zero is known scan history"
+        );
+        assert!(account.notes.is_empty());
+        assert!(!snapshot
+            .shielded
+            .per_subwallet
+            .contains_key(&SubwalletId::new([42; 32], 8)));
+        assert_eq!(
+            releases.load(Ordering::SeqCst),
+            2,
+            "both host allocations freed"
+        );
+    }
     unsafe extern "C" fn noop_free_wallets(
         _ctx: *mut c_void,
         _entries: *const WalletRestoreEntryFFI,
@@ -7506,6 +7702,137 @@ mod tests {
         drop(persister);
     }
 
+    /// The credit verdicts reach the host through their own
+    /// size-negotiated slot, BEFORE the changeset callback of the same
+    /// round (the persister needs them while it materialises the round's
+    /// UTXO rows), with outpoint, class and height intact; a round with no
+    /// verdict never fires the slot; and a host without the slot still
+    /// succeeds — it just materialises the row unspent, as every host did
+    /// before the slot existed.
+    #[test]
+    fn store_delivers_credit_verdicts_through_the_extension_slot_before_the_changeset() {
+        use dashcore::hashes::Hash as _;
+        use platform_wallet::changeset::changeset::UtxoCreditVerdict;
+        use platform_wallet::changeset::CoreChangeSet;
+
+        #[derive(Default)]
+        struct Sink {
+            events: std::sync::Mutex<Vec<String>>,
+        }
+        unsafe extern "C" fn record_changeset(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            sink.events.lock().unwrap().push("changeset".into());
+            0
+        }
+        unsafe extern "C" fn record_verdicts(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            verdicts: *const UtxoCreditVerdictFFI,
+            verdicts_count: usize,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            let mut events = sink.events.lock().unwrap();
+            for verdict in slice::from_raw_parts(verdicts, verdicts_count) {
+                events.push(format!(
+                    "verdict txid={:02x} vout={} class={} height={}",
+                    verdict.outpoint.txid[0],
+                    verdict.outpoint.vout,
+                    verdict.verdict,
+                    verdict.spent_at_height
+                ));
+            }
+            0
+        }
+        fn outpoint(byte: u8, vout: u32) -> dashcore::OutPoint {
+            dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([byte; 32]),
+                vout,
+            }
+        }
+        fn verdict_round() -> PlatformWalletChangeSet {
+            let mut core = CoreChangeSet::default();
+            core.utxo_credit_verdicts.insert(
+                outpoint(0xAB, 1),
+                UtxoCreditVerdict::ObservedSpent { height: 2_402_896 },
+            );
+            core.utxo_credit_verdicts
+                .insert(outpoint(0xCD, 0), UtxoCreditVerdict::Doomed);
+            core.utxo_credit_verdicts
+                .insert(outpoint(0xEF, 2), UtxoCreditVerdict::Uncredited);
+            PlatformWalletChangeSet {
+                core: Some(core),
+                ..Default::default()
+            }
+        }
+
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            callbacks,
+            PersistenceCapabilities::NONE,
+            PersistenceExtensionCallbacks {
+                wallet_changeset_utxo_verdicts: Some(record_verdicts),
+                ..Default::default()
+            },
+        );
+        // A round with no verdict: the slot stays silent.
+        persister
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        synced_height: Some(10),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect("verdict-less round must succeed");
+        // A round carrying verdicts: they cross first, in outpoint order.
+        persister
+            .store([1u8; 32], verdict_round())
+            .expect("verdict round must succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec![
+                "changeset".to_string(),
+                "verdict txid=ab vout=1 class=1 height=2402896".to_string(),
+                "verdict txid=cd vout=0 class=2 height=0".to_string(),
+                "verdict txid=ef vout=2 class=3 height=0".to_string(),
+                "changeset".to_string(),
+            ],
+        );
+        drop(persister);
+
+        // Host without the slot: the same round still succeeds.
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            callbacks,
+            PersistenceCapabilities::NONE,
+        );
+        persister
+            .store([1u8; 32], verdict_round())
+            .expect("slotless-host verdict round must still succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec!["changeset".to_string()]
+        );
+        drop(persister);
+    }
+
     #[test]
     fn asset_lock_reconciliation_requires_every_callback_leg() {
         fn complete_callbacks() -> PersistenceCallbacks {
@@ -7714,6 +8041,16 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_persist_wallet_changeset_chain_lock_height_fn
             ) + std::mem::size_of::<Option<PersistWalletChangesetChainLockHeightFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_utxo_verdicts_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_utxo_verdicts_fn
+            ) + std::mem::size_of::<Option<PersistWalletChangesetUtxoVerdictsFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -8748,8 +9085,11 @@ mod tests {
         let restored_type =
             account_type_from_spec(&spec).expect("account type tag round-trips through the spec");
         let raw = unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
-        let (decoded_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(raw, config::standard()).expect("decode account xpub");
+        let (decoded_xpub, _): (ExtendedPubKey, usize) = bincode::decode_from_slice(
+            raw,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+        )
+        .expect("decode account xpub");
         assert_eq!(
             decoded_xpub, expected_xpub,
             "the bincode round-trip must preserve the account xpub byte-for-byte"
@@ -8764,6 +9104,41 @@ mod tests {
         assert_eq!(
             restored.account_xpub, expected_xpub,
             "the restored account's xpub must equal the original — the key verify_seed_binds binds against"
+        );
+    }
+
+    /// The BLS xpub decoder is the only account-xpub graph with a
+    /// length-prefixed field (the public key bytes). A host-supplied blob
+    /// whose prefix claims a gigabyte must fail on the decode budget, before
+    /// the decoder reserves memory for the claimed payload.
+    #[test]
+    fn should_reject_inflated_bls_xpub_length_under_the_decode_budget() {
+        use key_wallet::bip32::ChildNumber;
+
+        // network, depth, parent fingerprint, child number: the fixed-width
+        // header every extended key starts with.
+        let mut bytes = bincode::encode_to_vec(
+            (
+                Network::Testnet,
+                0u8,
+                [0u8; 4],
+                ChildNumber::Normal { index: 0 },
+            ),
+            config::standard(),
+        )
+        .expect("encode xpub header");
+        // Vec<u8> length prefix claiming 1 GiB (bincode varint u32 marker),
+        // followed by a single byte of payload.
+        bytes.extend_from_slice(&[0xFC, 0x00, 0x00, 0x00, 0x40, 0x00]);
+
+        let error = bincode::decode_from_slice::<ExtendedBLSPubKey, _>(
+            &bytes,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+        )
+        .expect_err("a BLS xpub claiming a 1 GiB public key must not decode");
+        assert!(
+            matches!(error, bincode::error::DecodeError::LimitExceeded),
+            "the decode budget must reject the claimed length, got {error:?}"
         );
     }
 

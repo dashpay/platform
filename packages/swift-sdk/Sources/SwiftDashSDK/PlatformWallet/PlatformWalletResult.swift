@@ -246,6 +246,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// wallet error, not a store error, so it carries no retry
     /// classification. The wrapped error's rendering is in the message.
     case errorPersisterRestore = 54
+    /// An earlier identity-funded shield is unresolved. This request was not
+    /// built or broadcast; wait for shielded sync before starting another.
+    case errorShieldedIdentityDebitPending = 55
+    /// A durable recovery record is malformed or invalid; retain it for diagnosis.
+    case errorShieldedRecoveryCorrupted = 56
+    /// Recovery needs its account and compatible keys; damaged ciphertext can look the same.
+    case errorShieldedRecoveryKeysRequired = 57
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -365,6 +372,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorPersisterStoreConstraint
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_RESTORE:
             self = .errorPersisterRestore
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_DEBIT_PENDING:
+            self = .errorShieldedIdentityDebitPending
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_RECOVERY_CORRUPTED:
+            self = .errorShieldedRecoveryCorrupted
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_RECOVERY_KEYS_REQUIRED:
+            self = .errorShieldedRecoveryKeysRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -618,6 +631,13 @@ public enum PlatformWalletError: LocalizedError {
     /// wallet failed. Carries no retry classification: it wraps a wallet
     /// error rather than a store error.
     case persisterRestore(String)
+    /// An earlier identity-funded shield is unresolved. This request was not
+    /// built or broadcast; wait for shielded sync before starting another.
+    case shieldedIdentityDebitPending(String)
+    /// A durable recovery record is malformed or invalid; retain it for diagnosis.
+    case shieldedRecoveryCorrupted(String)
+    /// Recovery needs its account and compatible keys; damaged ciphertext can look the same.
+    case shieldedRecoveryKeysRequired(String)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
     /// was just signed against) is no longer registered in the manager, so there
@@ -648,6 +668,8 @@ public enum PlatformWalletError: LocalizedError {
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
+             .shieldedIdentityDebitPending(let m),
+             .shieldedRecoveryCorrupted(let m), .shieldedRecoveryKeysRequired(let m),
              .transactionBroadcastUnconfirmed(let m),
              .masternodeWithdrawalUnconfirmed(let m),
              .masternodeListUnavailable(let m),
@@ -831,6 +853,12 @@ public enum PlatformWalletError: LocalizedError {
             self = .persisterStoreConstraint(detail)
         case .errorPersisterRestore:
             self = .persisterRestore(detail)
+        case .errorShieldedIdentityDebitPending:
+            self = .shieldedIdentityDebitPending(detail)
+        case .errorShieldedRecoveryCorrupted:
+            self = .shieldedRecoveryCorrupted(detail)
+        case .errorShieldedRecoveryKeysRequired:
+            self = .shieldedRecoveryKeysRequired(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

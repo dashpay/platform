@@ -6,3 +6,6 @@ mod prove_contract_history;
 
 /// The `prove_contract` module provides functionality for getting multiple proved contracts.
 mod prove_contracts;
+
+/// The `prove_contracts_by_range` module proves one page of the contract enumeration.
+mod prove_contracts_by_range;

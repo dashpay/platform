@@ -16,6 +16,8 @@ describe('ContractsFacade', () => {
   let getDataContractHistoryWithProofInfoStub: SinonStub;
   let getDataContractsStub: SinonStub;
   let getDataContractsWithProofInfoStub: SinonStub;
+  let getDataContractsByRangeStub: SinonStub;
+  let getDataContractsByRangeWithProofInfoStub: SinonStub;
   let contractPublishStub: SinonStub;
   let contractUpdateStub: SinonStub;
 
@@ -45,6 +47,12 @@ describe('ContractsFacade', () => {
     });
     getDataContractsStub = this.sinon.stub(wasmSdk, 'getDataContracts').resolves(new Map());
     getDataContractsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDataContractsWithProofInfo').resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
+    getDataContractsByRangeStub = this.sinon.stub(wasmSdk, 'getDataContractsByRange').resolves(new Map());
+    getDataContractsByRangeWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDataContractsByRangeWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
@@ -122,6 +130,26 @@ describe('ContractsFacade', () => {
       await client.contracts.getManyWithProof(contractIds);
 
       expect(getDataContractsWithProofInfoStub).to.be.calledOnceWithExactly(contractIds);
+    });
+  });
+
+  describe('getByRange()', () => {
+    it('should fetch a page of contracts by range', async () => {
+      const query = { limit: 2, startAfter: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec' };
+
+      await client.contracts.getByRange(query);
+
+      expect(getDataContractsByRangeStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('getByRangeWithProof()', () => {
+    it('should fetch a page of contracts by range with proof', async () => {
+      const query = { idsOnly: true };
+
+      await client.contracts.getByRangeWithProof(query);
+
+      expect(getDataContractsByRangeWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
   });
 

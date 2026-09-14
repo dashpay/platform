@@ -18,7 +18,7 @@ use dapi_grpc::platform::v0::{
 };
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyID};
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use drive_proof_verifier::types::{
     IdentityBalance, IdentityContractNonceFetcher, IdentityNonceFetcher, IdentityPublicKeys,
 };
@@ -221,7 +221,7 @@ fn identity_keys() {
     let expected: Vec<IdentityPublicKey> = serialized_keys
         .iter()
         .map(|serialized| {
-            IdentityPublicKey::deserialize_from_bytes(&common::hex_vec(serialized))
+            IdentityPublicKey::deserialize_from_bytes_untrusted(&common::hex_vec(serialized))
                 .expect("expected fixture key must deserialize")
         })
         .collect();

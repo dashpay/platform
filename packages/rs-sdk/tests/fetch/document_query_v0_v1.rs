@@ -27,10 +27,11 @@ use std::sync::Arc;
 use super::common::{mock_data_contract, mock_document_type};
 use dapi_grpc::platform::v0::get_documents_request::Version as ReqVersion;
 use dapi_grpc::platform::v0::GetDocumentsRequest;
+use dash_sdk::sdk::min_protocol_version;
 use dash_sdk::{platform::documents::document_query::DocumentQuery, Error as SdkError, SdkBuilder};
+use dpp::dashcore::Network;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
-use dpp::version::v11::PROTOCOL_VERSION_11;
 use dpp::version::{PlatformVersion, INITIAL_PROTOCOL_VERSION};
 use drive::query::conditions::{WhereClause, WhereOperator};
 use drive::query::ordering::OrderClause;
@@ -298,8 +299,10 @@ fn sdk_builder_default_seeds_atomic_to_floor() {
     // Auto-detect default: the atomic seeds to the effective floor,
     // max(INITIAL_PROTOCOL_VERSION, mainnet network floor), which
     // `version()` returns until the first response ratchets it upward.
+    // Read the floor from the SDK rather than repeating the number here, so
+    // the test follows `min_protocol_version` when the networks move on.
     let sdk_default = SdkBuilder::new_mock().build().expect("mock sdk");
-    let expected_floor = INITIAL_PROTOCOL_VERSION.max(PROTOCOL_VERSION_11);
+    let expected_floor = INITIAL_PROTOCOL_VERSION.max(min_protocol_version(Network::Mainnet));
     assert_eq!(sdk_default.version().protocol_version, expected_floor);
 }
 

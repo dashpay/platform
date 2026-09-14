@@ -4,7 +4,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
@@ -20,7 +20,7 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetProofsResponse>, Error> {
         let state_transition =
-            match StateTransition::deserialize_from_bytes(&state_transition_bytes) {
+            match StateTransition::deserialize_from_bytes_untrusted(&state_transition_bytes) {
                 Ok(state_transition) => state_transition,
                 Err(e) => {
                     return Ok(QueryValidationResult::new_with_error(QueryError::Protocol(

@@ -4,6 +4,7 @@ pub mod context_provider;
 pub mod dpns;
 pub mod error;
 pub mod logging;
+mod protocol_version_store;
 pub mod queries;
 pub mod sdk;
 pub mod serialization;
