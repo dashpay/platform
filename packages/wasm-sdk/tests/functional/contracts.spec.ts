@@ -135,7 +135,27 @@ describe('Data Contract Queries', function describeDataContractQueries() {
   describe('addKnownContract()', () => {
     it('should accept a contract the caller holds', async () => {
       const contract = await client.getDataContract(dpnsContractId);
-      expect(client.addKnownContract(contract)).to.be(true);
+      expect(client.addKnownContract(contract)).to.be.true();
+    });
+  });
+
+  describe('getDataContractsLatestVersions() on a fresh client', () => {
+    // The staleness check is the first thing an app asks after start-up, and a client
+    // seeded below protocol version 14 has not ratcheted yet: the verifier must take the
+    // proof shape from the responding node's protocol version, not from the client's.
+    it('should verify the version proof when pinned to protocol version 13', async () => {
+      const context = await prefetchLocalReady();
+      const freshClient = await sdk.WasmSdkBuilder.local()
+        .withTrustedContext(context)
+        .withVersion(13)
+        .build();
+      try {
+        const res = await freshClient.getDataContractsLatestVersions({ contractIds: [dpnsContractId] });
+        expect(res.get(dpnsContractId).version).to.be.at.least(1);
+        expect(res.get(dpnsContractId).dataContract).to.be.undefined();
+      } finally {
+        freshClient.free();
+      }
     });
   });
 
