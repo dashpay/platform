@@ -753,6 +753,13 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
+        // Contract version items: from this version the storage writer stores every
+        // contract's version as a four-byte item beside it, and
+        // `getDataContractsLatestVersions` reads and proves that item instead of the
+        // contracts. Every contract stored before this block gets its item here.
+        self.drive
+            .add_version_items_to_all_contracts(transaction, platform_version)?;
+
         Ok(())
     }
 }
@@ -1493,6 +1500,67 @@ mod tests {
         assert!(
             element.value.is_ok(),
             "AddressBalances root tree should exist"
+        );
+    }
+
+    /// A chain born at protocol version 13 stores its contracts without version items; the
+    /// transition to 14 gives every stored contract the item holding its stored version.
+    #[test]
+    fn test_transition_to_version_14_writes_the_version_item_of_every_contract() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let dpns_id = SystemDataContract::DPNS.id().to_buffer();
+        assert_eq!(
+            platform
+                .drive
+                .fetch_contract_version(dpns_id, None, platform_version)
+                .expect("expected to read the version item"),
+            None,
+            "a v13 genesis state has no version items"
+        );
+
+        let transaction = platform.drive.grove.start_transaction();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 10,
+            epoch: Epoch::default(),
+        };
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let mut checked = 0;
+        for system_contract in SystemDataContract::ALL {
+            let id = system_contract.id().to_buffer();
+            let Some(stored) = platform
+                .drive
+                .fetch_contract(id, None, None, Some(&transaction), platform_version)
+                .value
+                .expect("expected to fetch the contract")
+            else {
+                // not every system contract is registered at a v13 genesis
+                continue;
+            };
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_contract_version(id, Some(&transaction), platform_version)
+                    .expect("expected to read the version item"),
+                Some(stored.contract.version()),
+                "{system_contract:?} has its version item after the transition"
+            );
+            checked += 1;
+        }
+        assert!(
+            checked >= 3,
+            "expected the genesis system contracts to be checked"
         );
     }
 

@@ -15,6 +15,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_contract_history: 0,
         verify_contract_return_serialization: 0,
         verify_contracts_by_range: 0,
+        verify_contracts_versions: 0,
     },
     document: DriveVerifyDocumentMethodVersions {
         verify_proof: 0,

@@ -49,35 +49,93 @@ impl FromProof<GetDataContractsLatestVersionsRequest> for DataContractsLatestVer
             })
             .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
-        // The proof is the multi-contract proof, which carries the contracts: each version is
-        // read off the verified contract, and the contract is kept only when it was asked for.
-        let (root_hash, contracts) = Drive::verify_contracts(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            false,
-            ids.as_slice(),
-            platform_version,
-        )
-        .map_drive_error(proof, mtd)?;
+        // From protocol version 14 (helper version 1) every contract carries a version item,
+        // and a request without the contracts is answered by a proof of those items. Before
+        // that, and whenever the contracts were asked for, the proof is the multi-contract
+        // proof, which carries the contracts: each version is read off the verified contract,
+        // and the contract is kept only when it was asked for.
+        //
+        // The shape follows the protocol version the responding node ran at, which the
+        // metadata carries and the quorum signature covers, not the version this client is
+        // seeded with: a client still at 13 must accept the version item proof of an upgraded
+        // network (its version only ratchets after a proof verifies), and a client already at
+        // 14 must accept the multi-contract proof of a network that has not activated yet. A
+        // wrong shape can only fail verification, never pass a bad proof.
+        let response_platform_version =
+            PlatformVersion::get(mtd.protocol_version).unwrap_or(platform_version);
+        let from_version_items = match response_platform_version
+            .drive_abci
+            .query
+            .data_contract_query_helpers
+            .latest_versions_read
+        {
+            0 => false,
+            1 => !include_contracts,
+            version => {
+                return Err(Error::DriveError {
+                    error: format!(
+                        "unknown data contract latest versions helper version {version}"
+                    ),
+                })
+            }
+        };
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        let proof_bytes = supported_grovedb_proof_bytes(proof, platform_version)?;
 
-        let versions = contracts
-            .into_iter()
-            .map(|(id, maybe_contract)| {
-                let id = Identifier::from_bytes(&id).map_err(|e| Error::ResultEncodingError {
-                    error: e.to_string(),
-                })?;
-                let entry = maybe_contract.map(|contract| DataContractLatestVersion {
-                    version: contract.version(),
-                    data_contract: include_contracts.then_some(contract),
-                });
-                Ok((id, entry))
-            })
-            .collect::<Result<DataContractsLatestVersions, Error>>()?;
+        let versions = if from_version_items {
+            let (root_hash, versions) = Drive::verify_contracts_versions(
+                proof_bytes,
+                ids.as_slice(),
+                response_platform_version,
+            )
+            .map_drive_error(proof, mtd)?;
+
+            verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+
+            versions
+                .into_iter()
+                .map(|(id, maybe_version)| {
+                    let id = identifier_from_bytes(&id)?;
+                    let entry = maybe_version.map(|version| DataContractLatestVersion {
+                        version,
+                        data_contract: None,
+                    });
+                    Ok((id, entry))
+                })
+                .collect::<Result<DataContractsLatestVersions, Error>>()?
+        } else {
+            let (root_hash, contracts) = Drive::verify_contracts(
+                proof_bytes,
+                false,
+                ids.as_slice(),
+                response_platform_version,
+            )
+            .map_drive_error(proof, mtd)?;
+
+            verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+
+            contracts
+                .into_iter()
+                .map(|(id, maybe_contract)| {
+                    let id = identifier_from_bytes(&id)?;
+                    let entry = maybe_contract.map(|contract| DataContractLatestVersion {
+                        version: contract.version(),
+                        data_contract: include_contracts.then_some(contract),
+                    });
+                    Ok((id, entry))
+                })
+                .collect::<Result<DataContractsLatestVersions, Error>>()?
+        };
 
         // Every requested id has an entry, so the result is never absent.
         Ok((Some(versions), mtd.clone(), proof.clone()))
     }
+}
+
+fn identifier_from_bytes(bytes: &[u8; 32]) -> Result<Identifier, Error> {
+    Identifier::from_bytes(bytes).map_err(|e| Error::ResultEncodingError {
+        error: e.to_string(),
+    })
 }
 
 #[cfg(test)]

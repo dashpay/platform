@@ -6,8 +6,8 @@ use dpp::identifier::Identifier;
 ///
 /// `data_contract` is `Some` only when the request set `include_contracts`. The query exists
 /// so that a client can check the contracts it already holds against `version` without
-/// transferring them again; the unproved form is answered from Drive's contract cache with
-/// one integer per contract.
+/// transferring them again: from protocol version 14 a request without the contracts is
+/// answered from, and proved by, the four-byte version item each contract carries in state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataContractLatestVersion {
     /// The contract's current version number.
@@ -19,7 +19,7 @@ pub struct DataContractLatestVersion {
 /// The current versions of the requested data contracts (`getDataContractsLatestVersions`),
 /// keyed by contract id.
 ///
-/// Every requested id is a key. A value is `None` when no contract has that id, and
+/// Every distinct requested id is a key. A value is `None` when no contract has that id, and
 /// `Some(entry)` otherwise; the entry carries the contract only when the request asked for
 /// it.
 #[derive(Debug, Default, Clone, PartialEq)]
