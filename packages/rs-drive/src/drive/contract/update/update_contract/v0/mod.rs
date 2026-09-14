@@ -111,7 +111,10 @@ impl Drive {
             platform_version,
         )?;
 
-        // Update DataContracts cache with the new contract
+        // Update DataContracts cache with the new contract. The snapshot is taken before the
+        // read so that, without a transaction, a rewrite straddling a block commit does not
+        // publish a copy that predates it.
+        let observed_generation = self.cache.data_contracts.committed_generation();
         let updated_contract_fetch_info = self
             .fetch_contract_and_add_operations(
                 contract.id().to_buffer(),
@@ -124,9 +127,11 @@ impl Drive {
                 "contract should exist",
             )))?;
 
-        self.cache
-            .data_contracts
-            .insert(updated_contract_fetch_info, transaction.is_some());
+        self.cache.data_contracts.insert_rewritten(
+            updated_contract_fetch_info,
+            transaction.is_some(),
+            observed_generation,
+        );
 
         Drive::calculate_fee(
             None,
