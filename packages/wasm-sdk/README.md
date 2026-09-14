@@ -172,6 +172,8 @@ const client = await b.withSettings(5000, 10000, 3, true).withLogs('info').build
 const status = await client.getStatus();
 // Enumerate contracts one page at a time, ascending by id (pass the last key as startAfter)
 const contracts = await client.getDataContractsByRange({ limit: 100 });
+// Check that contracts held locally are still current (versions only; the contracts themselves only with includeContracts)
+const versions = await client.getDataContractsLatestVersions({ contractIds: ['GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec'] });
 client.free();
 ```
 

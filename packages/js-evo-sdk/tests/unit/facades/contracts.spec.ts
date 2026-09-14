@@ -18,6 +18,8 @@ describe('ContractsFacade', () => {
   let getDataContractsWithProofInfoStub: SinonStub;
   let getDataContractsByRangeStub: SinonStub;
   let getDataContractsByRangeWithProofInfoStub: SinonStub;
+  let getDataContractsLatestVersionsStub: SinonStub;
+  let getDataContractsLatestVersionsWithProofInfoStub: SinonStub;
   let contractPublishStub: SinonStub;
   let contractUpdateStub: SinonStub;
 
@@ -53,6 +55,12 @@ describe('ContractsFacade', () => {
     });
     getDataContractsByRangeStub = this.sinon.stub(wasmSdk, 'getDataContractsByRange').resolves(new Map());
     getDataContractsByRangeWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDataContractsByRangeWithProofInfo').resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
+    getDataContractsLatestVersionsStub = this.sinon.stub(wasmSdk, 'getDataContractsLatestVersions').resolves(new Map());
+    getDataContractsLatestVersionsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDataContractsLatestVersionsWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
@@ -150,6 +158,26 @@ describe('ContractsFacade', () => {
       await client.contracts.getByRangeWithProof(query);
 
       expect(getDataContractsByRangeWithProofInfoStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('getLatestVersions()', () => {
+    it('should fetch the latest versions of contracts', async () => {
+      const query = { contractIds: ['GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec'], includeContracts: true };
+
+      await client.contracts.getLatestVersions(query);
+
+      expect(getDataContractsLatestVersionsStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('getLatestVersionsWithProof()', () => {
+    it('should fetch the latest versions of contracts with proof', async () => {
+      const query = { contractIds: ['GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec'] };
+
+      await client.contracts.getLatestVersionsWithProof(query);
+
+      expect(getDataContractsLatestVersionsWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
   });
 

@@ -5,6 +5,9 @@ use crate::WasmSdkError;
 use dash_sdk::platform::data_contracts_by_range::{
     DataContractsByRange, DataContractsByRangeQuery, DataContractsByRangeStart,
 };
+use dash_sdk::platform::data_contracts_latest_versions::{
+    DataContractLatestVersion, DataContractsLatestVersions, DataContractsLatestVersionsQuery,
+};
 use dash_sdk::platform::query::LimitQuery;
 use dash_sdk::platform::{DataContract, Fetch, FetchMany, Identifier};
 use drive_proof_verifier::types::{DataContractHistory, DataContracts};
@@ -178,6 +181,89 @@ fn parse_data_contracts_by_range_query(
     })
 }
 
+#[wasm_bindgen(typescript_custom_section)]
+const DATA_CONTRACTS_LATEST_VERSIONS_QUERY_TS: &'static str = r#"
+/**
+ * Query parameters for the current versions of data contracts
+ * (`getDataContractsLatestVersions`): the cheap check that contracts held locally are still
+ * current.
+ */
+export interface DataContractsLatestVersionsQuery {
+  /**
+   * Data contract identifiers, at least one and at most 100.
+   */
+  contractIds: IdentifierLike[]
+
+  /**
+   * Also return the contracts. Off by default: the query exists to learn the versions without
+   * transferring the contracts.
+   * @default false
+   */
+  includeContracts?: boolean;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DataContractsLatestVersionsQuery")]
+    pub type DataContractsLatestVersionsQueryJs;
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DataContractsLatestVersionsQueryInput {
+    #[serde(default)]
+    include_contracts: bool,
+}
+
+fn parse_data_contracts_latest_versions_query(
+    query: DataContractsLatestVersionsQueryJs,
+) -> Result<DataContractsLatestVersionsQuery, WasmSdkError> {
+    let query_js: JsValue = query.into();
+
+    // Extract the ids before serde: IdentifierLike accepts a string, a Uint8Array or an
+    // Identifier object, none of which serde reads.
+    let ids_js = js_sys::Reflect::get(&query_js, &JsValue::from_str("contractIds"))
+        .map_err(|_| WasmSdkError::invalid_argument("contractIds is required".to_string()))?;
+    let ids: Vec<Identifier> =
+        try_to_vec::<IdentifierWasm, _, _>(ids_js, "contractIds", "identifier")?;
+
+    let input: DataContractsLatestVersionsQueryInput = deserialize_required_query(
+        query_js,
+        "Query object is required",
+        "data contracts latest versions query",
+    )?;
+
+    Ok(DataContractsLatestVersionsQuery {
+        ids,
+        include_contracts: input.include_contracts,
+    })
+}
+
+/// The current version of one data contract, with the contract only when the query asked
+/// for it.
+#[wasm_bindgen(js_name = "DataContractLatestVersion")]
+#[derive(Clone)]
+pub struct DataContractLatestVersionWasm {
+    version: u32,
+    data_contract: Option<DataContractWasm>,
+}
+
+#[wasm_bindgen(js_class = DataContractLatestVersion)]
+impl DataContractLatestVersionWasm {
+    /// The contract's current version number.
+    #[wasm_bindgen(getter)]
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// The contract itself, only when the query set `includeContracts`.
+    #[wasm_bindgen(getter = "dataContract")]
+    pub fn data_contract(&self) -> Option<DataContractWasm> {
+        self.data_contract.clone()
+    }
+}
+
 impl WasmSdk {
     /// Fetch one contract (proved) and seed the trusted-context cache
     /// with it, so the document queries that follow find it there
@@ -224,6 +310,33 @@ impl WasmSdk {
         }
 
         contracts_map
+    }
+
+    /// Turns the versions lookup into a JS `Map` keyed by base58 contract id, seeding the
+    /// trusted-context cache with every contract the lookup carried. An id no contract has maps
+    /// to `undefined`.
+    pub(crate) fn data_contracts_latest_versions_to_map(
+        &self,
+        versions: DataContractsLatestVersions,
+    ) -> Map {
+        let versions_map = Map::new();
+
+        for (id, latest) in versions {
+            let key: JsValue = IdentifierWasm::from(id).to_base58().into();
+            let value = latest.map(|latest| {
+                let data_contract = latest.data_contract.map(|contract| {
+                    self.cache_contract(contract.clone());
+                    DataContractWasm::from(contract)
+                });
+                DataContractLatestVersionWasm {
+                    version: latest.version,
+                    data_contract,
+                }
+            });
+            versions_map.set(&key, &JsValue::from(value));
+        }
+
+        versions_map
     }
 }
 
@@ -345,6 +458,27 @@ impl WasmSdk {
         Ok(self.data_contracts_page_to_map(page))
     }
 
+    /// The current versions of data contracts: the cheap check that contracts held locally
+    /// are still current. One map entry per requested id, `undefined` for an id no contract
+    /// has; contracts come back only with `includeContracts`.
+    ///
+    /// This SDK verifies the answer, and the proof is the multi-contract proof, so the call
+    /// costs as much as `getDataContracts`; the saving is on the unproved gRPC path.
+    #[wasm_bindgen(
+        js_name = "getDataContractsLatestVersions",
+        unchecked_return_type = "Map<string, DataContractLatestVersion | undefined>"
+    )]
+    pub async fn get_data_contracts_latest_versions(
+        &self,
+        query: DataContractsLatestVersionsQueryJs,
+    ) -> Result<Map, WasmSdkError> {
+        let query = parse_data_contracts_latest_versions_query(query)?;
+
+        let versions = DataContractLatestVersion::fetch_many(self.as_ref(), query).await?;
+
+        Ok(self.data_contracts_latest_versions_to_map(versions))
+    }
+
     // Proof info versions for data contract queries
 
     #[wasm_bindgen(
@@ -434,6 +568,32 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             contracts_map,
+            metadata,
+            proof,
+        ))
+    }
+
+    /// The current versions of data contracts together with their proof and metadata.
+    #[wasm_bindgen(
+        js_name = "getDataContractsLatestVersionsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, DataContractLatestVersion | undefined>>"
+    )]
+    pub async fn get_data_contracts_latest_versions_with_proof_info(
+        &self,
+        query: DataContractsLatestVersionsQueryJs,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let query = parse_data_contracts_latest_versions_query(query)?;
+
+        let (versions, metadata, proof) =
+            DataContractLatestVersion::fetch_many_with_metadata_and_proof(
+                self.as_ref(),
+                query,
+                None,
+            )
+            .await?;
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            self.data_contracts_latest_versions_to_map(versions),
             metadata,
             proof,
         ))

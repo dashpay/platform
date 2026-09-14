@@ -113,6 +113,7 @@ pub struct DriveAbciQueryDataContractVersions {
     pub data_contract_history: FeatureVersionBounds,
     pub data_contracts: FeatureVersionBounds,
     pub data_contracts_by_range: FeatureVersionBounds,
+    pub data_contracts_latest_versions: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
