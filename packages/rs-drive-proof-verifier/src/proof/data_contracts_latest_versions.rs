@@ -54,7 +54,16 @@ impl FromProof<GetDataContractsLatestVersionsRequest> for DataContractsLatestVer
         // that, and whenever the contracts were asked for, the proof is the multi-contract
         // proof, which carries the contracts: each version is read off the verified contract,
         // and the contract is kept only when it was asked for.
-        let from_version_items = match platform_version
+        //
+        // The shape follows the protocol version the responding node ran at, which the
+        // metadata carries and the quorum signature covers, not the version this client is
+        // seeded with: a client still at 13 must accept the version item proof of an upgraded
+        // network (its version only ratchets after a proof verifies), and a client already at
+        // 14 must accept the multi-contract proof of a network that has not activated yet. A
+        // wrong shape can only fail verification, never pass a bad proof.
+        let response_platform_version =
+            PlatformVersion::get(mtd.protocol_version).unwrap_or(platform_version);
+        let from_version_items = match response_platform_version
             .drive_abci
             .query
             .data_contract_query_helpers
@@ -74,9 +83,12 @@ impl FromProof<GetDataContractsLatestVersionsRequest> for DataContractsLatestVer
         let proof_bytes = supported_grovedb_proof_bytes(proof, platform_version)?;
 
         let versions = if from_version_items {
-            let (root_hash, versions) =
-                Drive::verify_contracts_versions(proof_bytes, ids.as_slice(), platform_version)
-                    .map_drive_error(proof, mtd)?;
+            let (root_hash, versions) = Drive::verify_contracts_versions(
+                proof_bytes,
+                ids.as_slice(),
+                response_platform_version,
+            )
+            .map_drive_error(proof, mtd)?;
 
             verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
@@ -92,9 +104,13 @@ impl FromProof<GetDataContractsLatestVersionsRequest> for DataContractsLatestVer
                 })
                 .collect::<Result<DataContractsLatestVersions, Error>>()?
         } else {
-            let (root_hash, contracts) =
-                Drive::verify_contracts(proof_bytes, false, ids.as_slice(), platform_version)
-                    .map_drive_error(proof, mtd)?;
+            let (root_hash, contracts) = Drive::verify_contracts(
+                proof_bytes,
+                false,
+                ids.as_slice(),
+                response_platform_version,
+            )
+            .map_drive_error(proof, mtd)?;
 
             verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
