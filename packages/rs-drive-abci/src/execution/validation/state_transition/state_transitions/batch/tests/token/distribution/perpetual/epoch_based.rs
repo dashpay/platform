@@ -15,6 +15,7 @@ const INITIAL_BALANCE: u64 = 100_000;
 
 mod perpetual_distribution_epoch {
     use super::*;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
     use dpp::block::epoch::{Epoch, EpochIndex};
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
@@ -27,6 +28,7 @@ mod perpetual_distribution_epoch {
     use dpp::prelude::IdentityNonce;
     use dpp::version::ProtocolVersion;
     use simple_signer::signer::SimpleSigner;
+    use std::sync::Arc;
 
     /// The contract is registered in epoch 6 and pays a fixed amount every two epochs. A nonzero
     /// start with an interval above one is the shape whose cycle cap overflowed `u16` up to
@@ -45,7 +47,10 @@ mod perpetual_distribution_epoch {
         token_id: Identifier,
     }
 
-    fn setup(protocol_version: ProtocolVersion) -> EpochTokenFixture {
+    fn setup(
+        protocol_version: ProtocolVersion,
+        contract_creation_epoch: EpochIndex,
+    ) -> EpochTokenFixture {
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
         let mut platform = TestPlatformBuilder::new()
@@ -79,7 +84,7 @@ mod perpetual_distribution_epoch {
             None,
             None,
             None,
-            Some(CONTRACT_CREATION_EPOCH),
+            Some(contract_creation_epoch),
             platform_version,
         );
 
@@ -156,6 +161,14 @@ mod perpetual_distribution_epoch {
             processing_result
         }
 
+        /// Moves the platform state to `protocol_version`, as the first block of an upgrade does.
+        fn upgrade_to(&self, protocol_version: ProtocolVersion) {
+            let mut upgraded_state = self.platform.state.load().as_ref().clone();
+            upgraded_state.set_current_protocol_version_in_consensus(protocol_version);
+            upgraded_state.set_next_epoch_protocol_version(protocol_version);
+            self.platform.state.store(Arc::new(upgraded_state));
+        }
+
         fn owner_token_balance(&self, platform_version: &PlatformVersion) -> Option<u64> {
             self.platform
                 .drive
@@ -172,7 +185,7 @@ mod perpetual_distribution_epoch {
     #[tokio::test]
     async fn should_claim_epoch_rewards_with_a_nonzero_start_from_protocol_version_14() {
         let platform_version = PlatformVersion::latest();
-        let fixture = setup(platform_version.protocol_version);
+        let fixture = setup(platform_version.protocol_version, CONTRACT_CREATION_EPOCH);
 
         // Epoch 10: the cycle that began at epoch 8 is complete; the one beginning now is not.
         // Up to protocol version 13 this claim was refused every time.
@@ -214,6 +227,57 @@ mod perpetual_distribution_epoch {
         );
     }
 
+    /// Protocol version 13 could pay an interval-two token only while its start was below two,
+    /// where the cap did not wrap yet. That claim leaves the last paid moment off a cycle boundary
+    /// (the cap was the current cycle moment less one) and, for a fixed amount, one cycle short:
+    /// `steps_till` drops a cycle when the start sits on a boundary and the end does not. After
+    /// the upgrade the same count pays one cycle extra for a start off a boundary and an end on
+    /// it, so every cycle is paid exactly once overall, and from then on every stored moment sits
+    /// on a boundary and the counts agree.
+    #[tokio::test]
+    async fn should_pay_every_cycle_once_after_a_version_13_claim_left_the_start_off_a_boundary() {
+        let v13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        let v14 = PlatformVersion::latest();
+        let fixture = setup(v13.protocol_version, 0);
+
+        // Epoch 10 under version 13: the cycles at epochs 2, 4, 6 and 8 are complete, the cap is
+        // 9, and the count pays three of them; the stored moment is 9.
+        let processing_result = fixture.claim_in_epoch(2, 10, v13).await;
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert_eq!(
+            fixture.owner_token_balance(v13),
+            Some(INITIAL_BALANCE + 3 * AMOUNT_PER_CYCLE)
+        );
+
+        fixture.upgrade_to(v14.protocol_version);
+
+        // Epoch 14 under version 14: the cap is the completed cycle at 12, and the count from the
+        // stored moment 9 pays the cycles at 10 and 12 plus the one dropped before: six in all.
+        let processing_result = fixture.claim_in_epoch(3, 14, v14).await;
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert_eq!(
+            fixture.owner_token_balance(v14),
+            Some(INITIAL_BALANCE + 6 * AMOUNT_PER_CYCLE)
+        );
+
+        // Epoch 16: from the stored moment 12, on a boundary, exactly the cycle at 14.
+        let processing_result = fixture.claim_in_epoch(4, 16, v14).await;
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert_eq!(
+            fixture.owner_token_balance(v14),
+            Some(INITIAL_BALANCE + 7 * AMOUNT_PER_CYCLE)
+        );
+    }
+
     /// Protocol version 13 is frozen with the wrapping cap: the same claim is refused as having
     /// no rewards. The test profile checks arithmetic, so this also proves the frozen path
     /// reaches that refusal without an overflow panic, and replaying such a block cannot halt a
@@ -221,7 +285,7 @@ mod perpetual_distribution_epoch {
     #[tokio::test]
     async fn should_keep_refusing_epoch_rewards_with_a_nonzero_start_at_protocol_version_13() {
         let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
-        let fixture = setup(platform_version.protocol_version);
+        let fixture = setup(platform_version.protocol_version, CONTRACT_CREATION_EPOCH);
 
         let processing_result = fixture.claim_in_epoch(2, 10, platform_version).await;
         assert_matches!(

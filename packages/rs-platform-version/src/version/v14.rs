@@ -223,8 +223,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    shape in which `evaluate_interval`'s fixed-amount step count and its
 ///    per-cycle loop agree). Up to v13 the sum was taken in `u16`: a
 ///    fixed-amount function allows 32,767 cycles, so any epoch interval of
-///    three or more (or two with a start at epoch two or later) pushed the
-///    cap past `u16::MAX`. Release builds wrap, the cap landed below the
+///    three or more with a nonzero start (or two with a start at epoch two
+///    or later) pushed the cap past `u16::MAX`. Release builds wrap, the cap landed below the
 ///    start, `evaluate_interval` saw an empty range and the claim was
 ///    refused with `InvalidTokenClaimNoCurrentRewards` on every attempt. The
 ///    v0 arithmetic is kept, wrapping explicitly, so those refusals replay.
