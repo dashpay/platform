@@ -12,7 +12,9 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // resolves to. Also bump document create state validation to 2 and document
 // replace state validation to 1, adding `refersTo` document reference
 // validation (referenced identities and contracts must exist), and introduce
-// the `document_reference_validation` feature version.
+// the `document_reference_validation` feature version. Also bump
+// `delete_withdrawal_data_trigger` to 2 so owners can delete withdrawals in the
+// terminal FAILED status the withdrawals contract v2 admits.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -174,7 +176,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                         create_identity_data_trigger: 0,
                         create_feature_flag_data_trigger: 0,
                         create_masternode_reward_shares_data_trigger: 0,
-                        delete_withdrawal_data_trigger: 1,
+                        delete_withdrawal_data_trigger: 2, // changed in v14: FAILED withdrawals may be deleted like COMPLETE ones
                         // Reject does no drive reads — stays at v0.
                         reject_data_trigger: 0,
                     },
