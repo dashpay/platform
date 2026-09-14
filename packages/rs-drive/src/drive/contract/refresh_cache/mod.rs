@@ -33,8 +33,12 @@ impl Drive {
     ///   insert only after the block was committed and promoted, is closed by the committed
     ///   generation check in [`DataContractCache::insert_committed`].
     /// * Without a transaction the write is committed already: the superseded copy is evicted
-    ///   from both caches and the next reader reloads the contract from state. Block execution
-    ///   never takes this path; it exists for direct callers that write outside a block.
+    ///   from both caches through [`DataContractCache::replace_committed`], which also advances
+    ///   the committed generation so that a reader that read the pre-write contract cannot put
+    ///   it back, and the next reader reloads the contract from state. Block execution never
+    ///   takes this path; it exists for direct callers that write outside a block.
+    ///
+    ///   [`DataContractCache::replace_committed`]: crate::cache::DataContractCache::replace_committed
     ///
     ///   [`DataContractCache::insert_committed`]: crate::cache::DataContractCache::insert_committed
     ///
@@ -51,12 +55,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        // Drop the superseded copy from both caches.
-        self.cache.data_contracts.remove(contract_id);
-
-        // Without a transaction the rewrite is committed already: evicting is enough, and the
-        // next reader reloads the contract from state.
+        // Without a transaction the rewrite is committed already: evicting is enough for the
+        // next reader, which reloads the contract from state, and recording the commit keeps
+        // a reader that read the pre-write contract from putting it back.
         if transaction.is_none() {
+            self.cache
+                .data_contracts
+                .replace_committed(contract_id, None);
             return Ok(());
         }
 
@@ -74,6 +79,9 @@ impl Drive {
         self.cache
             .data_contracts
             .mark_modified_in_block(contract_id);
+
+        // Drop the superseded copy from both caches before re-seeding.
+        self.cache.data_contracts.remove(contract_id);
 
         // A contract that is not in state has nothing to cache: leaving both caches empty is
         // then the correct outcome, and the next reader will fetch and find it absent.
@@ -301,6 +309,15 @@ mod tests {
                 platform_version,
             )
             .expect("expected to rewrite the contract");
+        // A committed-state reader that read the pre-write contract before the rewrite and
+        // performs its insert only now.
+        let observed_before_the_rewrite = drive.cache.data_contracts.committed_generation();
+        let pre_write = drive
+            .cache
+            .data_contracts
+            .get(contract_id, false)
+            .expect("the warmed copy must be present");
+
         drive
             .refresh_data_contract_cache_from_state(contract_id, None, platform_version)
             .expect("expected the refresh to succeed");
@@ -310,6 +327,15 @@ mod tests {
             "the superseded copy must be evicted"
         );
         assert!(!drive.cache.data_contracts.is_modified_in_block(contract_id));
+
+        drive
+            .cache
+            .data_contracts
+            .insert_committed(pre_write, observed_before_the_rewrite);
+        assert!(
+            drive.cache.data_contracts.get(contract_id, false).is_none(),
+            "a reader that read the pre-write contract must not put it back after the rewrite"
+        );
         assert_eq!(
             drive
                 .get_contract_with_fetch_info(contract_id, true, None, platform_version)

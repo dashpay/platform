@@ -98,11 +98,15 @@ impl DataContractCache {
     /// Inserts a contract read from committed state into the global cache, unless a block
     /// was committed since `observed` was taken.
     ///
-    /// The generation is compared inside moka's per-key compute closure, so there is no
-    /// window between the comparison and the write: a promotion that bumps the generation
-    /// either happens-before this insert, in which case the insert is dropped, or after it,
-    /// in which case the promotion overwrites what was inserted. The same-contract version
-    /// guard of [`Self::insert_block`] applies as well.
+    /// The generation is compared inside moka's per-key compute closure, which runs and
+    /// applies its write under the key-level lock, and every write that must be ordered
+    /// against this insert ([`Self::merge_and_clear_block_cache`],
+    /// [`Self::replace_committed`]) goes through that same lock. A promotion therefore either
+    /// runs before this insert reaches the lock, in which case the insert sees the new
+    /// generation and is dropped, or after it, in which case the promotion overwrites what
+    /// was inserted. There is no interleaving in which an insert approved under the old
+    /// generation lands after the promotion. The same-contract version guard of
+    /// [`Self::insert_block`] applies as well.
     pub fn insert_committed(
         &self,
         fetch_info: Arc<DataContractFetchInfo>,
@@ -132,20 +136,45 @@ impl DataContractCache {
     /// When the rewrite went through the block transaction (`in_block_transaction`), the
     /// contract is marked as modified in the block and the copy goes to the block cache, see
     /// [`Self::mark_modified_in_block`]. Otherwise the rewrite is committed already and the
-    /// copy goes to the global cache through [`Self::insert_committed`]; `observed` must have
-    /// been taken before the read that produced `fetch_info`.
+    /// copy replaces the global entry through [`Self::replace_committed`].
     pub fn insert_rewritten(
         &self,
         fetch_info: Arc<DataContractFetchInfo>,
         in_block_transaction: bool,
-        observed: CommittedGeneration,
     ) {
+        let contract_id = fetch_info.contract.id().to_buffer();
         if in_block_transaction {
-            self.mark_modified_in_block(fetch_info.contract.id().to_buffer());
+            self.mark_modified_in_block(contract_id);
             self.insert_block(fetch_info);
         } else {
-            self.insert_committed(fetch_info, observed);
+            self.replace_committed(contract_id, Some(fetch_info));
         }
+    }
+
+    /// Records a rewrite of the contract in committed state, made outside any block
+    /// transaction, and replaces the global entry with `fetch_info`, or removes it when
+    /// `None`.
+    ///
+    /// Such a rewrite is a commit like any other: a committed-state reader that took its
+    /// snapshot before it may hold the pre-write copy. The generation is advanced first, so
+    /// that reader inserts nothing, and the replacement goes through the per-key compute
+    /// lock that [`Self::insert_committed`] evaluates its check under, so a reader whose
+    /// insert was already approved lands it before, not after, the replacement. Block
+    /// execution never takes this path; it exists for direct callers that write outside a
+    /// block.
+    pub fn replace_committed(
+        &self,
+        contract_id: [u8; 32],
+        fetch_info: Option<Arc<DataContractFetchInfo>>,
+    ) {
+        self.committed_generation.fetch_add(1, Ordering::SeqCst);
+        self.block_cache.remove(&contract_id);
+        self.global_cache
+            .entry(contract_id)
+            .and_compute_with(|_| match fetch_info {
+                Some(fetch_info) => Op::Put(fetch_info),
+                None => Op::Remove,
+            });
     }
 
     /// Tries to get a data contract from the block cache if the read is transactional, then
@@ -219,22 +248,33 @@ impl DataContractCache {
     /// dropped by a rollback and not read again) is removed from the global cache instead,
     /// because a committed-state reader may have inserted the pre-block definition there
     /// while the block was executing.
+    ///
+    /// Every global-cache write here goes through moka's per-key compute lock, the lock
+    /// [`Self::insert_committed`] evaluates its generation check under. A reader whose
+    /// closure already approved its insert holds that lock until the insert is applied, so
+    /// the promotion waits for it and then overwrites (or removes) it; a reader that reaches
+    /// the lock afterwards sees the new generation and inserts nothing. moka's plain
+    /// `insert` and `remove` do not take that lock and would let an approved insert of the
+    /// pre-block definition land after the promotion.
     pub fn merge_and_clear_block_cache(&self) {
         // Bumping first closes the door on committed-state readers that read before the
-        // commit: their inserts are dropped from here on, and any that already landed are
-        // overwritten or removed below.
+        // commit: their inserts are dropped from here on, and any that already landed, or
+        // are about to under the key lock, are overwritten or removed below.
         self.committed_generation.fetch_add(1, Ordering::SeqCst);
 
         let modified = std::mem::take(&mut *self.block_modified.write());
         for contract_id in modified {
             if !self.block_cache.contains_key(&contract_id) {
-                self.global_cache.remove(&contract_id);
+                self.global_cache
+                    .entry(contract_id)
+                    .and_compute_with(|_| Op::Remove);
             }
         }
 
         for (contract_id, fetch_info) in self.block_cache.iter() {
             self.global_cache
-                .insert(Arc::unwrap_or_clone(contract_id), fetch_info);
+                .entry(*contract_id)
+                .and_compute_with(|_| Op::Put(fetch_info));
         }
         self.block_cache.invalidate_all();
     }
@@ -266,6 +306,9 @@ mod tests {
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::fee::fee_result::FeeResult;
     use dpp::version::PlatformVersion;
+    use std::sync::Barrier;
+    use std::thread;
+    use std::time::Duration;
 
     /// Two copies of the SAME contract (same id) at the given versions. The fixture generates
     /// a fresh contract id per call, so both copies must derive from a single fixture.
@@ -566,6 +609,60 @@ mod tests {
         }
     }
 
+    mod replace_committed {
+        use super::*;
+
+        /// A rewrite outside any block transaction is a commit: a reader that read the
+        /// pre-write contract before it must not be able to put it back afterwards, whether
+        /// the rewrite published its replacement or only evicted the superseded copy.
+        #[test]
+        fn test_a_reader_that_read_before_the_rewrite_cannot_insert_after_it() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+            let (pre_write, rewritten) = same_contract_at_versions(1, 2);
+            let contract_id = pre_write.contract.id().to_buffer();
+
+            let observed_before_the_rewrite = data_contract_cache.committed_generation();
+            data_contract_cache.replace_committed(contract_id, Some(rewritten));
+            data_contract_cache
+                .insert_committed(Arc::clone(&pre_write), observed_before_the_rewrite);
+            assert_eq!(
+                data_contract_cache
+                    .get(contract_id, false)
+                    .expect("should be present")
+                    .contract
+                    .version(),
+                2
+            );
+
+            let observed_before_the_eviction = data_contract_cache.committed_generation();
+            data_contract_cache.replace_committed(contract_id, None);
+            data_contract_cache.insert_committed(pre_write, observed_before_the_eviction);
+            assert!(
+                data_contract_cache.get(contract_id, false).is_none(),
+                "an evicted contract must not be re-admitted by a reader that read before the rewrite"
+            );
+        }
+
+        #[test]
+        fn test_replaces_the_block_cache_copy_as_well() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+            let (stale, rewritten) = same_contract_at_versions(1, 2);
+            let contract_id = stale.contract.id().to_buffer();
+
+            data_contract_cache.insert_block(stale);
+            data_contract_cache.replace_committed(contract_id, Some(rewritten));
+
+            assert_eq!(
+                data_contract_cache
+                    .get(contract_id, true)
+                    .expect("should be present")
+                    .contract
+                    .version(),
+                2
+            );
+        }
+    }
+
     mod remove {
         use super::*;
 
@@ -740,6 +837,98 @@ mod tests {
             data_contract_cache.merge_and_clear_block_cache();
 
             assert!(!data_contract_cache.is_modified_in_block(contract_id));
+        }
+
+        /// A committed-state reader whose insert has passed its generation check and is about
+        /// to be applied when the block is promoted. The reader holds moka's per-key lock from
+        /// the moment its closure runs until its write lands; a promotion through plain
+        /// `insert` would slip in between and be overwritten by the reader's pre-block copy.
+        /// The promotion must wait for the reader and overwrite it instead. The reader is
+        /// modelled with the entry API directly, paused inside its closure, which is exactly
+        /// the state `insert_committed` is in once its check has passed.
+        #[test]
+        fn test_merge_overwrites_a_committed_insert_approved_before_the_promotion() {
+            let data_contract_cache = Arc::new(DataContractCache::new(10, 10));
+            let (committed, rewritten) = same_contract_at_versions(1, 2);
+            let contract_id = committed.contract.id().to_buffer();
+
+            data_contract_cache.mark_modified_in_block(contract_id);
+            data_contract_cache.insert_block(rewritten);
+
+            let final_version =
+                promote_while_a_committed_insert_is_paused(&data_contract_cache, committed);
+
+            assert_eq!(
+                final_version,
+                Some(2),
+                "the promoted contract must survive a committed insert approved before the promotion"
+            );
+        }
+
+        /// Same interleaving when the rewritten contract is no longer in the block cache: the
+        /// promotion removes the global entry, and the reader's pre-block copy must not
+        /// reappear behind it.
+        #[test]
+        fn test_merge_removal_wins_over_a_committed_insert_approved_before_the_promotion() {
+            let data_contract_cache = Arc::new(DataContractCache::new(10, 10));
+            let (committed, _) = same_contract_at_versions(1, 2);
+            let contract_id = committed.contract.id().to_buffer();
+
+            data_contract_cache.mark_modified_in_block(contract_id);
+
+            let final_version =
+                promote_while_a_committed_insert_is_paused(&data_contract_cache, committed);
+
+            assert_eq!(
+                final_version, None,
+                "a rewritten contract absent from the block cache must not be resurrected by a committed insert approved before the promotion"
+            );
+        }
+
+        /// Runs a committed insert of `committed` on another thread, pauses it inside its
+        /// compute closure (after the point where `insert_committed` has approved the put),
+        /// promotes the block cache while it is paused, then lets it finish. Returns the
+        /// version left in the global cache.
+        fn promote_while_a_committed_insert_is_paused(
+            data_contract_cache: &Arc<DataContractCache>,
+            committed: Arc<DataContractFetchInfo>,
+        ) -> Option<u32> {
+            let contract_id = committed.contract.id().to_buffer();
+            let reader_is_inside = Arc::new(Barrier::new(2));
+            let release_reader = Arc::new(Barrier::new(2));
+
+            let reader = {
+                let data_contract_cache = Arc::clone(data_contract_cache);
+                let reader_is_inside = Arc::clone(&reader_is_inside);
+                let release_reader = Arc::clone(&release_reader);
+                thread::spawn(move || {
+                    data_contract_cache
+                        .global_cache
+                        .entry(contract_id)
+                        .and_compute_with(|_| {
+                            reader_is_inside.wait();
+                            release_reader.wait();
+                            Op::Put(committed)
+                        });
+                })
+            };
+            reader_is_inside.wait();
+
+            let promotion = {
+                let data_contract_cache = Arc::clone(data_contract_cache);
+                thread::spawn(move || data_contract_cache.merge_and_clear_block_cache())
+            };
+            // Let the promotion reach the key. With the per-key lock it blocks there until
+            // the reader is released; without it, it would write now and lose.
+            thread::sleep(Duration::from_millis(100));
+            release_reader.wait();
+
+            reader.join().expect("the reader must finish");
+            promotion.join().expect("the promotion must finish");
+
+            data_contract_cache
+                .get(contract_id, false)
+                .map(|fetch_info| fetch_info.contract.version())
         }
 
         #[test]
