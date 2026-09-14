@@ -51,9 +51,8 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{
-    merge_payment_overlays, AssetLockChangeSet, CoreChangeSet, HighestUsedIndexes,
-    IdentityChangeSet, IdentityEntry, PaymentOverlay, PlatformWalletChangeSet, SweepBatch,
-    UtxoCreditVerdict,
+    merge_payment_overlays, AssetLockChangeSet, CoreChangeSet, HighestUsedIndexes, PaymentOverlay,
+    PlatformWalletChangeSet, SweepBatch, UtxoCreditVerdict,
 };
 use crate::changeset::merge::Merge;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
@@ -426,7 +425,7 @@ async fn run_wallet_event_adapter<P>(
             let entry = batch.entry(wallet_id).or_default();
             entry.core.merge(core);
             entry.asset_locks.merge(asset_locks);
-            entry.payments.merge(payments);
+            merge_payment_overlays(&mut entry.payments, payments);
         }
 
         // Fold in whatever else is already buffered. `try_recv` never waits,
@@ -447,7 +446,7 @@ async fn run_wallet_event_adapter<P>(
                     // Last-write-wins per `(owner, txid)`: a transaction swept
                     // and then reinstated inside one drain reaches the store as
                     // the verdict the drain ended on, never as two rows.
-                    entry.payments.merge(payments);
+                    merge_payment_overlays(&mut entry.payments, payments);
                     folded += 1;
                 }
                 Err(TryRecvError::Empty) => break,
@@ -731,30 +730,33 @@ fn commit_wallet<P>(
         // the verdict is derived state, so a host that later ships the slot
         // re-derives it from the records and the reconcile pass, whereas a
         // dropped removal has no such recovery.
-        let (payments, verdict_identities) = if payments.is_empty() {
-            (None, None)
+        let payments = if payments.is_empty() {
+            None
         } else if persister
             .persistence_capabilities()
             .contains(PersistenceCapabilities::DASHPAY_PAYMENTS)
         {
-            // Both carriers or neither. The identity snapshots are what make
-            // the verdict survive a restart (`load()` rehydrates payments from
-            // the identity blob, never from the overlay table); the overlay is
-            // the bounded row a delta-style persister projects. Splitting them
-            // across rounds is exactly the durability hole this pair closes,
-            // and `DASHPAY_PAYMENTS` is the one bit that says a host stores
-            // sent-payment state at all.
-            (Some(payments.overlay), Some(payments.identities))
+            // The overlay is the ONLY carrier. A backend that attests
+            // `DASHPAY_PAYMENTS` owes durability for these rows — the SQLite
+            // one patches them into the authoritative identity blob inside its
+            // own write transaction, an FFI host stores them in its own
+            // payment rows. The adapter deliberately does not ship a whole
+            // `IdentityEntry` alongside: it captured the verdict under the
+            // wallet-manager write lock and releases it well before this
+            // `store()`, so such a snapshot would be stale on arrival and
+            // would erase any payment a concurrent `record_dashpay_payment`
+            // persisted in the gap (dashpay/platform#4651).
+            Some(payments)
         } else {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
-                identities = payments.overlay.len(),
-                rows = payments.overlay.values().map(BTreeMap::len).sum::<usize>(),
+                identities = payments.len(),
+                rows = payments.values().map(BTreeMap::len).sum::<usize>(),
                 "Persister does not advertise DASHPAY_PAYMENTS; withholding this round's \
                  sent-payment verdicts. Swept sent payments stay as stored until the host \
                  adopts the payment-overlay slot."
             );
-            (None, None)
+            None
         };
         // Hold this wallet's durable watermark at the last fully persisted
         // height once it has faulted. Records/UTXOs still persist — only the
@@ -773,11 +775,7 @@ fn commit_wallet<P>(
                 diag.record_frozen(h);
             }
         }
-        if core.is_empty_no_records()
-            && Merge::is_empty(&asset_locks)
-            && payments.is_none()
-            && verdict_identities.is_none()
-        {
+        if core.is_empty_no_records() && Merge::is_empty(&asset_locks) && payments.is_none() {
             // SyncHeightAdvanced for an unknown wallet, empty BlockProcessed, a
             // watermark-only batch stripped by the fault guard above, a verdict
             // withheld from a payments-blind persister, etc. — nothing to
@@ -832,14 +830,10 @@ fn commit_wallet<P>(
             // same store round-trip so the row and the record that
             // implies it land atomically.
             asset_locks: (!Merge::is_empty(&asset_locks)).then_some(asset_locks),
-            // The authoritative half of the same verdicts: a post-flip
-            // `IdentityEntry` per identity whose payments moved. `load()`
-            // rebuilds `dashpay_payments` from this snapshot and never reads
-            // the overlay table back, so without it the round's verdict is
-            // undone by the next restart.
-            identities: verdict_identities,
             // The sent-payment verdicts this drain resolved, on the same round
             // as the sweep removal or confirming record that justifies them.
+            // The persister is responsible for making these durable; the
+            // adapter never ships a whole identity of its own.
             dashpay_payments_overlay: payments,
             ..PlatformWalletChangeSet::default()
         };
@@ -1009,12 +1003,20 @@ struct WalletBatch {
     core: CoreChangeSet,
     asset_locks: AssetLockChangeSet,
     /// Sent-payment verdicts this drain resolved (see
-    /// [`sent_payment_verdicts`]), in both carriers: the bounded overlay rows
-    /// and the authoritative post-flip identity snapshots. Rides the same
-    /// `store()` as the rows that justify it — a sweep's removal, or the
-    /// record that confirmed it — because neither event re-emits once its
-    /// round is durable.
-    payments: SentPaymentVerdicts,
+    /// [`sent_payment_verdicts`]): the changed `(owner, txid)` rows, and
+    /// nothing else. Rides the same `store()` as the rows that justify it —
+    /// a sweep's removal, or the record that confirmed it — because neither
+    /// event re-emits once its round is durable.
+    ///
+    /// Deliberately NOT accompanied by an `IdentityEntry` snapshot. The
+    /// adapter captures its verdicts under the wallet-manager write lock but
+    /// calls `store()` long after releasing it, so a whole-identity snapshot
+    /// taken here would be stale by the time it landed and would wholesale
+    /// replace any payment a concurrent `record_dashpay_payment` had
+    /// persisted in between (dashpay/platform#4651). The authoritative
+    /// identity blob is instead patched row-by-row by the persister, inside
+    /// its own write transaction — see the SQLite backend's `dashpay` module.
+    payments: PaymentOverlay,
 }
 
 /// Rebuild missing tracked asset locks from the records an event
@@ -1470,59 +1472,6 @@ fn sent_payment_evidence(event: &WalletEvent) -> Vec<(String, SentPaymentEvidenc
     }
 }
 
-/// One event's sent-payment verdicts, in the two carriers a round needs.
-///
-/// Both describe the same flips; neither is redundant.
-///
-/// * `identities` is the **authoritative** one. `load()` rebuilds a managed
-///   identity's `dashpay_payments` from the identity snapshot
-///   (`identities.entry_blob` in the SQLite backend), so a verdict that does
-///   not ride an [`IdentityEntry`] is silently replaced by the pre-verdict
-///   status at the next launch — with the swept transaction gone and nothing
-///   able to re-derive it. This is the same pair
-///   `ManagedIdentity::record_dashpay_payment` writes on the path this
-///   adapter replaced.
-/// * `overlay` is the **bounded** one. A full snapshot replays the identity's
-///   whole payment history on every flip, which delta-style persisters (the
-///   FFI vtable) must not be handed per round; the single-row overlay is what
-///   they project instead.
-#[derive(Default)]
-pub(crate) struct SentPaymentVerdicts {
-    /// The changed rows, keyed `(owner, txid)`.
-    overlay: PaymentOverlay,
-    /// A post-flip [`IdentityEntry`] snapshot per identity whose payments
-    /// moved. Merged with [`Merge`], which is keyed by identity id and folds
-    /// `dashpay_payments` last-write-wins per txid — so a drain touching one
-    /// identity twice still reaches the store as one entry.
-    identities: IdentityChangeSet,
-}
-
-impl SentPaymentVerdicts {
-    /// True when nothing moved, so the round carries no verdict at all. The
-    /// two halves are populated together — an identity is snapshotted exactly
-    /// when at least one of its rows entered the overlay — so either one
-    /// answers, and both are asserted here to keep that coupling honest.
-    fn is_empty(&self) -> bool {
-        debug_assert_eq!(
-            self.overlay.is_empty(),
-            Merge::is_empty(&self.identities),
-            "a verdict's overlay row and its identity snapshot are written together"
-        );
-        self.overlay.is_empty() && Merge::is_empty(&self.identities)
-    }
-
-    /// Fold `other` in. The overlay takes last-write-wins per `(owner, txid)`
-    /// via [`merge_payment_overlays`]; the snapshots take
-    /// [`IdentityChangeSet`]'s own merge, whose `dashpay_payments` fold is
-    /// last-write-wins per txid as well — so a transaction swept and then
-    /// reinstated inside one drain reaches the store once, as the verdict the
-    /// drain ended on, in both carriers.
-    fn merge(&mut self, other: Self) {
-        merge_payment_overlays(&mut self.overlay, other.overlay);
-        self.identities.merge(other.identities);
-    }
-}
-
 /// Resolve `event`'s sent-payment evidence against the wallet's live payment
 /// entries, flip the ones the transition table moves, and return them as a
 /// ready overlay for this drain's `store()` round.
@@ -1538,6 +1487,20 @@ impl SentPaymentVerdicts {
 /// persistence channel, so the verdict rides the same `store()` as the row
 /// removal that implies it.
 ///
+/// # Only the changed rows, never a whole identity
+///
+/// The flips below happen under the wallet-manager write lock, but the
+/// adapter releases that lock and only then calls `store()` on a blocking
+/// thread. Anything captured here that describes MORE than the rows it
+/// changed — a whole `IdentityEntry`, say — would therefore be a stale
+/// picture by the time it reached disk, and applying it wholesale would
+/// delete whatever a concurrent `ManagedIdentity::record_dashpay_payment`
+/// persisted in the gap (dashpay/platform#4651). So this returns exactly the
+/// `(owner, txid)` rows that moved, and making them durable is the
+/// persister's job: the SQLite backend patches them into the authoritative
+/// identity blob inside its own write transaction, which is atomic against
+/// every other writer.
+///
 /// # Failure posture
 ///
 /// The flip lands in memory here and in the store when the round commits. A
@@ -1550,8 +1513,8 @@ impl SentPaymentVerdicts {
 pub(crate) async fn sent_payment_verdicts(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     event: &WalletEvent,
-) -> SentPaymentVerdicts {
-    let mut overlay = SentPaymentVerdicts::default();
+) -> PaymentOverlay {
+    let mut overlay = PaymentOverlay::default();
     let evidence = sent_payment_evidence(event);
     if evidence.is_empty() {
         return overlay;
@@ -1603,7 +1566,6 @@ pub(crate) async fn sent_payment_verdicts(
         // the one thing this fix exists to avoid. The overlay returned here
         // carries the same row onto the adapter's round instead.
         let payments = managed.dashpay_payments_mut();
-        let mut flipped_any = false;
         for (txid, evidence) in &evidence {
             let Some(entry) = payments.get_mut(txid) else {
                 continue;
@@ -1619,25 +1581,10 @@ pub(crate) async fn sent_payment_verdicts(
                 "Sent DashPay payment verdict"
             );
             entry.status = next;
-            flipped_any = true;
             overlay
-                .overlay
                 .entry(owner)
                 .or_default()
                 .insert(txid.clone(), entry.clone());
-        }
-        if flipped_any {
-            // Taken AFTER the flips above, so the snapshot carries the verdict
-            // rather than the status it replaced. This is the authoritative
-            // half: `load()` rehydrates a managed identity's payments from the
-            // identity blob this entry encodes and never reads the overlay
-            // table back (see the sqlite `dashpay` module's own header), so a
-            // round carrying only the overlay is a verdict that does not
-            // survive a restart.
-            overlay
-                .identities
-                .identities
-                .insert(owner, IdentityEntry::from_managed(managed));
         }
     }
     overlay
@@ -2676,29 +2623,15 @@ mod sent_payment_verdict_tests {
     }
 
     /// One row, so a test can assert the overlay is exactly the verdict and
-    /// not a replay of the identity's whole payment history.
-    ///
-    /// Also asserts the authoritative carrier agrees: the round's identity
-    /// snapshot must hold the same post-flip entry, because that snapshot —
-    /// not the overlay table — is what `load()` rebuilds the payment map
-    /// from.
-    fn only_row(verdicts: &SentPaymentVerdicts, txid: &str) -> PaymentEntry {
-        let overlay = &verdicts.overlay;
-        assert_eq!(overlay.len(), 1, "exactly one identity: {overlay:?}");
-        let rows = overlay.get(&owner()).expect("the owning identity");
+    /// not a replay of the identity's whole payment history — and that it is
+    /// the ONLY thing the round carries about the identity. A whole
+    /// `IdentityEntry` alongside it is precisely the lost-update hazard the
+    /// adapter must not reintroduce (dashpay/platform#4651).
+    fn only_row(verdicts: &super::PaymentOverlay, txid: &str) -> PaymentEntry {
+        assert_eq!(verdicts.len(), 1, "exactly one identity: {verdicts:?}");
+        let rows = verdicts.get(&owner()).expect("the owning identity");
         assert_eq!(rows.len(), 1, "exactly one row: {rows:?}");
-        let row = rows.get(txid).expect("the flipped row").clone();
-        let snapshot = verdicts
-            .identities
-            .identities
-            .get(&owner())
-            .expect("the round must carry the owning identity's snapshot");
-        assert_eq!(
-            snapshot.dashpay_payments.get(txid),
-            Some(&row),
-            "the identity snapshot must carry the verdict, not the status it replaced"
-        );
-        row
+        rows.get(txid).expect("the flipped row").clone()
     }
 
     /// The defect: a swept sent payment stayed `Pending` forever because
@@ -4396,11 +4329,13 @@ mod tests {
         /// round carried none, which is also what a payments-blind persister
         /// must see after the capability gate has withheld one.
         dashpay_payments: Option<PaymentOverlay>,
-        /// The payment maps carried by the round's identity snapshots. This
-        /// is the carrier `load()` actually rebuilds `dashpay_payments` from,
-        /// so a verdict that reaches only `dashpay_payments` above does not
-        /// survive a restart. `None` when the round carried no `identities`
-        /// sub-changeset at all.
+        /// The payment maps carried by the round's identity snapshots.
+        /// `None` when the round carried no `identities` sub-changeset at
+        /// all, which is what a verdict round must look like: the adapter
+        /// captures its flips under a lock it has long released by the time
+        /// `store()` runs, so a whole-identity snapshot here would be a
+        /// stale wholesale replace (dashpay/platform#4651). Durability for
+        /// the overlay rows is the persister's job, not a second carrier's.
         dashpay_identity_payments: Option<PaymentOverlay>,
         rejected: bool,
     }
@@ -6200,7 +6135,7 @@ mod tests {
             super::WalletBatch {
                 core: CoreChangeSet::default(),
                 asset_locks,
-                payments: Default::default(),
+                payments: super::PaymentOverlay::default(),
             },
         );
         commit_batch(
@@ -6260,7 +6195,7 @@ mod tests {
             WalletBatch {
                 core,
                 asset_locks: AssetLockChangeSet::default(),
-                payments: Default::default(),
+                payments: super::PaymentOverlay::default(),
             },
         );
         batch
@@ -6278,38 +6213,6 @@ mod tests {
             Identifier::from([0xAA; 32]),
             BTreeMap::from([("deadbeef".to_string(), entry)]),
         )])
-    }
-
-    /// One sent-payment verdict, in the shape the adapter folds into a
-    /// wallet's batch: the bounded overlay row plus the identity snapshot
-    /// that makes it survive a restart.
-    fn one_verdict(status: crate::wallet::identity::PaymentStatus) -> super::SentPaymentVerdicts {
-        let overlay = one_verdict_overlay(status);
-        let owner = Identifier::from([0xAA; 32]);
-        let mut identities = crate::changeset::IdentityChangeSet::default();
-        identities.identities.insert(
-            owner,
-            crate::changeset::IdentityEntry {
-                id: owner,
-                balance: 0,
-                revision: 0,
-                identity_index: None,
-                last_updated_balance_block_time: None,
-                last_synced_keys_block_time: None,
-                dpns_names: Vec::new(),
-                contested_dpns_names: Vec::new(),
-                status: Default::default(),
-                wallet_id: None,
-                dashpay_profile: None,
-                dashpay_payments: overlay.get(&owner).cloned().unwrap_or_default(),
-                contact_profiles: Default::default(),
-                ignored_senders: Default::default(),
-            },
-        );
-        super::SentPaymentVerdicts {
-            overlay,
-            identities,
-        }
     }
 
     /// A persister that attests `DASHPAY_PAYMENTS` gets the verdict on the
@@ -6333,7 +6236,7 @@ mod tests {
             WalletBatch {
                 core: watermark_with_rows(700, 700),
                 asset_locks: AssetLockChangeSet::default(),
-                payments: one_verdict(PaymentStatus::Failed),
+                payments: one_verdict_overlay(PaymentStatus::Failed),
             },
         );
         let diag = commit_batch(
@@ -6353,10 +6256,10 @@ mod tests {
             "the verdict must ride the same store() as the rows that justify it"
         );
         assert_eq!(
-            observed.dashpay_identity_payments,
-            Some(one_verdict_overlay(PaymentStatus::Failed)),
-            "and the identity snapshot must ride it too, or the verdict is undone \
-             by the next load()"
+            observed.dashpay_identity_payments, None,
+            "and NOTHING else about the identity: a whole snapshot captured before \
+             the manager lock was released would erase a concurrently persisted \
+             payment when it landed (dashpay/platform#4651)"
         );
         assert_eq!(diag.persisted, Some(700));
         assert_eq!(diag.faulted, 0, "a payments-capable host is not a fault");
@@ -6385,7 +6288,7 @@ mod tests {
             WalletBatch {
                 core: watermark_with_rows(700, 700),
                 asset_locks: AssetLockChangeSet::default(),
-                payments: one_verdict(PaymentStatus::Failed),
+                payments: one_verdict_overlay(PaymentStatus::Failed),
             },
         );
         let diag = commit_batch(
@@ -6405,8 +6308,8 @@ mod tests {
         );
         assert_eq!(
             observed.dashpay_identity_payments, None,
-            "both carriers are withheld together — a snapshot smuggling the \
-             verdict past the gate would make DASHPAY_PAYMENTS meaningless"
+            "the overlay is the verdict's only carrier, so the gate covers all of \
+             it — nothing smuggles a verdict past DASHPAY_PAYMENTS"
         );
         assert_eq!(
             diag.persisted,
@@ -6437,7 +6340,7 @@ mod tests {
             WalletBatch {
                 core: CoreChangeSet::default(),
                 asset_locks: AssetLockChangeSet::default(),
-                payments: one_verdict(PaymentStatus::Failed),
+                payments: one_verdict_overlay(PaymentStatus::Failed),
             },
         );
         commit_batch(
@@ -6479,7 +6382,7 @@ mod tests {
             WalletBatch {
                 core: CoreChangeSet::default(),
                 asset_locks: AssetLockChangeSet::default(),
-                payments: one_verdict(PaymentStatus::Confirmed),
+                payments: one_verdict_overlay(PaymentStatus::Confirmed),
             },
         );
         commit_batch(
@@ -6498,10 +6401,7 @@ mod tests {
             observed.dashpay_payments,
             Some(one_verdict_overlay(PaymentStatus::Confirmed))
         );
-        assert_eq!(
-            observed.dashpay_identity_payments,
-            Some(one_verdict_overlay(PaymentStatus::Confirmed))
-        );
+        assert_eq!(observed.dashpay_identity_payments, None);
     }
 
     /// The sweep guard strips the height BEFORE the store sees it, so a
@@ -6921,9 +6821,9 @@ mod tests {
         observed
     }
 
-    /// The row the round must carry, in both carriers, with the assertion
-    /// that there is exactly one of it: a verdict is a status flip, never a
-    /// replay of the identity's payment history.
+    /// The row the round must carry, with the assertion that there is exactly
+    /// one of it and nothing else: a verdict is a status flip, never a replay
+    /// of the identity's payment history.
     fn sole_verdict_row(observed: &StoreObserved, txid: &str) -> PaymentStatus {
         let overlay = observed
             .dashpay_payments
@@ -6933,19 +6833,12 @@ mod tests {
         let rows = overlay.get(&owner()).expect("the owning identity");
         assert_eq!(rows.len(), 1, "exactly one row: {rows:?}");
         let status = rows.get(txid).expect("the flipped row").status;
-
-        let snapshot = observed
-            .dashpay_identity_payments
-            .as_ref()
-            .expect("the round must carry the identity snapshot too");
         assert_eq!(
-            snapshot
-                .get(&owner())
-                .and_then(|p| p.get(txid))
-                .map(|e| e.status),
-            Some(status),
-            "the authoritative carrier must agree with the overlay — `load()` \
-             rebuilds payments from the snapshot, never from the overlay table"
+            observed.dashpay_identity_payments, None,
+            "and the round must carry NO identity snapshot — the adapter's lock is \
+             long released by `store()`, so a snapshot would be stale on arrival \
+             (dashpay/platform#4651). The persister patches the overlay into the \
+             authoritative blob inside its own transaction instead."
         );
         status
     }
