@@ -652,10 +652,40 @@ impl IdentityKeyEntryFFI {
     /// caller owns the heap-allocated `public_key_data_ptr` byte
     /// buffer and (when present) the
     /// `contract_bounds_document_type` C-string; release both via
-    /// [`free_identity_key_entry_ffi`].
-    pub fn from_entry(entry: &IdentityKeyEntry) -> Self {
+    /// [`free_identity_key_entry_ffi`]. Scoped keys are rejected before any
+    /// allocation because this ABI cannot preserve their authorization bounds.
+    pub fn from_entry(entry: &IdentityKeyEntry) -> Result<Self, &'static str> {
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
         use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+
+        // Project the DPP `ContractBounds` enum into the kind /
+        // id / doc-type-cstring trio so the Swift side can switch
+        // on a single discriminant. Strings containing interior
+        // NULs (impossible in practice — DPP rejects them) keep
+        // the discriminant + payload self-consistent by falling
+        // back to `SingleContract { id }` (kind=1 + null doc-type
+        // pointer); emitting kind=2 with a null doc-type pointer
+        // would silently strip the bound on the Swift side, so
+        // demoting to `SingleContract` is the closest faithful
+        // representation — the document-type qualifier is the
+        // only thing lost, the contract id is preserved.
+        let (contract_bounds_kind, contract_bounds_id, contract_bounds_document_type) = match entry
+            .public_key
+            .contract_bounds()
+        {
+            Some(ContractBounds::SingleContract { id }) => (1u8, id.to_buffer(), ptr::null()),
+            Some(ContractBounds::SingleContractDocumentType {
+                id,
+                document_type_name,
+            }) => match CString::new(document_type_name.as_str()) {
+                Ok(c) => (2u8, id.to_buffer(), c.into_raw() as *const c_char),
+                Err(_) => (1u8, id.to_buffer(), ptr::null()),
+            },
+            Some(ContractBounds::Scoped(_)) => {
+                return Err("scoped authentication keys require a newer native persistence ABI");
+            }
+            None => (0u8, [0u8; 32], ptr::null()),
+        };
 
         let pk_bytes = entry.public_key.data().as_slice().to_vec();
         let pk_len = pk_bytes.len();
@@ -678,31 +708,7 @@ impl IdentityKeyEntryFFI {
             None => (false, 0, 0),
         };
 
-        // Project the DPP `ContractBounds` enum into the kind /
-        // id / doc-type-cstring trio so the Swift side can switch
-        // on a single discriminant. Strings containing interior
-        // NULs (impossible in practice — DPP rejects them) keep
-        // the discriminant + payload self-consistent by falling
-        // back to `SingleContract { id }` (kind=1 + null doc-type
-        // pointer); emitting kind=2 with a null doc-type pointer
-        // would silently strip the bound on the Swift side, so
-        // demoting to `SingleContract` is the closest faithful
-        // representation — the document-type qualifier is the
-        // only thing lost, the contract id is preserved.
-        let (contract_bounds_kind, contract_bounds_id, contract_bounds_document_type) =
-            match entry.public_key.contract_bounds() {
-                Some(ContractBounds::SingleContract { id }) => (1u8, id.to_buffer(), ptr::null()),
-                Some(ContractBounds::SingleContractDocumentType {
-                    id,
-                    document_type_name,
-                }) => match CString::new(document_type_name.as_str()) {
-                    Ok(c) => (2u8, id.to_buffer(), c.into_raw() as *const c_char),
-                    Err(_) => (1u8, id.to_buffer(), ptr::null()),
-                },
-                None => (0u8, [0u8; 32], ptr::null()),
-            };
-
-        Self {
+        Ok(Self {
             identity_id: entry.identity_id.to_buffer(),
             key_id: entry.key_id,
             purpose: entry.public_key.purpose() as u8,
@@ -722,7 +728,7 @@ impl IdentityKeyEntryFFI {
             contract_bounds_kind,
             contract_bounds_id,
             contract_bounds_document_type,
-        }
+        })
     }
 }
 
@@ -1187,7 +1193,7 @@ mod tests {
                 key_index: 5,
             }),
         };
-        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry).unwrap();
         assert_eq!(ffi.identity_id, [2u8; 32]);
         assert_eq!(ffi.key_id, 5);
         assert_eq!(ffi.purpose, Purpose::AUTHENTICATION as u8);
@@ -1229,7 +1235,7 @@ mod tests {
             wallet_id: None,
             derivation_indices: None,
         };
-        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry).unwrap();
         assert!(!ffi.wallet_id_is_some);
         assert!(!ffi.derivation_indices_is_some);
         assert!(ffi.read_only);
@@ -1238,6 +1244,70 @@ mod tests {
         assert_eq!(ffi.contract_bounds_kind, 0);
         assert!(ffi.contract_bounds_document_type.is_null());
         unsafe { free_identity_key_entry_ffi(&mut ffi) };
+    }
+
+    #[test]
+    fn scoped_keys_are_rejected_before_native_persistence_callbacks() {
+        use crate::persistence::{FFIPersister, PersistenceCallbacks};
+        use dpp::identity::contract_bounds::{
+            AuthenticationScope, AuthenticationScopeV0, ContractBounds, ContractScope,
+        };
+        use platform_wallet::changeset::PlatformWalletPersistence;
+        use platform_wallet::{IdentityKeysChangeSet, PlatformWalletChangeSet};
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        unsafe extern "C" fn begin(context: *mut std::ffi::c_void, _: *const u8) -> i32 {
+            (*(context as *const AtomicBool)).store(true, Ordering::SeqCst);
+            0
+        }
+
+        let entry = IdentityKeyEntry {
+            identity_id: Identifier::from([1; 32]),
+            key_id: 1,
+            public_key: IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: Some(ContractBounds::Scoped(AuthenticationScope::V0(
+                    AuthenticationScopeV0 {
+                        contracts: vec![ContractScope {
+                            id: Identifier::from([2; 32]),
+                            document_types: None,
+                        }],
+                        permissions: 1,
+                        expires_at: None,
+                    },
+                ))),
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(vec![2; 33]),
+                disabled_at: None,
+            }),
+            public_key_hash: [0; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        assert!(IdentityKeyEntryFFI::from_entry(&entry).is_err());
+
+        let began = AtomicBool::new(false);
+        let persister = FFIPersister::new(PersistenceCallbacks {
+            context: &began as *const AtomicBool as *mut std::ffi::c_void,
+            on_changeset_begin_fn: Some(begin),
+            ..Default::default()
+        });
+        let changeset = PlatformWalletChangeSet {
+            identity_keys: Some(IdentityKeysChangeSet {
+                upserts: [((entry.identity_id, entry.key_id), entry)].into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(persister.store([3; 32], changeset).is_err());
+        assert!(!began.load(Ordering::SeqCst));
+        assert!(persister
+            .store([3; 32], PlatformWalletChangeSet::default())
+            .is_ok());
+        assert!(began.load(Ordering::SeqCst));
     }
 
     #[test]
@@ -1262,7 +1332,7 @@ mod tests {
             wallet_id: None,
             derivation_indices: None,
         };
-        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry).unwrap();
         assert_eq!(ffi.contract_bounds_kind, 1);
         assert_eq!(ffi.contract_bounds_id, [0xAB; 32]);
         assert!(ffi.contract_bounds_document_type.is_null());
@@ -1294,7 +1364,7 @@ mod tests {
             wallet_id: None,
             derivation_indices: None,
         };
-        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry).unwrap();
         assert_eq!(ffi.contract_bounds_kind, 2);
         assert_eq!(ffi.contract_bounds_id, [0xCD; 32]);
         assert!(!ffi.contract_bounds_document_type.is_null());

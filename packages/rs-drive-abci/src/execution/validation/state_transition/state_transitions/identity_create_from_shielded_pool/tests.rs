@@ -120,6 +120,135 @@ fn build_success_action(
 }
 
 #[test]
+fn should_validate_scoped_keys_through_shielded_creation_dispatch() {
+    use super::StateTransitionStateValidationForIdentityCreateFromShieldedPoolTransitionV0;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::identifier::Identifier;
+    use dpp::identity::contract_bounds::{
+        authentication_scope::permissions, AuthenticationScope, AuthenticationScopeV0,
+        ContractBounds, ContractScope,
+    };
+
+    let version = PlatformVersion::latest();
+    let platform = setup_platform();
+    set_pool_total_balance(&platform, DENOMINATION * 10);
+    insert_anchor_into_state(&platform, &ANCHOR);
+    insert_dummy_encrypted_notes(
+        &platform,
+        version
+            .drive_abci
+            .validation_and_processing
+            .event_constants
+            .minimum_pool_notes_for_outgoing
+            .max(1),
+    );
+    let contract = platform
+        .drive
+        .cache
+        .system_data_contracts
+        .load_dashpay(version)
+        .unwrap();
+    let (valid_master, _) =
+        IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(31), version).unwrap();
+    let state = platform.state.load();
+    let platform_ref = PlatformRef {
+        drive: &platform.drive,
+        state: &state,
+        config: &platform.config,
+        core_rpc: &platform.core_rpc,
+    };
+
+    for (case, id, document_type, time_ms, error_code) in [
+        ("valid", contract.id(), "contactRequest", 99, None),
+        ("expired", contract.id(), "contactRequest", 100, Some(10535)),
+        (
+            "unknown contract",
+            Identifier::from([0x71; 32]),
+            "contactRequest",
+            99,
+            Some(10400),
+        ),
+        (
+            "unknown document",
+            contract.id(),
+            "missing",
+            99,
+            Some(10406),
+        ),
+    ] {
+        let scope = AuthenticationScope::V0(AuthenticationScopeV0 {
+            contracts: vec![ContractScope {
+                id,
+                document_types: Some(vec![document_type.into()]),
+            }],
+            permissions: permissions::DOCUMENT_CREATE,
+            expires_at: Some(100),
+        });
+        let key = IdentityPublicKeyInCreationV0 {
+            id: 1,
+            key_type: KeyType::ECDSA_HASH160,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: Some(ContractBounds::Scoped(scope)),
+            data: vec![0x72; 20].into(),
+            read_only: false,
+            signature: Default::default(),
+        };
+        let st = transition(
+            vec![valid_master.clone().into(), key.into()],
+            vec![action(30), action(31)],
+        );
+        let mut context =
+            StateTransitionExecutionContext::default_for_platform_version(version).unwrap();
+        let success = build_success_action(&platform, &st, &mut context, version);
+        let expected_notes = success.notes().to_vec();
+        let block_info = BlockInfo {
+            time_ms,
+            ..Default::default()
+        };
+        // Exercise the public version dispatcher, not a hard-coded v0/v1 implementation.
+        let result = st
+            .validate_state_for_identity_create_from_shielded_pool_transition(
+                success,
+                &platform_ref,
+                &block_info,
+                &mut context,
+                None,
+            )
+            .unwrap();
+        if let Some(error_code) = error_code {
+            assert_eq!(result.errors.len(), 1, "{case}: {:?}", result.errors);
+            assert_eq!(result.errors[0].code(), error_code);
+            let StateTransitionAction::UnshieldAction(fallback) = result.into_data().unwrap()
+            else {
+                panic!(
+                    "{case}: invalid bounds must finalize the spend through the charged fallback"
+                );
+            };
+            assert!(fallback.chargeable_failure(), "{case}");
+            assert_eq!(fallback.output_address(), &FALLBACK_ADDRESS);
+            assert_eq!(fallback.amount(), DENOMINATION);
+            assert_eq!(fallback.notes().len(), expected_notes.len());
+            for (actual, expected) in fallback.notes().iter().zip(&expected_notes) {
+                assert_eq!(actual.nullifier, expected.nullifier);
+                assert_eq!(actual.cmx, expected.cmx);
+                assert_eq!(actual.cv_net, expected.cv_net);
+                assert_eq!(actual.encrypted_note, expected.encrypted_note);
+            }
+            assert_eq!(fallback.anchor(), &ANCHOR);
+            assert!(fallback.fee_amount() > 0 && fallback.fee_amount() < DENOMINATION);
+        } else {
+            assert!(result.is_valid(), "{:?}", result.errors);
+            assert_matches!(
+                result.into_data().unwrap(),
+                StateTransitionAction::IdentityCreateFromShieldedPoolAction(_)
+            );
+        }
+    }
+}
+
+#[test]
 fn validate_state_rejects_when_identity_already_exists_at_derived_id() {
     let platform_version = PlatformVersion::latest();
     let platform = setup_platform();

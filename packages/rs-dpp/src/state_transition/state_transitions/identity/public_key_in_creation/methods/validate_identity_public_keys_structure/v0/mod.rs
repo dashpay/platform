@@ -37,11 +37,34 @@ lazy_static! {
     };
 }
 impl IdentityPublicKeyInCreation {
+    /// New binaries can decode Scoped even during historical replay. Reject only
+    /// that newly representable input; all historical validation remains unchanged.
+    pub(super) fn validate_identity_public_keys_structure_v0(
+        keys: &[IdentityPublicKeyInCreation],
+        in_create_identity: bool,
+        version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        if keys.iter().any(|key| {
+            matches!(
+                key.contract_bounds(),
+                Some(crate::identity::contract_bounds::ContractBounds::Scoped(_))
+            )
+        }) {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                crate::consensus::basic::identity::InvalidAuthenticationScopeError::new(
+                    "scoped authentication keys are not activated".into(),
+                )
+                .into(),
+            ));
+        }
+        Self::validate_identity_public_keys_structure_common(keys, in_create_identity, version)
+    }
+
     /// This validation will validate the count of new keys, that there are no duplicates either by
     /// id or by data. This is done before signature and state validation to remove potential
     /// attack vectors.
     #[inline(always)]
-    pub(super) fn validate_identity_public_keys_structure_v0(
+    pub(super) fn validate_identity_public_keys_structure_common(
         identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
         in_create_identity: bool,
         platform_version: &PlatformVersion,

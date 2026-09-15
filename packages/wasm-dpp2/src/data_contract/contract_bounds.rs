@@ -1,3 +1,4 @@
+use crate::error::WasmDppError;
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
@@ -99,8 +100,8 @@ impl ContractBoundsWasm {
     }
 
     #[wasm_bindgen(getter = "identifier")]
-    pub fn id(&self) -> IdentifierWasm {
-        (*self.0.identifier()).into()
+    pub fn id(&self) -> Option<IdentifierWasm> {
+        self.0.identifier().copied().map(Into::into)
     }
 
     #[wasm_bindgen(getter = "documentTypeName")]
@@ -126,6 +127,11 @@ impl ContractBoundsWasm {
         let contract_id: Identifier = contract_id.try_into()?;
 
         self.0 = match self.clone().0 {
+            ContractBounds::Scoped(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "replace the complete scope to change scoped bounds",
+                ));
+            }
             ContractBounds::SingleContract { .. } => {
                 ContractBounds::SingleContract { id: contract_id }
             }
@@ -144,8 +150,13 @@ impl ContractBoundsWasm {
     pub fn set_document_type_name(
         &mut self,
         #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
-    ) {
+    ) -> WasmDppResult<()> {
         self.0 = match self.clone().0 {
+            ContractBounds::Scoped(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "replace the complete scope to change scoped bounds",
+                ));
+            }
             ContractBounds::SingleContract { .. } => self.clone().0,
             ContractBounds::SingleContractDocumentType { id, .. } => {
                 ContractBounds::SingleContractDocumentType {
@@ -153,7 +164,8 @@ impl ContractBoundsWasm {
                     document_type_name,
                 }
             }
-        }
+        };
+        Ok(())
     }
 }
 

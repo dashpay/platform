@@ -119,6 +119,10 @@ fn encode_contract_bounds(
                 ),
             )),
         },
+        Some(ContractBounds::Scoped(_)) => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "scoped authentication keys require a newer native inspection ABI",
+        )),
         None => Ok((0u8, [0u8; 32], ptr::null_mut())),
     }
 }

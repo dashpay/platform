@@ -74,7 +74,7 @@ pub fn shielded_withdrawal_extra_sighash_data(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<u8>, ProtocolError> {
     match platform_version.dpp.methods.shielded_extra_sighash_data {
-        0 => Ok(shielded_withdrawal_extra_sighash_data_v0(
+        0 | 1 => Ok(shielded_withdrawal_extra_sighash_data_v0(
             output_script,
             unshielding_amount,
             core_fee_per_byte,
@@ -82,7 +82,7 @@ pub fn shielded_withdrawal_extra_sighash_data(
         )),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "shielded_withdrawal_extra_sighash_data".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         }),
     }
@@ -117,13 +117,13 @@ pub fn unshield_extra_sighash_data(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<u8>, ProtocolError> {
     match platform_version.dpp.methods.shielded_extra_sighash_data {
-        0 => Ok(unshield_extra_sighash_data_v0(
+        0 | 1 => Ok(unshield_extra_sighash_data_v0(
             output_address,
             unshielding_amount,
         )),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "unshield_extra_sighash_data".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         }),
     }
@@ -152,13 +152,15 @@ pub fn identity_top_up_from_shielded_extra_sighash_data(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<u8>, ProtocolError> {
     match platform_version.dpp.methods.shielded_extra_sighash_data {
-        0 => Ok(identity_top_up_from_shielded_extra_sighash_data_v0(
+        // Version 1 only changes the identity-create preimage (scoped key binding); the top-up
+        // layout is unchanged, so both versions share the frozen v0 bytes.
+        0 | 1 => Ok(identity_top_up_from_shielded_extra_sighash_data_v0(
             identity_id,
             top_up_amount,
         )),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "identity_top_up_from_shielded_extra_sighash_data".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         }),
     }
@@ -209,15 +211,21 @@ pub fn identity_create_from_shielded_extra_sighash_data(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<u8>, ProtocolError> {
     match platform_version.dpp.methods.shielded_extra_sighash_data {
-        0 => Ok(identity_create_from_shielded_extra_sighash_data_v0(
+        0 => identity_create_from_shielded_extra_sighash_data_v0(
             identity_id,
             denomination,
             send_to_address_on_creation_failure,
             public_keys,
-        )),
+        ),
+        1 => identity_create_from_shielded_extra_sighash_data_v1(
+            identity_id,
+            denomination,
+            send_to_address_on_creation_failure,
+            public_keys,
+        ),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "identity_create_from_shielded_extra_sighash_data".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         }),
     }
@@ -231,7 +239,7 @@ pub fn identity_create_from_shielded_extra_sighash_data_v0(
     denomination: u64,
     send_to_address_on_creation_failure: &PlatformAddress,
     public_keys: &[IdentityPublicKeyInCreation],
-) -> Vec<u8> {
+) -> Result<Vec<u8>, ProtocolError> {
     let mut data = Vec::with_capacity(32 + 8 + 21 + 2 + public_keys.len() * 44);
     data.extend_from_slice(identity_id);
     data.extend_from_slice(&denomination.to_le_bytes());
@@ -263,6 +271,13 @@ pub fn identity_create_from_shielded_extra_sighash_data_v0(
         // cannot flip `read_only` or alter `contract_bounds` on an observed transition.
         data.push(key.read_only() as u8);
         match key.contract_bounds() {
+            // This variant was not representable under v0. Reject it without
+            // changing a single byte of any historical preimage.
+            Some(ContractBounds::Scoped(_)) => {
+                return Err(ProtocolError::InvalidKeyContractBoundsError(
+                    "scoped keys require shielded sighash v1".into(),
+                ))
+            }
             None => data.push(0u8),
             Some(ContractBounds::SingleContract { id }) => {
                 data.push(1u8);
@@ -280,7 +295,121 @@ pub fn identity_create_from_shielded_extra_sighash_data_v0(
             }
         }
     }
-    data
+    Ok(data)
+}
+
+/// v1 adds a length-prefixed scoped delegation; legacy keys retain their preimages.
+pub fn identity_create_from_shielded_extra_sighash_data_v1(
+    identity_id: &[u8; 32],
+    denomination: u64,
+    send_to_address_on_creation_failure: &PlatformAddress,
+    public_keys: &[IdentityPublicKeyInCreation],
+) -> Result<Vec<u8>, ProtocolError> {
+    let mut data = Vec::with_capacity(32 + 8 + 21 + 2 + public_keys.len() * 44);
+    data.extend_from_slice(identity_id);
+    data.extend_from_slice(&denomination.to_le_bytes());
+    // Bind the fallback address (type tag || 20-byte hash) so a relayer cannot redirect the
+    // failure credit. Mirrors the way `unshield`/`withdrawal` bind their output address.
+    match send_to_address_on_creation_failure {
+        PlatformAddress::P2pkh(hash) => {
+            data.push(0u8);
+            data.extend_from_slice(hash);
+        }
+        PlatformAddress::P2sh(hash) => {
+            data.push(1u8);
+            data.extend_from_slice(hash);
+        }
+    }
+    data.extend_from_slice(&(public_keys.len() as u16).to_le_bytes());
+    for key in public_keys {
+        data.extend_from_slice(&key.id().to_le_bytes());
+        data.push(key.purpose() as u8);
+        data.push(key.security_level() as u8);
+        data.push(key.key_type() as u8);
+        let key_data = key.data().as_slice();
+        data.extend_from_slice(&(key_data.len() as u16).to_le_bytes());
+        data.extend_from_slice(key_data);
+        // Also bind `read_only` and `contract_bounds`. These are state-determining key fields that
+        // ARE in the transition's signable_bytes, but the per-key proof-of-possession does NOT bind
+        // them for hash-based key types (which accept an empty signature). Committing them into the
+        // Orchard binding sighash makes them un-malleable for EVERY key type, so a relayer/proposer
+        // cannot flip `read_only` or alter `contract_bounds` on an observed transition.
+        data.push(key.read_only() as u8);
+        match key.contract_bounds() {
+            Some(ContractBounds::Scoped(scope)) => {
+                let bytes = scope.to_bytes()?;
+                data.push(3u8);
+                data.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
+                data.extend_from_slice(&bytes);
+            }
+            None => data.push(0u8),
+            Some(ContractBounds::SingleContract { id }) => {
+                data.push(1u8);
+                data.extend_from_slice(id.as_bytes());
+            }
+            Some(ContractBounds::SingleContractDocumentType {
+                id,
+                document_type_name,
+            }) => {
+                data.push(2u8);
+                data.extend_from_slice(id.as_bytes());
+                let name = document_type_name.as_bytes();
+                data.extend_from_slice(&(name.len() as u16).to_le_bytes());
+                data.extend_from_slice(name);
+            }
+        }
+    }
+    Ok(data)
+}
+
+#[cfg(test)]
+mod dispatcher_tests {
+    use crate::shielded::{
+        identity_top_up_from_shielded_extra_sighash_data,
+        identity_top_up_from_shielded_extra_sighash_data_v0,
+        shielded_withdrawal_extra_sighash_data, shielded_withdrawal_extra_sighash_data_v0,
+        unshield_extra_sighash_data, unshield_extra_sighash_data_v0,
+    };
+    use crate::withdrawal::Pooling;
+    use platform_version::version::PlatformVersion;
+
+    /// Every dispatcher keyed on `dpp.methods.shielded_extra_sighash_data` must resolve at every
+    /// protocol version that can carry its transition. Version 1 only changes the identity-create
+    /// preimage (scoped key binding), so the other transitions keep their frozen v0 bytes.
+    #[test]
+    fn every_shielded_sighash_dispatcher_resolves_at_protocol_13_14_and_latest() {
+        for platform_version in [
+            PlatformVersion::get(13).expect("protocol 13"),
+            PlatformVersion::get(14).expect("protocol 14"),
+            PlatformVersion::latest(),
+        ] {
+            let version = platform_version.dpp.methods.shielded_extra_sighash_data;
+            let script = [0xAA; 25];
+            assert_eq!(
+                shielded_withdrawal_extra_sighash_data(
+                    &script,
+                    7,
+                    1,
+                    Pooling::Never,
+                    platform_version
+                )
+                .unwrap_or_else(|e| panic!("withdrawal dispatcher at version {version}: {e}")),
+                shielded_withdrawal_extra_sighash_data_v0(&script, 7, 1, Pooling::Never)
+            );
+            let address = [0xBB; 21];
+            assert_eq!(
+                unshield_extra_sighash_data(&address, 7, platform_version)
+                    .unwrap_or_else(|e| panic!("unshield dispatcher at version {version}: {e}")),
+                unshield_extra_sighash_data_v0(&address, 7)
+            );
+            let identity_id = [1; 32];
+            assert_eq!(
+                identity_top_up_from_shielded_extra_sighash_data(&identity_id, 7, platform_version)
+                    .unwrap_or_else(|e| panic!("top-up dispatcher at version {version}: {e}")),
+                identity_top_up_from_shielded_extra_sighash_data_v0(&identity_id, 7)
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -344,7 +473,20 @@ mod tests {
         use super::*;
         // Pin the v0 preimage directly (see the note in the parent test module).
         use crate::identity::{KeyType, Purpose, SecurityLevel};
-        use crate::shielded::identity_create_from_shielded_extra_sighash_data_v0 as identity_create_from_shielded_extra_sighash_data;
+        fn identity_create_from_shielded_extra_sighash_data(
+            id: &[u8; 32],
+            denomination: u64,
+            fallback: &PlatformAddress,
+            keys: &[IdentityPublicKeyInCreation],
+        ) -> Vec<u8> {
+            super::super::identity_create_from_shielded_extra_sighash_data_v0(
+                id,
+                denomination,
+                fallback,
+                keys,
+            )
+            .unwrap()
+        }
         use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
         use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
         use platform_value::BinaryData;

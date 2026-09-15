@@ -30,6 +30,7 @@ pub(crate) trait StateTransitionIdentityBasedSignatureValidationV0 {
     fn validate_identity_signed_state_transition(
         &self,
         drive: &Drive,
+        time_ms: u64,
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -55,6 +56,7 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
     fn validate_identity_signed_state_transition(
         &self,
         drive: &Drive,
+        time_ms: u64,
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -69,6 +71,7 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
                 //Basic signature verification
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
+                    time_ms,
                     true,
                     false,
                     tx,
@@ -80,6 +83,7 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
                 let mut consensus_validation_result = self
                     .validate_state_transition_identity_signed(
                         drive,
+                        time_ms,
                         true,
                         false,
                         tx,
@@ -103,6 +107,7 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
                 //Basic signature verification
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
+                    time_ms,
                     true,
                     true,
                     tx,
@@ -118,6 +123,7 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
 
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
+                    time_ms,
                     false,
                     false,
                     tx,

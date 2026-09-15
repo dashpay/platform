@@ -59,6 +59,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         let result = if state_transition.validates_signature_based_on_identity_info() {
             state_transition.validate_identity_signed_state_transition(
                 platform.drive,
+                block_info.time_ms,
                 transaction,
                 &mut state_transition_execution_context,
                 platform_version,

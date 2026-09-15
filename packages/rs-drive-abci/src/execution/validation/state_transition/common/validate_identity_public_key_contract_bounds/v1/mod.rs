@@ -12,6 +12,7 @@
 //!    is now billed to the passed-in execution context, instead of being
 //!    discarded as v0 did (which had an explicit `//todo:` for this).
 
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
@@ -91,6 +92,14 @@ fn validate_identity_public_key_contract_bounds_v1(
     let contract_id = match contract_bounds {
         ContractBounds::SingleContract { id } => *id,
         ContractBounds::SingleContractDocumentType { id, .. } => *id,
+        ContractBounds::Scoped(_) => {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                dpp::consensus::basic::identity::InvalidAuthenticationScopeError::new(
+                    "scope is not activated".into(),
+                )
+                .into(),
+            ))
+        }
     };
     let outcome = drive.get_system_or_user_contract_with_fee(
         contract_id.to_buffer(),
@@ -110,6 +119,12 @@ fn validate_identity_public_key_contract_bounds_v1(
     };
 
     match contract_bounds {
+        // Rejected by the purpose check above; never panic in block execution.
+        ContractBounds::Scoped(_) => {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "scoped bounds must be rejected before legacy bounds validation",
+            )))
+        }
         ContractBounds::SingleContract { .. } => {
             let requirements_for_purpose = match purpose {
                 ENCRYPTION => contract.config().requires_identity_encryption_bounded_key(),

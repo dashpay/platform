@@ -205,6 +205,7 @@ impl ErrorWithCode for BasicError {
             Self::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(_) => 10532,
             Self::InvalidKeyPurposeForContractBoundsError(_) => 10533,
             Self::IdentityAssetLockTransactionTooManyInputsError(_) => 10534,
+            Self::InvalidAuthenticationScopeError(_) => 10535,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,
@@ -265,6 +266,9 @@ impl ErrorWithCode for SignatureError {
             Self::BasicBLSError(_) => 20010,
             Self::InvalidSignaturePublicKeyPurposeError(_) => 20011,
             Self::UncompressedPublicKeyNotAllowedError(_) => 20012,
+            Self::ScopedKeyOutOfScopeError(_) => 20015,
+            Self::ScopedKeyExpiredError(_) => 20014,
+            Self::ScopedKeyNonBatchError(_) => 20013,
         }
     }
 }
