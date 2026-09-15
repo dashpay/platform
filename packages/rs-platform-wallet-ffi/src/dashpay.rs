@@ -589,6 +589,59 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
 // Send payment
 // ---------------------------------------------------------------------------
 
+/// Reserve a fresh contact Core address for a Platform or shielded withdrawal.
+/// The address is durably consumed before success; callers must not reuse it.
+/// This does not submit a payment or record payment history.
+///
+/// # Safety
+/// - Identity pointers must each reference 32 readable bytes.
+/// - `core_signer_handle` must remain valid throughout this synchronous call.
+/// - `out_address` must point to writable pointer storage. On success, free
+///   the returned string with `platform_wallet_string_free`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_reserve_dashpay_payment_address(
+    wallet_handle: Handle,
+    from_identity_id: *const u8,
+    to_contact_identity_id: *const u8,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_address: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_address);
+    *out_address = std::ptr::null_mut();
+    let from_id = unwrap_result_or_return!(read_identifier(from_identity_id));
+    let to_id = unwrap_result_or_return!(read_identifier(to_contact_identity_id));
+    let signer_addr = core_signer_handle as usize;
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        let provider = resolver_contact_crypto_provider(
+            signer_addr as *mut MnemonicResolverHandle,
+            wallet.wallet_id(),
+            wallet.network(),
+        );
+        block_on_worker(async move {
+            identity
+                .dashpay()
+                .reserve_payment_address(&from_id, &to_id, &provider)
+                .await
+        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let address = match result {
+        Ok(address) => address,
+        Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                e.to_string(),
+            );
+        }
+        Err(e) => return e.into(),
+    };
+    let c_str = unwrap_result_or_return!(std::ffi::CString::new(address.to_string()));
+    *out_address = c_str.into_raw();
+    PlatformWalletFFIResult::ok()
+}
+
 /// Send a Dash payment from `from_identity_id` to `to_contact_identity_id`.
 ///
 /// The funding inputs are signed through the supplied
