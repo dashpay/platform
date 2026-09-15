@@ -384,8 +384,10 @@ export default function getBaseConfigFactory() {
               allowlistOnly: false,
               flushThrottleTimeout: '100ms',
               maxPacketMsgPayloadSize: 10240,
-              sendRate: 5120000,
-              recvRate: 5120000,
+              // Provisional: a 32 MiB contract-code state transition takes about 1.6 s per hop
+              // at this rate (7 s at the previous 5,120,000); confirmed on the testnet rehearsal.
+              sendRate: 20480000,
+              recvRate: 20480000,
               maxConnections: 64,
               maxOutgoingConnections: 30,
             },
@@ -394,6 +396,9 @@ export default function getBaseConfigFactory() {
               port: 26657,
               maxOpenConnections: 900,
               timeoutBroadcastTx: 0,
+              // Largest JSON-RPC request body: a 32 MiB contract-code state transition arrives
+              // base64-encoded (44.7 MB) inside broadcast_tx_sync, plus the JSON envelope.
+              maxBodyBytes: 50000000,
             },
             pprof: {
               enabled: false,
@@ -408,6 +413,11 @@ export default function getBaseConfigFactory() {
               cacheSize: 15000,
               size: 5000,
               maxTxsBytes: 1073741824,
+              // Largest single transaction the mempool accepts. Must be at least the largest
+              // state transition family cap of the protocol version Drive runs: 32 MiB for the
+              // contract-code capable contract transitions from protocol version 17; every
+              // other family stays at 20 KiB and Drive enforces both.
+              maxTxBytes: 33554432,
               timeoutCheckTx: '1s',
               txEnqueueTimeout: '10ms',
               txSendRateLimit: 10,

@@ -431,6 +431,55 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
+  it('should add the Tenderdash transaction size options and raise stock bandwidth caps on a 4.x config', async () => {
+    // Loading is what fails without the two options: the schema requires them.
+    // The bandwidth caps are only moved off the stock value, so an operator who
+    // tuned them keeps their number.
+    const fromVersion = '4.2.0';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const baseConfig = container.resolve('defaultConfigs').get('base');
+    const tunedSendRate = 1234567;
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = fromVersion;
+    const [stockName, tunedName] = Object.keys(configFileData.configs);
+    for (const [name, options] of Object.entries(configFileData.configs)) {
+      // The shape a config stamped 4.2.0 carries: no per-transaction limits and
+      // the bandwidth caps of that release.
+      delete options.platform.drive.tenderdash.mempool.maxTxBytes;
+      delete options.platform.drive.tenderdash.rpc.maxBodyBytes;
+      options.platform.drive.tenderdash.p2p.sendRate = name === tunedName ? tunedSendRate : 5120000;
+      options.platform.drive.tenderdash.p2p.recvRate = 5120000;
+    }
+
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      const { tenderdash } = options.platform.drive;
+      expect(tenderdash.mempool.maxTxBytes).to.equal(
+        baseConfig.get('platform.drive.tenderdash.mempool.maxTxBytes'),
+        `5.0.0 did not add the transaction size cap for ${name}`,
+      );
+      expect(tenderdash.rpc.maxBodyBytes).to.equal(
+        baseConfig.get('platform.drive.tenderdash.rpc.maxBodyBytes'),
+        `5.0.0 did not add the RPC body cap for ${name}`,
+      );
+      expect(tenderdash.p2p.recvRate).to.equal(
+        baseConfig.get('platform.drive.tenderdash.p2p.recvRate'),
+        `5.0.0 did not raise the stock receive rate for ${name}`,
+      );
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+    expect(migrated.configs[stockName].platform.drive.tenderdash.p2p.sendRate).to.equal(
+      baseConfig.get('platform.drive.tenderdash.p2p.sendRate'),
+    );
+    expect(migrated.configs[tunedName].platform.drive.tenderdash.p2p.sendRate).to.equal(
+      tunedSendRate,
+      'an operator-tuned send rate was overwritten',
+    );
+  });
+
   // Upgrading Dashmate has to leave a mark on the config file even when nothing
   // needed migrating, because that recorded version is the only thing that tells
   // the next command every config is stale. `ConfigFileJsonRepository.read()`

@@ -9,8 +9,34 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::{sync::broadcast, time::timeout};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{
+    connect_async_with_config,
+    tungstenite::{Message, protocol::WebSocketConfig},
+};
 use tracing::{debug, error, info, trace, warn};
+
+/// The largest WebSocket message and frame accepted from Tenderdash.
+///
+/// Tenderdash serialises every event as one JSON-RPC message and writes it as a single
+/// uncompressed frame, so tungstenite's defaults (64 MiB per message, 16 MiB per frame) decide
+/// whether an event arrives at all. A `Tx` event carries the transaction base64-encoded, and a
+/// `NewBlock` event carries the whole block including its transactions the same way: a
+/// contract-code state transition at the 32 MiB family cap becomes about 44.7 MB of base64,
+/// and a block at the 36 MiB `block_max_bytes` about 50.3 MB. A frame limit below that
+/// disconnects the listener exactly when the transaction `waitForStateTransitionResult` is
+/// waiting for is committed. Both limits are therefore set to this value, which a test pins
+/// above the base64 size of the largest block every registered protocol version allows plus
+/// the JSON envelope.
+pub const MAX_TENDERDASH_WS_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
+
+/// The tungstenite configuration every connection to Tenderdash uses.
+fn tenderdash_websocket_config() -> WebSocketConfig {
+    WebSocketConfig {
+        max_message_size: Some(MAX_TENDERDASH_WS_MESSAGE_BYTES),
+        max_frame_size: Some(MAX_TENDERDASH_WS_MESSAGE_BYTES),
+        ..WebSocketConfig::default()
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionEvent {
@@ -103,11 +129,12 @@ impl TenderdashWebSocketClient {
         let _url = url::Url::parse(ws_url)?;
 
         // Try to connect
-        let (mut ws_stream, _) = timeout(CONNECT_TIMEOUT, connect_async(ws_url))
-            .await
-            .map_err(|e| {
-                DapiError::timeout(format!("WebSocket connection test timed out: {e}"))
-            })??;
+        let (mut ws_stream, _) = timeout(
+            CONNECT_TIMEOUT,
+            connect_async_with_config(ws_url, Some(tenderdash_websocket_config()), false),
+        )
+        .await
+        .map_err(|e| DapiError::timeout(format!("WebSocket connection test timed out: {e}")))??;
 
         ws_stream
             .close(None)
@@ -123,9 +150,12 @@ impl TenderdashWebSocketClient {
 
         // Validate URL format
         let _url = url::Url::parse(&self.ws_url)?;
-        let (ws_stream, _) = timeout(CONNECT_TIMEOUT, connect_async(&self.ws_url))
-            .await
-            .map_err(|e| DapiError::timeout(format!("WebSocket connect timed out: {e}")))??;
+        let (ws_stream, _) = timeout(
+            CONNECT_TIMEOUT,
+            connect_async_with_config(&self.ws_url, Some(tenderdash_websocket_config()), false),
+        )
+        .await
+        .map_err(|e| DapiError::timeout(format!("WebSocket connect timed out: {e}")))??;
 
         self.is_connected.store(true, Ordering::Relaxed);
         tracing::debug!(ws_url = self.ws_url, "Connected to Tenderdash WebSocket");
@@ -377,6 +407,221 @@ fn normalize_event_hash(value: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    mod large_events {
+        use super::*;
+        use base64::prelude::{BASE64_STANDARD, Engine};
+        use dpp::version::{PLATFORM_VERSIONS, PlatformVersion};
+        use std::time::Duration;
+        use tokio::net::TcpListener;
+        use tokio_tungstenite::{accept_async_with_config, connect_async};
+
+        /// Base64 grows the payload by a third; the JSON-RPC envelope, the event attributes
+        /// and the block header sit inside this allowance.
+        const ENVELOPE_HEADROOM_BYTES: usize = 1024 * 1024;
+
+        fn base64_len(raw_len: usize) -> usize {
+            raw_len.div_ceil(3) * 4
+        }
+
+        /// The cap must hold the largest block any registered protocol version lets
+        /// Tenderdash build (its `block_max_bytes`, or the genesis 2 MiB where a version sets
+        /// none) after base64 encoding, with room for the envelope, or the `NewBlock` event of
+        /// a full block disconnects the listener.
+        #[test]
+        fn message_cap_exceeds_the_base64_size_of_every_versions_largest_block() {
+            const GENESIS_BLOCK_MAX_BYTES: u64 = 2 * 1024 * 1024;
+            for platform_version in PLATFORM_VERSIONS {
+                let block_max_bytes = platform_version
+                    .consensus
+                    .block_max_bytes
+                    .unwrap_or(GENESIS_BLOCK_MAX_BYTES)
+                    as usize;
+                assert!(
+                    base64_len(block_max_bytes) + ENVELOPE_HEADROOM_BYTES
+                        <= MAX_TENDERDASH_WS_MESSAGE_BYTES,
+                    "protocol version {} allows a {block_max_bytes} byte block whose NewBlock \
+                     event would not fit the WebSocket message cap",
+                    platform_version.protocol_version
+                );
+            }
+        }
+
+        fn tx_event_message(tx: &[u8]) -> String {
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "subscription_id": "",
+                    "query": "tm.event = 'Tx'",
+                    "data": {
+                        "type": "tendermint/event/Tx",
+                        "value": {
+                            "height": 4242,
+                            "tx": BASE64_STANDARD.encode(tx),
+                            "result": { "gas_used": 1 }
+                        }
+                    },
+                    "events": [
+                        {
+                            "type": "tx",
+                            "attributes": [
+                                { "key": "hash", "value": "AB".repeat(32), "index": false }
+                            ]
+                        }
+                    ]
+                }
+            })
+            .to_string()
+        }
+
+        fn new_block_event_message(block_bytes: &[u8]) -> String {
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "subscription_id": "",
+                    "query": "tm.event = 'NewBlock'",
+                    "data": {
+                        "type": "tendermint/event/NewBlock",
+                        "value": {
+                            "block": {
+                                "data": { "txs": [BASE64_STANDARD.encode(block_bytes)] }
+                            }
+                        }
+                    },
+                    "events": []
+                }
+            })
+            .to_string()
+        }
+
+        /// A local server standing in for Tenderdash: every connection receives a `Tx` event
+        /// carrying a transaction at the family cap and a `NewBlock` event carrying a block at
+        /// the block cap, each as one frame the way Tenderdash writes them, then a close.
+        async fn spawn_event_server(tx: Vec<u8>, block: Vec<u8>) -> String {
+            let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+            let address = listener.local_addr().expect("local address");
+            tokio::spawn(async move {
+                loop {
+                    let (stream, _) = listener.accept().await.expect("accept");
+                    let tx = tx.clone();
+                    let block = block.clone();
+                    tokio::spawn(async move {
+                        let server_config = WebSocketConfig {
+                            max_message_size: None,
+                            max_frame_size: None,
+                            ..WebSocketConfig::default()
+                        };
+                        let mut ws = accept_async_with_config(stream, Some(server_config))
+                            .await
+                            .expect("server handshake");
+                        // Tenderdash acknowledges the subscriptions first.
+                        for _ in 0..2 {
+                            if let Some(Ok(Message::Text(_))) = ws.next().await {
+                                let ack = json!({ "jsonrpc": "2.0", "id": 0, "result": {} });
+                                let _ = ws.send(Message::Text(ack.to_string())).await;
+                            }
+                        }
+                        let _ = ws.send(Message::Text(tx_event_message(&tx))).await;
+                        let _ = ws
+                            .send(Message::Text(new_block_event_message(&block)))
+                            .await;
+                        let _ = ws.send(Message::Close(None)).await;
+                        while let Some(Ok(_)) = ws.next().await {}
+                    });
+                }
+            });
+            format!("ws://{address}")
+        }
+
+        fn family_cap_transaction() -> Vec<u8> {
+            let family_cap = PlatformVersion::latest()
+                .system_limits
+                .max_contract_code_state_transition_size
+                .expect("the latest version bounds contract code envelopes")
+                as usize;
+            vec![0x5Au8; family_cap]
+        }
+
+        fn block_cap_block() -> Vec<u8> {
+            let block_cap = PlatformVersion::latest()
+                .consensus
+                .block_max_bytes
+                .expect("the latest version sets the block byte cap")
+                as usize;
+            vec![0xA5u8; block_cap]
+        }
+
+        /// The configured connection delivers a `Tx` event carrying a transaction at the
+        /// family cap and a `NewBlock` event carrying a block at the block cap, each larger
+        /// than tungstenite's default frame limit.
+        #[tokio::test]
+        async fn configured_connection_delivers_large_tx_and_new_block_events() {
+            let tx = family_cap_transaction();
+            let ws_url = spawn_event_server(tx.clone(), block_cap_block()).await;
+
+            let client = Arc::new(TenderdashWebSocketClient::new(ws_url, 8));
+            let mut tx_events = client.subscribe();
+            let mut block_events = client.subscribe_blocks();
+            let listener = {
+                let client = Arc::clone(&client);
+                tokio::spawn(async move { client.connect_and_listen().await })
+            };
+
+            let tx_event = timeout(Duration::from_secs(60), tx_events.recv())
+                .await
+                .expect("the Tx event arrives in time")
+                .expect("the Tx event is broadcast");
+            assert_eq!(tx_event.height, 4242);
+            assert_eq!(tx_event.tx.as_deref(), Some(tx.as_slice()));
+            timeout(Duration::from_secs(60), block_events.recv())
+                .await
+                .expect("the NewBlock event arrives in time")
+                .expect("the NewBlock event is broadcast");
+
+            timeout(Duration::from_secs(60), listener)
+                .await
+                .expect("the listener returns after the close")
+                .expect("the listener task completes")
+                .expect("the listener exits cleanly");
+        }
+
+        /// The same events through tungstenite's defaults are refused at the frame limit,
+        /// which is what the configuration above prevents.
+        #[tokio::test]
+        async fn default_connection_refuses_the_same_events() {
+            let ws_url = spawn_event_server(family_cap_transaction(), block_cap_block()).await;
+            let (mut ws, _) = connect_async(&ws_url).await.expect("connect");
+            ws.send(Message::Text(String::new())).await.expect("send");
+            ws.send(Message::Text(String::new())).await.expect("send");
+            let mut refused = false;
+            while let Some(message) = timeout(Duration::from_secs(60), ws.next())
+                .await
+                .expect("the server keeps sending")
+            {
+                match message {
+                    Ok(Message::Text(text)) if text.contains("tm.event") => {
+                        panic!("a {} byte event passed the default frame limit", text.len())
+                    }
+                    Ok(Message::Close(_)) => break,
+                    Ok(_) => {}
+                    Err(error) => {
+                        refused = true;
+                        assert!(
+                            matches!(error, tokio_tungstenite::tungstenite::Error::Capacity(_)),
+                            "expected the frame limit to refuse the event, got {error:?}"
+                        );
+                        break;
+                    }
+                }
+            }
+            assert!(
+                refused,
+                "the default frame limit must refuse a family-cap event"
+            );
+        }
+    }
 
     #[test]
     fn test_tx_event_deserialization_with_string_height() {

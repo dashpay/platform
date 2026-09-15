@@ -50,4 +50,9 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
     max_time_range_overlap_factor: None,
+    // contract code bundles arrive with the 5.0 protocol version
+    max_contract_code_state_transition_size: None,
+    max_contract_code_state_transition_decode_budget: None,
+    max_contract_code_bundle_bytes: None,
+    max_contract_code_modules_per_bundle: None,
 };
