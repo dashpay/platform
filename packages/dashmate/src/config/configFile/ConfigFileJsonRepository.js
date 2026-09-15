@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import lockfile from 'proper-lockfile';
 import semver from 'semver';
 import writeFileAtomic from 'write-file-atomic';
+import getDefaultSeedUpdates from '../../tenderdash/getDefaultSeedUpdates.js';
 import Config from '../Config.js';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
 import ConfigFileNotFoundError from '../errors/ConfigFileNotFoundError.js';
@@ -80,6 +81,8 @@ export default class ConfigFileJsonRepository {
    * @param {Object} [configFileLockOptions={}] - lock timing overrides
    * @param {number} [configFileLockOptions.stale]
    * @param {number} [configFileLockOptions.acquireTimeout]
+   * @param {ensureTenderdashNodeKey} [ensureTenderdashNodeKey] - completes a
+   *   platform config's node identity before it is saved
    */
   constructor(
     migrateConfigFile,
@@ -87,10 +90,12 @@ export default class ConfigFileJsonRepository {
     createConfigFile,
     configFormatVersion,
     configFileLockOptions = {},
+    ensureTenderdashNodeKey = () => {},
   ) {
     this.migrateConfigFile = migrateConfigFile;
     this.configFormatVersion = configFormatVersion;
     this.createConfigFile = createConfigFile;
+    this.ensureTenderdashNodeKey = ensureTenderdashNodeKey;
     this.ajv = new Ajv();
     this.lockStaleMs = configFileLockOptions.stale ?? LOCK_STALE_MS;
     this.lockAcquireTimeoutMs = configFileLockOptions.acquireTimeout ?? LOCK_ACQUIRE_TIMEOUT_MS;
@@ -163,6 +168,11 @@ export default class ConfigFileJsonRepository {
       throw new InvalidConfigFileFormatError(this.configFilePath, error);
     }
 
+    const seedUpdates = getDefaultSeedUpdates(migratedConfigFileData.configs);
+    seedUpdates.forEach(([name, seeds]) => {
+      migratedConfigFileData.configs[name].platform.drive.tenderdash.p2p.seeds = seeds;
+    });
+
     let configs;
     try {
       configs = Object.entries(migratedConfigFileData.configs)
@@ -193,6 +203,11 @@ export default class ConfigFileJsonRepository {
     if (migratedConfigFileData.configFormatVersion !== originConfigVersion) {
       configFile.markAsChanged();
       configFile.getAllConfigs().forEach((config) => config.markAsChanged());
+    }
+
+    if (seedUpdates.length > 0) {
+      configFile.markAsChanged();
+      seedUpdates.forEach(([name]) => configFile.getConfig(name).markAsChanged());
     }
 
     return configFile;
@@ -265,7 +280,7 @@ export default class ConfigFileJsonRepository {
       return { configFile, migrated };
     };
 
-    // Decide whether a migration is due from the recorded version alone.
+    // Check the recorded version and obsolete stock seeds without running migrations.
     // Migrations are not all pure - some move service files on disk and delete
     // the originals - so running them to find out would do that work outside
     // the lock, and again inside it.
@@ -299,7 +314,7 @@ export default class ConfigFileJsonRepository {
   /**
    * Whether the file on disk records an older format than this build produces.
    *
-   * Reads the recorded version only. Running the migrations to find out would
+   * Checks recorded data only. Running the migrations to find out would
    * perform their side effects - the 0.25.7 migration moves TLS files and
    * deletes the originals - before this process holds the lock.
    *
@@ -317,9 +332,11 @@ export default class ConfigFileJsonRepository {
     let recordedVersion;
 
     try {
-      recordedVersion = JSON.parse(
-        fs.readFileSync(this.configFilePath, 'utf8'),
-      ).configFormatVersion;
+      const data = JSON.parse(fs.readFileSync(this.configFilePath, 'utf8'));
+      if (getDefaultSeedUpdates(data.configs).length > 0) {
+        return true;
+      }
+      recordedVersion = data.configFormatVersion;
     } catch {
       // An unreadable or malformed file is read()'s to report, with the error
       // that names the file and the reason.
@@ -451,6 +468,19 @@ export default class ConfigFileJsonRepository {
    * @param {ConfigFile} configFile
    */
   #save(configFile) {
+    // A platform node must not reach disk without its identity, or the rendered
+    // node_key.json holds a key the saved config does not and the next render
+    // mints another. Every save path ends here, so the in-flight configs are
+    // completed rather than re-read and saved separately.
+    //
+    // Changed configs only: a config stays changed until its service files are
+    // rendered, so these are exactly the ones the caller renders next. An
+    // untouched config would otherwise gain an identity in config.json that its
+    // node_key.json never receives.
+    configFile.getAllConfigs()
+      .filter((config) => config.isChanged())
+      .forEach((config) => this.ensureTenderdashNodeKey(config));
+
     const configFileJSON = `${JSON.stringify(configFile.toObject(), undefined, 2)}\n`;
 
     if (this.#compromised) {

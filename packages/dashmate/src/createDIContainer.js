@@ -33,6 +33,7 @@ import cancelCertificate from './ssl/zerossl/cancelCertificate.js';
 
 import renderTemplateFactory from './templates/renderTemplateFactory.js';
 import renderServiceTemplatesFactory from './templates/renderServiceTemplatesFactory.js';
+import ensureTenderdashNodeKeyFactory from './tenderdash/ensureTenderdashNodeKeyFactory.js';
 import writeServiceConfigsFactory from './templates/writeServiceConfigsFactory.js';
 
 import DockerCompose from './docker/DockerCompose.js';
@@ -217,6 +218,7 @@ export default async function createDIContainer(options = {}) {
    * Templates
    */
   container.register({
+    ensureTenderdashNodeKey: asFunction(ensureTenderdashNodeKeyFactory).singleton(),
     renderTemplate: asFunction(renderTemplateFactory).singleton(),
     renderServiceTemplates: asFunction(renderServiceTemplatesFactory).singleton(),
     writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton(),

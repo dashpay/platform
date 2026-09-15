@@ -1,6 +1,7 @@
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import renderServiceTemplatesFactory from '../../../src/templates/renderServiceTemplatesFactory.js';
+import ensureTenderdashNodeKeyFactory from '../../../src/tenderdash/ensureTenderdashNodeKeyFactory.js';
 import renderTemplateFactory from '../../../src/templates/renderTemplateFactory.js';
 
 describe('envoy template', () => {
@@ -12,7 +13,11 @@ describe('envoy template', () => {
     config.set('platform.gateway.admin.enabled', false);
 
     const renderTemplate = renderTemplateFactory();
-    const renderServiceTemplates = renderServiceTemplatesFactory(renderTemplate);
+    const ensureTenderdashNodeKey = ensureTenderdashNodeKeyFactory();
+    const renderServiceTemplates = renderServiceTemplatesFactory(
+      renderTemplate,
+      ensureTenderdashNodeKey,
+    );
     const renderedConfigs = renderServiceTemplates(config);
 
     const envoyConfig = renderedConfigs['platform/gateway/envoy.yaml'];
