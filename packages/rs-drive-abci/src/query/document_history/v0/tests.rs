@@ -219,6 +219,22 @@ fn history_api_proof_round_trip(gapped: bool) {
                 prove: true,
                 filter: Some(wire_selector),
             };
+            // Drive refuses revision reads over a gapped history; the handler
+            // must answer that as an invalid argument, not as a node error
+            // the client would retry.
+            for prove in [true, false] {
+                let mut refused = request.clone();
+                refused.prove = prove;
+                let result = platform
+                    .query_document_history_v0(refused, &state, version)
+                    .expect("a refused revision read is a query error, not a node error");
+                assert!(!result.is_valid());
+                assert!(
+                    matches!(result.errors.first(), Some(QueryError::Query(_))),
+                    "prove={prove}: {:?}",
+                    result.errors
+                );
+            }
             let mut time_request = request.clone();
             time_request.filter = Some(Filter::StartAtMs(0));
             let mut response = platform
