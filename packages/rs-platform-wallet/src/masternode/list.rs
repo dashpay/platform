@@ -29,6 +29,13 @@ pub struct MasternodeListSummary {
     /// Primary routable Core P2P endpoint. `None` for Tor / I2P / CJDNS /
     /// domain-only entries, which have no `SocketAddr` form.
     pub service_address: Option<SocketAddr>,
+    /// EVERY advertised endpoint with a socket form — the primary plus, for
+    /// a v3 extended entry, the rest of its endpoint map across all
+    /// purposes. Core registers each of them as a unique property of the
+    /// masternode (`bad-protx-dup-netinfo-entry`), so uniqueness preflights
+    /// must compare against all of these, never just `service_address`.
+    /// Defaults to the primary alone on pre-field snapshots.
+    pub service_addresses: Vec<SocketAddr>,
     /// Platform HTTP (DAPI gRPC) port — evonodes only.
     pub platform_http_port: Option<u16>,
     /// Operator BLS public key (48 bytes, as serialized in the list — the
@@ -51,6 +58,13 @@ pub struct MasternodeListSummary {
     /// Snapshots persisted before this field existed default to `false`;
     /// that guard reads only live list summaries.
     pub has_extended_net_info: bool,
+    /// The entry is version 1 (pre-v19), so `operator_public_key` uses the
+    /// LEGACY BLS serialization. A kept operator key re-entering a
+    /// version-2 payload must then be reserialized to the basic scheme —
+    /// the two serializations of one point differ only in flag bits, so
+    /// this cannot be inferred from the bytes. Defaults to `false` on
+    /// pre-field snapshots; the registrar path reads only live summaries.
+    pub operator_key_is_legacy: bool,
 }
 
 impl MasternodeListSummary {
@@ -79,6 +93,7 @@ impl MasternodeListSummary {
         Self {
             pro_tx_hash,
             service_address: entry.service_address.primary_service_address(),
+            service_addresses: all_socket_addresses(&entry.service_address),
             platform_http_port,
             operator_public_key,
             voting_key_id,
@@ -89,6 +104,7 @@ impl MasternodeListSummary {
                 entry.service_address,
                 dashcore::sml::masternode_list_entry::MasternodeNetInfo::Extended(_)
             ),
+            operator_key_is_legacy: entry.version < 2,
         }
     }
 
@@ -107,6 +123,52 @@ impl MasternodeListSummary {
         let mut out = self.pro_tx_hash;
         out.reverse();
         out
+    }
+}
+
+/// Every endpoint of `net_info` with a socket form, across all purposes —
+/// the shape Core's unique-property index holds them in (each entry of an
+/// extended map is registered individually). Tor / I2P / CJDNS / domain
+/// entries have no `SocketAddr` form and are skipped; a caller-supplied
+/// `ip:port` value can never collide with them anyway.
+fn all_socket_addresses(
+    net_info: &dashcore::sml::masternode_list_entry::MasternodeNetInfo,
+) -> Vec<SocketAddr> {
+    use dashcore::sml::masternode_list_entry::net_info::{Bip155Network, NetInfoEntry};
+    use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
+    use std::net::{SocketAddrV4, SocketAddrV6};
+
+    match net_info {
+        MasternodeNetInfo::Legacy(addr) => vec![*addr],
+        MasternodeNetInfo::Extended(info) => info
+            .purposes
+            .iter()
+            .flat_map(|(_, entries)| entries.iter())
+            .filter_map(|entry| match entry {
+                NetInfoEntry::Service {
+                    network: Bip155Network::Ipv4,
+                    addr,
+                    port,
+                } => {
+                    let octets: [u8; 4] = addr.as_slice().try_into().ok()?;
+                    Some(SocketAddr::V4(SocketAddrV4::new(octets.into(), *port)))
+                }
+                NetInfoEntry::Service {
+                    network: Bip155Network::Ipv6,
+                    addr,
+                    port,
+                } => {
+                    let octets: [u8; 16] = addr.as_slice().try_into().ok()?;
+                    Some(SocketAddr::V6(SocketAddrV6::new(
+                        octets.into(),
+                        *port,
+                        0,
+                        0,
+                    )))
+                }
+                _ => None,
+            })
+            .collect(),
     }
 }
 
@@ -165,12 +227,11 @@ pub(crate) mod test_support {
     /// operator key and voting key id are all derived from `seed` so every
     /// entry is distinct and recognizable.
     pub(crate) fn masternode(seed: u8) -> MasternodeListSummary {
+        let primary = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(10, 0, 0, seed), 9999));
         MasternodeListSummary {
             pro_tx_hash: [seed; 32],
-            service_address: Some(SocketAddr::V4(SocketAddrV4::new(
-                Ipv4Addr::new(10, 0, 0, seed),
-                9999,
-            ))),
+            service_address: Some(primary),
+            service_addresses: vec![primary],
             platform_http_port: None,
             operator_public_key: [seed; 48],
             voting_key_id: [seed; 20],
@@ -178,6 +239,7 @@ pub(crate) mod test_support {
             is_valid: true,
             is_evonode: false,
             has_extended_net_info: false,
+            operator_key_is_legacy: false,
         }
     }
 
@@ -242,6 +304,11 @@ mod tests {
             s.service_address,
             Some("1.2.3.4:19999".parse::<SocketAddr>().unwrap())
         );
+        assert_eq!(
+            s.service_addresses,
+            vec!["1.2.3.4:19999".parse::<SocketAddr>().unwrap()],
+            "a legacy entry's endpoint list is its single address"
+        );
         assert_eq!(s.platform_http_port, Some(1443));
         assert_eq!(s.operator_public_key, [9u8; 48]);
         assert_eq!(s.voting_key_id, [5u8; 20]);
@@ -268,6 +335,97 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].pro_tx_hash, [2u8; 32]);
         assert!(find_in_summaries(&list, &MasternodeListQuery::ProTxHash([9u8; 32])).is_empty());
+    }
+
+    /// The extended-map conversion is what feeds the service-uniqueness
+    /// preflight its secondary endpoints: every socket entry under every
+    /// purpose must be lifted (Core's unique-property index registers each
+    /// one individually), while domain / invalid entries — which have no
+    /// socket form — are skipped. The lifted secondary endpoint must then
+    /// actually collide in the values validator.
+    #[test]
+    fn summary_lifts_every_extended_endpoint() {
+        use super::super::update_service::validate_update_service_values;
+        use dashcore::sml::masternode_list_entry::net_info::{
+            Bip155Network, ExtNetInfo, NetInfoEntry, NetInfoPurpose,
+        };
+        use dashcore::Network;
+
+        let mut ipv6 = [0u8; 16];
+        ipv6[0] = 0x20;
+        ipv6[1] = 0x01;
+        ipv6[15] = 0x01;
+        let entry = MasternodeListEntry {
+            version: 2,
+            pro_reg_tx_hash: ProTxHash::from_byte_array([8u8; 32]),
+            confirmed_hash: None,
+            service_address: MasternodeNetInfo::Extended(ExtNetInfo {
+                version: 1,
+                purposes: vec![
+                    (
+                        NetInfoPurpose::CoreP2P,
+                        vec![
+                            NetInfoEntry::Service {
+                                network: Bip155Network::Ipv4,
+                                addr: vec![34, 214, 48, 68],
+                                port: 19999,
+                            },
+                            NetInfoEntry::Service {
+                                network: Bip155Network::Ipv4,
+                                addr: vec![34, 214, 48, 69],
+                                port: 29999,
+                            },
+                            NetInfoEntry::Domain {
+                                host: "node.example".to_string(),
+                                port: 19999,
+                            },
+                        ],
+                    ),
+                    (
+                        NetInfoPurpose::PlatformHttps,
+                        vec![
+                            NetInfoEntry::Service {
+                                network: Bip155Network::Ipv6,
+                                addr: ipv6.to_vec(),
+                                port: 443,
+                            },
+                            NetInfoEntry::Invalid,
+                        ],
+                    ),
+                ],
+            }),
+            operator_public_key: BLSPublicKey::from([9u8; 48]),
+            key_id_voting: PubkeyHash::from_byte_array([5u8; 20]),
+            is_valid: true,
+            mn_type: EntryMasternodeType::Regular,
+        };
+
+        let summary = MasternodeListSummary::from_entry(&entry);
+        assert!(summary.has_extended_net_info);
+        assert_eq!(
+            summary.service_addresses,
+            vec![
+                "34.214.48.68:19999".parse::<SocketAddr>().unwrap(),
+                "34.214.48.69:29999".parse::<SocketAddr>().unwrap(),
+                "[2001::1]:443".parse::<SocketAddr>().unwrap(),
+            ],
+            "every socket endpoint under every purpose is lifted; \
+             domain and invalid entries are skipped"
+        );
+
+        // A caller-supplied value equal to the extended entry's SECONDARY
+        // endpoint is refused by the uniqueness preflight — the join this
+        // converter exists to feed.
+        let target = masternode(0x60);
+        let summaries = vec![target.clone(), summary];
+        let values = super::super::update_service::UpdateServiceValues {
+            service_address: "34.214.48.69:29999".to_string(),
+            platform_node_id: None,
+            platform_p2p_port: None,
+            platform_http_port: None,
+        };
+        validate_update_service_values(Network::Testnet, &target, &values, &summaries)
+            .expect_err("another entry's secondary extended endpoint must collide");
     }
 
     #[test]

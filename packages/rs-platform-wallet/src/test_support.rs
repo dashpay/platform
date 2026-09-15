@@ -702,6 +702,24 @@ pub async fn test_platform_wallet_manager() -> (
     (manager, wallet_id)
 }
 
+/// Synchronous wrapper over [`test_platform_wallet_manager`] for blocking
+/// tests: builds the manager on its own runtime, resolves the wallet handle
+/// outside it, and leaks the manager so the registered `Arc<PlatformWallet>`
+/// stays alive — the same threading shape the FFI worker gives these calls.
+#[cfg(test)]
+pub(crate) fn sync_test_platform_wallet() -> Arc<crate::wallet::platform_wallet::PlatformWallet> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("test runtime");
+    let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
+    let wallet = manager
+        .get_wallet_blocking(&wallet_id)
+        .expect("test wallet");
+    std::mem::forget(manager);
+    wallet
+}
+
 /// Canonical all-`abandon` BIP-39 test vector. Fixed (not
 /// `TestWalletContext::new_random`) so every key it derives is a stable golden —
 /// which is what lets the signed-message tests pin an RFC6979-deterministic

@@ -58,6 +58,7 @@ pub mod managed_identity;
 pub mod manager;
 pub mod manager_diagnostics;
 pub mod masternode_locator;
+pub mod masternode_update_registrar;
 pub mod masternode_update_service;
 pub mod masternode_withdrawal;
 pub mod memory_explorer;
