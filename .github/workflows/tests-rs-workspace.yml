@@ -48,7 +48,10 @@ jobs:
       # target/llvm-cov-target is deliberately NOT pruned here: it holds the
       # coverage-instrumented build (~10GB) that makes the test step's compile
       # incremental (~2.5 min saved per run). The size/free-disk guard below
-      # removes the whole target/ if it ever outgrows the caps.
+      # removes the whole target/ if it ever outgrows the caps; the
+      # executables that earlier builds left in it are dropped just before
+      # the test step, once cargo is available ("Drop stale coverage
+      # objects" below).
       - name: Prune runner disk before tests
         run: |
           for path in ../target-backup-before-*-clean-*; do
@@ -377,9 +380,82 @@ jobs:
 
       # Leftover profile data from a cancelled run is handled earlier, in
       # "Prune runner disk before tests", unconditionally for every job.
+      # The tree-hash marker goes with the reports: from here on the lcov
+      # files on disk belong to THIS tree, and a marker that an earlier full
+      # run of a different tree wrote must not let a later run of that tree
+      # reuse them (a PR run regenerates the files but never rewrites the
+      # marker, so the two could otherwise drift apart).
       - name: Remove stale coverage data
         if: steps.coverage-cache.outputs.reuse == 'false'
-        run: rm -f lcov.info lcov-nonshielded.info lcov-strategy.info lcov-shielded.info
+        run: rm -f lcov.info lcov-nonshielded.info lcov-strategy.info lcov-shielded.info target/lcov-tree-hash
+
+      # cargo-llvm-cov does not build the report from the binaries this run
+      # produced: `cargo llvm-cov report` walks target/llvm-cov-target/debug
+      # and hands llvm-cov EVERY executable whose name matches a workspace
+      # package or target (report.rs `object_files`). Nothing removes the old
+      # ones: `--no-report` implies `--no-clean`, which skips the
+      # `cargo clean -p <members>` cargo-llvm-cov would otherwise run before
+      # building, so every test binary that a version bump, Cargo.lock
+      # change or toolchain bump re-keyed under a new hash stays behind in
+      # deps/ and keeps being read. Those stale objects carry the coverage
+      # regions of the tree they were built from and have no counts in this
+      # run's profile; llvm-cov loads them next to the current binaries and
+      # keeps the first record it meets per function, so lines that changed
+      # since pick up misses (and lose hits) unrelated to the code under
+      # test. That is what made the `rust` flag swing between ~74% and ~84%
+      # on the same runner within hours and fail codecov/project on PRs that
+      # never touched dpp or drive: base and head had simply been built on
+      # runners holding different leftovers. It is a property of the
+      # runner's retained target/, not of its OS, so per-OS flags or pinning
+      # the job to one OS would not have fixed it.
+      #
+      # Only the executables (test binaries, uplifted bins, examples and the
+      # workspace cdylibs) are removed, and only by the name filter
+      # cargo-llvm-cov itself applies. The workspace rlibs and the ~700
+      # dependency crates that make the retained build worth keeping stay
+      # cached: cargo recompiles the workspace's own test, bin and example
+      # targets against them and everything else is still incremental.
+      - name: Drop stale coverage objects
+        if: steps.coverage-cache.outputs.reuse == 'false'
+        run: |
+          python3 - <<'PY'
+          import json, os, re, stat, subprocess
+
+          root = "target/llvm-cov-target/debug"
+          if not os.path.isdir(root):
+              print("no retained coverage build; nothing to drop")
+              raise SystemExit(0)
+
+          meta = json.loads(subprocess.check_output(
+              ["cargo", "metadata", "--no-deps", "--format-version", "1"]))
+          names = set()
+          for pkg in meta["packages"]:
+              names.add(pkg["name"])
+              names.update(t["name"] for t in pkg["targets"])
+          # Same shape as cargo-llvm-cov's `pkg_hash_re`: an optional `lib`
+          # prefix, a workspace package or target name with `-` and `_`
+          # interchangeable, and an optional `-<hash>` suffix. Matched
+          # against the file name with every extension stripped, as
+          # cargo-llvm-cov does, so `libfoo-<hash>.dylib` is covered too.
+          alternatives = "|".join(sorted(n.replace("-", "[-_]") for n in names))
+          pattern = re.compile(rf"^(lib)?({alternatives})(-[0-9a-f]+)?$")
+
+          removed = 0
+          freed = 0
+          for directory in (root, f"{root}/deps", f"{root}/examples"):
+              if not os.path.isdir(directory):
+                  continue
+              for name in os.listdir(directory):
+                  path = f"{directory}/{name}"
+                  st = os.lstat(path)
+                  if not stat.S_ISREG(st.st_mode) or not st.st_mode & 0o111:
+                      continue
+                  if pattern.match(name.split(".")[0]):
+                      os.remove(path)
+                      removed += 1
+                      freed += st.st_size
+          print(f"dropped {removed} stale coverage objects ({freed >> 20} MB)")
+          PY
 
       # The drive-abci chain-simulation suite (strategy_tests, ~90
       # multi-second whole-chain simulations that dominate the test phase's
@@ -559,7 +635,10 @@ jobs:
       # size/free-disk guard in "Prune runner disk before tests", which
       # removes the whole target/ when it outgrows the caps. ("Prune runner
       # disk before tests" purges profile data again at the start of the next
-      # run, covering cancelled jobs where this step never executes.)
+      # run, covering cancelled jobs where this step never executes, and
+      # "Drop stale coverage objects" removes this run's executables before
+      # the next run's build so they can never be read as coverage objects
+      # for a different tree.)
       - name: Remove per-run coverage profile data
         if: always()
         run: |
