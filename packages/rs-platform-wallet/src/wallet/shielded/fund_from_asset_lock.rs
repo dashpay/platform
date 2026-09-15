@@ -430,8 +430,10 @@ impl PlatformWallet {
                     )
                 })
                 .await;
-                // The Chain proof was persisted above. If Platform places the
-                // transaction outside its height, keep the row off that proof.
+                // The Chain proof was persisted above. Its height was verified
+                // locally, but Platform checks it against its own Core view (a
+                // reorg or a lagging node can disagree); if Platform rejects the
+                // height, keep the row off that proof.
                 if let Err(e) = &submit_result {
                     if is_asset_lock_proof_transaction_height_invalid(e) {
                         tracing::warn!(

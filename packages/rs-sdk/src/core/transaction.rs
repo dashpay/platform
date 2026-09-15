@@ -3,12 +3,15 @@ use crate::platform::types::epoch::Epoch;
 use crate::{Error, Sdk};
 use bip37_bloom_filter::{BloomFilter, BloomFilterData};
 use dapi_grpc::core::v0::{
-    transactions_with_proofs_request, transactions_with_proofs_response, GetTransactionRequest,
-    GetTransactionResponse, TransactionsWithProofsRequest, TransactionsWithProofsResponse,
+    get_block_request, transactions_with_proofs_request, transactions_with_proofs_response,
+    GetBlockRequest, GetTransactionRequest, GetTransactionResponse, TransactionsWithProofsRequest,
+    TransactionsWithProofsResponse,
 };
 use dpp::dashcore::consensus::Decodable;
 use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::{Address, BlockHash, InstantLock, MerkleBlock, OutPoint, Transaction, Txid};
+use dpp::dashcore::{
+    Address, Block, BlockHash, InstantLock, MerkleBlock, OutPoint, Transaction, Txid,
+};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
@@ -135,6 +138,48 @@ impl Sdk {
             is_chain_locked: response.is_chain_locked,
             is_instant_locked: response.is_instant_locked,
         }))
+    }
+
+    /// Fetch a Core block by hash via DAPI `getBlock`.
+    ///
+    /// Returns `Ok(None)` when the node does not serve the block (gRPC
+    /// `NOT_FOUND` or an empty reply) and `Err` for any other failure,
+    /// including bytes that do not decode as a block. The bytes are
+    /// self-reported by the queried node: check `block_hash()` against a
+    /// header chain you trust before relying on anything in the block.
+    pub async fn get_block_by_hash(
+        &self,
+        hash: &BlockHash,
+        settings: RequestSettings,
+    ) -> Result<Option<Block>, Error> {
+        let response = match self
+            .execute(
+                GetBlockRequest {
+                    // Core's `getblock` takes the display-order hex `BlockHash` formats to.
+                    block: Some(get_block_request::Block::Hash(hash.to_string())),
+                },
+                settings,
+            )
+            .await
+            .into_inner()
+        {
+            Ok(response) => response,
+            Err(e) => {
+                let err: Error = e.into();
+                return if error_is_not_found(&err) {
+                    Ok(None)
+                } else {
+                    Err(err)
+                };
+            }
+        };
+
+        if response.block.is_empty() {
+            return Ok(None);
+        }
+        Block::consensus_decode(&mut response.block.as_slice())
+            .map(Some)
+            .map_err(|e| Error::CoreError(e.into()))
     }
 
     /// Run `getTransaction`, mapping an unknown transaction (gRPC `NOT_FOUND`

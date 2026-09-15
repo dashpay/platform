@@ -25,7 +25,8 @@ const LOCATE_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 /// Longest a single mined-height lookup may hold the ChainLock-proof wait.
 /// The wait cannot see lock events or its deadline while a lookup is
 /// in flight, so a stalled DAPI node must not be able to stretch that window.
-const LOCATE_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(15);
+/// One attempt makes two requests (the placement, then the block).
+const LOCATE_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Mined-height lookup state for ONE ChainLock-proof wait: the throttle, the
 /// latest answer, and which conditions have already been logged.
@@ -36,6 +37,8 @@ struct LocateState {
     logged_placed: bool,
     logged_header_missing: bool,
     logged_header_mismatch: bool,
+    logged_not_included: bool,
+    logged_block_unverifiable: bool,
     logged_not_found: bool,
     logged_not_mined: bool,
     logged_chain_lock_short: bool,
@@ -62,7 +65,7 @@ impl LocateState {
                 tracing::info!(
                     outpoint = %out_point,
                     height,
-                    "ChainLock wait: DAPI places the funding tx in a block the SPV header chain holds"
+                    "ChainLock wait: funding tx inclusion verified against the SPV header at height {height}"
                 );
             }
             Located::HeaderMissing { height } if !self.logged_header_missing => {
@@ -81,6 +84,25 @@ impl LocateState {
                     height,
                     "ChainLock wait: DAPI's block for the funding tx differs from the SPV header \
                      at that height; not using it"
+                );
+            }
+            Located::NotIncluded { height } if !self.logged_not_included => {
+                self.logged_not_included = true;
+                tracing::warn!(
+                    outpoint = %out_point,
+                    height,
+                    "ChainLock wait: the SPV-verified block at that height does not contain the \
+                     funding tx; not using DAPI's placement"
+                );
+            }
+            Located::BlockUnverifiable { height, reason } if !self.logged_block_unverifiable => {
+                self.logged_block_unverifiable = true;
+                tracing::warn!(
+                    outpoint = %out_point,
+                    height,
+                    reason = %reason,
+                    "ChainLock wait: could not verify the funding tx's inclusion in the \
+                     SPV-verified block"
                 );
             }
             Located::NotFound if !self.logged_not_found => {
@@ -2096,14 +2118,14 @@ mod chain_lock_wait_tests {
 
         // The guard outlasts the attempt cap by a second: both expire at the
         // same paused instant otherwise. The bound itself is asserted below.
-        let proof = tokio::time::timeout(Duration::from_secs(11), wait)
+        let proof = tokio::time::timeout(Duration::from_secs(16), wait)
             .await
             .expect("resolves once the stalled lookup is cut off")
             .expect("task")
             .expect("proof");
         assert_eq!(chain_proof_height(proof), 120);
         assert!(
-            started.elapsed() <= Duration::from_secs(15),
+            started.elapsed() <= Duration::from_secs(20),
             "{:?}",
             started.elapsed()
         );
@@ -2136,9 +2158,60 @@ mod chain_lock_wait_tests {
         let times = locator.call_times();
         assert_eq!(times.len(), 2);
         assert!(
-            times[1].duration_since(started) >= Duration::from_secs(15 + 30),
+            times[1].duration_since(started) >= Duration::from_secs(20 + 30),
             "second lookup at {:?}",
             times[1].duration_since(started)
         );
+    }
+
+    /// A block that lacks the funding tx is no placement: the wait keeps going
+    /// until a later lookup verifies inclusion.
+    #[tokio::test(start_paused = true)]
+    async fn not_included_answer_keeps_waiting_until_a_verified_placement() {
+        let locator = ScriptedLocator::new(vec![
+            Located::NotIncluded { height: 100 },
+            Located::Mined { height: 100 },
+        ]);
+        let ctx = ctx(
+            instant_send_context(),
+            Network::Testnet,
+            Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
+        )
+        .await;
+        set_wallet_chain_lock(&ctx, 150).await;
+
+        let proof = tokio::time::timeout(
+            Duration::from_secs(3600),
+            ctx.manager
+                .upgrade_to_chain_lock_proof(&ctx.out_point, None),
+        )
+        .await
+        .expect("the verified placement resolves the wait")
+        .expect("proof");
+        assert_eq!(chain_proof_height(proof), 100);
+        assert_eq!(locator.calls(), 2);
+    }
+
+    /// A block whose inclusion could not be checked never backs a proof.
+    #[tokio::test(start_paused = true)]
+    async fn unverifiable_block_is_never_a_proof_height() {
+        let locator = ScriptedLocator::new(vec![Located::BlockUnverifiable {
+            height: 100,
+            reason: "block not served".to_string(),
+        }]);
+        let ctx = ctx(
+            instant_send_context(),
+            Network::Testnet,
+            Some(locator as Arc<dyn MinedHeightLocator>),
+        )
+        .await;
+        set_wallet_chain_lock(&ctx, 150).await;
+
+        let err = ctx
+            .manager
+            .upgrade_to_chain_lock_proof(&ctx.out_point, Some(Duration::from_secs(90)))
+            .await
+            .expect_err("an unverified block must not produce a proof");
+        assert!(matches!(err, PlatformWalletError::FinalityTimeout(_)));
     }
 }

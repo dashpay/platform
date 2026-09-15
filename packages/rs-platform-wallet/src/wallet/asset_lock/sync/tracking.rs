@@ -483,7 +483,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// rejected the ChainLock proof built for it because the transaction is
     /// not in a block at or below the proof's height.
     ///
-    /// The Chain proof is persisted before it is submitted. Left in place,
+    /// Defence in depth: a looked-up height is only used once the SPV header
+    /// chain and the block's merkle root confirm the transaction, but Platform
+    /// judges the proof from its own Core view, which can still disagree (a
+    /// reorg, a lagging node). The Chain proof is persisted before it is submitted. Left in place,
     /// [`validate_or_upgrade_proof`](Self::validate_or_upgrade_proof) would
     /// hand that rejected proof back unchanged on every later resume; the
     /// InstantSend proof sends the next resume through the height lookup
