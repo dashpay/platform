@@ -2,10 +2,10 @@ use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
 };
-use crate::drive::document::paths::KeepHistoryStorage;
 use crate::drive::document::time_range_ttl::{entry_key_bucket_start, live_time_range_entry_keys};
 use crate::drive::document::{
-    make_document_reference, make_document_reference_with_sum_item, read_document_sum_contribution,
+    make_document_reference_v1, make_document_reference_with_sum_item_v1,
+    read_document_sum_contribution,
 };
 
 use crate::drive::Drive;
@@ -32,9 +32,7 @@ use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 
 use crate::drive::document::paths::{
-    contract_document_type_path,
-    contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_primary_key_path,
+    contract_document_type_path, contract_documents_primary_key_path,
 };
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{
@@ -211,38 +209,17 @@ impl Drive {
         // indexes use `Element::Reference`. The non-sum reference is
         // computed once here for reuse on all non-summable indexes;
         // summable indexes build their own variant inside the loop.
-        let document_reference = make_document_reference(
+        let document_reference = make_document_reference_v1(
             document,
             document_and_contract_info.document_type,
             storage_flags,
-            &platform_version.drive,
-        )?;
+        );
 
         // next we need to get the old document from storage
-        let old_document_element = if document_type.documents_keep_history()
-            && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
-                == KeepHistoryStorage::HistoryTree
-        {
+        let old_document_element = if document_type.documents_keep_history() {
             self.grove_get(
                 (&contract_documents_primary_key_path).into(),
                 document.id().as_slice(),
-                QueryType::StatefulQuery,
-                transaction,
-                &mut batch_operations,
-                drive_version,
-            )?
-        } else if document_type.documents_keep_history() {
-            let contract_documents_keeping_history_primary_key_path_for_document_id =
-                contract_documents_keeping_history_primary_key_path_for_document_id(
-                    contract.id_ref().as_bytes(),
-                    document_type.name().as_str(),
-                    document.id_ref().as_slice(),
-                );
-            // When keeping document history the 0 is a reference that points to the current value
-            // O is just on one byte, so we have at most one hop of size 1 (1 byte)
-            self.grove_get(
-                (&contract_documents_keeping_history_primary_key_path_for_document_id).into(),
-                &[0],
                 QueryType::StatefulQuery,
                 transaction,
                 &mut batch_operations,
@@ -377,13 +354,12 @@ impl Drive {
             // bug an attacker could trigger with any benign no-op update).
             let index_document_reference = if let Some(sum_property_name) = &index.summable {
                 let sum_value = read_document_sum_contribution(document, sum_property_name)?;
-                make_document_reference_with_sum_item(
+                make_document_reference_with_sum_item_v1(
                     document,
                     document_and_contract_info.document_type,
                     sum_value,
                     storage_flags,
-                    &platform_version.drive,
-                )?
+                )
             } else {
                 document_reference.clone()
             };

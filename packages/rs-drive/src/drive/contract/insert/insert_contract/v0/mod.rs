@@ -1,5 +1,4 @@
 use crate::drive::contract::paths;
-use crate::drive::document::paths::KeepHistoryStorage;
 
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
@@ -285,19 +284,6 @@ impl Drive {
                 contract_documents_path[2],
                 type_key.as_bytes(),
             ];
-
-            if document_type.as_ref().documents_keep_history()
-                && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
-                    == KeepHistoryStorage::HistoryTree
-            {
-                self.batch_insert_empty_tree(
-                    type_path,
-                    KeyRef(&[crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY]),
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?;
-            }
 
             // indexOnly document types have no primary-key tree at all —
             // the index entries are the rows, and nothing is ever addressed

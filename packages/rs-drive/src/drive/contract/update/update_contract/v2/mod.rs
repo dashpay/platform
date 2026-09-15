@@ -1,3 +1,5 @@
+// Protocol 14 generation: keep-history document types a contract update adds
+// get their per-type history tree; everything else matches v1.
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -11,13 +13,20 @@ use dpp::fee::fee_result::FeeResult;
 
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
+use crate::drive::contract_documents_path;
+use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::error::contract::DataContractError;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::DriveKeyInfo::KeyRef;
+use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -45,7 +54,7 @@ impl Drive {
     ///
     /// This function returns an error if the contract update or fee calculation fails.
     #[inline(always)]
-    pub(super) fn update_contract_v1(
+    pub(super) fn update_contract_v2(
         &self,
         contract: &DataContract,
         block_info: BlockInfo,
@@ -98,7 +107,7 @@ impl Drive {
             )));
         }
 
-        self.update_contract_element_v1(
+        self.update_contract_element_v2(
             contract_element,
             contract,
             &original_contract_fetch_info.contract,
@@ -138,7 +147,7 @@ impl Drive {
     /// Updates a contract.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn update_contract_element_v1(
+    pub(super) fn update_contract_element_v2(
         &self,
         contract_element: Element,
         contract: &DataContract,
@@ -150,7 +159,7 @@ impl Drive {
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info =
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>;
-        let batch_operations = self.update_contract_operations_v1(
+        let batch_operations = self.update_contract_operations_v2(
             contract_element,
             contract,
             original_contract,
@@ -171,7 +180,7 @@ impl Drive {
     /// Updates a contract.
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    pub(super) fn update_contract_add_operations_v1(
+    pub(super) fn update_contract_add_operations_v2(
         &self,
         contract_element: Element,
         contract: &DataContract,
@@ -184,7 +193,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let batch_operations = self.update_contract_operations_v1(
+        let batch_operations = self.update_contract_operations_v2(
             contract_element,
             contract,
             original_contract,
@@ -199,7 +208,7 @@ impl Drive {
 
     /// operations for updating a contract.
     #[allow(clippy::too_many_arguments)]
-    fn update_contract_operations_v1(
+    fn update_contract_operations_v2(
         &self,
         contract_element: Element,
         contract: &DataContract,
@@ -212,7 +221,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = self
-            .update_contract_operations_v0(
+            .update_contract_base_operations_v2(
                 contract_element,
                 contract,
                 original_contract,
@@ -295,6 +304,362 @@ impl Drive {
 
         Ok(batch_operations)
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn update_contract_base_operations_v2(
+        &self,
+        contract_element: Element,
+        contract: &DataContract,
+        original_contract: &DataContract,
+        block_info: &BlockInfo,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+
+        let drive_version = &platform_version.drive;
+
+        if original_contract.config().readonly() {
+            return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
+                "contract is readonly",
+            )));
+        }
+
+        if contract.config().readonly() {
+            return Err(Error::Drive(DriveError::ChangingContractToReadOnly(
+                "contract can not be changed to readonly",
+            )));
+        }
+
+        if contract.config().keeps_history() ^ original_contract.config().keeps_history() {
+            return Err(Error::Drive(DriveError::ChangingContractKeepsHistory(
+                "contract can not change whether it keeps history",
+            )));
+        }
+
+        if contract.config().documents_keep_history_contract_default()
+            ^ original_contract
+                .config()
+                .documents_keep_history_contract_default()
+        {
+            return Err(Error::Drive(
+                DriveError::ChangingContractDocumentsKeepsHistoryDefault(
+                    "contract can not change the default of whether documents keeps history",
+                ),
+            ));
+        }
+
+        if contract.config().documents_mutable_contract_default()
+            ^ original_contract
+                .config()
+                .documents_mutable_contract_default()
+        {
+            return Err(Error::Drive(
+                DriveError::ChangingContractDocumentsMutabilityDefault(
+                    "contract can not change the default of whether documents are mutable",
+                ),
+            ));
+        }
+
+        let element_flags = contract_element.get_flags().clone();
+
+        // this will override the previous contract if we do not keep history
+        self.add_contract_to_storage(
+            contract_element,
+            contract,
+            block_info,
+            estimated_costs_only_with_layer_info,
+            &mut batch_operations,
+            false,
+            transaction,
+            drive_version,
+        )?;
+
+        let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
+
+        let contract_documents_path = contract_documents_path(contract.id_ref().as_bytes());
+        for (type_key, document_type) in contract.document_types().iter() {
+            let original_document_type = &original_contract.document_types().get(type_key);
+            if let Some(original_document_type) = original_document_type {
+                if original_document_type.documents_mutable() ^ document_type.documents_mutable() {
+                    return Err(Error::Drive(DriveError::ChangingDocumentTypeMutability(
+                        "contract can not change whether a specific document type is mutable",
+                    )));
+                }
+                if original_document_type.documents_keep_history()
+                    ^ document_type.documents_keep_history()
+                {
+                    return Err(Error::Drive(DriveError::ChangingDocumentTypeKeepsHistory(
+                        "contract can not change whether a specific document type keeps history",
+                    )));
+                }
+
+                let type_path = [
+                    contract_documents_path[0],
+                    contract_documents_path[1],
+                    contract_documents_path[2],
+                    type_key.as_bytes(),
+                ];
+
+                let document_type_ref = document_type.as_ref();
+                let index_structure = document_type_ref.index_structure();
+                // For each type we should insert the indices that are top
+                // level — one root sub-level per distinct top tree (plain
+                // first properties by name, time-range grids by their
+                // qualified `TimeRangeTransform::storage_key`), the same
+                // iteration `insert_contract_v0` performs.
+                //
+                // `batch_insert_empty_tree_if_not_exists` is a no-op when the
+                // index already exists, so this loop covers BOTH the
+                // pre-existing indexes (no-op, no on-disk change) AND any
+                // brand-new top-level indexes the contract update adds to an
+                // existing doctype. The latter must materialize with the
+                // matching tree variant from the `(range_countable,
+                // range_summable)` dispatch — same 4-way table the
+                // new-doctype branch below uses, identical to
+                // `insert_contract_v0`'s top-level-index dispatch. Without
+                // this, adding a new `rangeSummable: true` (or
+                // `rangeCountable: true`) index to an existing doctype via
+                // contract update silently created a NormalTree, diverging
+                // from the layout a fresh insert would have produced and
+                // breaking subsequent range-sum / range-count reads.
+                for (level_key, level) in index_structure.sub_levels() {
+                    {
+                        // Meta schema v3 (PV14) additionally upgrades the
+                        // chosen variant to its indexed mirror when the index
+                        // declares a ranking axis — including the grouping
+                        // level of a compound index ranked at its first
+                        // property (`rankedCountable: { at }`), which the
+                        // level-aware resolver maps to the Count-axis indexed
+                        // tree; `ranked_axes` is empty for every pre-v3
+                        // contract, making this arm bit-identical to the
+                        // previous 4-way dispatch for them.
+                        let (target_tree_type, ranked_axes) =
+                            property_name_tree_type_and_ranked_axes_for_level(level)?;
+                        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                            BatchInsertTreeApplyType::StatefulBatchInsertTree
+                        } else {
+                            BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                                in_tree_type: TreeType::NormalTree,
+                                tree_type: target_tree_type,
+                                flags_len: element_flags
+                                    .as_ref()
+                                    .map(|e| e.len() as u32)
+                                    .unwrap_or_default(),
+                            }
+                        };
+                        // The generic `batch_insert_empty_index_tree_if_not_exists`
+                        // already takes a `TreeType` (plus the ranking axes an
+                        // indexed element needs and a `TreeType` cannot carry)
+                        // and routes the grovedb insert to the matching
+                        // variant — same helper count's non-summable index
+                        // path uses. No-op when the path/key already exists,
+                        // which is how this branch handles both pre-existing
+                        // indexes (unchanged on disk) and brand-new ones
+                        // (materialized with the dispatch-chosen variant).
+                        self.batch_insert_empty_index_tree_if_not_exists(
+                            PathFixedSizeKeyRef((type_path, level_key.as_bytes())),
+                            target_tree_type,
+                            &ranked_axes,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            apply_type,
+                            transaction,
+                            &mut None,
+                            &mut batch_operations,
+                            drive_version,
+                        )?;
+                    }
+                }
+            } else {
+                // We can just insert this directly because the original document type already exists
+                self.batch_insert_empty_tree(
+                    contract_documents_path,
+                    KeyRef(type_key.as_bytes()),
+                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                    &mut batch_operations,
+                    drive_version,
+                )?;
+
+                let type_path = [
+                    contract_documents_path[0],
+                    contract_documents_path[1],
+                    contract_documents_path[2],
+                    type_key.as_bytes(),
+                ];
+
+                if document_type.as_ref().documents_keep_history() {
+                    self.batch_insert_empty_tree(
+                        type_path,
+                        KeyRef(&[crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY]),
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?;
+                }
+
+                // primary key tree — route through the centralized
+                // primary_key_tree_type() so contract update, document inserts,
+                // deletes, and estimation paths all see the same tree-variant
+                // selection (under whichever drive method version is active).
+                // Must stay in lock-step with the matching dispatch in
+                // `insert_contract_v0::insert_contract_operations_v0`: a fresh
+                // insert and a contract-update that adds the same doctype must
+                // materialize the same on-disk tree variant, otherwise later
+                // sum/range-sum reads + fee logic operate against the wrong
+                // tree type for updated contracts.
+                let key_info = KeyRef(&[0]);
+                match document_type
+                    .as_ref()
+                    .primary_key_tree_type(platform_version)?
+                {
+                    TreeType::ProvableCountTree => self.batch_insert_empty_provable_count_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?,
+                    TreeType::CountTree => self.batch_insert_empty_count_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?,
+                    TreeType::SumTree => self.batch_insert_empty_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?,
+                    TreeType::ProvableSumTree => self.batch_insert_empty_provable_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?,
+                    TreeType::CountSumTree => self.batch_insert_empty_count_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?,
+                    TreeType::ProvableCountSumTree => self
+                        .batch_insert_empty_provable_count_sum_tree(
+                            type_path,
+                            key_info,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            &mut batch_operations,
+                            drive_version,
+                        )?,
+                    TreeType::ProvableCountProvableSumTree => self
+                        .batch_insert_empty_provable_count_provable_sum_tree(
+                            type_path,
+                            key_info,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            &mut batch_operations,
+                            drive_version,
+                        )?,
+                    _ => self.batch_insert_empty_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?,
+                }
+
+                let document_type_ref = document_type.as_ref();
+                let index_structure = document_type_ref.index_structure();
+                // For each type we should insert the indices that are top
+                // level — the index structure's root sub-levels, whose keys
+                // are grid-qualified for time-range first properties (see
+                // `insert_contract_v0`).
+                for (level_key, level) in index_structure.sub_levels() {
+                    let index_bytes = level_key.as_bytes();
+                    {
+                        // Top-level index tree variant is selected from the
+                        // index's `(range_countable, range_summable)` pair —
+                        // identical 4-way dispatch as
+                        // `insert_contract_operations_v0`. Without this dispatch
+                        // the previous unconditional `batch_insert_empty_tree`
+                        // would materialize a plain `NormalTree` for any new
+                        // sum- or range-countable top-level index added via
+                        // contract update, diverging on-disk layout from
+                        // fresh-insert contracts.
+                        let (tree_type, ranked_axes) =
+                            property_name_tree_type_and_ranked_axes_for_level(level)?;
+                        match tree_type {
+                            TreeType::ProvableCountProvableSumTree => self
+                                .batch_insert_empty_provable_count_provable_sum_tree(
+                                    type_path,
+                                    KeyRef(index_bytes),
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    &mut batch_operations,
+                                    drive_version,
+                                )?,
+                            TreeType::ProvableCountTree => self
+                                .batch_insert_empty_provable_count_tree(
+                                    type_path,
+                                    KeyRef(index_bytes),
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    &mut batch_operations,
+                                    drive_version,
+                                )?,
+                            TreeType::ProvableSumTree => self
+                                .batch_insert_empty_provable_sum_tree(
+                                    type_path,
+                                    KeyRef(index_bytes),
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    &mut batch_operations,
+                                    drive_version,
+                                )?,
+                            // Ranked (indexed) variants — meta schema v3 / PV14.
+                            TreeType::ProvableCountIndexedTree => self
+                                .batch_insert_empty_provable_count_indexed_tree(
+                                    type_path,
+                                    KeyRef(index_bytes),
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    &mut batch_operations,
+                                    drive_version,
+                                )?,
+                            TreeType::ProvableSumIndexedTree => self
+                                .batch_insert_empty_provable_sum_indexed_tree(
+                                    type_path,
+                                    KeyRef(index_bytes),
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    &mut batch_operations,
+                                    drive_version,
+                                )?,
+                            TreeType::ProvableCountProvableSumIndexedTree => self
+                                .batch_insert_empty_provable_count_provable_sum_indexed_tree(
+                                    type_path,
+                                    KeyRef(index_bytes),
+                                    &ranked_axes,
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    &mut batch_operations,
+                                    drive_version,
+                                )?,
+                            _ => self.batch_insert_empty_tree(
+                                type_path,
+                                KeyRef(index_bytes),
+                                storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                &mut batch_operations,
+                                drive_version,
+                            )?,
+                        }
+                    }
+                }
+            }
+        }
+        Ok(batch_operations)
+    }
 }
 
 #[cfg(test)]
@@ -315,7 +680,7 @@ mod tests {
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
-    /// Exercises `update_contract_operations_v1` when the updated contract
+    /// Exercises `update_contract_operations_v2` when the updated contract
     /// gains tokens that weren't in the original. This covers the loop that
     /// calls `create_token_trees_operations` for each token.
     /// PR #3516 inserts contracts with tokens but does not exercise an
@@ -323,7 +688,7 @@ mod tests {
     #[test]
     fn test_update_contract_v1_adds_tokens_creates_token_trees() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::latest();
 
         // Original: no tokens.
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
@@ -342,7 +707,7 @@ mod tests {
             .expect("insert initial contract without tokens");
 
         // Updated: add a token configuration. The update path exercises the
-        // `create_token_trees_operations` call in update_contract_operations_v1.
+        // `create_token_trees_operations` call in update_contract_operations_v2.
         let token_config = TokenConfiguration::V0(
             TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
         );
@@ -361,14 +726,14 @@ mod tests {
             .expect("update adding tokens should succeed");
     }
 
-    /// Exercises `update_contract_operations_v1` where the updated contract
+    /// Exercises `update_contract_operations_v2` where the updated contract
     /// gains groups that weren't in the original. This covers the
     /// `if !contract.groups().is_empty()` true branch inside
-    /// `update_contract_operations_v1`, invoking `add_new_groups_operations`.
+    /// `update_contract_operations_v2`, invoking `add_new_groups_operations`.
     #[test]
     fn test_update_contract_v1_adds_groups() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::latest();
 
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
@@ -405,19 +770,19 @@ mod tests {
             .expect("update adding groups should succeed");
     }
 
-    /// Exercises `update_contract_operations_v1`'s keyword-update branch:
+    /// Exercises `update_contract_operations_v2`'s keyword-update branch:
     /// update a contract that starts with some keywords to a new set of
-    /// keywords (different set), routed through the full `update_contract_v1`
+    /// keywords (different set), routed through the full `update_contract_v2`
     /// path rather than the dedicated `update_contract_keywords` API.
     /// PR #3516 covers the dedicated API but not the embedded path invoked
     /// via `update_contract`.
     #[test]
     fn test_update_contract_v1_keyword_delta_via_update_contract() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::latest();
 
         // Insert the keyword_search system contract first (required because
-        // update_contract_v1 calls update_contract_keywords_operations).
+        // update_contract_v2 calls update_contract_keywords_operations).
         let keyword_search =
             load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
                 .expect("load keyword_search");
@@ -531,7 +896,7 @@ mod tests {
     #[test]
     fn clearing_a_contracts_keywords_leaves_the_old_ones_indexed() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::latest();
 
         let keyword_search =
             load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
@@ -588,7 +953,7 @@ mod tests {
         );
     }
 
-    /// Exercises `update_contract_operations_v1`'s description-update branch:
+    /// Exercises `update_contract_operations_v2`'s description-update branch:
     /// changing contract description routes through
     /// `update_contract_description_operations`. Covers the `if let Some(description)`
     /// true branch specifically from the v1 update path (not the dedicated update
@@ -596,7 +961,7 @@ mod tests {
     #[test]
     fn test_update_contract_v1_description_via_update_contract() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::latest();
 
         let keyword_search =
             load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)

@@ -1,9 +1,12 @@
+// Protocol 14 generation: index references point at the primary key tree
+// entry for every document type, including keep-history types whose entry
+// is itself a reference into the history tree; everything else matches v0.
 use crate::drive::constants::STORAGE_FLAGS_SIZE;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 use crate::drive::document::{
-    document_reference_size, make_document_reference, make_document_reference_with_sum_item,
-    read_document_sum_contribution,
+    document_reference_size_v1, make_document_reference_v1,
+    make_document_reference_with_sum_item_v1, read_document_sum_contribution,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -39,7 +42,7 @@ impl Drive {
     /// Adds the terminal reference.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn add_reference_for_index_level_for_contract_operations_v0(
+    pub(super) fn add_reference_for_index_level_for_contract_operations_v1(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         mut index_path_info: PathInfo<0>,
@@ -70,7 +73,7 @@ impl Drive {
         // historical document — the same in-place gating the count and sum
         // flags in this function already rely on.
         if let Some(terminal_property) = index_type.terminal.as_deref() {
-            return self.add_index_only_terminal_item_operations(
+            return self.add_index_only_terminal_item_operations_v1(
                 document_and_contract_info,
                 index_path_info,
                 index_type,
@@ -133,14 +136,14 @@ impl Drive {
                         // conversion is safe — propagated as
                         // `CorruptedCodeExecution` if it ever fails.
                         let sum_value = read_document_sum_contribution(document, prop_name)?;
-                        Ok(make_document_reference_with_sum_item(
+                        Ok(make_document_reference_with_sum_item_v1(
                             document,
                             document_and_contract_info.document_type,
                             sum_value,
                             storage_flags,
                         ))
                     }
-                    None => Ok(make_document_reference(
+                    None => Ok(make_document_reference_v1(
                         document,
                         document_and_contract_info.document_type,
                         storage_flags,
@@ -197,7 +200,7 @@ impl Drive {
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllReference(
                             DEFAULT_HASH_SIZE_U8,
-                            document_reference_size(document_and_contract_info.document_type),
+                            document_reference_size_v1(),
                             storage_flags.map(|s| s.serialized_size()),
                         ),
                     },
@@ -231,7 +234,7 @@ impl Drive {
                             max_size: DEFAULT_HASH_SIZE_U8,
                         },
                         // Match the sum-bearing variant the live path
-                        // would have written: `make_document_reference_with_sum_item`
+                        // would have written: `make_document_reference_with_sum_item_v1`
                         // emits `Element::ReferenceWithSumItem` when
                         // `sum_property_name.is_some()`. The sum-aware helper
                         // reserves 10 worst-case bytes for the i64 sum_value.
@@ -322,7 +325,7 @@ impl Drive {
                 BatchInsertApplyType::StatelessBatchInsert {
                     in_tree_type: reference_tree_type,
                     target: QueryTargetValue(
-                        document_reference_size(document_and_contract_info.document_type)
+                        document_reference_size_v1()
                             + storage_flags
                                 .map(|s| s.serialized_size())
                                 .unwrap_or_default(),
@@ -373,7 +376,7 @@ impl Drive {
     /// by the row commitment: a delete carrying a falsified amount fails
     /// the commitment probe before anything is removed.
     #[allow(clippy::too_many_arguments)]
-    fn add_index_only_terminal_item_operations(
+    fn add_index_only_terminal_item_operations_v1(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         mut index_path_info: PathInfo<0>,

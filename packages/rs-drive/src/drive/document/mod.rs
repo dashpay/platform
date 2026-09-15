@@ -5,11 +5,7 @@
 //!
 
 #[cfg(feature = "server")]
-#[cfg(feature = "server")]
-use crate::drive::document::paths::KeepHistoryStorage;
 use crate::drive::votes::paths::CONTESTED_DOCUMENT_STORAGE_TREE_KEY;
-#[cfg(feature = "server")]
-use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::util::storage_flags::StorageFlags;
 #[cfg(feature = "server")]
@@ -104,8 +100,7 @@ fn make_document_reference(
     document: &Document,
     document_type: DocumentTypeRef,
     storage_flags: Option<&StorageFlags>,
-    drive_version: &dpp::version::drive_versions::DriveVersion,
-) -> Result<Element, Error> {
+) -> Element {
     // we need to construct the reference from the split height of the contract document
     // type which is at 4
     // 0 represents document storage
@@ -114,11 +109,7 @@ fn make_document_reference(
     let mut reference_path = vec![vec![0], document.id().to_vec()];
     let mut max_reference_hops = 1;
     if document_type.documents_keep_history() {
-        if KeepHistoryStorage::for_drive_version(drive_version)?
-            == KeepHistoryStorage::DocumentSubtree
-        {
-            reference_path.push(vec![0]);
-        }
+        reference_path.push(vec![0]);
         max_reference_hops += 1;
     }
     // 2 because the contract could allow for history
@@ -131,11 +122,11 @@ fn make_document_reference(
     // - 0 Storage
     // - Document id
     // -(Optional) 0 (means latest) in the case of documents_keep_history
-    Ok(Element::Reference(
+    Element::Reference(
         UpstreamRootHeightReference(4, reference_path),
         Some(max_reference_hops),
         StorageFlags::map_to_some_element_flags(storage_flags),
-    ))
+    )
 }
 
 #[cfg(feature = "server")]
@@ -181,19 +172,14 @@ pub(crate) fn make_document_reference_with_sum_item(
     // `grovedb-element` as a separate dep.
     sum_value: i64,
     storage_flags: Option<&StorageFlags>,
-    drive_version: &dpp::version::drive_versions::DriveVersion,
-) -> Result<Element, Error> {
+) -> Element {
     // Reference-path construction mirrors `make_document_reference`
     // byte-for-byte — the only structural difference is the element
     // variant carrying the sum contribution alongside the path.
     let mut reference_path = vec![vec![0], document.id().to_vec()];
     let mut max_reference_hops = 1;
     if document_type.documents_keep_history() {
-        if KeepHistoryStorage::for_drive_version(drive_version)?
-            == KeepHistoryStorage::DocumentSubtree
-        {
-            reference_path.push(vec![0]);
-        }
+        reference_path.push(vec![0]);
         max_reference_hops += 1;
     }
     // grovedb PR 670 (`feat: add
@@ -206,13 +192,11 @@ pub(crate) fn make_document_reference_with_sum_item(
     // `Some(max_reference_hops)` to bound dereferencing at the
     // documents-keep-history depth) AND the storage flags, so it's
     // the 4-arg variant.
-    Ok(
-        Element::new_reference_with_sum_item_with_max_hops_and_flags(
-            UpstreamRootHeightReference(4, reference_path),
-            Some(max_reference_hops),
-            sum_value,
-            StorageFlags::map_to_some_element_flags(storage_flags),
-        ),
+    Element::new_reference_with_sum_item_with_max_hops_and_flags(
+        UpstreamRootHeightReference(4, reference_path),
+        Some(max_reference_hops),
+        sum_value,
+        StorageFlags::map_to_some_element_flags(storage_flags),
     )
 }
 
@@ -295,10 +279,7 @@ fn make_document_contested_reference(
 
 #[cfg(feature = "server")]
 /// size of a document reference.
-fn document_reference_size(
-    document_type: DocumentTypeRef,
-    drive_version: &dpp::version::drive_versions::DriveVersion,
-) -> Result<u32, Error> {
+fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
     // we need to construct the reference from the split height of the contract document
     // type which is at 4
     // 0 represents document storage
@@ -307,10 +288,7 @@ fn document_reference_size(
     // vec![vec![0], Vec::from(document.id)];
     // 1 (vec size) + 1 (subvec size) + 1 (0) + 1 (subvec size) + 32 (document id size)
     let mut reference_path_size = 36;
-    if document_type.documents_keep_history()
-        && KeepHistoryStorage::for_drive_version(drive_version)?
-            == KeepHistoryStorage::DocumentSubtree
-    {
+    if document_type.documents_keep_history() {
         reference_path_size += 2;
     }
 
@@ -321,7 +299,69 @@ fn document_reference_size(
     // 1 reference_hops options
     // 1 reference_hops count
     // 1 element flags option
-    Ok(6 + reference_path_size)
+    6 + reference_path_size
+}
+
+#[cfg(feature = "server")]
+/// Creates a reference to a document stored with the per-type history tree
+/// (drive structure `keep_history_storage` 1).
+///
+/// The reference always points at the primary key tree entry. For a
+/// keep-history type that entry is itself a reference to the current revision
+/// in the history tree, so one more hop is allowed.
+fn make_document_reference_v1(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    storage_flags: Option<&StorageFlags>,
+) -> Element {
+    let reference_path = vec![vec![0], document.id().to_vec()];
+    let max_reference_hops = if document_type.documents_keep_history() {
+        2
+    } else {
+        1
+    };
+    Element::Reference(
+        UpstreamRootHeightReference(4, reference_path),
+        Some(max_reference_hops),
+        StorageFlags::map_to_some_element_flags(storage_flags),
+    )
+}
+
+#[cfg(feature = "server")]
+/// [`make_document_reference_v1`] carrying the document's sum contribution for
+/// a summable index.
+pub(crate) fn make_document_reference_with_sum_item_v1(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    sum_value: i64,
+    storage_flags: Option<&StorageFlags>,
+) -> Element {
+    let reference_path = vec![vec![0], document.id().to_vec()];
+    let max_reference_hops = if document_type.documents_keep_history() {
+        2
+    } else {
+        1
+    };
+    Element::new_reference_with_sum_item_with_max_hops_and_flags(
+        UpstreamRootHeightReference(4, reference_path),
+        Some(max_reference_hops),
+        sum_value,
+        StorageFlags::map_to_some_element_flags(storage_flags),
+    )
+}
+
+#[cfg(feature = "server")]
+/// Serialized size of a [`make_document_reference_v1`] reference: the path is
+/// always `[0, document id]`.
+fn document_reference_size_v1() -> u32 {
+    // 1 for type reference
+    // 1 for reference type
+    // 1 for root height offset
+    // 36 for the reference path (vec size, subvec size, 0, subvec size, 32-byte id)
+    // 1 reference_hops option
+    // 1 reference_hops count
+    // 1 element flags option
+    6 + 36
 }
 
 #[cfg(feature = "server")]
