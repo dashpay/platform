@@ -79,25 +79,44 @@ impl<C> Platform<C> {
                 QueryError::InvalidArgument("document type does not keep history".to_owned()),
             ));
         }
+        // A query Drive refuses (a revision filter over a gapped history, for
+        // one) is the caller's mistake and answers as an invalid argument;
+        // storage and corruption errors still propagate.
         let result = if request.prove {
-            let (_, proofs) = self.drive.prove_document_history_v1(
+            let (_, proofs) = match self.drive.prove_document_history_v1(
                 &query,
                 document_type,
                 None,
                 platform_version,
-            )?;
+            ) {
+                Ok(proved) => proved,
+                Err(drive::error::Error::Query(query_error)) => {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                        query_error,
+                    )));
+                }
+                Err(error) => return Err(error.into()),
+            };
             // Both GroveDB proofs travel inside one proof object, signed once.
             let proof = self
                 .response_proof_v0(platform_state, proofs.to_bytes(), GroveDBToUse::Current)?
                 .1;
             ResponseResult::Proof(proof)
         } else {
-            let history = self.drive.fetch_document_history_v1(
+            let history = match self.drive.fetch_document_history_v1(
                 &query,
                 document_type,
                 None,
                 platform_version,
-            )?;
+            ) {
+                Ok(history) => history,
+                Err(drive::error::Error::Query(query_error)) => {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                        query_error,
+                    )));
+                }
+                Err(error) => return Err(error.into()),
+            };
             let entries = history
                 .entries
                 .into_iter()
