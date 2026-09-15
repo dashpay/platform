@@ -543,6 +543,13 @@ impl IdentityWallet {
             ))
         })?;
 
+        // Verifying the execution proof of a delta-based update applies
+        // the delta to the contract it was built against, which the SDK
+        // takes from its context provider. The fetch above does not fill
+        // that provider, so hand it the pre-update contract now, and the
+        // confirmed one once the update landed.
+        self.register_contract_for_proof_verification(&existing);
+
         transition
             .broadcast(&self.sdk, None)
             .await
@@ -551,6 +558,8 @@ impl IdentityWallet {
         let confirmed = DataContract::wait_for_response(&self.sdk, transition, None)
             .await
             .map_err(PlatformWalletError::Sdk)?;
+
+        self.register_contract_for_proof_verification(&confirmed);
 
         Ok(confirmed)
     }

@@ -19,9 +19,15 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
- * DataContractUpdateTransition serialized as a plain object.
+ * What a delta-based (V1) DataContractUpdateTransition does to the description.
  */
-export interface DataContractUpdateTransitionObject {
+export type DataContractDescriptionUpdate = "keep" | "clear" | { set: string };
+
+/**
+ * A full-contract (V0) DataContractUpdateTransition serialized as a plain object.
+ */
+export interface DataContractUpdateTransitionV0Object {
+    $formatVersion: "0";
     dataContract: DataContractObject;
     identityNonce: bigint;
     userFeeIncrease: number;
@@ -30,15 +36,81 @@ export interface DataContractUpdateTransitionObject {
 }
 
 /**
- * DataContractUpdateTransition serialized as JSON.
+ * A delta-based (V1) DataContractUpdateTransition serialized as a plain object.
+ * It carries only what changed, keyed by the contract, its owner and the
+ * version the update produces.
  */
-export interface DataContractUpdateTransitionJSON {
+export interface DataContractUpdateTransitionV1Object {
+    $formatVersion: "1";
+    identityNonce: bigint;
+    dataContractId: Identifier;
+    ownerId: Identifier;
+    version: number;
+    config?: DataContractConfig;
+    updatedSchemaDefs?: Record<string, object>;
+    newSchemaDefs?: Record<string, object>;
+    updatedDocumentSchemas?: Record<string, object>;
+    newDocumentSchemas?: Record<string, object>;
+    newGroups?: Record<number, Group>;
+    newTokens?: Record<number, TokenConfiguration>;
+    addKeywords?: string[];
+    removeKeywords?: string[];
+    description?: DataContractDescriptionUpdate;
+    userFeeIncrease: number;
+    signaturePublicKeyId: number;
+    signature?: Uint8Array;
+}
+
+/**
+ * DataContractUpdateTransition serialized as a plain object.
+ */
+export type DataContractUpdateTransitionObject =
+    | DataContractUpdateTransitionV0Object
+    | DataContractUpdateTransitionV1Object;
+
+/**
+ * A full-contract (V0) DataContractUpdateTransition serialized as JSON.
+ */
+export interface DataContractUpdateTransitionV0JSON {
+    $formatVersion: "0";
     dataContract: DataContractJSON;
     identityNonce: string;
     userFeeIncrease: number;
     signaturePublicKeyId: number;
     signature?: string;
 }
+
+/**
+ * A delta-based (V1) DataContractUpdateTransition serialized as JSON
+ * (with string identifiers).
+ */
+export interface DataContractUpdateTransitionV1JSON {
+    $formatVersion: "1";
+    identityNonce: string;
+    dataContractId: string;
+    ownerId: string;
+    version: number;
+    config?: DataContractConfig;
+    updatedSchemaDefs?: Record<string, object>;
+    newSchemaDefs?: Record<string, object>;
+    updatedDocumentSchemas?: Record<string, object>;
+    newDocumentSchemas?: Record<string, object>;
+    newGroups?: Record<number, object>;
+    newTokens?: Record<number, object>;
+    addKeywords?: string[];
+    removeKeywords?: string[];
+    description?: DataContractDescriptionUpdate;
+    userFeeIncrease: number;
+    signaturePublicKeyId: number;
+    signature?: string;
+}
+
+/**
+ * DataContractUpdateTransition serialized as JSON.
+ */
+export type DataContractUpdateTransitionJSON =
+    | DataContractUpdateTransitionV0JSON
+    | DataContractUpdateTransitionV1JSON;
 "#;
 
 #[wasm_bindgen]

@@ -9,6 +9,7 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v0::To
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+use dpp::data_contract::update_values::DataContractUpdateValues;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::property_names::PRICE;
@@ -128,7 +129,55 @@ impl Drive {
                             .first_mismatch(&v0.data_contract)
                             .map(|mismatch| mismatch.to_string())
                     }
-                    DataContractUpdateTransition::V1(v1) => v1.first_mismatch(&contract),
+                    // A delta embeds no contract, so the contract it must have
+                    // produced is learnt by applying it to the contract it was
+                    // built against. The client that built the delta holds that
+                    // contract; the known-contracts provider supplies it, the way
+                    // it supplies the schema for a document transition. The
+                    // whole materialized contract is then compared, so a proven
+                    // state produced by some other update does not pass as this
+                    // one.
+                    DataContractUpdateTransition::V1(v1) => {
+                        if let Some(error) = v1.overlapping_entry() {
+                            return Err(Error::Proof(ProofError::InvalidTransition(format!(
+                                "delta-based update of contract {} is malformed: {}",
+                                contract_id, error
+                            ))));
+                        }
+                        let Some(stored_version) = v1.version.checked_sub(1) else {
+                            return Err(Error::Proof(ProofError::InvalidTransition(format!(
+                                "delta-based update of contract {} can not produce version 0",
+                                contract_id
+                            ))));
+                        };
+                        let stored = known_contracts_provider_fn(&contract_id)?.ok_or(
+                            Error::Proof(ProofError::MissingContextRequirement(format!(
+                                "verifying a delta-based update of contract {} requires the contract at version {} before the update",
+                                contract_id, stored_version
+                            ))),
+                        )?;
+                        if stored.version() != stored_version {
+                            return Err(Error::Proof(ProofError::MissingContextRequirement(format!(
+                                "verifying a delta-based update of contract {} requires the contract at version {} before the update, the known contract is at version {}",
+                                contract_id, stored_version, stored.version()
+                            ))));
+                        }
+                        let expected = DataContractUpdateValues::from(v1)
+                            .merge_onto(&stored, block_info)
+                            .map_err(|error| {
+                                Error::Proof(ProofError::InvalidTransition(format!(
+                                    "delta-based update of contract {} does not apply to the known contract: {}",
+                                    contract_id, error
+                                )))
+                            })?;
+                        let contract_for_serialization: DataContractInSerializationFormat =
+                            contract
+                                .clone()
+                                .try_into_platform_versioned(platform_version)?;
+                        contract_for_serialization
+                            .first_mismatch(&DataContractInSerializationFormat::V1(expected))
+                            .map(|mismatch| mismatch.to_string())
+                    }
                 };
                 if let Some(mismatch) = mismatch {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after update with id {}: {}", contract_id, mismatch))));

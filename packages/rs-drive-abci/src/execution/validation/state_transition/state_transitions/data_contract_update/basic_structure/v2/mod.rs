@@ -1,6 +1,5 @@
 use crate::error::Error;
 use dpp::consensus::basic::data_contract::{
-    DataContractUpdateEntryKind, DataContractUpdateOverlappingEntriesError,
     InvalidTokenBaseSupplyError, NewTokensDestinationIdentityOptionRequiredError,
 };
 use dpp::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
@@ -46,48 +45,9 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV2 for DataContrac
         };
         let contract_id = delta.data_contract_id;
 
-        if let Some(name) = delta
-            .updated_document_schemas
-            .keys()
-            .find(|name| delta.new_document_schemas.contains_key(*name))
-        {
+        if let Some(error) = delta.overlapping_entry() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
-                DataContractUpdateOverlappingEntriesError::new(
-                    contract_id,
-                    DataContractUpdateEntryKind::DocumentType,
-                    name.clone(),
-                )
-                .into(),
-            ));
-        }
-
-        if let Some(name) = delta
-            .updated_schema_defs
-            .keys()
-            .find(|name| delta.new_schema_defs.contains_key(*name))
-        {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                DataContractUpdateOverlappingEntriesError::new(
-                    contract_id,
-                    DataContractUpdateEntryKind::SchemaDef,
-                    name.clone(),
-                )
-                .into(),
-            ));
-        }
-
-        if let Some(keyword) = delta
-            .add_keywords
-            .iter()
-            .find(|keyword| delta.remove_keywords.contains(*keyword))
-        {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                DataContractUpdateOverlappingEntriesError::new(
-                    contract_id,
-                    DataContractUpdateEntryKind::Keyword,
-                    keyword.clone(),
-                )
-                .into(),
+                error.into(),
             ));
         }
 
@@ -184,6 +144,9 @@ mod tests {
     use super::*;
     use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
     use assert_matches::assert_matches;
+    use dpp::consensus::basic::data_contract::{
+        DataContractUpdateEntryKind, DataContractUpdateOverlappingEntriesError,
+    };
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::ConsensusError;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;

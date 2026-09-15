@@ -1,5 +1,5 @@
-mod first_mismatch;
 mod identity_signed;
+mod overlapping_entry;
 mod registration_cost;
 mod state_transition_like;
 mod types;
@@ -269,18 +269,35 @@ impl DataContractUpdateTransitionV1 {
             )));
         }
 
-        let remove_keywords = old_contract
+        let remove_keywords: Vec<String> = old_contract
             .keywords()
             .iter()
             .filter(|keyword| !new_contract.keywords().contains(*keyword))
             .cloned()
             .collect();
-        let add_keywords = new_contract
+        let add_keywords: Vec<String> = new_contract
             .keywords()
             .iter()
             .filter(|keyword| !old_contract.keywords().contains(*keyword))
             .cloned()
             .collect();
+        // Applying the delta keeps the stored order of the keywords it
+        // leaves in place and appends the added ones, so any other order
+        // in the new contract would be silently lost.
+        let mut applied_keywords: Vec<String> = old_contract
+            .keywords()
+            .iter()
+            .filter(|keyword| !remove_keywords.contains(*keyword))
+            .cloned()
+            .collect();
+        applied_keywords.extend(add_keywords.iter().cloned());
+        if applied_keywords != *new_contract.keywords() {
+            return Err(not_expressible(
+                "keywords were reordered; a delta keeps the stored order of the keywords it \
+                 leaves in place and appends the ones it adds"
+                    .to_string(),
+            ));
+        }
 
         let description = match (old_contract.description(), new_contract.description()) {
             (old, new) if old == new => DescriptionUpdate::Keep,
@@ -324,10 +341,14 @@ mod tests {
     use crate::data_contract::accessors::v0::DataContractV0Setters;
     use crate::data_contract::accessors::v1::DataContractV1Setters;
     use crate::data_contract::group::v0::GroupV0;
+    use crate::data_contract::serialized_version::{
+        DataContractInSerializationFormat, DataContractMismatch,
+    };
     use crate::tests::fixtures::get_data_contract_fixture;
     use assert_matches::assert_matches;
     use platform_value::platform_value;
     use platform_version::version::PlatformVersion;
+    use platform_version::TryIntoPlatformVersioned;
 
     fn contracts() -> (DataContract, DataContract, &'static PlatformVersion) {
         let platform_version = PlatformVersion::latest();
@@ -371,6 +392,25 @@ mod tests {
             .expect("apply_update should not fail with a protocol error");
         assert!(result.is_valid(), "unexpected errors: {:?}", result.errors);
         result.into_data().expect("updated contract")
+    }
+
+    /// The contract the delta produces, as the merge alone builds it.
+    fn merged(
+        old_contract: &DataContract,
+        delta: &DataContractUpdateTransitionV1,
+    ) -> DataContractInSerializationFormat {
+        DataContractInSerializationFormat::V1(
+            DataContractUpdateValues::from(delta)
+                .merge_onto(old_contract, &block_info())
+                .expect("the delta applies to the stored contract"),
+        )
+    }
+
+    fn format(contract: &DataContract) -> DataContractInSerializationFormat {
+        contract
+            .clone()
+            .try_into_platform_versioned(PlatformVersion::latest())
+            .expect("serialization format")
     }
 
     #[test]
@@ -449,7 +489,11 @@ mod tests {
         assert_eq!(updated_contract.updated_at(), Some(block_info().time_ms));
         assert_eq!(updated_contract.updated_at_block_height(), Some(42));
         assert_eq!(updated_contract.updated_at_epoch(), Some(3));
-        assert_eq!(delta.first_mismatch(&updated_contract), None);
+        // the merge alone builds the same contract apply_update validated
+        assert_eq!(
+            format(&updated_contract).first_mismatch(&merged(&old_contract, &delta)),
+            None
+        );
     }
 
     #[test]
@@ -477,10 +521,14 @@ mod tests {
             &vec!["beta".to_string(), "gamma".to_string()]
         );
         assert_eq!(updated_contract.description(), None);
-        assert_eq!(delta.first_mismatch(&updated_contract), None);
         assert_eq!(
-            delta.first_mismatch(&old_contract),
-            Some("contract version is 1, the update produces 2".to_string())
+            format(&updated_contract).first_mismatch(&merged(&old_contract, &delta)),
+            None
+        );
+        // the stored contract itself is not what the delta produces
+        assert_eq!(
+            format(&old_contract).first_mismatch(&merged(&old_contract, &delta)),
+            Some(DataContractMismatch::Version)
         );
     }
 
@@ -613,6 +661,53 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::StateError(StateError::DataContractUpdateEntryNotFoundError(e))]
                 if e.entry_kind() == DataContractUpdateEntryKind::Keyword && e.name() == "ghost"
+        );
+    }
+
+    #[test]
+    fn reordered_keywords_can_not_be_expressed() {
+        let (mut old_contract, _, _) = contracts();
+        old_contract.set_keywords(vec!["one".to_string(), "two".to_string()]);
+        let mut new_contract = old_contract.clone();
+        new_contract.increment_version();
+        new_contract.set_keywords(vec!["two".to_string(), "one".to_string()]);
+
+        let result =
+            DataContractUpdateTransitionV1::from_contract_update(&old_contract, &new_contract, 1);
+
+        assert_matches!(
+            result,
+            Err(ProtocolError::NonConsensusError(
+                NonConsensusError::StateTransitionCreationError(message)
+            )) if message.contains("keywords were reordered")
+        );
+    }
+
+    #[test]
+    fn removing_and_appending_keywords_keeps_the_stored_order() {
+        let (mut old_contract, _, _) = contracts();
+        old_contract.set_keywords(vec![
+            "one".to_string(),
+            "two".to_string(),
+            "three".to_string(),
+        ]);
+        let mut new_contract = old_contract.clone();
+        new_contract.increment_version();
+        new_contract.set_keywords(vec![
+            "one".to_string(),
+            "three".to_string(),
+            "four".to_string(),
+        ]);
+
+        let delta =
+            DataContractUpdateTransitionV1::from_contract_update(&old_contract, &new_contract, 1)
+                .expect("removing one keyword and appending another is expressible");
+
+        assert_eq!(delta.remove_keywords, vec!["two".to_string()]);
+        assert_eq!(delta.add_keywords, vec!["four".to_string()]);
+        assert_eq!(
+            apply(&old_contract, &delta).keywords(),
+            new_contract.keywords()
         );
     }
 
