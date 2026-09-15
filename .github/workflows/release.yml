@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Version (i.e. v0.22.3-pre.2)"
+        description: "Version (i.e. v0.22.3-pre.2); prefix with npm-test: to run only the NPM release dry-run"
         required: true
       only_drive:
         type: boolean
@@ -24,72 +24,104 @@ permissions:
   contents: read
 
 jobs:
-  release-npm:
-    name: Release NPM packages
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    if: github.event_name != 'workflow_dispatch'
+  build-npm:
+    name: Build NPM packages
+    # Reuse the persistent Linux runner's Cargo target and registry state. The
+    # publish job stays on a GitHub-hosted runner because npm trusted publishing
+    # does not support self-hosted runners.
+    runs-on: [self-hosted, kotlin-ci]
+    timeout-minutes: 120
+    if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
+    # In particular, do not mint an OIDC token for the persistent build host.
+    permissions:
+      contents: read
     steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Check package version matches tag
-        uses: geritol/match-tag-to-package-version@0.2.0
-        env:
-          TAG_PREFIX: v
-
       - uses: softwareforgood/check-artifact-v4-existence@v0
         id: check-artifact
         with:
           name: js-build-${{ github.sha }}
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
+      - name: Check out repo
+        uses: actions/checkout@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          # Preserve the expensive Cargo target cache between release builds.
+          clean: false
+          persist-credentials: false
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Ensure runner dependencies
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+        run: |
+          set -euo pipefail
+
+          MISSING=()
+          for pkg in build-essential cmake curl jq libgmp-dev libssl-dev pkg-config python3 unzip zip; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "Installing: ${MISSING[*]}"
+            sudo apt-get update -qq
+            sudo apt-get install -qq --yes "${MISSING[@]}"
+          fi
+
+          if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --no-modify-path --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+          docker info >/dev/null
+          if ! docker image inspect rvolosatovs/protoc:4.0.0 >/dev/null 2>&1; then
+            docker pull rvolosatovs/protoc:4.0.0
+          fi
+
+      - name: Clean stale build outputs
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+        run: |
+          git reset --hard
+          git clean -ffdx -e 'target/'
 
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
           target: wasm32-unknown-unknown
+          # The runner persists the Cargo registry and target directory.
+          cache: 'false'
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
-      - name: Setup sccache
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.AWS_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
-
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      # Composite action defaults to Node 24+ which ships npm 11.5.1+;
-      # required for trusted-publishers OIDC at the publish step below.
-      # See https://docs.npmjs.com/trusted-publishers.
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install Cargo binstall
         uses: cargo-bins/cargo-binstall@v1.3.1
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install wasm-bindgen-cli
-        run: cargo binstall wasm-bindgen-cli@0.2.108
+        run: |
+          if ! wasm-bindgen --version 2>/dev/null | grep -Fxq 'wasm-bindgen 0.2.108'; then
+            cargo binstall wasm-bindgen-cli@0.2.108 --no-confirm --force
+          fi
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install wasm-pack
-        run: cargo binstall wasm-pack
+        run: |
+          if ! wasm-pack --version 2>/dev/null | grep -Fxq 'wasm-pack 0.15.0'; then
+            cargo binstall wasm-pack@0.15.0 --no-confirm --force
+          fi
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install Binaryen
         run: |
-          wget https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz -P /tmp
-          tar -xzf /tmp/binaryen-version_121-x86_64-linux.tar.gz -C /tmp
-          sudo cp -r /tmp/binaryen-version_121/* /usr/local/
+          BINARYEN_DIR="$HOME/.local/binaryen-version_121"
+          if [ ! -x "$BINARYEN_DIR/bin/wasm-opt" ]; then
+            ARCHIVE="$RUNNER_TEMP/binaryen-version_121-x86_64-linux.tar.gz"
+            curl -fsSL -o "$ARCHIVE" \
+              https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz
+            mkdir -p "$HOME/.local"
+            tar -xzf "$ARCHIVE" -C "$HOME/.local"
+          fi
+          echo "$BINARYEN_DIR/bin" >> "$GITHUB_PATH"
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Build packages
@@ -98,13 +130,135 @@ jobs:
           CARGO_BUILD_PROFILE: release
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
+      - name: Ignore only already cached artifacts
+        run: |
+          find . -name '.gitignore' -exec rm -f {} +
+          {
+            echo ".yarn"
+            echo "target"
+            echo "node_modules"
+            echo ".nyc_output"
+            echo ".idea"
+            echo ".ultra.cache.json"
+            echo "db/*"
+            echo "npm-packages"
+          } >> .gitignore
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      # Pack on the unprivileged builder. The hosted publisher receives only
+      # these tarballs and publishes them without running package lifecycle
+      # scripts, so persistent-runner output cannot execute with OIDC access.
+      - name: Pack NPM packages on the unprivileged builder
+        run: |
+          set -euo pipefail
+          mkdir -p npm-packages
+          yarn workspaces foreach --all --no-private --parallel npm pack \
+            --pack-destination "$GITHUB_WORKSPACE/npm-packages"
+          test -n "$(find npm-packages -maxdepth 1 -type f -name '*.tgz' -print -quit)"
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Get modified files
+        id: diff
+        run: |
+          {
+            echo "files<<EOF"
+            git ls-files --others --exclude-standard
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Upload the archive of built files
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-build-${{ github.sha }}
+          path: |
+            ${{ steps.diff.outputs.files }}
+            npm-packages/*.tgz
+          # Keep the handoff alive long enough to re-run only a failed publish.
+          retention-days: 7
+          if-no-files-found: error
+          include-hidden-files: true
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+  release-npm:
+    name: Publish NPM packages
+    needs: build-npm
+    # npm trusted publishing currently accepts GitHub-hosted runners only.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Check package version matches tag
+        uses: geritol/match-tag-to-package-version@0.2.0
+        if: github.event_name == 'release'
+        env:
+          TAG_PREFIX: v
+
+      - name: Check package version matches requested test tag
+        id: test-tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          TAG="${INPUT_TAG#npm-test:}"
+          PACKAGE_VERSION=$(jq -r '.version' package.json)
+          if [ "$TAG" != "v${PACKAGE_VERSION}" ]; then
+            echo "::error::Requested tag $TAG does not match package version v${PACKAGE_VERSION}"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # Composite action defaults to Node 24+ which ships npm 11.5.1+;
+      # required for trusted-publishers OIDC at the publish step below.
+      # See https://docs.npmjs.com/trusted-publishers.
+      - name: Setup Node.JS
+        uses: ./.github/actions/nodejs
+
+      - name: Download built package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: js-build-${{ github.sha }}
+          path: release-artifacts
+
+      # Verify every tarball against the trusted checkout metadata before the
+      # credentialed publish. Tarball contents are treated as data; no package
+      # script from the persistent builder is executed on this runner.
+      - name: Validate packed package identities
+        env:
+          ARTIFACT_DIR: release-artifacts/npm-packages
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tarballs=("$ARTIFACT_DIR"/*.tgz)
+          [ "${#tarballs[@]}" -gt 0 ] || { echo "::error::No NPM tarballs were uploaded."; exit 1; }
+          declare -A seen=()
+          for tarball in "${tarballs[@]}"; do
+            metadata=$(tar -xOf "$tarball" package/package.json)
+            name=$(jq -r '.name' <<<"$metadata")
+            version=$(jq -r '.version' <<<"$metadata")
+            [ -n "$name" ] && [ "$name" != null ] || { echo "::error::Tarball $tarball has no package name."; exit 1; }
+            [ -n "$version" ] && [ "$version" != null ] || { echo "::error::Tarball $tarball has no package version."; exit 1; }
+            [ -z "${seen[$name]+x}" ] || { echo "::error::Duplicate tarball for $name."; exit 1; }
+            seen[$name]=1
+            trusted=$(for manifest in packages/*/package.json; do
+              jq -r --arg name "$name" --arg version "$version" 'select(.name == $name and .version == $version) | .name' "$manifest"
+            done | head -n1)
+            [ "$trusted" = "$name" ] || { echo "::error::Tarball $tarball ($name@$version) does not match a trusted workspace manifest."; exit 1; }
+          done
+
       - name: Set suffix
-        uses: actions/github-script@v6
+        uses: actions/github-script@v8
         id: suffix
         with:
           result-encoding: string
           script: |
-            const fullTag = "${{ inputs.tag }}" || context.payload.release.tag_name;
+            const fullTag = "${{ steps.test-tag.outputs.tag }}" || context.payload.release.tag_name;
             if (fullTag.includes('-')) {
               const [, fullSuffix] = fullTag.split('-');
               const [suffix] = fullSuffix.split('.');
@@ -114,12 +268,12 @@ jobs:
             }
 
       - name: Set NPM release tag
-        uses: actions/github-script@v6
+        uses: actions/github-script@v8
         id: tag
         with:
           result-encoding: string
           script: |
-            const tag = "${{ inputs.tag }}" || context.payload.release.tag_name;
+            const tag = "${{ steps.test-tag.outputs.tag }}" || context.payload.release.tag_name;
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
             return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
 
@@ -129,40 +283,57 @@ jobs:
           echo "NPM release tag: ${{ steps.tag.outputs.result }}"
 
       - name: Publish NPM packages
-        run: yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public --tag ${{ steps.tag.outputs.result }}
-
-      - name: Ignore only already cached artifacts
+        if: github.event_name == 'release'
+        env:
+          NPM_TAG: ${{ steps.tag.outputs.result }}
         run: |
-          find . -name '.gitignore' -exec rm -f {} +
-          echo ".yarn" >> .gitignore
-          echo "target" >> .gitignore
-          echo "node_modules" >> .gitignore
-          echo ".nyc_output" >> .gitignore
-          echo ".idea" >> .gitignore
-          echo ".ultra.cache.json" >> .gitignore
-          echo "db/*" >> .gitignore
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+          set -euo pipefail
+          REGISTRY="$(npm config get registry)"
+          REGISTRY="${REGISTRY%/}"
+          for tarball in release-artifacts/npm-packages/*.tgz; do
+            metadata=$(tar -xOf "$tarball" package/package.json)
+            name=$(jq -r '.name' <<<"$metadata")
+            version=$(jq -r '.version' <<<"$metadata")
+            encoded_name=${name//@/%2f}
+            status=$(curl --silent --show-error --location --output "$RUNNER_TEMP/npm-metadata.json" \
+              --write-out '%{http_code}' --connect-timeout 10 --max-time 30 \
+              "$REGISTRY/$encoded_name") || {
+              echo "::error::Could not query $REGISTRY for $name@$version."
+              exit 1
+            }
+            case "$status" in
+              404)
+                ;;
+              200)
+                jq -e --arg version "$version" '.versions[$version] != null' "$RUNNER_TEMP/npm-metadata.json" >/dev/null || {
+                  jq -e . "$RUNNER_TEMP/npm-metadata.json" >/dev/null || { echo "::error::Invalid registry response for $name."; exit 1; }
+                  npm publish "$tarball" --ignore-scripts --access public --tag "$NPM_TAG"
+                  continue
+                }
+                echo "::notice::$name@$version already exists on $REGISTRY; skipping."
+                continue
+                ;;
+              *)
+                echo "::error::Registry query for $name@$version returned HTTP $status; refusing to publish blindly."
+                exit 1
+                ;;
+            esac
+            npm publish "$tarball" --ignore-scripts --access public --tag "$NPM_TAG"
+          done
 
-      - name: Get modified files
-        id: diff
+      - name: Dry-run NPM packages
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          NPM_TAG: ${{ steps.tag.outputs.result }}
         run: |
-          echo "files<<EOF" >> $GITHUB_OUTPUT
-          git ls-files --others --exclude-standard >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Upload the archive of built files
-        uses: actions/upload-artifact@v4
-        with:
-          name: js-build-${{ github.sha }}
-          path: ${{ steps.diff.outputs.files }}
-          retention-days: 1
-          if-no-files-found: error
-          include-hidden-files: true
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+          set -euo pipefail
+          for tarball in release-artifacts/npm-packages/*.tgz; do
+            npm publish "$tarball" --ignore-scripts --dry-run --access public --tag "$NPM_TAG"
+          done
 
   release-drive-image:
     name: Release Drive image
+    if: ${{ !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -174,6 +345,7 @@ jobs:
 
   release-drive-image-debug:
     name: Release Drive debug image
+    if: ${{ !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -187,7 +359,7 @@ jobs:
 
   release-rs-dapi-image:
     name: Release RS-DAPI image
-    if: ${{ !inputs.only_drive }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -199,7 +371,7 @@ jobs:
 
   release-test-suite-image:
     name: Release Test Suite image
-    if: ${{ !inputs.only_drive }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -212,7 +384,7 @@ jobs:
   release-dashmate-helper-image:
     name: Release Dashmate Helper image
     secrets: inherit
-    if: ${{ !inputs.only_drive }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     uses: ./.github/workflows/release-docker-image.yml
     with:
       name: Dashmate Helper
@@ -247,7 +419,7 @@ jobs:
   release-dashmate-packages:
     name: Release Dashmate packages
     runs-on: ${{ matrix.os }}
-    if: ${{ !inputs.only_drive }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     needs: release-npm
     permissions:
       id-token: write # s3 cache
@@ -297,16 +469,16 @@ jobs:
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
           # import certificate and provisioning profile from secrets
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
 
           # create temporary keychain
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
           # import certificate to keychain
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
 
       - name: Install Linux build deps
         if: runner.os == 'Linux'
@@ -323,7 +495,8 @@ jobs:
       - name: Create package
         env:
           OSX_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
-        run: "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh ${{ matrix.package_type }}"
+        run: |
+          "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh" "${{ matrix.package_type }}"
 
       - name: Upload artifacts to action summary
         uses: actions/upload-artifact@v4
@@ -334,8 +507,14 @@ jobs:
 
       - name: Notarize MacOS Release Build
         if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.MACOS_APPLE_ID }}
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+          NOTARIZING_PASSWORD: ${{ secrets.MACOS_NOTARIZING_PASSWORD }}
         run: |
-          find packages/dashmate/dist/ -name '*.pkg' -exec sh -c 'xcrun notarytool submit "{}" --apple-id "${{ secrets.MACOS_APPLE_ID }}" --team-id "${{ secrets.MACOS_TEAM_ID }}" --password "${{ secrets.MACOS_NOTARIZING_PASSWORD }}" --wait;' \;
+          while IFS= read -r -d '' pkg; do
+            xcrun notarytool submit "$pkg" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$NOTARIZING_PASSWORD" --wait
+          done < <(find packages/dashmate/dist/ -name '*.pkg' -print0)
 
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v0.1.15
