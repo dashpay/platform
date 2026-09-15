@@ -173,6 +173,7 @@ export default class DockerCompose {
     await this.throwErrorIfNotInstalled();
 
     try {
+      await this.#removeDisabledTor(config, options);
       await dockerCompose.upAll({
         ...this.#createOptions(config, options),
         commandOptions: ['--no-build'],
@@ -246,9 +247,55 @@ export default class DockerCompose {
     await this.throwErrorIfNotInstalled();
 
     try {
+      await this.#removeDisabledTor(config, options);
       await dockerCompose.stop(this.#createOptions(config, options));
     } catch (e) {
       throw new DockerComposeError(e);
+    }
+  }
+
+  /**
+   * A disabled sidecar is absent from Compose's model, so stop/up cannot remove
+   * it. Use project and service labels to find it without touching other nodes
+   * or deleting its persistent Tor state. Platform-only operations leave it alone.
+   *
+   * @param {Config} config
+   * @param {Object} [options]
+   * @param {string[]} [options.profiles]
+   * @return {Promise<void>}
+   */
+  async #removeDisabledTor(config, { profiles = [] } = {}) {
+    if (config.get('core.tor.enabled') || (profiles.length > 0 && !profiles.includes('core'))) {
+      return;
+    }
+
+    const { COMPOSE_PROJECT_NAME: projectName } = this.#generateEnvs(config);
+    const containers = await this.#docker.listContainers({
+      all: true,
+      filters: {
+        label: [
+          `com.docker.compose.project=${projectName}`,
+          'com.docker.compose.service=core_tor',
+        ],
+      },
+    });
+
+    for (const { Id } of containers) {
+      const container = this.#docker.getContainer(Id);
+      try {
+        try {
+          await container.stop({ t: 30 });
+        } catch (e) {
+          if (e.statusCode !== 304) { // Already stopped containers still need removal.
+            throw e;
+          }
+        }
+        await container.remove();
+      } catch (e) {
+        if (e.statusCode !== 404) { // Another lifecycle operation may have removed it.
+          throw e;
+        }
+      }
     }
   }
 

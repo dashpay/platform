@@ -94,7 +94,7 @@ fn get_current_quorums_info(sdk_handle: *const SDKHandle) -> Result<Option<Strin
                                 format!(
                                     r#"{{"pro_tx_hash":"{}","node_ip":"{}","is_banned":{}}}"#,
                                     hex::encode(pro_tx_hash),
-                                    &validator.node_ip,
+                                    validator.node_ip,
                                     validator.is_banned
                                 )
                             })

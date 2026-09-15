@@ -10,17 +10,13 @@
 //! `mnemonic`, `seed`, `xpriv`, or `secret` breaks the test, forcing
 //! the author to rename or add an allow-list entry with rationale.
 //!
-//! Out of scope by design: files in `src/sqlite/` outside of
-//! `schema/` (`persister.rs`, `backup.rs`, `buffer.rs`, `config.rs`,
-//! `error.rs`, `migrations.rs`, `util/`) are NOT scanned. They never
-//! define database columns and may legitimately reference the
-//! forbidden tokens in doc comments. The future `src/secrets/`
-//! submodule slot is exempt for the same reason.
-//!
-//! The check is intentionally string-level: it does not parse SQL or
-//! Rust. A column literally named `private_X` is the kind of mistake
-//! we want to catch; legitimate uses inside doc comments are
-//! allow-listed via the `ALLOWLIST` constant below.
+//! Scope and blind spots: this is a column/comment NAMING scan, not a
+//! value-content scan — it cannot see the bytes a serialized value
+//! carries. Value-level safety is a separate guarantee via the sealed
+//! `PersistableBlob` trait in `src/sqlite/schema/blob.rs`. Files outside
+//! `schema/` define no columns and are not scanned; `src/secrets/` is
+//! exempt by design and covered by its own `tests/secrets_guard.rs`.
+//! Legitimate uses inside doc comments are allow-listed via `ALLOWLIST`.
 
 use std::path::Path;
 

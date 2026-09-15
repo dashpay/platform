@@ -53,14 +53,23 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+bincode = { package = "grovedb-bincode", version = "=2.1.0" }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "a579d52fcf68c3cbd798c5a94e73afdc41b5f5a6", default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "a579d52fcf68c3cbd798c5a94e73afdc41b5f5a6" }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "a579d52fcf68c3cbd798c5a94e73afdc41b5f5a6" }
+grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "a579d52fcf68c3cbd798c5a94e73afdc41b5f5a6" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "a579d52fcf68c3cbd798c5a94e73afdc41b5f5a6" }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "a579d52fcf68c3cbd798c5a94e73afdc41b5f5a6" }
+grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "a579d52fcf68c3cbd798c5a94e73afdc41b5f5a6" }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "a579d52fcf68c3cbd798c5a94e73afdc41b5f5a6" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "e4208c90786a6854bd498315bcb571ef24182c15" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "e4208c90786a6854bd498315bcb571ef24182c15" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "e4208c90786a6854bd498315bcb571ef24182c15" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "e4208c90786a6854bd498315bcb571ef24182c15" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "e4208c90786a6854bd498315bcb571ef24182c15" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "e4208c90786a6854bd498315bcb571ef24182c15" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "e4208c90786a6854bd498315bcb571ef24182c15" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "e4208c90786a6854bd498315bcb571ef24182c15" }
 tokio-metrics = "0.5"
 
 # Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which
@@ -112,6 +121,13 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.grovedb-commitment-tree]
 opt-level = 3
+# Same reasoning for Argon2id: a debug-built KDF is memory-hard by design, so
+# an unoptimized one costs seconds per derivation and dominates any test that
+# unlocks a `platform-wallet-storage` vault. `platform-wallet-storage` is the
+# only workspace member that compiles argon2, so this override touches nothing
+# else here despite the workspace-global syntax.
+[profile.dev.package.argon2]
+opt-level = 3
 
 [profile.test.package.halo2_proofs]
 opt-level = 3
@@ -125,8 +141,10 @@ opt-level = 3
 opt-level = 3
 [profile.test.package.grovedb-commitment-tree]
 opt-level = 3
+[profile.test.package.argon2]
+opt-level = 3
 
 [workspace.package]
 
-version = "4.2.0-dev.8"
-rust-version = "1.92"
+version = "4.2.0-dev.11"
+rust-version = "1.98"

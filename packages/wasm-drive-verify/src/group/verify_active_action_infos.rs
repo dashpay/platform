@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::GroupAction;
 use dpp::group::group_action_status::GroupActionStatus;
@@ -127,7 +128,7 @@ pub fn verify_action_infos_in_contract_vec(
 
     let (root_hash, actions_vec): (RootHash, Vec<(Identifier, GroupAction)>) =
         Drive::verify_action_infos_in_contract(
-            &proof_vec,
+            supported_grovedb_proof(&proof_vec, platform_version)?,
             Identifier::from(contract_id_bytes),
             group_contract_position,
             action_status_enum,
@@ -209,7 +210,7 @@ pub fn verify_action_infos_in_contract_map(
 
     let (root_hash, actions_map): (RootHash, BTreeMap<Identifier, GroupAction>) =
         Drive::verify_action_infos_in_contract(
-            &proof_vec,
+            supported_grovedb_proof(&proof_vec, platform_version)?,
             Identifier::from(contract_id_bytes),
             group_contract_position,
             action_status_enum,

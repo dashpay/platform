@@ -28,6 +28,19 @@ internal object FundingNative {
     )
 
 
+    external fun shieldedIdentityDebitRecoveryRecords(
+        managerHandle: Long,
+        walletId: ByteArray,
+    ): Array<ShieldedIdentityDebitRecoveryData>
+
+    external fun abandonShieldedIdentityDebit(
+        managerHandle: Long,
+        walletId: ByteArray,
+        accountIndex: Int,
+        activityId: ByteArray,
+        acknowledgePossibleExecution: Boolean,
+    )
+
     /** Kick the ~30s Halo 2 proving-key build onto a background thread. Idempotent. */
     external fun warmUpProver()
 
@@ -36,7 +49,10 @@ internal object FundingNative {
 
     /**
      * The flat shielded fee in credits for a transition of [kind]
-     * (0 = ShieldedTransfer/Shield, 1 = Unshield, 2 = ShieldedWithdrawal)
+     * (0 = ShieldedTransfer/Shield, 1 = Unshield, 2 = ShieldedWithdrawal,
+     * 3 = ShieldFromIdentity: the compute-only floor, no storage term,
+     * 4 = IdentityTopUpFromShieldedPool: base plus the flat
+     * identity-balance write cost)
      * and Orchard action count [numActions], computed at [managerHandle]'s
      * network-tracked platform version. No network round-trip; throws on
      * an unknown kind, an invalid manager handle, or overflow.
@@ -151,6 +167,31 @@ internal object FundingNative {
     )
 
     /**
+     * Shield from a Platform IDENTITY's balance, Type 21 (bridges
+     * `platform_wallet_manager_shielded_shield_from_identity`). Sibling of
+     * [shieldedShield] with the identity, rather than the transparent
+     * Platform-Payment addresses, as the funding side: [amount] credits move
+     * straight out of [identityId]'s balance into this wallet's own bound
+     * shielded pool ([shieldedAccount]), and the identity is debited [amount]
+     * plus the metered fee plus the shielded compute fee. The identity must
+     * be managed by this wallet. Self-shield only (Rust always targets the
+     * account's own default Orchard address), so there is no recipient.
+     * [signerIdentityHandle] is the Keystore identity signer (the manager's
+     * `signerHandle`): the same handle credit transfers use, since the
+     * transition is authorized by the identity's TRANSFER key. Blocks for the
+     * ~30s Halo 2 proof; returns the identity's proven post-debit credit
+     * balance (the wallet only confirms on the identity's own balance proof).
+     */
+    external fun shieldedShieldFromIdentity(
+        managerHandle: Long,
+        walletId: ByteArray,
+        shieldedAccount: Int,
+        identityId: ByteArray,
+        amount: Long,
+        signerIdentityHandle: Long,
+    ): Long
+
+    /**
      * Create an identity funded from the shielded pool, Type 20 (bridges
      * `platform_wallet_manager_shielded_identity_create_from_pool`). Spends a
      * note of the fixed exit [denomination] (credits — a member of the
@@ -211,6 +252,25 @@ internal object FundingNative {
         resolverHandle: Long,
         account: Int,
         toPlatformAddress: String,
+        amount: Long,
+    )
+
+    /**
+     * Shielded to existing-identity top-up, Type 22 (bridges
+     * `platform_wallet_manager_shielded_identity_top_up_from_pool`).
+     * [identityId] is the 32-byte id of an EXISTING Platform identity (it
+     * need not be one this wallet manages); [amount] is the credits the
+     * identity receives, and the flat pool-paid fee ([estimateShieldedFee]
+     * kind 4) is spent from the notes on top of it. [resolverHandle]
+     * supplies the transient spend authority exactly as for
+     * [shieldedUnshield].
+     */
+    external fun shieldedIdentityTopUpFromPool(
+        managerHandle: Long,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        account: Int,
+        identityId: ByteArray,
         amount: Long,
     )
 

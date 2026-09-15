@@ -832,6 +832,7 @@ mod keep_history_summable_e2e {
             "required": ["amount"],
             "additionalProperties": false,
             "documentsKeepHistory": true,
+            "canBeDeleted": false,
             "documentsSummable": "amount",
         });
         let schemas = platform_value!({ DOCTYPE_NAME: document_schema });

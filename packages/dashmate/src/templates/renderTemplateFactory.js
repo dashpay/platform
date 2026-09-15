@@ -1,6 +1,7 @@
 import fs from 'fs';
 import dots from 'dot';
 import crypto from 'crypto';
+import hashTorControlPassword from '../tor/hashTorControlPassword.js';
 
 /**
  * @return {renderTemplate}
@@ -23,7 +24,7 @@ export default function renderTemplateFactory() {
 
     const template = dots.template(templateString);
 
-    return template({ ...variables, crypto });
+    return template({ ...variables, crypto, hashTorControlPassword });
   }
 
   return renderTemplate;

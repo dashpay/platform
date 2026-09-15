@@ -159,6 +159,111 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        if estimated_costs_only_with_layer_info.is_none() {
+            self.prepare_time_range_ttl(drive, block_info, transaction, platform_version)?;
+        }
+        self.into_low_level_drive_operations_after_ttl_drain(
+            drive,
+            estimated_costs_only_with_layer_info,
+            block_info,
+            transaction,
+            platform_version,
+        )
+    }
+}
+
+impl DocumentOperationType<'_> {
+    /// Run all direct TTL cleanup before any operation in this batch is built.
+    pub(crate) fn prepare_time_range_ttl(
+        &self,
+        drive: &Drive,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        if platform_version
+            .system_limits
+            .min_time_range_ttl_drop_operations_per_write
+            .is_none()
+        {
+            return Ok(());
+        }
+        match self {
+            Self::AddDocument {
+                contract_info,
+                document_type_info,
+                ..
+            }
+            | Self::AddContestedDocument {
+                contract_info,
+                document_type_info,
+                ..
+            }
+            | Self::UpdateDocument {
+                contract_info,
+                document_type_info,
+                ..
+            }
+            | Self::DeleteDocument {
+                contract_info,
+                document_type_info,
+                ..
+            }
+            | Self::DeleteIndexOnlyDocument {
+                contract_info,
+                document_type_info,
+                ..
+            } => {
+                // Preparation reads are unbilled maintenance. Normal conversion
+                // still resolves and bills the contract through its usual path.
+                let resolved = contract_info.clone().resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut vec![],
+                    platform_version,
+                )?;
+                let contract = resolved.as_ref();
+                let document_type = document_type_info.clone().resolve(contract)?;
+                drive.prepare_document_time_range_ttl(
+                    contract,
+                    document_type,
+                    block_info.time_ms,
+                    transaction,
+                    platform_version,
+                )
+            }
+            Self::MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations,
+            } => {
+                // Each document earns a drainage budget, but all budgets are
+                // spent before the first document's low-level ops are queued.
+                for _ in &document_operations.operations {
+                    drive.prepare_document_time_range_ttl(
+                        document_operations.contract,
+                        document_operations.document_type,
+                        block_info.time_ms,
+                        transaction,
+                        platform_version,
+                    )?;
+                }
+                Ok(())
+            }
+            // These write to system contracts, which have no TTL indexes.
+            Self::AddWithdrawalDocument { .. } | Self::DocumentHistory { .. } => Ok(()),
+        }
+    }
+
+    pub(crate) fn into_low_level_drive_operations_after_ttl_drain(
+        self,
+        drive: &Drive,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DocumentOperationType::AddDocument {
                 owned_document_info,
@@ -182,7 +287,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     contract,
                     document_type,
                 };
-                let mut operations = drive.add_document_for_contract_operations(
+                let mut operations = drive.add_document_for_contract_operations_without_ttl_drain(
                     document_and_contract_info,
                     override_document,
                     block_info,
@@ -249,7 +354,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     contract: &contract,
                     document_type,
                 };
-                drive.add_document_for_contract_operations(
+                drive.add_document_for_contract_operations_without_ttl_drain(
                     document_and_contract_info,
                     false,
                     block_info,
@@ -280,14 +385,15 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     contract,
                     document_type,
                 };
-                let mut operations = drive.update_document_for_contract_operations(
-                    document_and_contract_info,
-                    block_info,
-                    &mut None,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    platform_version,
-                )?;
+                let mut operations = drive
+                    .update_document_for_contract_operations_without_ttl_drain(
+                        document_and_contract_info,
+                        block_info,
+                        &mut None,
+                        estimated_costs_only_with_layer_info,
+                        transaction,
+                        platform_version,
+                    )?;
                 drive_operations.append(&mut operations);
                 Ok(drive_operations)
             }
@@ -329,12 +435,13 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 let contract = contract_resolved_info.as_ref();
                 let document_type = document_type_info.resolve(contract)?;
 
-                drive.delete_document_for_contract_operations(
+                drive.delete_document_for_contract_operations_without_ttl_drain(
                     document_id,
                     contract,
                     document_type,
                     None,
                     estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
                     transaction,
                     platform_version,
                 )
@@ -360,12 +467,13 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 // Reconstruct the document the entries were written from.
                 let document = Drive::index_only_document_from_values(document_id, owner_id, data)?;
 
-                drive.delete_index_only_document_for_contract_operations(
+                drive.delete_index_only_document_for_contract_operations_without_ttl_drain(
                     document,
                     contract,
                     document_type,
                     None,
                     estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
                     transaction,
                     platform_version,
                 )
@@ -391,15 +499,16 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                                 contract,
                                 document_type,
                             };
-                            let mut operations = drive.add_document_for_contract_operations(
-                                document_and_contract_info,
-                                override_document,
-                                block_info,
-                                &mut Some(&mut drive_operations),
-                                estimated_costs_only_with_layer_info,
-                                transaction,
-                                platform_version,
-                            )?;
+                            let mut operations = drive
+                                .add_document_for_contract_operations_without_ttl_drain(
+                                    document_and_contract_info,
+                                    override_document,
+                                    block_info,
+                                    &mut Some(&mut drive_operations),
+                                    estimated_costs_only_with_layer_info,
+                                    transaction,
+                                    platform_version,
+                                )?;
                             drive_operations.append(&mut operations);
                         }
                         DocumentOperation::UpdateOperation(update_operation) => {
@@ -428,14 +537,15 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                                 contract,
                                 document_type,
                             };
-                            let mut operations = drive.update_document_for_contract_operations(
-                                document_and_contract_info,
-                                block_info,
-                                &mut Some(&mut drive_operations),
-                                estimated_costs_only_with_layer_info,
-                                transaction,
-                                platform_version,
-                            )?;
+                            let mut operations = drive
+                                .update_document_for_contract_operations_without_ttl_drain(
+                                    document_and_contract_info,
+                                    block_info,
+                                    &mut Some(&mut drive_operations),
+                                    estimated_costs_only_with_layer_info,
+                                    transaction,
+                                    platform_version,
+                                )?;
                             drive_operations.append(&mut operations);
                         }
                     }

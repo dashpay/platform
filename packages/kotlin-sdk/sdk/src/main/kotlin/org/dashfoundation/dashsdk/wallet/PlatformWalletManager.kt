@@ -1097,6 +1097,9 @@ class PlatformWalletManager(
      * per restorable id to obtain a [ManagedPlatformWallet] handle.
      *
      * Idempotent: with no persisted state, leaves [wallets] untouched.
+     *
+     * On failure the manager is unchanged and still usable — fix the store
+     * and call again, or destroy the manager and rebuild it.
      */
     suspend fun loadPersistedWallets(): List<ManagedPlatformWallet> = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.loadFromPersistor(managerHandle) }
@@ -1630,6 +1633,92 @@ class PlatformWalletManager(
     }
 
     /**
+     * Shield from a Platform IDENTITY's balance (Type 21). Sibling of
+     * [shieldedShield] with the identity, rather than the transparent
+     * Platform-Payment addresses, as the funding side: [amount] credits move
+     * straight out of [identityId]'s balance into this wallet's own bound
+     * shielded pool ([shieldedAccount]), and the identity is debited [amount]
+     * plus the metered fee plus the shielded compute fee
+     * ([ShieldedProver.FeeKind.ShieldFromIdentity]). The identity must be
+     * managed by this wallet. Signed by the Keystore identity signer
+     * ([signerHandle]) with the identity's TRANSFER key, the same handle
+     * [org.dashfoundation.dashsdk.credits.IdentityCredits.transferToAddresses]
+     * threads through. Swift counterpart:
+     * `PlatformWalletManager.shieldedShieldFromIdentity` in
+     * packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletManagerShieldedSync.swift. Self-shield only (Rust always targets this wallet's own
+     * default Orchard address, so there is no recipient parameter). Blocks for
+     * the ~30s Halo 2 proof; the note arrives on the next shielded sync pass.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param identityId the 32-byte funding identity id.
+     * @param amount credits to shield (1 DASH = 1e11).
+     * @return the identity's proven post-debit credit balance; the wallet only
+     *   confirms on the identity's own balance proof, any other result throws
+     *   the shielded-spend-unconfirmed error (do not resubmit).
+     */
+    suspend fun shieldedShieldFromIdentity(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        amount: Long,
+        shieldedAccount: Int = 0,
+    ): Long = teardownGate.op {
+        require(identityId.size == 32) {
+            "identityId must be exactly 32 bytes, got ${identityId.size}"
+        }
+        require(amount > 0) { "amount must be positive, got $amount" }
+        require(shieldedAccount >= 0) {
+            "shieldedAccount must be non-negative, got $shieldedAccount"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedShieldFromIdentity(
+                managerHandle,
+                walletId,
+                shieldedAccount,
+                identityId,
+                amount,
+                signerHandle,
+            )
+        }
+    }
+
+    /** List active and archived durable identity-funded shields for this manager's wallet. */
+    suspend fun shieldedIdentityDebitRecoveryRecords(
+        walletId: ByteArray,
+    ): List<ShieldedIdentityDebitRecoveryRecord> = teardownGate.op {
+        require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
+        mapNativeErrors {
+            FundingNative.shieldedIdentityDebitRecoveryRecords(managerHandle, walletId)
+                .map { ShieldedIdentityDebitRecoveryRecord.fromNative(it) }
+        }
+    }
+
+    /**
+     * Stop automatic retry of exactly `(walletId, accountIndex, activityId)`.
+     * Archives the complete signed record for later scan confirmation and audit,
+     * preserves an Unknown outcome, and permits a new identity debit after saving.
+     *
+     * This does not cancel an already relayed or in-flight payment. A new payment
+     * may cause an additional debit even if the old nonce is still usable. Obtain
+     * the user's informed acknowledgement before passing true. Acknowledgement
+     * is mandatory, has no default, and false is rejected by the wallet.
+     */
+    suspend fun abandonShieldedIdentityDebit(
+        walletId: ByteArray,
+        accountIndex: UInt,
+        activityId: ByteArray,
+        acknowledgePossibleExecution: Boolean,
+    ) = teardownGate.op {
+        require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
+        require(activityId.size == 32) { "activityId must be exactly 32 bytes, got ${activityId.size}" }
+        mapNativeErrors {
+            FundingNative.abandonShieldedIdentityDebit(
+                managerHandle, walletId, accountIndex.toInt(), activityId,
+                acknowledgePossibleExecution,
+            )
+        }
+    }
+
+    /**
      * Create an identity funded from the shielded pool (Type 20) — port of
      * Swift's `shieldedIdentityCreateFromPool`. Spends a note of the fixed
      * exit [denomination] (credits — a member of the ACTIVE protocol
@@ -1858,6 +1947,46 @@ class PlatformWalletManager(
                 mnemonicResolver.nativeHandle,
                 account,
                 toPlatformAddress,
+                amount,
+            )
+        }
+    }
+
+    /**
+     * Shielded to existing-identity top-up (Type 22), a port of Swift's
+     * `PlatformWalletManager.shieldedIdentityTopUpFromPool`
+     * (`PlatformWalletManagerShieldedSync.swift`). Spends notes from
+     * [account] on [walletId] and credits [identityId]'s Platform balance.
+     *
+     * The identity only has to exist on Platform; it does not have to be
+     * one this wallet manages. The flat pool-paid fee
+     * ([ShieldedProver.FeeKind.IdentityTopUpFromPool], i.e.
+     * [estimateShieldedFee] kind 4) is spent from the notes on top of
+     * [amount].
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param identityId the 32-byte id of the identity being topped up.
+     * @param amount credits the identity receives (1 DASH = 1e11 credits).
+     * @param account the ZIP-32 shielded account to spend from (usually 0).
+     */
+    suspend fun shieldedIdentityTopUpFromPool(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        amount: Long,
+        account: Int = 0,
+    ): Unit = teardownGate.op {
+        require(amount > 0) { "amount must be positive, got $amount" }
+        require(account >= 0) { "account must be non-negative, got $account" }
+        require(identityId.size == 32) {
+            "identityId must be exactly 32 bytes, got ${identityId.size}"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedIdentityTopUpFromPool(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                identityId,
                 amount,
             )
         }

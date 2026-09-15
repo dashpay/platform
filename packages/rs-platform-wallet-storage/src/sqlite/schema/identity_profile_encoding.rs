@@ -1,4 +1,14 @@
-//! Frozen pre-address profile records. Do not edit their field order.
+//! Frozen pre-V019 profile records, and the stamped decoders that route each
+//! `identities.entry_blob` / `dashpay_profiles.profile_blob` row to the shape
+//! it carries. Do not edit the legacy field order.
+//!
+//! `DashPayProfile` gained its payment addresses as trailing `Option` fields.
+//! Under `bincode::serde` a struct is a fixed-arity positional record, so a
+//! record written before the widening is never "short": the trailing fields
+//! are simply absent, and decoding it against the current shape reads the
+//! next field's bytes as an address. The row stamp (V019) is what says which
+//! shape to decode; `serde(default)` on the new fields serves map formats
+//! such as JSON only.
 use super::blob;
 use crate::sqlite::error::WalletStorageError;
 use dpp::fee::Credits;
@@ -31,6 +41,18 @@ impl From<LegacyProfile> for DashPayProfile {
         }
     }
 }
+impl From<DashPayProfile> for LegacyProfile {
+    fn from(p: DashPayProfile) -> Self {
+        Self {
+            display_name: p.display_name,
+            bio: p.bio,
+            avatar_url: p.avatar_url,
+            avatar_hash: p.avatar_hash,
+            avatar_fingerprint: p.avatar_fingerprint,
+            public_message: p.public_message,
+        }
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 struct LegacyContactProfile {
     profile: Option<LegacyProfile>,
@@ -53,8 +75,93 @@ struct LegacyIdentityEntry {
     pub contact_profiles: BTreeMap<Identifier, LegacyContactProfile>,
     pub ignored_senders: BTreeSet<Identifier>,
 }
+impl From<LegacyIdentityEntry> for IdentityEntry {
+    fn from(old: LegacyIdentityEntry) -> Self {
+        IdentityEntry {
+            id: old.id,
+            balance: old.balance,
+            revision: old.revision,
+            identity_index: old.identity_index,
+            last_updated_balance_block_time: old.last_updated_balance_block_time,
+            last_synced_keys_block_time: old.last_synced_keys_block_time,
+            dpns_names: old.dpns_names,
+            contested_dpns_names: old.contested_dpns_names,
+            status: old.status,
+            wallet_id: old.wallet_id,
+            dashpay_profile: old.dashpay_profile.map(Into::into),
+            dashpay_payments: old.dashpay_payments,
+            contact_profiles: old
+                .contact_profiles
+                .into_iter()
+                .map(|(id, entry)| {
+                    (
+                        id,
+                        ContactProfileEntry {
+                            profile: entry.profile.map(Into::into),
+                            checked_at_ms: entry.checked_at_ms,
+                        },
+                    )
+                })
+                .collect(),
+            ignored_senders: old.ignored_senders,
+        }
+    }
+}
+impl From<IdentityEntry> for LegacyIdentityEntry {
+    fn from(entry: IdentityEntry) -> Self {
+        Self {
+            id: entry.id,
+            balance: entry.balance,
+            revision: entry.revision,
+            identity_index: entry.identity_index,
+            last_updated_balance_block_time: entry.last_updated_balance_block_time,
+            last_synced_keys_block_time: entry.last_synced_keys_block_time,
+            dpns_names: entry.dpns_names,
+            contested_dpns_names: entry.contested_dpns_names,
+            status: entry.status,
+            wallet_id: entry.wallet_id,
+            dashpay_profile: entry.dashpay_profile.map(Into::into),
+            dashpay_payments: entry.dashpay_payments,
+            contact_profiles: entry
+                .contact_profiles
+                .into_iter()
+                .map(|(id, entry)| {
+                    (
+                        id,
+                        LegacyContactProfile {
+                            profile: entry.profile.map(Into::into),
+                            checked_at_ms: entry.checked_at_ms,
+                        },
+                    )
+                })
+                .collect(),
+            ignored_senders: entry.ignored_senders,
+        }
+    }
+}
 
-/// Decode a `dashpay_profiles.profile_blob` using its V008 `profile_format`
+// Test-only: production never writes the legacy shapes, but migration
+// fixtures have to produce the bytes a pre-V019 writer produced. PUBLIC
+// material only, like the current shapes they mirror.
+#[cfg(any(test, feature = "__test-helpers"))]
+super::blob::impl_persistable_blob!(LegacyProfile, LegacyIdentityEntry);
+
+/// The bytes a pre-V019 writer stored for `profile`: the record without the
+/// payment-address fields. For fixtures of databases written before V019.
+#[cfg(any(test, feature = "__test-helpers"))]
+pub fn encode_legacy_profile(profile: &DashPayProfile) -> Result<Vec<u8>, WalletStorageError> {
+    blob::encode(&LegacyProfile::from(profile.clone()))
+}
+
+/// The bytes a pre-V019 writer stored for `entry`: its own and its contacts'
+/// profiles in the pre-payment-address shape. For fixtures of databases
+/// written before V019.
+#[cfg(any(test, feature = "__test-helpers"))]
+pub fn encode_legacy_identity(entry: &IdentityEntry) -> Result<Vec<u8>, WalletStorageError> {
+    blob::encode(&LegacyIdentityEntry::from(entry.clone()))
+}
+
+/// Decode a `dashpay_profiles.profile_blob` using its V019 `profile_format`
 /// stamp: zero is the pre-address shape, one includes payment addresses. Never
 /// fall back to the legacy shape after a current-format decoding error.
 pub fn decode_profile(payload: &[u8], format: i64) -> Result<DashPayProfile, WalletStorageError> {
@@ -72,37 +179,7 @@ pub fn decode_profile(payload: &[u8], format: i64) -> Result<DashPayProfile, Wal
 pub fn decode_identity(payload: &[u8], format: i64) -> Result<IdentityEntry, WalletStorageError> {
     match format {
         1 => blob::decode(payload),
-        0 => {
-            let old: LegacyIdentityEntry = blob::decode(payload)?;
-            Ok(IdentityEntry {
-                id: old.id,
-                balance: old.balance,
-                revision: old.revision,
-                identity_index: old.identity_index,
-                last_updated_balance_block_time: old.last_updated_balance_block_time,
-                last_synced_keys_block_time: old.last_synced_keys_block_time,
-                dpns_names: old.dpns_names,
-                contested_dpns_names: old.contested_dpns_names,
-                status: old.status,
-                wallet_id: old.wallet_id,
-                dashpay_profile: old.dashpay_profile.map(Into::into),
-                dashpay_payments: old.dashpay_payments,
-                contact_profiles: old
-                    .contact_profiles
-                    .into_iter()
-                    .map(|(id, entry)| {
-                        (
-                            id,
-                            ContactProfileEntry {
-                                profile: entry.profile.map(Into::into),
-                                checked_at_ms: entry.checked_at_ms,
-                            },
-                        )
-                    })
-                    .collect(),
-                ignored_senders: old.ignored_senders,
-            })
-        }
+        0 => blob::decode::<LegacyIdentityEntry>(payload).map(Into::into),
         _ => Err(WalletStorageError::blob_decode(
             "unsupported identity profile encoding",
         )),
@@ -112,41 +189,41 @@ pub fn decode_identity(payload: &[u8], format: i64) -> Result<IdentityEntry, Wal
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn old_profile() -> LegacyProfile {
-        LegacyProfile {
+
+    fn old_profile() -> DashPayProfile {
+        DashPayProfile {
             display_name: Some("Alice".into()),
             bio: Some("hello".into()),
-            avatar_url: None,
-            avatar_hash: None,
-            avatar_fingerprint: None,
             public_message: Some("hello".into()),
+            ..Default::default()
         }
-    }
-    #[test]
-    fn should_decode_standalone_profiles_by_format_without_fallback() {
-        let legacy = blob::encode(&old_profile()).unwrap();
-        let mut profile = super::super::dashpay::decode_profile(&legacy, 0).unwrap();
-        assert_eq!(profile.display_name.as_deref(), Some("Alice"));
-        assert_eq!(profile.public_message.as_deref(), Some("hello"));
-        assert!(profile.core_payment_address.is_none());
-        assert!(profile.platform_payment_address.is_none());
-        assert!(profile.shielded_address.is_none());
-        assert!(super::super::dashpay::decode_profile(&legacy, 1).is_err());
-        profile.shielded_address = Some(vec![9; 43]);
-        let current = blob::encode(&profile).unwrap();
-        assert_eq!(
-            super::super::dashpay::decode_profile(&current, 1).unwrap(),
-            profile
-        );
-        assert!(super::super::dashpay::decode_profile(&current, 0).is_err());
-        assert!(super::super::dashpay::decode_profile(&current, 2).is_err());
-        assert!(super::super::dashpay::decode_profile(&current[..current.len() - 1], 1).is_err());
     }
 
     #[test]
+    fn should_decode_standalone_profiles_by_format_without_fallback() {
+        let legacy = encode_legacy_profile(&old_profile()).unwrap();
+        let mut profile = decode_profile(&legacy, 0).unwrap();
+        assert_eq!(profile, old_profile());
+        assert!(profile.core_payment_address.is_none());
+        assert!(profile.platform_payment_address.is_none());
+        assert!(profile.shielded_address.is_none());
+        assert!(decode_profile(&legacy, 1).is_err());
+        profile.shielded_address = Some(vec![9; 43]);
+        let current = blob::encode(&profile).unwrap();
+        assert_eq!(decode_profile(&current, 1).unwrap(), profile);
+        assert!(decode_profile(&current, 0).is_err());
+        assert!(decode_profile(&current, 2).is_err());
+        assert!(decode_profile(&current[..current.len() - 1], 1).is_err());
+    }
+
+    /// The legacy identity record round-trips through the stamped decoder
+    /// with every field after the embedded profiles intact: the profile is
+    /// positional, so a shape mismatch would shift `dashpay_payments`,
+    /// `contact_profiles` and `ignored_senders`, not just drop an address.
+    #[test]
     fn should_read_old_owned_and_contact_profiles_without_losing_following_fields() {
         let id = Identifier::from([1; 32]);
-        let old = LegacyIdentityEntry {
+        let entry = IdentityEntry {
             id,
             balance: 123,
             revision: 2,
@@ -161,7 +238,7 @@ mod tests {
             dashpay_payments: BTreeMap::new(),
             contact_profiles: [(
                 id,
-                LegacyContactProfile {
+                ContactProfileEntry {
                     profile: Some(old_profile()),
                     checked_at_ms: 321,
                 },
@@ -169,108 +246,14 @@ mod tests {
             .into(),
             ignored_senders: [Identifier::from([3; 32])].into(),
         };
-        let encoded = blob::encode(&old).unwrap();
-        // Apply the real V7 -> V8 migration around an existing binary record.
-        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::runner()
-            .set_target(refinery::Target::Version(7))
-            .run(&mut conn)
-            .unwrap();
-        conn.execute("INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)", rusqlite::params![[2u8; 32].as_slice()]).unwrap();
-        conn.execute("INSERT INTO identities (identity_id, wallet_id, entry_blob, tombstoned) VALUES (?1, ?2, ?3, 0)", rusqlite::params![id.as_slice(), [2u8; 32].as_slice(), &encoded]).unwrap();
-        conn.execute(
-            "INSERT INTO dashpay_profiles (identity_id, profile_blob) VALUES (?1, ?2)",
-            rusqlite::params![id.as_slice(), blob::encode(&old_profile()).unwrap()],
-        )
-        .unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
-        let (profile_blob, profile_format): (Vec<u8>, i64) = conn
-            .query_row(
-                "SELECT profile_blob, profile_format FROM dashpay_profiles",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(profile_format, 0);
-        assert_eq!(
-            super::super::dashpay::decode_profile(&profile_blob, profile_format).unwrap(),
-            DashPayProfile::from(old_profile()),
-        );
-        let (restored, tombstoned) =
-            super::super::identities::fetch(&conn, &[2; 32], &id.to_buffer())
-                .unwrap()
-                .unwrap();
-        assert!(!tombstoned);
-        assert_eq!(
-            conn.query_row("SELECT entry_format FROM identities", [], |row| row
-                .get::<_, i64>(0))
-                .unwrap(),
-            0
-        );
-        assert_eq!(restored.balance, 123);
-        assert_eq!(
-            restored
-                .dashpay_profile
-                .as_ref()
-                .unwrap()
-                .display_name
-                .as_deref(),
-            Some("Alice")
-        );
-        assert!(restored
-            .dashpay_profile
-            .as_ref()
-            .unwrap()
-            .shielded_address
-            .is_none());
-        assert_eq!(restored.contact_profiles[&id].checked_at_ms, 321);
-        assert!(restored
-            .ignored_senders
-            .contains(&Identifier::from([3; 32])));
-        let mut current = restored;
-        current.dashpay_profile.as_mut().unwrap().shielded_address = Some(vec![9; 43]);
-        let tx = conn.transaction().unwrap();
-        let changes = platform_wallet::changeset::IdentityChangeSet {
-            identities: [(id, current.clone())].into(),
-            ..Default::default()
-        };
-        super::super::identities::apply(&tx, &[2; 32], &changes).unwrap();
-        super::super::dashpay::apply(
-            &tx,
-            &[2; 32],
-            Some(&BTreeMap::from([(id, current.dashpay_profile.clone())])),
-            None,
-        )
-        .unwrap();
-        tx.commit().unwrap();
-        let (profile_blob, profile_format): (Vec<u8>, i64) = conn
-            .query_row(
-                "SELECT profile_blob, profile_format FROM dashpay_profiles",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(profile_format, 1);
-        assert_eq!(
-            super::super::dashpay::decode_profile(&profile_blob, profile_format).unwrap(),
-            current.dashpay_profile.clone().unwrap(),
-        );
-        assert_eq!(
-            conn.query_row("SELECT entry_format FROM identities", [], |row| row
-                .get::<_, i64>(0))
-                .unwrap(),
-            1
-        );
-        assert_eq!(
-            super::super::identities::fetch(&conn, &[2; 32], &id.to_buffer())
-                .unwrap()
-                .unwrap()
-                .0,
-            current
-        );
-        let encoded = blob::encode(&current).unwrap();
-        assert_eq!(decode_identity(&encoded, 1).unwrap(), current);
-        assert!(decode_identity(&encoded[..encoded.len() - 1], 1).is_err());
-        assert!(decode_identity(&encoded, 2).is_err());
+        let legacy = encode_legacy_identity(&entry).unwrap();
+        assert_eq!(decode_identity(&legacy, 0).unwrap(), entry);
+        // Current bytes carry three more `None`s per embedded profile.
+        let current = blob::encode(&entry).unwrap();
+        assert_eq!(current.len(), legacy.len() + 6);
+        assert_eq!(decode_identity(&current, 1).unwrap(), entry);
+        assert!(decode_identity(&current[..current.len() - 1], 1).is_err());
+        assert!(decode_identity(&current, 2).is_err());
+        assert!(decode_identity(&legacy, 2).is_err());
     }
 }

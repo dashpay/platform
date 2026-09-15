@@ -498,8 +498,13 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_mutable() {
         run_document_replace_on_document_type_that_is_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            // v14: contract-version stamp plus the larger DashPay v2 schema
-            1454380,
+            // v14: replaced documents carry the contract-version stamp, and
+            // GroveDB V4 writes through the Merk node it retains from reading
+            // the old value, billing slightly fewer reads than the V3 path
+            // Protocol version 14 adds +740 per document write (the contract's version
+            // item is one more node to rehash) and the larger DashPay v2 schema
+            // increases byte-billed contract-tree reads.
+            1450220,
         )
         .await;
     }
@@ -1259,7 +1264,7 @@ mod replacement_tests {
         use crate::execution::check_tx::CheckTxLevel;
         use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
         use crate::platform_types::platform::PlatformRef;
-        use dpp::serialization::PlatformDeserializable;
+        use dpp::serialization::PlatformDeserializableUntrusted;
         use dpp::state_transition::StateTransition;
 
         let platform_version = PlatformVersion::latest();
@@ -1445,7 +1450,7 @@ mod replacement_tests {
         // 4) Re-submitting identical bytes through CheckTx FirstTimeCheck must
         //    hit the nonce check first and reject.
         let replayed_state_transition =
-            StateTransition::deserialize_from_bytes(&replace_serialized)
+            StateTransition::deserialize_from_bytes_untrusted(&replace_serialized)
                 .expect("expected to deserialize replayed transition");
 
         let platform_state = platform.state.load();
@@ -1458,7 +1463,7 @@ mod replacement_tests {
 
         let check_tx_result = state_transition_to_execution_event_for_check_tx(
             &platform_ref,
-            replayed_state_transition,
+            &replayed_state_transition,
             CheckTxLevel::FirstTimeCheck,
             &platform.check_tx_proof_verifier,
             platform_version,
