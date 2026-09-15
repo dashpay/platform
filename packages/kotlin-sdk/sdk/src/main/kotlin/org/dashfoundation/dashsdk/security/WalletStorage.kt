@@ -90,6 +90,13 @@ class WalletStorage(
      * with its authentication gate, i.e. on a device with no secure lock
      * screen. See [KeystoreManager.effectiveKeySecurityPolicy]
      * (dashpay/platform#4060).
+     *
+     * Does NOT reflect the MO-972 lock-gate degradation: on a device with
+     * the false-locked defect on record, DEVICE_BOUND identity keys are
+     * written without `setUnlockedDeviceRequired` and this still returns
+     * [KeySecurityPolicy.DEVICE_BOUND]. Pair it with
+     * [isMasterKeyLockBindingDefectObserved] when logging or auditing the
+     * protection level (see [KeySecurityPolicy], "Lock-gate degradation").
      */
     fun effectiveKeySecurityPolicy(): KeySecurityPolicy =
         keystore.effectiveKeySecurityPolicy()

@@ -59,7 +59,15 @@ import javax.crypto.spec.PSource
  *   the [KeySecurityPolicy.DEVICE_BOUND] variant of the identity-keys
  *   alias: the same RSA-2048 OAEP wrapping pair, but withOUT the
  *   user-authentication gate on the private key, for host apps that gate
- *   signing behind their own auth model (see [KeySecurityPolicy]).
+ *   signing behind their own auth model (see [KeySecurityPolicy]). Still
+ *   carries `setUnlockedDeviceRequired` on lock-screen devices.
+ * - [KEYS_ALIAS_DEVICE_BOUND_UNBOUND]
+ *   `org.dashfoundation.wallet.keys.devicebound.unbound` — the identity-key
+ *   counterpart of [MASTER_ALIAS_UNBOUND]: [KEYS_ALIAS_DEVICE_BOUND]'s
+ *   parameters with `setUnlockedDeviceRequired` never applied. The
+ *   degradation target for DEVICE_BOUND identity keys on a device that has
+ *   demonstrated the false-locked defect (MO-972). Provisioned lazily, only
+ *   on such a device; there is deliberately no auth-gated counterpart.
  * - [KEYS_ALIAS] `org.dashfoundation.wallet.keys` — the **legacy** alias that
  *   previously wrapped identity keys (first under an auth-gated AES-256-GCM
  *   key, later under a single RSA keypair — see the [KEYS_ALIAS] KDoc).
@@ -165,6 +173,16 @@ open class KeystoreManager(
      * [KeySecurityPolicy.DEVICE_BOUND] for that state rather than lying
      * AUTH_GATED. Ordering matches [resolveIdentityKeysWriteAlias] so the
      * write path and this report never disagree.
+     *
+     * What this surface CANNOT report: the MO-972 lock-gate degradation. On a
+     * device that has demonstrated the false-locked Keystore defect,
+     * [KeySecurityPolicy.DEVICE_BOUND] writes go to
+     * [KEYS_ALIAS_DEVICE_BOUND_UNBOUND], which has no `setUnlockedDeviceRequired`
+     * — still DEVICE_BOUND by that policy's contract, so DEVICE_BOUND is what
+     * this returns, but hosts auditing the protection level must also read
+     * [WalletStorage.isMasterKeyLockBindingDefectObserved]. That record lives
+     * in [WalletStorage]'s DataStore and is device-scoped, which is why it is
+     * not folded in here (see [KeySecurityPolicy], "Lock-gate degradation").
      */
     open fun effectiveKeySecurityPolicy(): KeySecurityPolicy = when {
         keySecurityPolicy == KeySecurityPolicy.DEVICE_BOUND -> KeySecurityPolicy.DEVICE_BOUND

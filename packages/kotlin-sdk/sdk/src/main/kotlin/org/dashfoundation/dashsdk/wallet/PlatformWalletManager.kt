@@ -208,6 +208,16 @@ class PlatformWalletManager(
         // once, loudly, at manager construction. Best-effort — the probe
         // touches KeyguardManager/AndroidKeyStore, which may be absent in
         // JVM test fixtures.
+        //
+        // The OTHER degradation — MO-972's lock-gate drop, where DEVICE_BOUND
+        // keys lose setUnlockedDeviceRequired on a device with the
+        // false-locked defect on record — is deliberately NOT reported here:
+        // effectiveKeySecurityPolicy() cannot express it (see KeySecurityPolicy,
+        // "Lock-gate degradation") and the record is a suspending DataStore
+        // read with no scope available yet. It is logged loudly at the moment
+        // it is recorded (WalletStorage.healFalseLockedMnemonicStore /
+        // recordLockBindingDefectFromDeniedRead), and hosts can read it any
+        // time via WalletStorage.isMasterKeyLockBindingDefectObserved().
         runCatching {
             val requested = walletStorage.keySecurityPolicy
             val effective = walletStorage.effectiveKeySecurityPolicy()
