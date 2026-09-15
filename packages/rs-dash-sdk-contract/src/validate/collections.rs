@@ -104,7 +104,7 @@ fn validate_collection(
     );
 
     let mut token_costs = collection.token_costs.clone();
-    token_costs.sort_by(|a, b| a.action.cmp(&b.action));
+    token_costs.sort_by_key(|cost| cost.action);
     let mut seen_actions = Vec::new();
     for cost in &token_costs {
         if seen_actions.contains(&cost.action) {

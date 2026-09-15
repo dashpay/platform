@@ -442,9 +442,7 @@ impl CollectionSpec {
     pub fn normalized(&self) -> CollectionSpec {
         let mut normalized = self.clone();
         normalize_fields(&mut normalized.fields);
-        normalized
-            .token_costs
-            .sort_by(|a, b| a.action.cmp(&b.action));
+        normalized.token_costs.sort_by_key(|cost| cost.action);
         normalized
     }
 }
