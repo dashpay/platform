@@ -8,7 +8,6 @@
 use crate::drive::document::paths::{contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY};
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
-use crate::fees::op::LowLevelDriveOperation;
 use crate::query::QueryResultType;
 use crate::util::common::encode::encode_u64;
 use crate::util::storage_flags::StorageFlags;
@@ -21,7 +20,6 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::{QualifiedGroveDbOp, SubelementsDeletionBehavior};
 use grovedb::reference_path::ReferencePathType::{SiblingReference, UpstreamRootHeightReference};
 use grovedb::{Element, PathQuery, Query, SizedQuery, Transaction, TreeType};
-use grovedb_costs::OperationCost;
 use std::collections::BTreeMap;
 
 /// Inventory and measured GroveDB work for a history-layout migration.
@@ -51,8 +49,6 @@ pub struct DocumentHistoryMigrationStats {
     pub migrated_documents: u64,
     /// Applied batches, excluding reads.
     pub batches: u64,
-    /// Read and write costs reported by GroveDB.
-    pub cost: OperationCost,
 }
 
 type IndexReference = (Vec<Vec<u8>>, Vec<u8>, Element);
@@ -122,29 +118,20 @@ impl Drive {
         let mut stats = DocumentHistoryMigrationStats::default();
         let mut cursor: Option<[u8; 32]> = None;
         loop {
-            let mut operations = vec![];
-            let ids = self.fetch_contract_ids_with_operations(
+            let ids = self.fetch_contract_ids(
                 cursor.map(|id| (id, false)),
                 u16::MAX,
                 Some(transaction),
-                &mut operations,
                 platform_version,
             )?;
-            for operation in operations {
-                if let LowLevelDriveOperation::CalculatedCostOperation(cost) = operation {
-                    stats.cost += cost;
-                }
-            }
             if ids.is_empty() {
                 break;
             }
             cursor = ids.last().copied();
             for id in ids {
                 stats.contracts += 1;
-                let fetched =
-                    self.fetch_contract(id, None, None, Some(transaction), platform_version);
-                stats.cost += fetched.cost;
-                let fetched = fetched
+                let fetched = self
+                    .fetch_contract(id, None, None, Some(transaction), platform_version)
                     .value?
                     .ok_or_else(|| corrupt("enumerated contract is missing"))?;
                 let contract_flags =
@@ -155,12 +142,8 @@ impl Drive {
                     }
                     stats.types += 1;
                     let type_path = contract_document_type_path_vec(&id, name);
-                    let type_entries = self.history_migration_entries(
-                        &type_path,
-                        transaction,
-                        platform_version,
-                        &mut stats,
-                    )?;
+                    let type_entries =
+                        self.history_migration_entries(&type_path, transaction, platform_version)?;
                     let mut index_entries = BTreeMap::new();
                     for (key, element) in &type_entries {
                         match key.as_slice() {
@@ -223,7 +206,6 @@ impl Drive {
                         &primary_path,
                         transaction,
                         platform_version,
-                        &mut stats,
                     )? {
                         stats.documents += 1;
                         let mut history_path = type_path.clone();
@@ -236,7 +218,6 @@ impl Drive {
                                 &history_path,
                                 transaction,
                                 platform_version,
-                                &mut stats,
                             )?;
                             Self::history_migration_count_revisions(&entries, &mut stats)?;
                             index_entries.remove(&document_id);
@@ -257,7 +238,6 @@ impl Drive {
                             &old_path,
                             transaction,
                             platform_version,
-                            &mut stats,
                         )?;
                         let mut pointer = None;
                         let mut revisions = BTreeMap::new();
@@ -411,14 +391,16 @@ impl Drive {
                 }
                 _ => continue,
             }
-            let stored = self.grove.get_raw(
-                path.as_slice().into(),
-                key,
-                Some(transaction),
-                &version.drive.grove_version,
-            );
-            stats.cost += stored.cost;
-            if stored.value? == expected {
+            let stored = self
+                .grove
+                .get_raw(
+                    path.as_slice().into(),
+                    key,
+                    Some(transaction),
+                    &version.drive.grove_version,
+                )
+                .value?;
+            if stored == expected {
                 rewritten += 1;
             }
         }
@@ -479,7 +461,6 @@ impl Drive {
         path: &[Vec<u8>],
         transaction: &Transaction,
         version: &PlatformVersion,
-        stats: &mut DocumentHistoryMigrationStats,
     ) -> Result<Vec<(Vec<u8>, Element)>, Error> {
         let mut query = Query::new();
         query.insert_all();
@@ -491,11 +472,6 @@ impl Drive {
             &mut operations,
             &version.drive,
         )?;
-        for operation in operations {
-            if let LowLevelDriveOperation::CalculatedCostOperation(cost) = operation {
-                stats.cost += cost;
-            }
-        }
         let mut entries = result.0.to_key_elements();
         // Raw range queries normalize references to absolute paths. Read the
         // stored reference itself so migration preserves its flags and shape.
@@ -504,18 +480,19 @@ impl Drive {
                 element,
                 Element::Reference(..) | Element::ReferenceWithSumItem(..)
             ) {
-                let raw = self.grove.get_raw(
-                    path.iter()
-                        .map(Vec::as_slice)
-                        .collect::<Vec<_>>()
-                        .as_slice()
-                        .into(),
-                    key,
-                    Some(transaction),
-                    &version.drive.grove_version,
-                );
-                stats.cost += raw.cost;
-                *element = raw.value?;
+                *element = self
+                    .grove
+                    .get_raw(
+                        path.iter()
+                            .map(Vec::as_slice)
+                            .collect::<Vec<_>>()
+                            .as_slice()
+                            .into(),
+                        key,
+                        Some(transaction),
+                        &version.drive.grove_version,
+                    )
+                    .value?;
             }
         }
         Ok(entries)
@@ -529,7 +506,7 @@ impl Drive {
         stats: &mut DocumentHistoryMigrationStats,
         references: &mut IndexEntries,
     ) -> Result<(), Error> {
-        for (key, element) in self.history_migration_entries(&path, transaction, version, stats)? {
+        for (key, element) in self.history_migration_entries(&path, transaction, version)? {
             if element.is_any_tree() {
                 let mut child = path.clone();
                 child.push(key);
@@ -570,14 +547,14 @@ impl Drive {
         version: &PlatformVersion,
         stats: &mut DocumentHistoryMigrationStats,
     ) -> Result<(), Error> {
-        let result = self.grove.apply_batch(
-            operations,
-            None,
-            Some(transaction),
-            &version.drive.grove_version,
-        );
-        stats.cost += result.cost;
-        result.value?;
+        self.grove
+            .apply_batch(
+                operations,
+                None,
+                Some(transaction),
+                &version.drive.grove_version,
+            )
+            .value?;
         stats.batches += 1;
         Ok(())
     }
