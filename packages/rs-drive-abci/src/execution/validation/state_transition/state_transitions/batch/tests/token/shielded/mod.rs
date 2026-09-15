@@ -1024,6 +1024,49 @@ mod token_shielded_pool_tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_contract_create_with_shielded_pool_token_rejects_freeze_rules() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9011);
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let mut contract = shielded_token_contract(identity.id(), platform_version);
+        contract
+            .token_configuration_mut(0)
+            .expect("token configuration")
+            .set_freeze_rules(ChangeControlRules::V0(ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            }));
+
+        let create = DataContractCreateTransition::new_from_data_contract(
+            contract,
+            1,
+            &identity.clone().into_partial_identity_info(),
+            key.id(),
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("contract create transition");
+
+        let result = process(&platform, &create);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(BasicError::TokenShieldedPoolIncompatibleRulesError(
+                    error
+                ))
+            )] if error.token_contract_position() == 0 && error.rule() == "freezeRules"
+        );
+    }
+
     /// `hasShieldedPool` is a format-version-1 field, so clients see it in the contract JSON
     /// and it survives the round trip.
     #[test]

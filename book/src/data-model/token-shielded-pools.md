@@ -54,6 +54,17 @@ The flag is immutable. A contract update that changes it is rejected with
 enabled can hold notes that would become unspendable, and a pool that is enabled late would
 need a tree created under an existing token.
 
+A pool also makes freezing and confiscation unenforceable: shielded notes belong to no identity
+account, so a holder who expects a freeze shields first and nothing can freeze, destroy or even
+see those notes. Rather than let an issuer advertise controls that cover only transparent
+balances, a token with `hasShieldedPool` must disable them permanently: `freezeRules`,
+`unfreezeRules` and `destroyFrozenFundsRules` must each authorize no one to take the action and
+have no admin action takers, so no later configuration update can switch them on. Contract
+create and update reject anything else with `TokenShieldedPoolIncompatibleRulesError` (10277).
+Pausing still works: shield, unshield and shielded transfer are all rejected while the token is
+paused. The frozen-account checks in the shield and unshield validators remain as defence in
+depth for state written before this rule.
+
 ## Transitions
 
 The three operations are `TokenTransition` variants inside a `Batch` transition, like every

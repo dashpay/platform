@@ -85,6 +85,13 @@ impl DataContractCreateStateTransitionBasicStructureValidationV0 for DataContrac
                 return Ok(validation_result);
             }
 
+            let validation_result =
+                token_configuration.validate_shielded_pool_rules(*token_contract_position);
+
+            if !validation_result.is_valid() {
+                return Ok(validation_result);
+            }
+
             let validation_result = token_configuration
                 .conventions()
                 .validate_localizations(platform_version)?;
