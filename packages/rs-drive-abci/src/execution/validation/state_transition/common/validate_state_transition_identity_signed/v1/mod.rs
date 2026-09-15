@@ -43,7 +43,12 @@ impl ValidateStateTransitionIdentitySignatureV1 for StateTransition {
             platform_version,
         )?;
         if let Some(identity) = result.data.as_ref().filter(|_| result.is_valid()) {
-            for key in identity.loaded_public_keys.values() {
+            // v0 loads exactly the signing key, but pin the scope check to that key by id so
+            // another loaded key can never veto a transition it did not sign.
+            let signing_key = self
+                .signature_public_key_id()
+                .and_then(|key_id| identity.loaded_public_keys.get(&key_id));
+            if let Some(key) = signing_key {
                 if let Some(ContractBounds::Scoped(scope)) = key.contract_bounds() {
                     if scope.is_expired(time_ms) {
                         return Ok(ConsensusValidationResult::new_with_error(

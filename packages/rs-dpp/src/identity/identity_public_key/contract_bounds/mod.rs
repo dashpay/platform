@@ -79,7 +79,9 @@ impl ContractBounds {
         })
     }
 
-    /// Gets the contract bounds type
+    /// Gets the contract bounds type: 0 single contract, 1 single contract document type,
+    /// 2 scoped. This is the DPP type tag, not the wallet FFI `contract_bounds_kind`
+    /// (where 0 means unbounded and 1/2 are the two legacy variants).
     pub fn contract_bounds_type(&self) -> ContractBoundsType {
         match self {
             SingleContract { .. } => 0,
