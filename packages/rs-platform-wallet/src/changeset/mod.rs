@@ -18,6 +18,8 @@ pub mod identity_scan_state;
 pub mod merge;
 pub mod persistence_capabilities;
 pub mod platform_address_sync_start_state;
+#[cfg(any(feature = "bls", feature = "eddsa"))]
+pub mod provider_key_account;
 #[cfg(feature = "serde")]
 pub mod serde_adapters;
 #[cfg(feature = "shielded")]

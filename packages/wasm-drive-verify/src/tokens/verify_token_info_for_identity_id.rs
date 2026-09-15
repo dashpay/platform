@@ -1,4 +1,5 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -48,7 +49,7 @@ pub fn verify_token_info_for_identity_id(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, token_info_option) = Drive::verify_token_info_for_identity_id(
-        &proof_vec,
+        supported_grovedb_proof(&proof_vec, platform_version)?,
         token_id_bytes,
         identity_id_bytes,
         verify_subset_of_proof,

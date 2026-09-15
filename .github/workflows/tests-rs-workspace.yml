@@ -92,15 +92,28 @@ jobs:
             rm -rf target
           fi
 
-      - name: Install build dependencies (macOS)
+      - name: Verify build dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          echo "/opt/homebrew/bin" >> $GITHUB_PATH
-          echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
-          brew list cmake &>/dev/null || brew install cmake
-          brew list gmp &>/dev/null || brew install gmp
-          brew list llvm &>/dev/null || brew install llvm
-          brew list gnupg &>/dev/null || brew install gnupg
+          # Persistent runners must be provisioned before accepting CI jobs.
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
+          export PATH="/opt/homebrew/opt/llvm/bin:/opt/homebrew/bin:$PATH"
+
+          missing=0
+          for tool in cmake llvm-config gpg; do
+            if ! "$tool" --version >/dev/null 2>&1; then
+              echo "::error::Missing or unusable $tool. Provision this dependency on the runner before running CI."
+              missing=1
+            fi
+          done
+          for library in /opt/homebrew/opt/gmp/include/gmp.h /opt/homebrew/opt/gmp/lib/libgmp.dylib /opt/homebrew/opt/llvm/lib/libclang.dylib; do
+            if [ ! -r "$library" ]; then
+              echo "::error::Missing or unreadable $library. Provision this dependency on the runner before running CI."
+              missing=1
+            fi
+          done
+          exit "$missing"
 
       # clang, llvm and libsnappy are installed by ./.github/actions/rust on
       # Linux; this covers what the rest of the job needs and what a bare
@@ -265,15 +278,69 @@ jobs:
             '
           }
 
+          # A derive that only generates a decoder (`DecodeUntrusted`, the
+          # `PlatformDeserialize` family) cannot change how a structure's
+          # existing fields or variants serialize, but every other derive
+          # stays part of the comparison: swapping `Serialize_repr` for
+          # `Serialize`, or dropping `Encode`, is a wire change the guard must
+          # keep catching. Rewrite each `#[derive(...)]` attribute, single- or
+          # multi-line, as one canonical line with the decoder-only derives
+          # removed, so a rustfmt reflow of the list is not read as a change
+          # either. The fields, the variants and the attributes that do shape
+          # the encoding (serde, repr, platform_serialize) are compared
+          # verbatim.
+          normalize_derives() {
+            awk '
+              function flush_derive(   n, i, item, out) {
+                n = split(buf, parts, ",")
+                out = ""
+                for (i = 1; i <= n; i++) {
+                  item = parts[i]
+                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", item)
+                  if (item == "" || item == "DecodeUntrusted") continue
+                  if (item == "PlatformDeserialize" || item == "PlatformDeserializeTrusted") continue
+                  if (item == "PlatformDeserializeUntrusted") continue
+                  out = (out == "" ? item : out ", " item)
+                }
+                print "#[derive(" out ")]"
+                buf = ""
+              }
+              collecting {
+                if (index($0, ")]")) {
+                  sub(/\)\].*$/, "")
+                  buf = buf " " $0
+                  collecting = 0
+                  flush_derive()
+                } else {
+                  buf = buf " " $0
+                }
+                next
+              }
+              /^[[:space:]]*#\[derive\(/ {
+                sub(/^[[:space:]]*#\[derive\(/, "")
+                if (index($0, ")]")) {
+                  sub(/\)\].*$/, "")
+                  buf = $0
+                  flush_derive()
+                } else {
+                  buf = $0
+                  collecting = 1
+                }
+                next
+              }
+              { print }
+            '
+          }
+
           for file in $CHANGED_RS; do
             if [ ! -f "$file" ]; then continue; fi
             BASE_CONTENT=$(git show "$BASE_PARENT":"$file" 2>/dev/null || true)
             if [ -z "$BASE_CONTENT" ]; then continue; fi
 
-            BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only")
-            PR_APPEND=$(extract_tagged_block "@append_only" < "$file")
-            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | extract_tagged_block "@immutable")
-            PR_IMMUTABLE=$(extract_tagged_block "@immutable" < "$file")
+            BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only" | normalize_derives)
+            PR_APPEND=$(extract_tagged_block "@append_only" < "$file" | normalize_derives)
+            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | extract_tagged_block "@immutable" | normalize_derives)
+            PR_IMMUTABLE=$(extract_tagged_block "@immutable" < "$file" | normalize_derives)
 
             if [ -n "$BASE_APPEND" ]; then
               # Check for deletions, ignoring comment-only lines and the tag itself
@@ -298,7 +365,7 @@ jobs:
       - name: Check if coverage can be reused
         id: coverage-cache
         run: |
-          CURRENT_TREE=$(git rev-parse HEAD^{tree})
+          CURRENT_TREE=$(git rev-parse 'HEAD^{tree}')
           CACHED_TREE=$(cat target/lcov-tree-hash 2>/dev/null || echo "none")
           if [ "$CURRENT_TREE" = "$CACHED_TREE" ] && [ -f lcov-nonshielded.info ]; then
             echo "reuse=true" >> "$GITHUB_OUTPUT"
@@ -432,7 +499,7 @@ jobs:
           steps.coverage-cache.outputs.reuse == 'false'
           && steps.strategy-tests.outcome == 'success'
           && steps.shielded-tests.outcome == 'success'
-        run: git rev-parse HEAD^{tree} > target/lcov-tree-hash
+        run: git rev-parse 'HEAD^{tree}' > target/lcov-tree-hash
 
       - name: Reset GPG state (fix stale keyboxd locks on the macOS runners)
         if: always() && runner.os == 'macOS'
@@ -448,11 +515,16 @@ jobs:
       # File-existence gating (rather than step-outcome gating) also covers
       # the tree-hash reuse path, where the files persist from the previous
       # run of the identical tree.
+      # `files` is additive unless search is disabled. Persistent runners
+      # also contain old reports and build artifacts named "coverage"; only
+      # upload this phase's LCOV and do not generate unrelated plugin reports.
       - name: Upload coverage
         if: always() && hashFiles('lcov-nonshielded.info') != ''
         uses: codecov/codecov-action@v6
         with:
           files: lcov-nonshielded.info
+          disable_search: true
+          plugins: noop
           flags: rust
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
@@ -462,6 +534,8 @@ jobs:
         uses: codecov/codecov-action@v6
         with:
           files: lcov-strategy.info
+          disable_search: true
+          plugins: noop
           flags: rust-strategy
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
@@ -471,6 +545,8 @@ jobs:
         uses: codecov/codecov-action@v6
         with:
           files: lcov-shielded.info
+          disable_search: true
+          plugins: noop
           flags: rust-shielded
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false

@@ -29,6 +29,8 @@ mod refresh_cache;
 pub mod test_helpers;
 #[cfg(feature = "server")]
 mod update;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod version_item;
 #[cfg(feature = "server")]
 pub use contract_fetch_info::*;
 #[cfg(feature = "server")]

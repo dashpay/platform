@@ -123,7 +123,7 @@ mod tests {
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::data_contract::DataContract;
     use dpp::platform_value::platform_value;
-    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use drive::drive::Drive;
     use std::sync::Arc;
@@ -376,18 +376,24 @@ mod tests {
 
         assert_eq!(first_entry.date, 1000);
         let first_entry_data_contract = first_entry.value;
-        let first_data_contract_update =
-            DataContract::versioned_deserialize(&first_entry_data_contract, true, version)
-                .expect("To decode data contract");
+        let first_data_contract_update = DataContract::versioned_deserialize_untrusted(
+            &first_entry_data_contract,
+            true,
+            version,
+        )
+        .expect("To decode data contract");
         assert_eq!(first_data_contract_update, original_data_contract);
 
         assert_eq!(second_entry.date, 2000);
 
         let second_entry_data_contract = second_entry.value;
 
-        let second_data_contract_update =
-            DataContract::versioned_deserialize(&second_entry_data_contract, true, version)
-                .expect("To decode data contract");
+        let second_data_contract_update = DataContract::versioned_deserialize_untrusted(
+            &second_entry_data_contract,
+            true,
+            version,
+        )
+        .expect("To decode data contract");
 
         let updated_doc = second_data_contract_update
             .document_type_for_name("niceDocument")

@@ -7,7 +7,7 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action::GroupAction;
 use dpp::identifier::Identifier;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::version::PlatformVersion;
 use grovedb::{TransactionArg, TreeType};
 
@@ -37,7 +37,7 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        let group_action = GroupAction::deserialize_from_bytes(&value)?;
+        let group_action = GroupAction::deserialize_from_bytes_trusted(&value)?;
 
         Ok(group_action)
     }
@@ -81,7 +81,7 @@ impl Drive {
         )?;
 
         if !approximate_without_state_for_costs {
-            let group_action = GroupAction::deserialize_from_bytes(&value)?;
+            let group_action = GroupAction::deserialize_from_bytes_trusted(&value)?;
 
             Ok(Some(group_action))
         } else {

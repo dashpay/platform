@@ -218,6 +218,23 @@ pub(super) mod index_only_tests {
         platform_version: &PlatformVersion,
     ) -> crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult
     {
+        process_and_commit_at(
+            platform,
+            platform_state,
+            transition,
+            &BlockInfo::default(),
+            platform_version,
+        )
+    }
+
+    pub(super) fn process_and_commit_at(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        transition: &StateTransition,
+        block_info: &BlockInfo,
+        platform_version: &PlatformVersion,
+    ) -> crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult
+    {
         let serialized = transition
             .serialize_to_bytes()
             .expect("expected the batch transition to serialize");
@@ -227,7 +244,7 @@ pub(super) mod index_only_tests {
             .process_raw_state_transitions(
                 &vec![serialized],
                 platform_state,
-                &BlockInfo::default(),
+                block_info,
                 &transaction,
                 platform_version,
                 false,
@@ -1707,6 +1724,135 @@ mod index_only_executed_proof_tests {
         .await
         .expect("expected the create transition");
         (create, beat)
+    }
+
+    #[tokio::test]
+    async fn should_validate_signed_index_only_delete_after_ttl_drain() {
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::platform_value;
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let (alice, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+        let mut rng = StdRng::seed_from_u64(4581);
+        let contract = DataContractFactory::new(platform_version.protocol_version).unwrap()
+            .create_with_value_config(alice.id(), 0, platform_value!({"beat": {
+                "type": "object", "indexOnly": true, "documentsMutable": false,
+                "properties": {"hashtag": {"type": "string", "maxLength": 59, "position": 0}},
+                "required": ["hashtag", "$createdAt"],
+                "indices": [
+                    {"name": "allTime", "properties": [{"hashtag": "asc"}], "terminal": "$ownerId"},
+                    {"name": "windowed", "properties": [{"$createdAt": "asc"}, {"hashtag": "asc"}],
+                        "terminal": "$ownerId", "timeRange": {"on": "$createdAt", "range": 3600, "step": 3600, "ttl": 3600}}
+                ], "additionalProperties": false
+            }}), None, None).unwrap().data_contract_owned();
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .unwrap();
+        let (create, old) = signed_beat_create(
+            &contract,
+            alice.id(),
+            "old",
+            2,
+            &key,
+            &signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        let result = process_and_commit(&platform, &platform_state, &create, platform_version);
+        assert_eq!(result.valid_count(), 1, "{:?}", result.execution_results());
+
+        let now = BlockInfo {
+            time_ms: 7_200_000,
+            ..Default::default()
+        };
+        let (trigger, _) = signed_beat_create(
+            &contract,
+            alice.id(),
+            "new",
+            3,
+            &key,
+            &signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        let result =
+            process_and_commit_at(&platform, &platform_state, &trigger, &now, platform_version);
+        assert_eq!(result.valid_count(), 1, "{:?}", result.execution_results());
+
+        let dt = contract.document_type_for_name("beat").unwrap();
+        let (paths, _) = Drive::index_only_entry_paths_and_key(
+            contract.id(),
+            dt,
+            dt.indexes().get("windowed").unwrap(),
+            &old,
+            platform_version,
+        )
+        .unwrap();
+        assert!(
+            !platform
+                .drive
+                .grove
+                .has_raw(
+                    &paths[0][..5],
+                    &paths[0][5],
+                    None,
+                    &platform_version.drive.grove_version
+                )
+                .unwrap()
+                .unwrap(),
+            "expired bucket must be gone before validation"
+        );
+
+        let delete = BatchTransition::new_document_deletion_transition_from_document(
+            old,
+            dt,
+            &key,
+            4,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .unwrap();
+        let result =
+            process_and_commit_at(&platform, &platform_state, &delete, &now, platform_version);
+        assert_eq!(
+            result.valid_count(),
+            1,
+            "deletion must pass validation and execution: {:?}",
+            result.execution_results()
+        );
+        let proof = platform
+            .drive
+            .prove_state_transition(&delete, None, platform_version)
+            .unwrap()
+            .into_data()
+            .unwrap();
+        let contract = Arc::new(contract);
+        let lookup = |_id: &Identifier| Ok(Some(Arc::clone(&contract)));
+        Drive::verify_state_transition_was_executed_with_proof(
+            &delete,
+            &now,
+            &proof,
+            &lookup,
+            platform_version,
+        )
+        .expect("permanent entry must be deleted and provable");
     }
 
     /// The bucketed lifecycle through the pipeline: a `beat` create fans

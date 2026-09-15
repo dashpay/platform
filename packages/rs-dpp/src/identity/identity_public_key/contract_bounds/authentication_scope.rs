@@ -6,7 +6,7 @@ use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::{json_safe_fields, JsonConvertible};
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_SCOPE_BYTES: usize = 2048;
@@ -38,7 +38,18 @@ pub mod permissions {
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct ContractScope {
@@ -49,7 +60,18 @@ pub struct ContractScope {
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+    Serialize,
+    Deserialize,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AuthenticationScopeV0 {
@@ -61,7 +83,18 @@ pub struct AuthenticationScopeV0 {
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+    Serialize,
+    Deserialize,
 )]
 #[serde(tag = "$formatVersion")]
 pub enum AuthenticationScope {
@@ -152,7 +185,7 @@ impl AuthenticationScope {
                 "scope exceeds 2048 bytes".into(),
             ));
         }
-        let (scope, consumed): (Self, usize) = bincode::decode_from_slice(
+        let (scope, consumed): (Self, usize) = bincode::decode_from_slice_untrusted(
             bytes,
             bincode::config::standard().with_limit::<{ MAX_SCOPE_BYTES * 8 }>(),
         )
@@ -232,7 +265,7 @@ mod tests {
         use crate::identity::contract_bounds::ContractBounds;
         use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 
         for contract_count in [8, 16] {
             let scope = AuthenticationScope::V0(AuthenticationScopeV0 {
@@ -259,7 +292,7 @@ mod tests {
             .into();
             let bytes = key.serialize_to_bytes().unwrap();
             assert_eq!(
-                IdentityPublicKey::deserialize_from_bytes(&bytes).unwrap(),
+                IdentityPublicKey::deserialize_from_bytes_untrusted(&bytes).unwrap(),
                 key
             );
         }

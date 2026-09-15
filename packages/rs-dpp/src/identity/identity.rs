@@ -17,10 +17,12 @@ use crate::version::PlatformVersion;
 
 use crate::ProtocolError;
 #[cfg(feature = "identity-serialization")]
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 #[cfg(feature = "identity-serialization")]
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 
 use crate::fee::Credits;
@@ -43,7 +45,14 @@ use std::collections::{BTreeMap, BTreeSet};
 )]
 #[cfg_attr(
     feature = "identity-serialization",
-    derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
+    derive(
+        Encode,
+        Decode,
+        DecodeUntrusted,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
+        PlatformSerialize
+    ),
     platform_serialize(limit = 268435456, unversioned)
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
@@ -348,7 +357,7 @@ mod tests {
             ContractBounds, ContractScope,
         };
         use crate::identity::fields::IDENTITY_MAX_KEYS;
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 
         let scope = AuthenticationScope::V0(AuthenticationScopeV0 {
             contracts: (1..=16)
@@ -390,7 +399,7 @@ mod tests {
             .into();
             let bytes = identity.serialize_to_bytes().unwrap();
             assert_eq!(
-                Identity::deserialize_from_bytes(&bytes).unwrap(),
+                Identity::deserialize_from_bytes_untrusted(&bytes).unwrap(),
                 identity,
                 "full identity with {count} keys must round-trip"
             );
@@ -400,7 +409,7 @@ mod tests {
     #[cfg(feature = "identity-serialization")]
     #[test]
     fn should_reject_full_identity_with_excessive_declared_key_allocation() {
-        use crate::serialization::PlatformDeserializable;
+        use crate::serialization::PlatformDeserializableUntrusted;
 
         // Valid V0 tag and identity ID, followed by a forged public-key map length.
         // The decoder must enforce its allocation budget before reading any keys.
@@ -410,7 +419,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            Identity::deserialize_from_bytes(&bytes),
+            Identity::deserialize_from_bytes_untrusted(&bytes),
             Err(ProtocolError::MaxEncodedBytesReachedError { .. })
         ));
     }

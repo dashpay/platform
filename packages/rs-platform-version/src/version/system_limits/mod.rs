@@ -79,6 +79,14 @@ pub struct SystemLimits {
     /// keeps Core from rejecting the resulting `TxOut`. Versioned: see `min_withdrawal_amount`
     /// in each `SYSTEM_LIMITS_V*`.
     pub min_withdrawal_amount: u64,
+    /// Core's dust relay fee rate in duffs per kilobyte, from which the per-output dust
+    /// threshold Core's mempool enforces is derived (Core's `GetDustThreshold`: the fee at
+    /// this rate of the serialized output plus the input that would spend it, 546 duffs for
+    /// a P2PKH output at the default 3000 duffs/kB). From protocol version 14 an expired
+    /// withdrawal whose whole amount is below the threshold of its output script is marked
+    /// FAILED instead of being re-signed forever (`rebroadcast_expired_withdrawal_documents`
+    /// method version 2). `None` for the protocol versions that predate the rule.
+    pub core_dust_relay_fee_per_kb: Option<u64>,
     pub max_contract_group_size: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
@@ -100,6 +108,40 @@ pub struct SystemLimits {
     /// time-range indexes (nothing to bound: the `timeRange` keyword does not
     /// parse there).
     pub max_time_range_overlap_factor: Option<u64>,
+    /// Maximum time-to-live (in seconds) a `timeRange` index transform may
+    /// declare, enforced at contract registration.
+    ///
+    /// The cap is what makes the TTL fee model safe: entries under a TTL'd
+    /// index bill their bytes as processing (the ephemeral-bytes rate)
+    /// instead of storage, and a flat rate is only an honest price while
+    /// the lifetime it covers is bounded. One week in V4.
+    /// See `book/src/drive/time-range-ttl.md`.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate the
+    /// `ttl` key (nothing to bound: the key does not parse there).
+    pub max_time_range_ttl_seconds: Option<u64>,
+    /// Minimum per-write drainage budget for a TTL'd time-range grid.
+    /// Drive raises this floor to twice the maximum trees one document
+    /// can create in the grid's merged index structure, times its overlap
+    /// factor. This gives cleanup capacity above the tree creation rate,
+    /// including shared grids and deep suffixes. Each drop is O(1).
+    /// `None` disables cleanup on versions predating the `ttl` key.
+    pub min_time_range_ttl_drop_operations_per_write: Option<u16>,
+    /// Lowest GroveDB proof envelope version a client accepts from a
+    /// current-state response.
+    ///
+    /// Read by `drive-proof-verifier`'s `supported_grovedb_proof_bytes` and
+    /// `verify_tenderdash_proof`, by `wasm-drive-verify`'s
+    /// `supported_grovedb_proof`, and by Drive's
+    /// `verify_compacted_address_balance_changes` v1 for its nested proofs.
+    ///
+    /// `0` keeps accepting the legacy V0 envelope. Protocol version 14 raises
+    /// the floor to `1`: V0's item binding lets a prover return different
+    /// item bytes under the same authenticated root, so a quorum signature on
+    /// the root does not make a V0 payload safe. GroveDB emits V1 from grove
+    /// version 3 (protocol version 13), so every live network already serves
+    /// V1 by the time the floor applies.
+    pub minimum_grovedb_proof_envelope_version: u32,
 }
 
 #[cfg(test)]

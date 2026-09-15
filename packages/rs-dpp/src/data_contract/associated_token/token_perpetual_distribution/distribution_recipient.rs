@@ -2,14 +2,24 @@ use crate::data_contract::associated_token::token_distribution_key::{
     TokenDistributionType, TokenDistributionTypeWithResolvedRecipient,
 };
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSerialize;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(
-    Decode, Encode, PlatformSerialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default,
+    Decode,
+    Encode,
+    PlatformSerialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Default,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 // Custom `Serialize` / `Deserialize` below — `derive(Serialize, Deserialize)`
@@ -189,7 +199,9 @@ pub type TokenDistributionWeight = u64;
 //     pub total_blocks: u64,
 // }
 
-#[derive(Decode, Encode, PlatformSerialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(
+    Decode, Encode, PlatformSerialize, Debug, Clone, PartialEq, Eq, PartialOrd, DecodeUntrusted,
+)]
 #[platform_serialize(unversioned)]
 // Custom `Serialize` / `Deserialize` below — every variant wraps `Identifier`
 // (a base58 string in JSON, not a map), so serde's internal tagging can't

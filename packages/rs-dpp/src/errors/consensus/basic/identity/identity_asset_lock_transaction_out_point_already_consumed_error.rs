@@ -1,13 +1,24 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::Txid;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
 )]
 #[error("Asset lock transaction {transaction_id} output {output_index} already completely used")]
 #[platform_serialize(unversioned)]
@@ -45,3 +56,15 @@ impl From<IdentityAssetLockTransactionOutPointAlreadyConsumedError> for Consensu
         Self::BasicError(BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(err))
     }
 }
+
+impl<C> DecodeUntrusted<C> for IdentityAssetLockTransactionOutPointAlreadyConsumedError {
+    fn decode_untrusted<D: bincode::de::UntrustedDecoder<Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Self {
+            transaction_id: crate::serialization::untrusted::decode_txid(decoder)?,
+            output_index: DecodeUntrusted::decode_untrusted(decoder)?,
+        })
+    }
+}
+bincode::impl_borrow_decode_untrusted!(IdentityAssetLockTransactionOutPointAlreadyConsumedError);

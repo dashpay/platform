@@ -381,23 +381,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             op: PendingContactCryptoOp::ContactInfoDecrypt,
             enqueued_at_ms,
         };
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-                return;
-            };
-            let Some(managed) = info.identity_manager.managed_identity_mut(owner_id) else {
-                tracing::warn!(
-                    owner = %owner_id,
-                    "contactInfo-decrypt enqueue for a non-resident identity; dropping"
-                );
-                return;
-            };
-            upsert_pending_contact_crypto(
-                managed.dashpay_pending_contact_crypto_mut(),
-                entry.clone(),
+        // Serialize the queue write with identity removal under the same guard.
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(owner_id) else {
+            tracing::warn!(
+                owner = %owner_id,
+                "contactInfo-decrypt enqueue for a non-resident identity; dropping"
             );
-        }
+            return;
+        };
+        upsert_pending_contact_crypto(managed.dashpay_pending_contact_crypto_mut(), entry.clone());
         let changeset = PlatformWalletChangeSet {
             pending_contact_crypto_added: vec![entry],
             ..Default::default()
@@ -776,5 +772,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             "Published contactInfo document"
         );
         Ok(ContactInfoPublishOutcome::Published)
+    }
+}
+
+#[cfg(test)]
+mod pending_enqueue_tests {
+    #[tokio::test]
+    async fn should_serialize_contact_info_enqueue_with_identity_removal() {
+        let (iw, owner, backend) = super::super::pending_crypto_tests::fixture().await;
+        iw.dashpay().enqueue_contact_info_decrypt(&owner).await;
+        assert_eq!(backend.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
+        super::super::pending_crypto_tests::remove_owner(&iw, &owner).await;
+        iw.dashpay().enqueue_contact_info_decrypt(&owner).await;
+        assert_eq!(backend.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }

@@ -17,9 +17,11 @@ use crate::data_contract::DataContract;
 use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use platform_versioning::PlatformVersioned;
@@ -42,12 +44,14 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
     Clone,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

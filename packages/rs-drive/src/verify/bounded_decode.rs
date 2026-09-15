@@ -38,7 +38,7 @@ pub(super) fn decode_proof_data_contract(
     let config = bincode::config::standard()
         .with_big_endian()
         .with_limit::<MAX_CONTRACT_DECODE_MEMORY_BYTES>();
-    let (serialized_format, consumed) = bincode::borrow_decode_from_slice::<
+    let (serialized_format, consumed) = bincode::borrow_decode_from_slice_untrusted::<
         DataContractInSerializationFormat,
         _,
     >(serialized_contract, config)
@@ -78,8 +78,8 @@ pub(super) fn decode_vote_reference(
     let config = bincode::config::standard()
         .with_big_endian()
         .with_limit::<MAX_VOTE_REFERENCE_DECODE_BYTES>();
-    let (reference, consumed) =
-        bincode::decode_from_slice(serialized_reference, config).map_err(|e| {
+    let (reference, consumed) = bincode::decode_from_slice_untrusted(serialized_reference, config)
+        .map_err(|e| {
             Error::Drive(DriveError::CorruptedSerialization(format!(
                 "serialized vote reference is invalid: {e}"
             )))

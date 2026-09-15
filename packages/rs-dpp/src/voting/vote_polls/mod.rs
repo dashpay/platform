@@ -4,9 +4,11 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -18,7 +20,18 @@ pub mod contested_document_resource_vote_poll;
     all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
-#[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq, From)]
+#[derive(
+    Debug,
+    Clone,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    PartialEq,
+    From,
+    DecodeUntrusted,
+)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

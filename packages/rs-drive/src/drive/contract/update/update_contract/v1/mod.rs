@@ -123,7 +123,7 @@ impl Drive {
 
         self.cache
             .data_contracts
-            .insert(updated_contract_fetch_info, transaction.is_some());
+            .insert_rewritten(updated_contract_fetch_info, transaction.is_some());
 
         Drive::calculate_fee(
             None,

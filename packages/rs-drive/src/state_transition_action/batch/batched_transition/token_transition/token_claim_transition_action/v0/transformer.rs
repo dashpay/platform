@@ -432,6 +432,7 @@ impl TokenClaimTransitionActionV0 {
                         start_from_moment_for_distribution,
                         current_cycle_moment,
                         max_cycles,
+                        platform_version,
                     )?;
 
                 let (recipient, amount) = match perpetual_distribution.distribution_recipient() {
@@ -446,6 +447,7 @@ impl TokenClaimTransitionActionV0 {
                                 start_from_moment_for_distribution,
                                 max_cycle_moment,
                                 None,
+                                platform_version,
                             )?,
                     ),
                     TokenDistributionRecipient::Identity(identifier) => (
@@ -457,6 +459,7 @@ impl TokenClaimTransitionActionV0 {
                                 start_from_moment_for_distribution,
                                 max_cycle_moment,
                                 None,
+                                platform_version,
                             )?,
                     ),
                     TokenDistributionRecipient::EvonodesByParticipation => {
@@ -520,6 +523,7 @@ impl TokenClaimTransitionActionV0 {
                                         }
                                     }
                                 }),
+                                platform_version,
                             )?;
 
                         (

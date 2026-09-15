@@ -773,11 +773,18 @@ impl WasmSdk {
         use dash_sdk::platform::FetchMany;
         use drive_proof_verifier::types::Documents;
 
-        let query = parse_documents_query(self, query).await?;
+        let mut query = parse_documents_query(self, query).await?;
         let contract_id = query.data_contract.id();
         let document_type_name = query.document_type_name.clone();
 
-        let documents_result: Documents = Document::fetch_many(self.as_ref(), query).await?;
+        let mut documents_result: Documents =
+            Document::fetch_many(self.as_ref(), query.clone()).await?;
+        // A cached contract the network has since updated: refetch it and run
+        // the query once more against the current layout.
+        if self.drop_stale_contract(&query.data_contract, documents_result.values().flatten()) {
+            query.data_contract = std::sync::Arc::new(self.refresh_contract(contract_id).await?);
+            documents_result = Document::fetch_many(self.as_ref(), query).await?;
+        }
 
         let documents_map = Map::new();
         let doc_type_name = document_type_name;
@@ -807,12 +814,18 @@ impl WasmSdk {
         &self,
         query: DocumentsQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let query = parse_documents_query(self, query).await?;
+        let mut query = parse_documents_query(self, query).await?;
         let contract_id = query.data_contract.id();
         let document_type_name = query.document_type_name.clone();
 
-        let (documents_result, metadata, proof) =
-            Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
+        let (mut documents_result, mut metadata, mut proof) =
+            Document::fetch_many_with_metadata_and_proof(self.as_ref(), query.clone(), None)
+                .await?;
+        if self.drop_stale_contract(&query.data_contract, documents_result.values().flatten()) {
+            query.data_contract = std::sync::Arc::new(self.refresh_contract(contract_id).await?);
+            (documents_result, metadata, proof) =
+                Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
+        }
 
         let documents_map = Map::new();
         let doc_type_name = document_type_name;

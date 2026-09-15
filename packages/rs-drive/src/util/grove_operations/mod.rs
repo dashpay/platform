@@ -226,7 +226,7 @@ use intmap::IntMap;
 
 /// Pushes an operation's `OperationCost` to `drive_operations` given its `CostContext`
 /// and returns the operation's return value.
-fn push_drive_operation_result<T>(
+pub(crate) fn push_drive_operation_result<T>(
     cost_context: CostContext<Result<T, GroveError>>,
     drive_operations: &mut Vec<LowLevelDriveOperation>,
 ) -> Result<T, Error> {

@@ -10,6 +10,8 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V2: DriveContractMethodVersions =
             prove_contract: 0,
             prove_contract_history: 0,
             prove_contracts: 0,
+            prove_contracts_by_range: 0,
+            prove_contracts_versions: 0,
         },
         apply: DriveContractApplyMethodVersions {
             apply_contract: 0,
@@ -32,6 +34,7 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V2: DriveContractMethodVersions =
         get: DriveContractGetMethodVersions {
             fetch_contract: 0,
             fetch_contract_ids: 0,
+            fetch_contract_version: 0,
             fetch_contracts: 0,
             fetch_contract_with_history: 0,
             get_cached_contract_with_fetch_info: 0,

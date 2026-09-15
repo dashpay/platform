@@ -1445,6 +1445,7 @@ mod tests {
                 &epoch,
                 None,
                 &mut estimated_costs_only_with_layer_info,
+                0,
                 None,
                 platform_version,
             )
