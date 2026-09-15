@@ -122,7 +122,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             add_document_to_primary_storage: 1,
             add_indices_for_index_level_for_contract_operations: 2,
             add_indices_for_top_index_level_for_contract_operations: 2,
-            add_reference_for_index_level_for_contract_operations: 0,
+            add_reference_for_index_level_for_contract_operations: 1, // index references for keep-history types point at the primary key tree entry
         },
         insert_contested: DriveDocumentInsertContestedMethodVersions {
             add_contested_document: 0,
