@@ -449,6 +449,11 @@ jreleaser {
             mavenCentral {
                 create("sonatype") {
                     active.set(Active.RELEASE)
+                    // JReleaser's PomChecker builds a plain Maven model and rejects
+                    // `<packaging>aar` as unknown (kordamp pomchecker has no Android
+                    // support). Skip only that lint; the Central rules that matter
+                    // (sources + javadoc jars, signatures, POM metadata) still apply.
+                    verifyPom.set(false)
                     url.set("https://central.sonatype.com/api/v1/publisher")
                     stagingRepository(
                         layout.buildDirectory.dir("staging-deploy").get().asFile.path
@@ -463,6 +468,7 @@ jreleaser {
                     snapshotUrl.set("https://central.sonatype.com/repository/maven-snapshots/")
                     applyMavenCentralRules.set(true)
                     snapshotSupported.set(true)
+                    verifyPom.set(false) // same PomChecker/aar limitation as above
                     closeRepository.set(true)
                     releaseRepository.set(true)
                     stagingRepository(

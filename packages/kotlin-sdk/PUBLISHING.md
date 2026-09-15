@@ -139,6 +139,16 @@ confirm the artifact appears on search.maven.org (sync takes ~30 min).
 version (e.g. `0.1.0`) — the Android wallet's CI must depend on a pinned
 release, never a snapshot.
 
+## The `aar` packaging and JReleaser's POM check
+
+JReleaser runs kordamp's PomChecker before uploading. That checker builds a
+plain Maven model, and plain Maven does not know Android's `<packaging>aar`,
+so every deploy fails with `Unknown packaging: aar` before anything is sent.
+Both deployers therefore set `verifyPom.set(false)`. That disables only the
+POM *lint*; `applyMavenCentralRules` still enforces the sources and javadoc
+jars, the signatures and the POM metadata Central requires. Do not re-enable
+`verifyPom` unless PomChecker learns about `aar`.
+
 ## The JNI guard
 
 `sdk/src/main/jniLibs/` is gitignored, so a clean checkout has no
