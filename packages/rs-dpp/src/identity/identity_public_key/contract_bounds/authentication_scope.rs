@@ -439,6 +439,99 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "state-transitions")]
+    #[test]
+    fn should_require_each_document_permission_independently_and_respect_type_restrictions() {
+        use crate::state_transition::batch_transition::batched_transition::{
+            document_create_transition::DocumentCreateTransitionV0,
+            document_delete_transition::DocumentDeleteTransitionV0,
+            document_index_only_delete_transition::DocumentIndexOnlyDeleteTransitionV0,
+            document_purchase_transition::DocumentPurchaseTransitionV0,
+            document_replace_transition::DocumentReplaceTransitionV0,
+            document_transfer_transition::DocumentTransferTransitionV0,
+            document_update_price_transition::DocumentUpdatePriceTransitionV0,
+            BatchedTransitionRef, DocumentTransition,
+        };
+        use permissions::*;
+
+        let cases = [
+            (
+                DocumentTransition::Create(DocumentCreateTransitionV0::default().into()),
+                DOCUMENT_CREATE,
+            ),
+            (
+                DocumentTransition::Replace(DocumentReplaceTransitionV0::default().into()),
+                DOCUMENT_REPLACE,
+            ),
+            (
+                DocumentTransition::Delete(DocumentDeleteTransitionV0::default().into()),
+                DOCUMENT_DELETE,
+            ),
+            (
+                DocumentTransition::IndexOnlyDelete(
+                    DocumentIndexOnlyDeleteTransitionV0::default().into(),
+                ),
+                DOCUMENT_DELETE,
+            ),
+            (
+                DocumentTransition::Transfer(DocumentTransferTransitionV0::default().into()),
+                DOCUMENT_TRANSFER,
+            ),
+            (
+                DocumentTransition::UpdatePrice(DocumentUpdatePriceTransitionV0::default().into()),
+                DOCUMENT_UPDATE_PRICE,
+            ),
+            (
+                DocumentTransition::Purchase(DocumentPurchaseTransitionV0::default().into()),
+                DOCUMENT_PURCHASE,
+            ),
+        ];
+        // Default transitions target contract [0; 32] and the empty document type name.
+        for (transition, required) in cases {
+            let member = BatchedTransitionRef::Document(&transition);
+            let mut scope = AuthenticationScopeV0 {
+                contracts: vec![ContractScope {
+                    id: Identifier::from([0; 32]),
+                    document_types: None,
+                }],
+                permissions: required,
+                expires_at: None,
+            };
+            assert!(AuthenticationScope::V0(scope.clone()).allows_transition(member));
+            scope.permissions = ALL & !required;
+            assert!(
+                !AuthenticationScope::V0(scope.clone()).allows_transition(member),
+                "all other permissions must not authorize {transition:?}"
+            );
+            scope.permissions = ALL;
+            scope.contracts[0].document_types = Some(vec!["other".to_string()]);
+            assert!(
+                !AuthenticationScope::V0(scope.clone()).allows_transition(member),
+                "a type restriction must exclude unlisted types for {transition:?}"
+            );
+            scope.contracts[0].document_types = Some(vec![String::new()]);
+            assert!(
+                AuthenticationScope::V0(scope.clone()).allows_transition(member),
+                "listing the member's own type must authorize {transition:?}"
+            );
+            scope.contracts[0].document_types = None;
+            scope.contracts[0].id = Identifier::from([1; 32]);
+            assert!(
+                !AuthenticationScope::V0(scope).allows_transition(member),
+                "no permission may escape its contract"
+            );
+        }
+    }
+
+    /// Consensus rejects unknown bits against this mask at registration. Once protocol 14 is
+    /// released, widening it would accept on replay what the network rejected, so new bits
+    /// need a new scope version (or a versioned mask), never an edit here.
+    #[test]
+    fn scope_version_0_permission_mask_is_frozen() {
+        assert_eq!(permissions::ALL, 0x0003_FFFF);
+        assert_eq!(permissions::TOKEN_SET_PRICE, 1 << 17);
+    }
+
     #[cfg(all(feature = "json-conversion", feature = "value-conversion"))]
     #[test]
     fn should_round_trip_scoped_bounds_in_json_and_platform_value() {

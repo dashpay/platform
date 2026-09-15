@@ -726,3 +726,31 @@ impl From<BasicError> for ConsensusError {
         Self::BasicError(error)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `BasicError` is encoded by variant position; appending is the only safe change.
+    fn discriminant_of(error: BasicError) -> u8 {
+        let bytes = bincode::encode_to_vec(error, bincode::config::standard())
+            .expect("expected to encode the basic error");
+        bytes[0]
+    }
+
+    #[test]
+    fn basic_error_discriminants_are_frozen() {
+        assert_eq!(
+            discriminant_of(BasicError::ProtocolVersionParsingError(
+                ProtocolVersionParsingError::new("parse".to_string())
+            )),
+            0
+        );
+        assert_eq!(
+            discriminant_of(BasicError::InvalidAuthenticationScopeError(
+                InvalidAuthenticationScopeError::new("scope".to_string())
+            )),
+            175
+        );
+    }
+}
