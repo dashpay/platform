@@ -189,8 +189,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   contested create transition's prefunded voting balance to name the
 ///   same vote poll the document itself resolves to, and rejecting one on a
 ///   document that resolves to no contested index. It also bumps document
-///   create state validation to 3: v2 enforces `refersTo` document references,
-///   while v3 rejects non-contested creates whose id is already present in the
+///   create state validation to 2, enforcing `refersTo` document references
+///   and rejecting a non-contested create whose id is already present in the
 ///   contested tree. Document replace state validation 1 enforces the same
 ///   reference checks. v13 keeps the v9 table and therefore keeps
 ///   accepting all of these, so replay of pre-upgrade blocks is unchanged.
@@ -524,7 +524,7 @@ mod tests {
                 .state_transitions
                 .batch_state_transition
                 .document_create_transition_state_validation,
-            3
+            2
         );
     }
 }
