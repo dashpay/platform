@@ -139,14 +139,14 @@ impl Drive {
                             sum_value,
                             storage_flags,
                             &platform_version.drive,
-                        ))
+                        )?)
                     }
                     None => Ok(make_document_reference(
                         document,
                         document_and_contract_info.document_type,
                         storage_flags,
                         &platform_version.drive,
-                    )),
+                    )?),
                 }
             };
         // unique indexes will be stored under key "0"
@@ -202,7 +202,7 @@ impl Drive {
                             document_reference_size(
                                 document_and_contract_info.document_type,
                                 &platform_version.drive,
-                            ),
+                            )?,
                             storage_flags.map(|s| s.serialized_size()),
                         ),
                     },
@@ -330,7 +330,7 @@ impl Drive {
                         document_reference_size(
                             document_and_contract_info.document_type,
                             &platform_version.drive,
-                        ) + storage_flags
+                        )? + storage_flags
                             .map(|s| s.serialized_size())
                             .unwrap_or_default(),
                     ),

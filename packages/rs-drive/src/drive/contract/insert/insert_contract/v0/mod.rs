@@ -1,4 +1,5 @@
 use crate::drive::contract::paths;
+use crate::drive::document::paths::KeepHistoryStorage;
 
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
@@ -286,13 +287,8 @@ impl Drive {
             ];
 
             if document_type.as_ref().documents_keep_history()
-                && platform_version
-                    .drive
-                    .methods
-                    .document
-                    .insert
-                    .add_document_to_primary_storage
-                    == 1
+                && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
+                    == KeepHistoryStorage::HistoryTree
             {
                 self.batch_insert_empty_tree(
                     type_path,
