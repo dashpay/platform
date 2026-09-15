@@ -48,6 +48,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::document::paths::KeepHistoryStorage;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -166,13 +167,9 @@ mod tests {
 
         let mut history_path =
             contract_document_type_path_vec(contract.id().as_slice(), DOCUMENT_TYPE_NAME);
-        let history_key = if platform_version
-            .drive
-            .methods
-            .document
-            .insert
-            .add_document_to_primary_storage
-            == 0
+        let history_key = if KeepHistoryStorage::for_drive_version(&platform_version.drive)
+            .expect("keep-history storage layout")
+            == KeepHistoryStorage::DocumentSubtree
         {
             0
         } else {

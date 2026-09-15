@@ -5,7 +5,11 @@
 //!
 
 #[cfg(feature = "server")]
+#[cfg(feature = "server")]
+use crate::drive::document::paths::KeepHistoryStorage;
 use crate::drive::votes::paths::CONTESTED_DOCUMENT_STORAGE_TREE_KEY;
+#[cfg(feature = "server")]
+use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::util::storage_flags::StorageFlags;
 #[cfg(feature = "server")]
@@ -101,7 +105,7 @@ fn make_document_reference(
     document_type: DocumentTypeRef,
     storage_flags: Option<&StorageFlags>,
     drive_version: &dpp::version::drive_versions::DriveVersion,
-) -> Element {
+) -> Result<Element, Error> {
     // we need to construct the reference from the split height of the contract document
     // type which is at 4
     // 0 represents document storage
@@ -110,12 +114,8 @@ fn make_document_reference(
     let mut reference_path = vec![vec![0], document.id().to_vec()];
     let mut max_reference_hops = 1;
     if document_type.documents_keep_history() {
-        if drive_version
-            .methods
-            .document
-            .insert
-            .add_document_to_primary_storage
-            == 0
+        if KeepHistoryStorage::for_drive_version(drive_version)?
+            == KeepHistoryStorage::DocumentSubtree
         {
             reference_path.push(vec![0]);
         }
@@ -131,11 +131,11 @@ fn make_document_reference(
     // - 0 Storage
     // - Document id
     // -(Optional) 0 (means latest) in the case of documents_keep_history
-    Element::Reference(
+    Ok(Element::Reference(
         UpstreamRootHeightReference(4, reference_path),
         Some(max_reference_hops),
         StorageFlags::map_to_some_element_flags(storage_flags),
-    )
+    ))
 }
 
 #[cfg(feature = "server")]
@@ -182,19 +182,15 @@ pub(crate) fn make_document_reference_with_sum_item(
     sum_value: i64,
     storage_flags: Option<&StorageFlags>,
     drive_version: &dpp::version::drive_versions::DriveVersion,
-) -> Element {
+) -> Result<Element, Error> {
     // Reference-path construction mirrors `make_document_reference`
     // byte-for-byte — the only structural difference is the element
     // variant carrying the sum contribution alongside the path.
     let mut reference_path = vec![vec![0], document.id().to_vec()];
     let mut max_reference_hops = 1;
     if document_type.documents_keep_history() {
-        if drive_version
-            .methods
-            .document
-            .insert
-            .add_document_to_primary_storage
-            == 0
+        if KeepHistoryStorage::for_drive_version(drive_version)?
+            == KeepHistoryStorage::DocumentSubtree
         {
             reference_path.push(vec![0]);
         }
@@ -210,11 +206,13 @@ pub(crate) fn make_document_reference_with_sum_item(
     // `Some(max_reference_hops)` to bound dereferencing at the
     // documents-keep-history depth) AND the storage flags, so it's
     // the 4-arg variant.
-    Element::new_reference_with_sum_item_with_max_hops_and_flags(
-        UpstreamRootHeightReference(4, reference_path),
-        Some(max_reference_hops),
-        sum_value,
-        StorageFlags::map_to_some_element_flags(storage_flags),
+    Ok(
+        Element::new_reference_with_sum_item_with_max_hops_and_flags(
+            UpstreamRootHeightReference(4, reference_path),
+            Some(max_reference_hops),
+            sum_value,
+            StorageFlags::map_to_some_element_flags(storage_flags),
+        ),
     )
 }
 
@@ -300,7 +298,7 @@ fn make_document_contested_reference(
 fn document_reference_size(
     document_type: DocumentTypeRef,
     drive_version: &dpp::version::drive_versions::DriveVersion,
-) -> u32 {
+) -> Result<u32, Error> {
     // we need to construct the reference from the split height of the contract document
     // type which is at 4
     // 0 represents document storage
@@ -310,12 +308,8 @@ fn document_reference_size(
     // 1 (vec size) + 1 (subvec size) + 1 (0) + 1 (subvec size) + 32 (document id size)
     let mut reference_path_size = 36;
     if document_type.documents_keep_history()
-        && drive_version
-            .methods
-            .document
-            .insert
-            .add_document_to_primary_storage
-            == 0
+        && KeepHistoryStorage::for_drive_version(drive_version)?
+            == KeepHistoryStorage::DocumentSubtree
     {
         reference_path_size += 2;
     }
@@ -327,7 +321,7 @@ fn document_reference_size(
     // 1 reference_hops options
     // 1 reference_hops count
     // 1 element flags option
-    6 + reference_path_size
+    Ok(6 + reference_path_size)
 }
 
 #[cfg(feature = "server")]

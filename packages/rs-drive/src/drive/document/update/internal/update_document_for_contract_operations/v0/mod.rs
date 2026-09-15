@@ -205,7 +205,7 @@ impl Drive {
             document_and_contract_info.document_type,
             storage_flags,
             &platform_version.drive,
-        );
+        )?;
 
         // next we need to get the old document from storage
         let old_document_element = if document_type.documents_keep_history() {
@@ -349,7 +349,7 @@ impl Drive {
                     sum_value,
                     storage_flags,
                     &platform_version.drive,
-                )
+                )?
             } else {
                 document_reference.clone()
             };

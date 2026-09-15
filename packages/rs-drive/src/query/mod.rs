@@ -1,3 +1,4 @@
+use crate::drive::document::paths::KeepHistoryStorage;
 use dpp::data_contract::document_type::{DocumentPropertyType, TimeRangeTransform};
 use std::sync::Arc;
 
@@ -1850,38 +1851,33 @@ impl<'a> DriveDocumentQuery<'a> {
         &self,
         starts_at: &[u8; 32],
         platform_version: &PlatformVersion,
-    ) -> (Vec<Vec<u8>>, Vec<u8>) {
+    ) -> Result<(Vec<Vec<u8>>, Vec<u8>), Error> {
         if self.document_type.documents_keep_history()
-            && platform_version
-                .drive
-                .methods
-                .document
-                .insert
-                .add_document_to_primary_storage
-                == 0
+            && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
+                == KeepHistoryStorage::DocumentSubtree
         {
             let document_holding_path = self.contract.documents_with_history_primary_key_path(
                 self.document_type.name().as_str(),
                 starts_at,
             );
-            (
+            Ok((
                 document_holding_path
                     .into_iter()
                     .map(|key| key.to_vec())
                     .collect::<Vec<_>>(),
                 vec![0],
-            )
+            ))
         } else {
             let document_holding_path = self
                 .contract
                 .documents_primary_key_path(self.document_type.name().as_str());
-            (
+            Ok((
                 document_holding_path
                     .into_iter()
                     .map(|key| key.to_vec())
                     .collect::<Vec<_>>(),
                 starts_at.to_vec(),
-            )
+            ))
         }
     }
 
@@ -1943,13 +1939,8 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<PathQuery, Error> {
         if self.document_type.documents_keep_history()
             && self.block_time_ms.is_some()
-            && platform_version
-                .drive
-                .methods
-                .document
-                .insert
-                .add_document_to_primary_storage
-                == 1
+            && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
+                == KeepHistoryStorage::HistoryTree
         {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "point-in-time reads are unavailable for history-keeping document types"
@@ -2011,7 +2002,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 // from the backing store
 
                 let (start_at_document_path, start_at_document_key) =
-                    self.start_at_document_path_and_key(starts_at, platform_version);
+                    self.start_at_document_path_and_key(starts_at, platform_version)?;
                 let start_at_document = drive
                     .grove_get(
                         start_at_document_path.as_slice().into(),
@@ -2175,13 +2166,8 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<PathQuery, Error> {
         if self.document_type.documents_keep_history()
             && self.block_time_ms.is_some()
-            && platform_version
-                .drive
-                .methods
-                .document
-                .insert
-                .add_document_to_primary_storage
-                == 1
+            && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
+                == KeepHistoryStorage::HistoryTree
         {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "point-in-time reads are unavailable for history-keeping document types"
@@ -2416,13 +2402,8 @@ impl<'a> DriveDocumentQuery<'a> {
             query.insert_key(key);
 
             if self.document_type.documents_keep_history()
-                && platform_version
-                    .drive
-                    .methods
-                    .document
-                    .insert
-                    .add_document_to_primary_storage
-                    == 0
+                && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
+                    == KeepHistoryStorage::DocumentSubtree
             {
                 // if the documents keep history then we should insert a subquery
                 if let Some(block_time) = self.block_time_ms {
@@ -2503,13 +2484,8 @@ impl<'a> DriveDocumentQuery<'a> {
                 }
 
                 if self.document_type.documents_keep_history()
-                    && platform_version
-                        .drive
-                        .methods
-                        .document
-                        .insert
-                        .add_document_to_primary_storage
-                        == 0
+                    && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
+                        == KeepHistoryStorage::DocumentSubtree
                 {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
@@ -2552,13 +2528,8 @@ impl<'a> DriveDocumentQuery<'a> {
                 }
 
                 if self.document_type.documents_keep_history()
-                    && platform_version
-                        .drive
-                        .methods
-                        .document
-                        .insert
-                        .add_document_to_primary_storage
-                        == 0
+                    && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
+                        == KeepHistoryStorage::DocumentSubtree
                 {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {

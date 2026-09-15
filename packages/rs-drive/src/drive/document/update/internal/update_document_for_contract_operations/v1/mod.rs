@@ -2,6 +2,7 @@ use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
 };
+use crate::drive::document::paths::KeepHistoryStorage;
 use crate::drive::document::time_range_ttl::{entry_key_bucket_start, live_time_range_entry_keys};
 use crate::drive::document::{
     make_document_reference, make_document_reference_with_sum_item, read_document_sum_contribution,
@@ -215,17 +216,12 @@ impl Drive {
             document_and_contract_info.document_type,
             storage_flags,
             &platform_version.drive,
-        );
+        )?;
 
         // next we need to get the old document from storage
         let old_document_element = if document_type.documents_keep_history()
-            && platform_version
-                .drive
-                .methods
-                .document
-                .insert
-                .add_document_to_primary_storage
-                == 1
+            && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
+                == KeepHistoryStorage::HistoryTree
         {
             self.grove_get(
                 (&contract_documents_primary_key_path).into(),
@@ -387,7 +383,7 @@ impl Drive {
                     sum_value,
                     storage_flags,
                     &platform_version.drive,
-                )
+                )?
             } else {
                 document_reference.clone()
             };

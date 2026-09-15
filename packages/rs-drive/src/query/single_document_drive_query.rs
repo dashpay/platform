@@ -1,4 +1,5 @@
 use crate::drive::document::paths::contract_document_type_path_vec;
+use crate::drive::document::paths::KeepHistoryStorage;
 use crate::util::common::encode::encode_u64;
 
 use crate::drive::votes;
@@ -65,13 +66,8 @@ impl SingleDocumentDriveQuery {
     ) -> Result<PathQuery, Error> {
         if self.document_type_keeps_history
             && self.block_time_ms.is_some()
-            && platform_version
-                .drive
-                .methods
-                .document
-                .insert
-                .add_document_to_primary_storage
-                == 1
+            && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
+                == KeepHistoryStorage::HistoryTree
         {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "point-in-time reads are unavailable for history-keeping document types"
@@ -80,10 +76,11 @@ impl SingleDocumentDriveQuery {
         }
         match self.contested_status {
             SingleDocumentDriveQueryContestedStatus::NotContested => {
-                Ok(self.construct_non_contested_path_query(true, platform_version))
+                self.construct_non_contested_path_query(true, platform_version)
             }
             SingleDocumentDriveQueryContestedStatus::MaybeContested => {
-                let non_contested = self.construct_non_contested_path_query(true, platform_version);
+                let non_contested =
+                    self.construct_non_contested_path_query(true, platform_version)?;
                 let contested = self.construct_contested_path_query(true);
                 PathQuery::merge(
                     vec![&non_contested, &contested],
@@ -102,7 +99,7 @@ impl SingleDocumentDriveQuery {
         &self,
         with_limit_1: bool,
         platform_version: &PlatformVersion,
-    ) -> PathQuery {
+    ) -> Result<PathQuery, Error> {
         // First we should get the overall document_type_path
         let mut path =
             contract_document_type_path_vec(&self.contract_id, self.document_type_name.as_str());
@@ -113,13 +110,8 @@ impl SingleDocumentDriveQuery {
         query.insert_key(self.document_id.to_vec());
 
         if self.document_type_keeps_history
-            && platform_version
-                .drive
-                .methods
-                .document
-                .insert
-                .add_document_to_primary_storage
-                == 0
+            && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
+                == KeepHistoryStorage::DocumentSubtree
         {
             // if the documents keep history then we should insert a subquery
             if let Some(block_time) = self.block_time_ms {
@@ -134,7 +126,7 @@ impl SingleDocumentDriveQuery {
 
         let limit = if with_limit_1 { Some(1) } else { None };
 
-        PathQuery::new(path, SizedQuery::new(query, limit, None))
+        Ok(PathQuery::new(path, SizedQuery::new(query, limit, None)))
     }
 
     /// Operations to construct the contested path query.
