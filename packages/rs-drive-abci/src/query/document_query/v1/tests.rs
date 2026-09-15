@@ -5919,6 +5919,52 @@ mod time_range_proof_verification {
         assert_hashtag_counts(&page.entries, &[("ibiza", 3), ("berlin", 1)]);
     }
 
+    /// A window no document has landed in — every fresh window of a
+    /// `range == step` grid until its first post — ranks EMPTY through
+    /// the entry point, proof and all, rather than failing. The window's
+    /// bucket tree is created by the first write under it, so the pinned
+    /// path does not exist; grovedb answers the axis read over that
+    /// absent path with an empty page its proof's own layers
+    /// authenticate (grovedb #965), and the SDK verifies it at rank 0
+    /// against the signed root hash. Before that the prover refused ("a
+    /// single-path axis read must produce exactly one axis descent") and
+    /// every such request surfaced as an internal error. The window
+    /// starting four steps back covers `[start − 8h, start − 2h)`, which
+    /// none of the fixture's posts fall into.
+    #[test]
+    fn an_unwritten_window_ranks_empty_through_the_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_ranked_trending(&platform, &base_state, version);
+        let unwritten_start_ms = NEWEST_BUCKET_START_MS - 8 * HOUR_MS;
+
+        let request = windowed_top_k_request(
+            contract.id().to_vec(),
+            by_start_selection(unwritten_start_ms),
+        );
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let (page, _mtd, _proof) =
+            <DocumentRankedEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                windowed_top_k_query(
+                    &contract,
+                    TimeRangeSelector::ByStart {
+                        start_ms: unwritten_start_ms,
+                    },
+                ),
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed empty window must verify");
+        let page = page.expect("the ranked entry point always returns a page");
+        assert_eq!(page.starting_rank, 0);
+        assert!(
+            page.entries.is_empty(),
+            "an unwritten window is an authenticated empty leaderboard"
+        );
+    }
+
     /// The window-binding property of the relative selectors, on the
     /// ranked surface: re-signing the response over a one-step-later
     /// metadata time makes the verifier re-derive a *different* bucket

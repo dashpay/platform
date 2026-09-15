@@ -36,6 +36,9 @@
     "getDataContractHistory": {
       "status": "implemented"
     },
+    "getDataContractsLatestVersions": {
+      "status": "implemented"
+    },
     "getDataContracts": {
       "status": "implemented"
     },

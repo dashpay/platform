@@ -1765,11 +1765,13 @@ fn test_query_historical_latest_platform_version() {
         .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
+    // protocol version 14 stores the contract's version item beside the contract, one more
+    // element under the contract's root subtree in the app hash
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            161, 240, 182, 38, 13, 26, 246, 165, 76, 67, 252, 39, 203, 128, 225, 233, 70, 76, 30,
-            228, 64, 40, 59, 240, 240, 135, 215, 135, 146, 2, 128, 65
+            54, 181, 217, 82, 201, 205, 230, 125, 186, 252, 4, 136, 247, 204, 234, 159, 14, 239,
+            59, 72, 69, 192, 182, 54, 122, 100, 192, 158, 183, 88, 31, 255,
         ]
     );
 
@@ -3141,11 +3143,13 @@ fn test_query_historical_latest_platform_version() {
         .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
+    // protocol version 14 stores the contract's version item beside the contract, one more
+    // element under the contract's root subtree in the app hash
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            82, 200, 76, 76, 113, 4, 94, 39, 105, 206, 63, 185, 209, 222, 13, 161, 194, 209, 156,
-            251, 133, 192, 38, 65, 93, 196, 214, 198, 52, 196, 37, 208
+            74, 167, 180, 31, 0, 73, 101, 156, 93, 253, 230, 154, 157, 52, 205, 74, 148, 69, 143,
+            223, 85, 165, 216, 188, 121, 29, 94, 15, 126, 126, 39, 199,
         ]
     );
 }

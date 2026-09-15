@@ -65,6 +65,39 @@ export class ContractsFacade {
     return w.getDataContractsByRangeWithProofInfo(query);
   }
 
+  /**
+   * The current versions of contracts: the cheap check that contracts held locally are still
+   * current. One entry per requested id, `undefined` for an id no contract has; the contracts
+   * themselves come back only with `includeContracts`.
+   */
+  async getLatestVersions(
+    query: wasm.DataContractsLatestVersionsQuery,
+  ): Promise<Map<string, wasm.DataContractLatestVersion | undefined>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDataContractsLatestVersions(query);
+  }
+
+  /**
+   * Seed the contract cache with a contract the app already holds (a bundled snapshot, a
+   * contract it just published), so queries against it need no fetch. Persisted like a
+   * fetched contract. Returns false when the SDK runs without a trusted context. Pair with
+   * {@link getLatestVersions}, off the critical path, to learn whether the held contract is
+   * still current.
+   */
+  async addKnown(contract: wasm.DataContract): Promise<boolean> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.addKnownContract(contract);
+  }
+
+  async getLatestVersionsWithProof(
+    query: wasm.DataContractsLatestVersionsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<string, wasm.DataContractLatestVersion | undefined>
+  >> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDataContractsLatestVersionsWithProofInfo(query);
+  }
+
   async publish(options: wasm.ContractPublishOptions): Promise<wasm.DataContract> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.contractPublish(options);

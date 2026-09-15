@@ -265,7 +265,7 @@ describe('Withdrawals', function withdrawalsTest() {
 
         expect.fail('should throw broadcast error');
       } catch (e) {
-        expect(e.message).to.be.equal('withdrawal deletion is allowed only for COMPLETE statuses');
+        expect(e.message).to.be.equal('withdrawal deletion is allowed only for COMPLETE or FAILED statuses');
         expect(e.code).to.equal(40500);
       }
     });

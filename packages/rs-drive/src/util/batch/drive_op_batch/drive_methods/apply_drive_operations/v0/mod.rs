@@ -52,9 +52,10 @@ impl Drive {
         // on their own, so a conversion error after preparation would leave
         // drained buckets committed without the write. Span all of it with
         // one owned transaction and commit only once the batch applied.
+        let caller_transaction = transaction;
         let owned_transaction =
             (apply && transaction.is_none()).then(|| self.grove.start_transaction());
-        let transaction = owned_transaction.as_ref().or(transaction);
+        let transaction = owned_transaction.as_ref().or(caller_transaction);
         if apply {
             self.prepare_drive_operations_time_range_ttl(
                 &operations,
@@ -101,9 +102,14 @@ impl Drive {
             self.commit_transaction(owned_transaction, &platform_version.drive)?;
         }
 
-        // Execute drive operation callbacks after updating state
-        for task in finalize_tasks {
-            task.execute(self, platform_version)?;
+        // Execute drive operation callbacks after updating state. Nothing was written when
+        // only estimating, so there is nothing to finalize. The tasks read through the
+        // caller's transaction; an owned one was committed just above, and `caller_transaction`
+        // is `None` exactly then, so they read committed state.
+        if apply {
+            for task in finalize_tasks {
+                task.execute(self, caller_transaction, platform_version)?;
+            }
         }
 
         Drive::calculate_fee(
