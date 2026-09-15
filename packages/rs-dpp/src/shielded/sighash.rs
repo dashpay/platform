@@ -152,13 +152,15 @@ pub fn identity_top_up_from_shielded_extra_sighash_data(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<u8>, ProtocolError> {
     match platform_version.dpp.methods.shielded_extra_sighash_data {
-        0 => Ok(identity_top_up_from_shielded_extra_sighash_data_v0(
+        // Version 1 only changes the identity-create preimage (scoped key binding); the top-up
+        // layout is unchanged, so both versions share the frozen v0 bytes.
+        0 | 1 => Ok(identity_top_up_from_shielded_extra_sighash_data_v0(
             identity_id,
             top_up_amount,
         )),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "identity_top_up_from_shielded_extra_sighash_data".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         }),
     }
@@ -358,6 +360,56 @@ pub fn identity_create_from_shielded_extra_sighash_data_v1(
         }
     }
     Ok(data)
+}
+
+#[cfg(test)]
+mod dispatcher_tests {
+    use crate::shielded::{
+        identity_top_up_from_shielded_extra_sighash_data,
+        identity_top_up_from_shielded_extra_sighash_data_v0,
+        shielded_withdrawal_extra_sighash_data, shielded_withdrawal_extra_sighash_data_v0,
+        unshield_extra_sighash_data, unshield_extra_sighash_data_v0,
+    };
+    use crate::withdrawal::Pooling;
+    use platform_version::version::PlatformVersion;
+
+    /// Every dispatcher keyed on `dpp.methods.shielded_extra_sighash_data` must resolve at every
+    /// protocol version that can carry its transition. Version 1 only changes the identity-create
+    /// preimage (scoped key binding), so the other transitions keep their frozen v0 bytes.
+    #[test]
+    fn every_shielded_sighash_dispatcher_resolves_at_protocol_13_14_and_latest() {
+        for platform_version in [
+            PlatformVersion::get(13).expect("protocol 13"),
+            PlatformVersion::get(14).expect("protocol 14"),
+            PlatformVersion::latest(),
+        ] {
+            let version = platform_version.dpp.methods.shielded_extra_sighash_data;
+            let script = [0xAA; 25];
+            assert_eq!(
+                shielded_withdrawal_extra_sighash_data(
+                    &script,
+                    7,
+                    1,
+                    Pooling::Never,
+                    platform_version
+                )
+                .unwrap_or_else(|e| panic!("withdrawal dispatcher at version {version}: {e}")),
+                shielded_withdrawal_extra_sighash_data_v0(&script, 7, 1, Pooling::Never)
+            );
+            let address = [0xBB; 21];
+            assert_eq!(
+                unshield_extra_sighash_data(&address, 7, platform_version)
+                    .unwrap_or_else(|e| panic!("unshield dispatcher at version {version}: {e}")),
+                unshield_extra_sighash_data_v0(&address, 7)
+            );
+            let identity_id = [1; 32];
+            assert_eq!(
+                identity_top_up_from_shielded_extra_sighash_data(&identity_id, 7, platform_version)
+                    .unwrap_or_else(|e| panic!("top-up dispatcher at version {version}: {e}")),
+                identity_top_up_from_shielded_extra_sighash_data_v0(&identity_id, 7)
+            );
+        }
+    }
 }
 
 #[cfg(test)]
