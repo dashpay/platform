@@ -54,5 +54,8 @@ random = ["dep:rand", "std"]
 # use explicit `CodecBounds` instead of the native version registry.
 platform-version = ["dep:platform-version", "platform-serialization/platform-version"]
 
-cbor = ["dep:ciborium", "std"]
-json = ["dep:serde_json", "std"]
+# `ciborium` and `serde_json` stay bare (not `dep:`) on purpose: they were the
+# only optional dependencies before the alloc-only split, so their implicit
+# feature names existed and a downstream manifest may still select them.
+cbor = ["ciborium", "std"]
+json = ["serde_json", "std"]
