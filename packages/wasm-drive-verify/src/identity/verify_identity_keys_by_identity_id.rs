@@ -205,10 +205,44 @@ fn serialize_identity_public_key(key: &IdentityPublicKey) -> Result<Object, JsVa
                 Some(bounds) => {
                     let bounds_obj = Object::new();
                     match bounds {
-                        dpp::identity::contract_bounds::ContractBounds::Scoped(scope) => {
-                            Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("Scoped"))?;
-                            let value = serde_wasm_bindgen::to_value(scope).map_err(|e| JsValue::from_str(&e.to_string()))?;
-                            Reflect::set(&bounds_obj, &JsValue::from_str("scope"), &value)?;
+                        dpp::identity::identity_public_key::contract_bounds::ContractBounds::Scoped(scope) => {
+                            // Same shape conventions as the legacy branches below: contract ids as
+                            // Uint8Array, optional fields as null, timestamps as decimal strings
+                            // (like `disabledAt`).
+                            Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("Scoped"))
+                                .map_err(|_| JsValue::from_str("Failed to set bounds type"))?;
+                            let contracts = Array::new();
+                            for contract in scope.contracts() {
+                                let contract_obj = Object::new();
+                                let id_array = Uint8Array::from(contract.id.as_slice());
+                                Reflect::set(&contract_obj, &JsValue::from_str("id"), &id_array)
+                                    .map_err(|_| JsValue::from_str("Failed to set scoped contract id"))?;
+                                let document_types = match &contract.document_types {
+                                    Some(names) => names
+                                        .iter()
+                                        .map(|name| JsValue::from_str(name))
+                                        .collect::<Array>()
+                                        .into(),
+                                    None => JsValue::NULL,
+                                };
+                                Reflect::set(&contract_obj, &JsValue::from_str("documentTypes"), &document_types)
+                                    .map_err(|_| JsValue::from_str("Failed to set scoped document types"))?;
+                                contracts.push(&contract_obj);
+                            }
+                            Reflect::set(&bounds_obj, &JsValue::from_str("contracts"), &contracts)
+                                .map_err(|_| JsValue::from_str("Failed to set scoped contracts"))?;
+                            Reflect::set(
+                                &bounds_obj,
+                                &JsValue::from_str("permissions"),
+                                &JsValue::from(scope.v0().permissions),
+                            )
+                            .map_err(|_| JsValue::from_str("Failed to set scoped permissions"))?;
+                            let expires_at = match scope.expires_at() {
+                                Some(timestamp) => JsValue::from_str(&timestamp.to_string()),
+                                None => JsValue::NULL,
+                            };
+                            Reflect::set(&bounds_obj, &JsValue::from_str("expiresAt"), &expires_at)
+                                .map_err(|_| JsValue::from_str("Failed to set scoped expiry"))?;
                         }
                         dpp::identity::identity_public_key::contract_bounds::ContractBounds::SingleContract { id } => {
                             Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("SingleContract"))
