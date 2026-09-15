@@ -57,6 +57,10 @@ pub struct DocumentTypeVersions {
 #[derive(Clone, Debug, Default)]
 pub struct TokenVersions {
     pub validate_structure_interval: FeatureVersion,
+    /// Accepted `TokenConfiguration` format versions. `max_version` 0 admits only `V0`; 1 also
+    /// admits `V1`, which adds the per-token shielded pool flag. Contract creates and updates
+    /// carrying a format above the bound are rejected with `UnsupportedVersionError`.
+    pub token_configuration_format: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -28,7 +28,9 @@ pub use sighash::{
     identity_create_from_shielded_extra_sighash_data_v0,
     identity_top_up_from_shielded_extra_sighash_data,
     identity_top_up_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
-    shielded_withdrawal_extra_sighash_data_v0, unshield_extra_sighash_data,
+    shielded_withdrawal_extra_sighash_data_v0, token_shielded_transfer_extra_sighash_data,
+    token_shielded_transfer_extra_sighash_data_v0, token_unshield_extra_sighash_data,
+    token_unshield_extra_sighash_data_v0, unshield_extra_sighash_data,
     unshield_extra_sighash_data_v0,
 };
 
@@ -128,6 +130,7 @@ pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 20;
 /// the serialized actions, Sinsemilla anchor, Halo 2 proof, and RedPallas
 /// binding signature. Using this struct reduces parameter counts in SDK
 /// helper functions from 10-12 down to 5-8.
+#[derive(Debug, Clone, PartialEq)]
 pub struct OrchardBundleParams {
     /// The serialized Orchard actions (spends + outputs).
     pub actions: Vec<SerializedAction>,

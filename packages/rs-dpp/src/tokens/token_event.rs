@@ -166,6 +166,21 @@ pub enum TokenEvent {
     /// - `TokenAmount`: The amount of tokens purchased.
     /// - `Credits`: The number of credits paid.
     DirectPurchase(TokenAmount, Credits),
+
+    /// Event representing tokens moving from an identity balance into the token's shielded pool.
+    ///
+    /// - `TokenAmount`: The amount shielded.
+    Shield(TokenAmount),
+
+    /// Event representing tokens moving from the token's shielded pool to an identity balance.
+    ///
+    /// - `RecipientIdentifier`: The identity credited.
+    /// - `TokenAmount`: The amount unshielded.
+    Unshield(RecipientIdentifier, TokenAmount),
+
+    /// Event representing a transfer inside the token's shielded pool. Nothing about the
+    /// transfer (parties, amount) is public.
+    ShieldedTransfer,
 }
 
 // Manual impl because TokenEvent is a flat enum with u64-alias tuple variants
@@ -283,6 +298,24 @@ impl serde::Serialize for TokenEvent {
                 m.serialize_entry("$type", "directPurchase")?;
                 m.serialize_entry("amount", &SafeU64(amount))?;
                 m.serialize_entry("credits", &SafeU64(credits))?;
+                m.end()
+            }
+            TokenEvent::Shield(amount) => {
+                let mut m = serializer.serialize_map(Some(2))?;
+                m.serialize_entry("$type", "shield")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.end()
+            }
+            TokenEvent::Unshield(recipient, amount) => {
+                let mut m = serializer.serialize_map(Some(3))?;
+                m.serialize_entry("$type", "unshield")?;
+                m.serialize_entry("recipient", recipient)?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.end()
+            }
+            TokenEvent::ShieldedTransfer => {
+                let mut m = serializer.serialize_map(Some(1))?;
+                m.serialize_entry("$type", "shieldedTransfer")?;
                 m.end()
             }
         }
@@ -416,6 +449,14 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         amount.ok_or_else(|| A::Error::missing_field("amount"))?,
                         credits.ok_or_else(|| A::Error::missing_field("credits"))?,
                     )),
+                    "shield" => Ok(TokenEvent::Shield(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                    )),
+                    "unshield" => Ok(TokenEvent::Unshield(
+                        recipient.ok_or_else(|| A::Error::missing_field("recipient"))?,
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                    )),
+                    "shieldedTransfer" => Ok(TokenEvent::ShieldedTransfer),
                     other => Err(A::Error::unknown_variant(
                         other,
                         &[
@@ -430,6 +471,9 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                             "configUpdate",
                             "changePriceForDirectPurchase",
                             "directPurchase",
+                            "shield",
+                            "unshield",
+                            "shieldedTransfer",
                         ],
                     )),
                 }
@@ -629,6 +673,11 @@ impl fmt::Display for TokenEvent {
             TokenEvent::DirectPurchase(amount, credits) => {
                 write!(f, "Direct purchase of {} for {} credits", amount, credits)
             }
+            TokenEvent::Shield(amount) => write!(f, "Shield {} into the token pool", amount),
+            TokenEvent::Unshield(to, amount) => {
+                write!(f, "Unshield {} from the token pool to {}", amount, to)
+            }
+            TokenEvent::ShieldedTransfer => write!(f, "Shielded transfer inside the token pool"),
         }
     }
 }
@@ -654,6 +703,9 @@ impl TokenEvent {
             TokenEvent::ConfigUpdate(..) => "configUpdate",
             TokenEvent::DirectPurchase(..) => "directPurchase",
             TokenEvent::ChangePriceForDirectPurchase(..) => "directPricing",
+            TokenEvent::Shield(..) => "shield",
+            TokenEvent::Unshield(..) => "unshield",
+            TokenEvent::ShieldedTransfer => "shieldedTransfer",
         }
     }
 
@@ -869,6 +921,18 @@ impl TokenEvent {
                 ("tokenAmount".to_string(), amount.into()),
                 ("purchaseCost".to_string(), total_cost.into()),
             ]),
+            TokenEvent::Shield(amount) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("amount".to_string(), amount.into()),
+            ]),
+            TokenEvent::Unshield(recipient_id, amount) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("recipientId".to_string(), recipient_id.into()),
+                ("amount".to_string(), amount.into()),
+            ]),
+            TokenEvent::ShieldedTransfer => {
+                BTreeMap::from([("tokenId".to_string(), token_id.into())])
+            }
         };
 
         let document: Document = DocumentV0 {

@@ -283,6 +283,89 @@ pub fn identity_create_from_shielded_extra_sighash_data_v0(
     data
 }
 
+/// Builds the transparent `extra_data` bound into a `TokenUnshield`'s platform sighash, with the
+/// byte layout `token_id (32) || owner_id (32) || recipient_id (32) || amount (u64 LE)`.
+///
+/// A token unshield rides inside an identity-signed batch, but the note owner who authorizes
+/// the Orchard spend is not necessarily that identity. The spend-auth and binding signatures
+/// must therefore commit to the pool the notes leave (`token_id`), the identity paying the
+/// credits fee and submitting the batch (`owner_id`), the identity credited (`recipient_id`)
+/// and the gross amount, so a bundle observed in the mempool cannot be re-wrapped by another
+/// submitter to a different recipient or against another token's pool (every token pool
+/// starts from the same empty-tree anchor).
+pub fn token_unshield_extra_sighash_data(
+    token_id: &[u8; 32],
+    owner_id: &[u8; 32],
+    recipient_id: &[u8; 32],
+    amount: u64,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(token_unshield_extra_sighash_data_v0(
+            token_id,
+            owner_id,
+            recipient_id,
+            amount,
+        )),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "token_unshield_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// v0 byte layout of [`token_unshield_extra_sighash_data`]. Frozen: never mutate; a layout
+/// change requires a new `_v1` + version bump.
+pub fn token_unshield_extra_sighash_data_v0(
+    token_id: &[u8; 32],
+    owner_id: &[u8; 32],
+    recipient_id: &[u8; 32],
+    amount: u64,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(32 + 32 + 32 + 8);
+    data.extend_from_slice(token_id);
+    data.extend_from_slice(owner_id);
+    data.extend_from_slice(recipient_id);
+    data.extend_from_slice(&amount.to_le_bytes());
+    data
+}
+
+/// Builds the transparent `extra_data` bound into a `TokenShieldedTransfer`'s platform sighash,
+/// with the byte layout `token_id (32) || owner_id (32)`.
+///
+/// Nothing leaves the pool, so there is no amount or destination to bind, but the bundle is
+/// still pinned to one token pool and to the identity that pays for it: the same bundle
+/// cannot be resubmitted under another fee payer, and the pool it spends from is explicit.
+pub fn token_shielded_transfer_extra_sighash_data(
+    token_id: &[u8; 32],
+    owner_id: &[u8; 32],
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(token_shielded_transfer_extra_sighash_data_v0(
+            token_id, owner_id,
+        )),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "token_shielded_transfer_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// v0 byte layout of [`token_shielded_transfer_extra_sighash_data`]. Frozen: never mutate; a
+/// layout change requires a new `_v1` + version bump.
+pub fn token_shielded_transfer_extra_sighash_data_v0(
+    token_id: &[u8; 32],
+    owner_id: &[u8; 32],
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(64);
+    data.extend_from_slice(token_id);
+    data.extend_from_slice(owner_id);
+    data
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,6 +412,54 @@ mod tests {
         assert_eq!(&d[2..10], &1u64.to_le_bytes());
         assert_eq!(&d[10..14], &2u32.to_le_bytes());
         assert_eq!(d[14], Pooling::Never as u8);
+    }
+
+    #[test]
+    fn token_unshield_sighash_data_layout() {
+        use crate::shielded::token_unshield_extra_sighash_data_v0;
+        // token_id(32) || owner_id(32) || recipient_id(32) || amount(8)
+        let d =
+            token_unshield_extra_sighash_data_v0(&[0xAAu8; 32], &[0xBBu8; 32], &[0xCCu8; 32], 7);
+        assert_eq!(d.len(), 32 + 32 + 32 + 8);
+        assert_eq!(&d[0..32], &[0xAAu8; 32]);
+        assert_eq!(&d[32..64], &[0xBBu8; 32]);
+        assert_eq!(&d[64..96], &[0xCCu8; 32]);
+        assert_eq!(&d[96..104], &7u64.to_le_bytes());
+        // Every bound field changes the preimage.
+        assert_ne!(
+            d,
+            token_unshield_extra_sighash_data_v0(&[0xADu8; 32], &[0xBBu8; 32], &[0xCCu8; 32], 7)
+        );
+        assert_ne!(
+            d,
+            token_unshield_extra_sighash_data_v0(&[0xAAu8; 32], &[0xB0u8; 32], &[0xCCu8; 32], 7)
+        );
+        assert_ne!(
+            d,
+            token_unshield_extra_sighash_data_v0(&[0xAAu8; 32], &[0xBBu8; 32], &[0xC0u8; 32], 7)
+        );
+        assert_ne!(
+            d,
+            token_unshield_extra_sighash_data_v0(&[0xAAu8; 32], &[0xBBu8; 32], &[0xCCu8; 32], 8)
+        );
+    }
+
+    #[test]
+    fn token_shielded_transfer_sighash_data_layout() {
+        use crate::shielded::token_shielded_transfer_extra_sighash_data_v0;
+        // token_id(32) || owner_id(32)
+        let d = token_shielded_transfer_extra_sighash_data_v0(&[0x11u8; 32], &[0x22u8; 32]);
+        assert_eq!(d.len(), 64);
+        assert_eq!(&d[0..32], &[0x11u8; 32]);
+        assert_eq!(&d[32..64], &[0x22u8; 32]);
+        assert_ne!(
+            d,
+            token_shielded_transfer_extra_sighash_data_v0(&[0x12u8; 32], &[0x22u8; 32])
+        );
+        assert_ne!(
+            d,
+            token_shielded_transfer_extra_sighash_data_v0(&[0x11u8; 32], &[0x23u8; 32])
+        );
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use crate::drive::tokens::paths::TOKEN_SHIELDED_POOLS_KEY;
 use crate::drive::RootTree;
 use grovedb::{PathQuery, Query, SizedQuery};
 
@@ -187,24 +188,188 @@ pub fn shielded_latest_recorded_anchor_path_query() -> PathQuery {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Token shielded pools
+//
+// A token pool lives at `[Tokens, TOKEN_SHIELDED_POOLS_KEY, token_id]` and has the same five
+// children, under the same keys, as the credit pool above. Everything that reads or writes a
+// pool takes the pool's path, so the credit pool and every token pool share one implementation.
+// ---------------------------------------------------------------------------
+
+/// Path to a token's shielded pool: `[Tokens, 224, token_id]`
+pub fn token_shielded_pool_path(token_id: &[u8; 32]) -> [&[u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_SHIELDED_POOLS_KEY],
+        token_id,
+    ]
+}
+
+/// Path to a token's shielded pool as a vec
+pub fn token_shielded_pool_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_SHIELDED_POOLS_KEY],
+        token_id.to_vec(),
+    ]
+}
+
+/// Path to a token pool's notes tree: `[Tokens, 224, token_id, [128]]`
+pub fn token_shielded_pool_notes_path(token_id: &[u8; 32]) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_SHIELDED_POOLS_KEY],
+        token_id,
+        &[SHIELDED_NOTES_KEY],
+    ]
+}
+
+/// Path to a token pool's notes tree as a vec
+pub fn token_shielded_pool_notes_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_SHIELDED_POOLS_KEY],
+        token_id.to_vec(),
+        vec![SHIELDED_NOTES_KEY],
+    ]
+}
+
+/// Path to a token pool's nullifiers tree: `[Tokens, 224, token_id, [64]]`
+pub fn token_shielded_pool_nullifiers_path(token_id: &[u8; 32]) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_SHIELDED_POOLS_KEY],
+        token_id,
+        &[SHIELDED_NULLIFIERS_KEY],
+    ]
+}
+
+/// Path to a token pool's nullifiers tree as a vec
+pub fn token_shielded_pool_nullifiers_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_SHIELDED_POOLS_KEY],
+        token_id.to_vec(),
+        vec![SHIELDED_NULLIFIERS_KEY],
+    ]
+}
+
+/// Path to a token pool's anchors tree: `[Tokens, 224, token_id, [192]]`
+pub fn token_shielded_pool_anchors_path(token_id: &[u8; 32]) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_SHIELDED_POOLS_KEY],
+        token_id,
+        &[SHIELDED_ANCHORS_IN_POOL_KEY],
+    ]
+}
+
+/// Path to a token pool's anchors tree as a vec
+pub fn token_shielded_pool_anchors_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_SHIELDED_POOLS_KEY],
+        token_id.to_vec(),
+        vec![SHIELDED_ANCHORS_IN_POOL_KEY],
+    ]
+}
+
+/// Path to a token pool's anchors-by-height tree: `[Tokens, 224, token_id, [96]]`
+pub fn token_shielded_pool_anchors_by_height_path(token_id: &[u8; 32]) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_SHIELDED_POOLS_KEY],
+        token_id,
+        &[SHIELDED_ANCHORS_BY_HEIGHT_KEY],
+    ]
+}
+
+/// Path to a token pool's anchors-by-height tree as a vec
+pub fn token_shielded_pool_anchors_by_height_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_SHIELDED_POOLS_KEY],
+        token_id.to_vec(),
+        vec![SHIELDED_ANCHORS_BY_HEIGHT_KEY],
+    ]
+}
+
+/// The token-pool twin of [`shielded_latest_recorded_anchor_path_query`]: a `limit 1` reverse
+/// scan over the pool's anchors-by-height tree. Shared by the anchor recorder, the proven RPC
+/// handler and the SDK-side verifier for the same byte-for-byte reason.
+pub fn token_shielded_pool_latest_recorded_anchor_path_query(token_id: [u8; 32]) -> PathQuery {
+    let mut query = Query::new();
+    query.insert_all();
+    query.left_to_right = false;
+    PathQuery {
+        path: token_shielded_pool_anchors_by_height_path_vec(token_id),
+        query: SizedQuery {
+            query,
+            limit: Some(1),
+            offset: None,
+        },
+    }
+}
+
+/// The `PathQuery` proving the spent status of `nullifiers` in a token pool: one key per
+/// nullifier under the pool's nullifiers tree, limited to the number asked. Shared by the
+/// state transition proof (`TokenShieldedTransfer`) and `Drive::verify_token_shielded_pool_nullifiers`
+/// so prover and verifier agree byte-for-byte.
+pub fn token_shielded_pool_nullifiers_path_query(
+    token_id: [u8; 32],
+    nullifiers: &[[u8; 32]],
+) -> PathQuery {
+    let mut query = Query::new();
+    query.insert_keys(
+        nullifiers
+            .iter()
+            .map(|nullifier| nullifier.to_vec())
+            .collect(),
+    );
+    PathQuery {
+        path: token_shielded_pool_nullifiers_path_vec(token_id),
+        query: SizedQuery {
+            query,
+            limit: Some(nullifiers.len().min(u16::MAX as usize) as u16),
+            offset: None,
+        },
+    }
+}
+
 /// Resolves the nullifiers path based on pool type.
 ///
 /// Pool types:
 /// - 0: Main credit shielded pool → `[ShieldedBalances, "M", [64]]`
-/// - 1: Main token shielded pool (not yet implemented)
-/// - 2: Individual token shielded pool (not yet implemented, requires pool_identifier)
+/// - 1: Main token shielded pool (not supported: the Orchard note carries no asset identifier,
+///   so tokens cannot share one pool)
+/// - 2: Individual token shielded pool → `[Tokens, 224, token_id, [64]]`; `pool_identifier` is
+///   the 32-byte token id
 pub fn nullifiers_path_for_pool(
     pool_type: u32,
-    _pool_identifier: Option<&[u8]>,
+    pool_identifier: Option<&[u8]>,
 ) -> Result<Vec<Vec<u8>>, crate::error::Error> {
     use crate::error::drive::DriveError;
     use crate::error::Error;
 
     match pool_type {
         0 => Ok(shielded_credit_pool_nullifiers_path_vec()),
-        1 | 2 => Err(Error::Drive(DriveError::NotSupported(
-            "Token shielded pools not yet implemented",
+        1 => Err(Error::Drive(DriveError::NotSupported(
+            "a shared token shielded pool is not supported: each token has its own pool",
         ))),
+        2 => {
+            let token_id: [u8; 32] = pool_identifier
+                .ok_or(Error::Drive(DriveError::InvalidInput(
+                    "an individual token shielded pool requires the token id as pool identifier"
+                        .to_string(),
+                )))?
+                .try_into()
+                .map_err(|_| {
+                    Error::Drive(DriveError::InvalidInput(
+                        "token shielded pool identifier must be a 32-byte token id".to_string(),
+                    ))
+                })?;
+            Ok(token_shielded_pool_nullifiers_path_vec(token_id))
+        }
         _ => Err(Error::Drive(DriveError::InvalidInput(format!(
             "Unknown pool type: {}",
             pool_type
@@ -229,15 +394,77 @@ mod tests {
     }
 
     #[test]
-    fn pool_type_1_and_2_return_not_supported() {
-        // Pool types 1 and 2 hit the NotSupported error branch.
+    fn pool_type_1_returns_not_supported() {
+        // A shared token pool does not exist: the Orchard note has no asset identifier.
         let err1 =
             nullifiers_path_for_pool(1, None).expect_err("pool type 1 should return NotSupported");
         assert!(matches!(err1, Error::Drive(DriveError::NotSupported(_))));
+    }
 
-        let err2 = nullifiers_path_for_pool(2, Some(&[0xFFu8; 32]))
-            .expect_err("pool type 2 should return NotSupported");
-        assert!(matches!(err2, Error::Drive(DriveError::NotSupported(_))));
+    #[test]
+    fn pool_type_2_resolves_the_token_pool_nullifiers_path() {
+        let token_id = [0xFFu8; 32];
+        let path = nullifiers_path_for_pool(2, Some(&token_id)).expect("token pool path");
+        assert_eq!(path, token_shielded_pool_nullifiers_path_vec(token_id));
+        assert_eq!(
+            path,
+            vec![
+                vec![RootTree::Tokens as u8],
+                vec![TOKEN_SHIELDED_POOLS_KEY],
+                token_id.to_vec(),
+                vec![SHIELDED_NULLIFIERS_KEY],
+            ]
+        );
+        // The identifier is mandatory and must be a token id.
+        assert!(matches!(
+            nullifiers_path_for_pool(2, None),
+            Err(Error::Drive(DriveError::InvalidInput(_)))
+        ));
+        assert!(matches!(
+            nullifiers_path_for_pool(2, Some(&[1u8; 20])),
+            Err(Error::Drive(DriveError::InvalidInput(_)))
+        ));
+    }
+
+    #[test]
+    fn token_pool_paths_share_the_credit_pool_child_keys() {
+        // The token pool is the credit pool layout re-rooted under the token: every child key
+        // (notes, nullifiers, anchors, anchors-by-height) is identical, so one implementation
+        // serves both.
+        let token_id = [7u8; 32];
+        let pool = token_shielded_pool_path_vec(token_id);
+        assert_eq!(pool.len(), 3);
+        for (path, key) in [
+            (
+                token_shielded_pool_notes_path_vec(token_id),
+                SHIELDED_NOTES_KEY,
+            ),
+            (
+                token_shielded_pool_nullifiers_path_vec(token_id),
+                SHIELDED_NULLIFIERS_KEY,
+            ),
+            (
+                token_shielded_pool_anchors_path_vec(token_id),
+                SHIELDED_ANCHORS_IN_POOL_KEY,
+            ),
+            (
+                token_shielded_pool_anchors_by_height_path_vec(token_id),
+                SHIELDED_ANCHORS_BY_HEIGHT_KEY,
+            ),
+        ] {
+            assert_eq!(&path[..3], &pool[..]);
+            assert_eq!(path[3], vec![key]);
+        }
+        // Static and vec forms agree.
+        let arr = token_shielded_pool_notes_path(&token_id);
+        let v = token_shielded_pool_notes_path_vec(token_id);
+        for (a, b) in arr.iter().zip(v.iter()) {
+            assert_eq!(*a, b.as_slice());
+        }
+        assert_eq!(
+            token_shielded_pool_latest_recorded_anchor_path_query(token_id).path,
+            token_shielded_pool_anchors_by_height_path_vec(token_id)
+        );
     }
 
     #[test]

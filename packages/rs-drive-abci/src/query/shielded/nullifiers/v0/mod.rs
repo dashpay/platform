@@ -14,9 +14,7 @@ use dapi_grpc::platform::v0::get_shielded_nullifiers_response::{
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::{
-    shielded_credit_pool_nullifiers_path, shielded_credit_pool_nullifiers_path_vec,
-};
+use crate::query::shielded::ShieldedPoolSelector;
 use drive::error::query::QuerySyntaxError;
 use drive::grovedb::{PathQuery, Query, SizedQuery};
 use drive::util::grove_operations::{DirectQueryType, GroveDBToUse};
@@ -24,10 +22,18 @@ use drive::util::grove_operations::{DirectQueryType, GroveDBToUse};
 impl<C> Platform<C> {
     pub(super) fn query_shielded_nullifiers_v0(
         &self,
-        GetShieldedNullifiersRequestV0 { nullifiers, prove }: GetShieldedNullifiersRequestV0,
+        GetShieldedNullifiersRequestV0 {
+            nullifiers,
+            prove,
+            token_id,
+        }: GetShieldedNullifiersRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetShieldedNullifiersResponseV0>, Error> {
+        let pool = match ShieldedPoolSelector::from_request(token_id, platform_version) {
+            Ok(pool) => pool,
+            Err(error) => return Ok(QueryValidationResult::new_with_error(error)),
+        };
         let max_elements = platform_version.drive_abci.query.max_returned_elements as usize;
         if nullifiers.len() > max_elements {
             return Ok(QueryValidationResult::new_with_error(QueryError::Query(
@@ -60,7 +66,7 @@ impl<C> Platform<C> {
 
         let response = if prove {
             let path_query = PathQuery {
-                path: shielded_credit_pool_nullifiers_path_vec(),
+                path: pool.nullifiers_path_vec(),
                 query: SizedQuery {
                     query: {
                         let mut q = Query::new();
@@ -87,13 +93,13 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
-            let nullifiers_path = shielded_credit_pool_nullifiers_path();
+            let nullifiers_path = pool.nullifiers_path_vec();
 
             let entries: Vec<NullifierStatus> = nullifiers
                 .into_iter()
                 .map(|nullifier| {
                     let is_spent = self.drive.grove_has_raw(
-                        (&nullifiers_path).into(),
+                        nullifiers_path.as_slice().into(),
                         &nullifier,
                         DirectQueryType::StatefulDirectQuery,
                         None,
@@ -139,6 +145,7 @@ mod tests {
         let request = GetShieldedNullifiersRequestV0 {
             nullifiers: vec![],
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -159,6 +166,7 @@ mod tests {
         let request = GetShieldedNullifiersRequestV0 {
             nullifiers: vec![nullifier(1), vec![0u8; 16]],
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -182,6 +190,7 @@ mod tests {
         let request = GetShieldedNullifiersRequestV0 {
             nullifiers,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -205,6 +214,7 @@ mod tests {
         let request = GetShieldedNullifiersRequestV0 {
             nullifiers: queried.clone(),
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -240,6 +250,7 @@ mod tests {
         let request = GetShieldedNullifiersRequestV0 {
             nullifiers: vec![nullifier(0x01)],
             prove: true,
+            token_id: None,
         };
 
         let result = platform

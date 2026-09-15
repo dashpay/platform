@@ -3176,7 +3176,7 @@ mod test_suite {
         token_configuration: &TokenConfiguration,
         contract_start_time: u64,
     ) -> Result<(), String> {
-        let TokenConfiguration::V0(token_config) = token_configuration;
+        let token_config = token_configuration.as_v0();
 
         let TokenDistributionRules::V0(dist_rules) = token_config.distribution_rules();
 

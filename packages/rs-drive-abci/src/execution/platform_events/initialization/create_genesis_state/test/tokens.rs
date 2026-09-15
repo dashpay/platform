@@ -385,7 +385,7 @@ impl<C> Platform<C> {
             );
 
         let mut token_configuration_2 = token_configuration.clone();
-        let TokenConfiguration::V0(ref mut cfg) = token_configuration_2;
+        let cfg = token_configuration_2.as_v0_mut();
         let TokenDistributionRules::V0(ref mut rules) = cfg.distribution_rules;
         rules.pre_programmed_distribution = Some(TokenPreProgrammedDistribution::V0(
             TokenPreProgrammedDistributionV0 {

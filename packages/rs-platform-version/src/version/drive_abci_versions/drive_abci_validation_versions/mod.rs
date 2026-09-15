@@ -33,6 +33,12 @@ pub struct DriveAbciValidationConstants {
     /// transitions (Unshield, ShieldedWithdrawal) are allowed. This ensures a
     /// sufficient anonymity set before funds can leave the pool.
     pub minimum_pool_notes_for_outgoing: u64,
+    /// Minimum number of notes a TOKEN shielded pool must hold before a `TokenUnshield`
+    /// (the outflow with an observable destination) is allowed. Token pools start empty
+    /// and are small, so this is 0 at introduction: a floor would trap the first
+    /// depositors until enough other holders shielded. The knob exists so a later version
+    /// can raise it once per-token anonymity sets are meaningful.
+    pub minimum_token_pool_notes_for_outgoing: u64,
     /// Number of blocks of anchors to retain. Anchors older than this are
     /// pruned at the end of each block. Clients must use an anchor no older
     /// than this many blocks when building shielded transactions.
@@ -265,6 +271,12 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub token_direct_purchase_transition_state_validation: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition_structure_validation: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition_state_validation: FeatureVersion,
+    pub token_shield_transition_structure_validation: FeatureVersion,
+    pub token_shield_transition_state_validation: FeatureVersion,
+    pub token_unshield_transition_structure_validation: FeatureVersion,
+    pub token_unshield_transition_state_validation: FeatureVersion,
+    pub token_shielded_transfer_transition_structure_validation: FeatureVersion,
+    pub token_shielded_transfer_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -31,6 +31,9 @@ use crate::state_transition::batch_transition::token_mint_transition::validate_s
 use crate::state_transition::batch_transition::token_claim_transition::validate_structure::TokenClaimTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_direct_purchase_transition::validate_structure::TokenDirectPurchaseTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::validate_structure::TokenSetPriceForDirectPurchaseTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_shield_transition::validate_structure::TokenShieldTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_shielded_transfer_transition::validate_structure::TokenShieldedTransferTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_unshield_transition::validate_structure::TokenUnshieldTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_unfreeze_transition::validate_structure::TokenUnfreezeTransitionStructureValidation;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
@@ -218,6 +221,15 @@ impl BatchTransition {
                     set_price_for_direct_purchase_transition,
                 ) => {
                     set_price_for_direct_purchase_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::Shield(shield_transition) => {
+                    shield_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::Unshield(unshield_transition) => {
+                    unshield_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::ShieldedTransfer(shielded_transfer_transition) => {
+                    shielded_transfer_transition.validate_structure(platform_version)?
                 }
             };
 

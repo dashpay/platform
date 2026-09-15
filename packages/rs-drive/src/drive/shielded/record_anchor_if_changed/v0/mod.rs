@@ -7,7 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
-use grovedb::{Element, Transaction};
+use grovedb::{Element, PathQuery, Transaction};
 
 impl Drive {
     /// Version 0 implementation of recording the shielded pool anchor.
@@ -31,9 +31,36 @@ impl Drive {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        let pool_path = shielded_credit_pool_path();
+        let anchors_path = shielded_credit_pool_anchors_path();
+        let anchors_by_height_path = shielded_credit_pool_anchors_by_height_path();
+        self.record_pool_anchor_if_changed_v0(
+            &pool_path,
+            &anchors_path,
+            &anchors_by_height_path,
+            &shielded_latest_recorded_anchor_path_query(),
+            block_height,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Records the anchor of the pool at `pool_path` if its commitment tree changed, whichever
+    /// shielded pool (credit or token) it is. `latest_recorded_anchor_query` must be the pool's
+    /// own `limit 1` reverse scan over `anchors_by_height_path`.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::drive) fn record_pool_anchor_if_changed_v0(
+        &self,
+        pool_path: &[&[u8]],
+        anchors_path: &[&[u8]],
+        anchors_by_height_path: &[&[u8]],
+        latest_recorded_anchor_query: &PathQuery,
+        block_height: u64,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
         let grove_version = &drive_version.grove_version;
-        let pool_path = shielded_credit_pool_path();
 
         // 1. Read current anchor from the CommitmentTree.
         //
@@ -45,7 +72,7 @@ impl Drive {
         let current_anchor = self
             .grove
             .commitment_tree_anchor(
-                &pool_path,
+                pool_path,
                 &[SHIELDED_NOTES_KEY],
                 Some(transaction),
                 grove_version,
@@ -55,20 +82,21 @@ impl Drive {
 
         let current_anchor_bytes: [u8; 32] = current_anchor.to_bytes();
 
-        // 2. Read the latest recorded anchor from `[8]` via a
-        //    `limit 1` reverse query. This is the post-removal
-        //    replacement for the old `most_recent_anchor` slot — same
-        //    value, but derived from the canonical log so it cannot
-        //    drift out of sync with the anchors tree under prune.
+        // 2. Read the latest recorded anchor via a `limit 1` reverse query over the
+        //    anchors-by-height index, the canonical log that cannot drift out of sync
+        //    with the anchors tree under prune.
         //
         //    NOTE: there is intentionally no "skip when current is the
         //    Sinsemilla empty root" guard. The empty root is a
         //    well-defined value, recording it is harmless (it can't
-        //    be spent against — no notes), and it ensures `[6]` is
+        //    be spent against, no notes), and it ensures the index is
         //    populated from the very first block-end event onward
         //    rather than only after the first shield op.
-        let latest_recorded =
-            self.read_latest_recorded_shielded_anchor_v0(Some(transaction), drive_version)?;
+        let latest_recorded = self.read_latest_recorded_pool_anchor_v0(
+            latest_recorded_anchor_query,
+            Some(transaction),
+            drive_version,
+        )?;
 
         // 3. Only insert if the anchor actually changed. Orchard's
         //    commitment tree only changes when a new note is
@@ -80,10 +108,9 @@ impl Drive {
 
         // 4. Anchor changed — insert into both trees atomically with
         //    the rest of the block transaction.
-        let anchors_path = shielded_credit_pool_anchors_path();
         self.grove
             .insert(
-                &anchors_path,
+                anchors_path,
                 &current_anchor_bytes,
                 Element::new_item(block_height.to_be_bytes().to_vec()),
                 None,
@@ -93,10 +120,9 @@ impl Drive {
             .unwrap()
             .map_err(Error::from)?;
 
-        let anchors_by_height_path = shielded_credit_pool_anchors_by_height_path();
         self.grove
             .insert(
-                &anchors_by_height_path,
+                anchors_by_height_path,
                 &block_height.to_be_bytes(),
                 Element::new_item(current_anchor_bytes.to_vec()),
                 None,
@@ -110,7 +136,7 @@ impl Drive {
     }
 
     /// Read the latest recorded shielded-pool anchor from
-    /// `SHIELDED_ANCHORS_BY_HEIGHT_KEY` (`[..., "s", [96]]`) via a
+    /// `SHIELDED_ANCHORS_BY_HEIGHT_KEY` (`[..., "M", [96]]`) via a
     /// `limit 1` reverse query. Returns `None` if the index is empty
     /// (pool has never recorded an anchor — chain is at genesis or
     /// no shielded ops yet).
@@ -122,15 +148,29 @@ impl Drive {
     /// share the same `PathQuery` shape via
     /// `shielded_latest_recorded_anchor_path_query`, but operate on
     /// proofs rather than this raw helper.
+    #[cfg(test)]
     pub(in crate::drive) fn read_latest_recorded_shielded_anchor_v0(
         &self,
         transaction: grovedb::TransactionArg,
         drive_version: &dpp::version::drive_versions::DriveVersion,
     ) -> Result<Option<[u8; 32]>, Error> {
-        let path_query = shielded_latest_recorded_anchor_path_query();
+        self.read_latest_recorded_pool_anchor_v0(
+            &shielded_latest_recorded_anchor_path_query(),
+            transaction,
+            drive_version,
+        )
+    }
 
+    /// The pool-agnostic form of [`Drive::read_latest_recorded_shielded_anchor_v0`]: reads the
+    /// highest-height entry the given `limit 1` reverse scan returns.
+    pub(in crate::drive) fn read_latest_recorded_pool_anchor_v0(
+        &self,
+        latest_recorded_anchor_query: &PathQuery,
+        transaction: grovedb::TransactionArg,
+        drive_version: &dpp::version::drive_versions::DriveVersion,
+    ) -> Result<Option<[u8; 32]>, Error> {
         let (results, _) = self.grove_get_raw_path_query(
-            &path_query,
+            latest_recorded_anchor_query,
             transaction,
             QueryResultType::QueryKeyElementPairResultType,
             &mut vec![],

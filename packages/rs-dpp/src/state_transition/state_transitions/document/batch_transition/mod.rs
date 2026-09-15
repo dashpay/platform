@@ -29,8 +29,12 @@ pub use self::batched_transition::{
     token_freeze_transition::TokenFreezeTransition, token_mint_transition,
     token_mint_transition::TokenMintTransition, token_set_price_for_direct_purchase_transition,
     token_set_price_for_direct_purchase_transition::TokenSetPriceForDirectPurchaseTransition,
-    token_transfer_transition, token_transfer_transition::TokenTransferTransition,
-    token_unfreeze_transition, token_unfreeze_transition::TokenUnfreezeTransition,
+    token_shield_transition, token_shield_transition::TokenShieldTransition,
+    token_shielded_transfer_transition,
+    token_shielded_transfer_transition::TokenShieldedTransferTransition, token_transfer_transition,
+    token_transfer_transition::TokenTransferTransition, token_unfreeze_transition,
+    token_unfreeze_transition::TokenUnfreezeTransition, token_unshield_transition,
+    token_unshield_transition::TokenUnshieldTransition,
 };
 
 use platform_serialization_derive::{

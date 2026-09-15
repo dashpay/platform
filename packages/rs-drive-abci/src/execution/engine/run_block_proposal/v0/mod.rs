@@ -353,6 +353,15 @@ where
         // Prune anchors older than the configured retention depth
         self.prune_shielded_pool_anchors(block_proposal.height, transaction, platform_version)?;
 
+        // Token shielded pools: record the new anchor of every pool this block wrote to and
+        // prune that pool's stale anchors (touch-driven, so untouched pools cost nothing).
+        self.record_token_shielded_pool_anchors(
+            state_transitions_result.token_shielded_pools_touched(),
+            block_proposal.height,
+            transaction,
+            platform_version,
+        )?;
+
         // Pool withdrawals into transactions queue
 
         // Takes queued withdrawals, creates untiled withdrawal transaction payload, saves them to queue

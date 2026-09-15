@@ -23,6 +23,7 @@ mod token_mint_past_max_supply_error;
 mod token_not_for_direct_sale;
 mod token_not_paused_error;
 mod token_setting_max_supply_to_less_than_current_supply_error;
+mod token_shielded_pool_not_enabled_error;
 mod token_transfer_recipient_identity_not_exist_error;
 mod unauthorized_token_action_error;
 
@@ -51,5 +52,6 @@ pub use token_mint_past_max_supply_error::*;
 pub use token_not_for_direct_sale::*;
 pub use token_not_paused_error::*;
 pub use token_setting_max_supply_to_less_than_current_supply_error::*;
+pub use token_shielded_pool_not_enabled_error::*;
 pub use token_transfer_recipient_identity_not_exist_error::*;
 pub use unauthorized_token_action_error::*;

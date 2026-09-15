@@ -12,8 +12,24 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<u64>), Error> {
+        Self::verify_pool_state_v0(
+            proof,
+            shielded_credit_pool_path_vec(),
+            verify_subset_of_proof,
+            platform_version,
+        )
+    }
+
+    /// Verifies the total balance item of the pool at `pool_path`, whichever shielded pool
+    /// (credit or token) it is.
+    pub(super) fn verify_pool_state_v0(
+        proof: &[u8],
+        pool_path: Vec<Vec<u8>>,
+        verify_subset_of_proof: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Option<u64>), Error> {
         let path_query = PathQuery {
-            path: shielded_credit_pool_path_vec(),
+            path: pool_path,
             query: SizedQuery {
                 query: Query::new_single_key(vec![SHIELDED_TOTAL_BALANCE_KEY]),
                 limit: Some(1),

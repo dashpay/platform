@@ -121,6 +121,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(_) => 10274,
             Self::RedundantDocumentPaidForByTokenWithContractId(_) => 10275,
             Self::DataContractInvalidRequiredFieldsUpdateError { .. } => 10276,
+            Self::TokenShieldedPoolIncompatibleRulesError(_) => 10277,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -386,6 +387,7 @@ impl ErrorWithCode for StateError {
             Self::TokenDirectPurchaseUserPriceTooLow(_) => 40719,
             Self::TokenAmountUnderMinimumSaleAmount(_) => 40720,
             Self::TokenNotForDirectSale(_) => 40721,
+            Self::TokenShieldedPoolNotEnabledError(_) => 40722,
 
             // Group errors: 40800-40899
             Self::IdentityNotMemberOfGroupError(_) => 40800,

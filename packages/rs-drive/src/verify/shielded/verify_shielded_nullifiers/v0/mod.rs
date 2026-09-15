@@ -13,11 +13,30 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<(Vec<u8>, bool)>), Error> {
+        Self::verify_pool_nullifiers_v0(
+            proof,
+            shielded_credit_pool_nullifiers_path_vec(),
+            nullifiers,
+            verify_subset_of_proof,
+            platform_version,
+        )
+    }
+
+    /// Verifies nullifier spent statuses against the nullifiers tree at `nullifiers_path`,
+    /// whichever shielded pool (credit or token) it belongs to.
+    #[allow(clippy::type_complexity)]
+    pub(super) fn verify_pool_nullifiers_v0(
+        proof: &[u8],
+        nullifiers_path: Vec<Vec<u8>>,
+        nullifiers: &[Vec<u8>],
+        verify_subset_of_proof: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Vec<(Vec<u8>, bool)>), Error> {
         let mut query = Query::new();
         query.insert_keys(nullifiers.to_vec());
 
         let path_query = PathQuery {
-            path: shielded_credit_pool_nullifiers_path_vec(),
+            path: nullifiers_path,
             query: SizedQuery {
                 query,
                 limit: Some(u16::try_from(nullifiers.len()).map_err(|_| {

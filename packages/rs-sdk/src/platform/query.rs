@@ -51,6 +51,7 @@ use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use drive_proof_verifier::from_request::TryFromRequest;
 use drive_proof_verifier::types::{
     KeysInPath, NoParamQuery, ShieldedEncryptedNotesQuery, ShieldedNullifiersQuery,
+    TokenShieldedEncryptedNotesQuery, TokenShieldedNullifiersQuery, TokenShieldedPoolQuery,
 };
 use rs_dapi_client::transport::TransportRequest;
 use std::collections::BTreeSet;
@@ -1304,7 +1305,10 @@ impl Query<GetShieldedPoolStateRequest> for NoParamQuery {
 
         Ok(GetShieldedPoolStateRequest {
             version: Some(get_shielded_pool_state_request::Version::V0(
-                get_shielded_pool_state_request::GetShieldedPoolStateRequestV0 { prove },
+                get_shielded_pool_state_request::GetShieldedPoolStateRequestV0 {
+                    prove,
+                    token_id: None,
+                },
             )),
         })
     }
@@ -1330,7 +1334,10 @@ impl Query<GetShieldedNotesCountRequest> for NoParamQuery {
 
         Ok(GetShieldedNotesCountRequest {
             version: Some(get_shielded_notes_count_request::Version::V0(
-                get_shielded_notes_count_request::GetShieldedNotesCountRequestV0 { prove },
+                get_shielded_notes_count_request::GetShieldedNotesCountRequestV0 {
+                    prove,
+                    token_id: None,
+                },
             )),
         })
     }
@@ -1348,7 +1355,10 @@ impl Query<GetShieldedAnchorsRequest> for NoParamQuery {
 
         Ok(GetShieldedAnchorsRequest {
             version: Some(get_shielded_anchors_request::Version::V0(
-                get_shielded_anchors_request::GetShieldedAnchorsRequestV0 { prove },
+                get_shielded_anchors_request::GetShieldedAnchorsRequestV0 {
+                    prove,
+                    token_id: None,
+                },
             )),
         })
     }
@@ -1368,6 +1378,7 @@ impl Query<GetMostRecentShieldedAnchorRequest> for NoParamQuery {
             version: Some(get_most_recent_shielded_anchor_request::Version::V0(
                 get_most_recent_shielded_anchor_request::GetMostRecentShieldedAnchorRequestV0 {
                     prove,
+                    token_id: None,
                 },
             )),
         })
@@ -1390,6 +1401,7 @@ impl Query<GetShieldedEncryptedNotesRequest> for ShieldedEncryptedNotesQuery {
                     start_index: self.start_index,
                     count: self.count,
                     prove,
+                    token_id: None,
                 },
             )),
         })
@@ -1411,6 +1423,141 @@ impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
                 get_shielded_nullifiers_request::GetShieldedNullifiersRequestV0 {
                     nullifiers: self.0.iter().map(|n| n.to_vec()).collect(),
                     prove,
+                    token_id: None,
+                },
+            )),
+        })
+    }
+}
+
+// --- Token Shielded Pool Queries (protocol version 14+) ---
+
+impl Query<GetShieldedPoolStateRequest> for TokenShieldedPoolQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedPoolStateRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetShieldedPoolStateRequest {
+            version: Some(get_shielded_pool_state_request::Version::V0(
+                get_shielded_pool_state_request::GetShieldedPoolStateRequestV0 {
+                    prove,
+                    token_id: Some(self.token_id.to_vec()),
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedNotesCountRequest> for TokenShieldedPoolQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedNotesCountRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            return Err(Error::Generic(
+                "GetShieldedNotesCount requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
+        }
+
+        Ok(GetShieldedNotesCountRequest {
+            version: Some(get_shielded_notes_count_request::Version::V0(
+                get_shielded_notes_count_request::GetShieldedNotesCountRequestV0 {
+                    prove,
+                    token_id: Some(self.token_id.to_vec()),
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedAnchorsRequest> for TokenShieldedPoolQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedAnchorsRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetShieldedAnchorsRequest {
+            version: Some(get_shielded_anchors_request::Version::V0(
+                get_shielded_anchors_request::GetShieldedAnchorsRequestV0 {
+                    prove,
+                    token_id: Some(self.token_id.to_vec()),
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetMostRecentShieldedAnchorRequest> for TokenShieldedPoolQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetMostRecentShieldedAnchorRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetMostRecentShieldedAnchorRequest {
+            version: Some(get_most_recent_shielded_anchor_request::Version::V0(
+                get_most_recent_shielded_anchor_request::GetMostRecentShieldedAnchorRequestV0 {
+                    prove,
+                    token_id: Some(self.token_id.to_vec()),
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedEncryptedNotesRequest> for TokenShieldedEncryptedNotesQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedEncryptedNotesRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetShieldedEncryptedNotesRequest {
+            version: Some(get_shielded_encrypted_notes_request::Version::V0(
+                get_shielded_encrypted_notes_request::GetShieldedEncryptedNotesRequestV0 {
+                    start_index: self.start_index,
+                    count: self.count,
+                    prove,
+                    token_id: Some(self.token_id.to_vec()),
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedNullifiersRequest> for TokenShieldedNullifiersQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedNullifiersRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetShieldedNullifiersRequest {
+            version: Some(get_shielded_nullifiers_request::Version::V0(
+                get_shielded_nullifiers_request::GetShieldedNullifiersRequestV0 {
+                    nullifiers: self.nullifiers.iter().map(|n| n.to_vec()).collect(),
+                    prove,
+                    token_id: Some(self.token_id.to_vec()),
                 },
             )),
         })

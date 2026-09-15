@@ -2514,12 +2514,27 @@ fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
 
 // --- Shielded Pool Query Proof Verification ---
 
+/// The optional `token_id` every shielded pool request carries: `None` targets the credit
+/// shielded pool, `Some` the pool of that token. The verifier must prove against the same
+/// pool the request named, so a malformed id is a request error rather than a silent fallback.
+fn shielded_pool_token_id(token_id: Option<Vec<u8>>) -> Result<Option<[u8; 32]>, Error> {
+    token_id
+        .map(|token_id| {
+            token_id
+                .try_into()
+                .map_err(|token_id: Vec<u8>| Error::RequestError {
+                    error: format!("token_id must be 32 bytes, got {}", token_id.len()),
+                })
+        })
+        .transpose()
+}
+
 impl FromProof<platform::GetShieldedPoolStateRequest> for ShieldedPoolState {
     type Request = platform::GetShieldedPoolStateRequest;
     type Response = platform::GetShieldedPoolStateResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
+        request: I,
         response: O,
         _network: Network,
         platform_version: &PlatformVersion,
@@ -2528,15 +2543,29 @@ impl FromProof<platform::GetShieldedPoolStateRequest> for ShieldedPoolState {
     where
         Self: Sized + 'a,
     {
+        use dapi_grpc::platform::v0::get_shielded_pool_state_request;
+
+        let request: Self::Request = request.into();
         let response: Self::Response = response.into();
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, maybe_balance) = Drive::verify_shielded_pool_state(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            false,
-            platform_version,
-        )
+        let token_id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_pool_state_request::Version::V0(v0) => {
+                shielded_pool_token_id(v0.token_id)?
+            }
+        };
+
+        let proof_bytes = supported_grovedb_proof_bytes(proof, platform_version)?;
+        let (root_hash, maybe_balance) = match token_id {
+            None => Drive::verify_shielded_pool_state(proof_bytes, false, platform_version),
+            Some(token_id) => Drive::verify_token_shielded_pool_state(
+                proof_bytes,
+                token_id,
+                false,
+                platform_version,
+            ),
+        }
         .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
@@ -2554,7 +2583,7 @@ impl FromProof<platform::GetShieldedNotesCountRequest> for ShieldedNotesCount {
     type Response = platform::GetShieldedNotesCountResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
+        request: I,
         response: O,
         _network: Network,
         platform_version: &PlatformVersion,
@@ -2563,19 +2592,33 @@ impl FromProof<platform::GetShieldedNotesCountRequest> for ShieldedNotesCount {
     where
         Self: Sized + 'a,
     {
+        use dapi_grpc::platform::v0::get_shielded_notes_count_request;
+
+        let request: Self::Request = request.into();
         let response: Self::Response = response.into();
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let token_id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_notes_count_request::Version::V0(v0) => {
+                shielded_pool_token_id(v0.token_id)?
+            }
+        };
 
         // Mirrors `ShieldedPoolState` above; the only difference is the
         // proved element type — `verify_shielded_notes_count` decodes
         // `total_count` out of the `CommitmentTree` element rather than a
         // `SumItem` balance.
-        let (root_hash, maybe_count) = Drive::verify_shielded_notes_count(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            false,
-            platform_version,
-        )
+        let proof_bytes = supported_grovedb_proof_bytes(proof, platform_version)?;
+        let (root_hash, maybe_count) = match token_id {
+            None => Drive::verify_shielded_notes_count(proof_bytes, false, platform_version),
+            Some(token_id) => Drive::verify_token_shielded_pool_notes_count(
+                proof_bytes,
+                token_id,
+                false,
+                platform_version,
+            ),
+        }
         .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
@@ -2593,7 +2636,7 @@ impl FromProof<platform::GetShieldedAnchorsRequest> for ShieldedAnchors {
     type Response = platform::GetShieldedAnchorsResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
+        request: I,
         response: O,
         _network: Network,
         platform_version: &PlatformVersion,
@@ -2602,15 +2645,27 @@ impl FromProof<platform::GetShieldedAnchorsRequest> for ShieldedAnchors {
     where
         Self: Sized + 'a,
     {
+        use dapi_grpc::platform::v0::get_shielded_anchors_request;
+
+        let request: Self::Request = request.into();
         let response: Self::Response = response.into();
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, anchors) = Drive::verify_shielded_anchors(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            false,
-            platform_version,
-        )
+        let token_id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_anchors_request::Version::V0(v0) => shielded_pool_token_id(v0.token_id)?,
+        };
+
+        let proof_bytes = supported_grovedb_proof_bytes(proof, platform_version)?;
+        let (root_hash, anchors) = match token_id {
+            None => Drive::verify_shielded_anchors(proof_bytes, false, platform_version),
+            Some(token_id) => Drive::verify_token_shielded_pool_anchors(
+                proof_bytes,
+                token_id,
+                false,
+                platform_version,
+            ),
+        }
         .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
@@ -2630,7 +2685,7 @@ impl FromProof<platform::GetMostRecentShieldedAnchorRequest> for MostRecentShiel
     type Response = platform::GetMostRecentShieldedAnchorResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
+        request: I,
         response: O,
         _network: Network,
         platform_version: &PlatformVersion,
@@ -2639,15 +2694,29 @@ impl FromProof<platform::GetMostRecentShieldedAnchorRequest> for MostRecentShiel
     where
         Self: Sized + 'a,
     {
+        use dapi_grpc::platform::v0::get_most_recent_shielded_anchor_request;
+
+        let request: Self::Request = request.into();
         let response: Self::Response = response.into();
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, maybe_anchor) = Drive::verify_most_recent_shielded_anchor(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            false,
-            platform_version,
-        )
+        let token_id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_most_recent_shielded_anchor_request::Version::V0(v0) => {
+                shielded_pool_token_id(v0.token_id)?
+            }
+        };
+
+        let proof_bytes = supported_grovedb_proof_bytes(proof, platform_version)?;
+        let (root_hash, maybe_anchor) = match token_id {
+            None => Drive::verify_most_recent_shielded_anchor(proof_bytes, false, platform_version),
+            Some(token_id) => Drive::verify_most_recent_token_shielded_pool_anchor(
+                proof_bytes,
+                token_id,
+                false,
+                platform_version,
+            ),
+        }
         .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
@@ -2681,8 +2750,12 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (start_index, count) = match request.version.ok_or(Error::EmptyVersion)? {
-            get_shielded_encrypted_notes_request::Version::V0(v0) => (v0.start_index, v0.count),
+        let (start_index, count, token_id) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_encrypted_notes_request::Version::V0(v0) => (
+                v0.start_index,
+                v0.count,
+                shielded_pool_token_id(v0.token_id)?,
+            ),
         };
 
         let max_elements = platform_version
@@ -2692,14 +2765,26 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
             .max_query_chunks as u32
             * (1u32 << drive::drive::shielded::paths::SHIELDED_NOTES_CHUNK_POWER);
 
-        let (root_hash, notes, total_count) = Drive::verify_shielded_encrypted_notes(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            start_index,
-            count,
-            max_elements,
-            false,
-            platform_version,
-        )
+        let proof_bytes = supported_grovedb_proof_bytes(proof, platform_version)?;
+        let (root_hash, notes, total_count) = match token_id {
+            None => Drive::verify_shielded_encrypted_notes(
+                proof_bytes,
+                start_index,
+                count,
+                max_elements,
+                false,
+                platform_version,
+            ),
+            Some(token_id) => Drive::verify_token_shielded_pool_encrypted_notes(
+                proof_bytes,
+                token_id,
+                start_index,
+                count,
+                max_elements,
+                false,
+                platform_version,
+            ),
+        }
         .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
@@ -2747,16 +2832,25 @@ impl FromProof<platform::GetShieldedNullifiersRequest> for ShieldedNullifierStat
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let nullifiers = match request.version.ok_or(Error::EmptyVersion)? {
-            get_shielded_nullifiers_request::Version::V0(v0) => v0.nullifiers,
+        let (nullifiers, token_id) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_nullifiers_request::Version::V0(v0) => {
+                (v0.nullifiers, shielded_pool_token_id(v0.token_id)?)
+            }
         };
 
-        let (root_hash, statuses) = Drive::verify_shielded_nullifiers(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            &nullifiers,
-            false,
-            platform_version,
-        )
+        let proof_bytes = supported_grovedb_proof_bytes(proof, platform_version)?;
+        let (root_hash, statuses) = match token_id {
+            None => {
+                Drive::verify_shielded_nullifiers(proof_bytes, &nullifiers, false, platform_version)
+            }
+            Some(token_id) => Drive::verify_token_shielded_pool_nullifiers(
+                proof_bytes,
+                token_id,
+                &nullifiers,
+                false,
+                platform_version,
+            ),
+        }
         .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
@@ -6850,7 +6944,10 @@ mod tests {
                 request!(
                     get_shielded_pool_state_request,
                     GetShieldedPoolStateRequestV0,
-                    GetShieldedPoolStateRequest { prove: true }
+                    GetShieldedPoolStateRequest {
+                        prove: true,
+                        token_id: None
+                    }
                 ),
                 legacy_response!(
                     get_shielded_pool_state_response,
@@ -6865,7 +6962,10 @@ mod tests {
                 request!(
                     get_shielded_notes_count_request,
                     GetShieldedNotesCountRequestV0,
-                    GetShieldedNotesCountRequest { prove: true }
+                    GetShieldedNotesCountRequest {
+                        prove: true,
+                        token_id: None
+                    }
                 ),
                 legacy_response!(
                     get_shielded_notes_count_response,
@@ -6880,7 +6980,10 @@ mod tests {
                 request!(
                     get_shielded_anchors_request,
                     GetShieldedAnchorsRequestV0,
-                    GetShieldedAnchorsRequest { prove: true }
+                    GetShieldedAnchorsRequest {
+                        prove: true,
+                        token_id: None
+                    }
                 ),
                 legacy_response!(
                     get_shielded_anchors_response,
@@ -6895,7 +6998,10 @@ mod tests {
                 request!(
                     get_most_recent_shielded_anchor_request,
                     GetMostRecentShieldedAnchorRequestV0,
-                    GetMostRecentShieldedAnchorRequest { prove: true }
+                    GetMostRecentShieldedAnchorRequest {
+                        prove: true,
+                        token_id: None
+                    }
                 ),
                 legacy_response!(
                     get_most_recent_shielded_anchor_response,
@@ -6912,7 +7018,8 @@ mod tests {
                     GetShieldedEncryptedNotesRequestV0,
                     GetShieldedEncryptedNotesRequest {
                         count: 1,
-                        prove: true
+                        prove: true,
+                        token_id: None
                     }
                 ),
                 legacy_response!(
@@ -6930,7 +7037,8 @@ mod tests {
                     GetShieldedNullifiersRequestV0,
                     GetShieldedNullifiersRequest {
                         nullifiers: vec![id(1)],
-                        prove: true
+                        prove: true,
+                        token_id: None
                     }
                 ),
                 legacy_response!(

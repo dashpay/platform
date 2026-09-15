@@ -41,6 +41,8 @@ use dpp::state_transition::batch_transition::token_base_transition::v0::v0_metho
 use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_shielded_transfer_transition::v0::v0_methods::TokenShieldedTransferTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_unshield_transition::v0::v0_methods::TokenUnshieldTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
@@ -1003,6 +1005,65 @@ impl Drive {
                             | TokenTransition::EmergencyAction(_)
                             | TokenTransition::ConfigUpdate(_)
                             | TokenTransition::Claim(_) => historical_query(),
+                            TokenTransition::Shield(_) => {
+                                let (root_hash, Some(balance)) =
+                                    Drive::verify_token_balance_for_identity_id(
+                                        proof,
+                                        token_id.into_buffer(),
+                                        owner_id.into_buffer(),
+                                        false,
+                                        platform_version,
+                                    )?
+                                else {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
+                                        format!("proof did not contain token balance for identity {} expected to exist because of state transition (token shield)", owner_id))));
+                                };
+                                Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
+                            }
+                            TokenTransition::Unshield(token_unshield_transition) => {
+                                let recipient_id = token_unshield_transition.recipient_id();
+                                let (root_hash, Some(balance)) =
+                                    Drive::verify_token_balance_for_identity_id(
+                                        proof,
+                                        token_id.into_buffer(),
+                                        recipient_id.into_buffer(),
+                                        false,
+                                        platform_version,
+                                    )?
+                                else {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
+                                        format!("proof did not contain token balance for identity {} expected to exist because of state transition (token unshield)", recipient_id))));
+                                };
+                                Ok((root_hash, VerifiedTokenBalance(recipient_id, balance)))
+                            }
+                            TokenTransition::ShieldedTransfer(
+                                token_shielded_transfer_transition,
+                            ) => {
+                                let nullifiers: Vec<Vec<u8>> = token_shielded_transfer_transition
+                                    .actions()
+                                    .iter()
+                                    .map(|action| action.nullifier.to_vec())
+                                    .collect();
+                                let (root_hash, statuses) =
+                                    Drive::verify_token_shielded_pool_nullifiers(
+                                        proof,
+                                        token_id.into_buffer(),
+                                        &nullifiers,
+                                        false,
+                                        platform_version,
+                                    )?;
+                                if statuses.len() != nullifiers.len()
+                                    || statuses.iter().any(|(_, spent)| !spent)
+                                {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
+                                        "proof did not show every nullifier of the token shielded transfer as spent".to_string(),
+                                    )));
+                                }
+                                Ok((
+                                    root_hash,
+                                    dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiers(statuses),
+                                ))
+                            }
                         }
                     }
                 }
@@ -2376,6 +2437,11 @@ impl Drive {
                         | TokenTransition::EmergencyAction(_)
                         | TokenTransition::ConfigUpdate(_)
                         | TokenTransition::Claim(_) => true,
+                        // Balance snapshots: the moved amount cannot be tied to one shield or
+                        // unshield. A shielded transfer's spent nullifiers exist only if it
+                        // executed.
+                        TokenTransition::Shield(_) | TokenTransition::Unshield(_) => false,
+                        TokenTransition::ShieldedTransfer(_) => true,
                     }
                 }
             },

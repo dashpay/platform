@@ -65,5 +65,10 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
     },
     token_versions: TokenVersions {
         validate_structure_interval: 0,
+        token_configuration_format: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
     },
 };

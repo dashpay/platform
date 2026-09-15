@@ -18,7 +18,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
-use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenSetPriceForDirectPurchaseTransition};
+use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition, TokenShieldedTransferTransition, TokenUnshieldTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
@@ -37,6 +37,8 @@ use crate::state_transition::batch_transition::token_direct_purchase_transition:
 use crate::state_transition::batch_transition::token_direct_purchase_transition::v0::v0_methods::TokenDirectPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::v0_methods::TokenSetPriceForDirectPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use crate::state_transition::batch_transition::token_shield_transition::v0::v0_methods::TokenShieldTransitionV0Methods;
+use crate::state_transition::batch_transition::token_unshield_transition::v0::v0_methods::TokenUnshieldTransitionV0Methods;
 use crate::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use crate::tokens::token_event::TokenEvent;
 
@@ -89,6 +91,15 @@ pub enum TokenTransition {
 
     #[display("TokenSetPriceForDirectPurchaseTransition({})", "_0")]
     SetPriceForDirectPurchase(TokenSetPriceForDirectPurchaseTransition),
+
+    #[display("TokenShieldTransition({})", "_0")]
+    Shield(TokenShieldTransition),
+
+    #[display("TokenUnshieldTransition({})", "_0")]
+    Unshield(TokenUnshieldTransition),
+
+    #[display("TokenShieldedTransferTransition({})", "_0")]
+    ShieldedTransfer(TokenShieldedTransferTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -109,8 +120,9 @@ pub(crate) mod json_convertible_tests {
         token_burn_transition, token_claim_transition, token_config_update_transition,
         token_destroy_frozen_funds_transition, token_direct_purchase_transition,
         token_emergency_action_transition, token_freeze_transition, token_mint_transition,
-        token_set_price_for_direct_purchase_transition, token_transfer_transition,
-        token_unfreeze_transition,
+        token_set_price_for_direct_purchase_transition, token_shield_transition,
+        token_shielded_transfer_transition, token_transfer_transition, token_unfreeze_transition,
+        token_unshield_transition,
     };
 
     /// Wrapping helper — drives a single `TokenTransition::*` variant through
@@ -242,6 +254,32 @@ pub(crate) mod json_convertible_tests {
             "setPriceForDirectPurchase",
         );
     }
+
+    #[test]
+    fn umbrella_shield() {
+        assert_umbrella_round_trip(
+            TokenTransition::Shield(token_shield_transition::json_convertible_tests::fixture()),
+            "shield",
+        );
+    }
+
+    #[test]
+    fn umbrella_unshield() {
+        assert_umbrella_round_trip(
+            TokenTransition::Unshield(token_unshield_transition::json_convertible_tests::fixture()),
+            "unshield",
+        );
+    }
+
+    #[test]
+    fn umbrella_shielded_transfer() {
+        assert_umbrella_round_trip(
+            TokenTransition::ShieldedTransfer(
+                token_shielded_transfer_transition::json_convertible_tests::fixture(),
+            ),
+            "shieldedTransfer",
+        );
+    }
 }
 
 impl BatchTransitionResolversV0 for TokenTransition {
@@ -354,6 +392,30 @@ impl BatchTransitionResolversV0 for TokenTransition {
             None
         }
     }
+
+    fn as_transition_token_shield(&self) -> Option<&TokenShieldTransition> {
+        if let Self::Shield(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_unshield(&self) -> Option<&TokenUnshieldTransition> {
+        if let Self::Unshield(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_shielded_transfer(&self) -> Option<&TokenShieldedTransferTransition> {
+        if let Self::ShieldedTransfer(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
 }
 
 pub trait TokenTransitionV0Methods {
@@ -422,6 +484,9 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::ConfigUpdate(t) => t.base(),
             TokenTransition::DirectPurchase(t) => t.base(),
             TokenTransition::SetPriceForDirectPurchase(t) => t.base(),
+            TokenTransition::Shield(t) => t.base(),
+            TokenTransition::Unshield(t) => t.base(),
+            TokenTransition::ShieldedTransfer(t) => t.base(),
         }
     }
 
@@ -438,6 +503,9 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::ConfigUpdate(t) => t.base_mut(),
             TokenTransition::DirectPurchase(t) => t.base_mut(),
             TokenTransition::SetPriceForDirectPurchase(t) => t.base_mut(),
+            TokenTransition::Shield(t) => t.base_mut(),
+            TokenTransition::Unshield(t) => t.base_mut(),
+            TokenTransition::ShieldedTransfer(t) => t.base_mut(),
         }
     }
 
@@ -470,6 +538,9 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::SetPriceForDirectPurchase(t) => {
                 Some(t.calculate_action_id(owner_id, platform_version))
             }
+            TokenTransition::Shield(_)
+            | TokenTransition::Unshield(_)
+            | TokenTransition::ShieldedTransfer(_) => None,
         }
     }
 
@@ -485,7 +556,10 @@ impl TokenTransitionV0Methods for TokenTransition {
             | TokenTransition::SetPriceForDirectPurchase(_) => true,
             TokenTransition::Transfer(_)
             | TokenTransition::Claim(_)
-            | TokenTransition::DirectPurchase(_) => false,
+            | TokenTransition::DirectPurchase(_)
+            | TokenTransition::Shield(_)
+            | TokenTransition::Unshield(_)
+            | TokenTransition::ShieldedTransfer(_) => false,
         }
     }
 
@@ -523,6 +597,9 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Claim(_) => "claim",
             TokenTransition::DirectPurchase(_) => "directPurchase",
             TokenTransition::SetPriceForDirectPurchase(_) => "directPricing",
+            TokenTransition::Shield(_) => "shield",
+            TokenTransition::Unshield(_) => "unshield",
+            TokenTransition::ShieldedTransfer(_) => "shieldedTransfer",
         }
     }
 
@@ -653,6 +730,11 @@ impl TokenTransitionV0Methods for TokenTransition {
                     claim.public_note().cloned(),
                 )
             }
+            TokenTransition::Shield(shield) => TokenEvent::Shield(shield.amount()),
+            TokenTransition::Unshield(unshield) => {
+                TokenEvent::Unshield(unshield.recipient_id(), unshield.amount())
+            }
+            TokenTransition::ShieldedTransfer(_) => TokenEvent::ShieldedTransfer,
             TokenTransition::DirectPurchase(direct_purchase) => TokenEvent::DirectPurchase(
                 direct_purchase.token_count(),
                 direct_purchase.total_agreed_price(),

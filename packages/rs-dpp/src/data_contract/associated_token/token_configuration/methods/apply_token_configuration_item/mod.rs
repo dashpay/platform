@@ -13,6 +13,7 @@ impl TokenConfiguration {
     pub fn apply_token_configuration_item(&mut self, change_item: TokenConfigurationChangeItem) {
         match self {
             TokenConfiguration::V0(v0) => v0.apply_token_configuration_item(change_item),
+            TokenConfiguration::V1(v1) => v1.base.apply_token_configuration_item(change_item),
         }
     }
 }
