@@ -738,3 +738,69 @@ fn should_produce_identical_output_for_identical_input() {
     let b = prepare_module(name(), &bytes, &profile).expect("prepared");
     assert_eq!(a, b);
 }
+
+/// Hand-encodes a module whose function section declares `count` functions of type 0 and has
+/// no code section, so the function count is the only thing the module is big in: each entry
+/// is one byte, and the validator's own section-consistency check runs only after the section
+/// is read.
+fn module_declaring_functions(count: u32) -> Vec<u8> {
+    let mut bytes = b"\0asm\x01\0\0\0".to_vec();
+    // Type section: one type `() -> ()`.
+    bytes.extend_from_slice(&[1, 4, 1, 0x60, 0, 0]);
+    // Function section: `count` LEB128 entries of type index 0, one byte each.
+    let mut body = Vec::new();
+    leb128_u32(&mut body, count);
+    body.extend(std::iter::repeat_n(0u8, count as usize));
+    bytes.push(3);
+    leb128_u32(&mut bytes, body.len() as u32);
+    bytes.extend_from_slice(&body);
+    bytes
+}
+
+/// Hand-encodes a module whose import section declares `count` function imports of type 0.
+fn module_importing_functions(count: u32) -> Vec<u8> {
+    let mut bytes = b"\0asm\x01\0\0\0".to_vec();
+    bytes.extend_from_slice(&[1, 4, 1, 0x60, 0, 0]);
+    let mut body = Vec::new();
+    leb128_u32(&mut body, count);
+    for _ in 0..count {
+        // module "m", name "f", kind func, type 0.
+        body.extend_from_slice(&[1, b'm', 1, b'f', 0, 0]);
+    }
+    bytes.push(2);
+    leb128_u32(&mut bytes, body.len() as u32);
+    bytes.extend_from_slice(&body);
+    bytes
+}
+
+fn leb128_u32(out: &mut Vec<u8>, mut value: u32) {
+    loop {
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            out.push(byte);
+            return;
+        }
+        out.push(byte | 0x80);
+    }
+}
+
+/// A section that declares far more functions than the cap is refused at the cap plus one,
+/// not after the whole section has been expanded: the measurement records exactly the cap's
+/// worth of entries before the rejection.
+#[test]
+fn should_refuse_an_oversized_function_section_at_the_cap_without_expanding_it() {
+    let cap = 64u32;
+    let profile = profile_with(|limits| limits.max_functions_per_module = cap);
+    // Well over the cap; the body is one byte per function so this stays a small module.
+    let oversized = module_declaring_functions(200_000);
+    assert_eq!(
+        cap_of(reject_bytes(&oversized, &profile)),
+        (StructuralCap::Functions, u64::from(cap) + 1, u64::from(cap))
+    );
+    let oversized_imports = module_importing_functions(cap + 50);
+    assert_eq!(
+        cap_of(reject_bytes(&oversized_imports, &profile)),
+        (StructuralCap::Functions, u64::from(cap) + 1, u64::from(cap))
+    );
+}

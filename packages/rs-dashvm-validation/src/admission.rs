@@ -67,7 +67,16 @@ pub(crate) fn validate_prepared(
     submitted: &SubmittedModule,
     report: &InstrumentationReport,
 ) -> Result<ModuleFacts, ModuleError> {
-    let prepared = measure(prepared_bytes, profile, Stage::Prepared)?;
+    // The bytes under measurement were produced by the instrumenter from a module that
+    // already passed admission, so anything the measurement pass refuses (malformed bytes, a
+    // forbidden feature, a start section, a shape rule) is the instrumenter contradicting
+    // itself: a node fault, never a paid rejection. The prepared byte cap is the one
+    // exception, an intended bound on instrumented growth.
+    let prepared =
+        measure(prepared_bytes, profile, Stage::Prepared).map_err(|error| match error {
+            error @ ModuleError::PreparedTooLarge { .. } => error,
+            error => internal(format!("prepared module failed validation: {error}")),
+        })?;
     let original = &submitted.facts;
     let plan = &submitted.plan;
 

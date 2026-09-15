@@ -166,7 +166,7 @@ pub fn validate_and_prepare_bundle(
     Ok(bundle)
 }
 
-fn check_declared_bindings(
+pub(crate) fn check_declared_bindings(
     resolved: &[BundleBinding],
     declared: &[DeclaredBinding<'_>],
 ) -> Result<(), BundleError> {
@@ -189,9 +189,16 @@ fn check_declared_bindings(
     if declared == resolved {
         return Ok(());
     }
+    // Both lists are sorted (`declared` above, `resolved` from the sorted binding list whose
+    // ordering starts with the same three fields), so the first difference is found by binary
+    // search rather than a scan per element.
     let detail = match (
-        declared.iter().find(|binding| !resolved.contains(binding)),
-        resolved.iter().find(|binding| !declared.contains(binding)),
+        declared
+            .iter()
+            .find(|binding| resolved.binary_search(binding).is_err()),
+        resolved
+            .iter()
+            .find(|binding| declared.binary_search(binding).is_err()),
     ) {
         (Some((importer, target, export)), _) => {
             format!("declared binding `{importer}` -> `{target}`.`{export}` is not imported by the code")

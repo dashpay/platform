@@ -387,3 +387,68 @@ fn regenerate_golden_fixture() {
     );
     std::fs::write(path, &prepared.prepared_bytes).expect("written");
 }
+
+/// Whatever the measurement pass refuses in the instrumenter's output is an instrumenter
+/// fault, so it surfaces as `Internal`, never as the paid rejection the same bytes would earn
+/// on submission. Only the prepared byte cap keeps its own variant.
+#[test]
+fn should_report_malformed_or_forbidden_instrumenter_output_as_internal() {
+    let profile = latest_profile();
+    let bytes = wasm(THREE_FUNCTIONS);
+    let submitted = validate_submitted(&bytes, &profile).expect("admitted");
+    let (prepared, report) =
+        instrument(&bytes, &submitted.facts, &submitted.plan).expect("instrumented");
+
+    let truncated = &prepared[..prepared.len() - 5];
+    assert!(matches!(
+        validate_prepared(truncated, &profile, &submitted, &report).expect_err("caught"),
+        ModuleError::Internal(_)
+    ));
+
+    // Re-encode the output with a tail call inserted into the first body: a forbidden feature
+    // that would be `ForbiddenFeature` on submission.
+    struct InsertTailCall;
+    impl wasm_encoder::reencode::Reencode for InsertTailCall {
+        type Error = std::convert::Infallible;
+        fn parse_function_body(
+            &mut self,
+            code: &mut wasm_encoder::CodeSection,
+            func: wasmparser::FunctionBody<'_>,
+        ) -> Result<(), wasm_encoder::reencode::Error<Self::Error>> {
+            let mut function =
+                wasm_encoder::reencode::utils::new_function_with_parsed_locals(self, &func)?;
+            let mut reader = func.get_operators_reader()?;
+            let mut first = true;
+            while !reader.eof() {
+                let op = reader.read()?;
+                if first {
+                    function.instruction(&wasm_encoder::Instruction::ReturnCall(0));
+                    first = false;
+                }
+                function.instruction(&self.instruction(op)?);
+            }
+            code.function(&function);
+            Ok(())
+        }
+    }
+    let mut module = wasm_encoder::Module::new();
+    wasm_encoder::reencode::utils::parse_core_module(
+        &mut InsertTailCall,
+        &mut module,
+        wasmparser::Parser::new(0),
+        &prepared,
+    )
+    .expect("re-encodes");
+    let forbidden = module.finish();
+    assert!(matches!(
+        validate_prepared(&forbidden, &profile, &submitted, &report).expect_err("caught"),
+        ModuleError::Internal(_)
+    ));
+
+    // The prepared byte cap stays a distinct rejection.
+    let tight = profile_with(|limits| limits.max_prepared_module_bytes = prepared.len() as u32 - 1);
+    assert!(matches!(
+        validate_prepared(&prepared, &tight, &submitted, &report).expect_err("caught"),
+        ModuleError::PreparedTooLarge { .. }
+    ));
+}

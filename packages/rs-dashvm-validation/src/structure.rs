@@ -400,19 +400,23 @@ impl Pass<'_> {
                 }
                 TypeRef::Tag(_) => return Err(forbidden(ForbiddenFeature::Exceptions, offset)),
             };
+            // The cap is enforced on the running count so an oversized section is refused at
+            // the first entry over the cap instead of after every entry has been recorded.
+            if matches!(kind, ImportKind::Function { .. }) {
+                self.facts.structure.imported_functions += 1;
+                if self.enforce_caps() {
+                    cap(
+                        StructuralCap::Functions,
+                        u64::from(self.facts.structure.imported_functions),
+                        u64::from(self.limits.max_functions_per_module),
+                    )?;
+                }
+            }
             self.facts.imports.push(ImportFact {
                 module: import.module.to_owned(),
                 name: import.name.to_owned(),
                 kind,
             });
-        }
-        self.facts.structure.imported_functions = self.facts.imported_functions();
-        if self.enforce_caps() {
-            cap(
-                StructuralCap::Functions,
-                u64::from(self.facts.structure.imported_functions),
-                u64::from(self.limits.max_functions_per_module),
-            )?;
         }
         Ok(())
     }
@@ -429,6 +433,19 @@ impl Pass<'_> {
                     message: format!("unknown type {type_index}: type index out of bounds"),
                 });
             }
+            // Running count, for the same reason as in the import section: a section that
+            // declares millions of functions is refused at the cap, not after allocating a
+            // fact for each of them.
+            self.facts.structure.defined_functions += 1;
+            if self.enforce_caps() {
+                let total = u64::from(self.facts.structure.imported_functions)
+                    + u64::from(self.facts.structure.defined_functions);
+                cap(
+                    StructuralCap::Functions,
+                    total,
+                    u64::from(self.limits.max_functions_per_module),
+                )?;
+            }
             self.facts.functions.push(FunctionFact {
                 type_index,
                 locals: Vec::new(),
@@ -436,16 +453,6 @@ impl Pass<'_> {
                 operators: 0,
                 calls_to_defined: 0,
             });
-        }
-        self.facts.structure.defined_functions = self.facts.functions.len() as u32;
-        if self.enforce_caps() {
-            let total = u64::from(self.facts.structure.imported_functions)
-                + u64::from(self.facts.structure.defined_functions);
-            cap(
-                StructuralCap::Functions,
-                total,
-                u64::from(self.limits.max_functions_per_module),
-            )?;
         }
         Ok(())
     }

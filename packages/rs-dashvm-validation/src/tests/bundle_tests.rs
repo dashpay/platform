@@ -553,3 +553,44 @@ fn should_compute_a_stable_digest_that_covers_names_bindings_and_entries() {
         renamed.module(&name("lib")).map(|m| m.prepared_hash)
     );
 }
+
+/// The mismatch diagnostic on two large, nearly equal lists must stay cheap: both lists are
+/// sorted, so the first difference is found by binary search. A quadratic scan over these
+/// sizes would take seconds; this completes in milliseconds.
+#[test]
+fn should_diagnose_a_late_binding_mismatch_in_large_lists_without_quadratic_scanning() {
+    use crate::bundle_preparation::check_declared_bindings;
+    let signature = FuncSignature::new(vec![ValueType::I32], vec![ValueType::I32]);
+    let count = 200_000u32;
+    let names: Vec<String> = (0..count).map(|i| format!("m{i:06}")).collect();
+    let resolved: Vec<BundleBinding> = names
+        .iter()
+        .map(|target| BundleBinding {
+            importer: name("app"),
+            target: ModuleName::parse(target, 64).expect("valid"),
+            export: "helper".to_owned(),
+            signature: signature.clone(),
+        })
+        .collect();
+    let mut declared: Vec<DeclaredBinding<'_>> = names
+        .iter()
+        .map(|target| DeclaredBinding {
+            importer: "app",
+            target,
+            export: "helper",
+        })
+        .collect();
+    // Drop the last declaration: the only difference is at the very end of both lists.
+    declared.pop();
+    let started = std::time::Instant::now();
+    let error = check_declared_bindings(&resolved, &declared).expect_err("mismatch");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "mismatch diagnosis took {:?}",
+        started.elapsed()
+    );
+    assert!(matches!(
+        error,
+        BundleError::BindingsMismatch { detail } if detail.contains("m199999") && detail.contains("not declared")
+    ));
+}
