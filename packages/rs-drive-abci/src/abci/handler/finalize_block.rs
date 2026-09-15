@@ -102,6 +102,17 @@ where
         result.expect("commit transaction");
     }
 
+    // The block is durable now, so the contracts it read and rewrote through its transaction
+    // are committed state: promote them to the global cache. This must follow the commit.
+    // Promoting earlier would serve an uncommitted block's definitions to committed-state
+    // readers and, worse, let a query that read committed state between the promotion and
+    // the commit (still the pre-block definition) publish it as current afterwards.
+    app.platform()
+        .drive
+        .cache
+        .data_contracts
+        .merge_and_clear_block_cache();
+
     app.platform()
         .committed_block_height_guard
         .store(block_height, Ordering::Relaxed);
@@ -416,6 +427,62 @@ mod tests {
         );
 
         finalize_block::<_, MockCoreRPCLike>(app, request)
+    }
+
+    /// The data contract block cache is promoted to the global cache by this handler, after
+    /// the commit. A contract the block rewrote must replace the committed copy a concurrent
+    /// reader left in the global cache, and the block's record of rewrites must be reset.
+    #[test]
+    fn finalize_block_promotes_the_data_contract_block_cache_after_the_commit() {
+        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+        use drive::drive::contract::DataContractFetchInfo;
+
+        let mut config = PlatformConfig::default_testnet();
+        config.testing_configs.block_commit_signature_verification = false;
+        let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
+            .with_config(config)
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let app = FullAbciApplication::new(&platform.platform);
+        let cache = &platform.drive.cache.data_contracts;
+
+        // What a concurrent committed-state reader left behind, and what the block wrote.
+        let committed = DataContractFetchInfo::dpns_contract_fixture(
+            PlatformVersion::latest().protocol_version,
+        );
+        let contract_id = committed.contract.id().to_buffer();
+        let mut rewritten = committed.clone();
+        rewritten
+            .contract
+            .set_version(committed.contract.version() + 1);
+        cache.insert_committed(Arc::new(committed.clone()), cache.committed_generation());
+        cache.mark_modified_in_block(contract_id);
+        cache.insert_block(Arc::new(rewritten.clone()));
+        let generation_before = cache.committed_generation();
+
+        finalize_real_block(&platform, &app, 1, 1_700_000_000_000, None)
+            .expect("the block must finalize");
+
+        assert_eq!(platform.state.load().last_committed_block_height(), 1);
+        assert_eq!(
+            cache
+                .get(contract_id, false)
+                .expect("the global cache must hold the promoted contract")
+                .contract
+                .version(),
+            rewritten.contract.version(),
+            "the block's definition must replace the committed copy once the block is committed"
+        );
+        assert!(
+            !cache.is_modified_in_block(contract_id),
+            "the record of the block's rewrites must be reset by the promotion"
+        );
+        assert_ne!(
+            generation_before,
+            cache.committed_generation(),
+            "committed-state reads that began before the commit must no longer be able to publish"
+        );
     }
 
     /// Records the events emitted while `capture` runs, to assert a failure is observable.
