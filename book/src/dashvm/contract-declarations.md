@@ -204,13 +204,15 @@ The validator owns what the native host cannot know:
   derived capabilities cannot be required explicitly).
 
 It deliberately does not mirror native numeric limits (ten indexes per type,
-32-character index names, 63-character indexed strings, one hundred
-properties, time-range caps) or native schema dependencies (a range count
-needs a count, a ranking needs its range axis, a prefix ranking excludes sum
-axes, a time range needs a system timestamp). Those are enforced once, by Dash
-Platform Protocol, and the build crate surfaces them by running the real
-contract validation. Two definitions of "valid" would drift the day one of
-them changed.
+63-character indexed strings, one hundred properties, time-range caps) or
+native schema dependencies (a range count needs a count, a ranking needs its
+range axis, a prefix ranking excludes sum axes, a time range needs a system
+timestamp). Those are enforced once, by Dash Platform Protocol, and the build
+crate surfaces them by running the real contract validation. Two definitions
+of "valid" would drift the day one of them changed. The exception is the
+identity grammar: collection, property, property path and index name limits
+intentionally match the native rules because on-chain identity must agree;
+see the identity table above.
 
 ## Persistence
 
@@ -244,8 +246,10 @@ agreement, identity public key) is a `FieldType::Reference`.
 
 Average sugar (`average = "p"`, `range_average`) is expanded into `count`
 plus `sum = "p"` and `range_count` plus `range_sum` before the manifest,
-with the same conflict rules the native parser applies to `averageable`; the
-manifest has no average fields.
+with the same conflict rules the native parser applies to `averageable`: an
+omitted option is promoted, an explicit `count = false`, `range_count =
+false` or `range_sum = false` next to the sugar is a `ConflictingOption`.
+The manifest has no average fields.
 
 Index definitions on existing document types are frozen by the existing
 versioned native update validation: adding, removing or changing an index on

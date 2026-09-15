@@ -4,7 +4,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use super::field::FieldSpec;
+use super::field::{FieldSpec, FieldType, ReferenceTarget};
 use super::index::IndexSpec;
 use super::rule::ActionScope;
 use super::DeclarationOrigin;
@@ -192,14 +192,16 @@ pub struct CollectionSpec {
     pub encryption_key: Option<BoundedKeyRequirement>,
     /// Identity decryption bounded key requirement.
     pub decryption_key: Option<BoundedKeyRequirement>,
-    /// Count tree on the primary key.
-    pub count: bool,
-    /// Provable count on the primary key.
-    pub range_count: bool,
+    /// Count tree on the primary key. `None` when the author said nothing, so
+    /// that average sugar may promote it; an explicit `Some(false)` next to
+    /// `average` is a conflict, as it is natively.
+    pub count: Option<bool>,
+    /// Provable count on the primary key; explicitness as for `count`.
+    pub range_count: Option<bool>,
     /// Integer property summed on the primary key.
     pub sum: Option<PropertyName>,
-    /// Provable sum on the primary key.
-    pub range_sum: bool,
+    /// Provable sum on the primary key; explicitness as for `count`.
+    pub range_sum: Option<bool>,
     /// Sugar for `count` plus `sum`; expanded by the validator, never stored in
     /// the manifest.
     pub average: Option<PropertyName>,
@@ -240,10 +242,10 @@ impl CollectionSpec {
             security_level: SecurityLevel::default(),
             encryption_key: None,
             decryption_key: None,
-            count: false,
-            range_count: false,
+            count: None,
+            range_count: None,
             sum: None,
-            range_sum: false,
+            range_sum: None,
             average: None,
             range_average: false,
             index_only: false,
@@ -351,13 +353,13 @@ impl CollectionSpec {
 
     /// Counts documents on the primary key.
     pub fn count(mut self, count: bool) -> Self {
-        self.count = count;
+        self.count = Some(count);
         self
     }
 
     /// Provable counts on the primary key.
     pub fn range_count(mut self, range_count: bool) -> Self {
-        self.range_count = range_count;
+        self.range_count = Some(range_count);
         self
     }
 
@@ -369,7 +371,7 @@ impl CollectionSpec {
 
     /// Provable sums on the primary key.
     pub fn range_sum(mut self, range_sum: bool) -> Self {
-        self.range_sum = range_sum;
+        self.range_sum = Some(range_sum);
         self
     }
 
@@ -421,14 +423,41 @@ impl CollectionSpec {
         self
     }
 
-    /// Whether two specs describe the same collection apart from origin and
-    /// indexes. Used to tell a restatement or extension from a conflict.
+    /// Whether two specs describe the same collection apart from origin,
+    /// indexes and the order of order-insensitive members (fields at every
+    /// nesting level, token costs, reference agreements). Used to tell a
+    /// restatement or extension from a conflict.
     pub fn same_shape_ignoring_indexes(&self, other: &CollectionSpec) -> bool {
-        let mut left = self.clone();
-        let mut right = other.clone();
+        let mut left = self.normalized();
+        let mut right = other.normalized();
         left.origin = right.origin;
         left.indexes = Vec::new();
         right.indexes = Vec::new();
         left == right
     }
+
+    /// A copy with every order-insensitive member in canonical order: fields
+    /// by position at every nesting level, token costs by action, reference
+    /// agreements by referring property.
+    pub fn normalized(&self) -> CollectionSpec {
+        let mut normalized = self.clone();
+        normalize_fields(&mut normalized.fields);
+        normalized
+            .token_costs
+            .sort_by(|a, b| a.action.cmp(&b.action));
+        normalized
+    }
+}
+
+fn normalize_fields(fields: &mut [FieldSpec]) {
+    for field in fields.iter_mut() {
+        match &mut field.ty {
+            FieldType::Object(nested) => normalize_fields(nested),
+            FieldType::Reference(ReferenceTarget::PermanentDocument { agreement, .. }) => {
+                agreement.sort();
+            }
+            _ => {}
+        }
+    }
+    fields.sort_by(|a, b| a.position.cmp(&b.position).then(a.name.cmp(&b.name)));
 }
