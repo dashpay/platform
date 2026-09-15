@@ -30,6 +30,11 @@ on:
 jobs:
   build-and-release:
     name: Build and release DashSDKFFI
+    outputs:
+      tag_name: ${{ steps.release-ref.outputs.tag_name }}
+      version: ${{ steps.release-ref.outputs.version }}
+      sha: ${{ steps.resolve-sha.outputs.sha }}
+      checksum: ${{ steps.zip.outputs.checksum }}
     # Same persistent runner as swift-sdk-build.yml, so release builds reuse
     # its warm Cargo caches instead of building cold on a hosted mac. No fork
     # PR guard is needed here: the workflow only triggers on release/
@@ -39,7 +44,7 @@ jobs:
     # on the persistent runner needs the same headroom as swift-sdk-build.yml.
     timeout-minutes: 90
     permissions:
-      contents: write # attach the xcframework to the platform release
+      contents: read # release attachment runs on an ephemeral hosted job
     # Serialize same-tag runs (e.g. an emergency dispatch racing the
     # release-triggered run) so the asset-exists guard cannot be bypassed by
     # two concurrent builds. Never cancel a release build in progress.
@@ -109,6 +114,7 @@ jobs:
         with:
           ref: ${{ steps.release-ref.outputs.checkout_ref }}
           clean: false
+          persist-credentials: false
 
       # Same hygiene as swift-sdk-build.yml: release from a tree that is
       # exactly the tag's content plus the persistent Cargo target cache.
@@ -116,8 +122,8 @@ jobs:
         run: |
           git reset --hard HEAD
           git clean -ffdx \
-            -e target/ \
-            -e target/**
+            -e 'target/' \
+            -e 'target/**'
 
       - name: Resolve built commit SHA
         id: resolve-sha
@@ -179,88 +185,86 @@ jobs:
           printf '%s\n' "$BUILT_SHA" > "DashSDKFFI-${VERSION}.commit.txt"
           echo "checksum=$(cat "DashSDKFFI-${VERSION}.checksum.txt")" >> "$GITHUB_OUTPUT"
 
-      # Same defenses as the Kotlin job: hard-fail if the tag was force-moved
-      # away from the commit this run built, and never overwrite an
-      # already-attached versioned zip — SwiftPM consumers pin the zip by
-      # checksum, so replacing attached bytes would break them. The zip
-      # attaches together with checksum + commit provenance; existing assets
-      # are reused only when their recorded commit equals the commit this run
-      # built, so a force-moved tag cannot leave a green run whose assets
-      # came from a different commit. A deliberate re-release must delete all
-      # three assets first.
-      - name: Verify tag still resolves to the built commit
-        id: tag-guard
+      # Release attachment runs on a fresh hosted runner so release-write
+      # credentials never reach the persistent build machine.
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-sdk-release-assets
+          path: |
+            packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.xcframework.zip
+            packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.checksum.txt
+            packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.commit.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  attach-release:
+    name: Attach XCFramework to platform release
+    needs: build-and-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: release-swift-sdk-attach-${{ needs.build-and-release.outputs.tag_name }}
+      cancel-in-progress: false
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: swift-sdk-release-assets
+          path: release-assets
+
+      - name: Verify tag and existing assets
+        id: verify
         env:
-          TAG: ${{ steps.release-ref.outputs.tag_name }}
-          ZIP_ASSET: DashSDKFFI-${{ steps.release-ref.outputs.version }}.xcframework.zip
-          SUM_ASSET: DashSDKFFI-${{ steps.release-ref.outputs.version }}.checksum.txt
-          COMMIT_ASSET: DashSDKFFI-${{ steps.release-ref.outputs.version }}.commit.txt
-          BUILT_SHA: ${{ steps.resolve-sha.outputs.sha }}
+          TAG: ${{ needs.build-and-release.outputs.tag_name }}
+          ZIP_ASSET: DashSDKFFI-${{ needs.build-and-release.outputs.version }}.xcframework.zip
+          SUM_ASSET: DashSDKFFI-${{ needs.build-and-release.outputs.version }}.checksum.txt
+          COMMIT_ASSET: DashSDKFFI-${{ needs.build-and-release.outputs.version }}.commit.txt
+          BUILT_SHA: ${{ needs.build-and-release.outputs.sha }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Resolve the tag's current commit, dereferencing an annotated tag
-          # to the commit it points at.
+          set -euo pipefail
           OBJ_TYPE=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.type')
           OBJ_SHA=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.sha')
           if [ "$OBJ_TYPE" = "tag" ]; then
             OBJ_SHA=$(gh api "repos/${REPO}/git/tags/${OBJ_SHA}" --jq '.object.sha')
           fi
-          if [ "$OBJ_SHA" != "$BUILT_SHA" ]; then
-            echo "::error::Tag ${TAG} now points at ${OBJ_SHA} but this run built ${BUILT_SHA} — the tag was force-moved. Refusing to attach."
-            exit 1
-          fi
-          # The three assets are attached as one unit: reuse them only when
-          # ALL are present AND the recorded provenance commit matches this
-          # run's built commit. A partial set means an earlier run died
-          # mid-attach (provenance unverifiable); a mismatched commit means
-          # the tag was force-moved after the original attach. Both hard-fail
-          # and require deliberate cleanup instead of a silently-green run.
+          [ "$OBJ_SHA" = "$BUILT_SHA" ] || { echo "::error::Tag ${TAG} moved from built commit ${BUILT_SHA} to ${OBJ_SHA}."; exit 1; }
           ASSETS=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.assets[].name')
           HAVE_ZIP=$(echo "$ASSETS" | grep -Fxc "$ZIP_ASSET" || true)
           HAVE_SUM=$(echo "$ASSETS" | grep -Fxc "$SUM_ASSET" || true)
           HAVE_COMMIT=$(echo "$ASSETS" | grep -Fxc "$COMMIT_ASSET" || true)
-          if [ "$HAVE_ZIP" = "1" ] && [ "$HAVE_SUM" = "1" ] && [ "$HAVE_COMMIT" = "1" ]; then
+          if [ "$HAVE_ZIP" = 1 ] && [ "$HAVE_SUM" = 1 ] && [ "$HAVE_COMMIT" = 1 ]; then
             RECORDED_SHA=$(gh release download "$TAG" --repo "$REPO" --pattern "$COMMIT_ASSET" --output - | tr -d '[:space:]')
-            if [ "$RECORDED_SHA" != "$BUILT_SHA" ]; then
-              echo "::error::Release ${TAG} carries ${ZIP_ASSET} built from ${RECORDED_SHA}, but this run built ${BUILT_SHA} — the existing assets came from a different commit. Delete all three assets deliberately to re-release."
-              exit 1
-            fi
+            [ "$RECORDED_SHA" = "$BUILT_SHA" ] || { echo "::error::Existing XCFramework provenance does not match this build."; exit 1; }
             echo "asset_exists=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Release ${TAG} already has ${ZIP_ASSET} (+ checksum/commit) built from this same commit — leaving them untouched."
-          elif [ "$HAVE_ZIP" = "1" ] || [ "$HAVE_SUM" = "1" ] || [ "$HAVE_COMMIT" = "1" ]; then
-            echo "::error::Release ${TAG} has only some of ${ZIP_ASSET} / ${SUM_ASSET} / ${COMMIT_ASSET} — an earlier attach was interrupted, so the existing assets' provenance cannot be verified. Delete the surviving assets and re-run."
+          elif [ "$HAVE_ZIP" = 1 ] || [ "$HAVE_SUM" = 1 ] || [ "$HAVE_COMMIT" = 1 ]; then
+            echo "::error::Release has only some XCFramework provenance assets; delete them before retrying."
             exit 1
           else
             echo "asset_exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Attach to the PLATFORM release: only tag_name + files. Passing name/
-      # body/prerelease/generate_release_notes here would overwrite the
-      # platform release's own notes, title or prerelease flag.
-      # overwrite_files: false makes a same-name upload race fail loudly
-      # instead of silently replacing an asset the guard above vouched for.
       - name: Attach XCFramework to the platform release
-        if: steps.tag-guard.outputs.asset_exists != 'true'
+        if: steps.verify.outputs.asset_exists != 'true'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: ${{ steps.release-ref.outputs.tag_name }}
+          tag_name: ${{ needs.build-and-release.outputs.tag_name }}
           overwrite_files: false
           files: |
-            packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.xcframework.zip
-            packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.checksum.txt
-            packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.commit.txt
+            release-assets/DashSDKFFI-${{ needs.build-and-release.outputs.version }}.xcframework.zip
+            release-assets/DashSDKFFI-${{ needs.build-and-release.outputs.version }}.checksum.txt
+            release-assets/DashSDKFFI-${{ needs.build-and-release.outputs.version }}.commit.txt
 
-      # The durable home for the consumer checksum is the checksum.txt release
-      # asset; this summary is a convenience copy. Skipped when the attach was
-      # skipped: this run's freshly computed checksum would describe THIS
-      # build, not the (not byte-reproducible) zip actually attached earlier.
       - name: Write SwiftPM usage to the job summary
-        if: steps.tag-guard.outputs.asset_exists != 'true'
+        if: steps.verify.outputs.asset_exists != 'true'
         env:
-          TAG: ${{ steps.release-ref.outputs.tag_name }}
-          VERSION: ${{ steps.release-ref.outputs.version }}
-          CHECKSUM: ${{ steps.zip.outputs.checksum }}
+          TAG: ${{ needs.build-and-release.outputs.tag_name }}
+          VERSION: ${{ needs.build-and-release.outputs.version }}
+          CHECKSUM: ${{ needs.build-and-release.outputs.checksum }}
           REPO: ${{ github.repository }}
         run: |
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF

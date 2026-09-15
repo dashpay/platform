@@ -46,6 +46,7 @@ jobs:
         with:
           # Preserve the expensive Cargo target cache between release builds.
           clean: false
+          persist-credentials: false
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Ensure runner dependencies
@@ -78,7 +79,7 @@ jobs:
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
         run: |
           git reset --hard
-          git clean -ffdx -e target/
+          git clean -ffdx -e 'target/'
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -140,7 +141,20 @@ jobs:
             echo ".idea"
             echo ".ultra.cache.json"
             echo "db/*"
+            echo "npm-packages"
           } >> .gitignore
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      # Pack on the unprivileged builder. The hosted publisher receives only
+      # these tarballs and publishes them without running package lifecycle
+      # scripts, so persistent-runner output cannot execute with OIDC access.
+      - name: Pack NPM packages on the unprivileged builder
+        run: |
+          set -euo pipefail
+          mkdir -p npm-packages
+          yarn workspaces foreach --all --no-private --parallel npm pack \
+            --pack-destination "$GITHUB_WORKSPACE/npm-packages"
+          test -n "$(find npm-packages -maxdepth 1 -type f -name '*.tgz' -print -quit)"
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Get modified files
@@ -157,7 +171,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: js-build-${{ github.sha }}
-          path: ${{ steps.diff.outputs.files }}
+          path: |
+            ${{ steps.diff.outputs.files }}
+            npm-packages/*.tgz
           # Keep the handoff alive long enough to re-run only a failed publish.
           retention-days: 7
           if-no-files-found: error
@@ -204,11 +220,37 @@ jobs:
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
-      - name: Download JS build artifacts
+      - name: Download built package artifacts
         uses: actions/download-artifact@v4
         with:
           name: js-build-${{ github.sha }}
-          path: packages
+          path: release-artifacts
+
+      # Verify every tarball against the trusted checkout metadata before the
+      # credentialed publish. Tarball contents are treated as data; no package
+      # script from the persistent builder is executed on this runner.
+      - name: Validate packed package identities
+        env:
+          ARTIFACT_DIR: release-artifacts/npm-packages
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tarballs=("$ARTIFACT_DIR"/*.tgz)
+          [ "${#tarballs[@]}" -gt 0 ] || { echo "::error::No NPM tarballs were uploaded."; exit 1; }
+          declare -A seen=()
+          for tarball in "${tarballs[@]}"; do
+            metadata=$(tar -xOf "$tarball" package/package.json)
+            name=$(jq -r '.name' <<<"$metadata")
+            version=$(jq -r '.version' <<<"$metadata")
+            [ -n "$name" ] && [ "$name" != null ] || { echo "::error::Tarball $tarball has no package name."; exit 1; }
+            [ -n "$version" ] && [ "$version" != null ] || { echo "::error::Tarball $tarball has no package version."; exit 1; }
+            [ -z "${seen[$name]+x}" ] || { echo "::error::Duplicate tarball for $name."; exit 1; }
+            seen[$name]=1
+            trusted=$(for manifest in packages/*/package.json; do
+              jq -r --arg name "$name" --arg version "$version" 'select(.name == $name and .version == $version) | .name' "$manifest"
+            done | head -n1)
+            [ "$trusted" = "$name" ] || { echo "::error::Tarball $tarball ($name@$version) does not match a trusted workspace manifest."; exit 1; }
+          done
 
       - name: Set suffix
         uses: actions/github-script@v8
@@ -242,11 +284,23 @@ jobs:
 
       - name: Publish NPM packages
         if: github.event_name == 'release'
-        run: yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public --tag ${{ steps.tag.outputs.result }}
+        env:
+          NPM_TAG: ${{ steps.tag.outputs.result }}
+        run: |
+          set -euo pipefail
+          for tarball in release-artifacts/npm-packages/*.tgz; do
+            npm publish "$tarball" --ignore-scripts --tolerate-republish --access public --tag "$NPM_TAG"
+          done
 
       - name: Dry-run NPM packages
         if: github.event_name == 'workflow_dispatch'
-        run: yarn workspaces foreach --all --no-private --parallel npm publish --dry-run --tolerate-republish --access public --tag ${{ steps.tag.outputs.result }}
+        env:
+          NPM_TAG: ${{ steps.tag.outputs.result }}
+        run: |
+          set -euo pipefail
+          for tarball in release-artifacts/npm-packages/*.tgz; do
+            npm publish "$tarball" --ignore-scripts --dry-run --access public --tag "$NPM_TAG"
+          done
 
   release-drive-image:
     name: Release Drive image
@@ -386,16 +440,16 @@ jobs:
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
           # import certificate and provisioning profile from secrets
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
 
           # create temporary keychain
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
           # import certificate to keychain
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
 
       - name: Install Linux build deps
         if: runner.os == 'Linux'
@@ -407,7 +461,8 @@ jobs:
       - name: Create package
         env:
           OSX_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
-        run: "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh ${{ matrix.package_type }}"
+        run: |
+          "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh" "${{ matrix.package_type }}"
 
       - name: Upload artifacts to action summary
         uses: actions/upload-artifact@v4
@@ -418,8 +473,14 @@ jobs:
 
       - name: Notarize MacOS Release Build
         if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.MACOS_APPLE_ID }}
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+          NOTARIZING_PASSWORD: ${{ secrets.MACOS_NOTARIZING_PASSWORD }}
         run: |
-          find packages/dashmate/dist/ -name '*.pkg' -exec sh -c 'xcrun notarytool submit "{}" --apple-id "${{ secrets.MACOS_APPLE_ID }}" --team-id "${{ secrets.MACOS_TEAM_ID }}" --password "${{ secrets.MACOS_NOTARIZING_PASSWORD }}" --wait;' \;
+          while IFS= read -r -d '' pkg; do
+            xcrun notarytool submit "$pkg" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$NOTARIZING_PASSWORD" --wait
+          done < <(find packages/dashmate/dist/ -name '*.pkg' -print0)
 
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v0.1.15

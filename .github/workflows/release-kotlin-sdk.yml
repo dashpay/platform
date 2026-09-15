@@ -47,7 +47,7 @@ jobs:
     runs-on: [self-hosted, kotlin-ci]
     timeout-minutes: 180
     permissions:
-      contents: write # attach the AAR to the platform release
+      contents: read # release attachment runs on an ephemeral hosted job
     # Serialize same-tag runs (e.g. an emergency dispatch racing the
     # release-triggered run) so the asset-exists guard cannot be bypassed by
     # two concurrent builds. Never cancel a release build in progress.
@@ -155,6 +155,7 @@ jobs:
           # commit and a manual run can never build from a branch.
           ref: ${{ steps.release-ref.outputs.checkout_ref }}
           clean: false
+          persist-credentials: false
 
       # Release from a tree that is exactly the tag's content plus the
       # persistent Cargo target cache: stale jniLibs or gradle outputs from an
@@ -163,8 +164,8 @@ jobs:
         run: |
           git reset --hard HEAD
           git clean -ffdx \
-            -e target/ \
-            -e target/**
+            -e 'target/' \
+            -e 'target/**'
 
       - name: Resolve built commit SHA
         id: resolve-sha
@@ -233,57 +234,6 @@ jobs:
         working-directory: packages/kotlin-sdk
         run: ./gradlew :sdk:assembleRelease --stacktrace
 
-      # Defenses against a force-moved tag splitting the GitHub-release AAR
-      # from the (immutable) Maven Central artifact of the same version:
-      #   1. Hard-fail if the tag no longer resolves to the exact commit this
-      #      run built.
-      #   2. The AAR is attached together with a <asset>.commit.txt recording
-      #      the commit it was built from. When both already exist, this run
-      #      may proceed to the Maven deploy ONLY if that recorded commit
-      #      equals the commit this run built — otherwise the existing GitHub
-      #      AAR and the Maven artifact this run would publish came from
-      #      different commits, and the run hard-fails instead of letting the
-      #      two channels drift. An attached AAR is never overwritten; a
-      #      deliberate re-release must delete both assets first.
-      - name: Verify tag still resolves to the built commit
-        id: tag-guard
-        env:
-          TAG: ${{ steps.release-ref.outputs.tag_name }}
-          AAR_ASSET: dash-sdk-android-${{ steps.release-ref.outputs.version }}.aar
-          COMMIT_ASSET: dash-sdk-android-${{ steps.release-ref.outputs.version }}.commit.txt
-          BUILT_SHA: ${{ steps.resolve-sha.outputs.sha }}
-          REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Resolve the tag's current commit, dereferencing an annotated tag
-          # to the commit it points at.
-          OBJ_TYPE=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.type')
-          OBJ_SHA=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.sha')
-          if [ "$OBJ_TYPE" = "tag" ]; then
-            OBJ_SHA=$(gh api "repos/${REPO}/git/tags/${OBJ_SHA}" --jq '.object.sha')
-          fi
-          if [ "$OBJ_SHA" != "$BUILT_SHA" ]; then
-            echo "::error::Tag ${TAG} now points at ${OBJ_SHA} but this run built ${BUILT_SHA} — the tag was force-moved. Refusing to attach/deploy."
-            exit 1
-          fi
-          ASSETS=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.assets[].name')
-          HAVE_AAR=$(echo "$ASSETS" | grep -Fxc "$AAR_ASSET" || true)
-          HAVE_COMMIT=$(echo "$ASSETS" | grep -Fxc "$COMMIT_ASSET" || true)
-          if [ "$HAVE_AAR" = "1" ] && [ "$HAVE_COMMIT" = "1" ]; then
-            RECORDED_SHA=$(gh release download "$TAG" --repo "$REPO" --pattern "$COMMIT_ASSET" --output - | tr -d '[:space:]')
-            if [ "$RECORDED_SHA" != "$BUILT_SHA" ]; then
-              echo "::error::Release ${TAG} carries ${AAR_ASSET} built from ${RECORDED_SHA}, but this run built ${BUILT_SHA} — deploying would publish a different commit to Maven Central than the attached AAR. Delete both assets deliberately to re-release."
-              exit 1
-            fi
-            echo "asset_exists=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Release ${TAG} already has ${AAR_ASSET} built from this same commit — leaving it untouched; the Maven deploy may proceed."
-          elif [ "$HAVE_AAR" = "1" ] || [ "$HAVE_COMMIT" = "1" ]; then
-            echo "::error::Release ${TAG} has only one of ${AAR_ASSET} / ${COMMIT_ASSET} — an earlier attach was interrupted, so the existing asset's provenance cannot be verified. Delete the surviving asset and re-run."
-            exit 1
-          else
-            echo "asset_exists=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Prepare versioned assets (AAR + build provenance)
         env:
           VERSION: ${{ steps.release-ref.outputs.version }}
@@ -293,20 +243,17 @@ jobs:
           cp sdk-release.aar "dash-sdk-android-${VERSION}.aar"
           printf '%s\n' "$BUILT_SHA" > "dash-sdk-android-${VERSION}.commit.txt"
 
-      # Attach to the PLATFORM release: only tag_name + files. Passing name/
-      # body/prerelease/generate_release_notes here would overwrite the
-      # platform release's own notes, title or prerelease flag.
-      # overwrite_files: false makes a same-name upload race fail loudly
-      # instead of silently replacing an asset the guard above vouched for.
-      - name: Attach AAR to the platform release
-        if: steps.tag-guard.outputs.asset_exists != 'true'
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+      # Release attachment runs on a fresh hosted runner so release-write
+      # credentials never reach the persistent build machine.
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.release-ref.outputs.tag_name }}
-          overwrite_files: false
-          files: |
+          name: kotlin-sdk-release-assets
+          path: |
             packages/kotlin-sdk/sdk/build/outputs/aar/dash-sdk-android-${{ steps.release-ref.outputs.version }}.aar
             packages/kotlin-sdk/sdk/build/outputs/aar/dash-sdk-android-${{ steps.release-ref.outputs.version }}.commit.txt
+          if-no-files-found: error
+          retention-days: 7
 
       # Hand the freshly built native libraries to the deploy job so it
       # re-stages the SAME .so (same commit, same tag) without repeating the
@@ -319,6 +266,64 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  attach-release:
+    name: Attach AAR to platform release
+    needs: build-and-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: release-kotlin-sdk-attach-${{ needs.build-and-release.outputs.tag_name }}
+      cancel-in-progress: false
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: kotlin-sdk-release-assets
+          path: release-assets
+
+      - name: Verify tag and existing assets
+        id: verify
+        env:
+          TAG: ${{ needs.build-and-release.outputs.tag_name }}
+          AAR_ASSET: dash-sdk-android-${{ needs.build-and-release.outputs.version }}.aar
+          COMMIT_ASSET: dash-sdk-android-${{ needs.build-and-release.outputs.version }}.commit.txt
+          BUILT_SHA: ${{ needs.build-and-release.outputs.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          OBJ_TYPE=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.type')
+          OBJ_SHA=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.sha')
+          if [ "$OBJ_TYPE" = "tag" ]; then
+            OBJ_SHA=$(gh api "repos/${REPO}/git/tags/${OBJ_SHA}" --jq '.object.sha')
+          fi
+          [ "$OBJ_SHA" = "$BUILT_SHA" ] || { echo "::error::Tag ${TAG} moved from built commit ${BUILT_SHA} to ${OBJ_SHA}."; exit 1; }
+          ASSETS=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.assets[].name')
+          HAVE_AAR=$(echo "$ASSETS" | grep -Fxc "$AAR_ASSET" || true)
+          HAVE_COMMIT=$(echo "$ASSETS" | grep -Fxc "$COMMIT_ASSET" || true)
+          if [ "$HAVE_AAR" = 1 ] && [ "$HAVE_COMMIT" = 1 ]; then
+            RECORDED_SHA=$(gh release download "$TAG" --repo "$REPO" --pattern "$COMMIT_ASSET" --output - | tr -d '[:space:]')
+            [ "$RECORDED_SHA" = "$BUILT_SHA" ] || { echo "::error::Existing AAR provenance does not match this build."; exit 1; }
+            echo "asset_exists=true" >> "$GITHUB_OUTPUT"
+          elif [ "$HAVE_AAR" = 1 ] || [ "$HAVE_COMMIT" = 1 ]; then
+            echo "::error::Release has only one provenance asset; delete it before retrying."
+            exit 1
+          else
+            echo "asset_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Attach AAR to the platform release
+        if: steps.verify.outputs.asset_exists != 'true'
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ needs.build-and-release.outputs.tag_name }}
+          overwrite_files: false
+          files: |
+            release-assets/dash-sdk-android-${{ needs.build-and-release.outputs.version }}.aar
+            release-assets/dash-sdk-android-${{ needs.build-and-release.outputs.version }}.commit.txt
+
   # ---------------------------------------------------------------------------
   # Maven Central deploy. Declares `environment: maven-central`, so the five
   # JRELEASER_* secrets — which exist ONLY as environment secrets there, never
@@ -330,7 +335,7 @@ jobs:
   # ---------------------------------------------------------------------------
   maven-central-deploy:
     name: Deploy to Maven Central (version from tag)
-    needs: build-and-release
+    needs: [build-and-release, attach-release]
     # Runs only when the RUN's ref is exactly the target tag — not merely
     # some tag: binding the ref to inputs.tag stops a dispatch started at tag
     # A from publishing input tag B under the environment authorization A's
@@ -340,7 +345,7 @@ jobs:
     # selected ref) skips this job cleanly instead of failing at the
     # environment policy; Maven for such tags goes through the manual
     # runbook in packages/kotlin-sdk/PUBLISHING.md.
-    if: ${{ github.ref == format('refs/tags/{0}', inputs.tag) }}
+    if: ${{ needs.build-and-release.result == 'success' && needs.attach-release.result == 'success' && github.ref == format('refs/tags/{0}', inputs.tag) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
