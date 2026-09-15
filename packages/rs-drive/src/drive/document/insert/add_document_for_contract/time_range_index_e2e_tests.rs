@@ -417,6 +417,7 @@ fn should_keep_up_with_maximum_overlap_ttl_writes() {
 }
 
 #[test]
+#[ignore] // Long-running: runs in nightly CI only
 fn should_catch_up_after_a_burst_with_shared_deep_ttl_indexes() {
     assert_maximum_overlap_ttl_throughput(true);
 }
