@@ -799,6 +799,36 @@ mod tests {
     }
 
     #[test]
+    fn delta_update_keeping_a_legacy_config_is_rejected() {
+        use dpp::consensus::state::state_error::StateError;
+        use dpp::data_contract::config::v0::DataContractConfigV0;
+        use dpp::data_contract::config::DataContractConfig;
+
+        // a contract stored with the pre-v12 config layout
+        let (platform, mut data_contract) = setup();
+        data_contract.set_config(DataContractConfig::V0(DataContractConfigV0::default()));
+        store(&platform, &data_contract);
+        let updated = extended(&data_contract);
+        let transition = delta(&data_contract, &updated);
+        assert!(
+            matches!(&transition, DataContractUpdateTransition::V1(v1) if v1.config.is_none()),
+            "the delta carries no config, so the merged contract keeps the stored one"
+        );
+
+        // basic structure can only check a config the delta supplies; the
+        // merged contract is held to the config update rules, which enforce
+        // the version floor, exactly like a full-contract update
+        let result = validate(&platform, &transition);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::DataContractConfigUpdateError(error))]
+                if error.additional_message().contains("minimum version")
+        );
+        assert_bumps_nonce(&result, &data_contract);
+    }
+
+    #[test]
     fn delta_update_reaching_a_pre_v15_validator_is_an_unsupported_version_error() {
         use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
         use dpp::consensus::basic::UnsupportedVersionError;

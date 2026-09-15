@@ -19,6 +19,7 @@ use dashcore::signer::double_sha;
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
 };
+use platform_version::version::feature_initial_protocol_versions::DATA_CONTRACT_UPDATE_V1_INITIAL_PROTOCOL_VERSION;
 use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
 #[cfg(any(
@@ -892,8 +893,9 @@ impl StateTransition {
                         DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
                         DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
                     },
-                    // Delta-based contract updates arrive with protocol version 15.
-                    DataContractUpdateTransition::V1(_) => 15..=LATEST_VERSION,
+                    DataContractUpdateTransition::V1(_) => {
+                        DATA_CONTRACT_UPDATE_V1_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION
+                    }
                 }
             }
             StateTransition::Batch(batch_transition) => match batch_transition {

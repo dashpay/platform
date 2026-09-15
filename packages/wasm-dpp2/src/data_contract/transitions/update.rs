@@ -1,5 +1,6 @@
 use crate::data_contract::DataContractWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
@@ -10,6 +11,7 @@ use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::{DataContract, IdentityNonce};
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
+use dpp::state_transition::StateTransitionOwned;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::validation::operations::ProtocolValidationOperation;
@@ -29,7 +31,7 @@ export type DataContractDescriptionUpdate = "keep" | "clear" | { set: string };
 export interface DataContractUpdateTransitionV0Object {
     $formatVersion: "0";
     dataContract: DataContractObject;
-    identityNonce: bigint;
+    "$identity-contract-nonce": bigint;
     userFeeIncrease: number;
     signaturePublicKeyId: number;
     signature?: Uint8Array;
@@ -42,7 +44,7 @@ export interface DataContractUpdateTransitionV0Object {
  */
 export interface DataContractUpdateTransitionV1Object {
     $formatVersion: "1";
-    identityNonce: bigint;
+    "$identity-contract-nonce": bigint;
     dataContractId: Identifier;
     ownerId: Identifier;
     version: number;
@@ -74,7 +76,7 @@ export type DataContractUpdateTransitionObject =
 export interface DataContractUpdateTransitionV0JSON {
     $formatVersion: "0";
     dataContract: DataContractJSON;
-    identityNonce: string;
+    "$identity-contract-nonce": string;
     userFeeIncrease: number;
     signaturePublicKeyId: number;
     signature?: string;
@@ -86,7 +88,7 @@ export interface DataContractUpdateTransitionV0JSON {
  */
 export interface DataContractUpdateTransitionV1JSON {
     $formatVersion: "1";
-    identityNonce: string;
+    "$identity-contract-nonce": string;
     dataContractId: string;
     ownerId: string;
     version: number;
@@ -227,6 +229,17 @@ impl DataContractUpdateTransitionWasm {
     #[wasm_bindgen(getter = "identityContractNonce")]
     pub fn identity_contract_nonce(&self) -> IdentityNonce {
         self.0.identity_contract_nonce()
+    }
+
+    /// The contract the update targets: embedded in a V0 transition, named by a V1 delta.
+    #[wasm_bindgen(getter = "dataContractId")]
+    pub fn data_contract_id(&self) -> IdentifierWasm {
+        self.0.data_contract_id().into()
+    }
+
+    #[wasm_bindgen(getter = "ownerId")]
+    pub fn owner_id(&self) -> IdentifierWasm {
+        self.0.owner_id().into()
     }
 
     #[wasm_bindgen(js_name = "getDataContract")]

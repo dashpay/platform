@@ -117,6 +117,12 @@ impl DataContractUpdateTransitionWasm {
         self.0.owner_id().into()
     }
 
+    /// The contract the update targets: embedded in a V0 transition, named by a V1 delta.
+    #[wasm_bindgen(js_name=getDataContractId)]
+    pub fn get_data_contract_id(&self) -> IdentifierWrapper {
+        self.0.data_contract_id().into()
+    }
+
     #[wasm_bindgen(js_name=getIdentityContractNonce)]
     pub fn get_identity_contract_nonce(&self) -> u64 {
         self.0.identity_contract_nonce()

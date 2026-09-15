@@ -1,6 +1,6 @@
 use crate::version::consensus_versions::ConsensusVersions;
 use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_contract_versions::v6::CONTRACT_VERSIONS_V6;
+use crate::version::dpp_versions::dpp_contract_versions::v7::CONTRACT_VERSIONS_V7;
 use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_document_versions::v4::DOCUMENT_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
@@ -42,7 +42,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    default. `DRIVE_ABCI_VALIDATION_VERSIONS_V11` routes contract updates to
 ///    generation 2 of basic structure and state validation and to
 ///    `transform_into_action` 1: the delta is merged onto the stored contract
-///    (`DataContract::apply_update`) and the result then passes exactly the
+///    (`DataContract::apply_update`, `CONTRACT_VERSIONS_V7` slot `Some(0)`,
+///    absent on every earlier snapshot) and the result then passes exactly the
 ///    checks a full-contract update passes: the generation-1 update rules,
 ///    the identities new groups and tokens name, external token costs and
 ///    `refersTo` reference declarations. The delta shape itself adds three
@@ -73,7 +74,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
         state_transitions: STATE_TRANSITION_VERSIONS_V3,
-        contract_versions: CONTRACT_VERSIONS_V6,
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: apply_update Some(0), the delta-based (V1) contract update merge
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
