@@ -66,7 +66,9 @@ export interface TokenConfigurationOptions {
     description?: string;
     /**
      * Give the token its own shielded pool (protocol version 14+). Produces a
-     * format-version-1 token configuration; the flag cannot change after creation.
+     * format-version-1 token configuration; the flag cannot change after creation, and
+     * freezeRules, unfreezeRules and destroyFrozenFundsRules must then authorize no one
+     * (no action takers and no admins): shielded notes cannot be frozen or destroyed.
      */
     hasShieldedPool?: boolean;
 }

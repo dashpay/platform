@@ -1,6 +1,12 @@
+use crate::consensus::basic::data_contract::TokenShieldedPoolIncompatibleRulesError;
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
+use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use crate::data_contract::associated_token::token_configuration::v1::TokenConfigurationV1;
+use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+use crate::data_contract::change_control_rules::ChangeControlRules;
+use crate::data_contract::TokenContractPosition;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
@@ -76,6 +82,42 @@ impl TokenConfiguration {
         } else {
             SimpleConsensusValidationResult::new()
         }
+    }
+
+    /// A shielded pool makes freezing and confiscation unenforceable: shielded notes belong to
+    /// no identity account, so a holder who expects a freeze simply shields first. Rather than
+    /// let an issuer advertise controls that only cover transparent balances, a token with
+    /// `hasShieldedPool` must permanently disable `freezeRules`, `unfreezeRules` and
+    /// `destroyFrozenFundsRules`: no one may take the action and no one may administer the
+    /// rule, so no configuration update can ever switch them on. Checked on contract create
+    /// and update; the flag itself is immutable.
+    pub fn validate_shielded_pool_rules(
+        &self,
+        token_contract_position: TokenContractPosition,
+    ) -> SimpleConsensusValidationResult {
+        if !self.has_shielded_pool() {
+            return SimpleConsensusValidationResult::new();
+        }
+        let rules: [(&ChangeControlRules, &str); 3] = [
+            (self.freeze_rules(), "freezeRules"),
+            (self.unfreeze_rules(), "unfreezeRules"),
+            (self.destroy_frozen_funds_rules(), "destroyFrozenFundsRules"),
+        ];
+        for (rule, name) in rules {
+            let disabled = *rule.authorized_to_make_change_action_takers()
+                == AuthorizedActionTakers::NoOne
+                && *rule.admin_action_takers() == AuthorizedActionTakers::NoOne;
+            if !disabled {
+                return SimpleConsensusValidationResult::new_with_error(
+                    TokenShieldedPoolIncompatibleRulesError::new(
+                        token_contract_position,
+                        name.to_string(),
+                    )
+                    .into(),
+                );
+            }
+        }
+        SimpleConsensusValidationResult::new()
     }
 }
 
@@ -220,5 +262,104 @@ mod json_convertible_tests {
         }
         let recovered = TokenConfiguration::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+    }
+
+    mod shielded_pool_rules {
+        use super::*;
+        use crate::consensus::basic::BasicError;
+        use crate::consensus::ConsensusError;
+        use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
+        use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+        use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
+        use crate::prelude::Identifier;
+
+        fn rules(
+            authorized: AuthorizedActionTakers,
+            admin: AuthorizedActionTakers,
+        ) -> ChangeControlRules {
+            ChangeControlRules::V0(ChangeControlRulesV0 {
+                authorized_to_make_change: authorized,
+                admin_action_takers: admin,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            })
+        }
+
+        fn pooled_configuration() -> TokenConfiguration {
+            let mut configuration =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            configuration.set_has_shielded_pool(true);
+            configuration
+        }
+
+        fn rejected_rule(configuration: &TokenConfiguration) -> Option<String> {
+            let result = configuration.validate_shielded_pool_rules(3);
+            match result.errors.as_slice() {
+                [] => None,
+                [ConsensusError::BasicError(
+                    BasicError::TokenShieldedPoolIncompatibleRulesError(error),
+                )] => {
+                    assert_eq!(error.token_contract_position(), 3);
+                    Some(error.rule().to_string())
+                }
+                other => panic!("unexpected errors: {other:?}"),
+            }
+        }
+
+        #[test]
+        fn most_restrictive_defaults_are_compatible_with_a_pool() {
+            assert_eq!(rejected_rule(&pooled_configuration()), None);
+        }
+
+        #[test]
+        fn a_token_without_a_pool_may_keep_freeze_rules() {
+            let mut configuration =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            configuration.set_freeze_rules(rules(
+                AuthorizedActionTakers::ContractOwner,
+                AuthorizedActionTakers::ContractOwner,
+            ));
+            assert_eq!(rejected_rule(&configuration), None);
+        }
+
+        #[test]
+        fn a_pooled_token_rejects_an_authorized_freezer() {
+            let mut configuration = pooled_configuration();
+            configuration.set_freeze_rules(rules(
+                AuthorizedActionTakers::ContractOwner,
+                AuthorizedActionTakers::NoOne,
+            ));
+            assert_eq!(
+                rejected_rule(&configuration),
+                Some("freezeRules".to_string())
+            );
+        }
+
+        #[test]
+        fn a_pooled_token_rejects_an_admin_who_could_enable_unfreezing_later() {
+            let mut configuration = pooled_configuration();
+            configuration.set_unfreeze_rules(rules(
+                AuthorizedActionTakers::NoOne,
+                AuthorizedActionTakers::MainGroup,
+            ));
+            assert_eq!(
+                rejected_rule(&configuration),
+                Some("unfreezeRules".to_string())
+            );
+        }
+
+        #[test]
+        fn a_pooled_token_rejects_frozen_funds_destruction() {
+            let mut configuration = pooled_configuration();
+            configuration.set_destroy_frozen_funds_rules(rules(
+                AuthorizedActionTakers::Identity(Identifier::from([1u8; 32])),
+                AuthorizedActionTakers::NoOne,
+            ));
+            assert_eq!(
+                rejected_rule(&configuration),
+                Some("destroyFrozenFundsRules".to_string())
+            );
+        }
     }
 }

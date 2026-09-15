@@ -39,6 +39,7 @@ use crate::consensus::basic::data_contract::{
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
     NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError,
     RedundantDocumentPaidForByTokenWithContractId, SystemPropertyIndexAlreadyPresentError,
+    TokenShieldedPoolIncompatibleRulesError,
     UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
     UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
     UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
@@ -805,6 +806,8 @@ pub enum BasicError {
     // Documents cited by a contract moderation reason (protocol version 14).
     #[error(transparent)]
     InvalidContractModerationReasonDocumentsError(InvalidContractModerationReasonDocumentsError),
+    #[error(transparent)]
+    TokenShieldedPoolIncompatibleRulesError(TokenShieldedPoolIncompatibleRulesError),
 }
 
 impl From<BasicError> for ConsensusError {

@@ -122,6 +122,7 @@ impl ErrorWithCode for BasicError {
             Self::RedundantDocumentPaidForByTokenWithContractId(_) => 10275,
             Self::DataContractInvalidRequiredFieldsUpdateError { .. } => 10276,
             Self::PreProgrammedDistributionAmountOverLimitError(_) => 10277,
+            Self::TokenShieldedPoolIncompatibleRulesError(_) => 10278,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
