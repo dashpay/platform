@@ -11,8 +11,10 @@
 //! block at that height.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
+use dash_sdk::RequestSettings;
 use dashcore::hashes::Hash;
 use dashcore::{BlockHash, Txid};
 
@@ -42,8 +44,10 @@ pub(crate) enum Located {
     Unavailable(String),
 }
 
+/// Finds the block a transaction was mined in.
 #[async_trait]
 pub(crate) trait MinedHeightLocator: Send + Sync {
+    /// Where `txid` was mined, as far as this locator can establish.
     async fn locate(&self, txid: &Txid) -> Located;
 }
 
@@ -58,6 +62,18 @@ impl MinedHeightLocator for NoMinedHeightLocator {
     }
 }
 
+/// Request settings for one placement lookup: a short per-request timeout and a
+/// single retry, instead of the SDK defaults (several retries at a longer
+/// timeout). The ChainLock wait caps each attempt as well; these keep the
+/// transport from spending that whole budget on one node.
+const LOCATE_REQUEST_SETTINGS: RequestSettings = RequestSettings {
+    connect_timeout: None,
+    timeout: Some(Duration::from_secs(5)),
+    retries: Some(1),
+    ban_failed_address: None,
+    max_decoding_message_size: None,
+};
+
 /// Production locator: DAPI `getTransaction` for the placement, the SPV
 /// header store to verify it.
 pub(crate) struct DapiSpvLocator {
@@ -66,6 +82,7 @@ pub(crate) struct DapiSpvLocator {
 }
 
 impl DapiSpvLocator {
+    /// A locator asking `sdk` for placements and checking them against `headers`.
     pub(crate) fn new(sdk: Arc<dash_sdk::Sdk>, headers: Arc<dyn BlockHeaderSource>) -> Self {
         Self { sdk, headers }
     }
@@ -75,7 +92,11 @@ impl DapiSpvLocator {
 impl MinedHeightLocator for DapiSpvLocator {
     async fn locate(&self, txid: &Txid) -> Located {
         // Core's RPC takes the display-order hex that `Txid` formats to.
-        let fetched = match self.sdk.get_transaction(&txid.to_string()).await {
+        let fetched = match self
+            .sdk
+            .get_transaction_placement(&txid.to_string(), LOCATE_REQUEST_SETTINGS)
+            .await
+        {
             Ok(Some(fetched)) => fetched,
             Ok(None) => return Located::NotFound,
             Err(e) => return Located::Unavailable(e.to_string()),
@@ -143,6 +164,7 @@ pub(crate) fn chain_proof_height_from_lookup(
 mod tests {
     use super::*;
 
+    /// A distinct, non-palindromic block hash per `byte`.
     fn hash(byte: u8) -> BlockHash {
         let mut bytes = [0u8; 32];
         bytes[0] = byte;
@@ -150,12 +172,14 @@ mod tests {
         BlockHash::from_byte_array(bytes)
     }
 
+    /// `h` with its bytes reversed.
     fn reversed(h: BlockHash) -> BlockHash {
         let mut bytes = h.to_byte_array();
         bytes.reverse();
         BlockHash::from_byte_array(bytes)
     }
 
+    /// A reported block the SPV headers hold places the transaction.
     #[test]
     fn matching_header_places_the_transaction() {
         assert_eq!(
@@ -164,6 +188,7 @@ mod tests {
         );
     }
 
+    /// The reported hash matches in either byte order.
     #[test]
     fn reversed_reported_hash_still_matches() {
         assert_eq!(
@@ -172,6 +197,7 @@ mod tests {
         );
     }
 
+    /// A different SPV header at that height is a mismatch.
     #[test]
     fn differing_header_is_a_mismatch() {
         assert_eq!(
@@ -180,6 +206,7 @@ mod tests {
         );
     }
 
+    /// No SPV header at that height is reported as missing.
     #[test]
     fn absent_header_is_reported_as_missing() {
         assert_eq!(
@@ -188,6 +215,7 @@ mod tests {
         );
     }
 
+    /// A zero height or an absent hash means not mined.
     #[test]
     fn no_height_or_no_hash_means_not_mined() {
         assert_eq!(
@@ -200,6 +228,7 @@ mod tests {
         );
     }
 
+    /// A placement yields a height only under the wallet's ChainLock.
     #[test]
     fn proof_height_needs_wallet_chain_lock_coverage() {
         let mined = Located::Mined { height: 100 };
@@ -215,6 +244,7 @@ mod tests {
         assert_eq!(chain_proof_height_from_lookup(&mined, None, true), None);
     }
 
+    /// A ChainLock from another network yields no height.
     #[test]
     fn proof_height_refuses_a_network_mismatch() {
         let mined = Located::Mined { height: 100 };
@@ -224,6 +254,7 @@ mod tests {
         );
     }
 
+    /// Every answer but a verified placement yields no height.
     #[test]
     fn only_a_verified_placement_yields_a_height() {
         for located in [
