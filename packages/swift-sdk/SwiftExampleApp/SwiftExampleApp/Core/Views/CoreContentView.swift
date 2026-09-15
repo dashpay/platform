@@ -1146,7 +1146,7 @@ struct WalletRowView: View {
     /// as `platformBalance` (1e11 credits/DASH), so it folds into
     /// the same divisor in [`combinedDashAmount(coreTotal:)`].
     private var shieldedBalance: UInt64 {
-        shieldedNotes.reduce(UInt64(0)) { $0 + $1.value }
+        shieldedNotes.filter { !PlatformWalletManager.isShieldedTipAccount($0.accountIndex) }.reduce(UInt64(0)) { $0 + $1.value }
     }
 
     /// Combined wallet balance expressed in DASH for a precomputed
@@ -1528,7 +1528,8 @@ private struct ShieldedNetworkSummaryRows: View {
     /// Sum of `value` over this network's unspent notes, in credits.
     private var totalUnspentCredits: UInt64 {
         allNotes.lazy
-            .filter { !$0.isSpent && walletIds.contains($0.walletId) }
+            .filter { !$0.isSpent && walletIds.contains($0.walletId)
+                && !PlatformWalletManager.isShieldedTipAccount($0.accountIndex) }
             .reduce(UInt64(0)) { $0 &+ $1.value }
     }
 

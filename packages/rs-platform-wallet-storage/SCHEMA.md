@@ -132,6 +132,7 @@ erDiagram
         BLOB wallet_id FK "NULL = orphan identity (no parent wallet yet)"
         INTEGER identity_index "BIP-32 index; NULL for out-of-wallet identities"
         BLOB entry_blob "bincode-encoded IdentityEntry"
+        INTEGER entry_format "V019: 0 = pre-payment-address record, 1 = current"
     }
 
     IDENTITY_KEYS {
@@ -153,6 +154,7 @@ erDiagram
     DASHPAY_PROFILES {
         BLOB identity_id PK "one row per identity"
         BLOB profile_blob "bincode-encoded DashPayProfile"
+        INTEGER profile_format "V019: 0 = pre-payment-address record, 1 = current"
     }
 
     DASHPAY_PAYMENTS_OVERLAY {
@@ -486,6 +488,13 @@ every identity-scoped child writer, so a changeset carrying both an
 upsert and a removal for one identity commits instead of pulling the FK
 parent out from under its own child inserts.
 
+`entry_format` (V019) stamps the bincode shape of `entry_blob`: 0 is the
+record written before `DashPayProfile` gained its payment addresses, 1 the
+current one. The writer always stamps 1; the reader dispatches on the stamp
+(`schema::identity_profile_encoding::decode_identity`), so rows written
+before V019 stay readable until they are rewritten. The DEFAULT is 1 and the
+migration stamps the rows it finds 0, so only pre-V019 rows are ever legacy.
+
 - PK: `identity_id`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE` (nullable).
 - Index: `idx_identities_wallet(wallet_id)`.
@@ -617,6 +626,11 @@ At most one DashPay profile blob per identity. `None` profile maps to a
 DELETE rather than a NULL blob — the row is absent, not nulled.
 `apply` writes these rows, but `load()` does not return them today;
 `DashPaySyncManager` rebuilds the canonical profile from Platform.
+
+`profile_format` (V019) stamps the bincode shape of `profile_blob` the same
+way `identities.entry_format` does (0 = pre-payment-address record, 1 =
+current); `schema::identity_profile_encoding::decode_profile` is the stamped
+reader for the day `load()` grows one.
 
 - PK: `identity_id` (single-row-per-identity).
 - FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
@@ -847,3 +861,4 @@ table-rebuild migration, as V004 does.
 | V016 | `V016__identity_keys_null_scope_requires_existing_identity.rs` | Recreates the `identity_keys` null-scope trigger pair (see Triggers above) to also reject a NULL-scoped key naming an identity that does not exist at all, closing the gap where V008's guard caught only the wallet-owned case. |
 | V017 | `V017__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |
 | V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
+| V019 | `V019__profile_address_encoding.rs` | Adds the encoding stamps `identities.entry_format` and `dashpay_profiles.profile_format` (`INTEGER NOT NULL DEFAULT 1 CHECK IN (0, 1)`) and stamps every row present at migration time 0. `DashPayProfile` gained the core, platform and shielded payment addresses, which widens the positional bincode record embedded in both blobs; the stamp routes each row to the decoder for the shape it carries (`schema::identity_profile_encoding`). |

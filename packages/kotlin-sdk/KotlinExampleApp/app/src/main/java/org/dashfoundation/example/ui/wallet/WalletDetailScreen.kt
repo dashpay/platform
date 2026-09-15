@@ -129,8 +129,8 @@ fun WalletDetailScreen(
     val hasShielded = remember { Sdk.hasShielded() }
     val shieldedBalance by remember(walletIdHex) {
         if (hasShielded) {
-            container.database.shieldedDao().observeUnspentNotesByWallet(walletId)
-                .map { notes -> notes.sumOf { it.value } }
+            container.database.shieldedDao().observeNotesByWalletAccount(walletId, 0)
+                .map { notes -> notes.filter { !it.isSpent }.sumOf { it.value } }
         } else {
             MutableStateFlow(0L)
         }

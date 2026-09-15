@@ -137,6 +137,13 @@ pub struct IdentityEntryFFI {
     pub dashpay_profile_avatar_fingerprint: [u8; 8],
     /// `true` iff the source `avatar_fingerprint` was `Some(_)`.
     pub dashpay_profile_avatar_fingerprint_present: bool,
+    pub dashpay_profile_core_payment_address: [u8; 21],
+    pub dashpay_profile_core_payment_address_present: bool,
+    pub dashpay_profile_platform_payment_address: [u8; 21],
+    pub dashpay_profile_platform_payment_address_present: bool,
+    pub dashpay_profile_shielded_address: [u8; 43],
+    pub dashpay_profile_shielded_address_present: bool,
+
     /// Heap-allocated NUL-terminated UTF-8 C string for the DashPay
     /// profile's public message. `null` when the source field was
     /// `None`. Owned by this FFI struct; freed in
@@ -213,6 +220,13 @@ pub struct ContactProfileRowFFI {
     pub avatar_fingerprint: [u8; 8],
     /// `true` iff the source `avatar_fingerprint` was `Some(_)`.
     pub avatar_fingerprint_present: bool,
+    pub core_payment_address: [u8; 21],
+    pub core_payment_address_present: bool,
+    pub platform_payment_address: [u8; 21],
+    pub platform_payment_address_present: bool,
+    pub shielded_address: [u8; 43],
+    pub shielded_address_present: bool,
+
     /// Heap-allocated `publicMessage`; `null` when `None`. Freed in
     /// [`free_identity_entry_ffi`].
     pub public_message: *const c_char,
@@ -356,38 +370,8 @@ const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 // than a build error. Pin the expected size here so any reshape
 // fails the cargo build first.
 //
-// Expected layout on 64-bit targets (all fields in declaration
-// order under `#[repr(C)]`):
-//
-//   0..=31    identity_id                              [u8; 32]
-//   32..=39   balance                                  u64
-//   40..=47   revision                                 u64
-//   48        identity_index_is_some                   bool
-//   49..=51   (padding to 4)
-//   52..=55   identity_index                           u32
-//   56        status                                   u8
-//   57        wallet_id_is_some                        bool
-//   58..=89   wallet_id                                [u8; 32]
-//   90..=95   (padding to 8 for pointer alignment)
-//   96..=103  dpns_names                               *const *const c_char
-//   104..=111 dpns_names_count                         usize
-//   112..=119 dpns_names_acquired_at                   *const u64
-//   120       dashpay_profile_present                  bool
-//   121..=127 (padding to 8 for pointer alignment)
-//   128..=135 dashpay_profile_display_name             *const c_char
-//   136..=143 dashpay_profile_bio                      *const c_char
-//   144..=151 dashpay_profile_avatar_url               *const c_char
-//   152..=183 dashpay_profile_avatar_hash              [u8; 32]
-//   184       dashpay_profile_avatar_hash_present      bool
-//   185..=192 dashpay_profile_avatar_fingerprint       [u8; 8]
-//   193       dashpay_profile_avatar_fingerprint_present bool
-//   194..=199 (padding to 8 for pointer alignment)
-//   200..=207 dashpay_profile_public_message           *const c_char
-//   208..=215 contact_profiles                         *const ContactProfileRowFFI
-//   216..=223 contact_profiles_count                   usize
-//
-// Total size = 224, alignment = 8 (from u64 / pointer).
-const _: [u8; 224] = [0u8; std::mem::size_of::<IdentityEntryFFI>()];
+// Includes three fixed-size payment addresses and their presence flags.
+const _: [u8; 312] = [0u8; std::mem::size_of::<IdentityEntryFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityEntryFFI>()];
 
 // ---------------------------------------------------------------------------
@@ -450,6 +434,15 @@ impl IdentityEntryFFI {
             dashpay_profile_avatar_hash_present: profile_fields.avatar_hash_present,
             dashpay_profile_avatar_fingerprint: profile_fields.avatar_fingerprint,
             dashpay_profile_avatar_fingerprint_present: profile_fields.avatar_fingerprint_present,
+            dashpay_profile_core_payment_address: profile_fields.core_payment_address,
+            dashpay_profile_core_payment_address_present: profile_fields
+                .core_payment_address_present,
+            dashpay_profile_platform_payment_address: profile_fields.platform_payment_address,
+            dashpay_profile_platform_payment_address_present: profile_fields
+                .platform_payment_address_present,
+            dashpay_profile_shielded_address: profile_fields.shielded_address,
+            dashpay_profile_shielded_address_present: profile_fields.shielded_address_present,
+
             dashpay_profile_public_message: profile_fields.public_message,
             contact_profiles,
             contact_profiles_count,
@@ -472,6 +465,13 @@ struct DashPayProfileFields {
     avatar_hash_present: bool,
     avatar_fingerprint: [u8; 8],
     avatar_fingerprint_present: bool,
+    core_payment_address: [u8; 21],
+    core_payment_address_present: bool,
+    platform_payment_address: [u8; 21],
+    platform_payment_address_present: bool,
+    shielded_address: [u8; 43],
+    shielded_address_present: bool,
+
     public_message: *const c_char,
 }
 
@@ -487,6 +487,13 @@ impl DashPayProfileFields {
             avatar_hash_present: false,
             avatar_fingerprint: [0u8; 8],
             avatar_fingerprint_present: false,
+            core_payment_address: [0; 21],
+            core_payment_address_present: false,
+            platform_payment_address: [0; 21],
+            platform_payment_address_present: false,
+            shielded_address: [0; 43],
+            shielded_address_present: false,
+
             public_message: ptr::null(),
         }
     }
@@ -514,6 +521,34 @@ impl DashPayProfileFields {
             avatar_hash_present,
             avatar_fingerprint,
             avatar_fingerprint_present,
+            core_payment_address: profile
+                .core_payment_address
+                .as_deref()
+                .and_then(|a| a.try_into().ok())
+                .unwrap_or([0; 21]),
+            core_payment_address_present: profile
+                .core_payment_address
+                .as_ref()
+                .is_some_and(|a| a.len() == 21),
+            platform_payment_address: profile
+                .platform_payment_address
+                .as_deref()
+                .and_then(|a| a.try_into().ok())
+                .unwrap_or([0; 21]),
+            platform_payment_address_present: profile
+                .platform_payment_address
+                .as_ref()
+                .is_some_and(|a| a.len() == 21),
+            shielded_address: profile
+                .shielded_address
+                .as_deref()
+                .and_then(|a| a.try_into().ok())
+                .unwrap_or([0; 43]),
+            shielded_address_present: profile
+                .shielded_address
+                .as_ref()
+                .is_some_and(|a| a.len() == 43),
+
             public_message: optional_c_string(profile.public_message.as_deref()),
         }
     }
@@ -613,6 +648,13 @@ fn allocate_contact_profile_rows(
                 avatar_hash_present: false,
                 avatar_fingerprint: [0u8; 8],
                 avatar_fingerprint_present: false,
+                core_payment_address: [0; 21],
+                core_payment_address_present: false,
+                platform_payment_address: [0; 21],
+                platform_payment_address_present: false,
+                shielded_address: [0; 43],
+                shielded_address_present: false,
+
                 public_message: ptr::null(),
                 checked_at_ms: entry.checked_at_ms,
             });
@@ -636,6 +678,34 @@ fn allocate_contact_profile_rows(
             avatar_hash_present,
             avatar_fingerprint,
             avatar_fingerprint_present,
+            core_payment_address: profile
+                .core_payment_address
+                .as_deref()
+                .and_then(|a| a.try_into().ok())
+                .unwrap_or([0; 21]),
+            core_payment_address_present: profile
+                .core_payment_address
+                .as_ref()
+                .is_some_and(|a| a.len() == 21),
+            platform_payment_address: profile
+                .platform_payment_address
+                .as_deref()
+                .and_then(|a| a.try_into().ok())
+                .unwrap_or([0; 21]),
+            platform_payment_address_present: profile
+                .platform_payment_address
+                .as_ref()
+                .is_some_and(|a| a.len() == 21),
+            shielded_address: profile
+                .shielded_address
+                .as_deref()
+                .and_then(|a| a.try_into().ok())
+                .unwrap_or([0; 43]),
+            shielded_address_present: profile
+                .shielded_address
+                .as_ref()
+                .is_some_and(|a| a.len() == 43),
+
             public_message: optional_c_string(profile.public_message.as_deref()),
             checked_at_ms: entry.checked_at_ms,
         });
@@ -1015,6 +1085,7 @@ mod tests {
                 avatar_hash: Some([0xAB; 32]),
                 avatar_fingerprint: Some([0xCD; 8]),
                 public_message: None,
+                ..Default::default()
             }),
             dashpay_payments: Default::default(),
             contact_profiles: Default::default(),
@@ -1067,6 +1138,7 @@ mod tests {
                     avatar_hash: Some([0x11; 32]),
                     avatar_fingerprint: None,
                     public_message: None,
+                    ..Default::default()
                 }),
                 checked_at_ms: 111,
             },

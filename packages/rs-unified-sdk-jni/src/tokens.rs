@@ -1583,6 +1583,42 @@ pub(crate) fn profile_to_json(profile: &DashPayProfileFFI) -> String {
             .collect();
         fields.push(format!("\"avatarFingerprint\":{}", json_string(&hex)));
     }
+    if profile.core_payment_address_is_some {
+        fields.push(format!(
+            "\"corePaymentAddress\":{}",
+            json_string(
+                &profile
+                    .core_payment_address
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
+            )
+        ));
+    }
+    if profile.platform_payment_address_is_some {
+        fields.push(format!(
+            "\"platformPaymentAddress\":{}",
+            json_string(
+                &profile
+                    .platform_payment_address
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
+            )
+        ));
+    }
+    if profile.shielded_address_is_some {
+        fields.push(format!(
+            "\"shieldedAddress\":{}",
+            json_string(
+                &profile
+                    .shielded_address
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
+            )
+        ));
+    }
     format!("{{{}}}", fields.join(","))
 }
 
@@ -2006,7 +2042,19 @@ mod tests {
         profile.avatar_hash[31] = 0x01;
         profile.avatar_fingerprint_is_some = true;
         profile.avatar_fingerprint = [0x10, 0x20, 0, 0, 0, 0, 0, 0xFF];
+        profile.core_payment_address_is_some = true;
+        profile.core_payment_address = [1; 21];
+        profile.platform_payment_address_is_some = true;
+        profile.platform_payment_address = [2; 21];
+        profile.shielded_address_is_some = true;
+        profile.shielded_address = [3; 43];
         let json = profile_to_json(&profile);
+        assert!(json.contains(&format!("\"corePaymentAddress\":\"{}\"", "01".repeat(21))));
+        assert!(json.contains(&format!(
+            "\"platformPaymentAddress\":\"{}\"",
+            "02".repeat(21)
+        )));
+        assert!(json.contains(&format!("\"shieldedAddress\":\"{}\"", "03".repeat(43))));
         // 32-byte hash: 0xAB … 0x01 → "ab" prefix, "01" suffix (64 hex chars).
         assert!(json.contains("\"avatarHash\":\"ab"), "got {json}");
         assert!(json.contains("01\""), "hash suffix; got {json}");

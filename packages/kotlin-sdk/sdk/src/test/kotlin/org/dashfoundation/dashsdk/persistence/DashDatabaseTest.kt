@@ -233,12 +233,12 @@ class DashDatabaseTest {
     }
 
     @Test
-    fun schemaIsAtVersion11WithTheSweepHoldIndexes() = runTest {
+    fun schemaIsAtVersion12WithTheSweepHoldIndexes() = runTest {
         // The sweep-hold columns land in ONE migration (10 → 11), with the
         // two `pending_inputs` indexes the sweep's claimed-row lookup
         // (`spendingTxid`) and the end-of-round collector
         // (`walletId, isSweptTombstone, winnerMinedHeight`) rely on.
-        assertEquals(11, db.openHelper.readableDatabase.version)
+        assertEquals(12, db.openHelper.readableDatabase.version)
         val indexes = mutableSetOf<String>()
         db.openHelper.readableDatabase.query("PRAGMA index_list('pending_inputs')").use { c ->
             val nameColumn = c.getColumnIndexOrThrow("name")

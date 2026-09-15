@@ -474,6 +474,40 @@ struct DashpayContactProfileStorageListView: View {
     }
 }
 
+// MARK: - PersistentDashpayPaymentAddresses
+
+struct DashpayPaymentAddressesStorageListView: View {
+    let network: Network
+    @Query private var records: [PersistentDashpayPaymentAddresses]
+
+    private var filtered: [PersistentDashpayPaymentAddresses] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
+    var body: some View {
+        let visible = filtered
+        List(visible) { record in
+            NavigationLink(destination: DashpayPaymentAddressesStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.profileIdentityId.toHexString())
+                        .font(.body).lineLimit(1).truncationMode(.middle)
+                    Text("Owner: \(record.ownerIdentityId.toHexString())")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Payment Addresses (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No Records", systemImage: "qrcode")
+            }
+        }
+    }
+}
+
 // MARK: - PersistentDashpayContactRequest
 
 /// Storage-explorer list of every DashPay contact-request row.

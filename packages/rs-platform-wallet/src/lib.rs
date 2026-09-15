@@ -83,8 +83,9 @@ pub use wallet::identity::{
     derive_contact_payment_addresses, derive_contact_xpub, pubkey_binds_expected_key_data,
     unmask_account_reference, BlockTime, ContactProfileEntry, ContactRequest, ContactXpubData,
     DashPayProfile, DashPayState, DpnsNameInfo, EstablishedContact, IdentityLocation,
-    IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData, ProfileUpdate,
-    RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
+    IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PaymentAddressUpdate,
+    PrivateKeyData, ProfileUpdate, RegistrationIndex, ShieldedTipRecipient,
+    DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::masternode_withdrawal::{
     MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,
@@ -114,3 +115,12 @@ pub use key_wallet_manager;
 // the crate can pass it to `ManagedIdentity` mutation methods
 // (`set_dashpay_profile`, `record_dashpay_payment`, `add_identity`, …).
 pub use wallet::persister::WalletPersister;
+
+pub use wallet::identity::types::dashpay::profile::{
+    valid_transparent_payment_address, validated_shielded_address,
+};
+
+#[cfg(feature = "shielded")]
+pub use wallet::shielded::tips::{
+    is_shielded_tip_account, shielded_tip_account_index, SHIELDED_TIP_ACCOUNT_BASE,
+};

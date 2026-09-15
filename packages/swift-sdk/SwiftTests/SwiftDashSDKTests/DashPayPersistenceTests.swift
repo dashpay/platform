@@ -120,14 +120,15 @@ final class DashPayContactPersistenceTests: XCTestCase {
     /// Apply one identity persister round carrying only the given contact
     /// profiles for the fixture owner — the seam `upsertDashpayContactProfiles`
     /// runs under.
+    @discardableResult
     private func applyContactProfiles(
         _ profiles: [PlatformWalletPersistenceHandler.ContactProfileSnapshot]
-    ) {
+    ) -> Bool {
         // Bracket the round like the FFI does: `endChangeset` is the only
         // atomic `save()`, so a bare `persistIdentities` would stage the writes
         // without committing them.
         handler.beginChangeset(walletId: walletId)
-        handler.persistIdentities(
+        let success = handler.persistIdentities(
             walletId: walletId,
             upserts: [
                 PlatformWalletPersistenceHandler.IdentityEntrySnapshot(
@@ -145,7 +146,102 @@ final class DashPayContactPersistenceTests: XCTestCase {
             ],
             removed: []
         )
-        handler.endChangeset(walletId: walletId, success: true)
+        return handler.endChangeset(walletId: walletId, success: success)
+    }
+
+    func testContactPaymentAddressesAreReplacedAndRemovedTogetherWithProfile() throws {
+        let shielded = Data(repeating: 0x33, count: 43)
+        applyContactProfiles([.init(
+            contactIdentityId: contactId, isPresent: true, displayName: "Tips", bio: nil,
+            publicMessage: nil, avatarUrl: nil, avatarHash: nil, avatarFingerprint: nil,
+            corePaymentAddress: Data(repeating: 1, count: 21),
+            platformPaymentAddress: Data(repeating: 2, count: 21),
+            shieldedAddress: shielded, checkedAtMs: 1)])
+        let first = try XCTUnwrap(fetchContactProfileRows().first)
+        XCTAssertEqual(first.shieldedAddress, shielded)
+        XCTAssertEqual(first.corePaymentAddress, Data(repeating: 1, count: 21))
+        XCTAssertEqual(first.platformPaymentAddress, Data(repeating: 2, count: 21))
+        applyContactProfiles([.init(
+            contactIdentityId: contactId, isPresent: true, displayName: "Tips", bio: nil,
+            publicMessage: nil, avatarUrl: nil, avatarHash: nil, avatarFingerprint: nil,
+            checkedAtMs: 2)])
+        let replaced = try XCTUnwrap(fetchContactProfileRows().first)
+        XCTAssertNil(replaced.shieldedAddress)
+        XCTAssertNil(replaced.corePaymentAddress)
+        XCTAssertNil(replaced.platformPaymentAddress)
+    }
+
+    func testPaymentAddressReadFailureRejectsProfilePersistenceRound() throws {
+        handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet,
+            modelFetcher: PaymentAddressReadFailure())
+        let saved = applyContactProfiles([.init(contactIdentityId: contactId, isPresent: true,
+            displayName: "Must roll back", bio: nil, publicMessage: nil, avatarUrl: nil,
+            avatarHash: nil, avatarFingerprint: nil, shieldedAddress: Data(repeating: 3, count: 43),
+            checkedAtMs: 1)])
+        XCTAssertFalse(saved)
+        XCTAssertTrue(try fetchContactProfileRows().isEmpty)
+    }
+
+    func testPaymentAddressReadFailureRejectsWalletRestore() throws {
+        let context = ModelContext(container)
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        context.insert(wallet)
+        let account = PersistentAccount(wallet: wallet, accountType: 0, accountIndex: 0, accountTypeName: "standard")
+        account.accountExtendedPubKeyBytes = Data(repeating: 0xEE, count: 78)
+        context.insert(account)
+        try context.save()
+        handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet,
+            modelFetcher: PaymentAddressReadFailure())
+        let (entries, count, errored) = handler.loadWalletList()
+        XCTAssertTrue(errored)
+        XCTAssertNil(entries)
+        XCTAssertEqual(count, 0)
+    }
+
+    func testOwnedProfilePaymentAddressesSurviveRestoreBuffer() throws {
+        let context = ModelContext(container)
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        context.insert(wallet)
+        let account = PersistentAccount(wallet: wallet, accountType: 0, accountIndex: 0, accountTypeName: "standard")
+        account.accountExtendedPubKeyBytes = Data(repeating: 0xEE, count: 78)
+        context.insert(account)
+        let owner = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentIdentity>()).first)
+        owner.wallet = wallet
+        context.insert(PersistentDashpayProfile(identity: owner, displayName: "Tip recipient"))
+        try PersistentDashpayPaymentAddresses.replace(in: context, networkRaw: Network.testnet.rawValue,
+            ownerIdentityId: ownerId, profileIdentityId: ownerId, core: Data(repeating: 1, count: 21),
+            platform: Data(repeating: 2, count: 21), shielded: Data(repeating: 3, count: 43))
+        try context.save()
+
+        let (entries, count, errored) = handler.loadWalletList()
+        XCTAssertFalse(errored)
+        XCTAssertEqual(count, 1)
+        let buffer = try XCTUnwrap(entries)
+        defer { handler.loadWalletListFree(entries: UnsafeRawPointer(buffer)) }
+        let restored = try XCTUnwrap(buffer[0].identities?[0].dashpay_profile).pointee
+        XCTAssertEqual(restored.display_name.map { String(cString: $0) }, "Tip recipient")
+        XCTAssertTrue(restored.core_payment_address_present)
+        XCTAssertTrue(restored.platform_payment_address_present)
+        XCTAssertTrue(restored.shielded_address_present)
+        XCTAssertEqual(Swift.withUnsafeBytes(of: restored.shielded_address) { Data($0) }, Data(repeating: 3, count: 43))
+    }
+
+    func testTipConfirmationHistoryPersistsAndDoesNotOverwriteOnChangeCheck() throws {
+        let suite = "tip-history-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let original = ShieldedTipRecipient(identityId: ownerId, address: Data(repeating: 3, count: 43))
+        let changed = ShieldedTipRecipient(identityId: contactId, address: original.address)
+        let rotated = ShieldedTipRecipient(identityId: ownerId, address: Data(repeating: 4, count: 43))
+        ShieldedTipRecipientHistory(defaults: defaults).confirm(network: .testnet, walletId: walletId,
+            username: "Alice", recipient: original)
+        let restored = ShieldedTipRecipientHistory(defaults: defaults)
+        XCTAssertFalse(restored.hasChanged(network: .testnet, walletId: walletId, username: "a11ce.dash", recipient: original))
+        XCTAssertTrue(restored.hasChanged(network: .testnet, walletId: walletId, username: "Alice", recipient: changed))
+        XCTAssertTrue(restored.hasChanged(network: .testnet, walletId: walletId, username: "Alice", recipient: rotated))
+        XCTAssertFalse(restored.hasChanged(network: .testnet, walletId: walletId, username: "Alice", recipient: original))
+        XCTAssertFalse(restored.hasChanged(network: .mainnet, walletId: walletId, username: "Alice", recipient: changed))
+        XCTAssertFalse(restored.hasChanged(network: .testnet, walletId: contactId, username: "Alice", recipient: changed))
     }
 
     // MARK: Contact-profile tombstone delete
@@ -1152,5 +1248,13 @@ final class DashPayPaymentFFIMarshallingTests: XCTestCase {
         XCTAssertEqual(payment.direction, .sent)
         XCTAssertEqual(payment.status, .pending)
         XCTAssertEqual(payment.txid, "")
+    }
+}
+
+private struct PaymentAddressReadFailure: ModelFetching {
+    struct ReadError: Error {}
+    func fetch<T: PersistentModel>(_ descriptor: FetchDescriptor<T>, in context: ModelContext) throws -> [T] {
+        if T.self == PersistentDashpayPaymentAddresses.self { throw ReadError() }
+        return try context.fetch(descriptor)
     }
 }

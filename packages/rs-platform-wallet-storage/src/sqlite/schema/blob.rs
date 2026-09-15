@@ -1,6 +1,9 @@
 //! BLOB-column codec helpers: thin `bincode::serde` wrappers so every
 //! `_blob` column uses one encoding path. Schema evolution is gated by the
-//! refinery migration version — no per-blob revision tag.
+//! refinery migration version — no per-blob revision tag, except the
+//! `entry_format` / `profile_format` row stamps V019 added for the two
+//! blobs that embed the widened `DashPayProfile` record (see
+//! `identity_profile_encoding`).
 //!
 //! [`encode_outpoint`] / [`decode_outpoint`] encode `dashcore::OutPoint`
 //! the same way for the `outpoint` PK columns. The key is variable-width,

@@ -1183,13 +1183,28 @@ unsafe fn persist_identity_upsert(
     let public_message = cstr_opt(env, e.dashpay_profile_public_message)?;
     let avatar_hash = env.byte_array_from_slice(&e.dashpay_profile_avatar_hash)?;
     let avatar_fp = env.byte_array_from_slice(&e.dashpay_profile_avatar_fingerprint)?;
+    let core_payment_address = if e.dashpay_profile_core_payment_address_present {
+        JObject::from(env.byte_array_from_slice(&e.dashpay_profile_core_payment_address)?)
+    } else {
+        JObject::null()
+    };
+    let platform_payment_address = if e.dashpay_profile_platform_payment_address_present {
+        JObject::from(env.byte_array_from_slice(&e.dashpay_profile_platform_payment_address)?)
+    } else {
+        JObject::null()
+    };
+    let shielded_address = if e.dashpay_profile_shielded_address_present {
+        JObject::from(env.byte_array_from_slice(&e.dashpay_profile_shielded_address)?)
+    } else {
+        JObject::null()
+    };
 
     let code = env
         .call_method(
             bridge,
             "onPersistIdentityUpsert",
             "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
-             Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
+             Ljava/lang/String;[BZ[BZLjava/lang/String;[B[B[B)I",
             &[
                 wid.into(),
                 (&identity_id).into(),
@@ -1211,6 +1226,9 @@ unsafe fn persist_identity_upsert(
                 (&avatar_fp).into(),
                 JValue::Bool(e.dashpay_profile_avatar_fingerprint_present as u8),
                 (&public_message).into(),
+                (&core_payment_address).into(),
+                (&platform_payment_address).into(),
+                (&shielded_address).into(),
             ],
         )?
         .i()?;
@@ -1234,11 +1252,26 @@ unsafe fn persist_identity_upsert(
             let public_message = cstr_opt(env, row.public_message)?;
             let avatar_hash = env.byte_array_from_slice(&row.avatar_hash)?;
             let avatar_fp = env.byte_array_from_slice(&row.avatar_fingerprint)?;
+            let core_payment_address = if row.core_payment_address_present {
+                JObject::from(env.byte_array_from_slice(&row.core_payment_address)?)
+            } else {
+                JObject::null()
+            };
+            let platform_payment_address = if row.platform_payment_address_present {
+                JObject::from(env.byte_array_from_slice(&row.platform_payment_address)?)
+            } else {
+                JObject::null()
+            };
+            let shielded_address = if row.shielded_address_present {
+                JObject::from(env.byte_array_from_slice(&row.shielded_address)?)
+            } else {
+                JObject::null()
+            };
             env.call_method(
                 bridge,
                 "onPersistContactProfileDelta",
                 "([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;\
-                 [BZ[BZLjava/lang/String;J)I",
+                 [BZ[BZLjava/lang/String;J[B[B[B)I",
                 &[
                     wid.into(),
                     (&identity_id).into(),
@@ -1253,6 +1286,9 @@ unsafe fn persist_identity_upsert(
                     JValue::Bool(row.avatar_fingerprint_present as u8),
                     (&public_message).into(),
                     JValue::Long(row.checked_at_ms as i64),
+                    (&core_payment_address).into(),
+                    (&platform_payment_address).into(),
+                    (&shielded_address).into(),
                 ],
             )?
             .i()
@@ -2080,6 +2116,7 @@ struct IdentityRestoreStaged {
     ignored_senders: Vec<[u8; 32]>,
     payments: Vec<PaymentRestoreStaged>,
     contact_profiles: Vec<ContactProfileRestoreStaged>,
+    dashpay_profile: Option<ContactProfileRestoreStaged>,
 }
 
 /// Staged DashPay payment-history row: FFI struct with `txid` / `memo`
@@ -2106,6 +2143,21 @@ struct ContactProfileRestoreStaged {
     bio: Option<CString>,
     avatar_url: Option<CString>,
     public_message: Option<CString>,
+}
+
+fn seal_profile(profile: ContactProfileRestoreStaged) -> ContactProfileRestoreEntryFFI {
+    let ContactProfileRestoreStaged {
+        mut row,
+        display_name,
+        bio,
+        avatar_url,
+        public_message,
+    } = profile;
+    row.display_name = opt_cstring_into_raw(display_name);
+    row.bio = opt_cstring_into_raw(bio);
+    row.avatar_url = opt_cstring_into_raw(avatar_url);
+    row.public_message = opt_cstring_into_raw(public_message);
+    row
 }
 
 /// Staged DashPay contact-restore row: FFI struct with every pointer
@@ -2293,6 +2345,7 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                              ignored_senders,
                              payments,
                              contact_profiles,
+                             dashpay_profile,
                          }| {
                             let keys: Vec<IdentityKeyRestoreFFI> = keys
                                 .into_iter()
@@ -2365,26 +2418,12 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                                 .collect();
                             (entry.payments, entry.payments_count) = vec_into_raw(payments);
 
+                            entry.dashpay_profile =
+                                dashpay_profile.map_or(ptr::null(), |profile| {
+                                    Box::into_raw(Box::new(seal_profile(profile))) as *const _
+                                });
                             let contact_profiles: Vec<ContactProfileRestoreEntryFFI> =
-                                contact_profiles
-                                    .into_iter()
-                                    .map(
-                                        |ContactProfileRestoreStaged {
-                                             mut row,
-                                             display_name,
-                                             bio,
-                                             avatar_url,
-                                             public_message,
-                                         }| {
-                                            row.display_name = opt_cstring_into_raw(display_name);
-                                            row.bio = opt_cstring_into_raw(bio);
-                                            row.avatar_url = opt_cstring_into_raw(avatar_url);
-                                            row.public_message =
-                                                opt_cstring_into_raw(public_message);
-                                            row
-                                        },
-                                    )
-                                    .collect();
+                                contact_profiles.into_iter().map(seal_profile).collect();
                             (entry.contact_profiles, entry.contact_profiles_count) =
                                 vec_into_raw(contact_profiles);
                             entry
@@ -3164,6 +3203,18 @@ fn build_identity_restore(
         contact_profiles.push(cp);
     }
 
+    let owned_profile = env
+        .get_field(
+            holder,
+            "dashpayProfile",
+            "Lorg/dashfoundation/dashsdk/ffi/ContactProfileRestoreData;",
+        )?
+        .l()?;
+    let dashpay_profile = if owned_profile.is_null() {
+        None
+    } else {
+        Some(build_contact_profile_restore(env, &owned_profile)?)
+    };
     let entry = IdentityRestoreEntryFFI {
         identity_id,
         balance,
@@ -3184,6 +3235,7 @@ fn build_identity_restore(
         ignored_senders_count: 0,
         contact_profiles: ptr::null(),
         contact_profiles_count: 0,
+        dashpay_profile: ptr::null(),
     };
     Ok(IdentityRestoreStaged {
         entry,
@@ -3192,6 +3244,7 @@ fn build_identity_restore(
         ignored_senders,
         payments,
         contact_profiles,
+        dashpay_profile,
     })
 }
 
@@ -3260,6 +3313,24 @@ fn build_contact_profile_restore(
             Err(_) => ([0u8; 8], false),
         };
 
+    let bytes = read_bytes_field_vec(env, holder, "corePaymentAddress")?;
+    let (core_payment_address, core_payment_address_present) =
+        match <[u8; 21]>::try_from(bytes.as_slice()) {
+            Ok(value) => (value, true),
+            Err(_) => ([0; 21], false),
+        };
+    let bytes = read_bytes_field_vec(env, holder, "platformPaymentAddress")?;
+    let (platform_payment_address, platform_payment_address_present) =
+        match <[u8; 21]>::try_from(bytes.as_slice()) {
+            Ok(value) => (value, true),
+            Err(_) => ([0; 21], false),
+        };
+    let bytes = read_bytes_field_vec(env, holder, "shieldedAddress")?;
+    let (shielded_address, shielded_address_present) = match <[u8; 43]>::try_from(bytes.as_slice())
+    {
+        Ok(value) => (value, true),
+        Err(_) => ([0; 43], false),
+    };
     Ok(ContactProfileRestoreStaged {
         row: ContactProfileRestoreEntryFFI {
             contact_id,
@@ -3270,6 +3341,12 @@ fn build_contact_profile_restore(
             avatar_hash_present,
             avatar_fingerprint,
             avatar_fingerprint_present,
+            core_payment_address,
+            core_payment_address_present,
+            platform_payment_address,
+            platform_payment_address_present,
+            shielded_address,
+            shielded_address_present,
             public_message: ptr::null(),
             checked_at_ms,
         },
@@ -3603,6 +3680,16 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                         e.identities_count,
                     ));
                 for ident in idents.iter() {
+                    if !ident.dashpay_profile.is_null() {
+                        let profile = Box::from_raw(
+                            ident.dashpay_profile as *mut ContactProfileRestoreEntryFFI,
+                        );
+                        free_raw_cstring(profile.display_name);
+                        free_raw_cstring(profile.bio);
+                        free_raw_cstring(profile.avatar_url);
+                        free_raw_cstring(profile.public_message);
+                    }
+
                     if !ident.keys.is_null() && ident.keys_count > 0 {
                         let keys: Box<[IdentityKeyRestoreFFI]> =
                             Box::from_raw(std::ptr::slice_from_raw_parts_mut(
@@ -4525,13 +4612,13 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     (
         "onPersistIdentityUpsert",
         "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
-         Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
+         Ljava/lang/String;[BZ[BZLjava/lang/String;[B[B[B)I",
     ),
     ("onPersistIdentityRemoval", "([B[B)I"),
     (
         "onPersistContactProfileDelta",
         "([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;\
-         [BZ[BZLjava/lang/String;J)I",
+         [BZ[BZLjava/lang/String;J[B[B[B)I",
     ),
     (
         "onPersistIdentityKeyUpsert",

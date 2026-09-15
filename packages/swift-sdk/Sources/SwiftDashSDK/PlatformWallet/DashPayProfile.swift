@@ -26,19 +26,33 @@ public struct DashPayProfile: Sendable, Equatable {
     /// Perceptual dHash (8 bytes / 64 bits) of the avatar. Present
     /// whenever the on-chain document carried an `avatarFingerprint`.
     public let avatarFingerprint: Data?
+    /// Core address storage encoding: type byte followed by HASH160 (21 bytes).
+    public let corePaymentAddress: Data?
+    /// Platform address storage encoding: type byte followed by HASH160 (21 bytes).
+    public let platformPaymentAddress: Data?
+    /// Complete raw Orchard address: diversifier (11 bytes) and public key (32 bytes).
+    public let shieldedAddress: Data?
+
 
     public init(
         displayName: String? = nil,
         publicMessage: String? = nil,
         avatarUrl: String? = nil,
         avatarHash: Data? = nil,
-        avatarFingerprint: Data? = nil
+        avatarFingerprint: Data? = nil,
+        corePaymentAddress: Data? = nil,
+        platformPaymentAddress: Data? = nil,
+        shieldedAddress: Data? = nil
     ) {
         self.displayName = displayName
         self.publicMessage = publicMessage
         self.avatarUrl = avatarUrl
         self.avatarHash = avatarHash
         self.avatarFingerprint = avatarFingerprint
+        self.corePaymentAddress = corePaymentAddress
+        self.platformPaymentAddress = platformPaymentAddress
+        self.shieldedAddress = shieldedAddress
+
     }
 
     /// Copy a `DashPayProfileFFI` into a Swift-owned value. The
@@ -55,12 +69,16 @@ public struct DashPayProfile: Sendable, Equatable {
         self.avatarFingerprint = ffi.avatar_fingerprint_is_some
             ? Data(fromTuple8: ffi.avatar_fingerprint)
             : nil
+        self.corePaymentAddress = ffi.core_payment_address_is_some ? Swift.withUnsafeBytes(of: ffi.core_payment_address) { Data($0) } : nil
+        self.platformPaymentAddress = ffi.platform_payment_address_is_some ? Swift.withUnsafeBytes(of: ffi.platform_payment_address) { Data($0) } : nil
+        self.shieldedAddress = ffi.shielded_address_is_some ? Swift.withUnsafeBytes(of: ffi.shielded_address) { Data($0) } : nil
+
     }
 }
 
 /// Input for `ManagedPlatformWallet.createDashPayProfile` /
-/// `updateDashPayProfile`. Every field is optional; fields left as
-/// `nil` are simply omitted from the outgoing document.
+/// `updateDashPayProfile`. Optional text/avatar fields left as `nil`
+/// are omitted. Payment addresses explicitly distinguish keep, set, and remove.
 ///
 /// `avatarBytes` is the raw image payload pre-downloaded by the app
 /// layer. When provided, platform-wallet computes the SHA-256 hash
@@ -71,17 +89,28 @@ public struct DashPayProfileUpdate: Sendable {
     public var publicMessage: String?
     public var avatarUrl: String?
     public var avatarBytes: Data?
+    public var corePaymentAddress: DashPayPaymentAddressUpdate
+    public var platformPaymentAddress: DashPayPaymentAddressUpdate
+    public var shieldedAddress: DashPayPaymentAddressUpdate
+
 
     public init(
         displayName: String? = nil,
         publicMessage: String? = nil,
         avatarUrl: String? = nil,
-        avatarBytes: Data? = nil
+        avatarBytes: Data? = nil,
+        corePaymentAddress: DashPayPaymentAddressUpdate = .keep,
+        platformPaymentAddress: DashPayPaymentAddressUpdate = .keep,
+        shieldedAddress: DashPayPaymentAddressUpdate = .keep
     ) {
         self.displayName = displayName
         self.publicMessage = publicMessage
         self.avatarUrl = avatarUrl
         self.avatarBytes = avatarBytes
+        self.corePaymentAddress = corePaymentAddress
+        self.platformPaymentAddress = platformPaymentAddress
+        self.shieldedAddress = shieldedAddress
+
     }
 }
 
@@ -120,5 +149,26 @@ private extension Data {
     init(fromTuple8 tuple: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8)) {
         var value = tuple
         self = Swift.withUnsafeBytes(of: &value) { Data($0) }
+    }
+}
+
+/// Explicit operation on a payment address property.
+public enum DashPayPaymentAddressUpdate: Sendable, Equatable {
+    case keep
+    case set(Data)
+    case remove
+
+    func withFFI<T>(_ body: (UnsafePointer<PaymentAddressUpdateFFI>) throws -> T) rethrows -> T {
+        let action: UInt32
+        let data: Data
+        switch self {
+        case .keep: action = 0; data = Data()
+        case .set(let bytes): action = 1; data = bytes
+        case .remove: action = 2; data = Data()
+        }
+        return try data.withUnsafeBytes { bytes in
+            var value = PaymentAddressUpdateFFI(action: action, bytes: bytes.baseAddress?.assumingMemoryBound(to: UInt8.self), len: UInt(data.count))
+            return try withUnsafePointer(to: &value, body)
+        }
     }
 }

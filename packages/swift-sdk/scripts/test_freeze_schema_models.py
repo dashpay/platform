@@ -41,7 +41,8 @@ class CheckTests(unittest.TestCase):
         )
 
     def test_should_find_the_committed_files_are_the_generators_output(self):
-        self.assertEqual(len(self.files), 37)
+        # V1-V3 (37 files) plus the 36 frozen for V4 (35 models and the value types).
+        self.assertEqual(len(self.files), 73)
         self.assertEqual(gen.check_problems(ROOT, self.files), [])
 
     def test_should_report_a_hand_edit_to_a_frozen_file(self):
