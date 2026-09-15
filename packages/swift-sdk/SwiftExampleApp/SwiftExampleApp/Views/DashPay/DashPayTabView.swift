@@ -1035,24 +1035,43 @@ private struct AddViaQRSheet: View {
 }
 
 /// Resolve first, then explicitly confirm the identity, address, and amount.
+/// The send itself is owned by the app-wide `ShieldedTipSubmissions`, so a
+/// dismissed or reopened sheet finds the same in-flight or uncertain state
+/// instead of a fresh, unlocked one.
 struct SendShieldedTipSheet: View {
     let walletId: Data
     var account: UInt32 = 0
     var sourceLabel: String = "ordinary shielded account"
+    @EnvironmentObject private var submissions: ShieldedTipSubmissions
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        SendShieldedTipSheetContent(
+            walletId: walletId, account: account, sourceLabel: sourceLabel,
+            submission: submissions.forWallet(network: appState.currentNetwork, walletId: walletId))
+    }
+}
+
+private struct SendShieldedTipSheetContent: View {
+    let walletId: Data
+    let account: UInt32
+    let sourceLabel: String
+    @ObservedObject var submission: ShieldedTipSubmission
     @EnvironmentObject private var walletManager: PlatformWalletManager
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var username = ""
     @State private var amount = ""
     @State private var recipient: ShieldedTipRecipient?
-    @State private var busy = false
+    @State private var resolving = false
     @State private var error: String?
-    @State private var submitted = false
     @State private var showRecipientChanged = false
-
 
     private var tipAmount: ShieldedTipAmount? { ShieldedTipAmount(amount) }
     private var credits: UInt64? { tipAmount?.credits }
+    /// Recipient resolution is sheet-local; the send lock is the shared submission.
+    private var busy: Bool { resolving || submission.busy }
+    private var submitted: Bool { submission.submitted }
 
     var body: some View {
         NavigationStack {
@@ -1063,7 +1082,7 @@ struct SendShieldedTipSheet: View {
                     .onChange(of: username) { _, _ in recipient = nil }
                 TextField("Amount in DASH", text: $amount).keyboardType(.decimalPad)
                     .disabled(busy || submitted)
-                if let recipient {
+                if let recipient, !submitted {
                     Section("Confirm recipient") {
                         Text(username)
                         Text(recipient.identityId.toBase58String()).font(.caption).textSelection(.enabled)
@@ -1073,9 +1092,22 @@ struct SendShieldedTipSheet: View {
                     }
                 }
                 if let error { Text(error).foregroundStyle(.red) }
-                if submitted {
-                    Text("Tip submitted. Check shielded activity for confirmation.")
-                } else {
+                switch submission.status {
+                case .sent:
+                    Text(submission.message ?? "Tip submitted. Check shielded activity for confirmation.")
+                    Button("Send another tip") {
+                        submission.startNewTip()
+                        recipient = nil
+                        amount = ""
+                    }
+                case .uncertain:
+                    Text(submission.message
+                        ?? "The tip may have been sent. Check shielded activity before sending again.")
+                        .foregroundStyle(.orange)
+                case .ready, .sending:
+                    if let message = submission.message, error == nil {
+                        Text(message).foregroundStyle(.red)
+                    }
                     Button(recipient == nil ? "Review recipient" : "Confirm and send tip") { submit() }
                         .disabled(busy || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || credits == nil)
                 }
@@ -1095,29 +1127,40 @@ struct SendShieldedTipSheet: View {
 
     private func submit() {
         guard let wallet = walletManager.wallet(for: walletId), let credits else { return }
-        busy = true
         error = nil
-        Task { @MainActor in
-            defer { busy = false }
-            do {
-                if let recipient {
-                    ShieldedTipRecipientHistory().confirm(network: appState.currentNetwork, walletId: walletId,
-                        username: username, recipient: recipient)
-                    try await walletManager.sendShieldedTip(walletId: walletId, resolver: MnemonicResolver(),
-                        account: account, username: username, recipient: recipient, amount: credits)
-                    submitted = true
-                } else {
-                    let resolved = try await wallet.resolveShieldedTip(username: username)
-                    if ShieldedTipRecipientHistory().hasChanged(network: appState.currentNetwork, walletId: walletId,
-                        username: username, recipient: resolved) {
-                        showRecipientChanged = true
-                    }
-                    recipient = resolved
+        let network = appState.currentNetwork
+        let name = username
+        if let recipient {
+            let confirmed = recipient
+            let manager = walletManager
+            let account = account
+            let walletId = walletId
+            submission.submit {
+                ShieldedTipRecipientHistory().confirm(network: network, walletId: walletId,
+                    username: name, recipient: confirmed)
+                do {
+                    try await manager.sendShieldedTip(walletId: walletId, resolver: MnemonicResolver(),
+                        account: account, username: name, recipient: confirmed, amount: credits)
+                } catch {
+                    // Whatever the outcome, the next attempt re-reviews the recipient.
+                    self.recipient = nil
+                    throw error
                 }
+            }
+            return
+        }
+        resolving = true
+        Task { @MainActor in
+            defer { resolving = false }
+            do {
+                let resolved = try await wallet.resolveShieldedTip(username: name)
+                if ShieldedTipRecipientHistory().hasChanged(network: network, walletId: walletId,
+                    username: name, recipient: resolved) {
+                    showRecipientChanged = true
+                }
+                recipient = resolved
             } catch {
                 self.error = error.localizedDescription
-                // A relay-accepted payment may already exist; prevent a second send.
-                if case PlatformWalletError.shieldedSpendUnconfirmed = error { submitted = true }
                 recipient = nil
             }
         }

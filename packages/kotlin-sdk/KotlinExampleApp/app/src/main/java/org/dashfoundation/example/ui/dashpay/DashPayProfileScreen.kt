@@ -79,8 +79,12 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
     val walletId = identity?.walletId
     val wallet = remember(manager, walletId) { walletId?.let { manager?.wallet(forWalletId = it) } }
 
-    val tipAccount = remember(manager, identity?.identityIndex) {
-        identity?.identityIndex?.let { index -> runCatching { manager?.shieldedTipAccountIndex(index) }.getOrNull() }
+    // Derived from the live identity's index, not Room's placeholder 0 (see DashPayTabScreen).
+    val tipAccount by produceState<Int?>(initialValue = null, wallet, manager, identityIdHex) {
+        value = wallet?.let { w ->
+            runCatching { w.identityIndex(idBytes)?.let { index -> manager?.shieldedTipAccountIndex(index) } }
+                .getOrNull()
+        }
     }
     val tipBalance by remember(walletId, tipAccount) {
         if (walletId == null || tipAccount == null) flowOf(0L)

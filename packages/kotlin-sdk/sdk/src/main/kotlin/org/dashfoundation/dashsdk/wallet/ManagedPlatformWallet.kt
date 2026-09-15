@@ -1074,6 +1074,29 @@ class ManagedPlatformWallet internal constructor(
     }
 
     /**
+     * The HD derivation index of one managed identity, or null when the wallet
+     * holds no recoverable index for it (a watched or index-less identity).
+     * Per-identity state derived from the index — the dedicated shielded tip
+     * account — must treat null as "unavailable" rather than fall back to 0,
+     * which is identity 0's slot. Room's `IdentityEntity.identityIndex` is
+     * non-null and stores 0 as a placeholder, so it cannot answer this.
+     */
+    suspend fun identityIndex(identityId: ByteArray): Int? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            val identityHandle = translateManagedIdentityNotFoundToZero {
+                TokensNative.getManagedIdentity(handle, identityId)
+            }
+            if (identityHandle == 0L) return@mapNativeErrors null
+            try {
+                val index = WalletManagerNative.managedIdentityGetIdentityIndex(identityHandle)
+                if (index < 0) null else index.toInt()
+            } finally {
+                TokensNative.managedIdentityDestroy(identityHandle)
+            }
+        }
+    }
+
+    /**
      * The advisory "why not" reason a withdrawal preflight records when the
      * account can't fund one — port of the `success_with_message` reason the
      * Swift `WithdrawalPreflightFFI` message carries. Returns null when the

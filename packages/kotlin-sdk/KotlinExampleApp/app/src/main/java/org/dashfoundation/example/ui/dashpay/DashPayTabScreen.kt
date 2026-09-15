@@ -326,10 +326,20 @@ fun DashPayTabScreen(navController: NavHostController) {
 
                         val tipManager = manager
                         val tipWalletId = identity.walletId
-                        val tipAccountResult = remember(tipManager, identity.identityIndex) {
-                            runCatching { requireNotNull(tipManager).shieldedTipAccountIndex(identity.identityIndex) }
+                        // The tip account follows the live identity's derivation index, not
+                        // Room's non-null `identityIndex`: its 0 is a placeholder for an identity
+                        // with no recoverable index and would alias identity 0's tip pool.
+                        val tipAccountResult by produceState<Result<Int>?>(
+                            initialValue = null, managed, tipManager, identityHex,
+                        ) {
+                            value = runCatching {
+                                val index = requireNotNull(managed) { "Wallet is not loaded" }
+                                    .identityIndex(identity.identityId)
+                                    ?: error("Tip account requires a recoverable identity index")
+                                requireNotNull(tipManager).shieldedTipAccountIndex(index)
+                            }
                         }
-                        val tipAccount = tipAccountResult.getOrNull()
+                        val tipAccount = tipAccountResult?.getOrNull()
                         val tipSubmission = tipWalletId?.let {
                             container.shieldedTipSubmissions.forWallet(network.ffiValue, it.toHex())
                         }
@@ -351,10 +361,13 @@ fun DashPayTabScreen(navController: NavHostController) {
                                     icon = Icons.AutoMirrored.Filled.Send,
                                     title = "Send shielded tip",
                                     onClick = {
-                                        tipAccountResult.fold(
-                                            onSuccess = { showTipSheet = true },
-                                            onFailure = { unlockError = it.message ?: "Could not open shielded tips" },
-                                        )
+                                        when (val result = tipAccountResult) {
+                                            null -> unlockError = "The tip account is still loading"
+                                            else -> result.fold(
+                                                onSuccess = { showTipSheet = true },
+                                                onFailure = { unlockError = it.message ?: "Could not open shielded tips" },
+                                            )
+                                        }
                                     },
                                     modifier = Modifier.testTag("dashpay.sendShieldedTip"),
                                 )
