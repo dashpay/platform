@@ -51,7 +51,9 @@ mod creation_tests {
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use crate::config::PlatformConfig;
+    use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::has_contested_document_with_document_id;
     use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_card_game_internal_token_contract_with_owner_identity_transfer_tokens, create_token_contract_with_owner_identity};
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::SuccessfulExecution;
 
     #[tokio::test]
     async fn test_document_creation() {
@@ -2915,6 +2917,314 @@ mod creation_tests {
         assert_eq!(first_contender.vote_tally(), Some(0));
 
         assert_eq!(second_contender.vote_tally(), Some(0));
+    }
+
+    /// PROTOCOL_VERSION_13 twin of the collision regression above. v13 keeps
+    /// document create state validation 1, which probes contested storage
+    /// only for contested creates, so the same non-contested create is
+    /// accepted and both storages end up holding the id. Pinned so the replay
+    /// boundary stays explicit: v13 history must keep accepting it, v14
+    /// rejects it.
+    #[tokio::test]
+    async fn should_accept_reused_entropy_for_contested_and_non_contested_creates_at_protocol_13() {
+        let platform_version = PlatformVersion::get(13).expect("expected platform version 13");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+        let contested_label = "quantum";
+        let non_contested_label = "quantumcomputingnow1";
+        let non_contested_normalized_label = "quantumc0mput1ngn0w1";
+
+        let platform_state = platform.state.load();
+
+        let (identity_1, signer_1, key_1) =
+            setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
+        let dpns_contract = dpns.clone();
+
+        let preorder = dpns_contract
+            .document_type_for_name("preorder")
+            .expect("expected a preorder document type");
+
+        let domain = dpns_contract
+            .document_type_for_name("domain")
+            .expect("expected a domain document type");
+
+        // The shared entropy makes both domain documents derive the same id.
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let non_contested_preorder_entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut contested_preorder_document = preorder
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity_1.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        let mut non_contested_preorder_document = preorder
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity_1.id(),
+                non_contested_preorder_entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        let mut contested_document = domain
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity_1.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        let mut non_contested_document = domain
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity_1.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        for (document, label, normalized_label) in [
+            (&mut contested_document, contested_label, contested_label),
+            (
+                &mut non_contested_document,
+                non_contested_label,
+                non_contested_normalized_label,
+            ),
+        ] {
+            let owner_id = document.owner_id();
+            document.set("parentDomainName", "dash".into());
+            document.set("normalizedParentDomainName", "dash".into());
+            document.set("label", label.into());
+            document.set("normalizedLabel", normalized_label.into());
+            document.set("records.identity", owner_id.into());
+            document.set("subdomainRules.allowSubdomains", false.into());
+        }
+
+        let colliding_document_id = contested_document.id();
+        assert_eq!(colliding_document_id, non_contested_document.id());
+        assert!(domain
+            .prefunded_voting_balance_for_document(&contested_document, platform_version)
+            .expect("expected to classify the contested document")
+            .is_some());
+        assert!(domain
+            .prefunded_voting_balance_for_document(&non_contested_document, platform_version)
+            .expect("expected to classify the non-contested document")
+            .is_none());
+
+        let contested_salt: [u8; 32] = rng.gen();
+        let non_contested_salt: [u8; 32] = rng.gen();
+
+        let mut contested_salted_domain_buffer: Vec<u8> = vec![];
+        contested_salted_domain_buffer.extend(contested_salt);
+        contested_salted_domain_buffer.extend(format!("{contested_label}.dash").as_bytes());
+
+        let mut non_contested_salted_domain_buffer: Vec<u8> = vec![];
+        non_contested_salted_domain_buffer.extend(non_contested_salt);
+        non_contested_salted_domain_buffer
+            .extend(format!("{non_contested_normalized_label}.dash").as_bytes());
+
+        contested_preorder_document.set(
+            "saltedDomainHash",
+            hash_double(contested_salted_domain_buffer).into(),
+        );
+        non_contested_preorder_document.set(
+            "saltedDomainHash",
+            hash_double(non_contested_salted_domain_buffer).into(),
+        );
+        contested_document.set("preorderSalt", contested_salt.into());
+        non_contested_document.set("preorderSalt", non_contested_salt.into());
+
+        let contested_preorder_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                contested_preorder_document,
+                preorder,
+                entropy.0,
+                &key_1,
+                1,
+                0,
+                None,
+                &signer_1,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create the contested preorder transition")
+            .serialize_to_bytes()
+            .expect("expected to serialize the contested preorder transition");
+
+        let non_contested_preorder_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                non_contested_preorder_document,
+                preorder,
+                non_contested_preorder_entropy.0,
+                &key_1,
+                2,
+                0,
+                None,
+                &signer_1,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create the non-contested preorder transition")
+            .serialize_to_bytes()
+            .expect("expected to serialize the non-contested preorder transition");
+
+        let contested_domain_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                contested_document,
+                domain,
+                entropy.0,
+                &key_1,
+                3,
+                0,
+                None,
+                &signer_1,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create the contested domain transition")
+            .serialize_to_bytes()
+            .expect("expected to serialize the contested domain transition");
+
+        let non_contested_domain_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                non_contested_document,
+                domain,
+                entropy.0,
+                &key_1,
+                4,
+                0,
+                None,
+                &signer_1,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create the non-contested domain transition")
+            .serialize_to_bytes()
+            .expect("expected to serialize the non-contested domain transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![
+                    contested_preorder_transition,
+                    non_contested_preorder_transition,
+                ],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process the preorders");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(processing_result.valid_count(), 2);
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![contested_domain_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process the contested create");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        // v13 does not probe contested storage for a non-contested create,
+        // so the contender's id is accepted into primary storage as well.
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![non_contested_domain_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process the non-contested create");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [SuccessfulExecution { .. }]
+        );
+
+        let (contested_storage_holds_id, _) = has_contested_document_with_document_id(
+            &platform.drive,
+            &dpns_contract,
+            domain,
+            colliding_document_id,
+            None,
+            None,
+            platform_version,
+        )
+        .expect("expected to probe contested storage");
+
+        assert!(
+            contested_storage_holds_id,
+            "the contender must still be live while its id is also in primary storage"
+        );
     }
 
     #[tokio::test]
