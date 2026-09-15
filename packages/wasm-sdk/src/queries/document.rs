@@ -8,7 +8,7 @@ use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::drive::query::SelectProjection;
 use dash_sdk::platform::documents::document_history_query::{
-    DocumentHistoryQuery, DocumentHistorySelector,
+    DocumentHistoryFilter, DocumentHistoryQuery,
 };
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
@@ -258,34 +258,34 @@ fn parse_document_history_query(
 ) -> Result<DocumentHistoryQuery, WasmSdkError> {
     let input: DocumentHistoryQueryInput =
         deserialize_required_query(query, "Query object is required", "document history query")?;
-    let selectors = [
+    let filters = [
         input.start_at_ms.is_some(),
         input.start_after.is_some(),
         input.start_at_revision.is_some(),
         input.revision.is_some(),
     ];
-    if selectors.into_iter().filter(|present| *present).count() != 1 {
+    if filters.into_iter().filter(|present| *present).count() != 1 {
         return Err(WasmSdkError::invalid_argument(
-            "exactly one history selector is required",
+            "exactly one history filter is required",
         ));
     }
-    let selector = if let Some(time) = input.start_at_ms {
-        DocumentHistorySelector::StartAtTime(time)
+    let filter = if let Some(time) = input.start_at_ms {
+        DocumentHistoryFilter::StartAtTime(time)
     } else if let Some(cursor) = input.start_after {
-        DocumentHistorySelector::StartAfter {
+        DocumentHistoryFilter::StartAfter {
             time_ms: cursor.time_ms,
             revision: cursor.revision,
         }
     } else if let Some(revision) = input.start_at_revision {
-        DocumentHistorySelector::StartAtRevision(revision)
+        DocumentHistoryFilter::StartAtRevision(revision)
     } else {
-        DocumentHistorySelector::Revision(input.revision.expect("one selector was checked"))
+        DocumentHistoryFilter::Revision(input.revision.expect("one filter was checked"))
     };
     Ok(DocumentHistoryQuery {
         data_contract_id: input.data_contract_id.into(),
         document_type_name: input.document_type_name,
         document_id: input.document_id.into(),
-        selector,
+        filter,
         limit: input.limit,
     })
 }
@@ -1503,8 +1503,8 @@ mod history_wasm_tests {
         .unwrap();
         let query = parse_document_history_query(input.unchecked_into()).unwrap();
         assert_eq!(
-            query.selector,
-            DocumentHistorySelector::StartAfter {
+            query.filter,
+            DocumentHistoryFilter::StartAfter {
                 time_ms: 2000,
                 revision: 22
             }

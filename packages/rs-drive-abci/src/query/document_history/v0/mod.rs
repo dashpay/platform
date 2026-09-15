@@ -2,7 +2,7 @@ use crate::error::{query::QueryError, Error};
 use crate::platform_types::{platform::Platform, platform_state::PlatformState};
 use crate::query::{response_metadata::CheckpointUsed, QueryValidationResult};
 use dapi_grpc::platform::v0::get_document_history_request::{
-    get_document_history_request_v0::Selector, GetDocumentHistoryRequestV0,
+    get_document_history_request_v0::Filter, GetDocumentHistoryRequestV0,
 };
 use dapi_grpc::platform::v0::get_document_history_response::{
     get_document_history_response_v0::{
@@ -16,7 +16,7 @@ use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::document::history::{
-    DocumentHistoryQueryV1, DocumentHistorySelector, DocumentHistoryState,
+    DocumentHistoryFilter, DocumentHistoryQueryV1, DocumentHistoryState,
 };
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -35,19 +35,17 @@ impl<C> Platform<C> {
             .document_id
             .try_into()
             .map_err(|_| QueryError::InvalidArgument("document_id must be 32 bytes".to_owned())));
-        let selector = check_validation_result_with_data!(request.selector.ok_or_else(|| {
-            QueryError::InvalidArgument("exactly one history selector is required".to_owned())
+        let filter = check_validation_result_with_data!(request.filter.ok_or_else(|| {
+            QueryError::InvalidArgument("exactly one history filter is required".to_owned())
         }));
-        let selector = match selector {
-            Selector::StartAtMs(time) => DocumentHistorySelector::StartAtTime(time),
-            Selector::StartAfter(cursor) => DocumentHistorySelector::StartAfter {
+        let filter = match filter {
+            Filter::StartAtMs(time) => DocumentHistoryFilter::StartAtTime(time),
+            Filter::StartAfter(cursor) => DocumentHistoryFilter::StartAfter {
                 time_ms: cursor.time_ms,
                 revision: cursor.revision,
             },
-            Selector::StartAtRevision(revision) => {
-                DocumentHistorySelector::StartAtRevision(revision)
-            }
-            Selector::Revision(revision) => DocumentHistorySelector::Revision(revision),
+            Filter::StartAtRevision(revision) => DocumentHistoryFilter::StartAtRevision(revision),
+            Filter::Revision(revision) => DocumentHistoryFilter::Revision(revision),
         };
         let limit = check_validation_result_with_data!(request
             .limit
@@ -58,7 +56,7 @@ impl<C> Platform<C> {
             contract_id,
             document_type_name: request.document_type_name,
             document_id,
-            selector,
+            filter,
             limit,
         };
         check_validation_result_with_data!(query

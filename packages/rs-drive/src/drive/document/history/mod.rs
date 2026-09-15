@@ -1,4 +1,4 @@
-//! History selectors, authenticated lifecycle metadata, and composite revision keys.
+//! History filters, authenticated lifecycle metadata, and composite revision keys.
 use crate::drive::document::paths::{
     contract_document_type_path_vec, document_history_path, DOCUMENT_HISTORY_TREE_KEY,
 };
@@ -16,7 +16,7 @@ use grovedb::{Element, PathQuery, Query, SizedQuery};
 /// Exactly one lower bound or revision position for a history page.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum DocumentHistorySelector {
+pub enum DocumentHistoryFilter {
     /// Inclusive time bound for the first page.
     StartAtTime(u64),
     /// Exclusive composite cursor for subsequent pages.
@@ -41,8 +41,8 @@ pub struct DocumentHistoryQueryV1 {
     pub document_type_name: String,
     /// Document identifier.
     pub document_id: [u8; 32],
-    /// Page selector.
-    pub selector: DocumentHistorySelector,
+    /// Page filter.
+    pub filter: DocumentHistoryFilter,
     /// Page length, at most ten.
     pub limit: Option<u16>,
 }
@@ -228,30 +228,30 @@ fn corrupt(message: &'static str) -> Error {
 }
 
 impl DocumentHistoryQueryV1 {
-    /// Validates the selector without accessing state.
+    /// Validates the filter without accessing state.
     pub fn validate(&self) -> Result<(), Error> {
         if !(1..=MAX_DOCUMENT_HISTORY_FETCH_LIMIT)
             .contains(&self.limit.unwrap_or(MAX_DOCUMENT_HISTORY_FETCH_LIMIT))
         {
             return Err(invalid("history limit must be between one and ten"));
         }
-        match self.selector {
-            DocumentHistorySelector::StartAtTime(time)
-            | DocumentHistorySelector::StartAfter { time_ms: time, .. }
+        match self.filter {
+            DocumentHistoryFilter::StartAtTime(time)
+            | DocumentHistoryFilter::StartAfter { time_ms: time, .. }
                 if time >= (1u64 << 63) =>
             {
                 Err(invalid("history time must be below 2^63"))
             }
-            DocumentHistorySelector::StartAfter { revision: 0, .. } => {
+            DocumentHistoryFilter::StartAfter { revision: 0, .. } => {
                 Err(invalid("history cursor revision must be positive"))
             }
-            DocumentHistorySelector::StartAtRevision(revision)
-            | DocumentHistorySelector::Revision(revision)
+            DocumentHistoryFilter::StartAtRevision(revision)
+            | DocumentHistoryFilter::Revision(revision)
                 if !(1..=u16::MAX as u64).contains(&revision) =>
             {
                 Err(invalid("history revision must be between one and 65535"))
             }
-            DocumentHistorySelector::Revision(_) if self.limit.is_some_and(|limit| limit != 1) => {
+            DocumentHistoryFilter::Revision(_) if self.limit.is_some_and(|limit| limit != 1) => {
                 Err(invalid("single revision queries require limit one"))
             }
             _ => Ok(()),
@@ -267,21 +267,21 @@ impl DocumentHistoryQueryV1 {
         self.validate()?;
         let mut query = Query::new();
         let mut limit = self.limit.unwrap_or(MAX_DOCUMENT_HISTORY_FETCH_LIMIT);
-        let offset = match self.selector {
-            DocumentHistorySelector::StartAtTime(time) => {
+        let offset = match self.filter {
+            DocumentHistoryFilter::StartAtTime(time) => {
                 query.insert_range_from(encode_u64(time)..);
                 None
             }
-            DocumentHistorySelector::StartAfter { time_ms, revision } => {
+            DocumentHistoryFilter::StartAfter { time_ms, revision } => {
                 let mut key = encode_u64(time_ms);
                 key.extend(encode_u64(revision));
                 query.insert_range_after(key..);
                 None
             }
-            DocumentHistorySelector::StartAtRevision(revision)
-            | DocumentHistorySelector::Revision(revision) => {
+            DocumentHistoryFilter::StartAtRevision(revision)
+            | DocumentHistoryFilter::Revision(revision) => {
                 query.insert_all();
-                if matches!(self.selector, DocumentHistorySelector::Revision(_)) {
+                if matches!(self.filter, DocumentHistoryFilter::Revision(_)) {
                     limit = 1;
                 }
                 (revision > 1).then_some((revision - 1) as u16)
@@ -373,8 +373,8 @@ impl DocumentHistoryQueryV1 {
             return Err(corrupt("current document and retained history disagree"));
         }
         if matches!(
-            self.selector,
-            DocumentHistorySelector::Revision(_) | DocumentHistorySelector::StartAtRevision(_)
+            self.filter,
+            DocumentHistoryFilter::Revision(_) | DocumentHistoryFilter::StartAtRevision(_)
         ) && active
             && latest_revision != count
         {
@@ -428,8 +428,8 @@ impl DocumentHistoryQueryV1 {
                 {
                     return Err(corrupt("history revision does not match its key"));
                 }
-                if let DocumentHistorySelector::StartAtRevision(requested)
-                | DocumentHistorySelector::Revision(requested) = self.selector
+                if let DocumentHistoryFilter::StartAtRevision(requested)
+                | DocumentHistoryFilter::Revision(requested) = self.filter
                 {
                     if revision != requested + position as u64 {
                         return Err(invalid(

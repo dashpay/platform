@@ -53,7 +53,7 @@ fn should_authenticate_history_pages_metadata_and_absence() {
         contract_id: contract.id().to_buffer(),
         document_type_name: "profile".into(),
         document_id: document.id().to_buffer(),
-        selector: DocumentHistorySelector::StartAtTime(2000),
+        filter: DocumentHistoryFilter::StartAtTime(2000),
         limit: Some(10),
     };
     let mut seen = vec![];
@@ -76,34 +76,34 @@ fn should_authenticate_history_pages_metadata_and_absence() {
         let Some(last) = page.entries.last() else {
             break;
         };
-        query.selector = DocumentHistorySelector::StartAfter {
+        query.filter = DocumentHistoryFilter::StartAfter {
             time_ms: last.time_ms,
             revision: last.revision,
         };
     }
     assert_eq!(seen, (1..=22).collect::<Vec<_>>());
-    for selector in [
-        DocumentHistorySelector::Revision(1),
-        DocumentHistorySelector::Revision(2),
-        DocumentHistorySelector::Revision(22),
-        DocumentHistorySelector::Revision(23),
-        DocumentHistorySelector::StartAtRevision(7),
-        DocumentHistorySelector::StartAtRevision(20),
+    for filter in [
+        DocumentHistoryFilter::Revision(1),
+        DocumentHistoryFilter::Revision(2),
+        DocumentHistoryFilter::Revision(22),
+        DocumentHistoryFilter::Revision(23),
+        DocumentHistoryFilter::StartAtRevision(7),
+        DocumentHistoryFilter::StartAtRevision(20),
     ] {
-        let expected = match selector {
-            DocumentHistorySelector::Revision(revision) => {
+        let expected = match filter {
+            DocumentHistoryFilter::Revision(revision) => {
                 if revision <= 22 {
                     vec![revision]
                 } else {
                     vec![]
                 }
             }
-            DocumentHistorySelector::StartAtRevision(revision) => {
+            DocumentHistoryFilter::StartAtRevision(revision) => {
                 (revision..=(revision + 9).min(22)).collect()
             }
             _ => unreachable!(),
         };
-        query.selector = selector;
+        query.filter = filter;
         query.limit = None;
         let (page, proof) = drive
             .prove_document_history_v1(&query, document_type, None, version)
@@ -120,7 +120,7 @@ fn should_authenticate_history_pages_metadata_and_absence() {
         );
         assert_eq!(page.lifecycle.remaining_revisions, 22);
     }
-    query.selector = DocumentHistorySelector::StartAtTime(0);
+    query.filter = DocumentHistoryFilter::StartAtTime(0);
     let (_, old_proof) = drive
         .prove_document_history_v1(&query, document_type, None, version)
         .unwrap();
@@ -164,7 +164,7 @@ fn should_authenticate_history_pages_metadata_and_absence() {
             .is_err());
     }
     query.document_id = [255; 32];
-    query.selector = DocumentHistorySelector::Revision(2);
+    query.filter = DocumentHistoryFilter::Revision(2);
     let (page, proof) = drive
         .prove_document_history_v1(&query, document_type, None, version)
         .unwrap();
@@ -193,7 +193,7 @@ fn should_authenticate_history_pages_metadata_and_absence() {
         )
         .value
         .unwrap();
-    query.selector = DocumentHistorySelector::StartAtTime(0);
+    query.filter = DocumentHistoryFilter::StartAtTime(0);
     let (page, proof) = drive
         .prove_document_history_v1(&query, document_type, None, version)
         .unwrap();
@@ -235,22 +235,22 @@ fn should_reject_invalid_selectors_and_unsupported_protocols() {
         contract_id: [1; 32],
         document_type_name: "note".into(),
         document_id: [2; 32],
-        selector: DocumentHistorySelector::StartAtTime(0),
+        filter: DocumentHistoryFilter::StartAtTime(0),
         limit: None,
     };
-    for selector in [
-        DocumentHistorySelector::Revision(0),
-        DocumentHistorySelector::StartAtRevision(65536),
-        DocumentHistorySelector::StartAtTime(1 << 63),
-        DocumentHistorySelector::StartAfter {
+    for filter in [
+        DocumentHistoryFilter::Revision(0),
+        DocumentHistoryFilter::StartAtRevision(65536),
+        DocumentHistoryFilter::StartAtTime(1 << 63),
+        DocumentHistoryFilter::StartAfter {
             time_ms: 0,
             revision: 0,
         },
     ] {
-        query.selector = selector;
+        query.filter = filter;
         assert!(query.validate().is_err());
     }
-    query.selector = DocumentHistorySelector::Revision(65535);
+    query.filter = DocumentHistoryFilter::Revision(65535);
     assert!(query.validate().is_ok());
     query.limit = Some(2);
     assert!(query.validate().is_err());
@@ -312,7 +312,7 @@ fn should_use_sequence_one_for_an_immutable_document_without_a_revision() {
         contract_id: contract.id().to_buffer(),
         document_type_name: "note".into(),
         document_id: document.id().to_buffer(),
-        selector: DocumentHistorySelector::Revision(1),
+        filter: DocumentHistoryFilter::Revision(1),
         limit: None,
     };
     let (history, proof) = drive
@@ -563,7 +563,7 @@ fn should_reject_history_keys_that_are_not_sixteen_bytes() {
         contract_id: contract.id().to_buffer(),
         document_type_name: "profile".into(),
         document_id: document.id().to_buffer(),
-        selector: DocumentHistorySelector::StartAtTime(0),
+        filter: DocumentHistoryFilter::StartAtTime(0),
         limit: None,
     };
     let bytes = document
@@ -643,7 +643,7 @@ fn should_reject_metadata_proofs_that_omit_a_queried_branch() {
         contract_id: contract.id().to_buffer(),
         document_type_name: "profile".into(),
         document_id: document.id().to_buffer(),
-        selector: DocumentHistorySelector::StartAtTime(0),
+        filter: DocumentHistoryFilter::StartAtTime(0),
         limit: Some(10),
     };
     let (page, honest) = drive

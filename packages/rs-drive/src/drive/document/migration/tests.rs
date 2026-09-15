@@ -351,17 +351,16 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
             ),
             &transaction,
             new,
-            &mut ignored_stats,
         )
         .unwrap();
     assert_eq!(history.len(), 2);
     assert_eq!(&history[1].0[8..], encode_u64(3));
-    use crate::drive::document::history::{DocumentHistoryQueryV1, DocumentHistorySelector};
+    use crate::drive::document::history::{DocumentHistoryFilter, DocumentHistoryQueryV1};
     let mut history_query = DocumentHistoryQueryV1 {
         contract_id: contract.id().to_buffer(),
         document_type_name: "profile".into(),
         document_id: document.id().to_buffer(),
-        selector: DocumentHistorySelector::StartAtTime(0),
+        filter: DocumentHistoryFilter::StartAtTime(0),
         limit: None,
     };
     let page = drive
@@ -375,7 +374,7 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
         vec![1, 3]
     );
     assert_eq!(page.lifecycle.remaining_revisions, 2);
-    history_query.selector = DocumentHistorySelector::Revision(2);
+    history_query.filter = DocumentHistoryFilter::Revision(2);
     assert!(
         drive
             .fetch_document_history_v1(&history_query, document_type, Some(&transaction), new)
@@ -407,7 +406,7 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
         root_migrated
     );
     drive.grove.commit_transaction(retry).unwrap().unwrap();
-    history_query.selector = DocumentHistorySelector::StartAtTime(0);
+    history_query.filter = DocumentHistoryFilter::StartAtTime(0);
     let (committed_page, proof) = drive
         .prove_document_history_v1(&history_query, document_type, None, new)
         .unwrap();
@@ -434,11 +433,11 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
         Error::Query(crate::error::query::QuerySyntaxError::Unsupported(_))
     ));
     use crate::drive::document::history::DocumentHistoryProofV1;
-    for selector in [
-        DocumentHistorySelector::Revision(3),
-        DocumentHistorySelector::StartAtRevision(3),
+    for filter in [
+        DocumentHistoryFilter::Revision(3),
+        DocumentHistoryFilter::StartAtRevision(3),
     ] {
-        history_query.selector = selector;
+        history_query.filter = filter;
         let fetched = drive.fetch_document_history_v1(&history_query, document_type, None, new);
         let proved = drive.prove_document_history_v1(&history_query, document_type, None, new);
         let dishonest = DocumentHistoryProofV1 {

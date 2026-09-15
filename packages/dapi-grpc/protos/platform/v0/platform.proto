@@ -1823,7 +1823,7 @@ message GetDocumentHistoryRequest {
     bytes document_id = 3;
     google.protobuf.UInt32Value limit = 4;
     bool prove = 5;
-    oneof selector {
+    oneof filter {
       uint64 start_at_ms = 6 [ jstype = JS_STRING ];
       Cursor start_after = 7;
       uint64 start_at_revision = 8 [ jstype = JS_STRING ];

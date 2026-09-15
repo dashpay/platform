@@ -1,7 +1,7 @@
 //! Query type for retrieving document history.
 
 use dpp::prelude::Identifier;
-pub use drive::drive::document::history::DocumentHistorySelector;
+pub use drive::drive::document::history::DocumentHistoryFilter;
 
 /// Query parameters for a document's historical revisions.
 #[derive(Debug, Clone, PartialEq, Eq, dash_platform_macros::Mockable)]
@@ -13,8 +13,8 @@ pub struct DocumentHistoryQuery {
     pub document_type_name: String,
     /// Document ID.
     pub document_id: Identifier,
-    /// Exactly one time cursor or revision selector.
-    pub selector: DocumentHistorySelector,
+    /// Exactly one time cursor or revision filter.
+    pub filter: DocumentHistoryFilter,
     /// Maximum number of history entries to return.
     pub limit: Option<u32>,
 }
