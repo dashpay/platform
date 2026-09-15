@@ -189,6 +189,9 @@ impl StateTransition {
             StateTransitionDecodeBudget::Historical => Self::deserialize_from_bytes(bytes),
             StateTransitionDecodeBudget::Bounded(CONTRACT_CODE_STATE_TRANSITION_DECODE_BUDGET) => {
                 const BUDGET: usize = CONTRACT_CODE_STATE_TRANSITION_DECODE_BUDGET as usize;
+                // The error names its limit in kilobytes ("Payload reached a {n}KB limit");
+                // the budget is an exact number of kilobytes.
+                const BUDGET_KBYTES: usize = BUDGET / 1024;
                 let config: Configuration<BigEndian, _, Limit<BUDGET>> =
                     bincode::config::standard()
                         .with_big_endian()
@@ -198,7 +201,7 @@ impl StateTransition {
                     .map_err(|error| match error {
                         DecodeError::Io { .. } | DecodeError::LimitExceeded => {
                             ProtocolError::MaxEncodedBytesReachedError {
-                                max_size_kbytes: BUDGET,
+                                max_size_kbytes: BUDGET_KBYTES,
                                 size_hit: bytes.len(),
                             }
                         }
@@ -661,10 +664,20 @@ mod tests {
             StateTransitionDecodeBudget::Bounded(CONTRACT_CODE_STATE_TRANSITION_DECODE_BUDGET),
         )
         .expect_err("a claim above the budget must be rejected");
-        assert!(
-            matches!(error, ProtocolError::MaxEncodedBytesReachedError { .. }),
-            "expected the limit to fire, got {error:?}"
-        );
+        match error {
+            ProtocolError::MaxEncodedBytesReachedError {
+                max_size_kbytes,
+                size_hit,
+            } => {
+                // The limit is reported in the unit the error names, kilobytes.
+                assert_eq!(
+                    max_size_kbytes as u64,
+                    CONTRACT_CODE_STATE_TRANSITION_DECODE_BUDGET / 1024
+                );
+                assert_eq!(size_hit, payload.len());
+            }
+            other => panic!("expected the limit to fire, got {other:?}"),
+        }
         let historical_error = StateTransition::deserialize_from_bytes_with_budget(
             &payload,
             StateTransitionDecodeBudget::Historical,
