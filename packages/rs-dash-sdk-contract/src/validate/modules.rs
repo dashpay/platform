@@ -191,7 +191,12 @@ fn find_cycle(modules: &[&ModuleName], bindings: &[Binding]) -> Option<Vec<Modul
             };
             match marks[next] {
                 Mark::Active => {
-                    let start = stack.iter().position(|&index| index == next).unwrap_or(0);
+                    // An active module is on the stack by construction: it was
+                    // pushed when marked and is popped only when marked done.
+                    let start = stack
+                        .iter()
+                        .position(|&index| index == next)
+                        .expect("an active module is on the search stack");
                     return Some(
                         stack[start..]
                             .iter()

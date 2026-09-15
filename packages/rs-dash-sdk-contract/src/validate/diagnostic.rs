@@ -445,6 +445,28 @@ pub enum DiagnosticKind {
     /// database handle grammar, so there is nothing to reject. The variant
     /// documents that absence.
     RawPathDeclaration,
+    /// A string or byte array declares a minimum above its maximum.
+    LengthBoundsInverted {
+        /// The minimum.
+        min: u16,
+        /// The maximum.
+        max: u16,
+    },
+    /// Two members of one wire struct share a name.
+    DuplicateStructMember {
+        /// The member.
+        member: String,
+    },
+    /// A contested index names one field match property twice.
+    DuplicateContestedField {
+        /// The property path.
+        property: String,
+    },
+    /// A reference agreement names one referring property twice.
+    DuplicateAgreementProperty {
+        /// The property path.
+        property: String,
+    },
 }
 
 impl DiagnosticKind {
@@ -540,6 +562,14 @@ impl DiagnosticKind {
                 ("DSC0053", "CapabilityNotDeclarable")
             }
             DiagnosticKind::RawPathDeclaration => ("DSC0054", "RawPathDeclaration"),
+            DiagnosticKind::LengthBoundsInverted { .. } => ("DSC0055", "LengthBoundsInverted"),
+            DiagnosticKind::DuplicateStructMember { .. } => ("DSC0056", "DuplicateStructMember"),
+            DiagnosticKind::DuplicateContestedField { .. } => {
+                ("DSC0057", "DuplicateContestedField")
+            }
+            DiagnosticKind::DuplicateAgreementProperty { .. } => {
+                ("DSC0058", "DuplicateAgreementProperty")
+            }
         }
     }
 
@@ -712,6 +742,18 @@ impl fmt::Display for DiagnosticKind {
             ),
             DiagnosticKind::RawPathDeclaration => {
                 f.write_str("raw database paths are not declarable")
+            }
+            DiagnosticKind::LengthBoundsInverted { min, max } => {
+                write!(f, "minimum length {min} is above maximum length {max}")
+            }
+            DiagnosticKind::DuplicateStructMember { member } => {
+                write!(f, "struct member `{member}` declared twice")
+            }
+            DiagnosticKind::DuplicateContestedField { property } => {
+                write!(f, "contested field match `{property}` declared twice")
+            }
+            DiagnosticKind::DuplicateAgreementProperty { property } => {
+                write!(f, "agreement property `{property}` declared twice")
             }
         }
     }
