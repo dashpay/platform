@@ -307,9 +307,6 @@ pub enum StateError {
     TokenTransferRecipientIdentityNotExistError(TokenTransferRecipientIdentityNotExistError),
 
     #[error(transparent)]
-    TokenShieldedPoolNotEnabledError(TokenShieldedPoolNotEnabledError),
-
-    #[error(transparent)]
     PreProgrammedDistributionTimestampInPastError(PreProgrammedDistributionTimestampInPastError),
 
     #[error(transparent)]
@@ -410,6 +407,11 @@ pub enum StateError {
 
     #[error(transparent)]
     ReferencedDocumentPropertyMismatchError(ReferencedDocumentPropertyMismatchError),
+
+    /// Variants are encoded by position: new ones go at the end (see the frozen
+    /// discriminant test below).
+    #[error(transparent)]
+    TokenShieldedPoolNotEnabledError(TokenShieldedPoolNotEnabledError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -556,6 +558,12 @@ mod tests {
                 )
             )),
             100
+        );
+        assert_eq!(
+            discriminant_of(StateError::TokenShieldedPoolNotEnabledError(
+                TokenShieldedPoolNotEnabledError::new(Identifier::from([1; 32]))
+            )),
+            101
         );
     }
 }
