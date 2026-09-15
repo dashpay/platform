@@ -1624,13 +1624,26 @@ mod remove_wallet_lifecycle_tests {
     /// sender's ticket must precede the remover's. Without the gate the remover
     /// could finish first and the send still go out, which is exactly the
     /// `dashpay/platform#4185` finding.
+    ///
+    /// The PR suite runs a handful of iterations; the full shake runs in the
+    /// nightly long-running job.
     #[test]
     fn a_broadcast_never_reaches_the_broadcaster_after_teardown_completed() {
+        assert_broadcast_never_reaches_the_broadcaster_after_teardown_completed(5);
+    }
+
+    #[test]
+    #[ignore] // Long-running: runs in nightly CI only
+    fn a_broadcast_never_reaches_the_broadcaster_after_teardown_completed_full() {
+        assert_broadcast_never_reaches_the_broadcaster_after_teardown_completed(25);
+    }
+
+    fn assert_broadcast_never_reaches_the_broadcaster_after_teardown_completed(iterations: usize) {
         // Shares the process-global registry with `wallet::destroy_tests`,
         // which asserts on `outstanding()` counts — serialize against it.
         let _registry = crate::core_wallet::signed_payment::registry_test_guard();
 
-        for iteration in 0..25 {
+        for iteration in 0..iterations {
             runtime().block_on(async {
                 let (manager, wallet_id) = test_platform_wallet_manager().await;
                 let wallet = manager
