@@ -1,7 +1,10 @@
 use crate::{Error, Value};
+use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::cmp::Ordering;
+#[cfg(feature = "std")]
 use indexmap::IndexMap;
-use std::cmp::Ordering;
-use std::collections::BTreeMap;
 
 pub type ValueMap = Vec<(Value, Value)>;
 
@@ -427,6 +430,7 @@ mod tests {
     // ---------------------------------------------------------------
 
     #[test]
+    #[cfg(feature = "std")]
     fn map_ref_into_indexed_string_map_sorts_by_integer_key() {
         let map: ValueMap = vec![
             (
@@ -448,6 +452,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn map_ref_into_indexed_string_map_error_missing_sort_key() {
         let map: ValueMap = vec![(
             text("item"),
@@ -758,6 +763,7 @@ impl Value {
     /// The index map is in the order sorted by the sort key
     /// The type T is the type of the value of the sort key
     /// Returns `Err(Error::Structure("reason"))` otherwise.
+    #[cfg(feature = "std")]
     pub fn map_ref_into_indexed_string_map<'a, T>(
         map: &'a ValueMap,
         sort_key: &str,

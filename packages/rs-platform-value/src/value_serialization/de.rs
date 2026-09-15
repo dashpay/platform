@@ -1,7 +1,9 @@
+use alloc::string::String;
+use alloc::vec::Vec;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
+use core::iter::Peekable;
 use core::{fmt, slice};
-use std::iter::Peekable;
 
 use serde::de::value::SeqDeserializer;
 use serde::de::{self, Deserializer as _, IntoDeserializer};
@@ -860,6 +862,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn deserialize_map_type_mismatch_errors() {
         let val = Value::U32(42);
         let result: Result<std::collections::HashMap<String, u32>, Error> = from_value(val);
@@ -935,6 +938,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn round_trip_hashmap() {
         let mut original = std::collections::HashMap::new();
         original.insert("a".to_string(), 1u32);

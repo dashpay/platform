@@ -1,4 +1,6 @@
 use bincode::config;
+use platform_serialization::bounded::{BoundsError, CodecBounds};
+use platform_value::guest_bounds::BoundedEncodeError;
 use platform_value::Value;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -113,4 +115,32 @@ fn should_preserve_value_depth_and_budget_checks() {
     assert!(
         bincode::decode_from_slice_untrusted::<Value, _>(&bytes, config.with_limit::<8>()).is_err()
     );
+}
+
+#[test]
+fn should_reject_oversized_bounded_output_without_allocating() {
+    // Built outside the observation window: only `encode_bounded` is measured.
+    let value = Value::Bytes(vec![0; 200]);
+    let bounds = CodecBounds {
+        max_bytes: 128,
+        max_depth: 4,
+        max_elements: 16,
+    };
+
+    LARGEST_REQUEST.with(|largest| largest.set(0));
+    OBSERVING.with(|enabled| enabled.set(true));
+    let result = value.encode_bounded(&bounds);
+    OBSERVING.with(|enabled| enabled.set(false));
+    let largest = LARGEST_REQUEST.with(Cell::get);
+
+    assert!(matches!(
+        result,
+        Err(BoundedEncodeError::Bounds(BoundsError::BytesExceeded {
+            len: 202,
+            max: 128
+        }))
+    ));
+    // A byte leaf needs no traversal frames, so the size pass touches the
+    // heap nowhere and the output buffer is never reserved.
+    assert_eq!(largest, 0, "rejection allocated {largest} bytes");
 }
