@@ -91,10 +91,13 @@ class WalletStartupTest {
     }
 
     @Test
-    fun unknownDiscriminantThrows() {
-        assertThrows(IllegalArgumentException::class.java) {
-            WalletStartupOutcome.decode(blob(status = 200))
-        }
+    fun unknownDiscriminantFallsBackLikeSwift() {
+        // Append-only ABI: a newer native library may report a status this
+        // build predates. Swift maps it to .partialNoIdentity; so do we.
+        val outcome = WalletStartupOutcome.decode(blob(status = 200))
+        assertEquals(WalletStartupStatus.PARTIAL_NO_IDENTITY, outcome.status)
+        assertFalse(WalletStartupStatus.isKnownRaw(200))
+        for (status in WalletStartupStatus.entries) assertTrue(WalletStartupStatus.isKnownRaw(status.raw))
     }
 
     @Test

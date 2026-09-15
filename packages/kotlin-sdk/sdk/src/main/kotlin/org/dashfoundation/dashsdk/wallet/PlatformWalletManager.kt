@@ -2411,6 +2411,18 @@ class PlatformWalletManager(
                             gapLimit,
                         )
                     }
+                    val rawStatus = blob.firstOrNull()?.toInt()?.and(0xFF)
+                    if (rawStatus != null && !WalletStartupStatus.isKnownRaw(rawStatus)) {
+                        // Append-only ABI: a newer native library reported a status
+                        // this build predates. decode() maps it to PARTIAL_NO_IDENTITY
+                        // (Swift parity); say so once so the mismatch is visible.
+                        android.util.Log.w(
+                            "PlatformWalletManager",
+                            "startWalletSubsystems: unknown WalletStartupStatus discriminant " +
+                                "$rawStatus from the native library; treating as PARTIAL_NO_IDENTITY " +
+                                "(update the Kotlin SDK to match the native build)",
+                        )
+                    }
                     WalletStartupOutcome.decode(blob)
                 } finally {
                     runCatching { startupSigner.close() }

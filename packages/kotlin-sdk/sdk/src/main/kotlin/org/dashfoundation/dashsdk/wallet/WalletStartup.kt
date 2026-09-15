@@ -89,9 +89,20 @@ enum class WalletStartupStatus(val raw: Int) {
         get() = this != PARTIAL_NO_IDENTITY && this != DISCOVERY_FAILED
 
     companion object {
+        /**
+         * The raw values are an append-only ABI, so a newer native library can
+         * report a status this Kotlin build predates. Treat it as
+         * [PARTIAL_NO_IDENTITY] rather than fail the bring-up: that is the
+         * conservative case (host starts Core SPV, DIP-15 rescan still owed),
+         * and it is what Swift does (`WalletStartupStatus(rawValue:) ??
+         * .partialNoIdentity` in `PlatformWalletManagerStartup.swift`). Callers
+         * that want to surface the mismatch check [isKnownRaw] first.
+         */
         fun fromRaw(raw: Int): WalletStartupStatus =
-            entries.firstOrNull { it.raw == raw }
-                ?: throw IllegalArgumentException("unknown WalletStartupStatus discriminant $raw")
+            entries.firstOrNull { it.raw == raw } ?: PARTIAL_NO_IDENTITY
+
+        /** True when [raw] is a discriminant this build knows. */
+        fun isKnownRaw(raw: Int): Boolean = entries.any { it.raw == raw }
     }
 }
 
