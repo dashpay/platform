@@ -162,3 +162,134 @@ impl EpochCosts for Epoch {
         cost_item.lookup_cost_on_epoch(self, cached_fee_version)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_version::version::fee::storage::FeeStorageVersion;
+    use platform_version::version::fee::v1::FEE_VERSION1;
+    use platform_version::version::PLATFORM_VERSIONS;
+
+    /// A second generation that is not registered anywhere, so a boundary in the fee history is
+    /// observable through the storage rate it carries.
+    static SYNTHETIC_FEE_VERSION_2: FeeVersion = FeeVersion {
+        fee_version_number: 2,
+        storage: FeeStorageVersion {
+            storage_disk_usage_credit_per_byte: 54000,
+            ..FEE_VERSION1.storage
+        },
+        ..FEE_VERSION1
+    };
+
+    /// Every `KnownCostItem` variant, with a few sizes for the two sized variants.
+    fn every_known_cost_item() -> Vec<KnownCostItem> {
+        let mut items = vec![
+            KnownCostItem::StorageDiskUsageCreditPerByte,
+            KnownCostItem::StorageProcessingCreditPerByte,
+            KnownCostItem::StorageLoadCreditPerByte,
+            KnownCostItem::NonStorageLoadCreditPerByte,
+            KnownCostItem::StorageSeekCost,
+            KnownCostItem::FetchIdentityBalanceProcessingCost,
+            KnownCostItem::FetchSingleIdentityKeyProcessingCost,
+            KnownCostItem::VerifySignatureEcdsaSecp256k1,
+            KnownCostItem::VerifySignatureBLS12_381,
+            KnownCostItem::VerifySignatureEcdsaHash160,
+            KnownCostItem::VerifySignatureBip13ScriptHash,
+            KnownCostItem::VerifySignatureEddsa25519Hash160,
+        ];
+        for size in [0, 1, 64] {
+            items.push(KnownCostItem::SingleSHA256(size));
+            items.push(KnownCostItem::Blake3(size));
+        }
+        items
+    }
+
+    fn epoch(index: EpochIndex) -> Epoch {
+        Epoch::new(index).expect("epoch index fits")
+    }
+
+    #[test]
+    fn should_use_the_first_fee_version_when_the_history_is_empty() {
+        // The epoch change hook only records a generation on the first non-genesis epoch change,
+        // so genesis epoch refunds always resolve through an empty history. That must land on
+        // the first registered generation, which is number 1.
+        let empty = CachedEpochIndexFeeVersions::default();
+        for index in [0, 1, 500] {
+            let resolved = epoch(index).active_fee_version(&empty);
+            assert_eq!(resolved, FeeVersion::first());
+            assert_eq!(
+                resolved,
+                FeeVersion::get(1).expect("number 1 is registered")
+            );
+        }
+    }
+
+    #[test]
+    fn should_use_the_exact_epoch_entry_when_present() {
+        let history: CachedEpochIndexFeeVersions = BTreeMap::from([
+            (0, FeeVersion::get(1).expect("registered")),
+            (10, &SYNTHETIC_FEE_VERSION_2),
+        ]);
+        assert_eq!(epoch(0).active_fee_version(&history).fee_version_number, 1);
+        assert_eq!(epoch(10).active_fee_version(&history).fee_version_number, 2);
+        assert_eq!(
+            epoch(10)
+                .cost_for_known_cost_item(&history, KnownCostItem::StorageDiskUsageCreditPerByte),
+            54000
+        );
+    }
+
+    #[test]
+    fn should_use_the_nearest_lower_epoch_entry() {
+        let history: CachedEpochIndexFeeVersions = BTreeMap::from([
+            (0, FeeVersion::get(1).expect("registered")),
+            (10, &SYNTHETIC_FEE_VERSION_2),
+        ]);
+        assert_eq!(epoch(9).active_fee_version(&history).fee_version_number, 1);
+        assert_eq!(epoch(11).active_fee_version(&history).fee_version_number, 2);
+        assert_eq!(
+            epoch(u16::MAX - 300)
+                .active_fee_version(&history)
+                .fee_version_number,
+            2
+        );
+    }
+
+    #[test]
+    fn should_use_the_first_fee_version_before_the_earliest_entry() {
+        let history: CachedEpochIndexFeeVersions = BTreeMap::from([(10, &SYNTHETIC_FEE_VERSION_2)]);
+        let resolved = epoch(3).active_fee_version(&history);
+        assert_eq!(resolved, FeeVersion::first());
+        assert_eq!(
+            epoch(3)
+                .cost_for_known_cost_item(&history, KnownCostItem::StorageDiskUsageCreditPerByte),
+            FEE_VERSION1.storage.storage_disk_usage_credit_per_byte
+        );
+    }
+
+    #[test]
+    fn should_agree_with_the_registered_entry_on_every_known_cost_item_for_every_platform_version()
+    {
+        // The fee history stores a number and serves values through KnownCostItem. For the stored
+        // number to resolve to the intended table, the registered generation must return the same
+        // value as the schedule the platform version actually carries, for every item.
+        for platform_version in PLATFORM_VERSIONS {
+            let schedule = &platform_version.fee_version;
+            let registered = FeeVersion::get(schedule.fee_version_number).unwrap_or_else(|error| {
+                panic!(
+                    "protocol version {} references an unregistered fee version: {error}",
+                    platform_version.protocol_version
+                )
+            });
+            for item in every_known_cost_item() {
+                assert_eq!(
+                    item.lookup_cost(schedule),
+                    item.lookup_cost(registered),
+                    "protocol version {} disagrees with registered fee version {} on a cost item",
+                    platform_version.protocol_version,
+                    schedule.fee_version_number
+                );
+            }
+        }
+    }
+}

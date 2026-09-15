@@ -861,9 +861,13 @@ mod refund_tests {
 
         let mut platform_state = platform.state.load().clone().deref().clone();
 
-        platform_state
-            .previous_fee_versions_mut()
-            .insert(5, platform_version_with_higher_fees.fee_version.as_static());
+        platform_state.previous_fee_versions_mut().insert(
+            5,
+            platform_version_with_higher_fees
+                .fee_version
+                .as_static()
+                .expect("registered fee version"),
+        );
 
         let (mut fee_results, _) = process_state_transitions(
             &platform,
