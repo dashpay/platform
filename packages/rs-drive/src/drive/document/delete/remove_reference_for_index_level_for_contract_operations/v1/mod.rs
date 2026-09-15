@@ -11,7 +11,7 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
-use crate::drive::document::document_reference_size;
+use crate::drive::document::document_reference_size_v1;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::error::drive::DriveError;
 use crate::util::storage_flags::StorageFlags;
@@ -273,7 +273,7 @@ impl Drive {
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
                 AllReference(
                     DEFAULT_HASH_SIZE_U8,
-                    document_reference_size(document_type),
+                    document_reference_size_v1(),
                     storage_flags.map(|s| s.serialized_size()),
                 ),
                 &key_info_path,
@@ -302,7 +302,7 @@ impl Drive {
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
                 AllReference(
                     1,
-                    document_reference_size(document_type),
+                    document_reference_size_v1(),
                     storage_flags.map(|s| s.serialized_size()),
                 ),
                 &key_info_path,

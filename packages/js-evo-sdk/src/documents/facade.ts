@@ -73,14 +73,14 @@ export class DocumentsFacade {
     return w.getCompositeDocumentsWithProofInfo(query);
   }
 
-  async history(query: wasm.DocumentHistoryQuery): Promise<Map<bigint, wasm.Document>> {
+  async history(query: wasm.DocumentHistoryQuery): Promise<wasm.DocumentHistoryResult> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentHistory(query);
   }
 
   async historyWithProof(
     query: wasm.DocumentHistoryQuery,
-  ): Promise<wasm.ProofMetadataResponseTyped<Map<bigint, wasm.Document>>> {
+  ): Promise<wasm.DocumentHistoryProofMetadataResponseTyped> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentHistoryWithProofInfo(query);
   }

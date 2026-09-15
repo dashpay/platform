@@ -1751,8 +1751,8 @@ fn test_query_historical_first_platform_version() {
 
 #[cfg(feature = "server")]
 #[test]
-fn test_query_historical_latest_platform_version() {
-    let platform_version = PlatformVersion::latest();
+fn test_query_historical_protocol_13() {
+    let platform_version = PlatformVersion::get(13).unwrap();
     let (drive, contract) = setup(10, None, 73509, platform_version);
 
     let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
@@ -1770,8 +1770,8 @@ fn test_query_historical_latest_platform_version() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            54, 181, 217, 82, 201, 205, 230, 125, 186, 252, 4, 136, 247, 204, 234, 159, 14, 239,
-            59, 72, 69, 192, 182, 54, 122, 100, 192, 158, 183, 88, 31, 255,
+            161, 240, 182, 38, 13, 26, 246, 165, 76, 67, 252, 39, 203, 128, 225, 233, 70, 76, 30,
+            228, 64, 40, 59, 240, 240, 135, 215, 135, 146, 2, 128, 65,
         ]
     );
 
@@ -3148,8 +3148,125 @@ fn test_query_historical_latest_platform_version() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            74, 167, 180, 31, 0, 73, 101, 156, 93, 253, 230, 154, 157, 52, 205, 74, 148, 69, 143,
-            223, 85, 165, 216, 188, 121, 29, 94, 15, 126, 126, 39, 199,
+            82, 200, 76, 76, 113, 4, 94, 39, 105, 206, 63, 185, 209, 222, 13, 161, 194, 209, 156,
+            251, 133, 192, 38, 65, 93, 196, 214, 198, 52, 196, 37, 208,
         ]
+    );
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn test_query_historical_protocol_14_uses_composite_history() {
+    use drive::drive::document::history::{DocumentHistoryFilter, DocumentHistoryQueryV1};
+    use drive::drive::RootTree;
+    use drive::grovedb::Element;
+
+    let version = PlatformVersion::get(14).unwrap();
+    let (drive, contract) = setup(10, None, 73509, version);
+    let document_type = contract.document_type_for_name("person").unwrap();
+    let root = drive
+        .grove
+        .root_hash(None, &version.drive.grove_version)
+        .value
+        .unwrap();
+    assert_eq!(
+        root,
+        [
+            61, 61, 109, 216, 215, 227, 93, 117, 118, 209, 116, 229, 95, 28, 205, 206, 254, 129,
+            215, 83, 167, 164, 154, 106, 218, 238, 225, 109, 111, 17, 45, 200,
+        ]
+    );
+    let current_query = json!({"orderBy": [["firstName", "asc"]], "limit": 100});
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&current_query, None).unwrap();
+    let (documents, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            document_type,
+            &query_cbor,
+            None,
+            None,
+            Some(14),
+        )
+        .unwrap();
+    assert_eq!(documents.len(), 10);
+    let names: Vec<_> = documents
+        .iter()
+        .map(|bytes| {
+            let document = Document::from_bytes(bytes, document_type, version).unwrap();
+            document
+                .get("firstName")
+                .unwrap()
+                .as_text()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "Adey", "Briney", "Cammi", "Celinda", "Dalia", "Gilligan", "Kevina", "Meta", "Noellyn",
+            "Prissie"
+        ]
+    );
+    let primary_path = vec![
+        vec![RootTree::DataContractDocuments as u8],
+        contract.id().to_vec(),
+        vec![1],
+        b"person".to_vec(),
+        vec![0],
+    ];
+    for bytes in documents {
+        let current = Document::from_bytes(&bytes, document_type, version).unwrap();
+        let pointer = drive
+            .grove
+            .get_raw(
+                primary_path.as_slice().into(),
+                current.id().as_slice(),
+                None,
+                &version.drive.grove_version,
+            )
+            .value
+            .unwrap();
+        assert!(matches!(pointer, Element::Reference(..)));
+        let query = DocumentHistoryQueryV1 {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "person".into(),
+            document_id: current.id().to_buffer(),
+            filter: DocumentHistoryFilter::StartAtTime(0),
+            limit: None,
+        };
+        let (page, proof) = drive
+            .prove_document_history_v1(&query, document_type, None, version)
+            .unwrap();
+        assert_eq!(page.lifecycle.remaining_revisions, 4);
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|entry| entry.time_ms)
+                .collect::<Vec<_>>(),
+            [0, 15, 100, 1000]
+        );
+        assert_eq!(page.entries.last().unwrap().document, current);
+        let (proved_root, verified) =
+            Drive::verify_document_history_v1(&query, &proof, document_type, version).unwrap();
+        assert_eq!(proved_root, root);
+        assert_eq!(verified, page);
+    }
+    let point_in_time = json!({
+        "where": [["$id", "==", "6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179"]],
+        "blockTime": 300,
+    });
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&point_in_time, None).unwrap();
+    let result = drive.query_documents_cbor_from_contract(
+        &contract,
+        document_type,
+        &query_cbor,
+        None,
+        None,
+        Some(14),
+    );
+    assert!(
+        matches!(result, Err(Error::Query(QuerySyntaxError::Unsupported(message)))
+        if message == "point-in-time reads are unavailable for history-keeping document types")
     );
 }

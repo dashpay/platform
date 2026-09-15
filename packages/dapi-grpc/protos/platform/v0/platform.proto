@@ -1809,46 +1809,79 @@ message GetDocumentsResponse {
 }
 
 message GetDocumentHistoryRequest {
+  // Reads the retained revisions of a historical document (a type with
+  // documentsKeepHistory). Served from protocol version 14 on.
   message GetDocumentHistoryRequestV0 {
-    bytes data_contract_id = 1; // The ID of the data contract
-    string document_type_name = 2; // The document type name
-    bytes document_id = 3; // The document ID
-    google.protobuf.UInt32Value limit =
-        4; // The maximum number of history entries to return
-    google.protobuf.UInt32Value offset =
-        5; // The offset for pagination through the document history
-    uint64 start_at_ms = 6 [
-      jstype = JS_STRING
-    ];              // Only return results after this time in milliseconds
-    bool prove = 7; // Flag to request a proof as the response
+    // Exclusive cursor returned with a page. Several revisions can share a
+    // block time, so resuming needs the revision as well as the time.
+    message Cursor {
+      uint64 time_ms = 1 [ jstype = JS_STRING ];
+      uint64 revision = 2 [ jstype = JS_STRING ];
+    }
+    bytes data_contract_id = 1;
+    string document_type_name = 2;
+    bytes document_id = 3;
+    google.protobuf.UInt32Value limit = 4;
+    bool prove = 5;
+    oneof filter {
+      uint64 start_at_ms = 6 [ jstype = JS_STRING ];
+      Cursor start_after = 7;
+      uint64 start_at_revision = 8 [ jstype = JS_STRING ];
+      uint64 revision = 9 [ jstype = JS_STRING ];
+    }
   }
-  oneof version { GetDocumentHistoryRequestV0 v0 = 1; }
+  // This shape replaces the timestamp-keyed request that earlier releases
+  // served under the same version: no released network stores such history,
+  // and the protocol 14 storage migration leaves nothing for it to read.
+  oneof version {
+    GetDocumentHistoryRequestV0 v0 = 1;
+  }
 }
 
 message GetDocumentHistoryResponse {
+  // A page of a historical document's retained revisions, with the
+  // document's lifecycle as of the same block. Only document types with
+  // documentsKeepHistory retain history; every field here describes such a
+  // historical document.
   message GetDocumentHistoryResponseV0 {
-    // Represents a single entry in a document's history
-    message DocumentHistoryEntry {
-      uint64 date = 1 [ jstype = JS_STRING ]; // The date of the history entry
-      bytes value = 2; // The value of the document at this point in history
+    // One retained revision of the historical document.
+    message Entry {
+      uint64 time_ms = 1 [ jstype = JS_STRING ];
+      uint64 revision = 2 [ jstype = JS_STRING ];
+      bytes document = 3;
     }
-
-    // Collection of document history entries
-    message DocumentHistory {
-      repeated DocumentHistoryEntry document_entries =
-          1; // List of history entries
+    // Where the historical document stands: still current, or gone with
+    // nothing retained. Later protocol versions add the states between.
+    message Lifecycle {
+      enum State {
+        ACTIVE = 0;
+        ABSENT = 1;
+      }
+      State state = 1;
+      // Revisions the history still retains for the document.
+      uint64 remaining_revisions = 2 [ jstype = JS_STRING ];
     }
-
+    // A page of retained revisions and the document's lifecycle as of the
+    // same block.
+    message History {
+      repeated Entry entries = 1;
+      Lifecycle lifecycle = 2;
+    }
     oneof result {
-      DocumentHistory document_history =
-          1; // The actual history of the document
-      Proof proof =
-          2; // Cryptographic proof of the document history, if requested
+      History history = 1;
+      // One proof object. Its grovedb_proof carries two GroveDB proofs in a
+      // small versioned envelope, because they answer two queries GroveDB
+      // cannot merge: the offset-paginated proof over the document's history
+      // tree and the exact-key absence proof over the current pointer, the
+      // lifecycle record and the history tree's count. Both commit to the
+      // same root hash, signed once.
+      Proof proof = 2;
     }
-
-    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+    ResponseMetadata metadata = 3;
   }
-  oneof version { GetDocumentHistoryResponseV0 v0 = 1; }
+  oneof version {
+    GetDocumentHistoryResponseV0 v0 = 1;
+  }
 }
 
 message GetIdentityByPublicKeyHashRequest {

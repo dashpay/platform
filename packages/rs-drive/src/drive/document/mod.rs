@@ -27,12 +27,18 @@ mod delete;
 mod estimation_costs;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod get_fetch;
+/// Composite-key history queries and proof results.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod history;
 #[cfg(feature = "server")]
 mod index_uniqueness;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert_contested;
+/// Activation migration and its inventory.
+#[cfg(feature = "server")]
+pub mod migration;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 pub mod query;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
@@ -294,6 +300,68 @@ fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
     // 1 reference_hops count
     // 1 element flags option
     6 + reference_path_size
+}
+
+#[cfg(feature = "server")]
+/// Creates a reference to a document stored with the per-type history tree
+/// (drive structure `keep_history_storage` 1).
+///
+/// The reference always points at the primary key tree entry. For a
+/// keep-history type that entry is itself a reference to the current revision
+/// in the history tree, so one more hop is allowed.
+fn make_document_reference_v1(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    storage_flags: Option<&StorageFlags>,
+) -> Element {
+    let reference_path = vec![vec![0], document.id().to_vec()];
+    let max_reference_hops = if document_type.documents_keep_history() {
+        2
+    } else {
+        1
+    };
+    Element::Reference(
+        UpstreamRootHeightReference(4, reference_path),
+        Some(max_reference_hops),
+        StorageFlags::map_to_some_element_flags(storage_flags),
+    )
+}
+
+#[cfg(feature = "server")]
+/// [`make_document_reference_v1`] carrying the document's sum contribution for
+/// a summable index.
+pub(crate) fn make_document_reference_with_sum_item_v1(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    sum_value: i64,
+    storage_flags: Option<&StorageFlags>,
+) -> Element {
+    let reference_path = vec![vec![0], document.id().to_vec()];
+    let max_reference_hops = if document_type.documents_keep_history() {
+        2
+    } else {
+        1
+    };
+    Element::new_reference_with_sum_item_with_max_hops_and_flags(
+        UpstreamRootHeightReference(4, reference_path),
+        Some(max_reference_hops),
+        sum_value,
+        StorageFlags::map_to_some_element_flags(storage_flags),
+    )
+}
+
+#[cfg(feature = "server")]
+/// Serialized size of a [`make_document_reference_v1`] reference: the path is
+/// always `[0, document id]`.
+fn document_reference_size_v1() -> u32 {
+    // 1 for type reference
+    // 1 for reference type
+    // 1 for root height offset
+    // 36 for the reference path (vec size, subvec size, 0, subvec size, 32-byte id)
+    // 1 reference_hops option
+    // 1 reference_hops count
+    // 1 element flags option
+    6 + 36
 }
 
 #[cfg(feature = "server")]

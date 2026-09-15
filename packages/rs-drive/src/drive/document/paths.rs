@@ -1,4 +1,51 @@
 use crate::drive::{constants, RootTree};
+
+/// Reserved document-type key containing the revision trees.
+pub const DOCUMENT_HISTORY_TREE_KEY: u8 = 2;
+
+/// Where a keep-history document type stores its retained revisions.
+///
+/// Read from the drive structure version so every path, reference and query
+/// agrees with the writer that produced the stored state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeepHistoryStorage {
+    /// Every revision lives in the document's own subtree under the primary
+    /// key tree, keyed by block time, with the current revision at `[0]`.
+    DocumentSubtree,
+    /// The primary key tree points at the current revision; the revisions
+    /// live in the type's history tree under `DOCUMENT_HISTORY_TREE_KEY`.
+    HistoryTree,
+}
+
+impl KeepHistoryStorage {
+    /// The layout keep-history documents are stored in at this drive version.
+    pub fn for_drive_version(
+        drive_version: &dpp::version::drive_versions::DriveVersion,
+    ) -> Result<Self, crate::error::Error> {
+        match drive_version.structure.keep_history_storage {
+            0 => Ok(Self::DocumentSubtree),
+            1 => Ok(Self::HistoryTree),
+            received => Err(crate::error::Error::Drive(
+                crate::error::drive::DriveError::UnknownVersionMismatch {
+                    method: "keep_history_storage".to_string(),
+                    known_versions: vec![0, 1],
+                    received,
+                },
+            )),
+        }
+    }
+}
+
+/// Path to all retained revisions of one document.
+pub fn document_history_path(
+    contract_id: &[u8],
+    document_type_name: &str,
+    document_id: &[u8],
+) -> Vec<Vec<u8>> {
+    let mut path = contract_document_type_path_vec(contract_id, document_type_name);
+    path.extend([vec![DOCUMENT_HISTORY_TREE_KEY], document_id.to_vec()]);
+    path
+}
 #[cfg(feature = "server")]
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 #[cfg(feature = "server")]
