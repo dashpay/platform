@@ -1710,7 +1710,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
 
             // Move the Tenderdash image onto the tag the base config now pins
-            // (1.8.0-dev.2), so operators pick it up without waiting for a
+            // (1.8.0-dev.3), so operators pick it up without waiting for a
             // Dashmate release. Mirrors the re-pin the 4.1.1 migration did for
             // the 1.6 -> 1.7 move.
             if (options.platform?.drive?.tenderdash?.docker) {
