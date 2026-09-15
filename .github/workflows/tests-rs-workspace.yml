@@ -239,6 +239,17 @@ jobs:
             done
           done
 
+      # The contract-author declaration crate is a guest dependency: contract
+      # packages compile it for WebAssembly without std. Whole-workspace
+      # builds unify features and would hide a std leak, so check the
+      # standalone no-std graph on the no-std-library wasm target and run the
+      # crate's tests without default features.
+      - name: Check guest declaration cut
+        run: |
+          rustup target add wasm32v1-none
+          cargo check -p dash-sdk-contract --no-default-features --target wasm32v1-none --locked
+          cargo test -p dash-sdk-contract --no-default-features --locked
+
       - name: Detect immutable structure changes
         if: github.event_name == 'pull_request'
         run: |
@@ -419,6 +430,7 @@ jobs:
             --package token-history-contract \
             --package wallet-utils-contract \
             --package keyword-search-contract \
+            --package dash-sdk-contract \
             --all-features \
             --locked \
             -E 'not test(~shield) and (not binary_id(=drive-abci::strategy_tests) or test(~comprehensive_mixed_operations) or test(~process_proposal_collision))'

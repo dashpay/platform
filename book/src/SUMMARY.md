@@ -109,6 +109,10 @@
 - [Binding Patterns](wasm/binding-patterns.md)
 - [Error Macros](wasm/error-macros.md)
 
+# DashVM
+
+- [Contract Declarations and the Author API](dashvm/contract-declarations.md)
+
 ---
 
 # Appendix

@@ -106,6 +106,9 @@ rs-sdk-trusted-context-provider: &sdk_trusted_context_provider
   - *context_provider
   - *dpp
 
+dash-sdk-contract:
+  - packages/rs-dash-sdk-contract/**
+
 dapi-grpc: &dapi_grpc
   - packages/rs-platform-version/**
   - packages/rs-dash-platform-macros/**

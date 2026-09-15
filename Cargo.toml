@@ -5,6 +5,7 @@ resolver = "2"
 members = [
     "packages/dapi-grpc",
     "packages/rs-dash-platform-macros",
+    "packages/rs-dash-sdk-contract",
     "packages/rs-dpp",
     "packages/rs-drive",
     "packages/rs-platform-value",
