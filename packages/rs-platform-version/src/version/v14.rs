@@ -67,10 +67,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    ends — or open a contest for a document that is not a contested
 ///    resource at all. State validation also prevents a non-contested create
 ///    from occupying a live contested document's id before the contest winner
-///    is awarded into primary storage. Drive's contested insert also reuses an
-///    abstain or lock vote tree an earlier poll's cleanup left orphaned (it
-///    only removed the trees that received votes), so a resource can be
-///    contested again instead of failing with `CorruptedContractIndexes`.
+///    is awarded into primary storage. Drive's contested insert also recreates
+///    an abstain or lock vote tree over the storage an earlier poll's cleanup
+///    left orphaned (it only removed the trees that received votes), so a
+///    resource can be contested again instead of failing with
+///    `CorruptedContractIndexes`.
 /// 4. **Relative daily withdrawal limit**: the flat 2000 Dash per 24 hours that
 ///    applied from v8 becomes 15% of the total credits Platform held a day ago
 ///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by

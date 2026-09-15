@@ -1,9 +1,11 @@
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::{LowLevelDriveOperation, LowLevelDriveOperationTreeTypeConverter};
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::DriveKeyInfo::KeyRef;
 use crate::util::object_size_info::PathInfo;
+use crate::util::object_size_info::PathKeyInfo::PathKeyRef;
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U8_SIZE_U32, U8_SIZE_U8};
 use dpp::version::drive_versions::DriveVersion;
@@ -11,21 +13,23 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, Mix};
 use grovedb::EstimatedSumTrees::AllSumTrees;
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Adds the contested vote subtree, reusing one that already exists.
+    /// Adds the contested vote subtree, tolerating storage an earlier contest
+    /// left behind.
     ///
-    /// The tree can already exist when the resource was contested before:
-    /// the poll-end cleanup removes the abstain and lock vote trees only for
+    /// The poll-end cleanup removes the abstain and lock vote trees only for
     /// the choices that received votes, then drops their parent trees
-    /// regardless, so a zero-vote tree stays orphaned under the path the new
-    /// contest recreates. v0 raised `CorruptedContractIndexes` there, which
-    /// left the resource impossible to contest again. The orphan is always
-    /// empty, since any votes are deleted before its parent goes, so v1
-    /// reuses it. That also repairs resources orphaned under earlier
-    /// protocol versions.
+    /// regardless, so a zero-vote tree's storage stays behind under the path
+    /// the next contest recreates. GroveDB's raw existence probe reads that
+    /// storage by prefix and reports the tree as present, so v0 raised
+    /// `CorruptedContractIndexes` and the resource could never be contested
+    /// again. v1 checks what is actually reachable: nothing, so the tree is
+    /// created as for a new contest; a reachable empty sum tree is kept;
+    /// anything else is still `CorruptedContractIndexes`. This also repairs
+    /// resources orphaned under earlier protocol versions.
     #[inline(always)]
     pub(super) fn add_contested_vote_subtree_for_non_identities_operations_v1(
         &self,
@@ -101,10 +105,11 @@ impl Drive {
             }
         };
 
-        // here we are the tree that will contain the voting tree; an existing
-        // (orphaned, empty) one is kept
-        self.batch_insert_empty_tree_if_not_exists(
-            votes_path_key_info,
+        let direct_query_type = apply_type.to_direct_query_type();
+
+        // here we are the tree that will contain the voting tree
+        let inserted = self.batch_insert_empty_tree_if_not_exists(
+            votes_path_key_info.clone(),
             TreeType::SumTree,
             storage_flags,
             apply_type,
@@ -113,6 +118,42 @@ impl Drive {
             batch_operations,
             drive_version,
         )?;
+
+        if !inserted {
+            // Estimation paths carry sizes instead of keys and never report an
+            // existing tree.
+            if let PathKeyRef((path, key)) = &votes_path_key_info {
+                let existing = self.grove_get_raw_optional(
+                    path.as_slice().into(),
+                    key,
+                    direct_query_type,
+                    transaction,
+                    batch_operations,
+                    drive_version,
+                )?;
+
+                match existing {
+                    // Only the storage a previous contest's cleanup left under
+                    // the parent it dropped: nothing is reachable there, so the
+                    // tree is created as for a new contest.
+                    None => batch_operations.push(
+                        TreeType::SumTree.empty_tree_operation_for_known_path_key(
+                            path.clone(),
+                            key.to_vec(),
+                            storage_flags,
+                        )?,
+                    ),
+                    // A reachable empty tree is kept.
+                    Some(Element::SumTree(None, 0, _)) => {}
+                    Some(other) => {
+                        return Err(Error::Drive(DriveError::CorruptedContractIndexes(format!(
+                            "contested votes tree already exists for a non identity (abstain or lock) at path {} and is not an empty sum tree: {:?}",
+                            votes_path_key_info, other
+                        ))));
+                    }
+                }
+            }
+        }
 
         Ok(())
     }

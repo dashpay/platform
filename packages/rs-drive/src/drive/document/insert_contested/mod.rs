@@ -134,9 +134,12 @@ mod tests {
     /// vote trees behind when nobody voted that way.
     mod restart_after_cleanup {
         use super::*;
+        use crate::drive::votes::paths::{VotePollPaths, VOTING_STORAGE_TREE_KEY};
         use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+        use crate::drive::Drive;
         use crate::error::drive::DriveError;
         use crate::error::Error;
+        use crate::util::grove_operations::DirectQueryType;
         use crate::util::object_size_info::DataContractOwnedResolvedInfo;
         use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
         use dpp::data_contract::document_type::random_document::{
@@ -150,6 +153,7 @@ mod tests {
         use dpp::prelude::TimestampMillis;
         use dpp::tests::fixtures::get_dpns_data_contract_fixture;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+        use grovedb::Element;
         use rand::rngs::StdRng;
         use rand::SeedableRng;
         use std::collections::BTreeMap;
@@ -195,7 +199,11 @@ mod tests {
         /// abstain or lock, then opens a new contest for the same name.
         fn restart_contest_after_cleanup_without_abstain_or_lock_votes(
             platform_version: &PlatformVersion,
-        ) -> Result<FeeResult, Error> {
+        ) -> (
+            Drive,
+            ContestedDocumentResourceVotePollWithContractInfo,
+            Result<FeeResult, Error>,
+        ) {
             let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
             let dpns_contract =
@@ -259,33 +267,41 @@ mod tests {
             let finished_polls = [(&vote_poll, &end_time, &votes)];
 
             let mut cleanup_operations = vec![];
-            drive.remove_contested_resource_vote_poll_votes_operations(
-                &finished_polls,
-                true,
-                &mut cleanup_operations,
-                None,
-                platform_version,
-            )?;
-            drive.remove_contested_resource_vote_poll_documents_operations(
-                &finished_polls,
-                false,
-                &mut cleanup_operations,
-                None,
-                platform_version,
-            )?;
-            drive.remove_contested_resource_vote_poll_contenders_operations(
-                &finished_polls,
-                &mut cleanup_operations,
-                None,
-                platform_version,
-            )?;
-            drive.apply_batch_low_level_drive_operations(
-                None,
-                None,
-                cleanup_operations,
-                &mut vec![],
-                &platform_version.drive,
-            )?;
+            drive
+                .remove_contested_resource_vote_poll_votes_operations(
+                    &finished_polls,
+                    true,
+                    &mut cleanup_operations,
+                    None,
+                    platform_version,
+                )
+                .expect("expected the votes cleanup operations");
+            drive
+                .remove_contested_resource_vote_poll_documents_operations(
+                    &finished_polls,
+                    false,
+                    &mut cleanup_operations,
+                    None,
+                    platform_version,
+                )
+                .expect("expected the documents cleanup operations");
+            drive
+                .remove_contested_resource_vote_poll_contenders_operations(
+                    &finished_polls,
+                    &mut cleanup_operations,
+                    None,
+                    platform_version,
+                )
+                .expect("expected the contenders cleanup operations");
+            drive
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    None,
+                    cleanup_operations,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to apply the poll-end cleanup");
 
             let second_owner_id = Identifier::from([0x22; 32]);
             let second_document = quantum_domain_document(
@@ -296,7 +312,7 @@ mod tests {
                 platform_version,
             );
 
-            drive.add_contested_document(
+            let result = drive.add_contested_document(
                 OwnedDocumentInfo {
                     document_info: DocumentRefInfo((
                         &second_document,
@@ -304,20 +320,52 @@ mod tests {
                     )),
                     owner_id: Some(second_owner_id.to_buffer()),
                 },
-                vote_poll,
+                vote_poll.clone(),
                 false,
                 None,
                 &BlockInfo::default(),
                 true,
                 None,
                 platform_version,
-            )
+            );
+
+            (drive, vote_poll, result)
         }
 
         #[test]
         fn a_resource_can_be_contested_again_over_the_orphaned_vote_trees() {
-            restart_contest_after_cleanup_without_abstain_or_lock_votes(PlatformVersion::latest())
-                .expect("expected the new contest to reuse the orphaned vote trees");
+            let platform_version = PlatformVersion::latest();
+
+            let (drive, vote_poll, result) =
+                restart_contest_after_cleanup_without_abstain_or_lock_votes(platform_version);
+
+            result.expect("expected the new contest to be created over the orphaned vote trees");
+
+            // The new contest must own reachable, empty abstain and lock vote
+            // trees: the raw existence probe alone would have kept the
+            // orphaned storage and left the contest without them.
+            for resource_vote_choice in [ResourceVoteChoice::Abstain, ResourceVoteChoice::Lock] {
+                let path = vote_poll
+                    .contender_path(&resource_vote_choice, platform_version)
+                    .expect("expected the contender path");
+                let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
+
+                let vote_tree = drive
+                    .grove_get_raw_optional(
+                        path_refs.as_slice().into(),
+                        &[VOTING_STORAGE_TREE_KEY],
+                        DirectQueryType::StatefulDirectQuery,
+                        None,
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .expect("expected to read the vote tree");
+
+                assert!(
+                    matches!(vote_tree, Some(Element::SumTree(None, 0, _))),
+                    "{resource_vote_choice:?} vote tree must be a reachable empty sum tree, got {vote_tree:?}"
+                );
+            }
         }
 
         /// PROTOCOL_VERSION_13 keeps v0, which trips over the orphaned tree.
@@ -326,8 +374,11 @@ mod tests {
         fn a_resource_can_not_be_contested_again_at_protocol_version_13() {
             let platform_version = PlatformVersion::get(13).expect("expected platform version 13");
 
-            let err = restart_contest_after_cleanup_without_abstain_or_lock_votes(platform_version)
-                .expect_err("expected the new contest to fail on the orphaned vote tree");
+            let (_, _, result) =
+                restart_contest_after_cleanup_without_abstain_or_lock_votes(platform_version);
+
+            let err =
+                result.expect_err("expected the new contest to fail on the orphaned vote tree");
 
             assert!(
                 matches!(err, Error::Drive(DriveError::CorruptedContractIndexes(_))),
