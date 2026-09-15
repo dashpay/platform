@@ -1011,15 +1011,8 @@ pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::ConsensusError;
 
-    let consensus_error = match error {
-        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
-            broadcast_err.cause.as_ref()
-        }
-        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
-        _ => None,
-    };
     matches!(
-        consensus_error,
+        consensus_error_of(error),
         Some(ConsensusError::BasicError(
             BasicError::InvalidInstantAssetLockProofSignatureError(_),
         ))
@@ -1034,15 +1027,8 @@ pub fn is_asset_lock_proof_transaction_height_invalid(error: &dash_sdk::Error) -
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::ConsensusError;
 
-    let consensus_error = match error {
-        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
-            broadcast_err.cause.as_ref()
-        }
-        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
-        _ => None,
-    };
     matches!(
-        consensus_error,
+        consensus_error_of(error),
         Some(ConsensusError::BasicError(
             BasicError::InvalidAssetLockProofTransactionHeightError(_),
         ))
@@ -1539,6 +1525,36 @@ mod address_nonce_tests {
         let got = as_address_invalid_nonce(&wrapped).expect("must unwrap the retry envelope");
         assert_eq!(got.provided_nonce(), 9);
         assert_eq!(got.expected_nonce(), 10);
+    }
+
+    /// The tx-height rejection is still recognised when the dapi-client wraps
+    /// it in the exhausted-retry envelope.
+    #[test]
+    fn transaction_height_rejection_is_recognised_through_the_retry_envelope() {
+        use dpp::consensus::basic::identity::InvalidAssetLockProofTransactionHeightError;
+
+        let inner = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            dpp::consensus::ConsensusError::from(InvalidAssetLockProofTransactionHeightError::new(
+                100, None,
+            )),
+        )));
+        let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(inner));
+        assert!(is_asset_lock_proof_transaction_height_invalid(&wrapped));
+        assert!(!is_instant_lock_proof_invalid(&wrapped));
+    }
+
+    /// The InstantSend-signature rejection is still recognised when the
+    /// dapi-client wraps it in the exhausted-retry envelope.
+    #[test]
+    fn instant_proof_rejection_is_recognised_through_the_retry_envelope() {
+        use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
+
+        let inner = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            dpp::consensus::ConsensusError::from(InvalidInstantAssetLockProofSignatureError::new()),
+        )));
+        let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(inner));
+        assert!(is_instant_lock_proof_invalid(&wrapped));
+        assert!(!is_asset_lock_proof_transaction_height_invalid(&wrapped));
     }
 }
 

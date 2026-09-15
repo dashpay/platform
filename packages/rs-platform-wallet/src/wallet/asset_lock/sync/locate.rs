@@ -33,7 +33,13 @@ pub(crate) trait BlockHeaderSource: Send + Sync {
 pub(crate) enum Located {
     /// The SPV header chain holds a block at `height`, and that block's
     /// transactions — checked against its merkle root — include this one.
-    Mined { height: u32 },
+    Mined {
+        /// Height of the block.
+        height: u32,
+        /// Hash of the SPV header the inclusion was verified against;
+        /// re-checked before every use.
+        block_hash: BlockHash,
+    },
     /// DAPI knows the transaction but reports no block for it.
     NotMined,
     /// DAPI does not know the transaction.
@@ -55,6 +61,10 @@ pub(crate) enum Located {
 pub(crate) trait MinedHeightLocator: Send + Sync {
     /// Where `txid` was mined, as far as this locator can establish.
     async fn locate(&self, txid: &Txid) -> Located;
+
+    /// Hash of the SPV header this locator verifies against at `height`, or
+    /// `None` when it has no such header.
+    async fn header_hash_at(&self, height: u32) -> Option<BlockHash>;
 }
 
 /// Locator for managers built without a DAPI + SPV pair. Answers
@@ -65,6 +75,10 @@ pub(crate) struct NoMinedHeightLocator;
 impl MinedHeightLocator for NoMinedHeightLocator {
     async fn locate(&self, _txid: &Txid) -> Located {
         Located::Unavailable("no mined-height locator configured".to_string())
+    }
+
+    async fn header_hash_at(&self, _height: u32) -> Option<BlockHash> {
+        None
     }
 }
 
@@ -196,7 +210,10 @@ impl MinedHeightLocator for DapiSpvLocator {
             Err(e) => return Located::Unavailable(e),
         };
         match verify_inclusion(&block, spv_hash, txid) {
-            Inclusion::Included => Located::Mined { height },
+            Inclusion::Included => Located::Mined {
+                height,
+                block_hash: spv_hash,
+            },
             Inclusion::NotIncluded => Located::NotIncluded { height },
             Inclusion::BlockHashMismatch => Located::BlockUnverifiable {
                 height,
@@ -207,6 +224,10 @@ impl MinedHeightLocator for DapiSpvLocator {
                 reason: "served block's transactions do not match its merkle root".to_string(),
             },
         }
+    }
+
+    async fn header_hash_at(&self, height: u32) -> Option<BlockHash> {
+        self.headers.header_hash_at(height).await
     }
 }
 
@@ -291,7 +312,7 @@ pub(crate) fn chain_proof_height_from_lookup(
     networks_match: bool,
 ) -> Option<u32> {
     match located {
-        Located::Mined { height }
+        Located::Mined { height, .. }
             if networks_match && wallet_chain_lock_height.is_some_and(|cl| cl >= *height) =>
         {
             Some(*height)
@@ -303,6 +324,7 @@ pub(crate) fn chain_proof_height_from_lookup(
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
 
     use dashcore::block::{Header, Version};
     use dashcore::{CompactTarget, Network, OutPoint, Transaction, TxIn, TxMerkleNode};
@@ -382,7 +404,10 @@ mod tests {
     /// A placement yields a height only under the wallet's ChainLock.
     #[test]
     fn proof_height_needs_wallet_chain_lock_coverage() {
-        let mined = Located::Mined { height: 100 };
+        let mined = Located::Mined {
+            height: 100,
+            block_hash: hash(7),
+        };
         assert_eq!(
             chain_proof_height_from_lookup(&mined, Some(100), true),
             Some(100)
@@ -398,7 +423,10 @@ mod tests {
     /// A ChainLock from another network yields no height.
     #[test]
     fn proof_height_refuses_a_network_mismatch() {
-        let mined = Located::Mined { height: 100 };
+        let mined = Located::Mined {
+            height: 100,
+            block_hash: hash(7),
+        };
         assert_eq!(
             chain_proof_height_from_lookup(&mined, Some(150), false),
             None
@@ -509,11 +537,12 @@ mod tests {
         );
     }
 
-    /// Scripted DAPI answers, counting block fetches.
+    /// Scripted DAPI answers, counting block fetches and the hashes asked for.
     struct FakeCoreBlockSource {
         placement: Result<Option<ReportedPlacement>, String>,
         block: Result<Option<Block>, String>,
         block_calls: AtomicUsize,
+        requested: Mutex<Vec<BlockHash>>,
     }
 
     impl FakeCoreBlockSource {
@@ -526,7 +555,13 @@ mod tests {
                 placement,
                 block,
                 block_calls: AtomicUsize::new(0),
+                requested: Mutex::new(Vec::new()),
             })
+        }
+
+        /// The block hashes `block()` was asked for, in order.
+        fn requested_block_hashes(&self) -> Vec<BlockHash> {
+            self.requested.lock().unwrap().clone()
         }
 
         /// How many blocks were fetched.
@@ -541,8 +576,9 @@ mod tests {
             self.placement.clone()
         }
 
-        async fn block(&self, _hash: &BlockHash) -> Result<Option<Block>, String> {
+        async fn block(&self, hash: &BlockHash) -> Result<Option<Block>, String> {
             self.block_calls.fetch_add(1, Ordering::SeqCst);
+            self.requested.lock().unwrap().push(*hash);
             self.block.clone()
         }
     }
@@ -578,8 +614,15 @@ mod tests {
         let located = locator(Arc::clone(&core), Some(block.block_hash()))
             .locate(&block.txdata[0].txid())
             .await;
-        assert_eq!(located, Located::Mined { height: 1 });
+        assert_eq!(
+            located,
+            Located::Mined {
+                height: 1,
+                block_hash: block.block_hash(),
+            }
+        );
         assert_eq!(core.block_calls(), 1);
+        assert_eq!(core.requested_block_hashes(), vec![block.block_hash()]);
     }
 
     /// A verified block without the tx is reported as not including it.
@@ -587,10 +630,11 @@ mod tests {
     async fn locate_reports_not_included_when_block_lacks_txid() {
         let block = genesis();
         let core = FakeCoreBlockSource::new(placed_in(&block), Ok(Some(block.clone())));
-        let located = locator(core, Some(block.block_hash()))
+        let located = locator(Arc::clone(&core), Some(block.block_hash()))
             .locate(&tx(9).txid())
             .await;
         assert_eq!(located, Located::NotIncluded { height: 1 });
+        assert_eq!(core.requested_block_hashes(), vec![block.block_hash()]);
     }
 
     /// A placement the SPV header contradicts never costs a block fetch.
@@ -620,5 +664,39 @@ mod tests {
                 reason: "block not served".to_string(),
             }
         );
+    }
+
+    /// The block is fetched by the SPV header's hash even when DAPI reports
+    /// the same hash in the other byte order.
+    #[tokio::test]
+    async fn locate_requests_the_block_by_the_spv_header_hash_not_dapis() {
+        let block = genesis();
+        let spv = block.block_hash();
+        let core = FakeCoreBlockSource::new(
+            Ok(Some(ReportedPlacement {
+                height: 1,
+                block_hash: Some(reversed(spv)),
+            })),
+            Ok(Some(block.clone())),
+        );
+        let located = locator(Arc::clone(&core), Some(spv))
+            .locate(&block.txdata[0].txid())
+            .await;
+        assert_eq!(
+            located,
+            Located::Mined {
+                height: 1,
+                block_hash: spv,
+            }
+        );
+        assert_eq!(core.requested_block_hashes(), vec![spv]);
+    }
+
+    /// The locator answers header checks from its SPV header store.
+    #[tokio::test]
+    async fn locator_exposes_the_spv_header_hash() {
+        let core = FakeCoreBlockSource::new(Ok(None), Ok(None));
+        let locator = locator(core, Some(hash(3)));
+        assert_eq!(locator.header_hash_at(5).await, Some(hash(3)));
     }
 }
