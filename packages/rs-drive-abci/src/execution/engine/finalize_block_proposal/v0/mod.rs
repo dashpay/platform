@@ -245,9 +245,16 @@ where
         crate::metrics::abci_last_platform_height(height);
         crate::metrics::abci_last_finalized_round(round);
 
+        // Withdrawal transactions pooled in this block (or left over from a backlog) wait for
+        // the next block to sign them, and expired withdrawals wait for it to re-queue them.
+        // Ask Tenderdash for that block right away instead of after the empty-block interval.
+        let propose_next_block_immediately =
+            self.has_pending_withdrawal_work(Some(transaction), platform_version)?;
+
         Ok(block_execution_outcome::v0::BlockFinalizationOutcome {
             validation_result,
             checkpoint_needed: checkpoint_needed.is_some(),
+            propose_next_block_immediately,
         })
     }
 }

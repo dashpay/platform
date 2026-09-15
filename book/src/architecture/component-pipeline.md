@@ -228,6 +228,18 @@ let result = app.commit_transaction(platform_version);
 After commit, the block height counter is updated and, if needed, a GroveDB
 checkpoint is created for crash recovery.
 
+The finalize response also carries a proposer hint,
+`propose_next_block_immediately`. Drive sets it when the block leaves
+withdrawal work for the next block: untied withdrawal transactions waiting in
+the queue to be signed, or expired withdrawal documents waiting to be
+re-queued. Tenderdash then proposes round 0 of the next height without waiting
+for transactions or the empty-block interval, so a withdrawal is signed one
+block after it was pooled instead of one interval later. The hint is local to
+the node and never part of consensus: it is read from the same GroveDB
+transaction the block committed, but it does not change the state or the app
+hash. See `has_pending_withdrawal_work` under
+`packages/rs-drive-abci/src/execution/platform_events/withdrawals/`.
+
 ## Inside run_block_proposal
 
 The `run_block_proposal` method in `packages/rs-drive-abci/src/execution/engine/run_block_proposal/v0/mod.rs`

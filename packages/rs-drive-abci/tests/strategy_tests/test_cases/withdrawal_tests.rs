@@ -217,6 +217,14 @@ mod tests {
                 .unwrap();
             assert!(withdrawal_documents_pooled.is_empty());
 
+            // Nothing is queued and nothing expired, so the next block has no withdrawal work
+            // waiting and Tenderdash may wait for transactions again.
+            assert!(!outcome
+                .abci_app
+                .platform
+                .has_pending_withdrawal_work(None, platform_version)
+                .expect("expected to check for pending withdrawal work"));
+
             let locked_amount = outcome
                 .abci_app
                 .platform
@@ -367,6 +375,14 @@ mod tests {
                 .unwrap();
             assert!(!withdrawal_documents_pooled.is_empty());
 
+            // The pooled transactions wait in the queue for the next block to sign them, so
+            // Drive asks Tenderdash for that block right away.
+            assert!(outcome
+                .abci_app
+                .platform
+                .has_pending_withdrawal_work(None, platform_version)
+                .expect("expected to check for pending withdrawal work"));
+
             let locked_amount = outcome
                 .abci_app
                 .platform
@@ -452,6 +468,14 @@ mod tests {
                 withdrawal_documents_broadcasted.len(),
                 last_block_pooled_withdrawals_amount
             );
+
+            // Nothing is queued and nothing expired, so the next block has no withdrawal work
+            // waiting and Tenderdash may wait for transactions again.
+            assert!(!outcome
+                .abci_app
+                .platform
+                .has_pending_withdrawal_work(None, platform_version)
+                .expect("expected to check for pending withdrawal work"));
 
             let locked_amount = outcome
                 .abci_app
