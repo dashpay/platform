@@ -19,10 +19,13 @@ A missing/null document-type restriction authorizes all types in that contract,
 including types added by later contract updates. An empty array is invalid.
 Contract IDs and document-type names must be sorted and unique on the wire. There
 are at most 16 contracts and 16 types per contract, and the encoded scope must not
-exceed 2048 bytes. The WASM constructor sorts entries and rejects duplicates.
+exceed 2048 bytes. The WASM constructor (SDK follow-up, PR #4655) sorts entries and
+rejects duplicates.
 
 For an application that creates, updates and deletes documents and pays their
-configured token fees, construct the bounds with the WASM SDK:
+configured token fees, construct the bounds with the WASM SDK (`ContractBounds.Scoped`
+and `AuthenticationPermission` ship with the SDK follow-up, PR #4655; this PR only
+keeps the existing bindings compiling):
 
 ```javascript
 const P = wasm.AuthenticationPermission;
@@ -58,7 +61,9 @@ required for scoped authentication.
 
 Document create, replace, delete, ownership transfer, price updates and purchases
 have separate bits. Index-only deletion uses the delete bit. Standalone token
-transition kinds also have separate bits. New/unknown bits are rejected.
+transition kinds also have separate bits. New/unknown bits are rejected. Token bits
+apply to every token defined on a listed contract; a document-type restriction only
+narrows document actions, never token operations.
 
 `DocumentTokenPayment` permits the actual contract-defined token cost of an
 otherwise-authorized document action. It also covers fees using a token issued
@@ -89,9 +94,15 @@ document/token operations do not execute, but Platform credit validation fees
 can be charged and the first batch member's identity-contract nonce can advance,
 even if that member is outside the scope. Replays follow the usual nonce rules.
 
-There are no per-key budgets in scope version 0. A stolen key can exhaust credit
-balances through fees and permitted token balances through allowed operations.
-Expiry limits the time window, not total financial loss.
+There are no per-key budgets in scope version 0. Two bits carry more authority than
+their names suggest. `DocumentTokenPayment` delegates spending over every token
+balance the identity holds: the in-scope contract owner chooses the fee token and
+amount, may point at a token issued by any other contract, and may change both by
+contract update. `DocumentPurchase` moves credits to the seller at the listed price,
+so it amounts to credit-transfer authority towards any seller the key holder controls,
+using an authentication key rather than a TRANSFER key. A stolen key can exhaust
+credit and token balances through allowed operations. Expiry limits the time window,
+not total financial loss.
 
 ## Compatibility
 
