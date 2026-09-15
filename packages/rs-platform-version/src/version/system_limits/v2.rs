@@ -20,6 +20,7 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     daily_withdrawal_limit_percent: None,      // relative daily withdrawal limit arrives in v14
     max_daily_withdrawal_amount: None,
     min_withdrawal_amount: 1_000_000, //1000 duffs (raised from 190 in v12)
+    core_dust_relay_fee_per_kb: None, // expired dust withdrawals fail from v14
     max_contract_group_size: 256,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
@@ -31,4 +32,7 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
     max_time_range_overlap_factor: None,
+    max_time_range_ttl_seconds: None,
+    min_time_range_ttl_drop_operations_per_write: None,
+    minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
 };

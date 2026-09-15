@@ -1,6 +1,8 @@
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
@@ -102,6 +104,7 @@ use crate::consensus::basic::token::{
     ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
     DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError,
     InvalidTokenConfigUpdateNoChangeError, InvalidTokenDistributionBlockIntervalTooShortError,
+    InvalidTokenDistributionEpochIntervalTooShortError,
     InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
     InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenIdError,
     InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError,
@@ -118,7 +121,16 @@ use crate::data_contract::errors::DataContractError;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(
-    Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, PartialEq, Clone,
+    Error,
+    Debug,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    Encode,
+    Decode,
+    PartialEq,
+    Clone,
+    DecodeUntrusted,
 )]
 pub enum BasicError {
     /*
@@ -594,6 +606,11 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(
         InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionEpochIntervalTooShortError(
+        InvalidTokenDistributionEpochIntervalTooShortError,
     ),
     #[error(transparent)]
     RedundantDocumentPaidForByTokenWithContractId(RedundantDocumentPaidForByTokenWithContractId),

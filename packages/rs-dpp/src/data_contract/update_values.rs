@@ -21,7 +21,7 @@ use crate::data_contract::serialized_version::v1::DataContractInSerializationFor
 use crate::data_contract::{
     DataContract, DefinitionName, DocumentName, GroupContractPosition, TokenContractPosition,
 };
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -34,7 +34,9 @@ use crate::serialization::JsonSafeFields;
 /// A plain `Option<Option<String>>` cannot survive a JSON round trip
 /// (`None` and `Some(None)` both serialize as `null`), so the three cases
 /// are spelled out.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Encode, Decode, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
+)]
 #[serde(rename_all = "camelCase")]
 pub enum DescriptionUpdate {
     /// Leave the description as it is.

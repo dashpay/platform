@@ -18,7 +18,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 #[cfg(feature = "server")]
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 #[cfg(feature = "server")]
 use dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
 use dpp::voting::contender_structs::{
@@ -623,7 +623,7 @@ impl ResolvedContestedDocumentVotePollDriveQuery<'_> {
                                 Element::Item(serialized_item_info, _) => {
                                     if first_key.as_slice() == RESOURCE_STORED_INFO_KEY_U8_32 {
                                         // this is the stored info, let's check to see if the vote is over
-                                        let finalized_contested_document_vote_poll_stored_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&serialized_item_info)?;
+                                        let finalized_contested_document_vote_poll_stored_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes_trusted(&serialized_item_info)?;
                                         if finalized_contested_document_vote_poll_stored_info
                                             .vote_poll_status()
                                             .awarded_or_locked()
@@ -726,7 +726,7 @@ impl ResolvedContestedDocumentVotePollDriveQuery<'_> {
                                 Element::Item(serialized_item_info, _) => {
                                     if first_key.as_slice() == RESOURCE_STORED_INFO_KEY_U8_32 {
                                         // this is the stored info, let's check to see if the vote is over
-                                        let finalized_contested_document_vote_poll_stored_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&serialized_item_info)?;
+                                        let finalized_contested_document_vote_poll_stored_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes_trusted(&serialized_item_info)?;
                                         if finalized_contested_document_vote_poll_stored_info
                                             .vote_poll_status()
                                             .awarded_or_locked()
@@ -1081,7 +1081,7 @@ mod tests {
         assert!(
             matches!(&items[0], QueryItem::RangeAfter(..)),
             "expected RangeAfter, got {:?}",
-            &items[0]
+            items[0]
         );
 
         // Subquery path should point to document storage [vec![0]]
@@ -1120,7 +1120,7 @@ mod tests {
         assert!(
             matches!(&items[0], QueryItem::RangeFull(..)),
             "expected RangeFull, got {:?}",
-            &items[0]
+            items[0]
         );
 
         // Subquery path should point to vote tally [vec![1]]

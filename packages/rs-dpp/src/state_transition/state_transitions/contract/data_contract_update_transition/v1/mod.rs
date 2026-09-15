@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, Identifier, Value};
 #[cfg(feature = "serde-conversion")]
@@ -50,7 +50,7 @@ use crate::{NonConsensusError, ProtocolError};
 /// the transition carries them; the owner must match the stored contract's
 /// owner.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable)]
+#[derive(Debug, Clone, Encode, Decode, DecodeUntrusted, PartialEq, PlatformSignable)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -713,7 +713,7 @@ mod tests {
 
     #[test]
     fn the_delta_round_trips_through_the_wire_format() {
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 
         let (old_contract, mut new_contract, platform_version) = contracts();
         new_contract.increment_version();
@@ -734,7 +734,8 @@ mod tests {
         let state_transition: StateTransition = delta.clone().into();
 
         let bytes = state_transition.serialize_to_bytes().expect("serialize");
-        let recovered = StateTransition::deserialize_from_bytes(&bytes).expect("deserialize");
+        let recovered =
+            StateTransition::deserialize_from_bytes_untrusted(&bytes).expect("deserialize");
 
         assert_matches!(
             recovered,

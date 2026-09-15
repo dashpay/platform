@@ -551,6 +551,49 @@ impl ExecutionEvent<'_> {
                     user_fee_increase,
                 })
             }
+            StateTransitionAction::IdentityTopUpFromShieldedPoolAction(ref top_up_action) => {
+                // Pool-paid exactly like Unshield: the flat fee is carved from the value
+                // balance and routed to the fee pools; the identity receives the rest.
+                // There is no transparent address output to track.
+                let fee_amount = top_up_action.fee_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromShieldedPool {
+                    operations,
+                    fees_to_add_to_pool: fee_amount,
+                    added_to_balance_outputs: None,
+                    chargeable_failure: false,
+                })
+            }
+            StateTransitionAction::ShieldFromIdentityAction(ref shield_action) => {
+                // Identity-paid, exactly the IdentityCreditTransferToAddresses model, plus the
+                // shielded COMPUTE fee (proof verification + per-action processing) that GroveDB
+                // cannot meter, added as `additional_fixed_fee_cost` exactly like `Shield`. The
+                // note inserts and identity writes are metered through the operations.
+                let user_fee_increase = shield_action.user_fee_increase();
+                let removed_balance = shield_action.shield_amount();
+                let shielded_verification_fee = dpp::shielded::compute_shielded_verification_fee(
+                    shield_action.notes().len(),
+                    platform_version,
+                )?;
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                if let Some(identity) = identity {
+                    Ok(ExecutionEvent::Paid {
+                        identity,
+                        removed_balance: Some(removed_balance),
+                        added_to_balance_outputs: None,
+                        operations,
+                        execution_operations: execution_context.operations_consume(),
+                        additional_fixed_fee_cost: Some(shielded_verification_fee),
+                        user_fee_increase,
+                    })
+                } else {
+                    Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "partial identity should be present for shield from identity action",
+                    )))
+                }
+            }
             StateTransitionAction::ShieldedTransferAction(ref shielded_transfer_action) => {
                 let fee_amount = shielded_transfer_action.fee_amount();
                 let operations =

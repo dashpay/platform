@@ -17,7 +17,7 @@ import SwiftData
 /// globally unique across accounts (an intra-wallet transfer writes a
 /// Sent row on the sending account and a Received row on the receiving
 /// account sharing one `entryId`). Re-persisting the same tuple flips a
-/// `Pending` row to `Confirmed`/`Failed` in place, and a coarse
+/// `Pending` row to `Confirmed`/`Failed`/`Unknown` in place, and a coarse
 /// scan-derived `ShieldedSpend` can be refined to a specific kind when a
 /// richer entry re-emits the same id (the id = sha256 of the visible
 /// output cmxs is identical across both paths by construction).
@@ -46,11 +46,12 @@ public final class PersistentShieldedActivity {
 
     /// Kind discriminant (`ShieldedActivityKind::tag`): 0 Shield,
     /// 1 ShieldFromAssetLock, 2 Received, 3 Sent, 4 Unshield,
-    /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend.
+    /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend,
+    /// 8 ShieldFromIdentity, 9 IdentityTopUp (from the pool).
     public var kindTag: Int
     /// Direction: 0 In, 1 Out, 2 Self.
     public var direction: Int
-    /// Status: 0 Pending, 1 Confirmed, 2 Failed.
+    /// Status: 0 Pending, 1 Confirmed, 2 Failed, 3 Unknown.
     public var status: Int
 
     /// Display amount in credits (principal; excludes self-change /
@@ -85,8 +86,10 @@ public final class PersistentShieldedActivity {
     public var minNotePosition: UInt64 = 0
     public var hasMinNotePosition: Bool = false
 
-    /// Created identity id (32 bytes) when `kindTag == 6`
-    /// (IdentityCreate); empty otherwise.
+    /// Identity id (32 bytes) when the kind carries one: the created
+    /// identity for `kindTag == 6` (IdentityCreate), the debited identity
+    /// for `kindTag == 8` (ShieldFromIdentity), the credited identity for
+    /// `kindTag == 9` (IdentityTopUp from the pool). Empty otherwise.
     public var identityId: Data
     /// Counterparty bytes (43B Orchard / 21B PlatformAddress / Core
     /// script) when present; empty otherwise.

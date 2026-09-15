@@ -2,8 +2,10 @@ use crate::consensus::basic::data_contract::DataContractUpdateEntryKind;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use thiserror::Error;
 
@@ -11,7 +13,17 @@ use thiserror::Error;
 /// contract does not have: an updated document type or schema definition
 /// that was never registered, or a removed keyword that is not present.
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
 )]
 #[error("Data Contract {data_contract_id} has no {entry_kind} '{name}' to update")]
 #[platform_serialize(unversioned)]

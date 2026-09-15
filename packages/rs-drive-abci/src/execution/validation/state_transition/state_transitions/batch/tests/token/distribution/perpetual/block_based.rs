@@ -1327,6 +1327,7 @@ mod step_decreasing {
     }
 
     #[tokio::test]
+    #[ignore] // Long-running: runs in nightly CI only
     async fn distribute_max_distribution_param_every_step() {
         let claim_heights = (1..65_536).step_by(128).collect::<Vec<_>>();
         let expected_balances = claim_heights
@@ -2080,6 +2081,7 @@ mod polynomial {
     ///
     /// We expect this test not to end with InternalError.
     #[tokio::test]
+    #[ignore] // Long-running: runs in nightly CI only
     async fn polynomial_distribution_power_extreme_values() -> Result<(), String> {
         for m in [MIN_POL_M_PARAM, MAX_POL_M_PARAM] {
             for n in [1, MAX_POL_N_PARAM] {

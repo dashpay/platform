@@ -438,6 +438,10 @@ impl WasmSdk {
         let composite = CompositeDocuments::fetch(self.as_ref(), query.clone())
             .await?
             .unwrap_or_default();
+        // A page written under a newer contract than the cached one: drop the
+        // cache so the next composite fetches the current contract. The page
+        // itself verified, so it is returned as is.
+        self.drop_stale_contract(&query.data_contract, &composite.page_documents);
         composite_result_to_js(&composite, &query)
     }
 
@@ -455,7 +459,9 @@ impl WasmSdk {
         let (composite, metadata, proof) =
             CompositeDocuments::fetch_with_metadata_and_proof(self.as_ref(), query.clone(), None)
                 .await?;
-        let result = composite_result_to_js(&composite.unwrap_or_default(), &query)?;
+        let composite = composite.unwrap_or_default();
+        self.drop_stale_contract(&query.data_contract, &composite.page_documents);
+        let result = composite_result_to_js(&composite, &query)?;
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             result, metadata, proof,
         ))

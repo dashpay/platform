@@ -2,8 +2,10 @@ use crate::consensus::basic::data_contract::DataContractUpdateEntryKind;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use thiserror::Error;
 
@@ -12,7 +14,17 @@ use thiserror::Error;
 /// definitions change through the update sections, and existing groups,
 /// tokens and keywords cannot be replaced at all.
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
 )]
 #[error("Data Contract {data_contract_id} already has {entry_kind} '{name}', it can not be added")]
 #[platform_serialize(unversioned)]

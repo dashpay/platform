@@ -174,7 +174,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                         create_identity_data_trigger: 0,
                         create_feature_flag_data_trigger: 0,
                         create_masternode_reward_shares_data_trigger: 0,
-                        delete_withdrawal_data_trigger: 1,
+                        delete_withdrawal_data_trigger: 2, // changed in v14: FAILED withdrawals may be deleted like COMPLETE ones
                         // Reject does no drive reads — stays at v0.
                         reject_data_trigger: 0,
                     },
@@ -307,6 +307,23 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 transform_into_action: 0,
             },
             identity_create_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            shield_from_identity_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: Some(0),
+                advanced_structure: None,
+                identity_signatures: Some(0),
+                nonce: Some(0),
+                state: 0,
+                transform_into_action: 0,
+            },
+            identity_top_up_from_shielded_pool_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
                     advanced_structure: None,

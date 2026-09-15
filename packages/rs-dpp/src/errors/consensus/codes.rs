@@ -245,6 +245,7 @@ impl ErrorWithCode for BasicError {
             Self::ShieldedTooManyActionsError(_) => 10825,
             Self::ShieldedImplicitFeeCapExceededError(_) => 10826,
             Self::ShieldedInvalidDenominationError(_) => 10827,
+            Self::InvalidTokenDistributionEpochIntervalTooShortError(_) => 10828,
         }
     }
 }

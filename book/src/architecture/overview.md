@@ -18,7 +18,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "53d699c...
 ```
 
 The workspace version (`4.2.0-dev` at time of writing, Rust edition 2021, MSRV
-1.92) is shared by all member crates through `version.workspace = true`.
+1.98) is shared by all member crates through `version.workspace = true`.
 
 ## The Core Dependency Chain
 

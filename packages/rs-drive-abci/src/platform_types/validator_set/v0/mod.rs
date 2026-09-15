@@ -163,8 +163,8 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
         } = self;
         ValidatorSetUpdate {
             validator_updates: validator_set
-                .iter()
-                .filter_map(|(_, validator)| {
+                .values()
+                .filter_map(|validator| {
                     let ValidatorV0 {
                         pro_tx_hash,
                         public_key,

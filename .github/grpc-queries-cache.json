@@ -36,7 +36,13 @@
     "getDataContractHistory": {
       "status": "implemented"
     },
+    "getDataContractsLatestVersions": {
+      "status": "implemented"
+    },
     "getDataContracts": {
+      "status": "implemented"
+    },
+    "getDataContractsByRange": {
       "status": "implemented"
     },
     "getDocuments": {
@@ -172,9 +178,6 @@
       "status": "implemented"
     },
     "getShieldedNotesCount": {
-      "status": "implemented"
-    },
-    "getChainedDocuments": {
       "status": "implemented"
     }
   }

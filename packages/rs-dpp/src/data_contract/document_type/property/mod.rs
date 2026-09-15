@@ -4,8 +4,10 @@ use std::convert::TryInto;
 use std::io::{BufReader, Cursor, Read};
 
 use crate::data_contract::errors::DataContractError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 
 use crate::consensus::basic::decode::DecodingError;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
@@ -84,7 +86,17 @@ pub struct ByteArrayPropertySizes {
 // This enum is embedded in consensus errors, so it is consensus-serialized.
 // @append_only
 #[derive(
-    Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Serialize,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    DecodeUntrusted,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum DocumentPropertyReferenceTarget {

@@ -67,7 +67,7 @@ use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedErr
 use dpp::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, InvalidKeyPurposeForContractBoundsError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
-use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError, InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError, TokenNoteOnlyAllowedWhenProposerError, TokenPricingScheduleEmptyError, TokenTransferToOurselfError, InvalidTokenDistributionTimeIntervalNotMinuteAlignedError, InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenDistributionBlockIntervalTooShortError};
+use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError, InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError, TokenNoteOnlyAllowedWhenProposerError, TokenPricingScheduleEmptyError, TokenTransferToOurselfError, InvalidTokenDistributionTimeIntervalNotMinuteAlignedError, InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenDistributionBlockIntervalTooShortError, InvalidTokenDistributionEpochIntervalTooShortError};
 use dpp::consensus::state::data_contract::data_contract_not_found_error::DataContractNotFoundError;
 use dpp::consensus::state::data_contract::data_contract_update_entry_already_exists_error::DataContractUpdateEntryAlreadyExistsError;
 use dpp::consensus::state::data_contract::data_contract_update_entry_not_found_error::DataContractUpdateEntryNotFoundError;
@@ -925,6 +925,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(e) => {
             generic_consensus_error!(InvalidTokenDistributionTimeIntervalNotMinuteAlignedError, e)
                 .into()
+        }
+        BasicError::InvalidTokenDistributionEpochIntervalTooShortError(e) => {
+            generic_consensus_error!(InvalidTokenDistributionEpochIntervalTooShortError, e).into()
         }
         BasicError::RedundantDocumentPaidForByTokenWithContractId(e) => {
             generic_consensus_error!(RedundantDocumentPaidForByTokenWithContractId, e).into()

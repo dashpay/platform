@@ -147,7 +147,10 @@ extension PlatformWalletManager {
         // pass drained by `resetPlatformAddressSyncState` (Clear) repaints
         // chain-tip height, last-sync time, and metrics over the freshly
         // cleared UI. Mirrors the shielded guard.
-        guard generation == platformAddressSyncGeneration.current() else { return }
+        // Early shielded stop retains the handle/generation while shutdown
+        // drains admitted reads, but callbacks must stop publishing immediately.
+        guard !shutdownRequested,
+              generation == platformAddressSyncGeneration.current() else { return }
         lastPlatformAddressSyncEvent = event
     }
 

@@ -168,7 +168,8 @@ struct QueryCategoryDetailView: View {
             return [
                 QueryDefinition(name: "getDataContract", label: "Get Data Contract", description: "Fetch a data contract by its identifier"),
                 QueryDefinition(name: "getDataContractHistory", label: "Get Data Contract History", description: "Get the version history of a data contract"),
-                QueryDefinition(name: "getDataContracts", label: "Get Data Contracts", description: "Fetch multiple data contracts by their identifiers")
+                QueryDefinition(name: "getDataContracts", label: "Get Data Contracts", description: "Fetch multiple data contracts by their identifiers"),
+                QueryDefinition(name: "getDataContractsByRange", label: "Get Data Contracts by Range", description: "Enumerate data contracts one page at a time, ordered by id")
             ]
 
         case .documents:

@@ -14,7 +14,7 @@ use crate::state_transition::batch_transition::document_base_transition::v0::{
 use crate::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
 #[cfg(any(feature = "value-conversion", feature = "json-conversion"))]
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::{Display, From};
 pub use fields::*;
 #[cfg(any(feature = "value-conversion", feature = "json-conversion"))]
@@ -42,7 +42,7 @@ use std::collections::BTreeMap;
 // routes `$baseFormatVersion` + the known base struct fields to `base`
 // before letting the catchall claim what's left. See comments on
 // those impls for detail.
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

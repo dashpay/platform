@@ -27,6 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 use std::fmt;
 
+use super::balance::ShieldedBalanceSource;
 use crate::wallet::platform_wallet::WalletId;
 
 /// Identifies a single shielded "subwallet" — one Orchard account
@@ -132,14 +133,16 @@ pub struct ShieldedOutgoingNote {
 /// Platform's recorded set (the spend can then never execute).
 pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>);
 
-/// A re-drivable broadcast-accepted-but-unconfirmed spend: the signed
+/// An unresolved signed transition and its durable retry guard: the signed
 /// transition bytes plus everything the sync-time re-drive needs to
 /// resolve the ambiguity actively — re-broadcast the transition
 /// ([`nullifiers`](Self::nullifiers) detect a landing, `anchor` feeds
 /// the prune backstop, `activity_id` links the UI row, `attempts`
 /// bounds the retries.
 ///
-/// Armed only on the ambiguous outcome (`ShieldedSpendUnconfirmed`):
+/// Identity-funded shields arm this record before broadcast and have no input
+/// nullifiers. Their guard survives even after rebroadcasting stops. Note spends
+/// arm it only on the ambiguous outcome (`ShieldedSpendUnconfirmed`):
 /// the broadcast was accepted but the result wait failed, so the spend
 /// may or may not have executed. Re-broadcasting the byte-identical
 /// transition is fund-safe — identical nullifiers cannot double-spend —
@@ -159,6 +162,39 @@ pub struct PendingRedrive {
     pub st_bytes: Vec<u8>,
     /// Re-broadcast attempts made so far.
     pub attempts: u32,
+    /// A proven identity nonce has made this exact debit impossible to execute
+    /// again. Stop broadcasting, but keep its unresolved-payment guard until
+    /// the scan confirms the outputs. Always false for note-spend redrives.
+    pub identity_nonce_finalized: bool,
+    /// The host explicitly accepted that this payment may have executed or may
+    /// still execute. Retain the signed record for reconciliation/audit, but stop
+    /// automatic retries and permit separately authorized new payments.
+    /// This is never a proof of failure and is always false for note spends.
+    pub identity_user_abandoned: bool,
+}
+
+/// What the wallet knows about an identity debit's local recovery state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityDebitRecoveryStatus {
+    /// The original signed transaction may still be retried.
+    Retrying,
+    /// Its nonce is unavailable; output confirmation is still missing.
+    Parked,
+    /// The user accepted an unknown outcome and stopped automatic recovery.
+    Unknown,
+}
+
+/// An active or explicitly abandoned identity debit retained by the wallet.
+/// Missing decoded fields indicate a damaged record; the wallet/account/activity
+/// key still allows a deliberate, precisely scoped recovery decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityDebitRecoveryRecord {
+    pub account_index: u32,
+    pub activity_id: [u8; 32],
+    pub identity_id: Option<[u8; 32]>,
+    pub nonce: Option<u64>,
+    pub amount: Option<u64>,
+    pub status: IdentityDebitRecoveryStatus,
 }
 
 /// The result of [`SubwalletState::mark_spent`].
@@ -194,6 +230,11 @@ pub trait ShieldedStore: Send + Sync {
 
     /// Return all unspent notes for `id`.
     fn get_unspent_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
+
+    /// The same reservation-aware sum used by sync and local balance reads.
+    /// Implementations must reject sums exceeding `u64::MAX` with their storage
+    /// error, rather than wrapping, saturating, or panicking.
+    fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error>;
 
     /// Return all notes (spent and unspent) for `id`.
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
@@ -265,6 +306,14 @@ pub trait ShieldedStore: Send + Sync {
 
     /// Every armed redrive record for `id`.
     fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error>;
+
+    /// Every armed redrive record for a wallet, paired with the subwallet
+    /// that owns its durable row. Previously bound accounts remain visible
+    /// here while they retain a wallet-wide identity-debit guard.
+    fn pending_redrives_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<(SubwalletId, PendingRedrive)>, Self::Error>;
 
     /// Increment the attempt counter on `id`'s redrive keyed by
     /// `activity_id`, returning the new count (`0` when no such record
@@ -439,9 +488,10 @@ pub trait ShieldedStore: Send + Sync {
     /// rather than resuming behind the stale watermark.
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error>;
 
-    /// Drop the per-subwallet state (and any durable redrive rows)
-    /// for exactly ONE subwallet, leaving every other subwallet of
-    /// the same wallet — and the shared commitment tree — intact.
+    /// Drop the account-scoped state and nullifier-backed redrives for exactly
+    /// one subwallet, leaving every other subwallet and the shared commitment
+    /// tree intact. Empty-nullifier identity-debit guards are wallet-wide and
+    /// survive until authenticated resolution or an explicit wallet purge.
     ///
     /// The account-scoped sibling of [`Self::purge_wallet`]. Used by
     /// the coordinator when a re-bind changes a wallet's account set:
@@ -512,6 +562,9 @@ pub(super) struct SubwalletState {
     /// Sync watermark: count of note positions scanned = the next
     /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
+    /// Session-only provenance; durable watermarks are still ordinary u64 rows.
+    pub last_scanned_index: Option<u64>,
+    pub balance_source: ShieldedBalanceSource,
     /// Nullifiers of notes currently being spent in an in-flight
     /// transition, mapped to the [`PendingSpend`] bookkeeping the
     /// sync reconcile needs. Excluded from `unspent_notes()` so
@@ -557,12 +610,22 @@ impl SubwalletState {
         self.notes.push(note.clone());
     }
 
-    pub(super) fn unspent_notes(&self) -> Vec<ShieldedNote> {
+    /// Borrow the selectable notes so balance reads do not clone note payloads.
+    fn unspent_notes_iter(&self) -> impl Iterator<Item = &ShieldedNote> {
         self.notes
             .iter()
-            .filter(|n| !n.is_spent && !self.pending_nullifiers.contains_key(&n.nullifier))
-            .cloned()
-            .collect()
+            .filter(|note| !note.is_spent && !self.pending_nullifiers.contains_key(&note.nullifier))
+    }
+
+    pub(super) fn unspent_notes(&self) -> Vec<ShieldedNote> {
+        self.unspent_notes_iter().cloned().collect()
+    }
+
+    /// Both stores use the same borrowed, reservation-aware checked sum.
+    /// Each caller maps overflow into its own storage error.
+    pub(super) fn spendable_balance(&self) -> Option<u64> {
+        self.unspent_notes_iter()
+            .try_fold(0u64, |total, note| total.checked_add(note.value))
     }
 
     pub(super) fn all_notes(&self) -> Vec<ShieldedNote> {
@@ -684,6 +747,14 @@ impl SubwalletState {
         self.redrives.values().cloned().collect()
     }
 
+    pub(super) fn identity_redrives(&self) -> Vec<PendingRedrive> {
+        self.redrives
+            .values()
+            .filter(|redrive| redrive.nullifiers.is_empty())
+            .cloned()
+            .collect()
+    }
+
     /// Current attempt count for `activity_id`'s redrive, if armed.
     pub(super) fn redrive_attempts(&self, activity_id: &[u8; 32]) -> Option<u32> {
         self.redrives.get(activity_id).map(|r| r.attempts)
@@ -694,7 +765,7 @@ impl SubwalletState {
         self.redrives
             .get_mut(activity_id)
             .map(|r| {
-                r.attempts += 1;
+                r.attempts = r.attempts.saturating_add(1);
                 r.attempts
             })
             .unwrap_or(0)
@@ -807,6 +878,13 @@ impl ShieldedStore for InMemoryShieldedStore {
             .unwrap_or_default())
     }
 
+    fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error> {
+        self.subwallets
+            .get(&id)
+            .map_or(Some(0), SubwalletState::spendable_balance)
+            .ok_or_else(|| InMemoryStoreError("spendable shielded balance exceeds u64".to_string()))
+    }
+
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error> {
         Ok(self
             .subwallets
@@ -878,6 +956,23 @@ impl ShieldedStore for InMemoryShieldedStore {
             .get(&id)
             .map(SubwalletState::pending_redrives)
             .unwrap_or_default())
+    }
+
+    fn pending_redrives_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<(SubwalletId, PendingRedrive)>, Self::Error> {
+        Ok(self
+            .subwallets
+            .iter()
+            .filter(|(id, _)| id.wallet_id == wallet_id)
+            .flat_map(|(id, subwallet)| {
+                subwallet
+                    .pending_redrives()
+                    .into_iter()
+                    .map(|redrive| (*id, redrive))
+            })
+            .collect())
     }
 
     fn bump_redrive_attempts(
@@ -1009,7 +1104,10 @@ impl ShieldedStore for InMemoryShieldedStore {
         id: SubwalletId,
         index: u64,
     ) -> Result<(), Self::Error> {
-        self.subwallets.entry(id).or_default().last_synced_index = index;
+        let state = self.subwallets.entry(id).or_default();
+        state.last_synced_index = index;
+        state.last_scanned_index = Some(index);
+        state.balance_source = ShieldedBalanceSource::ScannedThisSession;
         Ok(())
     }
 
@@ -1019,7 +1117,18 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn purge_subwallet(&mut self, id: SubwalletId) -> Result<(), Self::Error> {
+        let identity_redrives = self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::identity_redrives)
+            .unwrap_or_default();
         self.subwallets.remove(&id);
+        if !identity_redrives.is_empty() {
+            let retained = self.subwallets.entry(id).or_default();
+            for redrive in identity_redrives {
+                retained.arm_redrive(redrive);
+            }
+        }
         Ok(())
     }
 
@@ -1047,6 +1156,83 @@ mod tests {
 
     fn test_id(account: u32) -> SubwalletId {
         SubwalletId::new([0xAA; 32], account)
+    }
+
+    #[test]
+    fn should_borrow_spendable_notes_and_preserve_the_selection_filter() {
+        let mut state = SubwalletState::default();
+        for tag in 1..=4 {
+            let mut note = note_with_nullifier([tag; 32]);
+            note.value = u64::from(tag) * 100;
+            state.save_note(&note);
+        }
+        state.mark_pending(&[2; 32]);
+        state.mark_spent(&[3; 32]);
+
+        let borrowed: Vec<_> = state.unspent_notes_iter().collect();
+        assert_eq!(borrowed.len(), 2);
+        assert!(std::ptr::eq(borrowed[0], &state.notes[0]));
+        assert!(std::ptr::eq(borrowed[1], &state.notes[3]));
+        assert_eq!(state.spendable_balance(), Some(500));
+        assert_eq!(
+            state
+                .unspent_notes()
+                .iter()
+                .map(|note| note.value)
+                .collect::<Vec<_>>(),
+            vec![100, 400]
+        );
+        state.clear_pending(&[2; 32]);
+        assert_eq!(state.spendable_balance(), Some(700));
+    }
+
+    #[test]
+    fn should_reject_overflowing_in_memory_spendable_balance() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        for (tag, value) in [(1, u64::MAX), (2, 1)] {
+            store
+                .save_note(
+                    id,
+                    &ShieldedNote {
+                        position: tag as u64,
+                        cmx: [tag; 32],
+                        nullifier: [tag; 32],
+                        block_height: 100,
+                        is_spent: false,
+                        value,
+                        note_data: vec![],
+                    },
+                )
+                .expect("save test note");
+        }
+        let error = store
+            .spendable_balance(id)
+            .expect_err("overflow must not wrap or panic");
+        assert!(error.to_string().contains("exceeds u64"));
+
+        // Reservations and spent notes are excluded before checked addition.
+        store
+            .mark_pending(id, &[2; 32])
+            .expect("reserve small note");
+        assert_eq!(store.spendable_balance(id).unwrap(), u64::MAX);
+        assert_eq!(store.spendable_balance(test_id(1)).unwrap(), 0);
+        assert_eq!(
+            store
+                .spendable_balance(SubwalletId::new([0xBB; 32], 0))
+                .unwrap(),
+            0
+        );
+        store
+            .clear_pending(id, &[2; 32])
+            .expect("release reservation");
+        assert!(store.spendable_balance(id).is_err());
+        store.mark_spent(id, &[2; 32]).expect("spend small note");
+        assert_eq!(store.spendable_balance(id).unwrap(), u64::MAX);
+        store
+            .mark_spent(id, &[1; 32])
+            .expect("spend remaining note");
+        assert_eq!(store.spendable_balance(id).unwrap(), 0);
     }
 
     #[test]
@@ -1124,6 +1310,8 @@ mod tests {
             nullifiers: vec![n1, n2],
             st_bytes: vec![1, 2, 3],
             attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
         };
 
         // Landing path: mark_spent on one nullifier drops the record.
@@ -1413,6 +1601,46 @@ mod tests {
         assert!(
             store.stale_pending_spends(id).unwrap().is_empty(),
             "a reservation with no recorded anchor must not surface as stale"
+        );
+    }
+
+    #[test]
+    fn account_purge_retains_wallet_wide_identity_guard_only() {
+        let wallet_id = [0x81; 32];
+        let id = SubwalletId::new(wallet_id, 4);
+        let mut store = InMemoryShieldedStore::new();
+        let identity_guard = PendingRedrive {
+            activity_id: [0x11; 32],
+            anchor: [0x22; 32],
+            nullifiers: vec![],
+            st_bytes: vec![0x33; 16],
+            attempts: 7,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+        };
+        let note_spend = PendingRedrive {
+            activity_id: [0x44; 32],
+            anchor: [0x55; 32],
+            nullifiers: vec![[0x66; 32]],
+            st_bytes: vec![0x77; 16],
+            attempts: 1,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+        };
+        store.arm_redrive(id, identity_guard.clone()).unwrap();
+        store.arm_redrive(id, note_spend).unwrap();
+
+        store.purge_subwallet(id).unwrap();
+
+        assert_eq!(
+            store.pending_redrives(id).unwrap(),
+            vec![identity_guard.clone()],
+            "account removal must keep the unresolved identity debit but discard account spends"
+        );
+        assert_eq!(
+            store.pending_redrives_for_wallet(wallet_id).unwrap(),
+            vec![(id, identity_guard)],
+            "the retained guard must remain visible to wallet-wide admission and redrive"
         );
     }
 }

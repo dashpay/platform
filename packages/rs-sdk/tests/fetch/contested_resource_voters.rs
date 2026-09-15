@@ -78,6 +78,10 @@ async fn test_contested_resource_voters_for_identity_not_found() {
     not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
+#[cfg_attr(
+    feature = "offline-testing",
+    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"
+)]
 async fn contested_resource_voters_for_existing_contestant() {
     setup_logs();
 

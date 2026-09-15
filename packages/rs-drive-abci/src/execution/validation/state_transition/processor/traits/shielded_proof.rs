@@ -14,6 +14,8 @@ use dpp::serialization::{PlatformMessageSignable, Signable};
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
+use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -26,6 +28,12 @@ pub(crate) trait StateTransitionHasShieldedProofValidationV0 {
 
     /// Returns the number of Orchard actions whose proof work must be admitted.
     fn shielded_proof_action_count(&self) -> usize;
+
+    /// Returns the identity and nonce that must not start repeated Orchard
+    /// verification attempts in CheckTx. Only ShieldFromIdentity uses this
+    /// admission key; shielded spends are already replay-protected by their
+    /// nullifiers.
+    fn shielded_proof_identity_nonce_admission_key(&self) -> Option<([u8; 32], u64)>;
 
     /// Returns true if this state transition pays fees from the shielded pool's
     /// value_balance and requires minimum fee validation.
@@ -53,10 +61,15 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
         // is done inside transform_into_action because a failed proof must penalize
         // the asset lock (via PartiallyUseAssetLockAction). Moving it here would let
         // attackers spam bad proofs without burning their asset lock.
+        // ShieldFromIdentity is excluded from the shared processor step for the same
+        // reason: block processing verifies it in its transform and turns a failure
+        // into a paid, nonce-consuming penalty. CheckTx invokes
+        // `validate_shielded_proof` explicitly after full fee admission.
         matches!(
             self,
             StateTransition::Shield(_)
                 | StateTransition::ShieldedTransfer(_)
+                | StateTransition::IdentityTopUpFromShieldedPool(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_)
@@ -70,6 +83,9 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                     v0.actions.len()
                 }
             },
+            StateTransition::ShieldFromIdentity(st) => match st {
+                ShieldFromIdentityTransition::V0(v0) => v0.actions.len(),
+            },
             StateTransition::ShieldedTransfer(st) => match st {
                 dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
                     v0.actions.len()
@@ -79,6 +95,9 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 dpp::state_transition::unshield_transition::UnshieldTransition::V0(v0) => {
                     v0.actions.len()
                 }
+            },
+            StateTransition::IdentityTopUpFromShieldedPool(st) => match st {
+                IdentityTopUpFromShieldedPoolTransition::V0(v0) => v0.actions.len(),
             },
             StateTransition::ShieldedWithdrawal(st) => match st {
                 dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
@@ -97,12 +116,22 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
         }
     }
 
+    fn shielded_proof_identity_nonce_admission_key(&self) -> Option<([u8; 32], u64)> {
+        match self {
+            StateTransition::ShieldFromIdentity(ShieldFromIdentityTransition::V0(v0)) => {
+                Some((v0.identity_id.to_buffer(), v0.nonce))
+            }
+            _ => None,
+        }
+    }
+
     fn has_shielded_minimum_fee_validation(&self) -> bool {
         // Only spending transitions pay fees from the shielded pool.
         // Shield pays from address inputs; ShieldFromAssetLock pays from the asset lock.
         matches!(
             self,
             StateTransition::ShieldedTransfer(_)
+                | StateTransition::IdentityTopUpFromShieldedPool(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_)
@@ -165,7 +194,10 @@ enum ShieldedMinFeeKind {
     /// the same constants the non-shielded `IdentityCreate` predictor uses, which grows with the key
     /// count). Carries `num_keys` because the fee scales with it, unlike the other (fixed)
     /// per-transition components.
-    IdentityCreate { num_keys: usize },
+    IdentityCreate {
+        num_keys: usize,
+    },
+    IdentityTopUp,
 }
 
 impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
@@ -198,7 +230,7 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                 //   document cost). MUST match what the builder/transformer carve from the pool.
                 let (validated_amount, num_actions, min_net_amount, max_net_amount, amount_is_pure_fee, fee_kind): (i64, usize, u64, u64, bool, ShieldedMinFeeKind) = match self {
                     // Shield: fee is paid from transparent address inputs, not from value_balance.
-                    StateTransition::Shield(_) => {
+                    StateTransition::Shield(_) | StateTransition::ShieldFromIdentity(_) => {
                         return Ok(SimpleConsensusValidationResult::new())
                     }
                     // ShieldedTransfer: value_balance (u64) IS the fee. It writes no extra
@@ -219,6 +251,16 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                         dpp::state_transition::unshield_transition::UnshieldTransition::V0(
                             v0,
                         ) => (v0.unshielding_amount as i64, v0.actions.len(), 0, u64::MAX, false, ShieldedMinFeeKind::Unshield),
+                    },
+                    StateTransition::IdentityTopUpFromShieldedPool(st) => match st {
+                        IdentityTopUpFromShieldedPoolTransition::V0(v0) => (
+                            v0.top_up_amount as i64,
+                            v0.actions.len(),
+                            0,
+                            u64::MAX,
+                            false,
+                            ShieldedMinFeeKind::IdentityTopUp,
+                        ),
                     },
                     // ShieldedWithdrawal: the net (`unshielding_amount - min_fee`) becomes a
                     // Core `TxOut`, so it must fall within the same
@@ -319,6 +361,12 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                         dpp::shielded::compute_shielded_identity_create_fee(
                             num_actions,
                             num_keys,
+                            platform_version,
+                        )?
+                    }
+                    ShieldedMinFeeKind::IdentityTopUp => {
+                        dpp::shielded::compute_shielded_identity_top_up_fee(
+                            num_actions,
                             platform_version,
                         )?
                     }
@@ -465,6 +513,17 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                             )
                         }
                     },
+                    StateTransition::ShieldFromIdentity(st) => match st {
+                        ShieldFromIdentityTransition::V0(v0) => reconstruct_and_verify_bundle(
+                            &v0.actions,
+                            FLAGS_OUTPUTS_ONLY,
+                            -(v0.amount as i64),
+                            &v0.anchor,
+                            v0.proof.as_slice(),
+                            &v0.binding_signature,
+                            &[],
+                        ),
+                    },
                     StateTransition::ShieldedTransfer(st) => match st {
                         dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
                             reconstruct_and_verify_bundle(
@@ -489,6 +548,25 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                                 &v0.actions,
                                 FLAGS_SPENDS_AND_OUTPUTS,
                                 v0.unshielding_amount as i64,
+                                &v0.anchor,
+                                v0.proof.as_slice(),
+                                &v0.binding_signature,
+                                &extra_sighash_data,
+                            )
+                        }
+                    },
+                    StateTransition::IdentityTopUpFromShieldedPool(st) => match st {
+                        IdentityTopUpFromShieldedPoolTransition::V0(v0) => {
+                            let extra_sighash_data =
+                                dpp::shielded::identity_top_up_from_shielded_extra_sighash_data(
+                                    &v0.identity_id.to_buffer(),
+                                    v0.top_up_amount,
+                                    platform_version,
+                                )?;
+                            reconstruct_and_verify_bundle(
+                                &v0.actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                v0.top_up_amount as i64,
                                 &v0.anchor,
                                 v0.proof.as_slice(),
                                 &v0.binding_signature,
@@ -549,8 +627,8 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                             )
                         }
                     },
-                    // ShieldFromAssetLock retains proof verification in transform_into_action
-                    // (penalty comes from the asset lock, which is safe)
+                    // ShieldFromAssetLock retains proof verification in transform_into_action;
+                    // its paid-failure action comes from the asset lock.
                     _ => return Ok(SimpleConsensusValidationResult::new()),
                 };
 

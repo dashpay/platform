@@ -46,10 +46,14 @@ mod identity_top_up_from_addresses;
 
 /// Module for identity-create-from-shielded-pool transition validation
 pub mod identity_create_from_shielded_pool;
+/// Identity top up from shielded pool (pool to an existing identity)
+pub mod identity_top_up_from_shielded_pool;
 /// Module for shield transition validation
 pub mod shield;
 /// Module for shield from asset lock transition validation
 pub mod shield_from_asset_lock;
+/// Shield from identity (identity balance to shielded pool)
+pub mod shield_from_identity;
 /// Common validation logic shared by shielded transitions (proof verification)
 pub mod shielded_common;
 /// Module for shielded transfer transition validation
@@ -143,6 +147,7 @@ pub(in crate::execution) mod tests {
     use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
     use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
     use dpp::state_transition::StateTransition;
+    use dpp::block::epoch::EpochIndex;
     use dpp::tokens::calculate_token_id;
     use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
@@ -177,7 +182,7 @@ pub(in crate::execution) mod tests {
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use dpp::tokens::token_amount_on_contract_token::{DocumentActionTokenCost, DocumentActionTokenEffect};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
-    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(
@@ -833,7 +838,7 @@ pub(in crate::execution) mod tests {
     ) -> DataContract {
         // Deserialize the data contract from bytes
         let mut data_contract =
-            DataContract::versioned_deserialize(&contract_bytes, false, platform_version)
+            DataContract::versioned_deserialize_untrusted(&contract_bytes, false, platform_version)
                 .expect("expected to deserialize data contract");
 
         // Get identity info based on the enum variant
@@ -2517,6 +2522,30 @@ pub(in crate::execution) mod tests {
         contract_start_block: Option<BlockHeight>,
         platform_version: &PlatformVersion,
     ) -> (DataContract, Identifier) {
+        create_token_contract_with_owner_identity_with_start_epoch(
+            platform,
+            identity_id,
+            token_configuration_modification,
+            contract_start_time,
+            add_groups,
+            contract_start_block,
+            None,
+            platform_version,
+        )
+    }
+
+    /// Like [`create_token_contract_with_owner_identity`], with the contract's creation epoch
+    /// settable as well; a perpetual distribution counted in epochs starts from it.
+    pub(in crate::execution) fn create_token_contract_with_owner_identity_with_start_epoch(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        identity_id: Identifier,
+        token_configuration_modification: Option<impl FnOnce(&mut TokenConfiguration)>,
+        contract_start_time: Option<TimestampMillis>,
+        add_groups: Option<BTreeMap<GroupContractPosition, Group>>,
+        contract_start_block: Option<BlockHeight>,
+        contract_start_epoch: Option<EpochIndex>,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, Identifier) {
         let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
 
         let basic_token_contract = setup_contract(
@@ -2525,7 +2554,7 @@ pub(in crate::execution) mod tests {
             Some(data_contract_id.to_buffer()),
             Some(identity_id.to_buffer()),
             Some(|data_contract: &mut DataContract| {
-                data_contract.set_created_at_epoch(Some(0));
+                data_contract.set_created_at_epoch(Some(contract_start_epoch.unwrap_or_default()));
                 data_contract.set_created_at(Some(contract_start_time.unwrap_or_default()));
                 data_contract
                     .set_created_at_block_height(Some(contract_start_block.unwrap_or_default()));

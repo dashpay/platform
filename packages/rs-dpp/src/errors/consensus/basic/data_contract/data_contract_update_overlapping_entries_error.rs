@@ -1,8 +1,10 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use std::fmt;
 use thiserror::Error;
@@ -12,7 +14,7 @@ use thiserror::Error;
 /// A V1 data contract update transition carries additive and in-place
 /// changes per entry kind rather than a whole contract, so validation
 /// errors report which section of the delta a name came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub enum DataContractUpdateEntryKind {
     /// A document type, keyed by its name.
     DocumentType,
@@ -43,7 +45,17 @@ impl fmt::Display for DataContractUpdateEntryKind {
 /// that cannot both apply: a document type or schema definition listed
 /// as both new and updated, or a keyword listed as both added and removed.
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
 )]
 #[error(
     "Data Contract {data_contract_id} update names {entry_kind} '{name}' in two conflicting sections"

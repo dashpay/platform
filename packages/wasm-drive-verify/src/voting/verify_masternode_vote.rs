@@ -1,6 +1,7 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::data_contract::DataContract;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
 use drive::drive::Drive;
@@ -50,7 +51,7 @@ pub fn verify_masternode_vote(
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize vote: {:?}", e)))?;
 
     // Deserialize the data contract
-    let data_contract = DataContract::versioned_deserialize(
+    let data_contract = DataContract::versioned_deserialize_untrusted(
         &data_contract_cbor.to_vec(),
         true,
         platform_version,
@@ -58,7 +59,7 @@ pub fn verify_masternode_vote(
     .map_err(|e| JsValue::from_str(&format!("Failed to deserialize data contract: {:?}", e)))?;
 
     let (root_hash, vote_option) = Drive::verify_masternode_vote(
-        &proof_vec,
+        supported_grovedb_proof(&proof_vec, platform_version)?,
         masternode_pro_tx_hash_bytes,
         &vote,
         &data_contract,

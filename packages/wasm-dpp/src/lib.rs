@@ -1,3 +1,7 @@
+// Same allowance the dpp crate root carries: the `ProtocolError` values
+// threaded through these bindings are larger than clippy's default threshold.
+#![allow(clippy::result_large_err)]
+
 extern crate core;
 
 pub use dash_platform_protocol::*;

@@ -15,10 +15,10 @@ use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::{Encoding, decode, encode};
 use dpp::prelude::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable, Signable};
 use dpp::state_transition::StateTransition::{
     Batch, DataContractCreate, DataContractUpdate, IdentityCreditTransfer,
-    IdentityCreditWithdrawal, IdentityUpdate, MasternodeVote,
+    IdentityCreditWithdrawal, IdentityUpdate, MasternodeVote, ShieldFromIdentity,
 };
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
@@ -37,6 +37,7 @@ use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTr
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
+use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionSigningOptions,
 };
@@ -215,6 +216,17 @@ impl StateTransitionWasm {
 
                 st.verify_public_key_is_enabled(&public_key.clone().into())?;
             }
+            ShieldFromIdentity(st) => {
+                st.verify_public_key_level_and_purpose(
+                    &public_key.clone().into(),
+                    StateTransitionSigningOptions {
+                        allow_signing_with_any_security_level,
+                        allow_signing_with_any_purpose,
+                    },
+                )?;
+
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
+            }
             _ => {}
         }
 
@@ -240,7 +252,7 @@ impl StateTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<StateTransitionWasm> {
-        let st = StateTransition::deserialize_from_bytes(bytes.as_slice())?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(st.into())
     }
@@ -250,7 +262,7 @@ impl StateTransitionWasm {
         let bytes =
             decode(&hex, Encoding::Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
-        let st = StateTransition::deserialize_from_bytes(bytes.as_slice())?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(st.into())
     }
@@ -260,7 +272,7 @@ impl StateTransitionWasm {
         let bytes = decode(&base64, Encoding::Base64)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
-        let st = StateTransition::deserialize_from_bytes(bytes.as_slice())?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(st.into())
     }
@@ -314,6 +326,8 @@ impl StateTransitionWasm {
             ShieldFromAssetLock(_) => 18,
             ShieldedWithdrawal(_) => 19,
             IdentityCreateFromShieldedPool(_) => 20,
+            ShieldFromIdentity(_) => 21,
+            IdentityTopUpFromShieldedPool(_) => 22,
         }
     }
 
@@ -393,6 +407,7 @@ impl StateTransitionWasm {
             IdentityCreditTransfer(_) => None,
             MasternodeVote(_) => None,
             IdentityCreditTransferToAddresses(_)
+            | ShieldFromIdentity(_)
             | IdentityCreateFromAddresses(_)
             | IdentityTopUpFromAddresses(_)
             | AddressFundsTransfer(_)
@@ -403,7 +418,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => None,
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => None,
         }
     }
 
@@ -421,6 +437,7 @@ impl StateTransitionWasm {
             IdentityCreditTransfer(credit_transfer) => Some(credit_transfer.nonce()),
             MasternodeVote(mn_vote) => Some(mn_vote.nonce()),
             IdentityCreditTransferToAddresses(ct) => Some(ct.nonce()),
+            ShieldFromIdentity(st) => Some(st.nonce()),
             IdentityCreateFromAddresses(_) => None,
             IdentityTopUpFromAddresses(_) => None,
             AddressFundsTransfer(_)
@@ -431,7 +448,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => None,
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => None,
         }
     }
 
@@ -561,6 +579,10 @@ impl StateTransitionWasm {
                 ct.set_identity_id(owner_id);
                 self.0 = IdentityCreditTransferToAddresses(ct);
             }
+            ShieldFromIdentity(mut st) => {
+                st.set_identity_id(owner_id);
+                self.0 = ShieldFromIdentity(st);
+            }
             IdentityCreateFromAddresses(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set owner for identity create transition",
@@ -583,7 +605,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => {
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set owner for shielded transition",
                 ));
@@ -652,6 +675,7 @@ impl StateTransitionWasm {
                 ));
             }
             IdentityCreditTransferToAddresses(_)
+            | ShieldFromIdentity(_)
             | IdentityCreateFromAddresses(_)
             | IdentityTopUpFromAddresses(_)
             | AddressFundsTransfer(_)
@@ -666,7 +690,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => {
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity contract nonce for shielded transition",
                 ));
@@ -742,6 +767,10 @@ impl StateTransitionWasm {
                 transfer.set_nonce(nonce);
                 transfer.into()
             }
+            ShieldFromIdentity(mut st) => {
+                st.set_nonce(nonce);
+                st.into()
+            }
             IdentityCreateFromAddresses(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity nonce for Identity Create From Addresses",
@@ -764,7 +793,8 @@ impl StateTransitionWasm {
             | Unshield(_)
             | ShieldFromAssetLock(_)
             | ShieldedWithdrawal(_)
-            | IdentityCreateFromShieldedPool(_) => {
+            | IdentityCreateFromShieldedPool(_)
+            | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity nonce for shielded transition",
                 ));
