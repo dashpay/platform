@@ -7,8 +7,11 @@ pub mod emergency_action;
 pub mod freeze;
 pub mod mint;
 pub mod set_price_for_direct_purchase;
+pub mod shield;
+pub mod shielded_transfer;
 pub mod transfer;
 pub mod unfreeze;
+pub mod unshield;
 
 use crate::batch_transition::token_transition::burn::TokenBurnTransitionWasm;
 use crate::batch_transition::token_transition::claim::TokenClaimTransitionWasm;
@@ -19,8 +22,11 @@ use crate::batch_transition::token_transition::emergency_action::TokenEmergencyA
 use crate::batch_transition::token_transition::freeze::TokenFreezeTransitionWasm;
 use crate::batch_transition::token_transition::mint::TokenMintTransitionWasm;
 use crate::batch_transition::token_transition::set_price_for_direct_purchase::TokenSetPriceForDirectPurchaseTransitionWasm;
+use crate::batch_transition::token_transition::shield::TokenShieldTransitionWasm;
+use crate::batch_transition::token_transition::shielded_transfer::TokenShieldedTransferTransitionWasm;
 use crate::batch_transition::token_transition::transfer::TokenTransferTransitionWasm;
 use crate::batch_transition::token_transition::unfreeze::TokenUnfreezeTransitionWasm;
+use crate::batch_transition::token_transition::unshield::TokenUnshieldTransitionWasm;
 use crate::identifier::IdentifierWrapper;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
@@ -44,6 +50,9 @@ pub enum TokenTransitionType {
     ConfigUpdate,
     DirectPurchase,
     SetPriceForDirectPurchase,
+    Shield,
+    Unshield,
+    ShieldedTransfer,
 }
 
 impl From<&TokenTransition> for TokenTransitionType {
@@ -62,6 +71,9 @@ impl From<&TokenTransition> for TokenTransitionType {
             TokenTransition::SetPriceForDirectPurchase(_) => {
                 TokenTransitionType::SetPriceForDirectPurchase
             }
+            TokenTransition::Shield(_) => TokenTransitionType::Shield,
+            TokenTransition::Unshield(_) => TokenTransitionType::Unshield,
+            TokenTransition::ShieldedTransfer(_) => TokenTransitionType::ShieldedTransfer,
         }
     }
 }
@@ -148,6 +160,15 @@ impl TokenTransitionWasm {
             }
             TokenTransition::SetPriceForDirectPurchase(set_price) => {
                 TokenSetPriceForDirectPurchaseTransitionWasm::from(set_price.clone()).into()
+            }
+            TokenTransition::Shield(shield) => {
+                TokenShieldTransitionWasm::from(shield.clone()).into()
+            }
+            TokenTransition::Unshield(unshield) => {
+                TokenUnshieldTransitionWasm::from(unshield.clone()).into()
+            }
+            TokenTransition::ShieldedTransfer(shielded_transfer) => {
+                TokenShieldedTransferTransitionWasm::from(shielded_transfer.clone()).into()
             }
         }
     }

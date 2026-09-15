@@ -33,6 +33,9 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 use crate::execution::validation::state_transition::batch::action_validation::token::token_set_price_for_direct_purchase_transition_action::TokenSetPriceForDirectPurchaseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_transfer_transition_action::TokenTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_unfreeze_transition_action::TokenUnfreezeTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_shield_transition_action::TokenShieldTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_shielded_transfer_transition_action::TokenShieldedTransferTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_unshield_transition_action::TokenUnshieldTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
 use crate::execution::validation::state_transition::batch::state::v0::index_only_batch_entries::IndexOnlyBatchEntries;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
@@ -47,12 +50,14 @@ mod index_only_batch_entries;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStateValidationV0
 {
+    #[allow(clippy::too_many_arguments)]
     fn validate_state_v0(
         &self,
         action: BatchTransitionAction,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
+        validation_mode: ValidationMode,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -73,6 +78,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
+        validation_mode: ValidationMode,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -268,6 +274,37 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                         transaction,
                         platform_version,
                     )?,
+                    TokenTransitionAction::ShieldAction(shield_action) => shield_action
+                        .validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?,
+                    TokenTransitionAction::UnshieldAction(unshield_action) => unshield_action
+                        .validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?,
+                    TokenTransitionAction::ShieldedTransferAction(shielded_transfer_action) => {
+                        shielded_transfer_action.validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?
+                    }
                 },
                 BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

@@ -93,6 +93,7 @@ mod tests {
             version: Some(RequestVersion::V0(GetShieldedNullifiersRequestV0 {
                 nullifiers: vec![vec![0x11u8; 32]],
                 prove: false,
+                token_id: None,
             })),
         };
 

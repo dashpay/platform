@@ -811,6 +811,12 @@ impl<C> Platform<C> {
         // exists, so both node populations build the same prefunded balances Merk.
         self.drive
             .insert_contract_fee_pot_trees(Some(transaction), platform_version)?;
+        // Token shielded pools root: the BigSumTree under the Tokens tree that holds one Orchard
+        // pool per token opting in (`TokenConfigurationV1::has_shielded_pool`). CONSENSUS-CRITICAL:
+        // the genesis-v14 path (`Drive::create_initial_state_structure_v4`) calls the same helper,
+        // so a chain born at v14 and one upgraded to it build a byte-identical `[Tokens]` subtree.
+        self.drive
+            .insert_token_shielded_pools_root_tree(Some(transaction), platform_version)?;
 
         Ok(())
     }

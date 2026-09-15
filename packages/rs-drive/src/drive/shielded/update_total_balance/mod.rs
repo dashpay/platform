@@ -1,5 +1,6 @@
 mod v0;
 
+use crate::drive::shielded::paths::token_shielded_pool_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -21,6 +22,28 @@ impl Drive {
             0 => Self::update_total_balance_op_v0(new_total_balance),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_total_balance_op".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}
+
+impl Drive {
+    /// Constructs the low-level drive operations to update a TOKEN shielded pool's total
+    /// balance. Same versioning as [`Drive::update_total_balance_op`].
+    pub fn update_token_pool_total_balance_op(
+        token_id: [u8; 32],
+        new_total_balance: u64,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        match platform_version.drive.methods.shielded.update_total_balance {
+            0 => Self::update_total_balance_op_in_pool_v0(
+                token_shielded_pool_path_vec(token_id),
+                new_total_balance,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "update_token_pool_total_balance_op".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

@@ -29,6 +29,15 @@ pub mod token_direct_purchase_transition_action;
 /// token_set_price_for_direct_purchase_transition_action
 pub mod token_set_price_for_direct_purchase_transition_action;
 
+/// token_shield_transition_action
+pub mod token_shield_transition_action;
+
+/// token_shielded_transfer_transition_action
+pub mod token_shielded_transfer_transition_action;
+
+/// token_unshield_transition_action
+pub mod token_unshield_transition_action;
+
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -56,6 +65,9 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::{TokenClaimTransitionAction, TokenClaimTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::{TokenDirectPurchaseTransitionAction, TokenDirectPurchaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_set_price_for_direct_purchase_transition_action::{TokenSetPriceForDirectPurchaseTransitionAction, TokenSetPriceForDirectPurchaseTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_shield_transition_action::{TokenShieldTransitionAction, TokenShieldTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_shielded_transfer_transition_action::{TokenShieldedTransferTransitionAction, TokenShieldedTransferTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_unshield_transition_action::{TokenUnshieldTransitionAction, TokenUnshieldTransitionActionAccessorsV0};
 
 /// token action
 #[derive(Debug, Clone, From)]
@@ -82,6 +94,12 @@ pub enum TokenTransitionAction {
     DirectPurchaseAction(TokenDirectPurchaseTransitionAction),
     /// sets the price for direct purchase of the token
     SetPriceForDirectPurchaseAction(TokenSetPriceForDirectPurchaseTransitionAction),
+    /// identity token balance -> token shielded pool
+    ShieldAction(TokenShieldTransitionAction),
+    /// token shielded pool -> identity token balance
+    UnshieldAction(TokenUnshieldTransitionAction),
+    /// transfer inside the token shielded pool
+    ShieldedTransferAction(TokenShieldedTransferTransitionAction),
 }
 
 impl TokenTransitionAction {
@@ -99,6 +117,9 @@ impl TokenTransitionAction {
             TokenTransitionAction::ConfigUpdateAction(action) => action.base(),
             TokenTransitionAction::DirectPurchaseAction(action) => action.base(),
             TokenTransitionAction::SetPriceForDirectPurchaseAction(action) => action.base(),
+            TokenTransitionAction::ShieldAction(action) => action.base(),
+            TokenTransitionAction::UnshieldAction(action) => action.base(),
+            TokenTransitionAction::ShieldedTransferAction(action) => action.base(),
         }
     }
 
@@ -116,6 +137,9 @@ impl TokenTransitionAction {
             TokenTransitionAction::ConfigUpdateAction(action) => action.base_owned(),
             TokenTransitionAction::DirectPurchaseAction(action) => action.base_owned(),
             TokenTransitionAction::SetPriceForDirectPurchaseAction(action) => action.base_owned(),
+            TokenTransitionAction::ShieldAction(action) => action.base_owned(),
+            TokenTransitionAction::UnshieldAction(action) => action.base_owned(),
+            TokenTransitionAction::ShieldedTransferAction(action) => action.base_owned(),
         }
     }
 
@@ -133,6 +157,9 @@ impl TokenTransitionAction {
             TokenTransitionAction::ConfigUpdateAction(_) => "configUpdate",
             TokenTransitionAction::DirectPurchaseAction(_) => "directPurchase",
             TokenTransitionAction::SetPriceForDirectPurchaseAction(_) => "directPricing",
+            TokenTransitionAction::ShieldAction(_) => "shield",
+            TokenTransitionAction::UnshieldAction(_) => "unshield",
+            TokenTransitionAction::ShieldedTransferAction(_) => "shieldedTransfer",
         }
     }
 
@@ -196,6 +223,11 @@ impl TokenTransitionAction {
             TokenTransitionAction::SetPriceForDirectPurchaseAction(_) => {
                 Ok(keeps_history.keeps_direct_pricing_history())
             }
+            // Shielded token operations never write history: the token history contract has
+            // no document types for them and a shielded transfer has nothing public to record.
+            TokenTransitionAction::ShieldAction(_)
+            | TokenTransitionAction::UnshieldAction(_)
+            | TokenTransitionAction::ShieldedTransferAction(_) => Ok(false),
         }
     }
 }

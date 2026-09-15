@@ -22,3 +22,7 @@ pub const CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
 /// version 14 and registered at genesis from that version on; below it the contract does
 /// not exist and lookups must report it absent.
 pub const APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
+/// Token shielded pools (per-token Orchard pools behind `TokenConfigurationV1::has_shielded_pool`,
+/// with the `TokenShield`, `TokenUnshield` and `TokenShieldedTransfer` batch transitions) activate
+/// with protocol version 14.
+pub const TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;

@@ -224,7 +224,12 @@ impl<C> Platform<C> {
                                                 })),
                                             })
                                         }
-                                        TokenEvent::Transfer(..) | TokenEvent::DirectPurchase(..) | TokenEvent::Claim(..) => {
+                                        TokenEvent::Transfer(..)
+                                        | TokenEvent::DirectPurchase(..)
+                                        | TokenEvent::Claim(..)
+                                        | TokenEvent::Shield(..)
+                                        | TokenEvent::Unshield(..)
+                                        | TokenEvent::ShieldedTransfer => {
                                             return None;
                                         },
                                     },

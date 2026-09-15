@@ -35,9 +35,31 @@ impl Drive {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let grove_version = &platform_version.drive.grove_version;
+        let anchors_path = shielded_credit_pool_anchors_path();
         let by_height_path = shielded_credit_pool_anchors_by_height_path();
-        let by_height_path_vec = shielded_credit_pool_anchors_by_height_path_vec();
+        self.prune_pool_anchors_v0(
+            &anchors_path,
+            &by_height_path,
+            shielded_credit_pool_anchors_by_height_path_vec(),
+            cutoff_height,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Prunes the anchors of the pool whose anchors tree and anchors-by-height tree are at the
+    /// given paths, whichever shielded pool (credit or token) it is. Same "always keep the
+    /// highest entry" rule as the credit pool.
+    pub(in crate::drive) fn prune_pool_anchors_v0(
+        &self,
+        anchors_path: &[&[u8]],
+        by_height_path: &[&[u8]],
+        by_height_path_vec: Vec<Vec<u8>>,
+        cutoff_height: u64,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let grove_version = &platform_version.drive.grove_version;
 
         // 1. Query for entries strictly below cutoff (`RangeTo` is
         //    exclusive). Anything in this set is a candidate for
@@ -114,7 +136,6 @@ impl Drive {
         // 3. Delete from both trees. Order doesn't matter for
         //    correctness — both writes occur atomically as part of
         //    the block transaction.
-        let anchors_path = shielded_credit_pool_anchors_path();
         for (height_key, element) in to_delete {
             if let Element::Item(anchor_bytes, _) = element {
                 // NOTE: `.unwrap()` is `CostContext::unwrap()`, NOT
@@ -122,7 +143,7 @@ impl Drive {
                 // never panics — standard pattern across Drive.
                 self.grove
                     .delete(
-                        &anchors_path,
+                        anchors_path,
                         &anchor_bytes,
                         None,
                         Some(transaction),
@@ -133,7 +154,7 @@ impl Drive {
             }
             self.grove
                 .delete(
-                    &by_height_path,
+                    by_height_path,
                     &height_key,
                     None,
                     Some(transaction),

@@ -24,15 +24,13 @@ impl TokenConfiguration {
         action_taker: &ActionTaker,
         goal: ActionGoal,
     ) -> bool {
-        match self {
-            TokenConfiguration::V0(v0) => v0.can_apply_token_configuration_item(
-                change_item,
-                contract_owner_id,
-                main_group,
-                groups,
-                action_taker,
-                goal,
-            ),
-        }
+        self.as_v0().can_apply_token_configuration_item(
+            change_item,
+            contract_owner_id,
+            main_group,
+            groups,
+            action_taker,
+            goal,
+        )
     }
 }

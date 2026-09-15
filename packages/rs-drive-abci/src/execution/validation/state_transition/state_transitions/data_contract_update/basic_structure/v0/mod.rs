@@ -58,6 +58,18 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
                 ));
             }
 
+            // A newer configuration format than this protocol version admits is a consensus
+
+            // error so that nodes already running newer software agree with the rest of the
+
+            // network until the version that introduces the format activates.
+
+            let validation_result = token_configuration.validate_format_version(platform_version);
+
+            if !validation_result.is_valid() {
+                return Ok(validation_result);
+            }
+
             let validation_result = token_configuration
                 .conventions()
                 .validate_localizations(platform_version)?;

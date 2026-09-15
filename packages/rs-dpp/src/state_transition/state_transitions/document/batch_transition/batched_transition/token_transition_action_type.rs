@@ -45,6 +45,15 @@ pub enum TokenTransitionActionType {
 
     /// Indicates that the transition sets or updates the price for direct token purchases.
     SetPriceForDirectPurchase,
+
+    /// Indicates tokens moving from an identity balance into the token's shielded pool.
+    Shield,
+
+    /// Indicates tokens moving from the token's shielded pool to an identity balance.
+    Unshield,
+
+    /// Indicates a transfer inside the token's shielded pool.
+    ShieldedTransfer,
 }
 
 impl fmt::Display for TokenTransitionActionType {
@@ -61,6 +70,9 @@ impl fmt::Display for TokenTransitionActionType {
             TokenTransitionActionType::ConfigUpdate => "ConfigUpdate",
             TokenTransitionActionType::DirectPurchase => "DirectPurchase",
             TokenTransitionActionType::SetPriceForDirectPurchase => "SetPriceForDirectPurchase",
+            TokenTransitionActionType::Shield => "Shield",
+            TokenTransitionActionType::Unshield => "Unshield",
+            TokenTransitionActionType::ShieldedTransfer => "ShieldedTransfer",
         };
         write!(f, "{}", action_str)
     }
@@ -86,6 +98,9 @@ impl TokenTransitionActionTypeGetter for TokenTransition {
                 TokenTransitionActionType::SetPriceForDirectPurchase
             }
             TokenTransition::DirectPurchase(_) => TokenTransitionActionType::DirectPurchase,
+            TokenTransition::Shield(_) => TokenTransitionActionType::Shield,
+            TokenTransition::Unshield(_) => TokenTransitionActionType::Unshield,
+            TokenTransition::ShieldedTransfer(_) => TokenTransitionActionType::ShieldedTransfer,
         }
     }
 }
@@ -111,6 +126,11 @@ impl TryFrom<&str> for TokenTransitionActionType {
             "direct_purchase" | "directPurchase" => Ok(TokenTransitionActionType::DirectPurchase),
             "set_price_for_direct_purchase" | "setPriceForDirectPurchase" => {
                 Ok(TokenTransitionActionType::SetPriceForDirectPurchase)
+            }
+            "shield" => Ok(TokenTransitionActionType::Shield),
+            "unshield" => Ok(TokenTransitionActionType::Unshield),
+            "shielded_transfer" | "shieldedTransfer" => {
+                Ok(TokenTransitionActionType::ShieldedTransfer)
             }
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown token transition action type {action_type}"

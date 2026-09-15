@@ -36,6 +36,9 @@ mod shield_from_asset_lock;
 mod shield_from_identity;
 mod shielded_transfer;
 mod shielded_withdrawal;
+mod token_shield;
+mod token_shielded_transfer;
+mod token_unshield;
 mod unshield;
 
 pub use self::shield::build_shield_transition;
@@ -49,6 +52,9 @@ pub use shield_from_asset_lock::build_shield_from_asset_lock_transition_with_sig
 pub use shield_from_identity::build_shield_from_identity_transition;
 pub use shielded_transfer::build_shielded_transfer_transition;
 pub use shielded_withdrawal::build_shielded_withdrawal_transition;
+pub use token_shield::build_token_shield_transition;
+pub use token_shielded_transfer::build_token_shielded_transfer_transition;
+pub use token_unshield::build_token_unshield_transition;
 pub use unshield::build_unshield_transition;
 
 use grovedb_commitment_tree::{
@@ -380,10 +386,17 @@ where
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
+    use crate::address_funds::AddressWitness;
+    use crate::identity::signer::Signer;
+    use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use grovedb_commitment_tree::{
         FullViewingKey, Hashable, MerkleHashOrchard, Note, NoteValue, ProvingKey, RandomSeed, Rho,
         Scope, SpendingKey, NOTE_COMMITMENT_TREE_DEPTH,
     };
+    use platform_value::BinaryData;
+    use platform_version::version::PlatformVersion;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use std::sync::OnceLock;
 
     static PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
@@ -409,6 +422,52 @@ pub(crate) mod test_helpers {
         let payment_address = fvk.address_at(0u32, Scope::External);
         OrchardAddress::from_raw_bytes(&payment_address.to_raw_address_bytes())
             .expect("valid orchard address bytes")
+    }
+
+    /// An identity signer that never verifies: it returns a fixed 65-byte signature so batch
+    /// constructors can be exercised without real keys.
+    #[derive(Debug)]
+    pub struct DummyIdentitySigner;
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for DummyIdentitySigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            Ok(BinaryData::new(vec![0u8; 65]))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::ShieldedBuildError(
+                "identity signer never creates address witnesses".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// A critical authentication key an identity could sign a batch transition with.
+    pub fn test_identity_key() -> IdentityPublicKey {
+        let mut rng = StdRng::seed_from_u64(42);
+        let (key, _) = IdentityPublicKey::random_key_with_known_attributes(
+            0,
+            &mut rng,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
+            None,
+            PlatformVersion::latest(),
+        )
+        .expect("authentication key");
+        key
     }
 
     /// Creates a SpendableNote with the given value.

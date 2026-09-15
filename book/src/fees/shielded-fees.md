@@ -46,6 +46,22 @@ The fee is derived differently depending on the shielded transition type:
 | **ShieldFromIdentity** | `fee = metered(storage + processing) + shielded_verification_fee`, paid from the funding identity's balance | Identity balance to pool (protocol version 14). Charged exactly like `Shield`, but on the identity side: the identity signature covers the whole outputs-only bundle, the metered note writes and identity writes go through the standard identity-paid path (`IdentityCreditTransferToAddresses` model), and only the ZK compute fee is added as `additional_fixed_fee_cost`. `user_fee_increase` applies. The identity must hold `amount + fee`; consensus rejects a short balance with `IdentityInsufficientBalanceError`. The pool and the identity are both balance trees, so no system-credit adjustment is emitted. See [Entry-Transition Fees](#entry-transition-fees-shield-shieldfromassetlock-and-shieldfromidentity). |
 | **IdentityTopUpFromShieldedPool** | `fee = compute_shielded_identity_top_up_fee(num_actions)` = `compute_minimum_shielded_fee(num_actions) + identity_balance_storage_fee`, carved from `value_balance` | Shielded pool to an EXISTING identity's balance (protocol version 14). `value_balance` (the transition's `topUpAmount`) is the gross amount leaving the pool; the identity receives `topUpAmount - fee` and validation requires `topUpAmount >= fee`. Same flat pool-paid model as `Unshield`, with the identity balance write as a flat component built like `Unshield`'s address write but calibrated to its measured cost: the top-up rewrites the existing identity's balance element and its Merk path (320 replaced bytes, 175,320 credits of processing, no storage), folded into one flat figure with headroom like the other shielded components, so `identity_balance_storage_fee = 8 x per_byte_rate` (`SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES`). The target identity and gross amount are bound into the Orchard sighash; the identity must already exist; no system-credit adjustment. |
 
+### Token shielded pool fees
+
+Token pools (protocol version 14, see [Token Shielded Pools](../data-model/token-shielded-pools.md))
+hold tokens, and tokens cannot pay fees, so none of the three token pool transitions carves a
+fee from the bundle. They are `TokenTransition` variants inside a `Batch`, and the batch's
+signing identity pays in credits through the standard identity-paid path.
+
+| Transition | Fee Formula | Explanation |
+|---|---|---|
+| **TokenShield** | `fee = metered(storage + processing) + shielded_verification_fee`, paid by the signing identity | Same model as `ShieldFromIdentity`: the note appends, the identity token balance write and the pool balance write are metered, and `compute_shielded_verification_fee(num_actions)` is added as a precalculated operation before the proof is verified. `value_balance` is `-amount` in tokens and carries no fee. |
+| **TokenUnshield** | `fee = metered(storage + processing) + shielded_verification_fee`, paid by the signing identity | `value_balance` equals the unshielded token amount exactly; the recipient receives the full amount. Nullifier inserts, note appends and the two balance writes are metered. |
+| **TokenShieldedTransfer** | `fee = metered(storage + processing) + shielded_verification_fee`, paid by the signing identity | `value_balance` is exactly zero; consensus rejects any other value. Only the nullifier inserts and note appends are metered. |
+
+Because the verification fee is charged before the proof is checked, an invalid proof is a paid
+failure: the identity is charged, its identity contract nonce advances, and no token moves.
+
 For `ShieldedTransfer`, the client constructs the bundle so that `total_spent −
 total_output = desired_fee`. The Orchard circuit proves that value is conserved
 (inputs = outputs + value_balance), and the binding signature cryptographically

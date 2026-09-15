@@ -7,7 +7,8 @@ use crate::state_transition::batch_transition::{
     DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
     TokenBurnTransition, TokenClaimTransition, TokenConfigUpdateTransition,
     TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition,
-    TokenMintTransition, TokenSetPriceForDirectPurchaseTransition, TokenTransferTransition,
+    TokenMintTransition, TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition,
+    TokenShieldedTransferTransition, TokenTransferTransition, TokenUnshieldTransition,
 };
 
 pub trait BatchTransitionResolversV0 {
@@ -33,4 +34,7 @@ pub trait BatchTransitionResolversV0 {
     fn as_transition_token_set_price_for_direct_purchase(
         &self,
     ) -> Option<&TokenSetPriceForDirectPurchaseTransition>;
+    fn as_transition_token_shield(&self) -> Option<&TokenShieldTransition>;
+    fn as_transition_token_unshield(&self) -> Option<&TokenUnshieldTransition>;
+    fn as_transition_token_shielded_transfer(&self) -> Option<&TokenShieldedTransferTransition>;
 }

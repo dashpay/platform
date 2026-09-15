@@ -103,6 +103,10 @@ impl Drive {
         // through the same helper: the prefunded balances Merk is then built by the same
         // sequence of inserts on both node populations.
         self.insert_contract_fee_pot_trees(transaction, platform_version)?;
+        // Token shielded pools root (v4, protocol version 14): an empty BigSumTree under the
+        // Tokens tree. Inserted after the batch so `[Tokens]` already exists, through the
+        // helper the in-place upgrade (`Platform::transition_to_version_14`) also calls.
+        self.insert_token_shielded_pools_root_tree(transaction, platform_version)?;
 
         Ok(())
     }

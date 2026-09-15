@@ -7,7 +7,9 @@ use crate::state_transition::batch_transition::{
     TokenBurnTransition, TokenClaimTransition, TokenConfigUpdateTransition,
     TokenDestroyFrozenFundsTransition, TokenDirectPurchaseTransition,
     TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition,
-    TokenSetPriceForDirectPurchaseTransition, TokenTransferTransition, TokenUnfreezeTransition,
+    TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition,
+    TokenShieldedTransferTransition, TokenTransferTransition, TokenUnfreezeTransition,
+    TokenUnshieldTransition,
 };
 
 impl BatchTransitionResolversV0 for BatchedTransition {
@@ -128,6 +130,27 @@ impl BatchTransitionResolversV0 for BatchedTransition {
             }
         }
     }
+
+    fn as_transition_token_shield(&self) -> Option<&TokenShieldTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_shield(),
+        }
+    }
+
+    fn as_transition_token_unshield(&self) -> Option<&TokenUnshieldTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_unshield(),
+        }
+    }
+
+    fn as_transition_token_shielded_transfer(&self) -> Option<&TokenShieldedTransferTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_shielded_transfer(),
+        }
+    }
 }
 
 impl BatchTransitionResolversV0 for BatchedTransitionRef<'_> {
@@ -246,6 +269,27 @@ impl BatchTransitionResolversV0 for BatchedTransitionRef<'_> {
             BatchedTransitionRef::Token(token) => {
                 token.as_transition_token_set_price_for_direct_purchase()
             }
+        }
+    }
+
+    fn as_transition_token_shield(&self) -> Option<&TokenShieldTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_shield(),
+        }
+    }
+
+    fn as_transition_token_unshield(&self) -> Option<&TokenUnshieldTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_unshield(),
+        }
+    }
+
+    fn as_transition_token_shielded_transfer(&self) -> Option<&TokenShieldedTransferTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_shielded_transfer(),
         }
     }
 }

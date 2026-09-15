@@ -1,5 +1,6 @@
 mod v0;
 
+use crate::drive::shielded::paths::token_shielded_pool_anchors_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -23,6 +24,37 @@ impl Drive {
             0 => Self::verify_shielded_anchors_v0(proof, verify_subset_of_proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_shielded_anchors".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}
+
+impl Drive {
+    /// Verifies a proof of a TOKEN shielded pool's recorded anchors. Same versioning as
+    /// [`Drive::verify_shielded_anchors`].
+    pub fn verify_token_shielded_pool_anchors(
+        proof: &[u8],
+        token_id: [u8; 32],
+        verify_subset_of_proof: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Vec<[u8; 32]>), Error> {
+        match platform_version
+            .drive
+            .methods
+            .verify
+            .shielded
+            .verify_shielded_anchors
+        {
+            0 => Self::verify_pool_anchors_v0(
+                proof,
+                token_shielded_pool_anchors_path_vec(token_id),
+                verify_subset_of_proof,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "verify_token_shielded_pool_anchors".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

@@ -17,6 +17,8 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_set_price_for_direct_purchase_transition_action::TokenSetPriceForDirectPurchaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::TokenTransferTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_shield_transition_action::TokenShieldTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_unshield_transition_action::TokenUnshieldTransitionActionAccessorsV0;
 
 impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
     fn into_high_level_batch_drive_operations<'b>(
@@ -64,6 +66,14 @@ impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
             TokenTransitionAction::SetPriceForDirectPurchaseAction(set_price) => {
                 set_price.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
             }
+            TokenTransitionAction::ShieldAction(shield) => {
+                shield.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+            }
+            TokenTransitionAction::UnshieldAction(unshield) => {
+                unshield.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+            }
+            TokenTransitionAction::ShieldedTransferAction(shielded_transfer) => shielded_transfer
+                .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
         }
     }
 }
@@ -135,6 +145,13 @@ impl TokenTransitionAction {
                     set_price_action.public_note().cloned(),
                 )
             }
+            TokenTransitionAction::ShieldAction(shield_action) => {
+                TokenEvent::Shield(shield_action.amount())
+            }
+            TokenTransitionAction::UnshieldAction(unshield_action) => {
+                TokenEvent::Unshield(unshield_action.recipient_id(), unshield_action.amount())
+            }
+            TokenTransitionAction::ShieldedTransferAction(_) => TokenEvent::ShieldedTransfer,
         }
     }
 }

@@ -413,6 +413,14 @@ where
 
         #[cfg(debug_assertions)]
         phases.end_phase("prune_shielded_pool_anchors");
+        // Token shielded pools: record the new anchor of every pool this block wrote to and
+        // prune that pool's stale anchors (touch-driven, so untouched pools cost nothing).
+        self.record_token_shielded_pool_anchors(
+            state_transitions_result.token_shielded_pools_touched(),
+            block_proposal.height,
+            transaction,
+            platform_version,
+        )?;
 
         // Pool withdrawals into transactions queue
 
