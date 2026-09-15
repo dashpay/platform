@@ -14,6 +14,7 @@ use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use crate::error::contract::DataContractError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -241,6 +242,16 @@ impl Drive {
                 transaction,
                 platform_version,
             )?);
+
+            if configuration.has_shielded_pool() {
+                batch_operations.extend(self.create_token_shielded_pool_trees_operations(
+                    token_id.to_buffer(),
+                    true,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?);
+            }
         }
 
         if !contract.groups().is_empty() {

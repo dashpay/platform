@@ -51,6 +51,10 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         unfreeze: 0,
         apply_status: 0,
         perpetual_distribution_next_event_for_identity_id: 0,
+        create_token_shielded_pool_trees: 0,
+        shield: 0,
+        unshield: 0,
+        shielded_transfer: 0,
     },
     calculate_total_tokens_balance: 0,
     distribution: DriveTokenDistributionMethodVersions {

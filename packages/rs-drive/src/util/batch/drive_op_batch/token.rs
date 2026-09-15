@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
@@ -123,6 +124,39 @@ pub enum TokenOperationType {
         /// The price we are setting to
         /// None means it's not currently for sale
         price: Option<TokenPricingSchedule>,
+    },
+    /// Moves tokens from an identity balance into the token's shielded pool.
+    TokenShield {
+        /// The token id
+        token_id: Identifier,
+        /// The identity whose balance is debited
+        identity_id: Identifier,
+        /// The amount entering the pool
+        amount: TokenAmount,
+        /// The bundle's output notes, appended to the pool's commitment tree
+        notes: Vec<ShieldedActionNote>,
+    },
+    /// Moves tokens from the token's shielded pool into an identity balance.
+    TokenUnshield {
+        /// The token id
+        token_id: Identifier,
+        /// The identity whose balance is credited
+        recipient_id: Identifier,
+        /// The amount leaving the pool
+        amount: TokenAmount,
+        /// The spent nullifiers, recorded in the pool's nullifier set
+        nullifiers: Vec<[u8; 32]>,
+        /// The bundle's output (change) notes, appended to the pool's commitment tree
+        notes: Vec<ShieldedActionNote>,
+    },
+    /// A transfer inside the token's shielded pool (the pool balance is unchanged).
+    TokenShieldedTransfer {
+        /// The token id
+        token_id: Identifier,
+        /// The spent nullifiers, recorded in the pool's nullifier set
+        nullifiers: Vec<[u8; 32]>,
+        /// The bundle's output notes, appended to the pool's commitment tree
+        notes: Vec<ShieldedActionNote>,
     },
 }
 
@@ -307,6 +341,48 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 )?;
                 Ok(batch_operations)
             }
+            TokenOperationType::TokenShield {
+                token_id,
+                identity_id,
+                amount,
+                notes,
+            } => drive.token_shield_operations(
+                token_id.to_buffer(),
+                identity_id.to_buffer(),
+                amount,
+                &notes,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            TokenOperationType::TokenUnshield {
+                token_id,
+                recipient_id,
+                amount,
+                nullifiers,
+                notes,
+            } => drive.token_unshield_operations(
+                token_id.to_buffer(),
+                recipient_id.to_buffer(),
+                amount,
+                &nullifiers,
+                &notes,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            TokenOperationType::TokenShieldedTransfer {
+                token_id,
+                nullifiers,
+                notes,
+            } => drive.token_shielded_transfer_operations(
+                token_id.to_buffer(),
+                &nullifiers,
+                &notes,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
         }
     }
 }

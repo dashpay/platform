@@ -12,8 +12,11 @@ use crate::state_transitions::batch::token_transitions::token_destroy_frozen_fun
 use crate::state_transitions::batch::token_transitions::token_emergency_action::TokenEmergencyActionTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_freeze::TokenFreezeTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_mint::TokenMintTransitionWasm;
+use crate::state_transitions::batch::token_transitions::token_shield::TokenShieldTransitionWasm;
+use crate::state_transitions::batch::token_transitions::token_shielded_transfer::TokenShieldedTransferTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_transfer::TokenTransferTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_unfreeze::TokenUnFreezeTransitionWasm;
+use crate::state_transitions::batch::token_transitions::token_unshield::TokenUnshieldTransitionWasm;
 use crate::utils::get_class_type;
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
@@ -23,14 +26,16 @@ use dpp::state_transition::batch_transition::{
     TokenBurnTransition, TokenClaimTransition, TokenConfigUpdateTransition,
     TokenDestroyFrozenFundsTransition, TokenDirectPurchaseTransition,
     TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition,
-    TokenSetPriceForDirectPurchaseTransition, TokenTransferTransition, TokenUnfreezeTransition,
+    TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition,
+    TokenShieldedTransferTransition, TokenTransferTransition, TokenUnfreezeTransition,
+    TokenUnshieldTransition,
 };
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TOKEN_TRANSITION_TYPES_TS: &str = r#"
-export type TokenTransitionLike = TokenMintTransition | TokenBurnTransition | TokenTransferTransition | TokenFreezeTransition | TokenUnFreezeTransition | TokenDestroyFrozenFundsTransition | TokenClaimTransition | TokenEmergencyActionTransition | TokenConfigUpdateTransition | TokenDirectPurchaseTransition | TokenSetPriceForDirectPurchaseTransition;
+export type TokenTransitionLike = TokenMintTransition | TokenBurnTransition | TokenTransferTransition | TokenFreezeTransition | TokenUnFreezeTransition | TokenDestroyFrozenFundsTransition | TokenClaimTransition | TokenEmergencyActionTransition | TokenConfigUpdateTransition | TokenDirectPurchaseTransition | TokenSetPriceForDirectPurchaseTransition | TokenShieldTransition | TokenUnshieldTransition | TokenShieldedTransferTransition;
 "#;
 
 /// Extern type for flexible TokenTransition input
@@ -53,6 +58,9 @@ impl_from_for_extern_type!(
     TokenConfigUpdateTransitionWasm,
     TokenDirectPurchaseTransitionWasm,
     TokenSetPriceForDirectPurchaseTransitionWasm,
+    TokenShieldTransitionWasm,
+    TokenUnshieldTransitionWasm,
+    TokenShieldedTransferTransitionWasm,
 );
 
 #[derive(Debug, Clone, PartialEq)]
@@ -124,6 +132,17 @@ impl TokenTransitionWasm {
                     TokenEmergencyActionTransitionWasm::try_from(&transition)?,
                 ))
             }
+            "TokenShieldTransition" => TokenTransition::from(TokenShieldTransition::from(
+                TokenShieldTransitionWasm::try_from(&transition)?,
+            )),
+            "TokenUnshieldTransition" => TokenTransition::from(TokenUnshieldTransition::from(
+                TokenUnshieldTransitionWasm::try_from(&transition)?,
+            )),
+            "TokenShieldedTransferTransition" => {
+                TokenTransition::from(TokenShieldedTransferTransition::from(
+                    TokenShieldedTransferTransitionWasm::try_from(&transition)?,
+                ))
+            }
             _ => {
                 return Err(WasmDppError::invalid_argument("Bad token transition input"));
             }
@@ -168,6 +187,15 @@ impl TokenTransitionWasm {
             TokenTransition::SetPriceForDirectPurchase(token_transition) => {
                 TokenSetPriceForDirectPurchaseTransitionWasm::from(token_transition).into()
             }
+            TokenTransition::Shield(token_transition) => {
+                TokenShieldTransitionWasm::from(token_transition).into()
+            }
+            TokenTransition::Unshield(token_transition) => {
+                TokenUnshieldTransitionWasm::from(token_transition).into()
+            }
+            TokenTransition::ShieldedTransfer(token_transition) => {
+                TokenShieldedTransferTransitionWasm::from(token_transition).into()
+            }
         }
     }
 
@@ -185,6 +213,9 @@ impl TokenTransitionWasm {
             TokenTransition::ConfigUpdate(_) => 8,
             TokenTransition::DirectPurchase(_) => 9,
             TokenTransition::SetPriceForDirectPurchase(_) => 10,
+            TokenTransition::Shield(_) => 11,
+            TokenTransition::Unshield(_) => 12,
+            TokenTransition::ShieldedTransfer(_) => 13,
         }
     }
 
@@ -204,6 +235,9 @@ impl TokenTransitionWasm {
             TokenTransition::SetPriceForDirectPurchase(_) => {
                 "SetPriceForDirectPurchase".to_string()
             }
+            TokenTransition::Shield(_) => "Shield".to_string(),
+            TokenTransition::Unshield(_) => "Unshield".to_string(),
+            TokenTransition::ShieldedTransfer(_) => "ShieldedTransfer".to_string(),
         }
     }
 

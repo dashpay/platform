@@ -1015,6 +1015,13 @@ impl StateTransition {
                         BatchedTransitionRef::Token(
                             TokenTransition::SetPriceForDirectPurchase(_),
                         ) => "SetPriceForDirectPurchase",
+                        BatchedTransitionRef::Token(TokenTransition::Shield(_)) => "TokenShield",
+                        BatchedTransitionRef::Token(TokenTransition::Unshield(_)) => {
+                            "TokenUnshield"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(_)) => {
+                            "TokenShieldedTransfer"
+                        }
                     };
                     document_transition_types.push(document_transition_name);
                 }

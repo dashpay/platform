@@ -20,7 +20,7 @@ impl TokenConfiguration {
             return legacy_result;
         }
 
-        let TokenConfiguration::V0(configuration) = self;
+        let configuration = self.as_v0();
 
         for (_, rules) in configuration.all_change_control_rules() {
             for action_takers in [

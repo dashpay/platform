@@ -14,10 +14,8 @@ use dapi_grpc::platform::v0::get_shielded_encrypted_notes_response::{
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::{
-    shielded_credit_pool_path, shielded_credit_pool_path_vec, SHIELDED_NOTES_CHUNK_POWER,
-    SHIELDED_NOTES_KEY,
-};
+use crate::query::shielded::ShieldedPoolSelector;
+use drive::drive::shielded::paths::{SHIELDED_NOTES_CHUNK_POWER, SHIELDED_NOTES_KEY};
 use drive::grovedb::{PathQuery, Query, QueryItem, SizedQuery, SubqueryBranch};
 use drive::grovedb_path::SubtreePath;
 use drive::util::grove_operations::GroveDBToUse;
@@ -29,10 +27,15 @@ impl<C> Platform<C> {
             start_index,
             count,
             prove,
+            token_id,
         }: GetShieldedEncryptedNotesRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetShieldedEncryptedNotesResponseV0>, Error> {
+        let pool = match ShieldedPoolSelector::from_request(token_id, platform_version) {
+            Ok(pool) => pool,
+            Err(error) => return Ok(QueryValidationResult::new_with_error(error)),
+        };
         // Two distinct quantities:
         //   * `mmr_chunk_size` — the on-chain MMR chunk size
         //     (`1 << SHIELDED_NOTES_CHUNK_POWER` = 2048 today). This is the
@@ -78,7 +81,7 @@ impl<C> Platform<C> {
             );
 
             let path_query = PathQuery {
-                path: shielded_credit_pool_path_vec(),
+                path: pool.pool_path_vec(),
                 query: SizedQuery {
                     query: Query {
                         read_mode: None,
@@ -115,8 +118,8 @@ impl<C> Platform<C> {
             }
         } else {
             // Non-proved: loop over commitment_tree_get_value for each position
-            let pool_path = shielded_credit_pool_path();
-            let pool_subtree: SubtreePath<&[u8]> = (&pool_path).into();
+            let pool_path = pool.pool_path_vec();
+            let pool_subtree: SubtreePath<Vec<u8>> = pool_path.as_slice().into();
             let notes_key: &[u8] = &[SHIELDED_NOTES_KEY];
 
             let mut entries = Vec::with_capacity(limit as usize);
@@ -197,6 +200,7 @@ mod tests {
             start_index: chunk - 1, // not aligned to chunk size
             count: 10,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -219,6 +223,7 @@ mod tests {
             start_index: chunk + 1,
             count: 10,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -242,6 +247,7 @@ mod tests {
             start_index: chunk,
             count: 1,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -268,6 +274,7 @@ mod tests {
             start_index: chunk * 2,
             count: 1,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -286,6 +293,7 @@ mod tests {
             start_index: 0,
             count: 1,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -313,6 +321,7 @@ mod tests {
             start_index: 0,
             count: 16,
             prove: true,
+            token_id: None,
         };
 
         let result = platform
@@ -339,6 +348,7 @@ mod tests {
             start_index: 3,
             count: 4,
             prove: true,
+            token_id: None,
         };
 
         let result = platform
@@ -362,6 +372,7 @@ mod tests {
             start_index: 0,
             count: max,
             prove: false,
+            token_id: None,
         };
 
         let result = platform
@@ -381,6 +392,7 @@ mod tests {
             start_index: 0,
             count: 8,
             prove: false,
+            token_id: None,
         };
 
         let result = platform

@@ -5,6 +5,12 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::Credits;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::token_transition::{
+    TokenTransition, TokenTransitionV0Methods,
+};
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::StateTransition;
 
 use crate::execution::types::state_transition_container::v0::{
     DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
@@ -188,6 +194,11 @@ where
                         }
                         let credit_mints_at_savepoint = block_credit_mints;
 
+                        // Remembered before the transition is consumed: the pools an applied
+                        // batch touched get their anchor recorded at block end.
+                        let token_shielded_pools_touched =
+                            token_shielded_pools_touched(&state_transition);
+
                         // Validate state transition and produce an execution event
                         let execution_result = process_state_transition(
                             &platform_ref,
@@ -270,6 +281,19 @@ where
                                     // classification in `prepare_proposal`.
                                 }
                             }
+                        }
+
+                        // An applied transition (successful, or a paid failure whose writes
+                        // stay in the block) may have appended notes to a token pool. A paid
+                        // failure that only bumped the nonce is recorded too: recording is
+                        // "if changed", so an untouched pool costs one anchor read.
+                        if matches!(
+                            execution_result,
+                            StateTransitionExecutionResult::SuccessfulExecution { .. }
+                                | StateTransitionExecutionResult::PaidConsensusError { .. }
+                        ) {
+                            processing_result
+                                .add_token_shielded_pools_touched(token_shielded_pools_touched);
                         }
 
                         // Store metrics
@@ -367,4 +391,23 @@ fn error_to_internal_error_execution_result(
     }
 
     StateTransitionExecutionResult::InternalError(error_with_st.error.to_string())
+}
+
+/// The token shielded pools a state transition writes to: the token ids of every
+/// `TokenShield`, `TokenUnshield` and `TokenShieldedTransfer` in a batch.
+fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 32]> {
+    match state_transition {
+        StateTransition::Batch(batch) => batch
+            .transitions_iter()
+            .filter_map(|transition| match transition {
+                BatchedTransitionRef::Token(
+                    token_transition @ (TokenTransition::Shield(_)
+                    | TokenTransition::Unshield(_)
+                    | TokenTransition::ShieldedTransfer(_)),
+                ) => Some(token_transition.token_id().to_buffer()),
+                _ => None,
+            })
+            .collect(),
+        _ => vec![],
+    }
 }

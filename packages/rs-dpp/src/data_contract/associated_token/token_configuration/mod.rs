@@ -1,10 +1,14 @@
+use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+use crate::data_contract::associated_token::token_configuration::v1::TokenConfigurationV1;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
+use crate::validation::SimpleConsensusValidationResult;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
+use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt;
@@ -12,6 +16,7 @@ use std::fmt;
 pub mod accessors;
 mod methods;
 pub mod v0;
+pub mod v1;
 
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
@@ -22,11 +27,54 @@ pub mod v0;
 pub enum TokenConfiguration {
     #[serde(rename = "0")]
     V0(TokenConfigurationV0),
+    /// V0 plus the per-token shielded pool opt-in. Admitted from protocol version 14
+    /// (`token_versions.token_configuration_format`).
+    #[serde(rename = "1")]
+    V1(TokenConfigurationV1),
 }
 impl TokenConfiguration {
     pub fn as_cow_v0(&self) -> Cow<'_, TokenConfigurationV0> {
         match self {
             TokenConfiguration::V0(v0) => Cow::Borrowed(v0),
+            TokenConfiguration::V1(v1) => Cow::Borrowed(&v1.base),
+        }
+    }
+
+    /// The `$formatVersion` this configuration is serialized with.
+    pub fn format_version(&self) -> u16 {
+        match self {
+            TokenConfiguration::V0(_) => 0,
+            TokenConfiguration::V1(_) => 1,
+        }
+    }
+
+    /// Checks the configuration's format version against the bounds the platform version
+    /// admits (`dpp.contract_versions.token_versions.token_configuration_format`).
+    ///
+    /// A format above the bound is a consensus error, not a decode failure: nodes running
+    /// software that knows the newer variant must still refuse it until the protocol version
+    /// that introduces it activates, so a mixed-version network agrees.
+    pub fn validate_format_version(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> SimpleConsensusValidationResult {
+        let bounds = &platform_version
+            .dpp
+            .contract_versions
+            .token_versions
+            .token_configuration_format;
+        let format_version = self.format_version();
+        if format_version < bounds.min_version || format_version > bounds.max_version {
+            SimpleConsensusValidationResult::new_with_error(
+                UnsupportedVersionError::new(
+                    format_version,
+                    bounds.min_version,
+                    bounds.max_version,
+                )
+                .into(),
+            )
+        } else {
+            SimpleConsensusValidationResult::new()
         }
     }
 }
@@ -35,6 +83,7 @@ impl fmt::Display for TokenConfiguration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TokenConfiguration::V0(v0) => write!(f, "{}", v0),
+            TokenConfiguration::V1(v1) => write!(f, "{}", v1),
         }
     }
 }

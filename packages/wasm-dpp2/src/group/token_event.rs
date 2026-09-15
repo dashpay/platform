@@ -25,6 +25,9 @@ const TS_TYPES: &str = r#"
  *   - ConfigUpdate:              { $type, configChange, publicNote }
  *   - ChangePriceForDirectPurchase: { $type, pricingSchedule, publicNote }
  *   - DirectPurchase: { $type, amount, credits }
+ *   - Shield:  { $type: "shield", amount }
+ *   - Unshield:{ $type: "unshield", recipientId, amount }
+ *   - ShieldedTransfer: { $type: "shieldedTransfer" }
  *
  * `amount`/`credits` are routed through json_safe_u64 — small numbers, JS
  * BigInt-safe stringification above 2^53. Identifier fields use base58 in
@@ -69,6 +72,9 @@ pub enum TokenEventVariant {
     ConfigUpdate = 8,
     ChangePriceForDirectPurchase = 9,
     DirectPurchase = 10,
+    Shield = 11,
+    Unshield = 12,
+    ShieldedTransfer = 13,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -106,6 +112,9 @@ impl TokenEventWasm {
                 TokenEventVariant::ChangePriceForDirectPurchase
             }
             TokenEvent::DirectPurchase(..) => TokenEventVariant::DirectPurchase,
+            TokenEvent::Shield(..) => TokenEventVariant::Shield,
+            TokenEvent::Unshield(..) => TokenEventVariant::Unshield,
+            TokenEvent::ShieldedTransfer => TokenEventVariant::ShieldedTransfer,
         }
     }
 }

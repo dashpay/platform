@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::execution::check_tx::{CheckTxLevel, CheckTxResult};
 use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+use crate::execution::validation::state_transition::processor::traits::shielded_proof::ShieldedProofAdmissionKey;
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
     StateTransitionHasShieldedProofValidationV0, StateTransitionShieldedProofValidationV0,
 };
@@ -198,21 +199,31 @@ where
             // the execution-event fee check remains the authoritative check
             // against actual metered writes before expensive proof work.
             if errors.is_empty() && matches!(check_tx_level, CheckTxLevel::FirstTimeCheck) {
-                if let Some((identity_id, nonce)) =
+                if let Some(admission_key) =
                     state_transition.shielded_proof_identity_nonce_admission_key()
                 {
-                    let committed_nonce = platform_ref.drive.fetch_identity_nonce(
-                        identity_id,
-                        true,
-                        None,
-                        platform_version,
-                    )?;
+                    let committed_nonce = match admission_key {
+                        ShieldedProofAdmissionKey::Identity { identity_id, .. } => platform_ref
+                            .drive
+                            .fetch_identity_nonce(identity_id, true, None, platform_version)?,
+                        ShieldedProofAdmissionKey::IdentityContract {
+                            identity_id,
+                            contract_id,
+                            ..
+                        } => platform_ref.drive.fetch_identity_contract_nonce(
+                            identity_id,
+                            contract_id,
+                            true,
+                            None,
+                            platform_version,
+                        )?,
+                    };
                     let verification = self
                         .check_tx_proof_verifier
                         .try_acquire_identity_nonce(
-                            identity_id,
+                            admission_key.cache_key(),
                             committed_nonce,
-                            nonce,
+                            admission_key.nonce(),
                             hash_single(raw_tx),
                             state_transition.shielded_proof_action_count(),
                             platform_version.protocol_version,

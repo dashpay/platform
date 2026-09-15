@@ -4,11 +4,15 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::StateTransition;
 use dpp::version::feature_initial_protocol_versions::{
     ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION,
     IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
     SHIELDED_POOL_INITIAL_PROTOCOL_VERSION, SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+    TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
 };
 use dpp::version::PlatformVersion;
 
@@ -59,7 +63,39 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error> {
         match self {
-            StateTransition::Batch(st) => st.validate_is_allowed(platform, platform_version),
+            StateTransition::Batch(st) => {
+                // Token shielded pools (and the three batch transitions that use them) are a
+                // protocol-version feature, not a table-versioned validator, so the gate is
+                // applied to the batch as a whole before its own `is_allowed` runs.
+                if platform_version.protocol_version < TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+                {
+                    if let Some(transition) =
+                        st.transitions_iter()
+                            .find_map(|transition| match transition {
+                                BatchedTransitionRef::Token(TokenTransition::Shield(_)) => {
+                                    Some("TokenShield")
+                                }
+                                BatchedTransitionRef::Token(TokenTransition::Unshield(_)) => {
+                                    Some("TokenUnshield")
+                                }
+                                BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(
+                                    _,
+                                )) => Some("TokenShieldedTransfer"),
+                                _ => None,
+                            })
+                    {
+                        return Ok(ConsensusValidationResult::new_with_errors(vec![
+                            StateTransitionNotActiveError::new(
+                                transition,
+                                platform_version.protocol_version,
+                                TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                            )
+                            .into(),
+                        ]));
+                    }
+                }
+                st.validate_is_allowed(platform, platform_version)
+            }
             StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)

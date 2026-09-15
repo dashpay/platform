@@ -12,6 +12,22 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<u64>), Error> {
+        Self::verify_pool_notes_count_v0(
+            proof,
+            shielded_credit_pool_path_vec(),
+            verify_subset_of_proof,
+            platform_version,
+        )
+    }
+
+    /// Verifies the notes count of the pool at `pool_path`, whichever shielded pool (credit or
+    /// token) it is.
+    pub(super) fn verify_pool_notes_count_v0(
+        proof: &[u8],
+        pool_path: Vec<Vec<u8>>,
+        verify_subset_of_proof: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Option<u64>), Error> {
         // Single-key query that lands on the notes `CommitmentTree`
         // element itself (no subquery into its contents). Because the
         // query has no subquery, GroveDB returns the serialized element
@@ -22,7 +38,7 @@ impl Drive {
         // except the proved element is a `CommitmentTree` (decode field
         // 0, `total_count`) rather than a `SumItem`.
         let path_query = PathQuery {
-            path: shielded_credit_pool_path_vec(),
+            path: pool_path,
             query: SizedQuery {
                 query: Query::new_single_key(vec![SHIELDED_NOTES_KEY]),
                 limit: Some(1),

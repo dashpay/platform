@@ -932,3 +932,46 @@ pub struct ShieldedEncryptedNotesQuery {
     platform_serialize(unversioned)
 )]
 pub struct ShieldedNullifiersQuery(pub Vec<[u8; 32]>);
+
+/// Targets one token's shielded pool (protocol version 14+) for the parameterless shielded
+/// queries: pool state, notes count, anchors and most recent anchor.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
+    platform_serialize(unversioned)
+)]
+pub struct TokenShieldedPoolQuery {
+    /// The token whose shielded pool is queried
+    pub token_id: Identifier,
+}
+
+/// Encrypted notes page of one token's shielded pool
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
+    platform_serialize(unversioned)
+)]
+pub struct TokenShieldedEncryptedNotesQuery {
+    /// The token whose shielded pool is queried
+    pub token_id: Identifier,
+    /// Starting index in the encrypted notes count tree (inclusive, 0 = from beginning)
+    pub start_index: u64,
+    /// Max number of notes to return
+    pub count: u32,
+}
+
+/// Nullifier status check inside one token's shielded pool
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
+    platform_serialize(unversioned)
+)]
+pub struct TokenShieldedNullifiersQuery {
+    /// The token whose shielded pool is queried
+    pub token_id: Identifier,
+    /// The nullifiers to check
+    pub nullifiers: Vec<[u8; 32]>,
+}

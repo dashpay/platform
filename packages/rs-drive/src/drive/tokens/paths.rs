@@ -22,6 +22,14 @@ pub const TOKEN_DIRECT_SELL_PRICE_KEY: u8 = 92;
 
 /// Key for token distributions sub level
 pub const TOKEN_DISTRIBUTIONS_KEY: u8 = 32;
+/// Key for the token shielded pools tree (a BigSumTree of per-token pool SumTrees).
+///
+/// Introduced in protocol version 14. Each token whose configuration has `has_shielded_pool`
+/// owns one child SumTree keyed by its token id, laid out exactly like the credit shielded pool
+/// (`crate::drive::shielded::paths`): notes, nullifiers, anchors, anchors-by-height and a total
+/// balance SumItem. The BigSumTree total is the amount of every token currently shielded and
+/// joins the identity balances on the balance side of the token conservation check.
+pub const TOKEN_SHIELDED_POOLS_KEY: u8 = 224;
 
 // The Token Merk tree looks like
 //                                                       TOKEN_BALANCES_KEY
@@ -634,6 +642,20 @@ impl TokenPerpetualDistributionMomentPaths for RewardDistributionMoment {
             }
         }
     }
+}
+
+/// The root path of the token shielded pools tree: `[Tokens, 224]`, a BigSumTree whose children
+/// are the per-token pool SumTrees.
+pub fn token_shielded_pools_root_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_SHIELDED_POOLS_KEY],
+    ]
+}
+
+/// The root path of the token shielded pools tree as a vec
+pub fn token_shielded_pools_root_path_vec() -> Vec<Vec<u8>> {
+    vec![vec![RootTree::Tokens as u8], vec![TOKEN_SHIELDED_POOLS_KEY]]
 }
 
 #[cfg(feature = "server")]

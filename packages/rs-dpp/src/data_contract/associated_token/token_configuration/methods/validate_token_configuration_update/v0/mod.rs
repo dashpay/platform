@@ -1,5 +1,6 @@
 use crate::consensus::basic::data_contract::DataContractTokenConfigurationUpdateError;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Getters;
@@ -441,6 +442,20 @@ impl TokenConfiguration {
                 DataContractTokenConfigurationUpdateError::new(
                     "update".to_string(),
                     "mainControlGroupCanBeModified".to_string(),
+                    self.clone(),
+                    new_config.clone(),
+                )
+                .into(),
+            );
+        }
+
+        // The shielded pool opt-in is decided at creation: enabling it later would need the
+        // pool subtree created by the update, and a pool holding notes can never be removed.
+        if self.has_shielded_pool() != new_config.has_shielded_pool() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractTokenConfigurationUpdateError::new(
+                    "update".to_string(),
+                    "hasShieldedPool".to_string(),
                     self.clone(),
                     new_config.clone(),
                 )

@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::response_metadata::CheckpointUsed;
+use crate::query::shielded::ShieldedPoolSelector;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_shielded_anchors_request::GetShieldedAnchorsRequestV0;
 use dapi_grpc::platform::v0::get_shielded_anchors_response::get_shielded_anchors_response_v0::Anchors;
@@ -12,7 +13,6 @@ use dapi_grpc::platform::v0::get_shielded_anchors_response::{
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::shielded_credit_pool_anchors_path_vec;
 use drive::grovedb::query_result_type::QueryResultType;
 use drive::grovedb::{PathQuery, Query, SizedQuery};
 use drive::util::grove_operations::GroveDBToUse;
@@ -47,10 +47,14 @@ fn v0_shielded_anchor_limits(platform_version: &PlatformVersion) -> Option<(u16,
 impl<C> Platform<C> {
     pub(super) fn query_shielded_anchors_v0(
         &self,
-        GetShieldedAnchorsRequestV0 { prove }: GetShieldedAnchorsRequestV0,
+        GetShieldedAnchorsRequestV0 { prove, token_id }: GetShieldedAnchorsRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetShieldedAnchorsResponseV0>, Error> {
+        let pool = match ShieldedPoolSelector::from_request(token_id, platform_version) {
+            Ok(pool) => pool,
+            Err(error) => return Ok(QueryValidationResult::new_with_error(error)),
+        };
         let Some((safety_limit, preflight_limit)) = v0_shielded_anchor_limits(platform_version)
         else {
             return Ok(QueryValidationResult::new_with_error(
@@ -66,7 +70,7 @@ impl<C> Platform<C> {
         // while failing closed if configuration or state ever exceeds the
         // amount that this unpaginated response can safely return.
         let bounded_path_query = PathQuery {
-            path: shielded_credit_pool_anchors_path_vec(),
+            path: pool.anchors_path_vec(),
             query: SizedQuery {
                 query: Query::new_range_full(),
                 limit: Some(preflight_limit),
@@ -91,7 +95,7 @@ impl<C> Platform<C> {
         }
 
         let path_query = PathQuery {
-            path: shielded_credit_pool_anchors_path_vec(),
+            path: pool.anchors_path_vec(),
             query: SizedQuery {
                 query: Query::new_range_full(),
                 limit: None,
@@ -138,6 +142,7 @@ mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
     use dpp::dashcore::Network;
+    use drive::drive::shielded::paths::shielded_credit_pool_anchors_path_vec;
     use drive::drive::Drive;
     use drive::grovedb::batch::QualifiedGroveDbOp;
     use drive::grovedb::Element;
@@ -174,7 +179,10 @@ mod tests {
 
         let at_limit = platform
             .query_shielded_anchors_v0(
-                GetShieldedAnchorsRequestV0 { prove: false },
+                GetShieldedAnchorsRequestV0 {
+                    prove: false,
+                    token_id: None,
+                },
                 &state,
                 version,
             )
@@ -205,7 +213,14 @@ mod tests {
 
         for prove in [false, true] {
             let result = platform
-                .query_shielded_anchors_v0(GetShieldedAnchorsRequestV0 { prove }, &state, version)
+                .query_shielded_anchors_v0(
+                    GetShieldedAnchorsRequestV0 {
+                        prove,
+                        token_id: None,
+                    },
+                    &state,
+                    version,
+                )
                 .expect("expected bounded query to complete");
 
             assert!(matches!(
@@ -255,7 +270,10 @@ mod tests {
 
         let plain = platform
             .query_shielded_anchors_v0(
-                GetShieldedAnchorsRequestV0 { prove: false },
+                GetShieldedAnchorsRequestV0 {
+                    prove: false,
+                    token_id: None,
+                },
                 &state,
                 version,
             )
@@ -271,7 +289,14 @@ mod tests {
         assert_eq!(plain_anchors, expected_sorted);
 
         let proved = platform
-            .query_shielded_anchors_v0(GetShieldedAnchorsRequestV0 { prove: true }, &state, version)
+            .query_shielded_anchors_v0(
+                GetShieldedAnchorsRequestV0 {
+                    prove: true,
+                    token_id: None,
+                },
+                &state,
+                version,
+            )
             .expect("proved small-state query");
         let proof = match proved.data.and_then(|response| response.result) {
             Some(get_shielded_anchors_response_v0::Result::Proof(proof)) => proof.grovedb_proof,
