@@ -27,7 +27,6 @@
 //! `platform.proto` for the full supported / rejected shape table.
 
 mod compute_aggregate_mode_and_check_limit;
-mod conversions;
 mod dispatch;
 mod routing;
 
@@ -68,6 +67,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{resolve_time_range_bucket_clause, CountMode, SelectProjection};
+pub(super) use platform_query_wire::proto_conversions as conversions;
 use std::sync::Arc;
 
 /// Build a `QuerySyntaxError::Unsupported` carrying a stable
@@ -332,7 +332,7 @@ impl<C> Platform<C> {
 
         let mut where_clauses = match conversions::where_clauses_from_proto(normal_proto) {
             Ok(c) => c,
-            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e.into())),
         };
         let mut resolved_time_ranges: Vec<ResolvedTimeRange> = Vec::new();
         // The contract fetched for time-range resolution, handed to the
@@ -375,7 +375,7 @@ impl<C> Platform<C> {
                 let (field, selector, grid) =
                     match conversions::time_range_clause_from_proto(proto_wc) {
                         Ok(parsed) => parsed,
-                        Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+                        Err(e) => return Ok(QueryValidationResult::new_with_error(e.into())),
                     };
                 match resolve_time_range_bucket_clause(
                     &field,
@@ -403,11 +403,11 @@ impl<C> Platform<C> {
         }
         let order_by_clauses = match conversions::order_clauses_from_proto(proto_order_by) {
             Ok(c) => c,
-            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e.into())),
         };
         let having_clauses = match conversions::having_clauses_from_proto(having) {
             Ok(c) => c,
-            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e.into())),
         };
 
         // `selects` is `repeated Select` on the wire. Empty
@@ -430,7 +430,7 @@ impl<C> Platform<C> {
         let select = match proto_selects.into_iter().next() {
             Some(s) => match conversions::select_from_proto(s) {
                 Ok(s) => s,
-                Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+                Err(e) => return Ok(QueryValidationResult::new_with_error(e.into())),
             },
             None => SelectProjection::documents(),
         };

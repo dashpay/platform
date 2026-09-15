@@ -83,6 +83,9 @@ simple-signer:
 strategy-tests:
   - packages/strategy-tests/**
 
+platform-query-wire:
+  - packages/rs-platform-query-wire/**
+
 drive-abci:
   - packages/rs-drive-abci/**
 

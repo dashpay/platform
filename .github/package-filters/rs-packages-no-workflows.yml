@@ -86,11 +86,25 @@ strategy-tests: &strategy-tests
   - *simple-signer
   - *drive
 
+dapi-grpc: &dapi_grpc
+  - packages/rs-platform-version/**
+  - packages/rs-dash-platform-macros/**
+  - packages/dapi-grpc/src/**
+  - packages/dapi-grpc/protos/**
+  - packages/dapi-grpc/build.rs
+  - packages/dapi-grpc/Cargo.toml
+
+platform-query-wire: &platform_query_wire
+  - packages/rs-platform-query-wire/**
+  - *drive
+  - *dapi_grpc
+
 drive-abci:
   - packages/rs-drive-abci/**
   - *drive
   - *simple-signer
   - *strategy-tests
+  - *platform_query_wire
 
 dash-async: &dash_async
   - packages/rs-dash-async/**
@@ -105,14 +119,6 @@ rs-sdk-trusted-context-provider: &sdk_trusted_context_provider
   - *dash_async
   - *context_provider
   - *dpp
-
-dapi-grpc: &dapi_grpc
-  - packages/rs-platform-version/**
-  - packages/rs-dash-platform-macros/**
-  - packages/dapi-grpc/src/**
-  - packages/dapi-grpc/protos/**
-  - packages/dapi-grpc/build.rs
-  - packages/dapi-grpc/Cargo.toml
 
 rs-dapi:
   - packages/rs-dapi/**
