@@ -31,8 +31,20 @@ class ListDAPIAddressProvider {
     // This is a temporary fix for a localhost masternode.
     // On macOS, internal docker IP is used to register masternode, and it's
     // not really possible to bind to that address, so that workaround is introduced.
+    //
+    // Only addresses discovered from the masternode list (they carry the
+    // masternode's proRegTxHash) can hold such an unreachable docker-internal
+    // host, so only those are rewritten, and only when the host is not
+    // already a reachable loopback. A caller-supplied address — a moved-port
+    // loopback, a secondary loopback like 127.0.0.2, a LAN IP, or a container
+    // hostname — already names the exact gateway to talk to (dashmate e2e
+    // suites move the stock ports on purpose), and clobbering it with the
+    // stock local ports silently redirects every request to whichever network
+    // squats those ports on the machine.
     const network = networks.get(this.options.network);
-    if (network && network.regtestEnabled) {
+    const isLoopback = ['127.0.0.1', 'localhost'].includes(liveAddress.getHost());
+    const isFromMasternodeList = Boolean(liveAddress.getProRegTxHash());
+    if (network && network.regtestEnabled && isFromMasternodeList && !isLoopback) {
       const randomNodeIndex = Math.floor(Math.random() * liveAddresses.length);
 
       liveAddress.protocol = 'https';
