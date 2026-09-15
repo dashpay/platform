@@ -606,6 +606,14 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    core_proto::GetBlockRequest,
+    core_proto::GetBlockResponse,
+    CoreGrpcClient,
+    RequestSettings::default(),
+    get_block
+);
+
+impl_transport_request_grpc!(
     core_proto::GetBlockchainStatusRequest,
     core_proto::GetBlockchainStatusResponse,
     CoreGrpcClient,

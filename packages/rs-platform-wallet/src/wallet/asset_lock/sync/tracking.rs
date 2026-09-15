@@ -478,4 +478,42 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
         Ok(Some(cs))
     }
+
+    /// Put a `ChainLocked` row back on its InstantSend proof after Platform
+    /// rejected the ChainLock proof built for it because the transaction is
+    /// not in a block at or below the proof's height.
+    ///
+    /// Defence in depth: a looked-up height is only used once the SPV header
+    /// chain and the block's merkle root confirm the transaction, but Platform
+    /// judges the proof from its own Core view, which can still disagree (a
+    /// reorg, a lagging node). The Chain proof is persisted before it is submitted. Left in place,
+    /// [`validate_or_upgrade_proof`](Self::validate_or_upgrade_proof) would
+    /// hand that rejected proof back unchanged on every later resume; the
+    /// InstantSend proof sends the next resume through the height lookup
+    /// again. A row that has meanwhile moved off `ChainLocked` is left alone.
+    ///
+    /// Only the shielded fund path submits a proof it upgraded itself, so
+    /// this is `shielded`-gated to avoid a dead-code warning without it.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn revert_rejected_chain_proof(
+        &self,
+        out_point: &OutPoint,
+        instant_proof: dpp::prelude::AssetLockProof,
+    ) -> Result<(), PlatformWalletError> {
+        if !matches!(instant_proof, dpp::prelude::AssetLockProof::Instant(_)) {
+            return Ok(());
+        }
+        if let Some(cs) = self
+            .advance_asset_lock_status_if(
+                out_point,
+                |status| *status == AssetLockStatus::ChainLocked,
+                AssetLockStatus::InstantSendLocked,
+                Some(instant_proof),
+            )
+            .await?
+        {
+            self.queue_asset_lock_changeset(cs);
+        }
+        Ok(())
+    }
 }

@@ -15,6 +15,7 @@ use crate::changeset::changeset::AssetLockChangeSet;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
+use super::sync::locate::{MinedHeightLocator, NoMinedHeightLocator};
 use super::tracked::TrackedAssetLock;
 use key_wallet_manager::WalletManager;
 
@@ -128,6 +129,12 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// second deferral while the first is still waiting is a no-op. Held
     /// only for set arithmetic, never across an await.
     pub(super) deferred_resumes: Arc<std::sync::Mutex<BTreeSet<OutPoint>>>,
+    /// Finds the block a funding transaction was mined in when its wallet
+    /// record carries no height, so the ChainLock-proof wait can resolve
+    /// without a record promotion. Defaults to a locator that knows nothing;
+    /// [`PlatformWallet::new`](crate::wallet::PlatformWallet) installs the
+    /// DAPI + SPV one.
+    pub(super) mined_height_locator: Arc<dyn MinedHeightLocator>,
     /// Test-only gauge of builds currently at or past the
     /// `build_persist_serial` gate within `broadcast_funded_asset_lock`
     /// (incremented before the `lock().await`, RAII-decremented on every
@@ -160,9 +167,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             build_persist_serial: Arc::new(tokio::sync::Mutex::new(())),
             resume_dispatch_claims: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             deferred_resumes: Arc::new(std::sync::Mutex::new(BTreeSet::new())),
+            mined_height_locator: Arc::new(NoMinedHeightLocator),
             #[cfg(test)]
             build_serial_gate: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
+    }
+
+    /// Replace the mined-height locator the ChainLock-proof wait consults.
+    pub(crate) fn with_mined_height_locator(
+        mut self,
+        locator: Arc<dyn MinedHeightLocator>,
+    ) -> Self {
+        self.mined_height_locator = locator;
+        self
     }
 
     /// A second handle onto the SAME manager: every field is shared, so a
@@ -185,6 +202,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             build_persist_serial: Arc::clone(&self.build_persist_serial),
             resume_dispatch_claims: Arc::clone(&self.resume_dispatch_claims),
             deferred_resumes: Arc::clone(&self.deferred_resumes),
+            mined_height_locator: Arc::clone(&self.mined_height_locator),
             #[cfg(test)]
             build_serial_gate: Arc::clone(&self.build_serial_gate),
         }

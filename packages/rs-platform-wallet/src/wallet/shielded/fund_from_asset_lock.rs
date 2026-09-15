@@ -39,7 +39,7 @@ use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 
 use std::time::Duration;
 
-use crate::error::is_instant_lock_proof_invalid;
+use crate::error::{is_asset_lock_proof_transaction_height_invalid, is_instant_lock_proof_invalid};
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
     ResolvedFunding,
@@ -430,6 +430,31 @@ impl PlatformWallet {
                     )
                 })
                 .await;
+                // The Chain proof was persisted above. Its height was verified
+                // locally, but Platform checks it against its own Core view (a
+                // reorg or a lagging node can disagree); if Platform rejects the
+                // height, keep the row off that proof.
+                if let Err(e) = &submit_result {
+                    if is_asset_lock_proof_transaction_height_invalid(e) {
+                        tracing::warn!(
+                            "ChainLock proof rejected by Platform for shielded \
+                             fund-from-asset-lock (tx {}): the transaction is not at the \
+                             proof's height; restoring the InstantSend proof",
+                            out_point.txid
+                        );
+                        if let Err(revert_error) = self
+                            .asset_locks
+                            .revert_rejected_chain_proof(&out_point, proof.clone())
+                            .await
+                        {
+                            tracing::error!(
+                                error = %revert_error,
+                                "failed to restore the InstantSend proof for tx {}",
+                                out_point.txid
+                            );
+                        }
+                    }
+                }
                 (submit_result, chain_proof)
             }
             Err(e) => (Err(e), proof.clone()),
