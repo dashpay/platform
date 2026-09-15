@@ -36,7 +36,7 @@ fn should_build_the_sketch_manifest_through_builders() {
             .param("delta", ValueType::Integer(IntegerWidth::I64)),
     );
     let manifest = validate(&declaration).expect("the sketch validates");
-    assert_eq!(manifest.collections.len(), 1);
+    assert_eq!(manifest.collections().len(), 1);
     let add = manifest.method("score.add").expect("entry present");
     assert_eq!(add.export, entry_export_symbol(&add.name));
     assert_eq!(
