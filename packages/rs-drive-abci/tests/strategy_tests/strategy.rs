@@ -3098,6 +3098,12 @@ pub struct ChainExecutionOutcome<'a> {
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
     pub state_transition_results_per_block: BTreeMap<u64, Vec<(StateTransition, ExecTxResult)>>,
+    /// The application hash every finalized block committed, by height, so a
+    /// test can compare two runs block by block instead of only at the end.
+    pub app_hashes_per_block: BTreeMap<u64, [u8; 32]>,
+    /// The protocol version that executed every finalized block, by height;
+    /// pins where an upgrade activated in a run.
+    pub protocol_versions_per_block: BTreeMap<u64, u64>,
     pub signer: SimpleSigner,
 }
 
