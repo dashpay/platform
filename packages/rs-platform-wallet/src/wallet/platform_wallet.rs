@@ -1028,7 +1028,7 @@ impl PlatformWallet {
         // only re-apply older data — skip it. The hydration flag is
         // load-bearing: a matching registration alone doesn't prove
         // the store was ever hydrated (the first bind's load/restore
-        // may have failed transiently and is only logged), and
+        // may have failed transiently), and
         // skipping on registration match alone would leave notes and
         // the watermark absent until a full rescan or restart.
         if identical && install.is_hydrated().await {
@@ -1040,13 +1040,11 @@ impl PlatformWallet {
         // this wallet. The restore is additive and monotonic
         // (`restore_for_wallet` never rewinds a watermark or
         // overwrites a known note), so applying a snapshot on top
-        // of retained live state is safe. Errors are logged but
-        // not fatal — first-launch wallets simply see no persisted
-        // state; the hydration flag stays unset on failure so the
-        // next re-bind retries the restore instead of fast-pathing
-        // over an unhydrated store. (A snapshot that cannot be READ
-        // is fatal, but earlier: both bind paths need it before they
-        // can decide what to install.)
+        // of retained live state is safe. Surface restore failures to
+        // the host and leave hydration unset: an empty first-launch
+        // snapshot succeeds, while an unreadable ledger must not look
+        // like a successfully bound zero balance. A subsequent bind
+        // retries rather than fast-pathing over an unhydrated store.
         // A Clear that completed after `start` was read wiped both the
         // store and (once it returned) the host's own rows, so this
         // snapshot describes state the user asked to be deleted.
@@ -1073,6 +1071,7 @@ impl PlatformWallet {
                     error = %e,
                     "Failed to restore shielded snapshot at bind time"
                 );
+                return Err(e);
             }
         }
         Ok(())
@@ -1936,8 +1935,12 @@ impl PlatformWallet {
     ///
     /// The identity is debited `amount` plus the metered fee plus the shielded
     /// compute fee. Returns the proven post-debit balance, which is also applied
-    /// to the managed identity and persisted. A result proof that is not this
-    /// identity's balance proof reports the spend as unconfirmed
+    /// to the managed identity. Persistence of this local balance cache is
+    /// best-effort after broadcast: a storage failure is logged and does not
+    /// turn the payment into a retryable failure. Reloading after such a failure
+    /// can show the prior cached balance until it is refreshed from Platform.
+    /// A result proof that is not this identity's balance proof reports the
+    /// spend as unconfirmed
     /// ([`PlatformWalletError::ShieldedSpendUnconfirmed`]), as does any failure
     /// verdict the proven identity nonce cannot rule out (do not rebuild on it).
     /// The activity row stays pending until the shielded scan observes the note
@@ -2093,6 +2096,10 @@ impl PlatformWallet {
             if let Some(managed) = managed {
                 managed.identity.set_balance(new_balance);
                 if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
+                    // Broadcast already happened. Returning a transaction error
+                    // could prompt a second payment; it cannot undo the debit.
+                    // Keep the proven in-memory balance and report the cache
+                    // failure separately in diagnostics.
                     tracing::error!(
                         identity = %identity_id,
                         error = %e,

@@ -3124,6 +3124,120 @@ mod tests {
                 assert_eq!(token_balance, None);
             }
 
+            /// A zero epoch interval registered fine up to protocol version 13 and then made
+            /// every claim fail as an internal error; version 14 refuses it at registration.
+            async fn register_token_with_zero_epoch_interval(
+                protocol_version: dpp::version::ProtocolVersion,
+            ) -> StateTransitionExecutionResult {
+                let platform_version = PlatformVersion::get(protocol_version)
+                    .expect("expected platform version for the requested protocol version");
+                let mut platform = TestPlatformBuilder::new()
+                    .with_initial_protocol_version(protocol_version)
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                {
+                    let token_config = data_contract
+                        .tokens_mut()
+                        .expect("expected tokens")
+                        .get_mut(&0)
+                        .expect("expected first token");
+                    token_config
+                        .distribution_rules_mut()
+                        .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                            TokenPerpetualDistributionV0 {
+                                distribution_type: RewardDistributionType::EpochBasedDistribution {
+                                    interval: 0,
+                                    function: DistributionFunction::FixedAmount { amount: 50 },
+                                },
+                                distribution_recipient: TokenDistributionRecipient::ContractOwner,
+                            },
+                        )));
+                }
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .await
+                    .expect("expect to create documents batch transition");
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                processing_result
+                    .execution_results()
+                    .first()
+                    .expect("expected one execution result")
+                    .clone()
+            }
+
+            #[tokio::test]
+            async fn should_reject_a_zero_epoch_interval_from_protocol_version_14() {
+                assert_matches!(
+                    register_token_with_zero_epoch_interval(
+                        PlatformVersion::latest().protocol_version
+                    )
+                    .await,
+                    StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(
+                            BasicError::InvalidTokenDistributionEpochIntervalTooShortError(_)
+                        ),
+                    )
+                );
+            }
+
+            #[tokio::test]
+            async fn should_keep_registering_a_zero_epoch_interval_at_protocol_version_13() {
+                assert_matches!(
+                    register_token_with_zero_epoch_interval(13).await,
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
+                );
+            }
+
             #[tokio::test]
             async fn test_data_contract_creation_with_single_token_with_random_perpetual_distribution_should_cause_error(
             ) {

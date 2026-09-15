@@ -21,6 +21,7 @@ use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
+use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
 use super::store::{
     PendingRedrive, ShieldedNote, ShieldedOutgoingNote, ShieldedStore, StalePendingSpend,
     SubwalletId, SubwalletState,
@@ -111,6 +112,42 @@ pub struct FileBackedShieldedStore {
 }
 
 impl FileBackedShieldedStore {
+    /// Called under the coordinator's store read guard so amount and provenance
+    /// cannot straddle a sync or a pending-spend reservation.
+    pub(super) fn local_account_balance(
+        &self,
+        id: SubwalletId,
+    ) -> Result<ShieldedLocalAccountBalance, FileShieldedStoreError> {
+        let state = self.subwallets.get(&id);
+        Ok(ShieldedLocalAccountBalance {
+            spendable_credits: self.spendable_balance(id)?,
+            last_scanned_index: state.and_then(|state| state.last_scanned_index),
+            source: state.map(|state| state.balance_source).unwrap_or_default(),
+        })
+    }
+
+    /// Add restore provenance without downgrading a live scan or rewinding it.
+    /// A positive legacy watermark also proves a prior scan even when an older
+    /// Rust persister did not supply the new row-presence metadata.
+    pub(super) fn restore_balance_metadata(
+        &mut self,
+        id: SubwalletId,
+        index: u64,
+        has_sync_state: bool,
+        has_notes: bool,
+    ) {
+        let state = self.subwallets.entry(id).or_default();
+        state.last_synced_index = state.last_synced_index.max(index);
+        if has_sync_state || index > 0 {
+            state.last_scanned_index = Some(state.last_scanned_index.unwrap_or(0).max(index));
+        }
+        if state.balance_source == ShieldedBalanceSource::NoHistory
+            && (has_notes || has_sync_state || index > 0)
+        {
+            state.balance_source = ShieldedBalanceSource::Restored;
+        }
+    }
+
     /// Open or create a shielded store at `path`.
     ///
     /// SQLite is opened with **WAL journal + synchronous=NORMAL + temp_store=MEMORY**
@@ -485,6 +522,18 @@ impl ShieldedStore for FileBackedShieldedStore {
             .unwrap_or_default())
     }
 
+    fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error> {
+        // Borrow notes under the store guard: balance reads need only values,
+        // not an allocated/deep-copied selection vector. Corrupt restored sums
+        // still fail closed before sync or local snapshots can publish them.
+        self.subwallets
+            .get(&id)
+            .map_or(Some(0), SubwalletState::spendable_balance)
+            .ok_or_else(|| {
+                FileShieldedStoreError::Storage("spendable shielded balance exceeds u64".into())
+            })
+    }
+
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error> {
         Ok(self
             .subwallets
@@ -821,7 +870,10 @@ impl ShieldedStore for FileBackedShieldedStore {
         id: SubwalletId,
         index: u64,
     ) -> Result<(), Self::Error> {
-        self.subwallets.entry(id).or_default().last_synced_index = index;
+        let state = self.subwallets.entry(id).or_default();
+        state.last_synced_index = index;
+        state.last_scanned_index = Some(index);
+        state.balance_source = ShieldedBalanceSource::ScannedThisSession;
         Ok(())
     }
 

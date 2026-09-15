@@ -133,9 +133,13 @@ impl Drive {
             }
         }
 
-        // Clear the global data contract cache so that subsequent fetches
-        // reload the cleaned contracts from disk rather than serving stale
-        // cached versions with the unknown properties still present.
+        // Clear the data contract caches so that subsequent fetches reload the
+        // cleaned contracts from disk rather than serving stale cached versions
+        // with the unknown properties still present. The rewritten contracts
+        // were marked as modified in the block as they were written, which the
+        // clear keeps: a transactional read of one of them must not fall back
+        // to a copy a concurrent committed-state query puts back into the
+        // global cache before this block commits.
         self.cache.data_contracts.clear();
 
         Ok(())
@@ -205,6 +209,10 @@ impl Drive {
             &mut vec![],
             drive_version,
         )?;
+
+        self.cache
+            .data_contracts
+            .mark_modified_in_block(*contract_id_bytes);
 
         tracing::info!(
             contract_id = hex::encode(contract_id_bytes),

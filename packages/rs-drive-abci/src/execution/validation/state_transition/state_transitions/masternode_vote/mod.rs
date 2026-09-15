@@ -6416,6 +6416,7 @@ mod tests {
             }
 
             #[tokio::test]
+            #[ignore] // Long-running: runs in nightly CI only
             async fn test_document_distribution_many_votes_two_contests_same_time() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()

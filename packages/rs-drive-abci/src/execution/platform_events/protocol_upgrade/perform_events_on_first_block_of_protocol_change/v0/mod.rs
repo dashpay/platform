@@ -695,7 +695,8 @@ impl<C> Platform<C> {
 
     /// When transitioning to version 14 we re-store the DashPay contract whose
     /// v2 schema adds the optional public payment address fields to the
-    /// `profile` document type (DIP-33).
+    /// `profile` document type (DIP-33), and the withdrawals contract whose v2
+    /// schema admits the terminal FAILED value of the `status` property.
     fn transition_to_version_14(
         &self,
         block_info: &BlockInfo,
@@ -707,6 +708,21 @@ impl<C> Platform<C> {
 
         self.drive.apply_contract(
             &dashpay_contract,
+            *block_info,
+            true,
+            None,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        // Withdrawals contract v2: `status` admits the terminal FAILED value that
+        // `rebroadcast_expired_withdrawal_documents` v2 writes for withdrawals whose asset
+        // unlock Core can never mine, instead of re-signing them forever.
+        let withdrawals_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)?;
+
+        self.drive.apply_contract(
+            &withdrawals_contract,
             *block_info,
             true,
             None,
@@ -736,6 +752,13 @@ impl<C> Platform<C> {
             None,
             &platform_version.drive,
         )?;
+
+        // Contract version items: from this version the storage writer stores every
+        // contract's version as a four-byte item beside it, and
+        // `getDataContractsLatestVersions` reads and proves that item instead of the
+        // contracts. Every contract stored before this block gets its item here.
+        self.drive
+            .add_version_items_to_all_contracts(transaction, platform_version)?;
 
         Ok(())
     }
@@ -1156,6 +1179,83 @@ mod tests {
         );
     }
 
+    /// Reads the `status` enum of the stored withdrawals contract's `withdrawal` document
+    /// type, the contract-level record of which statuses a withdrawal may carry.
+    fn stored_withdrawal_status_enum(
+        platform: &crate::platform_types::platform::Platform<crate::rpc::core::MockCoreRPCLike>,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Vec<u64> {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
+        let (_fee_result, fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *dpp::data_contracts::SystemDataContract::Withdrawals
+                    .id()
+                    .as_bytes(),
+                None,
+                false,
+                Some(transaction),
+                platform_version,
+            )
+            .expect("expected to fetch the withdrawals contract");
+
+        let schema = fetch_info
+            .expect("expected the withdrawals contract to exist")
+            .contract
+            .document_type_for_name("withdrawal")
+            .expect("expected the withdrawal document type")
+            .schema()
+            .clone()
+            .try_into_validating_json()
+            .expect("expected the document type schema to convert to JSON");
+
+        schema["properties"]["status"]["enum"]
+            .as_array()
+            .expect("expected the status enum")
+            .iter()
+            .map(|value| value.as_u64().expect("expected an integer status"))
+            .collect()
+    }
+
+    #[test]
+    fn test_transition_to_version_14_updates_withdrawals_with_failed_status() {
+        // A chain born at protocol version 13 stores the withdrawals contract v1, whose
+        // `status` enum stops at EXPIRED (4).
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version = PlatformVersion::get(14).expect("expected platform version 14");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        assert_eq!(
+            stored_withdrawal_status_enum(&platform, &transaction, platform_version),
+            vec![0, 1, 2, 3, 4],
+            "the withdrawals contract must be v1 before transition_to_version_14"
+        );
+
+        let result = platform.transition_to_version_14(&block_info, &transaction, platform_version);
+        assert!(result.is_ok(), "transition failed: {:?}", result.err());
+
+        assert_eq!(
+            stored_withdrawal_status_enum(&platform, &transaction, platform_version),
+            vec![0, 1, 2, 3, 4, 5],
+            "the withdrawals contract must admit FAILED after transition_to_version_14"
+        );
+    }
+
     /// The v13→v14 boundary through the production dispatcher
     /// (`perform_events_on_first_block_of_protocol_change`), with a v1 profile
     /// stored before the upgrade and the contract cache warmed: the dispatcher
@@ -1400,6 +1500,67 @@ mod tests {
         assert!(
             element.value.is_ok(),
             "AddressBalances root tree should exist"
+        );
+    }
+
+    /// A chain born at protocol version 13 stores its contracts without version items; the
+    /// transition to 14 gives every stored contract the item holding its stored version.
+    #[test]
+    fn test_transition_to_version_14_writes_the_version_item_of_every_contract() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let dpns_id = SystemDataContract::DPNS.id().to_buffer();
+        assert_eq!(
+            platform
+                .drive
+                .fetch_contract_version(dpns_id, None, platform_version)
+                .expect("expected to read the version item"),
+            None,
+            "a v13 genesis state has no version items"
+        );
+
+        let transaction = platform.drive.grove.start_transaction();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 10,
+            epoch: Epoch::default(),
+        };
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let mut checked = 0;
+        for system_contract in SystemDataContract::ALL {
+            let id = system_contract.id().to_buffer();
+            let Some(stored) = platform
+                .drive
+                .fetch_contract(id, None, None, Some(&transaction), platform_version)
+                .value
+                .expect("expected to fetch the contract")
+            else {
+                // not every system contract is registered at a v13 genesis
+                continue;
+            };
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_contract_version(id, Some(&transaction), platform_version)
+                    .expect("expected to read the version item"),
+                Some(stored.contract.version()),
+                "{system_contract:?} has its version item after the transition"
+            );
+            checked += 1;
+        }
+        assert!(
+            checked >= 3,
+            "expected the genesis system contracts to be checked"
         );
     }
 
@@ -1808,6 +1969,17 @@ mod tests {
         platform
             .transition_to_version_12(&transaction, platform_version_12)
             .expect("v12 transition should succeed and strip unknown properties");
+
+        // The rewrite must be recorded so that a transactional read of the contract never
+        // falls back to a copy a concurrent committed-state query puts into the global cache.
+        assert!(
+            platform
+                .drive
+                .cache
+                .data_contracts
+                .is_modified_in_block(contract_id.to_buffer()),
+            "the migration must mark the rewritten contract as modified in the block"
+        );
 
         // 6. Verify the unknown property is gone from disk
         let raw_after = platform

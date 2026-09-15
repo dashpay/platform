@@ -1,6 +1,8 @@
 use wasm_bindgen::prelude::wasm_bindgen;
 
+mod browser_storage;
 pub mod context_provider;
+mod contract_store;
 pub mod dpns;
 pub mod error;
 pub mod logging;

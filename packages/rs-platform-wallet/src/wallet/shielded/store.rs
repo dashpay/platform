@@ -27,6 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 use std::fmt;
 
+use super::balance::ShieldedBalanceSource;
 use crate::wallet::platform_wallet::WalletId;
 
 /// Identifies a single shielded "subwallet" — one Orchard account
@@ -229,6 +230,11 @@ pub trait ShieldedStore: Send + Sync {
 
     /// Return all unspent notes for `id`.
     fn get_unspent_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
+
+    /// The same reservation-aware sum used by sync and local balance reads.
+    /// Implementations must reject sums exceeding `u64::MAX` with their storage
+    /// error, rather than wrapping, saturating, or panicking.
+    fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error>;
 
     /// Return all notes (spent and unspent) for `id`.
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
@@ -556,6 +562,9 @@ pub(super) struct SubwalletState {
     /// Sync watermark: count of note positions scanned = the next
     /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
+    /// Session-only provenance; durable watermarks are still ordinary u64 rows.
+    pub last_scanned_index: Option<u64>,
+    pub balance_source: ShieldedBalanceSource,
     /// Nullifiers of notes currently being spent in an in-flight
     /// transition, mapped to the [`PendingSpend`] bookkeeping the
     /// sync reconcile needs. Excluded from `unspent_notes()` so
@@ -601,12 +610,22 @@ impl SubwalletState {
         self.notes.push(note.clone());
     }
 
-    pub(super) fn unspent_notes(&self) -> Vec<ShieldedNote> {
+    /// Borrow the selectable notes so balance reads do not clone note payloads.
+    fn unspent_notes_iter(&self) -> impl Iterator<Item = &ShieldedNote> {
         self.notes
             .iter()
-            .filter(|n| !n.is_spent && !self.pending_nullifiers.contains_key(&n.nullifier))
-            .cloned()
-            .collect()
+            .filter(|note| !note.is_spent && !self.pending_nullifiers.contains_key(&note.nullifier))
+    }
+
+    pub(super) fn unspent_notes(&self) -> Vec<ShieldedNote> {
+        self.unspent_notes_iter().cloned().collect()
+    }
+
+    /// Both stores use the same borrowed, reservation-aware checked sum.
+    /// Each caller maps overflow into its own storage error.
+    pub(super) fn spendable_balance(&self) -> Option<u64> {
+        self.unspent_notes_iter()
+            .try_fold(0u64, |total, note| total.checked_add(note.value))
     }
 
     pub(super) fn all_notes(&self) -> Vec<ShieldedNote> {
@@ -859,6 +878,13 @@ impl ShieldedStore for InMemoryShieldedStore {
             .unwrap_or_default())
     }
 
+    fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error> {
+        self.subwallets
+            .get(&id)
+            .map_or(Some(0), SubwalletState::spendable_balance)
+            .ok_or_else(|| InMemoryStoreError("spendable shielded balance exceeds u64".to_string()))
+    }
+
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error> {
         Ok(self
             .subwallets
@@ -1078,7 +1104,10 @@ impl ShieldedStore for InMemoryShieldedStore {
         id: SubwalletId,
         index: u64,
     ) -> Result<(), Self::Error> {
-        self.subwallets.entry(id).or_default().last_synced_index = index;
+        let state = self.subwallets.entry(id).or_default();
+        state.last_synced_index = index;
+        state.last_scanned_index = Some(index);
+        state.balance_source = ShieldedBalanceSource::ScannedThisSession;
         Ok(())
     }
 
@@ -1127,6 +1156,83 @@ mod tests {
 
     fn test_id(account: u32) -> SubwalletId {
         SubwalletId::new([0xAA; 32], account)
+    }
+
+    #[test]
+    fn should_borrow_spendable_notes_and_preserve_the_selection_filter() {
+        let mut state = SubwalletState::default();
+        for tag in 1..=4 {
+            let mut note = note_with_nullifier([tag; 32]);
+            note.value = u64::from(tag) * 100;
+            state.save_note(&note);
+        }
+        state.mark_pending(&[2; 32]);
+        state.mark_spent(&[3; 32]);
+
+        let borrowed: Vec<_> = state.unspent_notes_iter().collect();
+        assert_eq!(borrowed.len(), 2);
+        assert!(std::ptr::eq(borrowed[0], &state.notes[0]));
+        assert!(std::ptr::eq(borrowed[1], &state.notes[3]));
+        assert_eq!(state.spendable_balance(), Some(500));
+        assert_eq!(
+            state
+                .unspent_notes()
+                .iter()
+                .map(|note| note.value)
+                .collect::<Vec<_>>(),
+            vec![100, 400]
+        );
+        state.clear_pending(&[2; 32]);
+        assert_eq!(state.spendable_balance(), Some(700));
+    }
+
+    #[test]
+    fn should_reject_overflowing_in_memory_spendable_balance() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        for (tag, value) in [(1, u64::MAX), (2, 1)] {
+            store
+                .save_note(
+                    id,
+                    &ShieldedNote {
+                        position: tag as u64,
+                        cmx: [tag; 32],
+                        nullifier: [tag; 32],
+                        block_height: 100,
+                        is_spent: false,
+                        value,
+                        note_data: vec![],
+                    },
+                )
+                .expect("save test note");
+        }
+        let error = store
+            .spendable_balance(id)
+            .expect_err("overflow must not wrap or panic");
+        assert!(error.to_string().contains("exceeds u64"));
+
+        // Reservations and spent notes are excluded before checked addition.
+        store
+            .mark_pending(id, &[2; 32])
+            .expect("reserve small note");
+        assert_eq!(store.spendable_balance(id).unwrap(), u64::MAX);
+        assert_eq!(store.spendable_balance(test_id(1)).unwrap(), 0);
+        assert_eq!(
+            store
+                .spendable_balance(SubwalletId::new([0xBB; 32], 0))
+                .unwrap(),
+            0
+        );
+        store
+            .clear_pending(id, &[2; 32])
+            .expect("release reservation");
+        assert!(store.spendable_balance(id).is_err());
+        store.mark_spent(id, &[2; 32]).expect("spend small note");
+        assert_eq!(store.spendable_balance(id).unwrap(), u64::MAX);
+        store
+            .mark_spent(id, &[1; 32])
+            .expect("spend remaining note");
+        assert_eq!(store.spendable_balance(id).unwrap(), 0);
     }
 
     #[test]
