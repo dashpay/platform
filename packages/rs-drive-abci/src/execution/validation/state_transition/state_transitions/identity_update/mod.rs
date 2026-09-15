@@ -938,6 +938,212 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_keep_the_newest_scoped_key_current_after_revoking_an_older_one() {
+        use dpp::identity::contract_bounds::{
+            authentication_scope::permissions, AuthenticationScope, AuthenticationScopeV0,
+            ContractScope,
+        };
+        use drive::config::DriveConfig;
+        use drive::drive::identity::key::fetch::{
+            IdentityKeysRequest, KeyKindRequestType, KeyRequestType,
+        };
+        let version = PlatformVersion::latest();
+        // Consistency verification makes GroveDB reject two pending operations on one slot,
+        // which is exactly what two scoped keys covering one contract write for the
+        // current-key pointer of that contract.
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                drive: DriveConfig {
+                    batching_consistency_verification: true,
+                    ..DriveConfig::default_testnet()
+                },
+                ..Default::default()
+            })
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, signer, _, master) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(version)
+            .unwrap();
+        let bounds = ContractBounds::Scoped(AuthenticationScope::V0(AuthenticationScopeV0 {
+            contracts: vec![ContractScope {
+                id: dashpay.id(),
+                document_types: None,
+            }],
+            permissions: permissions::DOCUMENT_CREATE,
+            expires_at: None,
+        }));
+
+        // Register two scoped keys covering the same contract in one transition.
+        let secp = Secp256k1::new();
+        let mut rng = StdRng::seed_from_u64(292);
+        let pairs: Vec<(u32, Keypair)> = [2u32, 3]
+            .into_iter()
+            .map(|id| (id, Keypair::new(&secp, &mut rng)))
+            .collect();
+        let mut new_keys: Vec<IdentityPublicKeyInCreationV0> = pairs
+            .iter()
+            .map(|(id, pair)| IdentityPublicKeyInCreationV0 {
+                id: *id,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                key_type: ECDSA_SECP256K1,
+                read_only: false,
+                data: pair.public_key().serialize().to_vec().into(),
+                signature: Default::default(),
+                contract_bounds: Some(bounds.clone()),
+            })
+            .collect();
+        let registration = |keys: Vec<IdentityPublicKeyInCreationV0>| -> StateTransition {
+            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: keys
+                    .into_iter()
+                    .map(IdentityPublicKeyInCreation::V0)
+                    .collect(),
+                disable_public_keys: vec![],
+                user_fee_increase: 0,
+                signature_public_key_id: master.id(),
+                signature: Default::default(),
+            })
+            .into()
+        };
+        let signable_bytes = registration(new_keys.clone()).signable_bytes().unwrap();
+        for (key, (_, pair)) in new_keys.iter_mut().zip(&pairs) {
+            key.signature = signer::sign(&signable_bytes, &pair.secret_key().secret_bytes())
+                .unwrap()
+                .to_vec()
+                .into();
+        }
+        let mut registration = registration(new_keys);
+        registration.set_signature(signer.sign(&master, &signable_bytes).await.unwrap());
+
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![registration.serialize_to_bytes().unwrap()],
+                &platform.state.load(),
+                &BlockInfo::default(),
+                &transaction,
+                version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+            "two scoped keys on one contract must register in a single batch"
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+
+        // Revoke the older key; the current-key pointer must keep naming the newer one.
+        let mut revocation: StateTransition =
+            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 2,
+                nonce: 2,
+                add_public_keys: vec![],
+                disable_public_keys: vec![2],
+                user_fee_increase: 0,
+                signature_public_key_id: master.id(),
+                signature: Default::default(),
+            })
+            .into();
+        revocation.set_signature(
+            signer
+                .sign(&master, &revocation.signable_bytes().unwrap())
+                .await
+                .unwrap(),
+        );
+        let block = BlockInfo {
+            time_ms: 1001,
+            ..Default::default()
+        };
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![revocation.serialize_to_bytes().unwrap()],
+                &platform.state.load(),
+                &block,
+                &transaction,
+                version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+
+        let fetch = |request_type: KeyRequestType| {
+            platform
+                .drive
+                .fetch_identity_keys_as_partial_identity(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type,
+                        limit: None,
+                        offset: None,
+                    },
+                    None,
+                    version,
+                )
+                .unwrap()
+                .unwrap()
+                .loaded_public_keys
+        };
+        let current = fetch(KeyRequestType::ContractBoundKey(
+            dashpay.id().to_buffer(),
+            Purpose::AUTHENTICATION,
+            KeyKindRequestType::CurrentKeyOfKindRequest,
+        ));
+        assert_eq!(
+            current.keys().copied().collect::<Vec<_>>(),
+            vec![3],
+            "revoking an older scoped key must not repoint the current key at it"
+        );
+        assert_eq!(current[&3].disabled_at(), None);
+        let all = fetch(KeyRequestType::ContractBoundKey(
+            dashpay.id().to_buffer(),
+            Purpose::AUTHENTICATION,
+            KeyKindRequestType::AllKeysOfKindRequest,
+        ));
+        assert_eq!(all[&2].disabled_at(), Some(block.time_ms));
+        assert_eq!(all[&3].disabled_at(), None);
+        assert!(
+            platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &version.drive.grove_version)
+                .unwrap()
+                .is_empty(),
+            "revocation must leave no stale GroveDB references"
+        );
+    }
+
+    #[tokio::test]
     async fn test_identity_update_that_disables_an_encryption_key() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {

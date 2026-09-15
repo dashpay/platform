@@ -9,12 +9,40 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::{KeyID, Purpose};
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 mod add_potential_contract_info_for_contract_bounded_key;
 mod refresh_potential_contract_info_key_references;
+
+/// Drops any pending grove operation already queued for `path`/`key`.
+///
+/// The "current key" sibling pointer of a contract-info purpose subtree lives at the empty
+/// key, and every scoped key covering that contract writes it. Two scoped keys registered in
+/// one transition would therefore queue two operations for one slot, which GroveDB rejects
+/// under batching consistency verification. The last registered key must win, so the earlier
+/// pending write is removed before the new one is queued.
+pub(super) fn drop_pending_operation_at(
+    drive_operations: &mut Vec<LowLevelDriveOperation>,
+    path: &[Vec<u8>],
+    key: &[u8],
+) {
+    let path = KeyInfoPath::from_known_owned_path(path.to_vec());
+    let key = KeyInfo::KnownKey(key.to_vec());
+    drive_operations.retain(|operation| {
+        !matches!(
+            operation,
+            LowLevelDriveOperation::GroveOperation(QualifiedGroveDbOp {
+                path: pending_path,
+                key: Some(pending_key),
+                ..
+            }) if *pending_path == path && *pending_key == key
+        )
+    });
+}
 
 pub enum IdentityDataContractKeyApplyInfo {
     /// The root_id is either a contract id or an owner id
@@ -138,7 +166,12 @@ impl IdentityDataContractKeyApplyInfo {
                     contract_keys: vec![],
                 }])
             }
-            ContractBounds::Scoped(_) => unreachable!("handled above"),
+            // Expanded per contract by the early return above; never panic in block execution.
+            ContractBounds::Scoped(_) => {
+                Err(Error::Identity(IdentityError::IdentityKeyBoundsError(
+                    "scoped bounds are expanded per contract before this match",
+                )))
+            }
         }
     }
 }

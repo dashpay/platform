@@ -1,4 +1,6 @@
-use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInfo;
+use crate::drive::identity::contract_info::keys::{
+    drop_pending_operation_at, IdentityDataContractKeyApplyInfo,
+};
 use crate::drive::identity::contract_info::ContractInfoStructure::ContractInfoKeysKey;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
 use crate::drive::identity::{
@@ -319,20 +321,24 @@ impl Drive {
                     // we also insert a sibling reference so we can query the current key
 
                     let sibling_ref_type_path = SiblingReference(key_id_bytes);
+                    let sibling_path = if purpose == Purpose::AUTHENTICATION {
+                        // Scoped authentication's current-key reference belongs beside
+                        // its key IDs, under the purpose subtree. Keep legacy paths frozen.
+                        identity_contract_info_group_path_key_purpose_vec(
+                            &identity_id,
+                            &root_id,
+                            purpose,
+                        )
+                    } else {
+                        identity_contract_info_group_keys_path_vec(&identity_id, &root_id)
+                    };
+                    // Two scoped keys covering this contract in one transition both write the
+                    // current-key slot; keep only the last one in the batch.
+                    drop_pending_operation_at(drive_operations, &sibling_path, &[]);
 
                     self.batch_insert(
                         PathKeyElementInfo::<0>::PathKeyElement((
-                            if purpose == Purpose::AUTHENTICATION {
-                                // Scoped authentication's current-key reference belongs beside
-                                // its key IDs, under the purpose subtree. Keep legacy paths frozen.
-                                identity_contract_info_group_path_key_purpose_vec(
-                                    &identity_id,
-                                    &root_id,
-                                    purpose,
-                                )
-                            } else {
-                                identity_contract_info_group_keys_path_vec(&identity_id, &root_id)
-                            },
+                            sibling_path,
                             vec![],
                             Element::Reference(sibling_ref_type_path, Some(2), None),
                         )),
@@ -517,14 +523,17 @@ impl Drive {
                         // we also insert a sibling reference so we can query the current key
 
                         let sibling_ref_type_path = SiblingReference(key_id_bytes);
+                        let sibling_path = identity_contract_info_group_path_key_purpose_vec(
+                            &identity_id,
+                            &contract_id_bytes_with_document_type_name,
+                            purpose,
+                        );
+                        // Same de-duplication as the contract-level current-key slot above.
+                        drop_pending_operation_at(drive_operations, &sibling_path, &[]);
 
                         self.batch_insert(
                             PathKeyElementInfo::<0>::PathKeyElement((
-                                identity_contract_info_group_path_key_purpose_vec(
-                                    &identity_id,
-                                    &contract_id_bytes_with_document_type_name,
-                                    purpose,
-                                ),
+                                sibling_path,
                                 vec![],
                                 Element::Reference(sibling_ref_type_path, Some(2), None),
                             )),
