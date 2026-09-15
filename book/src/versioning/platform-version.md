@@ -34,8 +34,16 @@ pub struct PlatformVersion {
     pub fee_version: FeeVersion,
     pub system_data_contracts: SystemDataContractVersions,
     pub system_limits: SystemLimits,
+    pub dashvm: Option<DashVmVersion>,
 }
 ```
+
+`dashvm` is the smart-contract engine table: which engine profile, preparation
+generation and metering generation the version selects, plus the numeric
+limits and metering weights those generations read. It is `None` on every
+protocol version that predates smart contracts, which is the exact pre-feature
+value, and `Some` from the 5.0 protocol version. The runtime crates project it
+into their own profile types and never define a limit themselves.
 
 Where `ProtocolVersion` is simply:
 
@@ -97,6 +105,17 @@ pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 The array is indexed by protocol version number minus one (since versions are
 1-indexed). `PLATFORM_V1` sits at index 0, `PLATFORM_V12` at index 11. This
 simple layout is what makes the `get` function so fast.
+
+Because the array is indexed by number, a version cannot be registered without
+every number below it. The 5.0 development branch therefore carries protocol
+version 17 (its own) together with 15 and 16, which the allocation register
+reserves for the 4.3 and 4.4 releases. Until those branches merge their real
+`v15.rs` and `v16.rs` forward, the two files are placeholders written as
+struct updates over their predecessor
+(`PlatformVersion { protocol_version: PROTOCOL_VERSION_15, ..PLATFORM_V14 }`).
+A forward merge that brings the real file is resolved by taking the incoming
+file; because 16 and 17 are struct updates too, every table the incoming
+version changes flows into them without a second edit.
 
 ## What a Version Snapshot Looks Like
 

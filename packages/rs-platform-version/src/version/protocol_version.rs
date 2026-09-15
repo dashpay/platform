@@ -1,4 +1,5 @@
 use crate::error::PlatformVersionError;
+use crate::version::dashvm_versions::DashVmVersion;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::DriveVersion;
@@ -22,6 +23,9 @@ use crate::version::v11::PLATFORM_V11;
 use crate::version::v12::PLATFORM_V12;
 use crate::version::v13::PLATFORM_V13;
 use crate::version::v14::PLATFORM_V14;
+use crate::version::v15::PLATFORM_V15;
+use crate::version::v16::PLATFORM_V16;
+use crate::version::v17::PLATFORM_V17;
 use crate::version::v2::PLATFORM_V2;
 use crate::version::v3::PLATFORM_V3;
 use crate::version::v4::PLATFORM_V4;
@@ -44,6 +48,9 @@ pub struct PlatformVersion {
     pub fee_version: FeeVersion,
     pub system_data_contracts: SystemDataContractVersions,
     pub system_limits: SystemLimits,
+    /// The DashVM table: engine profile, preparation and metering generations, limits and
+    /// weights. `None` on every protocol version that predates smart contracts.
+    pub dashvm: Option<DashVmVersion>,
 }
 
 pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
@@ -61,6 +68,9 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
     PLATFORM_V12,
     PLATFORM_V13,
     PLATFORM_V14,
+    PLATFORM_V15,
+    PLATFORM_V16,
+    PLATFORM_V17,
 ];
 
 #[cfg(feature = "mock-versions")]
@@ -69,7 +79,7 @@ pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::ne
 #[cfg(feature = "mock-versions")]
 const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, TEST_PLATFORM_V3];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V14;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V17;
 
 pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 

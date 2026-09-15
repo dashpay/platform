@@ -60,6 +60,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V1,
     fee_version: FEE_VERSION1,
     system_limits: SYSTEM_LIMITS_V1,
+    dashvm: None,
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,
     },

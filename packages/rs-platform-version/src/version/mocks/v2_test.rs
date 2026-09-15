@@ -517,6 +517,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_shielded_transition_actions: 16,
         max_time_range_overlap_factor: None,
     },
+    dashvm: None,
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,
     },

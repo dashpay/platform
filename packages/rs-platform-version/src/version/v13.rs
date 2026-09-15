@@ -90,6 +90,7 @@ pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V2, // changed: DPNS v2 subscribes domain to document history
     fee_version: FEE_VERSION2,
     system_limits: SYSTEM_LIMITS_V3,
+    dashvm: None,
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
