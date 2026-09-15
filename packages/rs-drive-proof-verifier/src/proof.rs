@@ -1407,9 +1407,9 @@ fn verify_document_history_response_v0(
     provider: &dyn ContextProvider,
 ) -> Result<(Option<DocumentHistory>, ResponseMetadata, Proof), Error> {
     use drive::drive::document::history::{
-        DocumentHistoryProofV1, DocumentHistoryQueryV1, DocumentHistorySelector,
+        DocumentHistoryFilter, DocumentHistoryProofV1, DocumentHistoryQueryV1,
     };
-    use platform::get_document_history_request::get_document_history_request_v0::Selector;
+    use platform::get_document_history_request::get_document_history_request_v0::Filter;
     let proof = response.proof().or(Err(Error::NoProofInResult))?;
     let metadata = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
     let contract_id = Identifier::from_bytes(&request.data_contract_id).map_err(|error| {
@@ -1421,23 +1421,23 @@ fn verify_document_history_response_v0(
         Identifier::from_bytes(&request.document_id).map_err(|error| Error::ProtocolError {
             error: error.to_string(),
         })?;
-    let selector = match request.selector.ok_or_else(|| Error::RequestError {
-        error: "history selector is required".to_owned(),
+    let filter = match request.filter.ok_or_else(|| Error::RequestError {
+        error: "history filter is required".to_owned(),
     })? {
-        Selector::StartAtMs(time) => DocumentHistorySelector::StartAtTime(time),
-        Selector::StartAfter(cursor) => DocumentHistorySelector::StartAfter {
+        Filter::StartAtMs(time) => DocumentHistoryFilter::StartAtTime(time),
+        Filter::StartAfter(cursor) => DocumentHistoryFilter::StartAfter {
             time_ms: cursor.time_ms,
             revision: cursor.revision,
         },
-        Selector::StartAtRevision(revision) => DocumentHistorySelector::StartAtRevision(revision),
-        Selector::Revision(revision) => DocumentHistorySelector::Revision(revision),
+        Filter::StartAtRevision(revision) => DocumentHistoryFilter::StartAtRevision(revision),
+        Filter::Revision(revision) => DocumentHistoryFilter::Revision(revision),
     };
     let query =
         DocumentHistoryQueryV1 {
             contract_id: contract_id.to_buffer(),
             document_type_name: request.document_type_name,
             document_id: document_id.to_buffer(),
-            selector,
+            filter,
             limit: request.limit.map(u16::try_from).transpose().map_err(|_| {
                 Error::RequestError {
                     error: "history limit out of bounds".to_owned(),
@@ -1601,7 +1601,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             core_height: mtd.core_chain_locked_height,
             // Response metadata is not part of the authenticated state ID.
             // Current proof consumers do not require an epoch, so do not
-            // propagate an unsigned selector into the verification context.
+            // propagate an unsigned filter into the verification context.
             epoch: Default::default(),
         };
 
@@ -3461,7 +3461,7 @@ mod tests {
         limit: Option<u32>,
     ) -> platform::GetDocumentHistoryRequest {
         use dapi_grpc::platform::v0::get_document_history_request::{
-            get_document_history_request_v0::Selector, GetDocumentHistoryRequestV0,
+            get_document_history_request_v0::Filter, GetDocumentHistoryRequestV0,
         };
         GetDocumentHistoryRequestV0 {
             data_contract_id,
@@ -3469,7 +3469,7 @@ mod tests {
             document_id,
             limit,
             prove: true,
-            selector: Some(Selector::StartAtMs(0)),
+            filter: Some(Filter::StartAtMs(0)),
         }
         .into()
     }

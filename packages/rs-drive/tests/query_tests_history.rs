@@ -3157,7 +3157,7 @@ fn test_query_historical_protocol_13() {
 #[cfg(feature = "server")]
 #[test]
 fn test_query_historical_protocol_14_uses_composite_history() {
-    use drive::drive::document::history::{DocumentHistoryQueryV1, DocumentHistorySelector};
+    use drive::drive::document::history::{DocumentHistoryFilter, DocumentHistoryQueryV1};
     use drive::drive::RootTree;
     use drive::grovedb::Element;
 
@@ -3232,7 +3232,7 @@ fn test_query_historical_protocol_14_uses_composite_history() {
             contract_id: contract.id().to_buffer(),
             document_type_name: "person".into(),
             document_id: current.id().to_buffer(),
-            selector: DocumentHistorySelector::StartAtTime(0),
+            filter: DocumentHistoryFilter::StartAtTime(0),
             limit: None,
         };
         let (page, proof) = drive

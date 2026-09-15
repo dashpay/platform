@@ -290,9 +290,9 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
         &self,
         settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetDocumentHistoryRequest, Error> {
-        use drive::drive::document::history::{DocumentHistoryQueryV1, DocumentHistorySelector};
+        use drive::drive::document::history::{DocumentHistoryFilter, DocumentHistoryQueryV1};
         use proto::get_document_history_request::{
-            get_document_history_request_v0::{Cursor, Selector},
+            get_document_history_request_v0::{Cursor, Filter},
             GetDocumentHistoryRequestV0,
         };
         // Every history fetch verifies the two GroveDB proofs; there is no
@@ -312,26 +312,24 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
             contract_id: self.data_contract_id.to_buffer(),
             document_type_name: self.document_type_name.clone(),
             document_id: self.document_id.to_buffer(),
-            selector: self.selector.clone(),
+            filter: self.filter.clone(),
             limit,
         }
         .entries_query(settings.protocol_version)?;
-        let selector = match self.selector {
-            DocumentHistorySelector::StartAtTime(time) => Selector::StartAtMs(time),
-            DocumentHistorySelector::StartAfter { time_ms, revision } => {
-                Selector::StartAfter(Cursor { time_ms, revision })
+        let filter = match self.filter {
+            DocumentHistoryFilter::StartAtTime(time) => Filter::StartAtMs(time),
+            DocumentHistoryFilter::StartAfter { time_ms, revision } => {
+                Filter::StartAfter(Cursor { time_ms, revision })
             }
-            DocumentHistorySelector::StartAtRevision(revision) => {
-                Selector::StartAtRevision(revision)
-            }
-            DocumentHistorySelector::Revision(revision) => Selector::Revision(revision),
+            DocumentHistoryFilter::StartAtRevision(revision) => Filter::StartAtRevision(revision),
+            DocumentHistoryFilter::Revision(revision) => Filter::Revision(revision),
         };
         Ok(GetDocumentHistoryRequestV0 {
             data_contract_id: self.data_contract_id.to_vec(),
             document_type_name: self.document_type_name.clone(),
             document_id: self.document_id.to_vec(),
             limit: self.limit,
-            selector: Some(selector),
+            filter: Some(filter),
             prove: settings.prove,
         }
         .into())
@@ -1449,7 +1447,7 @@ mod history_query_tests {
     use super::*;
     use crate::platform::QuerySettings;
     use dpp::version::PlatformVersion;
-    use drive::drive::document::history::DocumentHistorySelector;
+    use drive::drive::document::history::DocumentHistoryFilter;
 
     #[cfg(feature = "mocks")]
     #[tokio::test]
@@ -1466,7 +1464,7 @@ mod history_query_tests {
             data_contract_id: [1; 32].into(),
             document_type_name: "note".into(),
             document_id: [2; 32].into(),
-            selector: DocumentHistorySelector::StartAtTime(0),
+            filter: DocumentHistoryFilter::StartAtTime(0),
             limit: None,
         };
         let expected = DocumentHistory {
@@ -1507,7 +1505,7 @@ mod history_query_tests {
                 data_contract_id: [1; 32].into(),
                 document_type_name: "note".into(),
                 document_id: [2; 32].into(),
-                selector: DocumentHistorySelector::StartAtTime(0),
+                filter: DocumentHistoryFilter::StartAtTime(0),
                 limit: Some(limit),
             };
             assert!(
@@ -1529,7 +1527,7 @@ mod history_query_tests {
             data_contract_id: [1; 32].into(),
             document_type_name: "note".into(),
             document_id: [2; 32].into(),
-            selector: DocumentHistorySelector::StartAtTime(0),
+            filter: DocumentHistoryFilter::StartAtTime(0),
             limit: Some(1),
         };
         assert!(
@@ -1550,7 +1548,7 @@ mod history_query_tests {
             data_contract_id: [1; 32].into(),
             document_type_name: "note".into(),
             document_id: [2; 32].into(),
-            selector: DocumentHistorySelector::StartAfter {
+            filter: DocumentHistoryFilter::StartAfter {
                 time_ms: 1000,
                 revision: 22,
             },
@@ -1561,7 +1559,7 @@ mod history_query_tests {
         else {
             panic!("expected history version one");
         };
-        let Some(proto::get_document_history_request::get_document_history_request_v0::Selector::StartAfter(cursor)) = request.selector else { panic!("expected composite cursor"); };
+        let Some(proto::get_document_history_request::get_document_history_request_v0::Filter::StartAfter(cursor)) = request.filter else { panic!("expected composite cursor"); };
         assert_eq!((cursor.time_ms, cursor.revision), (1000, 22));
         for protocol in [12, 13] {
             assert!(query
@@ -1571,11 +1569,11 @@ mod history_query_tests {
                 })
                 .is_err());
         }
-        query.selector = DocumentHistorySelector::Revision(2);
+        query.filter = DocumentHistoryFilter::Revision(2);
         assert!(query.query(&settings).is_err());
         query.limit = Some(1);
         assert!(query.query(&settings).is_ok());
-        query.selector = DocumentHistorySelector::StartAtRevision(65536);
+        query.filter = DocumentHistoryFilter::StartAtRevision(65536);
         assert!(query.query(&settings).is_err());
     }
 }

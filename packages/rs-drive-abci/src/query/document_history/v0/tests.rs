@@ -204,11 +204,11 @@ fn history_api_proof_round_trip(gapped: bool) {
     committed.set_app_hash(root);
     committed.set_signature(signed.signature.try_into().unwrap());
     if gapped {
-        for (wire_selector, selector) in [
-            (Selector::Revision(3), DocumentHistorySelector::Revision(3)),
+        for (wire_selector, filter) in [
+            (Filter::Revision(3), DocumentHistoryFilter::Revision(3)),
             (
-                Selector::StartAtRevision(3),
-                DocumentHistorySelector::StartAtRevision(3),
+                Filter::StartAtRevision(3),
+                DocumentHistoryFilter::StartAtRevision(3),
             ),
         ] {
             let request = GetDocumentHistoryRequestV0 {
@@ -217,10 +217,10 @@ fn history_api_proof_round_trip(gapped: bool) {
                 document_id: document.id().to_vec(),
                 limit: None,
                 prove: true,
-                selector: Some(wire_selector),
+                filter: Some(wire_selector),
             };
             let mut time_request = request.clone();
-            time_request.selector = Some(Selector::StartAtMs(0));
+            time_request.filter = Some(Filter::StartAtMs(0));
             let mut response = platform
                 .query_document_history_v0(time_request, &state, version)
                 .unwrap()
@@ -230,7 +230,7 @@ fn history_api_proof_round_trip(gapped: bool) {
                 contract_id: contract.id().to_buffer(),
                 document_type_name: "profile".into(),
                 document_id: document.id().to_buffer(),
-                selector,
+                filter,
                 limit: None,
             };
             let proof = proof_mut(&mut response);
@@ -274,44 +274,44 @@ fn history_api_proof_round_trip(gapped: bool) {
     let selections = [
         (
             document.id().to_buffer(),
-            Selector::StartAtMs(2000),
-            DocumentHistorySelector::StartAtTime(2000),
+            Filter::StartAtMs(2000),
+            DocumentHistoryFilter::StartAtTime(2000),
         ),
         (
             document.id().to_buffer(),
-            Selector::StartAfter(Cursor {
+            Filter::StartAfter(Cursor {
                 time_ms: 2000,
                 revision: 1,
             }),
-            DocumentHistorySelector::StartAfter {
+            DocumentHistoryFilter::StartAfter {
                 time_ms: 2000,
                 revision: 1,
             },
         ),
         (
             document.id().to_buffer(),
-            Selector::Revision(2),
-            DocumentHistorySelector::Revision(2),
+            Filter::Revision(2),
+            DocumentHistoryFilter::Revision(2),
         ),
         (
             document.id().to_buffer(),
-            Selector::StartAtRevision(65535),
-            DocumentHistorySelector::StartAtRevision(65535),
+            Filter::StartAtRevision(65535),
+            DocumentHistoryFilter::StartAtRevision(65535),
         ),
         (
             [255; 32],
-            Selector::Revision(2),
-            DocumentHistorySelector::Revision(2),
+            Filter::Revision(2),
+            DocumentHistoryFilter::Revision(2),
         ),
     ];
-    for (id, wire_selector, selector) in selections {
+    for (id, wire_selector, filter) in selections {
         let request = GetDocumentHistoryRequestV0 {
             data_contract_id: contract.id().to_vec(),
             document_type_name: "profile".into(),
             document_id: id.to_vec(),
             limit: None,
             prove: true,
-            selector: Some(wire_selector),
+            filter: Some(wire_selector),
         };
         let request_v0 = request.clone();
         let response = platform
@@ -324,7 +324,7 @@ fn history_api_proof_round_trip(gapped: bool) {
             document_type_name: "profile".into(),
             document_id: id,
             limit: None,
-            selector,
+            filter,
         };
         let expected = platform
             .drive
@@ -461,7 +461,7 @@ fn should_reject_missing_selectors_before_reading_state() {
         data_contract_id: vec![1; 32],
         document_type_name: "note".into(),
         document_id: vec![2; 32],
-        selector: None,
+        filter: None,
         limit: None,
         prove: false,
     };

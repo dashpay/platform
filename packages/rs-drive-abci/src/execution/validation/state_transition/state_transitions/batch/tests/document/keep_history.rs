@@ -265,7 +265,7 @@ async fn should_replace_and_transfer_migrated_history_through_signed_transitions
 
 async fn run_history_write_sequence(migrated: bool, countable: bool) {
     use dpp::data_contract::DataContractFactory;
-    use drive::drive::document::history::{DocumentHistoryQueryV1, DocumentHistorySelector};
+    use drive::drive::document::history::{DocumentHistoryFilter, DocumentHistoryQueryV1};
     let version = PlatformVersion::get(14).unwrap();
     let initial_version = PlatformVersion::get(if migrated { 13 } else { 14 }).unwrap();
     let mut platform = TestPlatformBuilder::new()
@@ -312,7 +312,7 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
         contract_id: contract.id().to_buffer(),
         document_type_name: "note".into(),
         document_id: document.id().to_buffer(),
-        selector: DocumentHistorySelector::StartAtTime(0),
+        filter: DocumentHistoryFilter::StartAtTime(0),
         limit: None,
     };
     for revision in 1..=5 {
