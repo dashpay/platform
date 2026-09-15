@@ -36,6 +36,11 @@ use grovedb_version::version::v4::GROVE_V4;
 ///   `document_ranked.verify_ranked_top_k_proof`. All are 0 at
 ///   introduction; the ranked grammar itself is gated one layer up by
 ///   `CONTRACT_VERSIONS_V6`'s meta schema v3.
+/// * **Contest restart over orphaned vote trees** — the same V4 table bumps
+///   `insert_contested.add_contested_vote_subtree_for_non_identities_operations`
+///   to 1 so a new contest reuses the abstain or lock vote tree an earlier
+///   poll's cleanup left behind (it only removed the trees that received
+///   votes) instead of failing with `CorruptedContractIndexes`.
 ///
 /// Everything else matches `DRIVE_VERSION_V8`.
 pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {

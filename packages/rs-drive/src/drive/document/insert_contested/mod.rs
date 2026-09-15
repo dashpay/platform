@@ -129,6 +129,213 @@ mod tests {
             );
     }
 
+    /// A resource contested once must be contestable again after its poll
+    /// ends, even though the poll-end cleanup leaves the abstain and lock
+    /// vote trees behind when nobody voted that way.
+    mod restart_after_cleanup {
+        use super::*;
+        use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+        use crate::error::drive::DriveError;
+        use crate::error::Error;
+        use crate::util::object_size_info::DataContractOwnedResolvedInfo;
+        use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+        use dpp::data_contract::document_type::random_document::{
+            CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+        };
+        use dpp::data_contract::DataContract;
+        use dpp::document::{Document, DocumentV0Setters};
+        use dpp::fee::fee_result::FeeResult;
+        use dpp::identifier::Identifier;
+        use dpp::platform_value::{Bytes32, Value};
+        use dpp::prelude::TimestampMillis;
+        use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+        use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+        use std::collections::BTreeMap;
+
+        fn quantum_domain_document(
+            dpns_contract: &DataContract,
+            owner_id: Identifier,
+            entropy: Bytes32,
+            rng: &mut StdRng,
+            platform_version: &PlatformVersion,
+        ) -> Document {
+            let document_type = dpns_contract
+                .document_type_for_name("domain")
+                .expect("domain should exist on DPNS");
+
+            let mut document = document_type
+                .random_document_with_params(
+                    owner_id,
+                    entropy,
+                    Some(1),
+                    Some(1),
+                    Some(1),
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::MinDocumentFillSize,
+                    rng,
+                    platform_version,
+                )
+                .expect("random document");
+
+            document.set("parentDomainName", "dash".into());
+            document.set("normalizedParentDomainName", "dash".into());
+            document.set("label", "quantum".into());
+            document.set("normalizedLabel", "quantum".into());
+            document.set("records.identity", owner_id.into());
+            document.set("subdomainRules.allowSubdomains", false.into());
+
+            document
+        }
+
+        /// Opens a contest for `dash.quantum`, runs the poll-end cleanup as
+        /// `clean_up_after_contested_resources_vote_polls_end` does for a
+        /// contest whose only contender received no votes and nobody voted
+        /// abstain or lock, then opens a new contest for the same name.
+        fn restart_contest_after_cleanup_without_abstain_or_lock_votes(
+            platform_version: &PlatformVersion,
+        ) -> Result<FeeResult, Error> {
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+
+            let dpns_contract =
+                get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            drive
+                .apply_contract(
+                    &dpns_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("applied dpns contract");
+
+            let vote_poll = ContestedDocumentResourceVotePollWithContractInfo {
+                contract: DataContractOwnedResolvedInfo::OwnedDataContract(dpns_contract.clone()),
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                index_values: vec![
+                    Value::Text("dash".to_string()),
+                    Value::Text("quantum".to_string()),
+                ],
+            };
+
+            let mut rng = StdRng::seed_from_u64(433);
+            let first_owner_id = Identifier::from([0x11; 32]);
+            let first_document = quantum_domain_document(
+                &dpns_contract,
+                first_owner_id,
+                Bytes32::random_with_rng(&mut rng),
+                &mut rng,
+                platform_version,
+            );
+
+            drive
+                .add_contested_document(
+                    OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &first_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(first_owner_id.to_buffer()),
+                    },
+                    vote_poll.clone(),
+                    false,
+                    None,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to open the first contest");
+
+            // The voter map the poll-end hook builds: contenders always
+            // appear, abstain and lock only when they received votes.
+            let end_time: TimestampMillis = 1;
+            let votes: BTreeMap<ResourceVoteChoice, Vec<Identifier>> =
+                BTreeMap::from([(ResourceVoteChoice::TowardsIdentity(first_owner_id), vec![])]);
+            let finished_polls = [(&vote_poll, &end_time, &votes)];
+
+            let mut cleanup_operations = vec![];
+            drive.remove_contested_resource_vote_poll_votes_operations(
+                &finished_polls,
+                true,
+                &mut cleanup_operations,
+                None,
+                platform_version,
+            )?;
+            drive.remove_contested_resource_vote_poll_documents_operations(
+                &finished_polls,
+                false,
+                &mut cleanup_operations,
+                None,
+                platform_version,
+            )?;
+            drive.remove_contested_resource_vote_poll_contenders_operations(
+                &finished_polls,
+                &mut cleanup_operations,
+                None,
+                platform_version,
+            )?;
+            drive.apply_batch_low_level_drive_operations(
+                None,
+                None,
+                cleanup_operations,
+                &mut vec![],
+                &platform_version.drive,
+            )?;
+
+            let second_owner_id = Identifier::from([0x22; 32]);
+            let second_document = quantum_domain_document(
+                &dpns_contract,
+                second_owner_id,
+                Bytes32::random_with_rng(&mut rng),
+                &mut rng,
+                platform_version,
+            );
+
+            drive.add_contested_document(
+                OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &second_document,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(second_owner_id.to_buffer()),
+                },
+                vote_poll,
+                false,
+                None,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+        }
+
+        #[test]
+        fn a_resource_can_be_contested_again_over_the_orphaned_vote_trees() {
+            restart_contest_after_cleanup_without_abstain_or_lock_votes(PlatformVersion::latest())
+                .expect("expected the new contest to reuse the orphaned vote trees");
+        }
+
+        /// PROTOCOL_VERSION_13 keeps v0, which trips over the orphaned tree.
+        /// Pinned so the replay boundary stays explicit.
+        #[test]
+        fn a_resource_can_not_be_contested_again_at_protocol_version_13() {
+            let platform_version = PlatformVersion::get(13).expect("expected platform version 13");
+
+            let err = restart_contest_after_cleanup_without_abstain_or_lock_votes(platform_version)
+                .expect_err("expected the new contest to fail on the orphaned vote tree");
+
+            assert!(
+                matches!(err, Error::Drive(DriveError::CorruptedContractIndexes(_))),
+                "unexpected error: {err:?}"
+            );
+        }
+    }
+
     /// Tests covering the error branches of the contested-document insertion
     /// path that aren't already reached by the happy-path integration tests.
     mod error_paths {

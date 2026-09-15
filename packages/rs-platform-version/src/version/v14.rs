@@ -66,6 +66,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    the contest was created on — which halts the chain when that poll
 ///    ends — or open a contest for a document that is not a contested
 ///    resource at all.
+///    Drive's contested insert also reuses an abstain or lock vote tree an
+///    earlier poll's cleanup left orphaned (it only removed the trees that
+///    received votes), so a resource can be contested again instead of
+///    failing with `CorruptedContractIndexes`.
 /// 4. **Relative daily withdrawal limit**: the flat 2000 Dash per 24 hours that
 ///    applied from v8 becomes 15% of the total credits Platform held a day ago
 ///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
@@ -504,6 +508,24 @@ mod tests {
                 .state_transitions
                 .batch_state_transition
                 .document_create_transition_structure_validation,
+            1
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .drive
+                .methods
+                .document
+                .insert_contested
+                .add_contested_vote_subtree_for_non_identities_operations,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive
+                .methods
+                .document
+                .insert_contested
+                .add_contested_vote_subtree_for_non_identities_operations,
             1
         );
     }
