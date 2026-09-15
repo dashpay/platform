@@ -367,7 +367,17 @@ impl Display for BoundedDecodeError {
     }
 }
 
-impl core::error::Error for BoundedDecodeError {}
+impl core::error::Error for BoundedDecodeError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            BoundedDecodeError::Bounds(error) => Some(error),
+            // bincode's errors implement the error trait only with `std`.
+            #[cfg(feature = "std")]
+            BoundedDecodeError::Decode(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 /// Reads a bincode length prefix and returns it once the unread input could
 /// contain that many entries. No allocation happens here.
