@@ -288,8 +288,37 @@ jobs:
           NPM_TAG: ${{ steps.tag.outputs.result }}
         run: |
           set -euo pipefail
+          REGISTRY="$(npm config get registry)"
+          REGISTRY="${REGISTRY%/}"
           for tarball in release-artifacts/npm-packages/*.tgz; do
-            npm publish "$tarball" --ignore-scripts --tolerate-republish --access public --tag "$NPM_TAG"
+            metadata=$(tar -xOf "$tarball" package/package.json)
+            name=$(jq -r '.name' <<<"$metadata")
+            version=$(jq -r '.version' <<<"$metadata")
+            encoded_name=${name//@/%2f}
+            status=$(curl --silent --show-error --location --output "$RUNNER_TEMP/npm-metadata.json" \
+              --write-out '%{http_code}' --connect-timeout 10 --max-time 30 \
+              "$REGISTRY/$encoded_name") || {
+              echo "::error::Could not query $REGISTRY for $name@$version."
+              exit 1
+            }
+            case "$status" in
+              404)
+                ;;
+              200)
+                jq -e --arg version "$version" '.versions[$version] != null' "$RUNNER_TEMP/npm-metadata.json" >/dev/null || {
+                  jq -e . "$RUNNER_TEMP/npm-metadata.json" >/dev/null || { echo "::error::Invalid registry response for $name."; exit 1; }
+                  npm publish "$tarball" --ignore-scripts --access public --tag "$NPM_TAG"
+                  continue
+                }
+                echo "::notice::$name@$version already exists on $REGISTRY; skipping."
+                continue
+                ;;
+              *)
+                echo "::error::Registry query for $name@$version returned HTTP $status; refusing to publish blindly."
+                exit 1
+                ;;
+            esac
+            npm publish "$tarball" --ignore-scripts --access public --tag "$NPM_TAG"
           done
 
       - name: Dry-run NPM packages
