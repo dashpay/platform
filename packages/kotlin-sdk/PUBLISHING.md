@@ -144,10 +144,14 @@ release, never a snapshot.
 JReleaser runs kordamp's PomChecker before uploading. That checker builds a
 plain Maven model, and plain Maven does not know Android's `<packaging>aar`,
 so every deploy fails with `Unknown packaging: aar` before anything is sent.
-Both deployers therefore set `verifyPom.set(false)`. That disables only the
-POM *lint*; `applyMavenCentralRules` still enforces the sources and javadoc
-jars, the signatures and the POM metadata Central requires. Do not re-enable
-`verifyPom` unless PomChecker learns about `aar`.
+Both deployers therefore set `verifyPom.set(false)`. That disables the POM
+*lint*. Nothing else is lost by it: JReleaser already exempts `aar` packaging
+(with `pom`, `war`, `zip`, `nbm`) from its sources-and-javadoc presence check,
+so those jars were never enforced for this artifact — they are staged because
+the Gradle publication generates them via `withSourcesJar` / `withJavadocJar`.
+Signing stays on through the signing configuration, and Maven Central
+validates release POM metadata server-side. Do not re-enable `verifyPom`
+unless PomChecker learns about `aar`.
 
 ## The JNI guard
 

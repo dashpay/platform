@@ -451,8 +451,12 @@ jreleaser {
                     active.set(Active.RELEASE)
                     // JReleaser's PomChecker builds a plain Maven model and rejects
                     // `<packaging>aar` as unknown (kordamp pomchecker has no Android
-                    // support). Skip only that lint; the Central rules that matter
-                    // (sources + javadoc jars, signatures, POM metadata) still apply.
+                    // support). Skip that lint. Note what is NOT lost: JReleaser already
+                    // exempts `aar` (with pom/war/zip/nbm) from its sources+javadoc
+                    // presence check, so those jars were never enforced here — they
+                    // are staged because the publication above generates them; signing
+                    // comes from the signing block; Central validates release POM
+                    // metadata server-side.
                     verifyPom.set(false)
                     url.set("https://central.sonatype.com/api/v1/publisher")
                     stagingRepository(
