@@ -131,14 +131,16 @@ pub struct IndexSpec {
     pub null_searchable: bool,
     /// Contested parameters.
     pub contested: Option<ContestedSpec>,
-    /// Count fast path.
-    pub count: Countability,
-    /// Range counts.
-    pub range_count: bool,
+    /// Count fast path. `None` when the author said nothing, so that average
+    /// sugar may promote it; an explicit `Some(NotCountable)` next to
+    /// `average` is a conflict, as it is natively.
+    pub count: Option<Countability>,
+    /// Range counts; explicitness as for `count`.
+    pub range_count: Option<bool>,
     /// Integer property summed at the index.
     pub sum: Option<PropertyName>,
-    /// Range sums.
-    pub range_sum: bool,
+    /// Range sums; explicitness as for `count`.
+    pub range_sum: Option<bool>,
     /// Sugar for `count` plus `sum`; expanded by the validator.
     pub average: Option<PropertyName>,
     /// Sugar for `range_count` plus `range_sum`; expanded by the validator.
@@ -161,10 +163,10 @@ impl IndexSpec {
             unique: false,
             null_searchable: true,
             contested: None,
-            count: Countability::NotCountable,
-            range_count: false,
+            count: None,
+            range_count: None,
             sum: None,
-            range_sum: false,
+            range_sum: None,
             average: None,
             range_average: false,
             ranked: Ranking::default(),
@@ -198,20 +200,24 @@ impl IndexSpec {
     }
 
     /// Selects a count tree.
-    pub fn count(mut self) -> Self {
-        self.count = Countability::Countable;
-        self
+    pub fn count(self) -> Self {
+        self.countability(Countability::Countable)
     }
 
     /// Selects a provable count tree.
-    pub fn count_allowing_offset(mut self) -> Self {
-        self.count = Countability::CountableAllowingOffset;
+    pub fn count_allowing_offset(self) -> Self {
+        self.countability(Countability::CountableAllowingOffset)
+    }
+
+    /// Sets the count fast path explicitly, including `NotCountable`.
+    pub fn countability(mut self, count: Countability) -> Self {
+        self.count = Some(count);
         self
     }
 
     /// Enables range counts.
     pub fn range_count(mut self, range_count: bool) -> Self {
-        self.range_count = range_count;
+        self.range_count = Some(range_count);
         self
     }
 
@@ -223,7 +229,7 @@ impl IndexSpec {
 
     /// Enables range sums.
     pub fn range_sum(mut self, range_sum: bool) -> Self {
-        self.range_sum = range_sum;
+        self.range_sum = Some(range_sum);
         self
     }
 
@@ -273,5 +279,18 @@ impl IndexSpec {
     pub fn index_only(mut self, options: IndexOnlySpec) -> Self {
         self.index_only = Some(options);
         self
+    }
+
+    /// A copy with every order-insensitive member in canonical order:
+    /// contested field matches by property and ranked levels by property.
+    pub fn normalized(&self) -> IndexSpec {
+        let mut normalized = self.clone();
+        if let Some(contested) = normalized.contested.as_mut() {
+            contested.field_matches.sort();
+        }
+        if let RankedCount::At(levels) = &mut normalized.ranked.count {
+            levels.sort();
+        }
+        normalized
     }
 }

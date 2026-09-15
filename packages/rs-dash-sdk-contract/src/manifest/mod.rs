@@ -28,25 +28,58 @@ pub use method::{MethodEntry, MethodTable};
 use crate::declare::ReceiptPolicy;
 
 /// The canonical manifest of one contract package.
+///
+/// The tables are read through accessors only: a manifest exists solely as
+/// the output of validation, and its invariants (a non-empty module table,
+/// derived capabilities matching the declarations) hold because nothing
+/// outside the validator can construct or edit one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CanonicalManifest {
-    /// Modules, interfaces and bindings.
-    pub modules: ModuleTable,
-    /// Document collections and singletons, sorted by name.
-    pub collections: Vec<CollectionManifest>,
-    /// Typed specialized collections, sorted by id.
-    pub typed_collections: Vec<TypedCollectionManifest>,
-    /// Entries, sorted by method name.
-    pub methods: MethodTable,
-    /// Rules, sorted by `(collection, name)`.
-    pub rules: Vec<RuleManifest>,
-    /// Required capabilities, sorted.
-    pub capabilities: CapabilityTable,
-    /// Receipt policy.
-    pub receipts: ReceiptPolicy,
+    pub(crate) modules: ModuleTable,
+    pub(crate) collections: Vec<CollectionManifest>,
+    pub(crate) typed_collections: Vec<TypedCollectionManifest>,
+    pub(crate) methods: MethodTable,
+    pub(crate) rules: Vec<RuleManifest>,
+    pub(crate) capabilities: CapabilityTable,
+    pub(crate) receipts: ReceiptPolicy,
 }
 
 impl CanonicalManifest {
+    /// Modules, interfaces and bindings.
+    pub fn modules(&self) -> &ModuleTable {
+        &self.modules
+    }
+
+    /// Document collections and singletons, sorted by name.
+    pub fn collections(&self) -> &[CollectionManifest] {
+        &self.collections
+    }
+
+    /// Typed specialized collections, sorted by id.
+    pub fn typed_collections(&self) -> &[TypedCollectionManifest] {
+        &self.typed_collections
+    }
+
+    /// Entries, sorted by method name.
+    pub fn methods(&self) -> &MethodTable {
+        &self.methods
+    }
+
+    /// Rules, sorted by `(collection, name)`.
+    pub fn rules(&self) -> &[RuleManifest] {
+        &self.rules
+    }
+
+    /// Required capabilities, explicit and derived, sorted.
+    pub fn capabilities(&self) -> &CapabilityTable {
+        &self.capabilities
+    }
+
+    /// Receipt policy.
+    pub fn receipts(&self) -> ReceiptPolicy {
+        self.receipts
+    }
+
     /// Looks a collection up by name.
     pub fn collection(&self, name: &str) -> Option<&CollectionManifest> {
         self.collections

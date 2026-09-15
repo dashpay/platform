@@ -155,7 +155,7 @@ impl Identified for IndexSpec {
     }
 
     fn equivalent(&self, other: &Self) -> bool {
-        equal_ignoring_origin(self, other)
+        equal_ignoring_origin(&self.normalized(), &other.normalized())
     }
 
     fn duplicate() -> DiagnosticKind {
