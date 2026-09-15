@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::Purpose;
 use dpp::identity::signer::Signer;
 use dpp::identity::KeyType;
@@ -19,13 +20,23 @@ use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
 
 // Profile documents require HIGH or CRITICAL authentication; MASTER is reserved
 // for identity operations and cannot authorize an ordinary document write.
-fn profile_signing_key(identity: &Identity) -> Option<&IdentityPublicKey> {
-    identity.get_first_public_key_matching(
-        Purpose::AUTHENTICATION,
-        [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-        [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160].into(),
-        false,
-    )
+fn profile_signing_key<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
+) -> Option<&'a IdentityPublicKey> {
+    identity.public_keys().values().find(|key| {
+        key.purpose() == Purpose::AUTHENTICATION
+            && matches!(
+                key.security_level(),
+                SecurityLevel::HIGH | SecurityLevel::CRITICAL
+            )
+            && matches!(
+                key.key_type(),
+                KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160
+            )
+            && !key.is_disabled()
+            && signer.can_sign_with(key)
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -121,9 +132,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Mirrors [`Self::create_profile`] but signing is routed through
     /// the supplied `&S: Signer<IdentityPublicKey>`. The signing key
     /// is resolved from the identity's active HIGH or CRITICAL ECDSA
-    /// authentication keys (full public key or HASH160) — the signer
-    /// is responsible for producing a signature for whatever key is
-    /// picked.
+    /// authentication keys (full public key or HASH160), choosing the
+    /// first key available according to `signer.can_sign_with`.
+    /// Signing errors are propagated without trying another key.
     ///
     /// All other behavior — avatar hashing, document construction,
     /// local cache update via the persister — is identical to the
@@ -183,11 +194,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .identity_manager
                 .managed_identity(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            profile_signing_key(&managed.identity)
+            profile_signing_key(&managed.identity, signer)
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
-                        "No HIGH or CRITICAL authentication key found on identity \
+                        "No HIGH or CRITICAL authentication key available to signer on identity \
                          (required for document state transitions)"
                             .to_string(),
                     )
@@ -256,7 +267,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// externally-supplied signer.
     ///
     /// Mirrors [`Self::update_profile`] but signing is routed through
-    /// the supplied `&S: Signer<IdentityPublicKey>`.
+    /// the supplied `&S: Signer<IdentityPublicKey>`. Key selection follows
+    /// [`Self::create_profile_with_external_signer`].
     pub async fn update_profile_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
@@ -332,11 +344,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .identity_manager
                 .managed_identity(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            profile_signing_key(&managed.identity)
+            profile_signing_key(&managed.identity, signer)
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
-                        "No HIGH or CRITICAL authentication key found on identity \
+                        "No HIGH or CRITICAL authentication key available to signer on identity \
                          (required for document state transitions)"
                             .to_string(),
                     )
@@ -789,6 +801,68 @@ mod tests {
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::version::PlatformVersion;
 
+    use async_trait::async_trait;
+    use dpp::address_funds::AddressWitness;
+    use dpp::platform_value::BinaryData;
+    use dpp::ProtocolError;
+
+    #[derive(Debug)]
+    struct AvailableKeys<'a>(&'a [u32]);
+
+    #[async_trait]
+    impl Signer<IdentityPublicKey> for AvailableKeys<'_> {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            panic!("key selection must not sign")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            panic!("key selection must not create a witness")
+        }
+
+        fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
+            self.0.contains(&key.id())
+        }
+    }
+
+    #[test]
+    fn should_skip_unavailable_profile_keys() {
+        for (first_type, second_type) in [
+            (KeyType::ECDSA_HASH160, KeyType::ECDSA_SECP256K1),
+            (KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160),
+        ] {
+            let mut identity = identity_with_key(profile_key(first_type, SecurityLevel::HIGH));
+            let mut second = profile_key(second_type, SecurityLevel::CRITICAL);
+            second.id = 2;
+            identity.add_public_key(second.into());
+            assert_eq!(
+                profile_signing_key(&identity, &AvailableKeys(&[2])),
+                identity.public_keys().get(&2),
+                "unavailable {first_type:?} must not shadow available {second_type:?}"
+            );
+            assert_eq!(
+                profile_signing_key(&identity, &AvailableKeys(&[1, 2])),
+                identity.public_keys().get(&1),
+                "select the first available eligible key"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_profile_keys_unavailable_to_signer() {
+        for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
+            let identity = identity_with_key(profile_key(key_type, SecurityLevel::HIGH));
+            assert!(profile_signing_key(&identity, &AvailableKeys(&[])).is_none());
+        }
+    }
+
     fn profile_key(key_type: KeyType, security_level: SecurityLevel) -> IdentityPublicKeyV0 {
         IdentityPublicKeyV0 {
             id: 1,
@@ -812,7 +886,7 @@ mod tests {
             for level in [SecurityLevel::HIGH, SecurityLevel::CRITICAL] {
                 let identity = identity_with_key(profile_key(key_type, level));
                 assert!(
-                    profile_signing_key(&identity).is_some(),
+                    profile_signing_key(&identity, &AvailableKeys(&[1])).is_some(),
                     "{key_type:?}/{level:?}"
                 );
             }
@@ -822,30 +896,32 @@ mod tests {
     #[test]
     fn should_reject_ineligible_profile_keys() {
         let empty = Identity::default_versioned(PlatformVersion::latest()).unwrap();
-        assert!(profile_signing_key(&empty).is_none());
+        assert!(profile_signing_key(&empty, &AvailableKeys(&[1])).is_none());
         for key_type in [
             KeyType::BLS12_381,
             KeyType::BIP13_SCRIPT_HASH,
             KeyType::EDDSA_25519_HASH160,
         ] {
-            assert!(profile_signing_key(&identity_with_key(profile_key(
-                key_type,
-                SecurityLevel::HIGH
-            )))
+            assert!(profile_signing_key(
+                &identity_with_key(profile_key(key_type, SecurityLevel::HIGH)),
+                &AvailableKeys(&[1])
+            )
             .is_none());
         }
         for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
             for level in [SecurityLevel::MASTER, SecurityLevel::MEDIUM] {
-                assert!(
-                    profile_signing_key(&identity_with_key(profile_key(key_type, level))).is_none()
-                );
+                assert!(profile_signing_key(
+                    &identity_with_key(profile_key(key_type, level)),
+                    &AvailableKeys(&[1])
+                )
+                .is_none());
             }
             let mut key = profile_key(key_type, SecurityLevel::HIGH);
             key.disabled_at = Some(1);
-            assert!(profile_signing_key(&identity_with_key(key)).is_none());
+            assert!(profile_signing_key(&identity_with_key(key), &AvailableKeys(&[1])).is_none());
             let mut key = profile_key(key_type, SecurityLevel::CRITICAL);
             key.purpose = Purpose::TRANSFER;
-            assert!(profile_signing_key(&identity_with_key(key)).is_none());
+            assert!(profile_signing_key(&identity_with_key(key), &AvailableKeys(&[1])).is_none());
         }
     }
 
@@ -861,7 +937,7 @@ mod tests {
         transfer.purpose = Purpose::TRANSFER;
         identity.add_public_key(transfer.into());
         assert_eq!(
-            profile_signing_key(&identity),
+            profile_signing_key(&identity, &AvailableKeys(&[1])),
             identity.public_keys().get(&1)
         );
     }
