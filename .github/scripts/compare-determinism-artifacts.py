@@ -109,7 +109,8 @@ def validate_shape(artifact, label):
     if not isinstance(artifact, dict):
         raise Malformed(f"{label}: artifact is not an object")
     schema = artifact.get("schema")
-    if schema not in KNOWN_SCHEMAS:
+    # bool is an int subclass and 1.0 == 1 in Python; only a real int counts.
+    if type(schema) is not int or schema not in KNOWN_SCHEMAS:
         raise Malformed(
             f"{label}: unknown artifact schema {schema!r}; this comparator knows {sorted(KNOWN_SCHEMAS)}"
         )
@@ -426,6 +427,11 @@ def self_test():
         artifact["consensus"]["final_root_hash"] = "0f" * 32
 
     malformed("an unknown schema is malformed", lambda a: a.__setitem__("schema", 99))
+    for value in ([], {}, True, 1.0, "1", None):
+        malformed(
+            f"a schema of {value!r} is malformed, not compared",
+            lambda a, value=value: a.__setitem__("schema", value),
+        )
     malformed("a missing section is malformed", lambda a: a.__delitem__("diagnostic"))
     malformed("a missing transition fee is malformed", drop_fees)
     malformed("a null block is malformed", null_block)
