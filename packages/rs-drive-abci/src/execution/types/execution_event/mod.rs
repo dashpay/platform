@@ -327,11 +327,10 @@ impl ExecutionEvent<'_> {
             }
             StateTransitionAction::DataContractUpdateAction(data_contract_update_action) => {
                 let user_fee_increase = action.user_fee_increase();
-                // The update cost pays for the whole contract again, that's fine for now.
-                // It would be a lot of work to fix this, so we'll just go with this for now.
-                let registration_cost = data_contract_update_action
-                    .data_contract_ref()
-                    .registration_cost(platform_version)?;
+                // A full-contract (V0) update pays for the whole contract again;
+                // a delta-based (V1) update only pays for what it adds.
+                let registration_cost =
+                    data_contract_update_action.registration_cost(platform_version)?;
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {

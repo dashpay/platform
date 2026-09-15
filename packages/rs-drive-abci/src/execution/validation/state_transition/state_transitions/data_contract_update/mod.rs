@@ -4,11 +4,16 @@ mod state;
 
 use basic_structure::v0::DataContractUpdateStateTransitionBasicStructureValidationV0;
 use basic_structure::v1::DataContractUpdateStateTransitionBasicStructureValidationV1;
+use basic_structure::v2::DataContractUpdateStateTransitionBasicStructureValidationV2;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::UnsupportedVersionError;
+use dpp::consensus::ConsensusError;
 use dpp::dashcore::Network;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use std::collections::BTreeMap;
@@ -25,11 +30,40 @@ use crate::execution::validation::state_transition::processor::basic_structure::
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::data_contract_update::state::v2::DataContractUpdateStateTransitionStateValidationV2;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
+
+/// The contract a full-contract (V0) update embeds.
+///
+/// Protocol version 15, which introduces delta-based (V1) updates, routes
+/// contract updates to generation 2. A V1 update that still reaches the
+/// generation-0 or generation-1 validators (a node below protocol version 15
+/// checking a transition built for a newer one) is rejected as an unsupported
+/// transition version: a consensus error, never an execution error, so a
+/// mis-versioned transition can not stall a proposal.
+pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) fn embedded_data_contract<
+    'a,
+>(
+    transition: &'a DataContractUpdateTransition,
+    platform_version: &PlatformVersion,
+) -> Result<&'a DataContractInSerializationFormat, ConsensusError> {
+    transition.data_contract().ok_or_else(|| {
+        let bounds = &platform_version
+            .dpp
+            .state_transition_serialization_versions
+            .contract_update_state_transition;
+        UnsupportedVersionError::new(
+            transition.feature_version(),
+            bounds.min_version,
+            bounds.max_version,
+        )
+        .into()
+    })
+}
 
 impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition {
     fn validate_basic_structure(
@@ -46,9 +80,10 @@ impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition 
         {
             Some(0) => self.validate_basic_structure_v0(network_type, platform_version),
             Some(1) => self.validate_basic_structure_v1(network_type, platform_version),
+            Some(2) => self.validate_basic_structure_v2(network_type, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: validate_basic_structure".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
@@ -69,7 +104,7 @@ impl StateTransitionActionTransformer for DataContractUpdateTransition {
         >,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
-        _tx: TransactionArg,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
@@ -86,9 +121,17 @@ impl StateTransitionActionTransformer for DataContractUpdateTransition {
                 execution_context,
                 platform_version,
             ),
+            1 => self.transform_into_action_v1(
+                platform,
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -122,6 +165,7 @@ mod tests {
     use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
     use dpp::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
+        DataContractUpdateTransitionV1,
     };
 
     use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -244,6 +288,251 @@ mod tests {
         TestData {
             data_contract,
             platform: platform.set_initial_state_structure(),
+        }
+    }
+
+    mod delta_execution_proofs {
+        use super::*;
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+        use dpp::platform_value::platform_value;
+        use dpp::state_transition::proof_result::StateTransitionProofResult;
+        use dpp::state_transition::StateTransition;
+        use drive::drive::Drive;
+        use drive::error::proof::ProofError;
+        use drive::error::Error as DriveError;
+        use std::sync::Arc;
+
+        /// Stores the fixture contract, executes a delta that adds a
+        /// document type, a keyword and a description, and returns the
+        /// pre-update contract, the updated contract, the executed
+        /// transition and its execution proof.
+        async fn executed_delta() -> (DataContract, DataContract, StateTransition, Vec<u8>) {
+            // keywords are indexed through the keyword search system
+            // contract, which only genesis state creates
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+            let platform_state = platform.state.load();
+            let platform_version = PlatformVersion::latest();
+
+            let mut original_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            original_contract.set_owner_id(identity.id());
+            apply_contract(&platform, &original_contract, BlockInfo::default());
+
+            let mut updated_contract = original_contract.clone();
+            updated_contract.increment_version();
+            updated_contract
+                .set_document_schema(
+                    "newType",
+                    platform_value!({
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "position": 0
+                            }
+                        },
+                        "additionalProperties": false
+                    }),
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("expected to add a document type");
+            updated_contract.set_keywords(vec!["alpha".to_string()]);
+            updated_contract.set_description(Some("a described contract".to_string()));
+
+            let transition = DataContractUpdateTransition::new_from_contract_update(
+                &original_contract,
+                &updated_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                1,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected a contract update transition");
+            assert!(
+                matches!(
+                    transition,
+                    StateTransition::DataContractUpdate(DataContractUpdateTransition::V1(_))
+                ),
+                "the latest platform version defaults to the delta form"
+            );
+
+            let tx_bytes = transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[tx_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let proof = platform
+                .drive
+                .prove_state_transition(&transition, None, platform_version)
+                .expect("expected to prove the state transition");
+
+            (
+                original_contract,
+                updated_contract,
+                transition,
+                proof.data.expect("expected proof data"),
+            )
+        }
+
+        fn delta_of(transition: &StateTransition) -> DataContractUpdateTransitionV1 {
+            let StateTransition::DataContractUpdate(DataContractUpdateTransition::V1(delta)) =
+                transition.clone()
+            else {
+                panic!("expected a delta-based contract update");
+            };
+            delta
+        }
+
+        #[tokio::test]
+        async fn delta_execution_proof_verifies_the_whole_contract_the_delta_produces() {
+            let (original_contract, updated_contract, transition, proof) = executed_delta().await;
+            let known = Arc::new(original_contract);
+
+            let (_root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+                &transition,
+                &BlockInfo::default(),
+                &proof,
+                &|_| Ok(Some(Arc::clone(&known))),
+                PlatformVersion::latest(),
+            )
+            .expect("expected the delta's execution proof to verify");
+
+            let StateTransitionProofResult::VerifiedDataContract(contract) = outcome.into_result()
+            else {
+                panic!("expected a verified data contract");
+            };
+            assert_eq!(contract.version(), updated_contract.version());
+            assert_eq!(contract.keywords(), updated_contract.keywords());
+            assert_eq!(contract.description(), updated_contract.description());
+            assert!(contract.document_type_for_name("newType").is_ok());
+        }
+
+        #[tokio::test]
+        async fn delta_execution_proof_needs_the_pre_update_contract() {
+            let (_original_contract, _updated_contract, transition, proof) = executed_delta().await;
+
+            let result = Drive::verify_state_transition_was_executed_with_proof(
+                &transition,
+                &BlockInfo::default(),
+                &proof,
+                &|_| Ok(None),
+                PlatformVersion::latest(),
+            );
+
+            assert_matches!(
+                result,
+                Err(DriveError::Proof(ProofError::MissingContextRequirement(_)))
+            );
+        }
+
+        #[tokio::test]
+        async fn delta_execution_proof_rejects_a_known_contract_at_another_version() {
+            let (_original_contract, updated_contract, transition, proof) = executed_delta().await;
+            let known = Arc::new(updated_contract);
+
+            // the contract after the update is not the one the delta was
+            // built against, so nothing can be materialized from it
+            let result = Drive::verify_state_transition_was_executed_with_proof(
+                &transition,
+                &BlockInfo::default(),
+                &proof,
+                &|_| Ok(Some(Arc::clone(&known))),
+                PlatformVersion::latest(),
+            );
+
+            assert_matches!(
+                result,
+                Err(DriveError::Proof(ProofError::MissingContextRequirement(_)))
+            );
+        }
+
+        #[tokio::test]
+        async fn delta_execution_proof_rejects_state_another_update_produced() {
+            let (original_contract, _updated_contract, transition, proof) = executed_delta().await;
+            let known = Arc::new(original_contract);
+
+            // a delta that claims not to add the keyword the proven state
+            // carries did not produce that state
+            let mut delta = delta_of(&transition);
+            delta.add_keywords.clear();
+            let other_delta: StateTransition = delta.into();
+
+            let result = Drive::verify_state_transition_was_executed_with_proof(
+                &other_delta,
+                &BlockInfo::default(),
+                &proof,
+                &|_| Ok(Some(Arc::clone(&known))),
+                PlatformVersion::latest(),
+            );
+
+            assert_matches!(
+                result,
+                Err(DriveError::Proof(ProofError::IncorrectProof(message)))
+                    if message.contains("Keywords differ")
+            );
+        }
+
+        #[tokio::test]
+        async fn delta_execution_proof_rejects_overlapping_sections() {
+            let (original_contract, _updated_contract, transition, proof) = executed_delta().await;
+            let known = Arc::new(original_contract);
+
+            let mut delta = delta_of(&transition);
+            let (name, schema) = delta
+                .new_document_schemas
+                .iter()
+                .next()
+                .map(|(name, schema)| (name.clone(), schema.clone()))
+                .expect("the delta adds a document type");
+            delta.updated_document_schemas.insert(name, schema);
+            let malformed: StateTransition = delta.into();
+
+            let result = Drive::verify_state_transition_was_executed_with_proof(
+                &malformed,
+                &BlockInfo::default(),
+                &proof,
+                &|_| Ok(Some(Arc::clone(&known))),
+                PlatformVersion::latest(),
+            );
+
+            assert_matches!(
+                result,
+                Err(DriveError::Proof(ProofError::InvalidTransition(message)))
+                    if message.contains("two conflicting sections")
+            );
         }
     }
 
@@ -719,6 +1008,137 @@ mod tests {
                 && error.document_type_name() == "card"
                 && error.additional_message() == "document type can not change creation restriction mode: changing from Owner Only to No Restrictions"
         ));
+    }
+
+    #[tokio::test]
+    async fn test_delta_data_contract_update_is_processed_and_stored() {
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+        use dpp::platform_value::platform_value;
+        use dpp::state_transition::StateTransition;
+
+        // genesis state installs the keyword search contract the added keyword lands in
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        let contract =
+            get_data_contract_fixture(Some(identity.id()), 0, platform_version.protocol_version)
+                .data_contract_owned();
+
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        let mut updated_contract = contract.clone();
+        updated_contract.increment_version();
+        updated_contract
+            .set_document_schema(
+                "newType",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "position": 0
+                        }
+                    },
+                    "additionalProperties": false
+                }),
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected to add a document type");
+        updated_contract.set_keywords(vec!["alpha".to_string()]);
+        updated_contract.set_description(Some("a described contract".to_string()));
+
+        let data_contract_update_transition =
+            DataContractUpdateTransition::new_from_contract_update(
+                &contract,
+                &updated_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                1,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create a delta-based update transition");
+
+        assert!(matches!(
+            data_contract_update_transition,
+            StateTransition::DataContractUpdate(DataContractUpdateTransition::V1(_))
+        ));
+
+        let serialized_transition = data_contract_update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize the update transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(
+            processing_result.valid_count(),
+            1,
+            "{:?}",
+            processing_result.execution_results()
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let stored = platform
+            .drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), false, None, platform_version)
+            .expect("expected to fetch the contract")
+            .expect("expected the contract to exist");
+        let stored = &stored.contract;
+
+        assert_eq!(stored.version(), 2);
+        assert!(stored.has_document_type_for_name("newType"));
+        assert_eq!(stored.keywords(), &vec!["alpha".to_string()]);
+        assert_eq!(
+            stored.description(),
+            Some(&"a described contract".to_string())
+        );
+        assert_eq!(
+            stored.document_schemas(),
+            updated_contract.document_schemas()
+        );
     }
 
     /// The data contract cache must hand block execution the definition its transaction holds,

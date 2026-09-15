@@ -5,6 +5,7 @@ pub mod v3;
 pub mod v4;
 pub mod v5;
 pub mod v6;
+pub mod v7;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPContractVersions {
@@ -31,6 +32,9 @@ pub struct DataContractMethodVersions {
     pub validate_groups: FeatureVersion,
     pub equal_ignoring_time_fields: FeatureVersion,
     pub registration_cost: FeatureVersion,
+    /// Merges a delta-based (V1) update transition onto the stored contract.
+    /// `None` before protocol version 15, where no delta transition is admitted.
+    pub apply_update: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

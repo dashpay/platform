@@ -92,8 +92,14 @@ impl DataContractUpdateTransitionWasm {
             PlatformVersion::latest()
         };
 
+        let data_contract = self.0.data_contract().ok_or_else(|| {
+            JsValue::from_str(
+                "a delta-based data contract update transition carries no full contract",
+            )
+        })?;
+
         DataContractWasm::try_from_serialization_format_with_platform_version(
-            self.0.data_contract().clone(),
+            data_contract.clone(),
             false,
             platform_version,
         )
@@ -109,6 +115,12 @@ impl DataContractUpdateTransitionWasm {
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
         self.0.owner_id().into()
+    }
+
+    /// The contract the update targets: embedded in a V0 transition, named by a V1 delta.
+    #[wasm_bindgen(js_name=getDataContractId)]
+    pub fn get_data_contract_id(&self) -> IdentifierWrapper {
+        self.0.data_contract_id().into()
     }
 
     #[wasm_bindgen(js_name=getIdentityContractNonce)]
