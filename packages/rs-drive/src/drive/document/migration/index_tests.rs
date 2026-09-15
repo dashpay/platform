@@ -205,9 +205,8 @@ fn read_and_prove_index_matrix(countable: bool) {
         }
         let mut path = type_path.clone();
         path.push(b"recipient".to_vec());
-        let mut ignored = DocumentHistoryMigrationStats::default();
         let values = drive
-            .history_migration_entries(&path, &drive.grove.start_transaction(), new, &mut ignored)
+            .history_migration_entries(&path, &drive.grove.start_transaction(), new)
             .unwrap();
         assert_eq!(values.len(), 1);
         assert!(
