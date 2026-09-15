@@ -29,9 +29,11 @@ package org.dashfoundation.dashsdk.security
  *   StrongBox-preferring, non-exportable RSA wrapping pair, but with **no**
  *   `setUserAuthenticationRequired` gate, so decrypts never throw
  *   `UserNotAuthenticatedException` and never need a [BiometricGate].
- *   Keys remain bound to this device's Keystore (`setUnlockedDeviceRequired`
- *   still applies) — the host app is responsible for gating *access* to
- *   signing flows (PIN, biometrics, session policy) itself.
+ *   Keys remain bound to this device's Keystore — the host app is
+ *   responsible for gating *access* to signing flows (PIN, biometrics,
+ *   session policy) itself. `setUnlockedDeviceRequired` is applied where
+ *   the device has a lock screen, but it is incidental hardening, NOT part
+ *   of this policy's contract: see "Lock-gate degradation" below.
  *
  * ## Storage backing (not guaranteed hardware)
  *
@@ -55,6 +57,31 @@ package org.dashfoundation.dashsdk.security
  * `PlatformWalletManager.repairIdentityKey`, which re-encrypts under the
  * current policy's alias). Mnemonics ([KeystoreManager.MASTER_ALIAS]) are
  * unaffected — this policy governs identity keys only.
+ *
+ * ## Lock-gate degradation (MO-972)
+ *
+ * Both identity aliases, like the master alias, carry
+ * `setUnlockedDeviceRequired` on lock-screen devices. Some OEM builds deny
+ * that gate while `KeyguardManager` reports the device unlocked (HONOR
+ * PTP-N49 / MagicOS; Google confirmed the same on Fairphone 5/6, Issue
+ * Tracker 506989112). Once a device has demonstrated that defect — recorded
+ * durably AND witnessed by a device-local Keystore key, see
+ * [WalletStorage.isMasterKeyLockBindingDefectObserved] — [DEVICE_BOUND]
+ * writes move to [KeystoreManager.KEYS_ALIAS_DEVICE_BOUND_UNBOUND], which
+ * carries no lock gate. Nothing this policy promises is lost (hardware
+ * backing where available, non-exportable, never auth-gated all survive),
+ * but the incidental "device unlocked right now" hardening is gone on that
+ * device, **device-wide**: the record is keyed to the device, not to an
+ * alias, because both aliases fail through the same gate.
+ *
+ * This enum cannot express that state — adding a value would break every
+ * exhaustive `when` in host code for a distinction the policy contract
+ * does not draw — so `effectiveKeySecurityPolicy()` keeps reporting
+ * [DEVICE_BOUND]. Hosts that log or audit the protection level must ALSO
+ * consult [WalletStorage.isMasterKeyLockBindingDefectObserved]; that
+ * boolean is the honest surface for the degradation. [AUTH_GATED] is never
+ * degraded this way — its authentication gate is the real control and it
+ * keeps failing honestly on a defective device.
  *
  * ## Lockless-device degradation (dashpay/platform#4060)
  *

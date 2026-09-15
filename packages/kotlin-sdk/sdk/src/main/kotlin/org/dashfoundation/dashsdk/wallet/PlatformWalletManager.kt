@@ -208,6 +208,16 @@ class PlatformWalletManager(
         // once, loudly, at manager construction. Best-effort — the probe
         // touches KeyguardManager/AndroidKeyStore, which may be absent in
         // JVM test fixtures.
+        //
+        // The OTHER degradation — MO-972's lock-gate drop, where DEVICE_BOUND
+        // keys lose setUnlockedDeviceRequired on a device with the
+        // false-locked defect on record — is deliberately NOT reported here:
+        // effectiveKeySecurityPolicy() cannot express it (see KeySecurityPolicy,
+        // "Lock-gate degradation") and the record is a suspending DataStore
+        // read with no scope available yet. It is logged loudly at the moment
+        // it is recorded (WalletStorage.healFalseLockedMnemonicStore /
+        // recordLockBindingDefectFromDeniedRead), and hosts can read it any
+        // time via WalletStorage.isMasterKeyLockBindingDefectObserved().
         runCatching {
             val requested = walletStorage.keySecurityPolicy
             val effective = walletStorage.effectiveKeySecurityPolicy()
@@ -767,10 +777,14 @@ class PlatformWalletManager(
      *   encrypt, and thrown BEFORE the native create, so nothing was
      *   created and nothing needs rolling back — or if the Keystore denies
      *   the mnemonic store as device-locked after the false-locked bounded
-     *   retry in [WalletStorage.storeMnemonic] is exhausted (that path runs
-     *   the full rollback below first). A locked device whose master key is
-     *   NOT lock-bound (generated before a PIN was enrolled) proceeds
-     *   normally.
+     *   retry in [WalletStorage.storeMnemonic] is exhausted AND its
+     *   last-rung degradation (re-encrypting under the never-lock-bound
+     *   master alias) also failed (that path runs the full rollback below
+     *   first). A locked device whose master key is NOT lock-bound
+     *   (generated before a PIN was enrolled) proceeds normally, as does a
+     *   device whose false-locked Keystore defect is already on record
+     *   (mnemonic writes target the never-lock-bound alias, which no lock
+     *   state can deny).
      */
     suspend fun createWallet(
         mnemonic: String,
