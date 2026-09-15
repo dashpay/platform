@@ -72,7 +72,18 @@ impl Display for BoundedEncodeError {
     }
 }
 
-impl core::error::Error for BoundedEncodeError {}
+impl core::error::Error for BoundedEncodeError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            BoundedEncodeError::Bounds(error) => Some(error),
+            // bincode's errors implement the error trait only with `std`.
+            #[cfg(feature = "std")]
+            BoundedEncodeError::Encode(error) => Some(error),
+            #[cfg(not(feature = "std"))]
+            BoundedEncodeError::Encode(_) => None,
+        }
+    }
+}
 
 /// Leaf reader that charges every length to a [`CodecBudget`]. Byte leaves
 /// never allocate more than the unread input; containers start empty.
