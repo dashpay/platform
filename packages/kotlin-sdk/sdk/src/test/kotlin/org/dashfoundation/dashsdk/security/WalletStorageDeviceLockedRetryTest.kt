@@ -439,24 +439,21 @@ class WalletStorageDeviceLockedRetryTest {
     }
 
     @Test
-    fun shouldScrubMnemonicWhenTheWitnessProbeItselfThrows() {
-        runBlocking {
-            storage.storeMnemonic(walletId, mnemonic)
-            fake.failMasterEncrypts = Int.MAX_VALUE
-            storage.storeMnemonic(siblingWalletId, mnemonic)
-            fake.failMasterEncrypts = 0
-        }
-        fake.lastMasterDecryptRef = null
+    fun shouldReturnTheMnemonicWhenTheWitnessProbeItselfThrows() = runBlocking {
+        storage.storeMnemonic(walletId, mnemonic)
+        fake.failMasterEncrypts = Int.MAX_VALUE
+        storage.storeMnemonic(siblingWalletId, mnemonic)
+        fake.failMasterEncrypts = 0
+        fake.unboundEncryptCalls = 0
 
-        // The witness probe is cheap and non-suspending, but it still talks to
-        // a Keystore provider that can fail. It is evaluated AFTER the decrypt,
-        // so a fault there exits without returning the plaintext.
+        // The decrypt has already SUCCEEDED when the witness probe runs; the
+        // probe only decides whether to re-wrap. A Keystore provider fault in
+        // that decision must not turn a successful read into "no mnemonic" —
+        // the caller gets its key and the re-wrap is simply skipped.
         fake.throwOnWitnessProbe = true
 
-        assertThrows(IllegalStateException::class.java) {
-            runBlocking { storage.retrieveMnemonicUtf8(walletId) }
-        }
-        assertBufferScrubbed(fake.lastMasterDecryptRef)
+        assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
+        assertEquals("re-wrap must be skipped, not attempted", 0, fake.unboundEncryptCalls)
     }
 
     // ── re-wrap must never outrun a concurrent write ─────────────────────
@@ -680,7 +677,10 @@ private class FalseLockedFakeKeystoreManager : KeystoreManager() {
     var throwOnWitnessProbe = false
 
     override fun hasUnboundMasterKey(): Boolean {
-        if (throwOnWitnessProbe) error("simulated Keystore provider fault")
+        // The realistic type: androidKeyStore().getKey throws a KeyStoreException,
+        // which IS a GeneralSecurityException — the shape that can be mistaken
+        // for a wrong-key failure downstream.
+        if (throwOnWitnessProbe) throw java.security.KeyStoreException("simulated Keystore provider fault")
         return unboundKeyProvisioned
     }
 

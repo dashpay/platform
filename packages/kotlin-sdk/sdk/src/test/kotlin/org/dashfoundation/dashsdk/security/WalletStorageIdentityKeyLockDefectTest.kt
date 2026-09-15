@@ -229,29 +229,25 @@ class WalletStorageIdentityKeyLockDefectTest {
     }
 
     @Test
-    fun shouldScrubIdentityKeyWhenTheDefectLookupItselfThrows() {
-        runBlocking {
-            storage.storePrivateKey(pubkeyHex, privateKey)
-            recordDefectViaMnemonicWrite()
-        }
-        fake.lastIdentityDecryptRef = null
+    fun shouldReturnTheIdentityKeyWhenTheDefectLookupItselfThrows() = runBlocking {
+        storage.storePrivateKey(pubkeyHex, privateKey)
+        recordDefectViaMnemonicWrite()
+        fake.unboundEncryptCalls = 0
 
-        // isMasterKeyLockBindingDefectObserved() is consulted AFTER the
-        // decrypt and reaches both DataStore and the Keystore. A fault (or a
-        // cancellation) there exits before the plaintext reaches the caller,
-        // and migrateToPolicyAlias's own scrub cannot help because it is
-        // never entered.
+        // The decrypt has already SUCCEEDED when the defect lookup runs; it
+        // only decides whether to re-wrap. Its Keystore probe throws a
+        // GeneralSecurityException, and the enclosing recovery arm catches
+        // exactly that type as a WRONG-KEY signal — so, unguarded, an intact
+        // key that decrypted perfectly was routed into recoverEmptyIvRsaBlob
+        // and (with no legacy key present) came back null: "key unavailable"
+        // for a key that was never unavailable. The decision must fail closed
+        // to "skip the re-wrap", never to "lose the key".
         fake.throwOnWitnessProbe = true
 
-        assertThrows(IllegalStateException::class.java) {
-            runBlocking { storage.retrievePrivateKey(pubkeyHex) }
-        }
-        val buf = fake.lastIdentityDecryptRef
-        assertNotNull("expected the identity-key plaintext to have been captured", buf)
-        assertTrue(
-            "decrypted identity key must be zeroed when it cannot be returned",
-            buf!!.all { it == 0.toByte() },
-        )
+        val key = storage.retrievePrivateKey(pubkeyHex)
+        assertNotNull("an intact, decrypted key must not be reported unavailable", key)
+        assertArrayEquals(privateKey, key)
+        assertEquals("re-wrap must be skipped, not attempted", 0, fake.unboundEncryptCalls)
     }
 
     @Test
@@ -323,7 +319,9 @@ private class DeviceBoundLockDefectFakeKeystore :
     var throwOnWitnessProbe = false
 
     override fun hasUnboundMasterKey(): Boolean {
-        if (throwOnWitnessProbe) error("simulated Keystore provider fault")
+        // KeyStoreException IS a GeneralSecurityException — the exact shape that
+        // retrievePrivateKey's wrong-key recovery arm would otherwise swallow.
+        if (throwOnWitnessProbe) throw java.security.KeyStoreException("simulated Keystore provider fault")
         return unboundMasterKeyProvisioned
     }
 

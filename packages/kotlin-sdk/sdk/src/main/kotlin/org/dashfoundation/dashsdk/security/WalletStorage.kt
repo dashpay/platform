@@ -631,25 +631,44 @@ class WalletStorage(
         // the witness first makes that impossible. hasUnboundMasterKey is a
         // non-suspending Keystore presence check, so the hot path still pays
         // no second DataStore read.
-        // Everything from here to the return is inside the ownership guard,
-        // the CONDITION included. The caller owns [plain] and scrubs it, but
-        // only ever receives it by RETURN, so any exit that is not that return
-        // must zero it first: rewrapMnemonicUnbound deliberately rethrows
-        // CancellationException (never swallow structured concurrency), and
-        // hasUnboundMasterKey — cheap and non-suspending though it is — still
-        // talks to a Keystore provider that can fail. Evaluating the condition
-        // outside the guard left exactly that hole. Ordinary re-wrap failures
-        // never reach the catch; they stay best-effort inside the helper.
-        try {
-            if (alias == KeystoreManager.MASTER_ALIAS &&
+        // The decrypt has SUCCEEDED; everything from here to the return is
+        // advisory. Two rules govern it, and they pull in opposite directions
+        // for the two kinds of failure:
+        //  - The caller owns [plain] but only ever receives it by RETURN, so a
+        //    CancellationException anywhere below must zero the buffer before
+        //    it propagates (never swallow structured concurrency).
+        //  - An ORDINARY failure in the re-wrap decision must not fail a read
+        //    that already has the plaintext in hand. hasUnboundMasterKey is
+        //    cheap and non-suspending, but it still talks to a Keystore
+        //    provider that can throw; treating that as a read failure would
+        //    turn "could not decide whether to re-wrap" into "no mnemonic".
+        //    Skip the re-wrap and hand the caller its key — the next read
+        //    decides again. rewrapMnemonicUnbound already applies the same
+        //    best-effort rule to its own body.
+        val shouldRewrap = try {
+            alias == KeystoreManager.MASTER_ALIAS &&
                 prefs[MASTER_LOCK_DEFECT_KEY] == true &&
                 keystore.hasUnboundMasterKey()
-            ) {
-                rewrapMnemonicUnbound(walletId, plain, encoded)
-            }
-        } catch (t: Throwable) {
+        } catch (cancellation: CancellationException) {
             plain.fill(0)
-            throw t
+            throw cancellation
+        } catch (e: Exception) {
+            Log.w(
+                TAG,
+                "retrieveMnemonicUtf8: could not evaluate the re-wrap decision " +
+                    "(defect-record witness probe failed); returning the decrypted " +
+                    "mnemonic without re-wrapping — the next read will retry",
+                e,
+            )
+            false
+        }
+        if (shouldRewrap) {
+            try {
+                rewrapMnemonicUnbound(walletId, plain, encoded)
+            } catch (t: Throwable) {
+                plain.fill(0)
+                throw t
+            }
         }
         return plain
     }
@@ -1138,23 +1157,49 @@ class WalletStorage(
                 // same best-effort, conditional rewrite the legacy migration
                 // uses, so a failure simply retries on the next read.
                 //
-                // The CONDITION is inside the ownership guard, not just the
-                // migration: isMasterKeyLockBindingDefectObserved suspends on
-                // store.data.first(), so a cancellation or DataStore fault
-                // there exits before [plain] reaches the caller — and
-                // migrateToPolicyAlias's own scrub cannot help, because it was
-                // never entered. Without this, such an exit would also be
-                // caught by the GeneralSecurityException arm below and routed
-                // into the recovery ladder with the buffer still live.
-                try {
-                    if (recordedAlias == KeystoreManager.KEYS_ALIAS_DEVICE_BOUND &&
+                // The decrypt has SUCCEEDED; the re-wrap decision below is
+                // advisory, and it sits INSIDE an enclosing try whose
+                // GeneralSecurityException arm is the wrong-key recovery
+                // ladder. That arm exists to answer "did this alias write this
+                // blob?" — a question already settled, in the affirmative, by
+                // the decrypt that just returned [plain]. So a failure in the
+                // decision must never reach it: isMasterKeyLockBindingDefectObserved
+                // suspends on store.data.first() and probes the Keystore, and a
+                // provider fault there is a GeneralSecurityException. Letting it
+                // fall through routed an INTACT, successfully decrypted key into
+                // recoverEmptyIvRsaBlob, which returns null when the legacy key
+                // is absent — reported to the signer as "key unavailable".
+                //
+                //  - CancellationException: the caller only receives [plain] by
+                //    RETURN, so scrub before propagating (never swallow it).
+                //  - Any other failure of the decision: log, skip the re-wrap,
+                //    return the key. The next read decides again.
+                val shouldRewrap = try {
+                    recordedAlias == KeystoreManager.KEYS_ALIAS_DEVICE_BOUND &&
                         isMasterKeyLockBindingDefectObserved()
-                    ) {
-                        migrateToPolicyAlias(pubkeyHex, plain, encoded)
-                    }
-                } catch (t: Throwable) {
+                } catch (cancellation: CancellationException) {
                     plain.fill(0)
-                    throw t
+                    throw cancellation
+                } catch (e: Exception) {
+                    Log.w(
+                        TAG,
+                        "retrievePrivateKey: could not evaluate the re-wrap decision " +
+                            "(defect-record lookup failed); returning the decrypted " +
+                            "identity key without re-wrapping — the next read will retry",
+                        e,
+                    )
+                    false
+                }
+                if (shouldRewrap) {
+                    // migrateToPolicyAlias scrubs on cancellation itself and keeps
+                    // ordinary rewrite failures best-effort; this outer scrub is
+                    // belt-and-braces for the ownership boundary.
+                    try {
+                        migrateToPolicyAlias(pubkeyHex, plain, encoded)
+                    } catch (t: Throwable) {
+                        plain.fill(0)
+                        throw t
+                    }
                 }
                 plain
             } catch (e: KeystoreDeviceLockedException) {
