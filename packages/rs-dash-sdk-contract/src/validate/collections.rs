@@ -94,7 +94,14 @@ fn validate_collection(
         }
     }
 
-    let fields = validate_fields(&collection.name, "", &collection.fields, all, diagnostics);
+    let fields = validate_fields(
+        &collection.name,
+        "",
+        &collection.fields,
+        &collection.fields,
+        all,
+        diagnostics,
+    );
 
     let mut token_costs = collection.token_costs.clone();
     token_costs.sort_by(|a, b| a.action.cmp(&b.action));
@@ -114,36 +121,60 @@ fn validate_collection(
 
     // Collection-level average sugar: `average = p` is `count` plus `sum = p`;
     // `range_average` is `range_count` plus `range_sum`. The same conflict
-    // rules the native parser applies to `documentsAverageable`.
-    let mut count = collection.count;
-    let mut range_count = collection.range_count;
+    // rules the native parser applies to `documentsAverageable`: an omitted
+    // option is promoted silently, an explicit `false` next to the sugar is a
+    // contradiction the author must resolve.
+    let mut count = collection.count.unwrap_or(false);
+    let mut range_count = collection.range_count.unwrap_or(false);
     let mut sum = collection.sum.clone();
-    let mut range_sum = collection.range_sum;
+    let mut range_sum = collection.range_sum.unwrap_or(false);
     if let Some(average) = &collection.average {
         if let Some(existing) = &sum {
             if existing != average {
-                diagnostics.push(Diagnostic::new(
-                    path.clone(),
-                    DiagnosticKind::ConflictingOption {
-                        options: alloc::vec!["average".to_string(), "sum".to_string()],
-                        reason: "both name the summed property, so they must agree".to_string(),
-                    },
+                diagnostics.push(conflicting_option(
+                    &path,
+                    "average",
+                    "sum",
+                    "both name the summed property, so they must agree",
                 ));
             }
+        }
+        if collection.count == Some(false) {
+            diagnostics.push(conflicting_option(
+                &path,
+                "average",
+                "count",
+                "average implies count; remove the explicit `count = false`",
+            ));
         }
         count = true;
         sum = Some(average.clone());
         if collection.range_average {
+            if collection.range_count == Some(false) {
+                diagnostics.push(conflicting_option(
+                    &path,
+                    "range_average",
+                    "range_count",
+                    "range_average implies range_count; remove the explicit `range_count = false`",
+                ));
+            }
+            if collection.range_sum == Some(false) {
+                diagnostics.push(conflicting_option(
+                    &path,
+                    "range_average",
+                    "range_sum",
+                    "range_average implies range_sum; remove the explicit `range_sum = false`",
+                ));
+            }
             range_count = true;
             range_sum = true;
         }
     } else if collection.range_average {
-        diagnostics.push(Diagnostic::new(
-            path.clone(),
-            DiagnosticKind::ConflictingOption {
-                options: alloc::vec!["range_average".to_string(), "average".to_string()],
-                reason: "range_average needs average to name the property".to_string(),
-            },
+        diagnostics.push(conflicting_option(
+            &path,
+            "range_average",
+            "average",
+            "range_average needs average to name the property",
         ));
     }
     if let Some(summed) = &sum {
@@ -196,6 +227,21 @@ fn validate_collection(
     }
 }
 
+fn conflicting_option(
+    path: &DeclarationPath,
+    first: &str,
+    second: &str,
+    reason: &str,
+) -> Diagnostic {
+    Diagnostic::new(
+        path.clone(),
+        DiagnosticKind::ConflictingOption {
+            options: alloc::vec![first.to_string(), second.to_string()],
+            reason: reason.to_string(),
+        },
+    )
+}
+
 fn join_path(prefix: &str, name: &str) -> alloc::string::String {
     if prefix.is_empty() {
         name.to_string()
@@ -208,10 +254,14 @@ fn join_path(prefix: &str, name: &str) -> alloc::string::String {
 }
 
 /// Validates one nesting level of fields and returns them sorted by position.
+/// `root` is the collection's top-level fields: reference paths resolve from
+/// the document root, the way native registration resolves them through the
+/// flattened properties, whatever the nesting level of the referring field.
 fn validate_fields(
     collection: &CollectionName,
     prefix: &str,
     fields: &[FieldSpec],
+    root: &[FieldSpec],
     all: &[&CollectionSpec],
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Vec<FieldSpec> {
@@ -239,7 +289,7 @@ fn validate_fields(
         }
         positions.push(field.position);
 
-        let ty = validate_field_type(collection, &dotted, fields, &field.ty, all, diagnostics);
+        let ty = validate_field_type(collection, &dotted, root, &field.ty, all, diagnostics);
         let mut validated = field.clone();
         validated.ty = ty;
         sorted.push(validated);
@@ -272,7 +322,7 @@ fn validate_fields(
 fn validate_field_type(
     collection: &CollectionName,
     dotted: &str,
-    siblings: &[FieldSpec],
+    root: &[FieldSpec],
     ty: &FieldType,
     all: &[&CollectionSpec],
     diagnostics: &mut Vec<Diagnostic>,
@@ -290,14 +340,29 @@ fn validate_field_type(
             diagnostics.push(Diagnostic::new(path, DiagnosticKind::UnboundedField));
             ty.clone()
         }
-        FieldType::Reference(target) => {
-            validate_reference(&path, target, siblings, all, diagnostics);
+        FieldType::String {
+            min_chars: Some(min),
+            max_chars: Some(max),
+        }
+        | FieldType::Bytes {
+            min_len: Some(min),
+            max_len: Some(max),
+        } if min > max => {
+            diagnostics.push(Diagnostic::new(
+                path,
+                DiagnosticKind::LengthBoundsInverted {
+                    min: *min,
+                    max: *max,
+                },
+            ));
             ty.clone()
         }
+        FieldType::Reference(target) => validate_reference(&path, target, root, all, diagnostics),
         FieldType::Object(nested) => FieldType::Object(validate_fields(
             collection,
             dotted,
             nested,
+            root,
             all,
             diagnostics,
         )),
@@ -344,15 +409,19 @@ pub(super) fn check_integer_bounds(
     }
 }
 
+/// Validates a reference target against the declaring collection's root
+/// fields and returns the type with its agreement in canonical order.
 fn validate_reference(
     path: &DeclarationPath,
     target: &ReferenceTarget,
-    siblings: &[FieldSpec],
+    root: &[FieldSpec],
     all: &[&CollectionSpec],
     diagnostics: &mut Vec<Diagnostic>,
-) {
+) -> FieldType {
     match target {
-        ReferenceTarget::Identity | ReferenceTarget::Contract | ReferenceTarget::Token => {}
+        ReferenceTarget::Identity | ReferenceTarget::Contract | ReferenceTarget::Token => {
+            FieldType::Reference(target.clone())
+        }
         ReferenceTarget::PermanentDocument {
             contract,
             document_type,
@@ -385,8 +454,9 @@ fn validate_reference(
                     }
                 }
             }
+            let mut seen: Vec<&PropertyPath> = Vec::new();
             for (referring_property, _) in agreement {
-                if !has_property_path(siblings, referring_property) {
+                if !has_property_path(root, referring_property) {
                     diagnostics.push(Diagnostic::new(
                         path.clone(),
                         DiagnosticKind::ReferencePropertyUnknown {
@@ -394,10 +464,29 @@ fn validate_reference(
                         },
                     ));
                 }
+                if seen.contains(&referring_property) {
+                    diagnostics.push(Diagnostic::new(
+                        path.clone(),
+                        DiagnosticKind::DuplicateAgreementProperty {
+                            property: referring_property.to_string(),
+                        },
+                    ));
+                } else {
+                    seen.push(referring_property);
+                }
             }
+            // The agreement is a map keyed by the referring property; the
+            // manifest stores it sorted so declaration order never leaks in.
+            let mut agreement = agreement.clone();
+            agreement.sort();
+            FieldType::Reference(ReferenceTarget::PermanentDocument {
+                contract: *contract,
+                document_type: document_type.clone(),
+                agreement,
+            })
         }
         ReferenceTarget::IdentityPublicKey { key_id_field } => {
-            if !has_property_path(siblings, key_id_field) {
+            if !has_property_path(root, key_id_field) {
                 diagnostics.push(Diagnostic::new(
                     path.clone(),
                     DiagnosticKind::ReferencePropertyUnknown {
@@ -405,6 +494,7 @@ fn validate_reference(
                     },
                 ));
             }
+            FieldType::Reference(target.clone())
         }
     }
 }
@@ -455,38 +545,62 @@ fn validate_index(
     }
 
     // Index-level average sugar, expanded the way the native parser expands
-    // `averageable` / `rangeAverageable`.
-    let mut count = index.count;
-    let mut range_count = index.range_count;
+    // `averageable` / `rangeAverageable`: an omitted option is promoted, an
+    // explicit non-countable or `false` next to the sugar is a contradiction.
+    let mut count = index.count.unwrap_or_default();
+    let mut range_count = index.range_count.unwrap_or(false);
     let mut sum = index.sum.clone();
-    let mut range_sum = index.range_sum;
+    let mut range_sum = index.range_sum.unwrap_or(false);
     if let Some(average) = &index.average {
         if let Some(existing) = &sum {
             if existing != average {
-                diagnostics.push(Diagnostic::new(
-                    path.clone(),
-                    DiagnosticKind::ConflictingOption {
-                        options: alloc::vec!["average".to_string(), "sum".to_string()],
-                        reason: "both name the summed property, so they must agree".to_string(),
-                    },
+                diagnostics.push(conflicting_option(
+                    &path,
+                    "average",
+                    "sum",
+                    "both name the summed property, so they must agree",
                 ));
             }
         }
-        if !count.is_countable() {
-            count = Countability::Countable;
+        match index.count {
+            None => count = Countability::Countable,
+            Some(explicit) if !explicit.is_countable() => {
+                diagnostics.push(conflicting_option(
+                    &path,
+                    "average",
+                    "count",
+                    "average implies a countable index; remove the explicit not-countable setting",
+                ));
+            }
+            Some(_) => {}
         }
         sum = Some(average.clone());
         if index.range_average {
+            if index.range_count == Some(false) {
+                diagnostics.push(conflicting_option(
+                    &path,
+                    "range_average",
+                    "range_count",
+                    "range_average implies range_count; remove the explicit `range_count = false`",
+                ));
+            }
+            if index.range_sum == Some(false) {
+                diagnostics.push(conflicting_option(
+                    &path,
+                    "range_average",
+                    "range_sum",
+                    "range_average implies range_sum; remove the explicit `range_sum = false`",
+                ));
+            }
             range_count = true;
             range_sum = true;
         }
     } else if index.range_average {
-        diagnostics.push(Diagnostic::new(
-            path.clone(),
-            DiagnosticKind::ConflictingOption {
-                options: alloc::vec!["range_average".to_string(), "average".to_string()],
-                reason: "range_average needs average to name the property".to_string(),
-            },
+        diagnostics.push(conflicting_option(
+            &path,
+            "range_average",
+            "average",
+            "range_average needs average to name the property",
         ));
     }
     if let Some(summed) = &sum {
@@ -502,6 +616,7 @@ fn validate_index(
 
     let mut contested = index.contested.clone();
     if let Some(contested) = contested.as_mut() {
+        let mut seen: Vec<&PropertyPath> = Vec::new();
         for (property, _) in &contested.field_matches {
             if !index.properties.contains(property) {
                 diagnostics.push(Diagnostic::new(
@@ -511,8 +626,18 @@ fn validate_index(
                     },
                 ));
             }
+            if seen.contains(&property) {
+                diagnostics.push(Diagnostic::new(
+                    path.clone(),
+                    DiagnosticKind::DuplicateContestedField {
+                        property: property.to_string(),
+                    },
+                ));
+            } else {
+                seen.push(property);
+            }
         }
-        contested.field_matches.sort_by(|a, b| a.0.cmp(&b.0));
+        contested.field_matches.sort();
     }
 
     if let RankedCount::At(levels) = &index.ranked.count {
@@ -643,7 +768,18 @@ pub(super) fn check_value_type(
         }
         ValueType::Option(inner) => check_value_type(path, inner, diagnostics),
         ValueType::Struct(members) => {
-            for (_, member) in members {
+            let mut seen: Vec<&str> = Vec::new();
+            for (name, member) in members {
+                if seen.contains(&name.as_str()) {
+                    diagnostics.push(Diagnostic::new(
+                        path.clone(),
+                        DiagnosticKind::DuplicateStructMember {
+                            member: name.clone(),
+                        },
+                    ));
+                } else {
+                    seen.push(name);
+                }
                 check_value_type(path, member, diagnostics);
             }
         }

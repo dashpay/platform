@@ -1,7 +1,7 @@
 //! Validator tests: the sketch, one `should_report_*` test per producible
 //! diagnostic, sugar expansion and manifest order independence.
 
-use alloc::string::ToString;
+use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -294,6 +294,69 @@ fn should_report_both_a_duplicate_and_a_conflict_whatever_the_order() {
 }
 
 #[test]
+fn should_treat_a_reordered_restatement_as_equivalent() {
+    let ordered = CollectionSpec::documents(collection("c"))
+        .with_origin(DeclarationOrigin::Attribute)
+        .document_id_field("id")
+        .field(FieldSpec::new(property("a"), 0, FieldType::Bool))
+        .field(FieldSpec::new(
+            property("nested"),
+            1,
+            FieldType::Object(vec![
+                FieldSpec::new(property("x"), 0, FieldType::Bool),
+                FieldSpec::new(property("y"), 1, FieldType::Bool),
+            ]),
+        ))
+        .token_cost(ActionScope::Create, TokenCost::new(0, 5))
+        .token_cost(ActionScope::Delete, TokenCost::new(1, 3))
+        .index(
+            IndexSpec::new(index_name("i"), vec![path("a")])
+                .with_origin(DeclarationOrigin::Attribute)
+                .count()
+                .range_count(true)
+                .ranked_count_at(vec![path("a")])
+                .contested(ContestedSpec::masternode_vote(vec![(
+                    path("a"),
+                    "^x".to_string(),
+                )])),
+        );
+    let reordered = CollectionSpec::documents(collection("c"))
+        .with_origin(DeclarationOrigin::Builder)
+        .document_id_field("id")
+        .field(FieldSpec::new(
+            property("nested"),
+            1,
+            FieldType::Object(vec![
+                FieldSpec::new(property("y"), 1, FieldType::Bool),
+                FieldSpec::new(property("x"), 0, FieldType::Bool),
+            ]),
+        ))
+        .field(FieldSpec::new(property("a"), 0, FieldType::Bool))
+        .token_cost(ActionScope::Delete, TokenCost::new(1, 3))
+        .token_cost(ActionScope::Create, TokenCost::new(0, 5))
+        .index(
+            IndexSpec::new(index_name("i"), vec![path("a")])
+                .with_origin(DeclarationOrigin::Builder)
+                .count()
+                .range_count(true)
+                .ranked_count_at(vec![path("a")])
+                .contested(ContestedSpec::masternode_vote(vec![(
+                    path("a"),
+                    "^x".to_string(),
+                )])),
+        );
+    let merged = expect_manifest(
+        &ContractDeclaration::new()
+            .collection(ordered.clone())
+            .collection(reordered),
+    );
+    assert_eq!(
+        merged,
+        expect_manifest(&ContractDeclaration::new().collection(ordered))
+    );
+}
+
+#[test]
 fn should_let_a_builder_extend_an_attribute_collection_with_indexes() {
     let attribute = minimal("scores").with_origin(DeclarationOrigin::Attribute);
     let builder = minimal("scores")
@@ -515,6 +578,60 @@ fn should_report_unbounded_field_for_strings_bytes_and_lists() {
             "UnboundedField",
             "UnboundedField"
         ]
+    );
+}
+
+#[test]
+fn should_report_length_bounds_inverted() {
+    let spec = CollectionSpec::documents(collection("c"))
+        .document_id_field("id")
+        .field(FieldSpec::new(
+            property("s"),
+            0,
+            FieldType::String {
+                min_chars: Some(9),
+                max_chars: Some(8),
+            },
+        ))
+        .field(FieldSpec::new(
+            property("b"),
+            1,
+            FieldType::Bytes {
+                min_len: Some(2),
+                max_len: Some(1),
+            },
+        ));
+    let diagnostics = expect_diagnostics(&ContractDeclaration::new().collection(spec));
+    assert_eq!(
+        kinds(&diagnostics),
+        ["LengthBoundsInverted", "LengthBoundsInverted"]
+    );
+}
+
+#[test]
+fn should_report_duplicate_struct_member() {
+    let declaration = ContractDeclaration::new().entry(EntrySpec::new(method("f")).returns(
+        ValueType::Struct(vec![
+            ("count".to_string(), ValueType::Bool),
+            ("count".to_string(), ValueType::Bool),
+        ]),
+    ));
+    assert_reports(&declaration, "DuplicateStructMember");
+}
+
+#[test]
+fn should_report_duplicate_contested_field() {
+    let spec = minimal("c").index(
+        IndexSpec::new(index_name("i"), vec![path("a")])
+            .unique(true)
+            .contested(ContestedSpec::masternode_vote(vec![
+                (path("a"), "^x".to_string()),
+                (path("a"), "^y".to_string()),
+            ])),
+    );
+    assert_reports(
+        &ContractDeclaration::new().collection(spec),
+        "DuplicateContestedField",
     );
 }
 
@@ -803,6 +920,110 @@ fn should_report_reference_property_unknown_for_agreements_and_key_ids() {
             "ReferencePropertyUnknown"
         ]
     );
+}
+
+#[test]
+fn should_resolve_nested_reference_paths_from_the_document_root() {
+    let posts = CollectionSpec::documents(collection("posts"))
+        .document_id_field("id")
+        .deletable(false)
+        .field(FieldSpec::new(property("author"), 0, FieldType::identity()));
+    let likes = CollectionSpec::documents(collection("likes"))
+        .document_id_field("id")
+        .field(FieldSpec::new(property("author"), 0, FieldType::identity()))
+        .field(FieldSpec::new(
+            property("nested"),
+            1,
+            FieldType::Object(vec![
+                FieldSpec::new(property("key_id"), 0, FieldType::integer(IntegerWidth::U32)),
+                FieldSpec::new(
+                    property("signer"),
+                    1,
+                    FieldType::Reference(ReferenceTarget::IdentityPublicKey {
+                        key_id_field: path("nested.key_id"),
+                    }),
+                ),
+                FieldSpec::new(
+                    property("post"),
+                    2,
+                    FieldType::Reference(ReferenceTarget::PermanentDocument {
+                        contract: None,
+                        document_type: collection("posts"),
+                        agreement: vec![(path("author"), path("author"))],
+                    }),
+                ),
+            ]),
+        ));
+    expect_manifest(
+        &ContractDeclaration::new()
+            .collection(posts)
+            .collection(likes),
+    );
+}
+
+#[test]
+fn should_report_reference_property_unknown_for_a_sibling_relative_path() {
+    // Native resolves reference paths from the document root, so a nested
+    // field naming its sibling without the object prefix is unknown.
+    let spec = CollectionSpec::documents(collection("c"))
+        .document_id_field("id")
+        .field(FieldSpec::new(
+            property("nested"),
+            0,
+            FieldType::Object(vec![
+                FieldSpec::new(property("key_id"), 0, FieldType::integer(IntegerWidth::U32)),
+                FieldSpec::new(
+                    property("signer"),
+                    1,
+                    FieldType::Reference(ReferenceTarget::IdentityPublicKey {
+                        key_id_field: path("key_id"),
+                    }),
+                ),
+            ]),
+        ));
+    let diagnostics = expect_diagnostics(&ContractDeclaration::new().collection(spec));
+    assert_eq!(kinds(&diagnostics), ["ReferencePropertyUnknown"]);
+}
+
+#[test]
+fn should_canonicalize_agreement_order_and_report_duplicate_agreement_property() {
+    let posts = CollectionSpec::documents(collection("posts"))
+        .document_id_field("id")
+        .deletable(false)
+        .field(FieldSpec::new(property("a"), 0, FieldType::identity()))
+        .field(FieldSpec::new(property("b"), 1, FieldType::identity()));
+    let likes = |agreement: Vec<(PropertyPath, PropertyPath)>| {
+        CollectionSpec::documents(collection("likes"))
+            .document_id_field("id")
+            .field(FieldSpec::new(property("a"), 0, FieldType::identity()))
+            .field(FieldSpec::new(property("b"), 1, FieldType::identity()))
+            .field(FieldSpec::new(
+                property("post"),
+                2,
+                FieldType::Reference(ReferenceTarget::PermanentDocument {
+                    contract: None,
+                    document_type: collection("posts"),
+                    agreement,
+                }),
+            ))
+    };
+    let forward = expect_manifest(
+        &ContractDeclaration::new()
+            .collection(posts.clone())
+            .collection(likes(vec![(path("a"), path("a")), (path("b"), path("b"))])),
+    );
+    let backward = expect_manifest(
+        &ContractDeclaration::new()
+            .collection(posts.clone())
+            .collection(likes(vec![(path("b"), path("b")), (path("a"), path("a"))])),
+    );
+    assert_eq!(forward, backward);
+    let diagnostics = expect_diagnostics(
+        &ContractDeclaration::new()
+            .collection(posts)
+            .collection(likes(vec![(path("a"), path("a")), (path("a"), path("b"))])),
+    );
+    assert_eq!(kinds(&diagnostics), ["DuplicateAgreementProperty"]);
 }
 
 #[test]
@@ -1289,6 +1510,80 @@ fn should_report_conflicting_option_for_average_against_a_different_sum() {
         kinds(&diagnostics),
         ["ConflictingOption", "ConflictingOption"]
     );
+}
+
+#[test]
+fn should_report_conflicting_option_for_explicit_false_next_to_average_sugar() {
+    let spec = CollectionSpec::documents(collection("c"))
+        .document_id_field("id")
+        .field(FieldSpec::new(property("class"), 0, FieldType::string(8)))
+        .field(FieldSpec::new(
+            property("points"),
+            1,
+            FieldType::integer(IntegerWidth::I64),
+        ))
+        .count(false)
+        .range_count(false)
+        .range_sum(false)
+        .average(property("points"))
+        .range_average(true)
+        .index(
+            IndexSpec::new(index_name("i"), vec![path("class")])
+                .countability(Countability::NotCountable)
+                .range_count(false)
+                .range_sum(false)
+                .average(property("points"))
+                .range_average(true),
+        );
+    let diagnostics = expect_diagnostics(&ContractDeclaration::new().collection(spec));
+    assert_eq!(
+        kinds(&diagnostics),
+        [
+            "ConflictingOption",
+            "ConflictingOption",
+            "ConflictingOption",
+            "ConflictingOption",
+            "ConflictingOption",
+            "ConflictingOption"
+        ]
+    );
+    let pairs: Vec<Vec<String>> = diagnostics
+        .iter()
+        .map(|d| match &d.kind {
+            DiagnosticKind::ConflictingOption { options, .. } => options.clone(),
+            _ => panic!(),
+        })
+        .collect();
+    assert_eq!(pairs[0], ["average", "count"]);
+    assert_eq!(pairs[1], ["range_average", "range_count"]);
+    assert_eq!(pairs[2], ["range_average", "range_sum"]);
+    assert_eq!(pairs[3], ["average", "count"]);
+}
+
+#[test]
+fn should_promote_omitted_options_but_keep_explicit_true_next_to_average_sugar() {
+    let spec = CollectionSpec::documents(collection("c"))
+        .document_id_field("id")
+        .field(FieldSpec::new(property("class"), 0, FieldType::string(8)))
+        .field(FieldSpec::new(
+            property("points"),
+            1,
+            FieldType::integer(IntegerWidth::I64),
+        ))
+        .count(true)
+        .average(property("points"))
+        .index(
+            IndexSpec::new(index_name("i"), vec![path("class")])
+                .range_count(true)
+                .average(property("points"))
+                .range_average(true),
+        );
+    let manifest = expect_manifest(&ContractDeclaration::new().collection(spec));
+    let c = manifest.collection("c").unwrap();
+    assert!(c.count && !c.range_count && !c.range_sum);
+    let i = c.index("i").unwrap();
+    assert_eq!(i.count, Countability::Countable);
+    assert!(i.range_count && i.range_sum);
 }
 
 #[test]
