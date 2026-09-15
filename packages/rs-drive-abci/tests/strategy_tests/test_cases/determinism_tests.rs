@@ -85,11 +85,14 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 1_000,
-            testing_configs: PlatformTestConfig {
-                // The reopened run needs the state on disk.
-                store_platform_state: true,
-                ..PlatformTestConfig::default_minimal_verifications()
-            },
+            // The full verification profile: blocks are signed and their
+            // commit signatures verified, and instant lock signatures are
+            // verified rather than skipped. Those are BLS paths, which is
+            // exactly where an architecture could disagree, so the replay
+            // keeps them on. It also persists the state the reopened run
+            // needs. Only result-proof verification stays off, on the
+            // strategy below.
+            testing_configs: PlatformTestConfig::default(),
             ..Default::default()
         }
     }
