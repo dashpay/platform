@@ -19,13 +19,14 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::get_overflow_error;
 use crate::fees::op::LowLevelDriveOperation::{
-    CalculatedCostOperation, FunctionOperation, GroveOperation, PreCalculatedFeeResult,
+    CalculatedCostOperation, CalculatedCostOperationWithRefundOwners, FunctionOperation,
+    GroveOperation, PreCalculatedFeeResult,
 };
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use dpp::fee::fee_result::refunds::FeeRefunds;
+use dpp::fee::fee_result::refunds::{FeeRefunds, RefundOwnersByIdentifier};
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use platform_version::version::fee::FeeVersion;
@@ -211,6 +212,22 @@ pub enum LowLevelDriveOperation {
     CalculatedCostOperation(OperationCost),
     /// Pre Calculated Fee Result
     PreCalculatedFeeResult(FeeResult),
+    /// A calculated cost whose sectioned storage removal carries the typed
+    /// owner recorded for every carrier key when the bytes were split.
+    ///
+    /// Pushed by the batch apply generations that split removed bytes with
+    /// typed storage flags. Only a fee decoder that knows how to route typed
+    /// owners may consume it: `operation_cost` rejects it, so a decoder that
+    /// predates typed owners fails closed instead of pricing a removal whose
+    /// owner it cannot name.
+    CalculatedCostOperationWithRefundOwners {
+        /// The measured cost, whose removed bytes are sectioned under the
+        /// owners' carrier keys
+        cost: OperationCost,
+        /// The recorded owner of every carrier key in the sectioned removal,
+        /// the system key excepted
+        refund_owners: RefundOwnersByIdentifier,
+    },
 }
 
 /// Shared rejection message for the three `Element` wrappers
@@ -325,16 +342,25 @@ impl LowLevelDriveOperation {
             FunctionOperation(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "function operations should not be requested by operation costs",
             ))),
+            CalculatedCostOperationWithRefundOwners { .. } => {
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "a cost operation carrying typed refund owners reached a fee decoder that \
+                     cannot route typed owners",
+                )))
+            }
         }
     }
 
     /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
     pub fn combine_cost_operations(operations: &[LowLevelDriveOperation]) -> OperationCost {
         let mut cost = OperationCost::default();
-        operations.iter().for_each(|op| {
-            if let CalculatedCostOperation(operation_cost) = op {
-                cost += operation_cost.clone()
-            }
+        operations.iter().for_each(|op| match op {
+            CalculatedCostOperation(operation_cost)
+            | CalculatedCostOperationWithRefundOwners {
+                cost: operation_cost,
+                ..
+            } => cost += operation_cost.clone(),
+            _ => {}
         });
         cost
     }
@@ -1643,8 +1669,13 @@ impl DriveCost for OperationCost {
 #[allow(clippy::identity_op)]
 mod tests {
     use super::*;
-    use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
+    use dpp::fee::refund_owner::RefundOwner;
+    use dpp::identifier::Identifier;
+    use grovedb_costs::storage_cost::removal::{
+        StorageRemovalPerEpochByIdentifier, StorageRemovedBytes,
+    };
     use grovedb_costs::storage_cost::StorageCost;
+    use intmap::IntMap;
     use platform_version::version::fee::storage::FeeStorageVersion;
     use platform_version::version::fee::FeeVersion;
 
@@ -2016,6 +2047,88 @@ mod tests {
             "unexpected error: {}",
             err_msg
         );
+    }
+
+    #[test]
+    fn should_reject_a_typed_cost_operation_from_operation_cost() {
+        let op = CalculatedCostOperationWithRefundOwners {
+            cost: OperationCost::default(),
+            refund_owners: Default::default(),
+        };
+        let result = op.operation_cost();
+        let err_msg = format!("{:?}", result.expect_err("typed costs are not plain costs"));
+        assert!(
+            err_msg.contains("cannot route typed owners"),
+            "unexpected error: {}",
+            err_msg
+        );
+    }
+
+    /// The shipped decoder reaches `operation_cost` through its catch-all
+    /// arm, so a typed cost operation makes it fail closed instead of pricing
+    /// a removal whose owner it cannot route.
+    #[test]
+    fn should_fail_closed_when_consume_to_fees_v0_meets_a_typed_cost_operation() {
+        let owner = RefundOwner::Identity(Identifier::from([5u8; 32]));
+        let mut removal = StorageRemovalPerEpochByIdentifier::new();
+        removal.insert(owner.removal_key(), IntMap::from_iter([(0u16, 100u32)]));
+        let op = CalculatedCostOperationWithRefundOwners {
+            cost: OperationCost {
+                seek_count: 1,
+                storage_cost: StorageCost {
+                    added_bytes: 0,
+                    replaced_bytes: 0,
+                    removed_bytes: SectionedStorageRemoval(removal),
+                },
+                storage_loaded_bytes: 0,
+                hash_node_calls: 0,
+                sinsemilla_hash_calls: 0,
+            },
+            refund_owners: BTreeMap::from([(owner.removal_key(), owner)]),
+        };
+
+        let result = LowLevelDriveOperation::consume_to_fees_v0(
+            vec![op],
+            &Epoch::new(1).expect("epoch"),
+            20,
+            fee_version(),
+            None,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+        ));
+    }
+
+    #[test]
+    fn should_sum_typed_cost_operations_into_combined_costs() {
+        let cost = OperationCost {
+            seek_count: 4,
+            storage_cost: StorageCost {
+                added_bytes: 7,
+                replaced_bytes: 3,
+                removed_bytes: StorageRemovedBytes::NoStorageRemoval,
+            },
+            storage_loaded_bytes: 11,
+            hash_node_calls: 2,
+            sinsemilla_hash_calls: 0,
+        };
+        let operations = vec![
+            CalculatedCostOperation(cost.clone()),
+            CalculatedCostOperationWithRefundOwners {
+                cost: cost.clone(),
+                refund_owners: Default::default(),
+            },
+        ];
+
+        let combined = LowLevelDriveOperation::combine_cost_operations(&operations);
+
+        assert_eq!(combined.seek_count, 8);
+        assert_eq!(combined.storage_cost.added_bytes, 14);
+        assert_eq!(combined.storage_cost.replaced_bytes, 6);
+        assert_eq!(combined.storage_loaded_bytes, 22);
+        assert_eq!(combined.hash_node_calls, 4);
     }
 
     // ---------------------------------------------------------------

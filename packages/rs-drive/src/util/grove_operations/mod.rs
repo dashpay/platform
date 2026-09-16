@@ -218,7 +218,10 @@ use grovedb::{EstimatedLayerInformation, MaybeTree, TreeType};
 
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
+use crate::fees::op::LowLevelDriveOperation::{
+    CalculatedCostOperation, CalculatedCostOperationWithRefundOwners,
+};
+use dpp::fee::fee_result::refunds::RefundOwnersByIdentifier;
 
 use grovedb::Error as GroveError;
 
@@ -233,6 +236,28 @@ fn push_drive_operation_result<T>(
     let CostContext { value, cost } = cost_context;
     if !cost.is_nothing() {
         drive_operations.push(CalculatedCostOperation(cost));
+    }
+    value.map_err(Error::from)
+}
+
+/// Pushes an operation's `OperationCost` together with the refund owners
+/// recorded while its removed bytes were split, and returns the operation's
+/// return value.
+///
+/// The owners ride with the cost as `CalculatedCostOperationWithRefundOwners`
+/// so that the fee decoder reads each carrier key's owner from the record
+/// rather than inferring it from the key.
+fn push_drive_operation_result_with_refund_owners<T>(
+    cost_context: CostContext<Result<T, GroveError>>,
+    refund_owners: RefundOwnersByIdentifier,
+    drive_operations: &mut Vec<LowLevelDriveOperation>,
+) -> Result<T, Error> {
+    let CostContext { value, cost } = cost_context;
+    if !cost.is_nothing() {
+        drive_operations.push(CalculatedCostOperationWithRefundOwners {
+            cost,
+            refund_owners,
+        });
     }
     value.map_err(Error::from)
 }
