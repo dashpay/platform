@@ -1,4 +1,5 @@
 use crate::drive::balances::total_tokens_root_supply_path;
+use crate::drive::tokens::lifecycle::estimated_costs::ESTIMATED_TOKEN_CONTRACT_LIFECYCLE_SIZE_BYTES;
 use crate::drive::tokens::paths::{
     token_balances_root_path, token_contract_infos_root_path, token_contract_lifecycles_root_path,
     token_contract_lifecycles_root_path_vec, token_identity_infos_root_path,
@@ -15,7 +16,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::TokenContractPosition;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::Identifier;
-use dpp::serialization::PlatformSerializable;
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::contract_lifecycle::ContractTokenLifecycle;
 use dpp::tokens::status::TokenStatus;
@@ -27,7 +28,9 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Creates a new token root subtree at `TokenBalances` keyed by `token_id`, and the
-    /// issuer's lifecycle record when the contract has none yet.
+    /// issuer's lifecycle record when the contract has none yet. A destroyed issuer is refused
+    /// as corrupted state: a contract update that adds a token to it is rejected by validation
+    /// before it reaches Drive.
     /// This function applies the operations directly, calculates fees, and returns the fee result.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn create_token_trees_v1(
@@ -284,15 +287,26 @@ impl Drive {
 
         // The issuer's lifecycle record. A token starts with no supply, so a record created
         // here starts at zero; a contract that already has one (an issuer adding a token, or
-        // an earlier token of the same contract in this batch) keeps it. The batch scan is
-        // what keeps a contract update that adds several tokens from inserting the record
-        // once per token.
+        // an earlier token of the same contract in this batch) keeps it, unless it is wiped:
+        // a destroyed issuer never gains a token. The batch scan is what keeps a contract
+        // update that adds several tokens from inserting the record once per token; the
+        // first token of the batch is the one that reads the stored record.
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_token_contract_lifecycles(
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
         }
+        let record_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+            BatchInsertApplyType::StatefulBatchInsert
+        } else {
+            BatchInsertApplyType::StatelessBatchInsert {
+                in_tree_type: TreeType::NormalTree,
+                target: QueryTarget::QueryTargetValue(
+                    ESTIMATED_TOKEN_CONTRACT_LIFECYCLE_SIZE_BYTES,
+                ),
+            }
+        };
         let record_already_in_batch = previous_batch_operations
             .as_deref()
             .map(|operations| {
@@ -310,17 +324,35 @@ impl Drive {
         if !record_already_in_batch {
             let record_bytes =
                 ContractTokenLifecycle::new(0, platform_version)?.serialize_consume_to_bytes()?;
-            self.batch_insert_if_not_exists(
+            let existing_record = self.batch_insert_if_not_exists_return_existing_element(
                 PathKeyElementInfo::PathFixedSizeKeyRefElement::<2>((
                     token_contract_lifecycles_root_path(),
                     contract_id.as_slice(),
                     Element::Item(record_bytes, None),
                 )),
-                item_apply_type,
+                record_apply_type,
                 transaction,
                 &mut batch_operations,
                 &platform_version.drive,
             )?;
+            if let Some(existing_record) = existing_record {
+                let record = match existing_record {
+                    Element::Item(bytes, _) => {
+                        ContractTokenLifecycle::deserialize_from_bytes(bytes.as_slice())?
+                    }
+                    _ => {
+                        return Err(Error::Drive(DriveError::CorruptedElementType(
+                            "contract token lifecycle was present but was not an item",
+                        )))
+                    }
+                };
+                if record.is_wiped() {
+                    return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                        "contract {} was destroyed, it cannot issue a new token",
+                        contract_id
+                    ))));
+                }
+            }
         }
 
         Ok(batch_operations)
@@ -330,11 +362,21 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+    use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
     use dpp::prelude::Identifier;
+    use dpp::tests::fixtures::get_dashpay_contract_fixture;
     use dpp::tokens::contract_lifecycle::v0::ContractTokenLifecycleV0Accessors;
     use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
 
     fn create(
         drive: &Drive,
@@ -456,12 +498,12 @@ mod tests {
     }
 
     #[test]
-    fn should_estimate_without_touching_state() {
+    fn should_estimate_without_touching_state_and_cover_the_applied_cost() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let contract_id = Identifier::from([52u8; 32]);
 
-        let fees = drive
+        let estimated = drive
             .create_token_trees(
                 contract_id,
                 0,
@@ -475,11 +517,151 @@ mod tests {
             )
             .expect("expected an estimate");
 
-        assert!(fees.processing_fee > 0);
+        assert!(estimated.processing_fee > 0);
         assert_eq!(
             drive
                 .fetch_contract_token_lifecycle(contract_id.to_buffer(), None, platform_version)
                 .expect("expected to read"),
+            None
+        );
+
+        let applied = drive
+            .create_token_trees(
+                contract_id,
+                0,
+                [51u8; 32],
+                false,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply");
+        // Block execution requires the estimated total to cover the applied total. The
+        // estimator sizes the three empty tree inserts a few bytes short in storage (the
+        // shipped contract insert shows the same gap at protocol version 14), so the check
+        // is on the total, which the processing estimate covers many times over; the
+        // lifecycle record itself is an item priced at its largest size.
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "estimated {} is below applied {}",
+            estimated.processing_fee,
+            applied.processing_fee
+        );
+        assert!(
+            estimated.total_base_fee() >= applied.total_base_fee(),
+            "estimated total {} is below applied total {}",
+            estimated.total_base_fee(),
+            applied.total_base_fee()
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_new_token_for_a_destroyed_issuer() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let contract_id = Identifier::from([52u8; 32]);
+        let new_token = [53u8; 32];
+
+        create(&drive, contract_id, 0, [51u8; 32], false);
+        drive
+            .destroy_token_issuer(
+                contract_id.to_buffer(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to destroy the issuer");
+
+        let result = drive.create_token_trees(
+            contract_id,
+            1,
+            new_token,
+            false,
+            true,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+        ));
+        assert_eq!(
+            drive
+                .fetch_token_total_supply(new_token, None, platform_version)
+                .expect("expected to fetch supply"),
+            None
+        );
+        assert!(drive
+            .fetch_contract_token_lifecycle(contract_id.to_buffer(), None, platform_version)
+            .expect("expected to read")
+            .expect("expected a record")
+            .is_wiped());
+    }
+
+    #[test]
+    fn should_refuse_a_contract_update_adding_a_token_to_a_destroyed_issuer() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+        let token_config = || {
+            TokenConfiguration::V0(
+                TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+            )
+        };
+        contract.set_tokens(BTreeMap::from([(0, token_config())]));
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to insert the contract");
+
+        drive
+            .destroy_token_issuer(
+                contract.id().to_buffer(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to destroy the issuer");
+
+        contract.set_tokens(BTreeMap::from([(0, token_config()), (1, token_config())]));
+        contract.increment_version();
+        let result = drive.update_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+            ),
+            "expected the update to be refused, got {result:?}"
+        );
+        let second_token = contract.token_id(1).expect("expected a token id");
+        assert_eq!(
+            drive
+                .fetch_token_total_supply(second_token.to_buffer(), None, platform_version)
+                .expect("expected to fetch supply"),
             None
         );
     }

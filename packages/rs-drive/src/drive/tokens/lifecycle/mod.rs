@@ -13,8 +13,9 @@
 pub mod add_to_contract_issued_supply;
 #[cfg(feature = "server")]
 mod destroy_token_issuer;
+/// Layer estimation for writes under the lifecycle ledger.
 #[cfg(feature = "server")]
-mod estimated_costs;
+pub mod estimated_costs;
 #[cfg(feature = "server")]
 mod fetch_contract_token_lifecycle;
 #[cfg(feature = "server")]
