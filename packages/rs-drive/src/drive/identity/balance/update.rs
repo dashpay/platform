@@ -523,6 +523,7 @@ mod tests {
         use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use dpp::fee::fee_result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
         use dpp::fee::fee_result::{BalanceChange, FeeResult};
+        use dpp::fee::refund_owner::RefundOwner;
         use dpp::fee::{Credits, SignedCredits};
         use dpp::version::PlatformVersion;
         use grovedb::batch::GroveOp;
@@ -580,9 +581,19 @@ mod tests {
                     (identity.id().to_buffer(), credits_per_epoch),
                     (other_identity.id().to_buffer(), other_credits_per_epoch),
                 ]);
+            let refund_owners = BTreeMap::from_iter([
+                (
+                    identity.id().to_buffer(),
+                    RefundOwner::Identity(identity.id()),
+                ),
+                (
+                    other_identity.id().to_buffer(),
+                    RefundOwner::Identity(other_identity.id()),
+                ),
+            ]);
 
             let fee_result = FeeResult {
-                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier),
+                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier, refund_owners),
                 ..Default::default()
             };
             let fee_change = fee_result.clone().into_balance_change(identity.id());
@@ -658,11 +669,18 @@ mod tests {
                         IntMap::from_iter([(GENESIS_EPOCH_INDEX, other_refund)]),
                     ),
                 ]);
+            let refund_owners = BTreeMap::from_iter([
+                (payer.id().to_buffer(), RefundOwner::Identity(payer.id())),
+                (
+                    other_identity.id().to_buffer(),
+                    RefundOwner::Identity(other_identity.id()),
+                ),
+            ]);
 
             let fee_result = FeeResult {
                 storage_fee,
                 processing_fee,
-                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier),
+                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier, refund_owners),
                 ..Default::default()
             };
             let fee_change = fee_result.clone().into_balance_change(payer.id());
@@ -749,9 +767,13 @@ mod tests {
 
             let refunds_per_epoch_by_identifier: CreditsPerEpochByIdentifier =
                 BTreeMap::from_iter([(identity.id().to_buffer(), credits_per_epoch)]);
+            let refund_owners = BTreeMap::from_iter([(
+                identity.id().to_buffer(),
+                RefundOwner::Identity(identity.id()),
+            )]);
 
             let fee_result = FeeResult {
-                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier),
+                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier, refund_owners),
                 ..Default::default()
             };
             let fee_change = fee_result.clone().into_balance_change(identity.id());
@@ -826,9 +848,13 @@ mod tests {
 
             let refunds_per_epoch_by_identifier: CreditsPerEpochByIdentifier =
                 BTreeMap::from_iter([(identity.id().to_buffer(), credits_per_epoch)]);
+            let refund_owners = BTreeMap::from_iter([(
+                identity.id().to_buffer(),
+                RefundOwner::Identity(identity.id()),
+            )]);
 
             let fee_result = FeeResult {
-                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier),
+                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier, refund_owners),
                 ..Default::default()
             };
             let fee_change = fee_result.clone().into_balance_change(identity.id());
