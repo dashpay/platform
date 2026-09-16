@@ -265,34 +265,8 @@ struct SendTransactionView: View {
                             // be the one that was last created.
                             let managed = walletManager.wallet(for: wallet.walletId)
                             let platformAddressWallet = try? managed?.platformAddressWallet()
-                            // Resolve the account that FUNDS the send. Two
-                            // consumers read `senderAccountIndex`, in two
-                            // DISTINCT account namespaces:
-                            //
-                            // • platform → platform: a key-class-0 Platform
-                            //   Payment account. The Rust Auto selector
-                            //   resolves the source via
-                            //   `platform_payment_managed_account_at_index`
-                            //   and selects inputs WITHIN that single account
-                            //   (it does not span accounts). `canSend` gates
-                            //   only on the aggregate platform balance, so we
-                            //   must pick an account whose OWN balance covers
-                            //   amount + fee, else Rust rejects the send —
-                            //   done by the unit-tested
-                            //   `PlatformPaymentAccountSelection` helper.
-                            //
-                            // • core → core: a BIP44 Core account index, fed
-                            //   into `CoreTransactionBuilder.setFunding(
-                            //   accountType: .bip44, ...)`. That namespace is
-                            //   SEPARATE from key-class Platform Payment
-                            //   accounts — a Platform-Payment index must never
-                            //   leak into it. The Core send UI has no account
-                            //   picker and funds the default BIP44 account, so
-                            //   resolve to account 0.
-                            //
-                            // Every other flow (shielded / platform → shielded
-                            // / core → shielded) ignores this value and
-                            // resolves its own funding, so 0 is harmless there.
+                            // Platform payments select one account with sufficient funds.
+                            // Core sends use the view model's BIP44 funding account.
                             let senderAccountIndex: UInt32
                             if viewModel.detectedFlow == .platformToPlatform {
                                 guard let resolved = resolvePlatformSenderAccountIndex() else {
@@ -324,7 +298,7 @@ struct SendTransactionView: View {
                             )
                         }
                     }
-                    .disabled(!viewModel.canSend)
+                    .disabled(!viewModel.canSend(coreBalance: coreBalance))
                 }
             }
             .disabled(viewModel.isSending)
@@ -480,15 +454,13 @@ struct SendTransactionView: View {
 
     // MARK: - Computed
 
-    /// Spendable Core balance, summed from Rust's in-memory per-account
-    /// totals. The persisted `PersistentWallet.balanceConfirmed` field
-    /// was removed; `accountBalances(for:)` is now the canonical
-    /// source (same path `BalanceCardView` uses). Exposed as a
-    /// function rather than a computed property so callers can
-    /// snapshot once per render and thread the value through.
+    /// Core sends display only the BIP44 account used by their builder.
     private func coreBalanceSnapshot() -> UInt64 {
-        walletManager.accountBalances(for: wallet.walletId)
-            .reduce(0) { $0 + $1.confirmed }
+        let balances = walletManager.accountBalances(for: wallet.walletId)
+        if viewModel.detectedFlow == .coreToCore {
+            return SendViewModel.coreFundingBalance(balances)
+        }
+        return balances.reduce(0) { $0 + $1.confirmed }
     }
 
     /// Per-wallet shielded balance: sum of THIS wallet's unspent

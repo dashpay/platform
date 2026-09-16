@@ -23,10 +23,18 @@ cd "$SCRIPT_DIR" || exit 1
 # touches a developer's keychain configuration; the previous default and
 # search list are restored on exit.
 if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
-  # `security default-keychain -d user` exits non-zero on a runner with no
-  # user default keychain; tolerate it (the restore below skips an empty
-  # value) so `set -euo pipefail` doesn't abort the run before any build.
-  PREV_DEFAULT_KEYCHAIN="$(security default-keychain -d user 2>/dev/null | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//' || true)"
+  # Only a missing default is recoverable; other failures leave its value unknown.
+  if PREV_DEFAULT_KEYCHAIN_OUTPUT="$(LC_ALL=C security default-keychain -d user 2>&1)"; then
+    PREV_DEFAULT_KEYCHAIN="$(printf '%s\n' "$PREV_DEFAULT_KEYCHAIN_OUTPUT" | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
+  else
+    lookup_status=$?
+    if [ "$lookup_status" -eq 1 ] && [ "$PREV_DEFAULT_KEYCHAIN_OUTPUT" = "security: SecKeychainCopyDomainDefault user: A default keychain could not be found." ]; then
+      PREV_DEFAULT_KEYCHAIN=""
+    else
+      printf '%s\n' "$PREV_DEFAULT_KEYCHAIN_OUTPUT" >&2
+      exit "$lookup_status"
+    fi
+  fi
   PREV_USER_KEYCHAINS_OUTPUT="$(security list-keychains -d user)"
   PREV_USER_KEYCHAINS=()
   while IFS= read -r keychain_path; do

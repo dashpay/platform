@@ -1,5 +1,5 @@
 import XCTest
-import SwiftDashSDK
+@testable import SwiftDashSDK
 @testable import SwiftExampleApp
 
 /// Behavioral tests for `SendViewModel`'s multi-recipient Core batch —
@@ -34,6 +34,62 @@ final class SendViewModelCoreRecipientsTests: XCTestCase {
         vm.selectedSource = .core
         vm.updateFlow()
         return vm
+    }
+
+    func test_coreFundingExcludesOtherAccountsAndAccountTypes() {
+        func balance(
+            type: UInt8 = 0,
+            standard: UInt8 = 0,
+            index: UInt32 = 0,
+            confirmed: UInt64
+        ) -> PlatformWalletManager.AccountBalance {
+            PlatformWalletManager.AccountBalance(
+                typeTag: type, standardTag: standard, index: index,
+                registrationIndex: 0, keyClass: 0, userIdentityId: Data(),
+                friendIdentityId: Data(), confirmed: confirmed, unconfirmed: 0,
+                immature: 0, locked: 0, keysUsed: 0, keysTotal: 0
+            )
+        }
+        let otherAccounts = [
+            balance(index: 1, confirmed: 1_000_000),
+            balance(type: 12, confirmed: 1_000_000),
+            balance(standard: 1, confirmed: 1_000_000)
+        ]
+        XCTAssertEqual(SendViewModel.coreFundingBalance(otherAccounts), 0)
+        XCTAssertEqual(SendViewModel.coreFundingBalance(
+            otherAccounts + [balance(confirmed: 0)]
+        ), 0)
+        XCTAssertEqual(SendViewModel.coreFundingBalance(
+            otherAccounts + [balance(confirmed: 100_500)]
+        ), 100_500)
+    }
+
+    func test_coreFundingRequiresBatchAndEstimatedFeeInSelectedAccount() {
+        let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
+        vm.estimatedFee = 500
+        XCTAssertFalse(vm.canSend(coreBalance: 100_000))
+        XCTAssertFalse(vm.canSend(coreBalance: 100_499))
+        XCTAssertTrue(vm.canSend(coreBalance: 100_500))
+        XCTAssertFalse(vm.canSend(coreBalance: 0))
+
+        vm.addCoreRecipient()
+        vm.additionalCoreRecipients[0].address = extraAddress
+        vm.additionalCoreRecipients[0].amountString = "0.002"
+        XCTAssertFalse(vm.canSend(coreBalance: 100_500))
+        XCTAssertTrue(vm.canSend(coreBalance: 300_500))
+    }
+
+    func test_coreFundingRejectsFeeOverflow() {
+        let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
+        vm.estimatedFee = UInt64.max
+        XCTAssertFalse(vm.canSend(coreBalance: UInt64.max))
+    }
+
+    func test_coreFundingUsesDisplayedFallbackFee() {
+        let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
+        vm.estimatedFee = nil
+        XCTAssertFalse(vm.canSend(coreBalance: 100_000))
+        XCTAssertTrue(vm.canSend(coreBalance: 100_000 + SendFlow.coreToCore.estimatedFee))
     }
 
     // MARK: - Sanity: the fixtures really are Core addresses on testnet
