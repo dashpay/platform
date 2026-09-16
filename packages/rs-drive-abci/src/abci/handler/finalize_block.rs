@@ -7,6 +7,7 @@ use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::Network;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 
 pub fn finalize_block<'a, A, C>(
@@ -96,6 +97,16 @@ where
             "historical mainnet vote-cleanup commit conflict; proceeding as the \
              network did at the time (see platform#2309, tenderdash#966)"
         );
+
+        // The block's saved platform state was in the failed transaction, so the
+        // full record on disk is behind the state cache this block published as
+        // clean. Mark it dirty again: the next block then writes the full record
+        // rather than only the small one on top of a stale full record, which a
+        // restart before the next heavy change would otherwise read back.
+        let platform = app.platform();
+        let mut state = platform.state.load().as_ref().clone();
+        state.heavy_fields_dirty = true;
+        platform.state.store(Arc::new(state));
     } else {
         // A failed commit leaves caches ahead of durable state. Restart Drive so the
         // caches are restored from disk before retrying the block.
@@ -363,6 +374,16 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
+        finalize_block_with_failing_commit_on(&platform, height, commit_error)
+    }
+
+    /// Like [`finalize_block_with_failing_commit`], on a platform the caller keeps
+    /// so it can inspect the state left behind.
+    fn finalize_block_with_failing_commit_on(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        height: u64,
+        commit_error: Error,
+    ) -> Result<proto::ResponseFinalizeBlock, Error> {
         let app = FailingCommitApplication {
             platform: &platform.platform,
             commit_error: RwLock::new(Some(commit_error)),
@@ -577,6 +598,27 @@ mod tests {
                 "historical conflict at {height}: {result:?}"
             );
         }
+    }
+
+    /// The block's saved platform state sat in the transaction that failed to
+    /// commit, so the published state cache is ahead of the full record on disk.
+    /// The handler must leave it dirty, or the next historical block writes only
+    /// the small record on top of a stale full one.
+    #[test]
+    fn finalize_block_leaves_the_state_dirty_after_a_tolerated_commit_conflict() {
+        let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
+            .with_config(mainnet_evo1_config())
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        finalize_block_with_failing_commit_on(&platform, 32326, busy_commit_error())
+            .expect("the incident's commit conflict is tolerated");
+
+        assert!(
+            platform.state.load().heavy_fields_dirty,
+            "a block whose commit failed must not leave the state cache clean"
+        );
     }
 
     #[test]

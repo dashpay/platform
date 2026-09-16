@@ -231,7 +231,9 @@ mod tests {
     /// While replaying history the full saved record is rewritten only when a
     /// heavy field changed; the small record carries the block info in between.
     /// A node restarted from disk must see the newest block info and the heavy
-    /// fields from the last full write.
+    /// fields from the last full write. Once at the tip, a block that changes
+    /// nothing heavy still rewrites the full record, so a caught-up node always
+    /// has a complete record on disk that an older drive-abci can read.
     #[test]
     fn v0_historical_block_with_clean_heavy_fields_reloads_from_the_small_record() {
         use crate::config::{PlatformConfig, PlatformTestConfig};
@@ -351,6 +353,41 @@ mod tests {
             full_record.last_committed_block_height(),
             7,
             "the full record is not rewritten for a historical block that changed nothing heavy"
+        );
+
+        // Block 9 changes nothing heavy either, but it is a current block: at the
+        // tip the full record is refreshed every block regardless.
+        let loaded = platform.state.load();
+        let block_platform_state = loaded.as_ref().clone();
+        drop(loaded);
+        assert!(!block_platform_state.heavy_fields_dirty);
+
+        let mut tip_block = make_extended_block_info(9);
+        tip_block.basic_info_mut().time_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time after the epoch")
+            .as_millis() as u64;
+        platform
+            .update_state_cache_v0(
+                tip_block,
+                block_platform_state,
+                &transaction,
+                platform_version,
+            )
+            .expect("block 9 must be stored");
+
+        let full_bytes = platform
+            .drive
+            .fetch_platform_state_bytes(Some(&transaction), platform_version)
+            .expect("fetch must succeed")
+            .expect("a full record was stored");
+        let full_record =
+            PlatformState::versioned_deserialize_trusted(&full_bytes, platform_version)
+                .expect("full record must deserialize");
+        assert_eq!(
+            full_record.last_committed_block_height(),
+            9,
+            "a clean block at the tip refreshes the full record"
         );
     }
 }
