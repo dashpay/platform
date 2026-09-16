@@ -120,11 +120,9 @@ fn validate_identity_public_key_contract_bounds_v1(
 
     match contract_bounds {
         // Rejected by the purpose check above; never panic in block execution.
-        ContractBounds::Scoped(_) => {
-            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "scoped bounds must be rejected before legacy bounds validation",
-            )))
-        }
+        ContractBounds::Scoped(_) => Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "scoped bounds must be rejected before legacy bounds validation",
+        ))),
         ContractBounds::SingleContract { .. } => {
             let requirements_for_purpose = match purpose {
                 ENCRYPTION => contract.config().requires_identity_encryption_bounded_key(),
