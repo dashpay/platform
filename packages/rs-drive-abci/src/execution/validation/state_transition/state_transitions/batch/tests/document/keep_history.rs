@@ -13,6 +13,7 @@ use drive::util::storage_flags::StorageFlags;
 fn process_and_commit(
     platform: &mut TempPlatform<MockCoreRPCLike>,
     serialized: Vec<u8>,
+    block_info: BlockInfo,
 ) -> StateTransitionExecutionResult {
     let state = platform.state.load();
     let version = state.current_platform_version().unwrap();
@@ -22,7 +23,7 @@ fn process_and_commit(
         .process_raw_state_transitions(
             &[serialized],
             &state,
-            &BlockInfo::default(),
+            &block_info,
             &transaction,
             version,
             false,
@@ -99,7 +100,11 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     .await
     .unwrap();
     assert_matches!(
-        process_and_commit(&mut platform, create.serialize_to_bytes().unwrap()),
+        process_and_commit(
+            &mut platform,
+            create.serialize_to_bytes().unwrap(),
+            BlockInfo::default(),
+        ),
         StateTransitionExecutionResult::SuccessfulExecution { .. }
     );
     let query = DriveDocumentQuery::from_sql_expr(
@@ -180,7 +185,11 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     .await
     .unwrap();
     assert_matches!(
-        process_and_commit(&mut platform, update.serialize_to_bytes().unwrap()),
+        process_and_commit(
+            &mut platform,
+            update.serialize_to_bytes().unwrap(),
+            BlockInfo::default(),
+        ),
         StateTransitionExecutionResult::SuccessfulExecution { .. },
         "the repair must pass full validation and persist"
     );
@@ -213,7 +222,11 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     .await
     .unwrap();
     assert_matches!(
-        process_and_commit(&mut platform, update.serialize_to_bytes().unwrap()),
+        process_and_commit(
+            &mut platform,
+            update.serialize_to_bytes().unwrap(),
+            BlockInfo::default(),
+        ),
         StateTransitionExecutionResult::SuccessfulExecution { .. }
     );
 
@@ -257,7 +270,7 @@ async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timest
 }
 
 #[tokio::test]
-async fn should_replace_and_transfer_migrated_history_through_signed_transitions() {
+async fn should_keep_migrated_and_new_history_writable_through_signed_transitions() {
     for countable in [false, true] {
         run_history_write_sequence(true, countable).await;
     }
@@ -306,7 +319,7 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
             entropy,
             DocumentFieldFillType::DoNotFillIfNotRequired,
             DocumentFieldFillSize::AnyDocumentFillSize,
-            version,
+            initial_version,
         )
         .unwrap();
     document.set("amount", 100u64.into());
@@ -318,7 +331,7 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
         limit: None,
     };
     for revision in 1..=5 {
-        let write_version = if revision == 1 {
+        let write_version = if migrated && revision <= 2 {
             initial_version
         } else {
             version
@@ -405,11 +418,45 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
             _ => unreachable!(),
         }
         .unwrap();
+        let mut block_info = BlockInfo::default();
+        if migrated {
+            block_info.time_ms = if revision == 1 { 1 } else { 2 };
+        }
         assert_matches!(
-            process_and_commit(&mut platform, transition.serialize_to_bytes().unwrap()),
+            process_and_commit(
+                &mut platform,
+                transition.serialize_to_bytes().unwrap(),
+                block_info,
+            ),
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
-        if migrated && revision == 1 {
+        if migrated && revision == 2 {
+            let legacy_history = platform
+                .drive
+                .fetch_document_history(&query, document_type, None, initial_version)
+                .unwrap();
+            let legacy_proof = platform
+                .drive
+                .prove_document_history(&query, document_type, None, initial_version)
+                .unwrap();
+            assert!(legacy_history.lifecycle.is_none());
+            assert_eq!(
+                legacy_history
+                    .entries
+                    .iter()
+                    .map(|entry| entry.revision)
+                    .collect::<Vec<_>>(),
+                vec![1, 2]
+            );
+            let (_, verified_legacy) = drive::drive::Drive::verify_document_history(
+                &query,
+                &legacy_proof,
+                document_type,
+                initial_version,
+            )
+            .unwrap();
+            assert_eq!(verified_legacy, legacy_history);
+
             let mut upgraded = platform.state.load().as_ref().clone();
             upgraded.set_current_protocol_version_in_consensus(14);
             upgraded.set_next_epoch_protocol_version(14);
@@ -431,6 +478,11 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
                 .unwrap();
             platform.state.store(std::sync::Arc::new(upgraded));
         }
+        let primary_read_version = if migrated && revision == 1 {
+            initial_version
+        } else {
+            version
+        };
         let type_path = vec![
             vec![drive::drive::RootTree::DataContractDocuments as u8],
             contract.id().to_vec(),
@@ -444,7 +496,7 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
                 type_path.as_slice().into(),
                 &[0],
                 None,
-                &version.drive.grove_version,
+                &primary_read_version.drive.grove_version,
             )
             .value
             .unwrap();
@@ -456,6 +508,9 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
                 matches!(primary, drive::grovedb::Element::SumTree(_, sum, _) if sum == expected_sum),
                 "only the current revision contributes to the primary sum: {primary:?}"
             );
+        }
+        if migrated && revision == 1 {
+            continue;
         }
         let history = platform
             .drive
@@ -477,7 +532,20 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
                 .collect::<Vec<_>>(),
             (1..=revision).collect::<Vec<_>>()
         );
-        assert!(history.entries.iter().all(|entry| entry.time_ms == 0));
+        if migrated {
+            assert_eq!(
+                history
+                    .entries
+                    .iter()
+                    .map(|entry| entry.time_ms)
+                    .collect::<Vec<_>>(),
+                (1..=revision)
+                    .map(|entry_revision| if entry_revision == 1 { 1 } else { 2 })
+                    .collect::<Vec<_>>()
+            );
+        } else {
+            assert!(history.entries.iter().all(|entry| entry.time_ms == 0));
+        }
         let (_, verified) =
             drive::drive::Drive::verify_document_history(&query, &proof, document_type, version)
                 .unwrap();
@@ -491,5 +559,132 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
                 owner.id()
             }
         );
+    }
+
+    if migrated {
+        let fresh_entropy = Bytes32::random_with_rng(&mut rng);
+        let mut fresh_document = document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                owner.id(),
+                fresh_entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                version,
+            )
+            .unwrap();
+        fresh_document.set("amount", 30u64.into());
+        let fresh_query = DocumentHistoryDriveQuery {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "note".into(),
+            document_id: fresh_document.id().to_buffer(),
+            filter: DocumentHistoryFilter::StartAtTime(0),
+            limit: None,
+        };
+
+        for revision in 1..=2 {
+            fresh_document.set_revision(Some(revision));
+            let transition = if revision == 1 {
+                BatchTransition::new_document_creation_transition_from_document(
+                    fresh_document.clone(),
+                    document_type,
+                    fresh_entropy.0,
+                    &owner_key,
+                    5,
+                    0,
+                    None,
+                    &owner_signer,
+                    version,
+                    None,
+                )
+                .await
+            } else {
+                fresh_document.set("message", "fresh replacement".into());
+                fresh_document.set("amount", 50u64.into());
+                BatchTransition::new_document_replacement_transition_from_document(
+                    fresh_document.clone(),
+                    document_type,
+                    &owner_key,
+                    6,
+                    0,
+                    None,
+                    &owner_signer,
+                    version,
+                    None,
+                )
+                .await
+            }
+            .unwrap();
+            assert_matches!(
+                process_and_commit(
+                    &mut platform,
+                    transition.serialize_to_bytes().unwrap(),
+                    BlockInfo::default(),
+                ),
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+
+            let type_path = vec![
+                vec![drive::drive::RootTree::DataContractDocuments as u8],
+                contract.id().to_vec(),
+                vec![1],
+                b"note".to_vec(),
+            ];
+            let primary = platform
+                .drive
+                .grove
+                .get_raw(
+                    type_path.as_slice().into(),
+                    &[0],
+                    None,
+                    &version.drive.grove_version,
+                )
+                .value
+                .unwrap();
+            let expected_sum = if revision == 1 { 280 } else { 300 };
+            if countable {
+                assert!(
+                    matches!(primary, drive::grovedb::Element::CountSumTree(_, 2, sum, _) if sum == expected_sum),
+                    "both migrated and new live documents contribute to count and sum: {primary:?}"
+                );
+            } else {
+                assert!(
+                    matches!(primary, drive::grovedb::Element::SumTree(_, sum, _) if sum == expected_sum),
+                    "both migrated and new current revisions contribute to the primary sum: {primary:?}"
+                );
+            }
+
+            let history = platform
+                .drive
+                .fetch_document_history(&fresh_query, document_type, None, version)
+                .unwrap();
+            let proof = platform
+                .drive
+                .prove_document_history(&fresh_query, document_type, None, version)
+                .unwrap();
+            assert_eq!(
+                history.lifecycle.as_ref().unwrap().remaining_revisions,
+                revision
+            );
+            assert_eq!(
+                history
+                    .entries
+                    .iter()
+                    .map(|entry| entry.revision)
+                    .collect::<Vec<_>>(),
+                (1..=revision).collect::<Vec<_>>()
+            );
+            assert!(history.entries.iter().all(|entry| entry.time_ms == 0));
+            let (_, verified) = drive::drive::Drive::verify_document_history(
+                &fresh_query,
+                &proof,
+                document_type,
+                version,
+            )
+            .unwrap();
+            assert_eq!(verified, history);
+            fresh_document = history.entries.last().unwrap().document.clone();
+            assert_eq!(fresh_document.owner_id(), owner.id());
+        }
     }
 }
