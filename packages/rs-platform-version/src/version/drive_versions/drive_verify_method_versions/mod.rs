@@ -39,6 +39,7 @@ pub struct DriveVerifyContractMethodVersions {
     pub verify_contract_history: FeatureVersion,
     pub verify_contract_return_serialization: FeatureVersion,
     pub verify_contracts_by_range: FeatureVersion,
+    pub verify_contracts_versions: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

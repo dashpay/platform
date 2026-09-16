@@ -432,6 +432,7 @@ impl TokenClaimTransitionActionV0 {
                         start_from_moment_for_distribution,
                         current_cycle_moment,
                         max_cycles,
+                        platform_version,
                     )?;
 
                 let (recipient, amount) = match perpetual_distribution.distribution_recipient() {

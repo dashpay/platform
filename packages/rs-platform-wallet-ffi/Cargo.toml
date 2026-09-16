@@ -10,7 +10,11 @@ description = "C FFI bindings for platform-wallet"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
-platform-wallet = { path = "../rs-platform-wallet" }
+# `bls`/`eddsa` are required explicitly, not just inherited from
+# `platform-wallet`'s default features: `persistence.rs` calls
+# `rebuild_provider_key_account` and matches on `ProviderKeyExtendedPubKey`,
+# both gated behind those features in `platform-wallet`.
+platform-wallet = { path = "../rs-platform-wallet", features = ["bls", "eddsa"] }
 dpp = { path = "../rs-dpp" }
 dash-sdk = { path = "../rs-sdk", features = ["wallet"] }
 # Needed for `SignerHandle` + `VTableSigner` so the `*_with_signer`

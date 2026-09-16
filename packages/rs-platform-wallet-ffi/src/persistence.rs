@@ -11,7 +11,7 @@
 
 use bincode::config;
 use key_wallet::account::account_collection::AccountCollection;
-use key_wallet::account::{Account, AccountType, BLSAccount, EdDSAAccount, StandardAccountType};
+use key_wallet::account::{Account, AccountType, StandardAccountType};
 use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::derivation_bls_bip32::ExtendedBLSPubKey;
@@ -27,6 +27,9 @@ use parking_lot::Mutex;
 use std::str::FromStr;
 
 use crate::types::{FFINetwork, Network};
+use platform_wallet::changeset::provider_key_account::{
+    rebuild_provider_key_account, ProviderAccountRebuildError,
+};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
     ListedCoreTxid, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
@@ -3344,6 +3347,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             .entry(id)
                             .or_insert_with(ShieldedSubwalletStartState::default);
                         entry.last_synced_index = ffi.last_synced_index;
+                        entry.has_sync_state = true;
                     }
                 }
             }
@@ -4968,6 +4972,23 @@ impl Drop for LoadGuard {
     }
 }
 
+/// Map a provider-account rebuild failure to a load error naming the
+/// curve-specific constructor or `AccountCollection` insert that failed.
+fn provider_rebuild_error(
+    constructor: &str,
+    insert: &str,
+    error: ProviderAccountRebuildError,
+) -> PersistenceError {
+    match error {
+        ProviderAccountRebuildError::Invalid(e) => {
+            PersistenceError::backend(format!("{constructor} failed: {e:?}"))
+        }
+        ProviderAccountRebuildError::Rejected(e) => {
+            PersistenceError::backend(format!("AccountCollection::{insert} failed: {e}"))
+        }
+    }
+}
+
 /// Reconstruct an external-signable [`Wallet`] + matching start-state
 /// bucket from a single `WalletRestoreEntryFFI`. The mnemonic / seed
 /// stays in the host's keychain; signing requests route back through
@@ -5028,7 +5049,7 @@ fn build_wallet_start_state(
         // platform node keys) live in dedicated `Option` fields on the
         // collection and carry a non-secp256k1 extended public key in
         // the same `account_xpub_bytes` slot. Rebuild them watch-only
-        // via the type-specific `new` + insert methods rather than the
+        // via the shared `rebuild_provider_key_account` rather than the
         // ECDSA `Account::from_xpub` / `insert` path (which would fail
         // to decode the bytes and reject the provider `AccountType`).
         // Provider xpubs are stored raw (`bincode(xpub)`), exactly like the
@@ -5055,21 +5076,14 @@ fn build_wallet_start_state(
                 .map_err(|e| {
                     PersistenceError::backend(format!("failed to decode provider BLS xpub: {}", e))
                 })?;
-                let bls_account = BLSAccount::new(
-                    Some(entry.wallet_id.to_vec()),
-                    account_type,
-                    bls_pubkey,
+                rebuild_provider_key_account(
+                    &mut accounts,
+                    entry.wallet_id,
                     network,
+                    account_type,
+                    &ProviderKeyExtendedPubKey::Bls(bls_pubkey),
                 )
-                .map_err(|e| {
-                    PersistenceError::backend(format!("BLSAccount::new failed: {:?}", e))
-                })?;
-                accounts.insert_bls_account(bls_account).map_err(|e| {
-                    PersistenceError::backend(format!(
-                        "AccountCollection::insert_bls_account failed: {}",
-                        e
-                    ))
-                })?;
+                .map_err(|e| provider_rebuild_error("BLSAccount::new", "insert_bls_account", e))?;
                 continue;
             }
             AccountType::ProviderPlatformKeys => {
@@ -5083,20 +5097,15 @@ fn build_wallet_start_state(
                         e
                     ))
                 })?;
-                let eddsa_account = EdDSAAccount::new(
-                    Some(entry.wallet_id.to_vec()),
-                    account_type,
-                    ed_pubkey,
+                rebuild_provider_key_account(
+                    &mut accounts,
+                    entry.wallet_id,
                     network,
+                    account_type,
+                    &ProviderKeyExtendedPubKey::EdDSA(ed_pubkey),
                 )
                 .map_err(|e| {
-                    PersistenceError::backend(format!("EdDSAAccount::new failed: {:?}", e))
-                })?;
-                accounts.insert_eddsa_account(eddsa_account).map_err(|e| {
-                    PersistenceError::backend(format!(
-                        "AccountCollection::insert_eddsa_account failed: {}",
-                        e
-                    ))
+                    provider_rebuild_error("EdDSAAccount::new", "insert_eddsa_account", e)
                 })?;
                 // The platform-node (Ed25519) pool is rehydrated from the
                 // persisted core-address rows like every other pool — see
@@ -6831,6 +6840,82 @@ mod tests {
         *out_entries = std::ptr::null();
         *out_count = 0;
         0
+    }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn local_balance_restore_preserves_explicit_zero_sync_row_presence() {
+        use crate::shielded_persistence::ShieldedSubwalletSyncStateFFI;
+        use platform_wallet::wallet::shielded::SubwalletId;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        unsafe extern "C" fn load_wallet(
+            _context: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            *entries = Box::into_raw(Box::new(WalletRestoreEntryFFI {
+                wallet_id: [42; 32],
+                ..Default::default()
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_wallet(
+            context: *mut c_void,
+            entries: *const WalletRestoreEntryFFI,
+            _count: usize,
+        ) {
+            drop(Box::from_raw(entries.cast_mut()));
+            (*(context as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        }
+        unsafe extern "C" fn load_state(
+            _context: *mut c_void,
+            entries: *mut *const ShieldedSubwalletSyncStateFFI,
+            count: *mut usize,
+        ) -> i32 {
+            *entries = Box::into_raw(Box::new(ShieldedSubwalletSyncStateFFI {
+                wallet_id: [42; 32],
+                account_index: 7,
+                last_synced_index: 0,
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_state(
+            context: *mut c_void,
+            entries: *const ShieldedSubwalletSyncStateFFI,
+            _count: usize,
+        ) {
+            drop(Box::from_raw(entries.cast_mut()));
+            (*(context as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        }
+        let releases = AtomicUsize::new(0);
+        let persister = FFIPersister::new(PersistenceCallbacks {
+            context: (&releases as *const AtomicUsize).cast_mut().cast(),
+            on_load_wallet_list_fn: Some(load_wallet),
+            on_load_wallet_list_free_fn: Some(free_wallet),
+            on_load_shielded_sync_states_fn: Some(load_state),
+            on_load_shielded_sync_states_free_fn: Some(free_state),
+            ..Default::default()
+        });
+        let snapshot = persister.load().expect("host snapshot");
+        let account = &snapshot.shielded.per_subwallet[&SubwalletId::new([42; 32], 7)];
+        assert_eq!(account.last_synced_index, 0);
+        assert!(
+            account.has_sync_state,
+            "a persisted zero is known scan history"
+        );
+        assert!(account.notes.is_empty());
+        assert!(!snapshot
+            .shielded
+            .per_subwallet
+            .contains_key(&SubwalletId::new([42; 32], 8)));
+        assert_eq!(
+            releases.load(Ordering::SeqCst),
+            2,
+            "both host allocations freed"
+        );
     }
     unsafe extern "C" fn noop_free_wallets(
         _ctx: *mut c_void,
@@ -9028,6 +9113,72 @@ mod tests {
             restored.account_xpub, expected_xpub,
             "the restored account's xpub must equal the original — the key verify_seed_binds binds against"
         );
+    }
+
+    /// `build_wallet_start_state` rebuilds the BLS operator-key and EdDSA
+    /// platform-node-key accounts watch-only from their bincode-encoded specs.
+    #[test]
+    fn provider_key_accounts_survive_restore_round_trip() {
+        let wallet = Wallet::from_seed_bytes(
+            [0x42; 64],
+            Network::Testnet,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+        )
+        .expect("seeded wallet");
+        let bls = wallet
+            .accounts
+            .bls_account_of_type(AccountType::ProviderOperatorKeys)
+            .expect("a Default-created wallet has a BLS provider account")
+            .bls_public_key
+            .clone();
+        let eddsa = wallet
+            .accounts
+            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+            .expect("a Default-created wallet has an EdDSA provider account")
+            .ed25519_public_key
+            .clone();
+        let bls_bytes = bincode::encode_to_vec(&bls, config::standard()).expect("encode BLS xpub");
+        let eddsa_bytes =
+            bincode::encode_to_vec(&eddsa, config::standard()).expect("encode EdDSA xpub");
+        let specs = [
+            build_account_spec_ffi(&AccountType::ProviderOperatorKeys, &bls_bytes),
+            build_account_spec_ffi(&AccountType::ProviderPlatformKeys, &eddsa_bytes),
+        ];
+        let entry = WalletRestoreEntryFFI {
+            wallet_id: wallet.wallet_id,
+            accounts: specs.as_ptr(),
+            accounts_count: specs.len(),
+            ..Default::default()
+        };
+
+        let (state, _) =
+            build_wallet_start_state(&entry).expect("provider key accounts must restore");
+
+        let restored_bls = state
+            .wallet
+            .accounts
+            .bls_account_of_type(AccountType::ProviderOperatorKeys)
+            .expect("BLS provider account must be rebuilt");
+        let restored_bls_bytes =
+            bincode::encode_to_vec(&restored_bls.bls_public_key, config::standard())
+                .expect("encode restored BLS xpub");
+        assert_eq!(restored_bls_bytes, bls_bytes);
+        assert_eq!(
+            restored_bls.parent_wallet_id.as_deref(),
+            Some(&wallet.wallet_id[..])
+        );
+        assert!(restored_bls.is_watch_only);
+        let restored_eddsa = state
+            .wallet
+            .accounts
+            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+            .expect("EdDSA provider account must be rebuilt");
+        assert_eq!(restored_eddsa.ed25519_public_key, eddsa);
+        assert_eq!(
+            restored_eddsa.parent_wallet_id.as_deref(),
+            Some(&wallet.wallet_id[..])
+        );
+        assert!(restored_eddsa.is_watch_only);
     }
 
     /// The BLS xpub decoder is the only account-xpub graph with a

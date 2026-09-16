@@ -3,12 +3,16 @@ on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed, edited]
   issue_comment:
-    types: [created, edited, deleted]
+    # CodeRabbit publishes its completion by editing the comment it posted when
+    # the review began: on Platform every observed receipt arrived that way and
+    # none was accompanied by a review. Edits therefore have to be heard, but
+    # only from the accounts whose comments this controller reads.
+    types: [created, edited]
   pull_request_review:
     types: [submitted, edited, dismissed]
   workflow_dispatch:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '17 * * * *'
 permissions:
   contents: read
   pull-requests: write
@@ -16,4 +20,11 @@ permissions:
   statuses: write
 jobs:
   policy:
-    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@750eec13bc5e5f9c704f1a610aed51d376513fa2
+    # Only comments this controller actually reads can change an outcome: a bot
+    # receipt or an author's attestation. Its own comments, coverage bots and
+    # human discussion cannot, and were most of the runs it caused.
+    if: >-
+      github.event_name != 'issue_comment' ||
+      contains(fromJSON('["coderabbitai", "coderabbitai[bot]", "thepastaclaw"]'), github.event.comment.user.login) ||
+      contains(github.event.comment.body, '/self-reviewed')
+    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@b378d1d7f9c3949a5f73822362ca02d251ab8141

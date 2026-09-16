@@ -79,6 +79,14 @@ pub struct SystemLimits {
     /// keeps Core from rejecting the resulting `TxOut`. Versioned: see `min_withdrawal_amount`
     /// in each `SYSTEM_LIMITS_V*`.
     pub min_withdrawal_amount: u64,
+    /// Core's dust relay fee rate in duffs per kilobyte, from which the per-output dust
+    /// threshold Core's mempool enforces is derived (Core's `GetDustThreshold`: the fee at
+    /// this rate of the serialized output plus the input that would spend it, 546 duffs for
+    /// a P2PKH output at the default 3000 duffs/kB). From protocol version 14 an expired
+    /// withdrawal whose whole amount is below the threshold of its output script is marked
+    /// FAILED instead of being re-signed forever (`rebroadcast_expired_withdrawal_documents`
+    /// method version 2). `None` for the protocol versions that predate the rule.
+    pub core_dust_relay_fee_per_kb: Option<u64>,
     pub max_contract_group_size: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication

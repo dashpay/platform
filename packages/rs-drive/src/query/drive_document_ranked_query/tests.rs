@@ -2989,6 +2989,131 @@ mod pinned_prefix {
         );
     }
 
+    /// A `==` pin on an identity that never inserted a document
+    /// addresses a prefix value tree that does not exist — the same
+    /// state a `timeRange` window is in before its first document lands
+    /// (a bucket is created by the first write under it, not at
+    /// contract registration). That is an EMPTY ranking, not corrupted
+    /// state: grovedb answers a single-path axis read over an absent
+    /// path with the empty page on the read and the proof alike, the
+    /// absence authenticated by the layers the walk emits — the
+    /// verifier reconstructs the live root hash from an empty page.
+    /// Before grovedb #965 both paths failed with "a single-path axis
+    /// read must produce exactly one axis descent", which reached
+    /// clients as an internal error on every fresh window.
+    #[test]
+    fn an_absent_equality_pin_reads_empty_and_proves_empty() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "art", 90)]);
+
+        let never_written = pin([9u8; 32]);
+        let page = match run(&drive, &contract, &never_written, 2, false)
+            .expect("a never-written prefix reads as an empty ranking")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(page.skipped, 0);
+        assert!(
+            page.entries.is_empty(),
+            "nothing is ranked under an unwritten prefix"
+        );
+
+        let proof = match run(&drive, &contract, &never_written, 2, true)
+            .expect("a never-written prefix proves as an empty ranking")
+        {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let (root_hash, verified) = client_side_query(&contract, &never_written, 2)
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("the envelope authenticates the absent prefix");
+        assert_eq!(verified, page);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+
+        // The written prefix still reads with its entry and no `in_key`:
+        // absence semantics change nothing about what a present prefix
+        // returns.
+        let present = match run(&drive, &contract, &pin(IDENTITY_X), 2, false)
+            .expect("a written prefix reads")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            present.entries,
+            vec![RankedEntry {
+                in_key: None,
+                key: b"art".to_vec(),
+                value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(90, 1)),
+            }]
+        );
+
+        // A page past rank 0 over the unwritten prefix is the same empty
+        // answer: the population is zero, so nothing could be skipped
+        // and the attested skip is 0, not the requested offset.
+        let mode = detect_ranked_mode(
+            &SelectProjection::avg("grade"),
+            &[CLASS_PROPERTY.to_string()],
+            &[],
+            &[OrderClause {
+                field: "grade".to_string(),
+                ascending: false,
+            }],
+            &never_written,
+            RankedPaginationInputs {
+                limit: Some(2),
+                offset: Some(1),
+                has_start_at: false,
+            },
+            platform_version(),
+        )
+        .expect("an offset with a `==` pin is grammatical");
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("grade doctype exists");
+        let paged = resolve_ranked_query_for_mode(
+            contract.id_ref().to_buffer(),
+            document_type,
+            DOCUMENT_TYPE.to_string(),
+            document_type.indexes(),
+            &mode,
+            &[],
+            platform_version(),
+        )
+        .expect("the compound index covers the pinned request");
+        let offset_page = paged
+            .execute_top_k_no_proof(&drive, None, platform_version())
+            .expect("an offset page of an unwritten prefix reads as an empty ranking");
+        assert_eq!(
+            offset_page.skipped, 0,
+            "nothing to skip in an empty population"
+        );
+        assert!(offset_page.entries.is_empty());
+        let proof = paged
+            .execute_top_k_with_proof(&drive, None, platform_version())
+            .expect("an offset page of an unwritten prefix proves as an empty ranking");
+        let (root_hash, verified) = paged
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("the absent-path proof verifies the offset page");
+        assert_eq!(verified, offset_page);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
+
     /// An unpinned request over the compound-only contract has no
     /// covering index — there is no global cross-prefix ordering to
     /// serve, so the rejection names the missing coverage.

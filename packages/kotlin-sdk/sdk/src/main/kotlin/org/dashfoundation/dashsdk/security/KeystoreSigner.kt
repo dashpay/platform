@@ -331,6 +331,20 @@ class KeystoreSigner(
     /**
      * Decrypt the key; on an expired auth window, run the biometric gate
      * once and retry — mirroring KeychainSigner's LAContext flow.
+     *
+     * A [KeystoreDeviceLockedException] deliberately does NOT come here.
+     * It is the typed "the Keystore refused a lock-bound key" signal, which
+     * `WalletStorage` now raises for the non-auth-gated identity alias too
+     * (MO-972). Android reports that denial with the very same
+     * `UserNotAuthenticatedException` as a closed auth window, and treating
+     * the two alike is what made the field failure unreadable: signing on a
+     * `DEVICE_BOUND` install — a policy with no auth window at all — was
+     * reported as "Keystore auth window expired" one second after a
+     * successful biometric. Prompting cannot help either: the gate tracks
+     * the device's lock state, not recency of authentication, so a prompt
+     * would burn a user interaction and fail identically. Letting the typed
+     * exception escape completes the sign with its own explicit message
+     * (which alias, and what `KeyguardManager` said at the time) instead.
      */
     private suspend fun retrieveKeyWithAuth(storageKey: String): ByteArray? =
         try {

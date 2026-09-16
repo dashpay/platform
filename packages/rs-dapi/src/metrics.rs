@@ -558,6 +558,7 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getEvonodesProposedEpochBlocksByRange",
                 "getDataContract",
                 "getDataContractHistory",
+                "getDataContractsLatestVersions",
                 "getDataContracts",
                 "getDataContractsByRange",
                 "getDocumentHistory",

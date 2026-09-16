@@ -159,6 +159,9 @@ impl MockDashPlatformSdk {
                 "GetDataContractsByRangeRequest" => {
                     load_expectation::<proto::GetDataContractsByRangeRequest>(&mut dapi, filename)?
                 }
+                "GetDataContractsLatestVersionsRequest" => load_expectation::<
+                    proto::GetDataContractsLatestVersionsRequest,
+                >(&mut dapi, filename)?,
                 "GetDataContractHistoryRequest" => {
                     load_expectation::<proto::GetDataContractHistoryRequest>(&mut dapi, filename)?
                 }

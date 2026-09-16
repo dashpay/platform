@@ -285,6 +285,15 @@ impl_transport_request_grpc!(
     get_data_contracts_by_range
 );
 
+// rpc getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest) returns (GetDataContractsLatestVersionsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetDataContractsLatestVersionsRequest,
+    platform_proto::GetDataContractsLatestVersionsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_data_contracts_latest_versions
+);
+
 impl_transport_request_grpc!(
     platform_proto::GetConsensusParamsRequest,
     platform_proto::GetConsensusParamsResponse,

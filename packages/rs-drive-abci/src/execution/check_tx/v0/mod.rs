@@ -688,7 +688,158 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24002816630
+            // from protocol version 14 the contract's version item is stored beside the contract,
+            // and the larger DashPay v2 schema adds byte-billed contract bytes
+            24002988740
+        );
+
+        let check_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid()); // it should still be valid, because we didn't commit the transaction
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let check_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(!check_result.is_valid()); // it should no longer be valid, because of the nonce check
+
+        assert!(matches!(
+            check_result.errors.first().expect("expected an error"),
+            ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
+        ));
+    }
+
+    /// Protocol version 13 stores no contract version item, so the create fee stays where it
+    /// was before protocol version 14 added the item.
+    #[test]
+    fn data_contract_create_check_tx_protocol_version_13() {
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc();
+
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(1),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        platform
+            .drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create state structure");
+        let identity: Identity = IdentityV0 {
+            id: Identifier::new([
+                158, 113, 180, 126, 91, 83, 62, 44, 83, 54, 97, 88, 240, 215, 84, 139, 167, 156,
+                166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
+            ]),
+            public_keys: BTreeMap::from([(1, key.clone())]),
+            balance: 25_000_000_000, // 0.25 Dash
+            revision: 0,
+        }
+        .into();
+
+        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
+        let mut create_contract_state_transition: StateTransition = dashpay
+            .try_into_platform_versioned(platform_version)
+            .expect("expected a state transition");
+        create_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
+            .expect("expected to sign transition");
+        let serialized = create_contract_state_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+        platform
+            .drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let validation_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert_eq!(validation_result.errors.as_slice(), &[]);
+
+        let check_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid());
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                std::slice::from_ref(&serialized),
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            24002489210
         );
 
         let check_result = platform
@@ -1203,7 +1354,9 @@ mod tests {
         // Plus we have 24_000_000_000 in base costs
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24005633260
+            // from protocol version 14 the contract's version item is stored beside the contract,
+            // and the larger DashPay v2 schema adds byte-billed contract bytes
+            24005977480
         );
 
         let check_result = platform
@@ -1678,7 +1831,9 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24002816630
+            // from protocol version 14 the contract's version item is stored beside the contract,
+            // and the larger DashPay v2 schema adds byte-billed contract bytes
+            24002988740
         );
 
         platform
@@ -1765,7 +1920,225 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            27002879350
+            // from protocol version 14 the contract's version item is stored beside the contract,
+            // and the larger DashPay v2 schema adds byte-billed contract bytes
+            27003059940
+        );
+
+        let check_result = platform
+            .check_tx(
+                serialized_update.as_slice(),
+                Recheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid()); // it should still be valid, because we didn't commit the transaction
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let check_result = platform
+            .check_tx(
+                serialized_update.as_slice(),
+                Recheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(!check_result.is_valid()); // it should no longer be valid, because of the nonce check
+
+        assert!(matches!(
+            check_result.errors.first().expect("expected an error"),
+            ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
+        ));
+    }
+
+    /// Protocol version 13 stores no contract version item, so the update fee stays where it
+    /// was before protocol version 14 added the item.
+    #[test]
+    fn data_contract_update_check_tx_protocol_version_13() {
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc();
+
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(1),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        platform
+            .drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create state structure");
+        let identity: Identity = IdentityV0 {
+            id: Identifier::new([
+                158, 113, 180, 126, 91, 83, 62, 44, 83, 54, 97, 88, 240, 215, 84, 139, 167, 156,
+                166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
+            ]),
+            public_keys: BTreeMap::from([(1, key.clone())]),
+            balance: 100_000_000_000, // 1.0 Dash
+            revision: 0,
+        }
+        .into();
+
+        let dashpay_created_contract =
+            get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
+        let mut modified_dashpay_contract = dashpay_created_contract.data_contract().clone();
+        let mut create_contract_state_transition: StateTransition = dashpay_created_contract
+            .try_into_platform_versioned(platform_version)
+            .expect("expected a state transition");
+        create_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
+            .expect("expected to sign transition");
+        let serialized = create_contract_state_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                std::slice::from_ref(&serialized),
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            24002489210
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Now let's do the data contract update
+        let _dashpay_id = modified_dashpay_contract.id();
+        // we need to alter dashpay to make it invalid
+
+        modified_dashpay_contract.set_version(2);
+
+        let document_types = modified_dashpay_contract.document_types_mut();
+
+        let dpns_contract =
+            get_dpns_data_contract_fixture(Some(identity.id()), 1, protocol_version)
+                .data_contract_owned();
+
+        document_types.insert(
+            "preorder".to_string(),
+            dpns_contract
+                .document_type_for_name("preorder")
+                .expect("expected document type")
+                .to_owned_document_type(),
+        );
+
+        let mut update_contract_state_transition: StateTransition =
+            DataContractUpdateTransition::try_from_platform_versioned(
+                (modified_dashpay_contract, 2),
+                platform_version,
+            )
+            .expect("expected a state transition")
+            .into();
+
+        update_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
+            .expect("expected to sign transition");
+        let serialized_update = update_contract_state_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let validation_result = platform
+            .check_tx(
+                serialized_update.as_slice(),
+                FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert_eq!(validation_result.errors.as_slice(), &[]);
+
+        let check_result = platform
+            .check_tx(
+                serialized_update.as_slice(),
+                Recheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid());
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let update_processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                std::slice::from_ref(&serialized_update),
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        // We have one invalid paid for state transition
+        assert_eq!(update_processing_result.valid_count(), 1);
+
+        assert_eq!(
+            update_processing_result.aggregated_fees().processing_fee,
+            27002504030
         );
 
         let check_result = platform
@@ -2137,7 +2510,9 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24002816630
+            // from protocol version 14 the contract's version item is stored beside the contract,
+            // and the larger DashPay v2 schema adds byte-billed contract bytes
+            24002988740
         );
 
         platform
