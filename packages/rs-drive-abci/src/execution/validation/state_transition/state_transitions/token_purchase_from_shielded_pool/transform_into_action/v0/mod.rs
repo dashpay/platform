@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::token_pool_paid_common::{
-    resolve_pooled_token, validate_credit_pool_fee_spend, 
+    resolve_pooled_token, validate_credit_pool_fee_spend,
 };
 use dpp::consensus::state::token::{TokenMintPastMaxSupplyError, TokenNotForDirectSale};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
