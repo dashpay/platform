@@ -1,9 +1,3 @@
-## [Unreleased]
-
-### Fixed
-
-- **platform-wallet:** Select a DashPay profile authentication key available to the external signer when an earlier eligible key is unavailable.
-
 ## [4.2.0-dev.11](https://github.com/dashpay/platform/compare/v4.2.0-dev.10...v4.2.0-dev.11) (2026-09-14)
 
 

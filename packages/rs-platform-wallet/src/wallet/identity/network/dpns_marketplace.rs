@@ -26,6 +26,7 @@
 //! purchase/transfer; a name inside an active contested-name vote is not
 //! in the documents tree at all.
 
+use super::signing_key::available_signing_key;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
@@ -903,6 +904,7 @@ impl IdentityWallet {
     async fn select_dpns_signing_key(
         &self,
         identity_id: &Identifier,
+        signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
         let contract = self.dpns_contract().await?;
         let required_level = contract
@@ -925,21 +927,23 @@ impl IdentityWallet {
             .wallet_identity(&self.wallet_id, identity_id)
             .map(|m| m.identity.clone())
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        identity
-            .get_first_public_key_matching(
-                Purpose::AUTHENTICATION,
-                allowed_levels.iter().copied().collect(),
-                [KeyType::ECDSA_SECP256K1].into(),
-                false,
-            )
-            .cloned()
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "No ECDSA authentication key at a security level satisfying \
-                     {required_level} found on identity {identity_id} \
+        drop(wm);
+        available_signing_key(
+            &identity,
+            signer,
+            Purpose::AUTHENTICATION,
+            &allowed_levels,
+            &[KeyType::ECDSA_SECP256K1],
+            false,
+        )
+        .cloned()
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "No ECDSA authentication key at a security level satisfying \
+                     {required_level} available to signer on identity {identity_id} \
                      (required to sign a DPNS domain state transition)"
-                ))
-            })
+            ))
+        })
     }
 
     // -----------------------------------------------------------------
@@ -1099,7 +1103,9 @@ impl IdentityWallet {
                 state.owner_id
             )));
         }
-        let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
+        let signing_key = self
+            .select_dpns_signing_key(owner_identity_id, signer)
+            .await?;
         let contract_id = dpns_contract_id();
         let confirmed = self
             .set_document_price_with_signer(
@@ -1151,7 +1157,9 @@ impl IdentityWallet {
                 document_id: state.document_id,
             });
         }
-        let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
+        let signing_key = self
+            .select_dpns_signing_key(owner_identity_id, signer)
+            .await?;
         let contract_id = dpns_contract_id();
         let confirmed = self
             .transfer_document_with_signer(
@@ -1212,7 +1220,9 @@ impl IdentityWallet {
                 state.owner_id
             )));
         }
-        let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
+        let signing_key = self
+            .select_dpns_signing_key(owner_identity_id, signer)
+            .await?;
         let contract_id = dpns_contract_id();
         let confirmed = self
             .transfer_document_with_signer(
@@ -1332,7 +1342,9 @@ impl IdentityWallet {
                 available,
             });
         }
-        let signing_key = self.select_dpns_signing_key(purchaser_identity_id).await?;
+        let signing_key = self
+            .select_dpns_signing_key(purchaser_identity_id, signer)
+            .await?;
         let contract_id = dpns_contract_id();
         let confirmed = self
             .purchase_document_with_signer(

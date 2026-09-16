@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::Purpose;
 use dpp::identity::signer::Signer;
 use dpp::identity::KeyType;
@@ -13,6 +12,7 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
+use super::signing_key::available_signing_key;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -24,19 +24,14 @@ fn profile_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
 ) -> Option<&'a IdentityPublicKey> {
-    identity.public_keys().values().find(|key| {
-        key.purpose() == Purpose::AUTHENTICATION
-            && matches!(
-                key.security_level(),
-                SecurityLevel::HIGH | SecurityLevel::CRITICAL
-            )
-            && matches!(
-                key.key_type(),
-                KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160
-            )
-            && !key.is_disabled()
-            && signer.can_sign_with(key)
-    })
+    available_signing_key(
+        identity,
+        signer,
+        Purpose::AUTHENTICATION,
+        &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+        &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
+        false,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -129,16 +124,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Create a DashPay profile document using an externally-supplied
     /// signer.
     ///
-    /// Mirrors [`Self::create_profile`] but signing is routed through
-    /// the supplied `&S: Signer<IdentityPublicKey>`. The signing key
+    /// Signing uses the supplied `&S: Signer<IdentityPublicKey>`. The signing key
     /// is resolved from the identity's active HIGH or CRITICAL ECDSA
     /// authentication keys (full public key or HASH160), choosing the
     /// first key available according to `signer.can_sign_with`.
     /// Signing errors are propagated without trying another key.
-    ///
-    /// All other behavior — avatar hashing, document construction,
-    /// local cache update via the persister — is identical to the
-    /// legacy variant.
     pub async fn create_profile_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
@@ -194,7 +184,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .identity_manager
                 .managed_identity(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            profile_signing_key(&managed.identity, signer)
+            let identity = managed.identity.clone();
+            drop(wm);
+            profile_signing_key(&identity, signer)
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
@@ -266,8 +258,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Update an existing DashPay profile document using an
     /// externally-supplied signer.
     ///
-    /// Mirrors [`Self::update_profile`] but signing is routed through
-    /// the supplied `&S: Signer<IdentityPublicKey>`. Key selection follows
+    /// Signing uses the supplied `&S: Signer<IdentityPublicKey>`. Key selection follows
     /// [`Self::create_profile_with_external_signer`].
     pub async fn update_profile_with_external_signer<S>(
         &self,
@@ -344,7 +335,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .identity_manager
                 .managed_identity(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            profile_signing_key(&managed.identity, signer)
+            let identity = managed.identity.clone();
+            drop(wm);
+            profile_signing_key(&identity, signer)
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
@@ -796,6 +789,7 @@ fn contact_profiles_chunk_query(
 mod tests {
     use super::*;
     use crate::wallet::identity::ProfileUpdate;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use std::collections::BTreeMap;
 
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;

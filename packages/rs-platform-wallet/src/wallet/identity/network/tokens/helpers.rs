@@ -12,10 +12,11 @@
 //! all rejected by Drive. See
 //! `state_transitions/document/batch_transition/methods/v0/mod.rs:133-138`.
 
+use super::super::signing_key::available_signing_key;
 use std::sync::Arc;
 
 use dpp::data_contract::DataContract;
-use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 
@@ -37,6 +38,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     pub(super) async fn token_resolve_signing_key(
         &self,
         identity_id: &Identifier,
+        signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         let info = wm
@@ -48,23 +50,23 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .identity(identity_id)
             .map(|m| m.identity.clone())
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+        drop(wm);
 
-        let signing_key = identity
-            .get_first_public_key_matching(
-                Purpose::AUTHENTICATION,
-                [SecurityLevel::CRITICAL].into(),
-                [KeyType::ECDSA_SECP256K1].into(),
-                false,
-            )
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "No AUTHENTICATION ECDSA_SECP256K1 key at CRITICAL security level on identity {} — \
-                     identities registered before this fix may need an IdentityUpdate to add a CRITICAL key, \
-                     or re-registration",
-                    identity_id
-                ))
-            })?
-            .clone();
+        let signing_key = available_signing_key(
+            &identity,
+            signer,
+            Purpose::AUTHENTICATION,
+            &[SecurityLevel::CRITICAL],
+            &[KeyType::ECDSA_SECP256K1],
+            false,
+        )
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "No AUTHENTICATION ECDSA_SECP256K1 key at CRITICAL security level \
+                     available to signer on identity {identity_id}"
+            ))
+        })?
+        .clone();
 
         Ok(signing_key)
     }
@@ -99,5 +101,25 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             provider.register_data_contract(Arc::clone(&contract));
         }
         Ok(contract)
+    }
+}
+
+#[cfg(test)]
+mod signing_tests {
+    use super::*;
+    use crate::wallet::identity::network::signing_key::tests::{
+        wallet_with_signing_keys, LockCheckingSigner,
+    };
+
+    #[tokio::test]
+    async fn should_check_token_key_availability_outside_wallet_lock() {
+        let wallet = wallet_with_signing_keys().await;
+        let signer = LockCheckingSigner(wallet.identity());
+        let error = wallet
+            .identity()
+            .token_resolve_signing_key(&Identifier::default(), &signer)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("available to signer"), "{error}");
     }
 }

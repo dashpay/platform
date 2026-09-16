@@ -1,5 +1,6 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
+use super::signing_key::available_signing_key;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -606,24 +607,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
 
         // 5. Build the signing key reference for document signing.
-        let identity_public_key = sender_identity
-            // Contact-request send writes a document state transition,
-            // which DPP requires to be signed by a HIGH-or-stricter
-            // authentication key. MASTER is rejected on document writes.
-            .get_first_public_key_matching(
-                Purpose::AUTHENTICATION,
-                [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                [KeyType::ECDSA_SECP256K1].into(),
-                false,
-            )
-            .cloned()
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "Sender identity has no HIGH or CRITICAL authentication key \
+        let identity_public_key = available_signing_key(
+            &sender_identity,
+            signer,
+            Purpose::AUTHENTICATION,
+            &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+            &[KeyType::ECDSA_SECP256K1],
+            false,
+        )
+        .cloned()
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "Sender identity has no HIGH or CRITICAL authentication key available to signer \
                      (required for document state transitions)"
-                        .to_string(),
-                )
-            })?;
+                    .to_string(),
+            )
+        })?;
 
         // 6. Client-side ECDH via the signer: the shared secret is derived in
         //    the signer (scalar at `sender_enc_path`) against the recipient's
