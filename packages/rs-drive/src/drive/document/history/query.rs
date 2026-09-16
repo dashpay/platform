@@ -8,7 +8,7 @@ use crate::drive::document::paths::{
     contract_document_type_path_vec, document_history_path, DOCUMENT_HISTORY_TREE_KEY,
 };
 use crate::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
-use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::common::encode::encode_u64;
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
@@ -66,7 +66,23 @@ impl DocumentHistoryQueryV1 {
 
     /// The leaf-only query required for authenticated count-offset pagination.
     pub fn entries_query(&self, version: &PlatformVersion) -> Result<PathQuery, Error> {
-        Drive::fetch_document_history_query(self, version)
+        match version
+            .drive
+            .methods
+            .document
+            .query
+            .fetch_document_history_query
+        {
+            1 => self.entries_query_v1(),
+            0 => Err(invalid(
+                "document history is served from protocol version 14",
+            )),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "entries_query".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
     }
 
     pub(crate) fn entries_query_v1(&self) -> Result<PathQuery, Error> {

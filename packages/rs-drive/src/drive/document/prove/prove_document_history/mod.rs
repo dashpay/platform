@@ -1,23 +1,26 @@
-use crate::drive::document::history::{
-    invalid, DocumentHistoryProofV1, DocumentHistoryQueryV1, DocumentHistoryV1,
-};
+mod v0;
+
+use crate::drive::document::history::invalid;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Proves a page of a historical document's retained revisions with its
-    /// lifecycle, through the method version the protocol selects.
+    /// Proves the existence or absence of the specified document's history.
+    #[allow(clippy::too_many_arguments)]
     pub fn prove_document_history(
         &self,
-        query: &DocumentHistoryQueryV1,
-        document_type: DocumentTypeRef,
+        contract_id: [u8; 32],
+        document_type_name: &str,
+        document_id: [u8; 32],
         transaction: TransactionArg,
+        start_at_ms: u64,
+        limit: Option<u16>,
+        offset: Option<u16>,
         platform_version: &PlatformVersion,
-    ) -> Result<(DocumentHistoryV1, DocumentHistoryProofV1), Error> {
+    ) -> Result<Vec<u8>, Error> {
         match platform_version
             .drive
             .methods
@@ -25,18 +28,24 @@ impl Drive {
             .query
             .prove_document_history
         {
-            1 => self.prove_document_history_v1_impl(
-                query,
-                document_type,
+            0 => self.prove_document_history_v0(
+                contract_id,
+                document_type_name,
+                document_id,
                 transaction,
+                start_at_ms,
+                limit,
+                offset,
                 platform_version,
             ),
-            0 => Err(invalid(
-                "document history is served from protocol version 14",
+            // The layout changed at protocol version 14: revisions live in the
+            // per-type history tree and are proved through the history query.
+            1 => Err(invalid(
+                "the document history layout changed at protocol version 14; use the history query",
             )),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "prove_document_history".to_owned(),
-                known_versions: vec![1],
+                method: "prove_document_history".to_string(),
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

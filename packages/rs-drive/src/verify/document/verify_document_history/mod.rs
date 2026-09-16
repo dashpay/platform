@@ -1,22 +1,29 @@
-use crate::drive::document::history::{
-    invalid, DocumentHistoryProofV1, DocumentHistoryQueryV1, DocumentHistoryV1,
-};
+mod v0;
+
+use crate::drive::document::history::invalid;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::document::Document;
 use dpp::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 impl Drive {
-    /// Verifies a proved page of a historical document's retained revisions
-    /// and lifecycle, through the method version the protocol selects.
+    /// Verifies that the document's history is included in the proof.
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_document_history(
-        proof: &DocumentHistoryProofV1,
-        query: &DocumentHistoryQueryV1,
+        proof: &[u8],
+        contract_id: [u8; 32],
+        document_type_name: &str,
         document_type: DocumentTypeRef,
+        document_id: [u8; 32],
+        start_at_ms: u64,
+        limit: Option<u16>,
+        offset: Option<u16>,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, DocumentHistoryV1), Error> {
+    ) -> Result<(RootHash, Option<BTreeMap<u64, Document>>), Error> {
         match platform_version
             .drive
             .methods
@@ -24,15 +31,25 @@ impl Drive {
             .document
             .verify_document_history
         {
-            1 => {
-                Self::verify_document_history_v1_impl(query, proof, document_type, platform_version)
-            }
-            0 => Err(invalid(
-                "document history is served from protocol version 14",
+            0 => Drive::verify_document_history_v0(
+                proof,
+                contract_id,
+                document_type_name,
+                document_type,
+                document_id,
+                start_at_ms,
+                limit,
+                offset,
+                platform_version,
+            ),
+            // The layout changed at protocol version 14: proofs of the per-type
+            // history tree are verified through the history query.
+            1 => Err(invalid(
+                "the document history layout changed at protocol version 14; use the history query",
             )),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "verify_document_history".to_owned(),
-                known_versions: vec![1],
+                method: "verify_document_history".to_string(),
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

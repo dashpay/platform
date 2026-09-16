@@ -2,6 +2,7 @@
 
 use super::{corrupt, invalid, DocumentHistoryProofV1, DocumentHistoryQueryV1, DocumentHistoryV1};
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -81,6 +82,22 @@ impl Drive {
         document_type: DocumentTypeRef,
         version: &PlatformVersion,
     ) -> Result<([u8; 32], DocumentHistoryV1), Error> {
-        Self::verify_document_history(proof, query, document_type, version)
+        match version
+            .drive
+            .methods
+            .verify
+            .document
+            .verify_document_history
+        {
+            1 => Self::verify_document_history_v1_impl(query, proof, document_type, version),
+            0 => Err(invalid(
+                "document history is served from protocol version 14",
+            )),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "verify_document_history_v1".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
     }
 }
