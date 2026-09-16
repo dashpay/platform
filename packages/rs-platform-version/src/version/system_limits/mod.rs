@@ -87,6 +87,9 @@ pub struct SystemLimits {
     /// FAILED instead of being re-signed forever (`rebroadcast_expired_withdrawal_documents`
     /// method version 2). `None` for the protocol versions that predate the rule.
     pub core_dust_relay_fee_per_kb: Option<u64>,
+    /// Maximum Core transaction fee rate, in duffs per byte, accepted for a withdrawal.
+    /// `None` preserves the behavior of protocol versions that predate this limit.
+    pub max_core_fee_per_byte: Option<u32>,
     pub max_contract_group_size: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
@@ -235,6 +238,67 @@ mod tests {
                 .system_limits
                 .max_document_value_depth,
             Some(256)
+        );
+    }
+
+    /// The withdrawal structure generations selected from protocol version 14 read the cap
+    /// through `dpp::withdrawal::validate_core_fee_per_byte_cap`, which treats `None` as "no
+    /// cap" per the field's contract. A table that selected one of those generations without a
+    /// cap would drop the limit silently, so that combination has to be a deliberate edit here.
+    #[test]
+    fn should_carry_a_core_fee_cap_wherever_the_capped_withdrawal_rules_are_selected() {
+        let selecting_capped_rules: Vec<_> = PLATFORM_VERSIONS
+            .iter()
+            .filter(|platform_version| {
+                let dpp_transitions = &platform_version.dpp.state_transitions;
+                let identity_structure = platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_credit_withdrawal_state_transition
+                    .basic_structure;
+                dpp_transitions
+                    .address_funds
+                    .validate_credit_withdrawal_structure
+                    >= 1
+                    || dpp_transitions.shielded.validate_withdrawal_structure >= 1
+                    || identity_structure.is_some_and(|version| version >= 2)
+            })
+            .collect();
+        assert!(
+            !selecting_capped_rules.is_empty(),
+            "no protocol version selects the fee-capped withdrawal rules; this test would \
+             assert nothing"
+        );
+        for platform_version in selecting_capped_rules {
+            assert!(
+                platform_version
+                    .system_limits
+                    .max_core_fee_per_byte
+                    .is_some(),
+                "protocol version {} selects the fee-capped withdrawal structure rules without \
+                 a Core fee-rate cap; see SystemLimits::max_core_fee_per_byte",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    #[test]
+    fn core_fee_per_byte_limit_starts_at_protocol_version_14() {
+        // v13 is already active on live networks, so the limit must not apply there.
+        assert_eq!(
+            PlatformVersion::get(13)
+                .expect("protocol version 13 should exist")
+                .system_limits
+                .max_core_fee_per_byte,
+            None
+        );
+        assert_eq!(
+            PlatformVersion::get(14)
+                .expect("protocol version 14 should exist")
+                .system_limits
+                .max_core_fee_per_byte,
+            Some(6_765)
         );
     }
 }

@@ -40,6 +40,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     // * CREDITS_PER_DUFF(1000) = 190_000 credits = 190 duffs.
     min_withdrawal_amount: 190_000,
     core_dust_relay_fee_per_kb: None, // expired dust withdrawals fail from v14
+    max_core_fee_per_byte: None,
     max_contract_group_size: 256,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on

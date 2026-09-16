@@ -1854,6 +1854,11 @@ fn load_one_wallet(
         wallet_info,
         identity_manager,
         unused_asset_locks,
+        // This backend does not stage unconfirmed outgoing sends for replay
+        // yet; the FFI persister is the only producer today. Empty leaves the
+        // replay inert here, which is the behaviour this path had before the
+        // field existed.
+        unconfirmed_outgoing_txs: Vec::new(),
     })
 }
 

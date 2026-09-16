@@ -163,7 +163,13 @@ windows-native-keyring-store = { version = "=1.0.0", optional = true }
 [dev-dependencies]
 # `test-utils` reaches `provider_key_test_wallet`, shared with
 # `platform-wallet`'s own `rebuild_provider_key_account` tests — see its use
-# in `sqlite/provider_accounts.rs`'s test module.
+# in `sqlite/provider_accounts.rs`'s test module. It also exposes
+# `platform_wallet::test_support::funded_wallet_manager`, which
+# `sqlite_sent_payment_verdict_durability.rs` needs to stand up a real
+# `WalletManager` and drive the wallet-event adapter against this crate's
+# SQLite persister. ONE entry: a second `platform-wallet` key in this table is
+# a duplicate key, and cargo refuses to load the manifest at all — which takes
+# the whole workspace down, `cargo fmt` included.
 platform-wallet = { path = "../rs-platform-wallet", features = ["test-utils"] }
 proptest = "1"
 assert_cmd = "2"
@@ -192,11 +198,6 @@ serial_test = "3"
 # so `secrets_mock_store_test_util.rs` proves the feature gate from the
 # outside — `cfg(test)` alone would satisfy it from within the crate.
 platform-wallet-storage = { path = ".", default-features = false, features = ["sqlite", "cli", "secrets", "kv", "__test-helpers", "test-util"] }
-# `test-utils` exposes `platform_wallet::test_support::funded_wallet_manager`,
-# which `sqlite_sent_payment_verdict_durability.rs` needs to stand up a real
-# `WalletManager` and drive the wallet-event adapter against this crate's
-# SQLite persister. Additive over the production dep above.
-platform-wallet = { path = "../rs-platform-wallet", features = ["test-utils"] }
 # The adapter is a tokio task; the durability test drives it and awaits its
 # join handle. Current-thread runtime only — nothing here needs threads.
 tokio = { version = "1", features = ["rt", "macros", "sync"] }

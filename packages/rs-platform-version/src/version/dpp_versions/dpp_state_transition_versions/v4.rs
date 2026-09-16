@@ -5,7 +5,12 @@ use crate::version::dpp_versions::dpp_state_transition_versions::{
     IdentityTransitionAssetLockVersions, IdentityTransitionVersions, ShieldedTransitionVersions,
 };
 
-pub const STATE_TRANSITION_VERSIONS_V3: DPPStateTransitionVersions = DPPStateTransitionVersions {
+/// Protocol version 14. Identical to [`super::v3::STATE_TRANSITION_VERSIONS_V3`] except that the
+/// address and shielded withdrawal structure rules move to their version 1, which cap
+/// `core_fee_per_byte` and require the withdrawn amount to leave `min_withdrawal_amount` above
+/// the Core fee, since from v14 that fee is carved out of the amount instead of being drawn
+/// from the Core credit pool on top of it.
+pub const STATE_TRANSITION_VERSIONS_V4: DPPStateTransitionVersions = DPPStateTransitionVersions {
     documents: DocumentTransitionVersions {
         documents_batch_transition: DocumentsBatchTransitionVersions {
             validation: DocumentsBatchTransitionValidationVersions {
@@ -37,13 +42,13 @@ pub const STATE_TRANSITION_VERSIONS_V3: DPPStateTransitionVersions = DPPStateTra
     address_funds: AddressFundsTransitionVersions {
         address_funds_transition_default_version: 0,
         credit_withdrawal: 0,
-        validate_credit_withdrawal_structure: 0,
+        validate_credit_withdrawal_structure: 1, // v14: Core fee-rate cap + fee-inclusive minimum
         min_output_amount: 500_000,
         min_input_amount: 100_000,
         min_identity_funding_amount: 200_000,
     },
     shielded: ShieldedTransitionVersions {
-        validate_withdrawal_structure: 0,
+        validate_withdrawal_structure: 1, // v14: Core fee-rate cap + fee-inclusive reserved range
     },
     max_address_inputs: 16,
     max_address_outputs: 128,
