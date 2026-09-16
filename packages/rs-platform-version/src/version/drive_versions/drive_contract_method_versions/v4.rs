@@ -6,10 +6,16 @@ use crate::version::drive_versions::drive_contract_method_versions::{
 
 /// Drive contract methods for the 5.0 protocol version (17).
 ///
-/// Identical to [`super::v3::DRIVE_CONTRACT_METHOD_VERSIONS_V3`] except
-/// `insert.insert_contract` is bumped to `2`: a contract that issues tokens
-/// gets its lifecycle record (the per-issuer supply rollup) in the same batch
-/// that creates its token trees, seeded with the sum of the base supplies.
+/// Identical to [`super::v3::DRIVE_CONTRACT_METHOD_VERSIONS_V3`] except:
+///
+/// * `insert.insert_contract` is bumped to `2`: a contract that issues tokens
+///   gets its lifecycle record (the per-issuer supply rollup) in the same
+///   batch that creates its token trees, seeded with the sum of the base
+///   supplies.
+/// * `update.update_contract` is bumped to `2`: an update that adds tokens
+///   hands its accumulated batch to every token tree creation, so the
+///   issuer's record is written once per update however many tokens are
+///   added, and a destroyed issuer is refused.
 pub const DRIVE_CONTRACT_METHOD_VERSIONS_V4: DriveContractMethodVersions =
     DriveContractMethodVersions {
         prove: DriveContractProveMethodVersions {
@@ -28,7 +34,7 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V4: DriveContractMethodVersions =
             add_keywords: 0,
         },
         update: DriveContractUpdateMethodVersions {
-            update_contract: 1,
+            update_contract: 2, // changed in v4: writes the issuer's lifecycle record once per update
             update_description: 0,
             update_keywords: 0,
         },

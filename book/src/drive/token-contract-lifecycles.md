@@ -33,7 +33,8 @@ An issuer's rollup can exceed `i64`: two tokens at the largest legal base supply
 | Genesis | `create_initial_state_structure` v4 | Calls `insert_token_contract_lifecycles_structure`, which inserts the ledger tree, the zero scalar and the empty queue sequentially. |
 | Upgrade | `transition_to_version_17_token_lifecycles` | Calls the same helper, then backfills one record per issuer with insert-if-not-exists. |
 | Contract creation | `insert_contract` v2 | Inserts the record seeded with the checked sum of the base supplies. |
-| Token creation | `create_token_trees` v1 | Inserts a zero record if the contract has none, scanning the current batch so a contract update that adds several tokens inserts it once. |
+| Token creation | `create_token_trees` v1 | Inserts a zero record if the contract has none and refuses a destroyed issuer, scanning the batch it is handed so several tokens created together insert the record once. |
+| Contract update | `update_contract` v2 | Hands its accumulated batch to every added token's tree creation, so the record is written once per update however many tokens are added. |
 | Supply increase | `add_to_token_total_supply` v1 | Resolves the issuer through the contract info leaf and raises the rollup by the amount actually added (the saturated amount when saturation was allowed). |
 | Supply decrease | `remove_from_token_total_supply` v1 | Lowers the rollup by the same amount. |
 | Destruction | `destroy_token_issuer` | Marks the record wiped and raises the scalar by its rollup: two reads, two writes, whatever the issuer holds. A contract without tokens gets a wiped zero record. |

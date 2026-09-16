@@ -40,9 +40,10 @@ use grovedb_version::version::v4::GROVE_V4;
 ///   `remove_from_token_total_supply` to 1 so every native supply mutation
 ///   keeps the issuer rollup current in the same batch and refuses a wiped
 ///   issuer, and turns on the `lifecycle` method group.
-/// * **Contract creation**: `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps
-///   `insert_contract` to 2 so a new issuer's record starts at the sum of
-///   its base supplies.
+/// * **Contract creation and update**: `DRIVE_CONTRACT_METHOD_VERSIONS_V4`
+///   bumps `insert_contract` to 2 so a new issuer's record starts at the sum
+///   of its base supplies, and `update_contract` to 2 so an update that adds
+///   tokens writes the record once and refuses a destroyed issuer.
 /// * **Token conservation**: `calculate_total_tokens_balance` 0 -> 1 reads
 ///   the destroyed supply scalar; the block end check requires raw supply to
 ///   equal raw balances and the destroyed supply to stay within them.
@@ -78,7 +79,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed in v9: v2 index walkers + v1 update walker (shared-prefix aggregate indexes become insertable) and the detect_ranked_mode slot
         vote: DRIVE_VOTE_METHOD_VERSIONS_V2,
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V4, // changed in v10: insert_contract 2 writes the issuer's lifecycle record
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V4, // changed in v10: insert_contract 2 and update_contract 2 write the issuer's lifecycle record
         fees: DriveFeesMethodVersions { calculate_fee: 0 },
         estimated_costs: DriveEstimatedCostsMethodVersions {
             add_estimation_costs_for_levels_up_to_contract: 0,
