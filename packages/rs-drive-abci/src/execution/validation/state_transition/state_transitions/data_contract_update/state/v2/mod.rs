@@ -872,6 +872,33 @@ mod tests {
     }
 
     #[test]
+    fn delta_update_reaching_pre_v15_state_validation_is_an_unsupported_version_error() {
+        use dpp::consensus::basic::UnsupportedVersionError;
+
+        // a node still on protocol version 14 selects state generation 1,
+        // which shipped before delta-based updates; the dispatcher rejects
+        // the delta ahead of it with a consensus error, never an execution
+        // error, so no shipped generation ever sees a delta
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let data_contract = get_data_contract_fixture(None, 0, 14).data_contract_owned();
+        store(&platform, &data_contract);
+        let updated = extended(&data_contract);
+        let transition = delta(&data_contract, &updated);
+
+        let result = validate(&platform, &transition);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::UnsupportedVersionError(error))]
+                if *error == UnsupportedVersionError::new(1, 0, 0)
+        );
+        assert!(result.data.is_none());
+    }
+
+    #[test]
     fn transforming_a_delta_update_of_a_missing_contract_is_not_an_execution_error() {
         let (platform, data_contract) = setup();
         let updated = extended(&data_contract);
