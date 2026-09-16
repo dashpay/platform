@@ -2151,8 +2151,14 @@ extension SDK {
         defer { dash_sdk_data_contract_fetch_result_free(&result) }
 
         if let error = result.error {
-            let message = error.pointee.message.map { String(cString: $0) } ?? "Unknown error"
-            throw SDKError.internalError("Failed to fetch data contract: \(message)")
+            // Typed, like the other query paths in this file, so a transport
+            // failure surfaces as `.networkError` / `.timeout` and callers keep
+            // their retry classification instead of seeing `.internalError`.
+            // Built here, while the result is still alive; the `defer` above
+            // releases it — and the error with it, so unlike the call sites
+            // that own a bare `DashSDKResult`, this one must NOT also call
+            // `dash_sdk_error_free`.
+            throw SDKError.fromDashSDKError(error.pointee)
         }
 
         guard let json = result.json_string else {
