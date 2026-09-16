@@ -98,14 +98,14 @@ where
              network did at the time (see platform#2309, tenderdash#966)"
         );
 
-        // The block's saved platform state was in the failed transaction, so the
-        // full record on disk is behind the state cache this block published as
-        // clean. Mark it dirty again: the next block then writes the full record
-        // rather than only the small one on top of a stale full record, which a
-        // restart before the next heavy change would otherwise read back.
+        // The block's saved platform state was in the failed transaction, so
+        // what is on disk is behind the state cache this block published as
+        // saved. Mark all of it unsaved again: the next block then writes the
+        // full record and every entry rather than only its own changes on top
+        // of stale ones, which a restart would otherwise read back.
         let platform = app.platform();
         let mut state = platform.state.load().as_ref().clone();
-        state.heavy_fields_dirty = true;
+        state.mark_all_unsaved();
         platform.state.store(Arc::new(state));
     } else {
         // A failed commit leaves caches ahead of durable state. Restart Drive so the
@@ -615,9 +615,14 @@ mod tests {
         finalize_block_with_failing_commit_on(&platform, 32326, busy_commit_error())
             .expect("the incident's commit conflict is tolerated");
 
+        let state = platform.state.load();
         assert!(
-            platform.state.load().heavy_fields_dirty,
+            state.heavy_fields_dirty,
             "a block whose commit failed must not leave the state cache clean"
+        );
+        assert!(
+            state.masternode_changes.rewrite_all && state.validator_set_changes.rewrite_all,
+            "its entries were in the failed transaction too"
         );
     }
 

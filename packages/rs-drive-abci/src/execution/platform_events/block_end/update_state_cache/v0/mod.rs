@@ -55,9 +55,8 @@ where
         self.store_platform_state(&block_platform_state, Some(transaction), platform_version)?;
 
         // Whatever the store wrote is now what is on disk for this block, so the
-        // next block only has to write the full record if it changes something
-        // heavy itself.
-        block_platform_state.heavy_fields_dirty = false;
+        // next block only has to write what it changes itself.
+        block_platform_state.mark_saved();
 
         let block_platform_state = Arc::new(block_platform_state);
 
@@ -234,6 +233,9 @@ mod tests {
     /// fields from the last full write. Once at the tip, a block that changes
     /// nothing heavy still rewrites the full record, so a caught-up node always
     /// has a complete record on disk that an older drive-abci can read.
+    ///
+    /// This is the structure 0 store, used up to protocol version 13; from 14 on
+    /// the record no longer carries the heavy fields and is written every block.
     #[test]
     fn v0_historical_block_with_clean_heavy_fields_reloads_from_the_small_record() {
         use crate::config::{PlatformConfig, PlatformTestConfig};
@@ -244,7 +246,15 @@ mod tests {
         use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
         use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+        assert_eq!(
+            platform_version
+                .drive_abci
+                .structs
+                .platform_state_for_saving_structure_default,
+            0,
+            "this test is about the structure 0 store"
+        );
         let platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -253,6 +263,7 @@ mod tests {
                 },
                 ..Default::default()
             })
+            .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
