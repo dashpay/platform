@@ -1022,6 +1022,18 @@ impl StateTransition {
                         BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(_)) => {
                             "TokenShieldedTransfer"
                         }
+                        BatchedTransitionRef::Token(TokenTransition::MintToPool(_)) => {
+                            "TokenMintToPool"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::BurnFromPool(_)) => {
+                            "TokenBurnFromPool"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::ClaimToPool(_)) => {
+                            "TokenClaimToPool"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(_)) => {
+                            "TokenDirectPurchaseToPool"
+                        }
                     };
                     document_transition_types.push(document_transition_name);
                 }

@@ -43,6 +43,7 @@ use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_metho
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_shielded_transfer_transition::v0::v0_methods::TokenShieldedTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_unshield_transition::v0::v0_methods::TokenUnshieldTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_burn_from_pool_transition::v0::v0_methods::TokenBurnFromPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
@@ -50,7 +51,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenShieldedPoolBalance, VerifiedShieldedNullifiers, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1059,10 +1060,50 @@ impl Drive {
                                         "proof did not show every nullifier of the token shielded transfer as spent".to_string(),
                                     )));
                                 }
+                                Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
+                            }
+                            TokenTransition::MintToPool(_)
+                            | TokenTransition::ClaimToPool(_)
+                            | TokenTransition::DirectPurchaseToPool(_) => {
+                                let (root_hash, Some(balance)) =
+                                    Drive::verify_token_shielded_pool_state(
+                                        proof,
+                                        token_id.into_buffer(),
+                                        false,
+                                        platform_version,
+                                    )?
+                                else {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
+                                        "proof did not contain the token shielded pool balance expected to exist because of state transition (notes created in the pool)".to_string(),
+                                    )));
+                                };
                                 Ok((
                                     root_hash,
-                                    dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiers(statuses),
+                                    VerifiedTokenShieldedPoolBalance(token_id, balance),
                                 ))
+                            }
+                            TokenTransition::BurnFromPool(token_burn_from_pool_transition) => {
+                                let nullifiers: Vec<Vec<u8>> = token_burn_from_pool_transition
+                                    .actions()
+                                    .iter()
+                                    .map(|action| action.nullifier.to_vec())
+                                    .collect();
+                                let (root_hash, statuses) =
+                                    Drive::verify_token_shielded_pool_nullifiers(
+                                        proof,
+                                        token_id.into_buffer(),
+                                        &nullifiers,
+                                        false,
+                                        platform_version,
+                                    )?;
+                                if statuses.len() != nullifiers.len()
+                                    || statuses.iter().any(|(_, spent)| !spent)
+                                {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
+                                        "proof did not show every nullifier of the token burn from pool as spent".to_string(),
+                                    )));
+                                }
+                                Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
                             }
                         }
                     }
@@ -2440,8 +2481,14 @@ impl Drive {
                         // Balance snapshots: the moved amount cannot be tied to one shield or
                         // unshield. A shielded transfer's spent nullifiers exist only if it
                         // executed.
-                        TokenTransition::Shield(_) | TokenTransition::Unshield(_) => false,
-                        TokenTransition::ShieldedTransfer(_) => true,
+                        TokenTransition::Shield(_)
+                        | TokenTransition::Unshield(_)
+                        | TokenTransition::MintToPool(_)
+                        | TokenTransition::ClaimToPool(_)
+                        | TokenTransition::DirectPurchaseToPool(_) => false,
+                        TokenTransition::ShieldedTransfer(_) | TokenTransition::BurnFromPool(_) => {
+                            true
+                        }
                     }
                 }
             },

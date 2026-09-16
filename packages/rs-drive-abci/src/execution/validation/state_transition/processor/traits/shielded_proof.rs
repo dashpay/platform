@@ -26,6 +26,10 @@ use dpp::state_transition::batch_transition::token_base_transition::v0::v0_metho
 use dpp::state_transition::batch_transition::token_shield_transition::v0::v0_methods::TokenShieldTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_shielded_transfer_transition::v0::v0_methods::TokenShieldedTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_unshield_transition::v0::v0_methods::TokenUnshieldTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_mint_to_pool_transition::v0::v0_methods::TokenMintToPoolTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_burn_from_pool_transition::v0::v0_methods::TokenBurnFromPoolTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_claim_to_pool_transition::v0::v0_methods::TokenClaimToPoolTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_direct_purchase_to_pool_transition::v0::v0_methods::TokenDirectPurchaseToPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::{StateTransition, StateTransitionOwned};
 use dpp::util::hash::hash_single;
@@ -179,6 +183,18 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                     BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(t)) => {
                         t.actions().len()
                     }
+                    BatchedTransitionRef::Token(TokenTransition::MintToPool(t)) => {
+                        t.actions().len()
+                    }
+                    BatchedTransitionRef::Token(TokenTransition::BurnFromPool(t)) => {
+                        t.actions().len()
+                    }
+                    BatchedTransitionRef::Token(TokenTransition::ClaimToPool(t)) => {
+                        t.actions().len()
+                    }
+                    BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(t)) => {
+                        t.actions().len()
+                    }
                     _ => 0,
                 })
                 .sum(),
@@ -202,7 +218,11 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                         BatchedTransitionRef::Token(
                             token_transition @ (TokenTransition::Shield(_)
                             | TokenTransition::Unshield(_)
-                            | TokenTransition::ShieldedTransfer(_)),
+                            | TokenTransition::ShieldedTransfer(_)
+                            | TokenTransition::MintToPool(_)
+                            | TokenTransition::BurnFromPool(_)
+                            | TokenTransition::ClaimToPool(_)
+                            | TokenTransition::DirectPurchaseToPool(_)),
                         ) => Some(ShieldedProofAdmissionKey::IdentityContract {
                             identity_id: owner_id,
                             contract_id: token_transition.data_contract_id().to_buffer(),
@@ -798,6 +818,48 @@ fn validate_batch_token_shielded_proofs(
                     t.proof(),
                     t.binding_signature(),
                     &extra_sighash_data,
+                )
+            }
+            BatchedTransitionRef::Token(TokenTransition::MintToPool(t)) => {
+                reconstruct_and_verify_bundle(
+                    t.actions(),
+                    FLAGS_OUTPUTS_ONLY,
+                    -(t.amount() as i64),
+                    t.anchor(),
+                    t.proof(),
+                    t.binding_signature(),
+                    &[],
+                )
+            }
+            BatchedTransitionRef::Token(TokenTransition::BurnFromPool(t)) => {
+                let extra_sighash_data = dpp::shielded::token_burn_from_pool_extra_sighash_data(
+                    &t.base().token_id().to_buffer(),
+                    &owner_id,
+                    t.amount(),
+                    platform_version,
+                )?;
+                reconstruct_and_verify_bundle(
+                    t.actions(),
+                    FLAGS_SPENDS_AND_OUTPUTS,
+                    t.amount() as i64,
+                    t.anchor(),
+                    t.proof(),
+                    t.binding_signature(),
+                    &extra_sighash_data,
+                )
+            }
+            // The claimable amount is only known against state, so a claim into the pool is
+            // verified in block validation only; its proof is still admitted per nonce.
+            BatchedTransitionRef::Token(TokenTransition::ClaimToPool(_)) => continue,
+            BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(t)) => {
+                reconstruct_and_verify_bundle(
+                    t.actions(),
+                    FLAGS_OUTPUTS_ONLY,
+                    -(t.token_count() as i64),
+                    t.anchor(),
+                    t.proof(),
+                    t.binding_signature(),
+                    &[],
                 )
             }
             _ => continue,

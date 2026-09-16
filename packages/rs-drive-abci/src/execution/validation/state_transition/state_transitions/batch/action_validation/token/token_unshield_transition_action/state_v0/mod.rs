@@ -215,7 +215,6 @@ impl TokenUnshieldTransitionActionStateValidationV0 for TokenUnshieldTransitionA
         )?;
 
         verify_token_pool_bundle(
-            execution_context,
             validation_mode,
             self.actions(),
             FLAGS_SPENDS_AND_OUTPUTS,
@@ -224,7 +223,6 @@ impl TokenUnshieldTransitionActionStateValidationV0 for TokenUnshieldTransitionA
             self.proof(),
             self.binding_signature(),
             &extra_sighash_data,
-            platform_version,
         )
     }
 }

@@ -81,6 +81,18 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                                 BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(
                                     _,
                                 )) => Some("TokenShieldedTransfer"),
+                                BatchedTransitionRef::Token(TokenTransition::MintToPool(_)) => {
+                                    Some("TokenMintToPool")
+                                }
+                                BatchedTransitionRef::Token(TokenTransition::BurnFromPool(_)) => {
+                                    Some("TokenBurnFromPool")
+                                }
+                                BatchedTransitionRef::Token(TokenTransition::ClaimToPool(_)) => {
+                                    Some("TokenClaimToPool")
+                                }
+                                BatchedTransitionRef::Token(
+                                    TokenTransition::DirectPurchaseToPool(_),
+                                ) => Some("TokenDirectPurchaseToPool"),
                                 _ => None,
                             })
                     {

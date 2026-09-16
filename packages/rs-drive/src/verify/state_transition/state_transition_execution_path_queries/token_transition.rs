@@ -1,4 +1,6 @@
-use crate::drive::shielded::paths::token_shielded_pool_nullifiers_path_query;
+use crate::drive::shielded::paths::{
+    token_shielded_pool_nullifiers_path_query, token_shielded_pool_state_path_query,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
@@ -15,6 +17,7 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
     TokenTransition, TokenTransitionV0Methods,
 };
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_burn_from_pool_transition::v0::v0_methods::TokenBurnFromPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_shielded_transfer_transition::v0::v0_methods::TokenShieldedTransferTransitionV0Methods;
@@ -176,6 +179,21 @@ impl TryTransitionIntoPathQuery for TokenTransition {
             }
             TokenTransition::ShieldedTransfer(token_shielded_transfer_transition) => {
                 let nullifiers: Vec<[u8; 32]> = token_shielded_transfer_transition
+                    .actions()
+                    .iter()
+                    .map(|action| action.nullifier)
+                    .collect();
+                token_shielded_pool_nullifiers_path_query(token_id.to_buffer(), &nullifiers)
+            }
+            // Notes created straight into the pool show up in the pool's total balance; a burn
+            // from the pool is attested by the nullifiers it spent.
+            TokenTransition::MintToPool(_)
+            | TokenTransition::ClaimToPool(_)
+            | TokenTransition::DirectPurchaseToPool(_) => {
+                token_shielded_pool_state_path_query(token_id.to_buffer())
+            }
+            TokenTransition::BurnFromPool(token_burn_from_pool_transition) => {
+                let nullifiers: Vec<[u8; 32]> = token_burn_from_pool_transition
                     .actions()
                     .iter()
                     .map(|action| action.nullifier)

@@ -56,7 +56,14 @@ pub async fn build_token_shielded_transfer_transition<
         ));
     }
 
-    let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
+    let total_spent: u64 = spends
+        .iter()
+        .try_fold(0u64, |total, spend| {
+            total.checked_add(spend.note.value().inner())
+        })
+        .ok_or_else(|| {
+            ProtocolError::ShieldedBuildError("total spendable value overflows u64".to_string())
+        })?;
     if transfer_amount > total_spent {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "token shielded transfer amount {} exceeds total spendable value {}",

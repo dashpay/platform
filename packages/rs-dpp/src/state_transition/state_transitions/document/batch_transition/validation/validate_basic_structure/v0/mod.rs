@@ -32,6 +32,10 @@ use crate::state_transition::batch_transition::token_claim_transition::validate_
 use crate::state_transition::batch_transition::token_direct_purchase_transition::validate_structure::TokenDirectPurchaseTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::validate_structure::TokenSetPriceForDirectPurchaseTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_shield_transition::validate_structure::TokenShieldTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_mint_to_pool_transition::validate_structure::TokenMintToPoolTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_burn_from_pool_transition::validate_structure::TokenBurnFromPoolTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_claim_to_pool_transition::validate_structure::TokenClaimToPoolTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_direct_purchase_to_pool_transition::validate_structure::TokenDirectPurchaseToPoolTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_shielded_transfer_transition::validate_structure::TokenShieldedTransferTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_unshield_transition::validate_structure::TokenUnshieldTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
@@ -230,6 +234,18 @@ impl BatchTransition {
                 }
                 TokenTransition::ShieldedTransfer(shielded_transfer_transition) => {
                     shielded_transfer_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::MintToPool(mint_to_pool_transition) => {
+                    mint_to_pool_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::BurnFromPool(burn_from_pool_transition) => {
+                    burn_from_pool_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::ClaimToPool(claim_to_pool_transition) => {
+                    claim_to_pool_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::DirectPurchaseToPool(direct_purchase_to_pool_transition) => {
+                    direct_purchase_to_pool_transition.validate_structure(platform_version)?
                 }
             };
 

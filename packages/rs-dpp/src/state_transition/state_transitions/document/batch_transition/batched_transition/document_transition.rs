@@ -5,7 +5,8 @@ use derive_more::{Display, From};
 use serde::{Deserialize, Serialize};
 use bincode::{Encode, Decode, DecodeUntrusted};
 use crate::prelude::{IdentityNonce, Revision};
-use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenUnfreezeTransition, TokenDirectPurchaseTransition, TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition, TokenShieldedTransferTransition, TokenUnshieldTransition};
+use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenUnfreezeTransition, TokenDirectPurchaseTransition, TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition, TokenMintToPoolTransition, TokenBurnFromPoolTransition,
+    TokenClaimToPoolTransition, TokenDirectPurchaseToPoolTransition, TokenShieldedTransferTransition, TokenUnshieldTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentIndexOnlyDeleteTransition, DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
 use crate::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
@@ -282,6 +283,24 @@ impl BatchTransitionResolversV0 for DocumentTransition {
     }
 
     fn as_transition_token_shielded_transfer(&self) -> Option<&TokenShieldedTransferTransition> {
+        None
+    }
+
+    fn as_transition_token_mint_to_pool(&self) -> Option<&TokenMintToPoolTransition> {
+        None
+    }
+
+    fn as_transition_token_burn_from_pool(&self) -> Option<&TokenBurnFromPoolTransition> {
+        None
+    }
+
+    fn as_transition_token_claim_to_pool(&self) -> Option<&TokenClaimToPoolTransition> {
+        None
+    }
+
+    fn as_transition_token_direct_purchase_to_pool(
+        &self,
+    ) -> Option<&TokenDirectPurchaseToPoolTransition> {
         None
     }
 }

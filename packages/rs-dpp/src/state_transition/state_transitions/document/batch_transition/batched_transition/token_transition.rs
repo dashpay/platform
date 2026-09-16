@@ -18,7 +18,10 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
-use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition, TokenShieldedTransferTransition, TokenUnshieldTransition};
+use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition, TokenShieldedTransferTransition, TokenUnshieldTransition,
+    TokenMintToPoolTransition, TokenBurnFromPoolTransition, TokenClaimToPoolTransition,
+    TokenDirectPurchaseToPoolTransition,
+};
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
@@ -37,7 +40,11 @@ use crate::state_transition::batch_transition::token_direct_purchase_transition:
 use crate::state_transition::batch_transition::token_direct_purchase_transition::v0::v0_methods::TokenDirectPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::v0_methods::TokenSetPriceForDirectPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use crate::shielded::serialized_actions_digest;
 use crate::state_transition::batch_transition::token_shield_transition::v0::v0_methods::TokenShieldTransitionV0Methods;
+use crate::state_transition::batch_transition::token_mint_to_pool_transition::v0::v0_methods::TokenMintToPoolTransitionV0Methods;
+use crate::state_transition::batch_transition::token_burn_from_pool_transition::v0::v0_methods::TokenBurnFromPoolTransitionV0Methods;
+use crate::state_transition::batch_transition::token_direct_purchase_to_pool_transition::v0::v0_methods::TokenDirectPurchaseToPoolTransitionV0Methods;
 use crate::state_transition::batch_transition::token_unshield_transition::v0::v0_methods::TokenUnshieldTransitionV0Methods;
 use crate::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use crate::tokens::token_event::TokenEvent;
@@ -100,6 +107,18 @@ pub enum TokenTransition {
 
     #[display("TokenShieldedTransferTransition({})", "_0")]
     ShieldedTransfer(TokenShieldedTransferTransition),
+
+    #[display("TokenMintToPoolTransition({})", "_0")]
+    MintToPool(TokenMintToPoolTransition),
+
+    #[display("TokenBurnFromPoolTransition({})", "_0")]
+    BurnFromPool(TokenBurnFromPoolTransition),
+
+    #[display("TokenClaimToPoolTransition({})", "_0")]
+    ClaimToPool(TokenClaimToPoolTransition),
+
+    #[display("TokenDirectPurchaseToPoolTransition({})", "_0")]
+    DirectPurchaseToPool(TokenDirectPurchaseToPoolTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -416,6 +435,40 @@ impl BatchTransitionResolversV0 for TokenTransition {
             None
         }
     }
+
+    fn as_transition_token_mint_to_pool(&self) -> Option<&TokenMintToPoolTransition> {
+        if let Self::MintToPool(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_burn_from_pool(&self) -> Option<&TokenBurnFromPoolTransition> {
+        if let Self::BurnFromPool(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_claim_to_pool(&self) -> Option<&TokenClaimToPoolTransition> {
+        if let Self::ClaimToPool(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_direct_purchase_to_pool(
+        &self,
+    ) -> Option<&TokenDirectPurchaseToPoolTransition> {
+        if let Self::DirectPurchaseToPool(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
 }
 
 pub trait TokenTransitionV0Methods {
@@ -487,6 +540,10 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Shield(t) => t.base(),
             TokenTransition::Unshield(t) => t.base(),
             TokenTransition::ShieldedTransfer(t) => t.base(),
+            TokenTransition::MintToPool(t) => t.base(),
+            TokenTransition::BurnFromPool(t) => t.base(),
+            TokenTransition::ClaimToPool(t) => t.base(),
+            TokenTransition::DirectPurchaseToPool(t) => t.base(),
         }
     }
 
@@ -506,6 +563,10 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Shield(t) => t.base_mut(),
             TokenTransition::Unshield(t) => t.base_mut(),
             TokenTransition::ShieldedTransfer(t) => t.base_mut(),
+            TokenTransition::MintToPool(t) => t.base_mut(),
+            TokenTransition::BurnFromPool(t) => t.base_mut(),
+            TokenTransition::ClaimToPool(t) => t.base_mut(),
+            TokenTransition::DirectPurchaseToPool(t) => t.base_mut(),
         }
     }
 
@@ -538,9 +599,17 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::SetPriceForDirectPurchase(t) => {
                 Some(t.calculate_action_id(owner_id, platform_version))
             }
+            TokenTransition::MintToPool(t) => {
+                Some(t.calculate_action_id(owner_id, platform_version))
+            }
+            TokenTransition::BurnFromPool(t) => {
+                Some(t.calculate_action_id(owner_id, platform_version))
+            }
             TokenTransition::Shield(_)
             | TokenTransition::Unshield(_)
-            | TokenTransition::ShieldedTransfer(_) => None,
+            | TokenTransition::ShieldedTransfer(_)
+            | TokenTransition::ClaimToPool(_)
+            | TokenTransition::DirectPurchaseToPool(_) => None,
         }
     }
 
@@ -553,13 +622,17 @@ impl TokenTransitionV0Methods for TokenTransition {
             | TokenTransition::DestroyFrozenFunds(_)
             | TokenTransition::EmergencyAction(_)
             | TokenTransition::ConfigUpdate(_)
-            | TokenTransition::SetPriceForDirectPurchase(_) => true,
+            | TokenTransition::SetPriceForDirectPurchase(_)
+            | TokenTransition::MintToPool(_)
+            | TokenTransition::BurnFromPool(_) => true,
             TokenTransition::Transfer(_)
             | TokenTransition::Claim(_)
             | TokenTransition::DirectPurchase(_)
             | TokenTransition::Shield(_)
             | TokenTransition::Unshield(_)
-            | TokenTransition::ShieldedTransfer(_) => false,
+            | TokenTransition::ShieldedTransfer(_)
+            | TokenTransition::ClaimToPool(_)
+            | TokenTransition::DirectPurchaseToPool(_) => false,
         }
     }
 
@@ -600,6 +673,10 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Shield(_) => "shield",
             TokenTransition::Unshield(_) => "unshield",
             TokenTransition::ShieldedTransfer(_) => "shieldedTransfer",
+            TokenTransition::MintToPool(_) => "mintToPool",
+            TokenTransition::BurnFromPool(_) => "burnFromPool",
+            TokenTransition::ClaimToPool(_) => "claimToPool",
+            TokenTransition::DirectPurchaseToPool(_) => "directPurchaseToPool",
         }
     }
 
@@ -735,6 +812,22 @@ impl TokenTransitionV0Methods for TokenTransition {
                 TokenEvent::Unshield(unshield.recipient_id(), unshield.amount())
             }
             TokenTransition::ShieldedTransfer(_) => TokenEvent::ShieldedTransfer,
+            TokenTransition::MintToPool(mint) => TokenEvent::MintToPool(
+                mint.amount(),
+                serialized_actions_digest(mint.actions()).into(),
+                mint.public_note().cloned(),
+            ),
+            TokenTransition::BurnFromPool(burn) => TokenEvent::BurnFromPool(
+                burn.amount(),
+                serialized_actions_digest(burn.actions()).into(),
+                burn.public_note().cloned(),
+            ),
+            // we do not know how much will be released
+            TokenTransition::ClaimToPool(_) => TokenEvent::ClaimToPool(TokenAmount::MAX),
+            TokenTransition::DirectPurchaseToPool(purchase) => TokenEvent::DirectPurchaseToPool(
+                purchase.token_count(),
+                purchase.total_agreed_price(),
+            ),
             TokenTransition::DirectPurchase(direct_purchase) => TokenEvent::DirectPurchase(
                 direct_purchase.token_count(),
                 direct_purchase.total_agreed_price(),

@@ -31,6 +31,16 @@ where
             .shielded_anchor_retention_blocks;
 
         for token_id in token_ids {
+            // Defence in depth: only successful pool writes are collected, but a pool that
+            // does not exist must never turn the block end into a storage error.
+            if !self
+                .drive
+                .has_token_shielded_pool(*token_id, Some(transaction), platform_version)
+                .map_err(Error::Drive)?
+            {
+                continue;
+            }
+
             self.drive
                 .record_token_shielded_pool_anchor_if_changed(
                     *token_id,

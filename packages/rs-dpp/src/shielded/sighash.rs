@@ -331,6 +331,40 @@ pub fn token_unshield_extra_sighash_data_v0(
     data
 }
 
+/// Extra sighash data of a batch `TokenBurnFromPool`: the token id, the burning identity and the
+/// amount destroyed, so a bundle proven for one burn cannot be replayed for another token,
+/// signer or amount (72 bytes; no other layout has that length).
+pub fn token_burn_from_pool_extra_sighash_data(
+    token_id: &[u8; 32],
+    owner_id: &[u8; 32],
+    amount: u64,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(token_burn_from_pool_extra_sighash_data_v0(
+            token_id, owner_id, amount,
+        )),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "token_burn_from_pool_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Version 0 layout: `token_id (32) || owner_id (32) || amount (8, little endian)`.
+pub fn token_burn_from_pool_extra_sighash_data_v0(
+    token_id: &[u8; 32],
+    owner_id: &[u8; 32],
+    amount: u64,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(32 + 32 + 8);
+    data.extend_from_slice(token_id);
+    data.extend_from_slice(owner_id);
+    data.extend_from_slice(&amount.to_le_bytes());
+    data
+}
+
 /// Builds the transparent `extra_data` bound into a `TokenShieldedTransfer`'s platform sighash,
 /// with the byte layout `token_id (32) || owner_id (32)`.
 ///
@@ -652,5 +686,14 @@ mod tests {
                 "contract_bounds must be bound"
             );
         }
+    }
+
+    #[test]
+    fn token_burn_from_pool_layout_is_token_owner_amount() {
+        let data = token_burn_from_pool_extra_sighash_data_v0(&[1u8; 32], &[2u8; 32], 300);
+        assert_eq!(data.len(), 72);
+        assert_eq!(&data[..32], &[1u8; 32]);
+        assert_eq!(&data[32..64], &[2u8; 32]);
+        assert_eq!(&data[64..], &300u64.to_le_bytes());
     }
 }

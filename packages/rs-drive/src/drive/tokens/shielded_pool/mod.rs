@@ -12,18 +12,22 @@
 //! module holds what is token-specific: pool creation, cost estimation, and the three composite
 //! operations (`shield`, `unshield`, `shielded_transfer`) the batch token transitions lower to.
 
+mod burn_from_pool;
 mod create_pool_trees;
 mod estimated_costs;
 mod insert_root_tree;
+mod mint_to_pool;
 mod shield;
 mod shielded_transfer;
 mod unshield;
 
+use crate::drive::tokens::paths::token_shielded_pools_root_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::shielded::ShieldedActionNote;
+use crate::util::grove_operations::DirectQueryType;
 use dpp::balances::credits::TokenAmount;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -42,6 +46,23 @@ pub(in crate::drive::tokens) enum TokenPoolBalanceChange {
 }
 
 impl Drive {
+    /// Whether the token owns a shielded pool subtree, without touching it.
+    pub fn has_token_shielded_pool(
+        &self,
+        token_id: [u8; 32],
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        self.grove_has_raw(
+            (&token_shielded_pools_root_path()).into(),
+            &token_id,
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            &mut vec![],
+            &platform_version.drive,
+        )
+    }
+
     /// The operations every token pool write shares: nullifier insertion, note appends and the
     /// total balance update, with the pool's cost estimation registered when estimating.
     ///
@@ -192,6 +213,19 @@ mod tests {
                 platform_version,
             )
             .expect("create token trees");
+        // Keep the supply consistent with the balance handed to the identity, as a mint would.
+        drive
+            .add_to_token_total_supply(
+                TOKEN_ID,
+                balance,
+                true,
+                false,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("add to total supply");
         drive
             .add_to_identity_token_balance(
                 TOKEN_ID,
@@ -475,6 +509,121 @@ mod tests {
         assert_eq!(token_balance(&drive, identity_id), Some(600));
         assert!(nullifier_is_spent(&drive, &nullifiers[0]));
         assert!(nullifier_is_spent(&drive, &nullifiers[1]));
+    }
+
+    #[test]
+    fn should_mint_into_the_pool_raising_the_supply() {
+        let (drive, identity_id) = setup(1_000);
+        let platform_version = PlatformVersion::latest();
+
+        let operations = drive
+            .token_mint_to_pool_operations(
+                TOKEN_ID,
+                250,
+                false,
+                &[note(1), note(2)],
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("mint to pool operations");
+        apply(&drive, operations);
+
+        assert_eq!(pool_balance(&drive), 250);
+        assert_eq!(notes_count(&drive), 2);
+        assert_eq!(
+            drive
+                .fetch_token_total_supply(TOKEN_ID, None, platform_version)
+                .expect("supply"),
+            Some(1_250)
+        );
+        // The minter's own balance is not involved.
+        assert_eq!(token_balance(&drive, identity_id), Some(1_000));
+        assert!(drive
+            .has_token_shielded_pool(TOKEN_ID, None, platform_version)
+            .expect("pool lookup"));
+        assert!(!drive
+            .has_token_shielded_pool([9u8; 32], None, platform_version)
+            .expect("pool lookup"));
+    }
+
+    #[test]
+    fn should_burn_from_the_pool_lowering_the_supply() {
+        let (drive, identity_id) = setup(1_000);
+        let platform_version = PlatformVersion::latest();
+
+        let operations = drive
+            .token_shield_operations(
+                TOKEN_ID,
+                identity_id,
+                400,
+                &[note(1), note(2)],
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("shield operations");
+        apply(&drive, operations);
+
+        let nullifiers = [[31u8; 32], [32u8; 32]];
+        let operations = drive
+            .token_burn_from_pool_operations(
+                TOKEN_ID,
+                150,
+                &nullifiers,
+                &[note(7)],
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("burn from pool operations");
+        apply(&drive, operations);
+
+        assert_eq!(pool_balance(&drive), 250);
+        assert_eq!(notes_count(&drive), 3);
+        assert_eq!(
+            drive
+                .fetch_token_total_supply(TOKEN_ID, None, platform_version)
+                .expect("supply"),
+            Some(850)
+        );
+        assert_eq!(token_balance(&drive, identity_id), Some(600));
+        assert!(nullifier_is_spent(&drive, &nullifiers[0]));
+        assert!(nullifier_is_spent(&drive, &nullifiers[1]));
+    }
+
+    #[test]
+    fn should_reject_burning_more_than_the_pool_holds() {
+        let (drive, identity_id) = setup(1_000);
+        let platform_version = PlatformVersion::latest();
+
+        let operations = drive
+            .token_shield_operations(
+                TOKEN_ID,
+                identity_id,
+                100,
+                &[note(1)],
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("shield operations");
+        apply(&drive, operations);
+
+        let result = drive.token_burn_from_pool_operations(
+            TOKEN_ID,
+            101,
+            &[[41u8; 32]],
+            &[note(2)],
+            &mut None,
+            None,
+            platform_version,
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+        ));
+        assert_eq!(pool_balance(&drive), 100);
     }
 
     #[test]

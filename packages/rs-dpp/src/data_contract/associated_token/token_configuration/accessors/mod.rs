@@ -245,8 +245,10 @@ impl TokenConfigurationV1Getters for TokenConfiguration {
 }
 
 impl TokenConfigurationV1Setters for TokenConfiguration {
-    /// Enabling the pool on a V0 configuration upgrades it in place to V1; disabling it on a
-    /// V0 configuration is a no-op (a V0 never has a pool).
+    /// The representation stays canonical: enabling the pool on a V0 configuration upgrades
+    /// it in place to V1, and disabling it on a V1 configuration downgrades it back to V0, so
+    /// a configuration without a pool always serializes as format version 0 and is accepted
+    /// by every protocol version.
     fn set_has_shielded_pool(&mut self, has_shielded_pool: bool) {
         match self {
             TokenConfiguration::V0(v0) => {
@@ -256,7 +258,17 @@ impl TokenConfigurationV1Setters for TokenConfiguration {
                     *self = TokenConfiguration::V1(TokenConfigurationV1::from_v0(base, true));
                 }
             }
-            TokenConfiguration::V1(v1) => v1.set_has_shielded_pool(has_shielded_pool),
+            TokenConfiguration::V1(v1) => {
+                if has_shielded_pool {
+                    v1.set_has_shielded_pool(true);
+                } else {
+                    let base = std::mem::replace(
+                        &mut v1.base,
+                        TokenConfigurationV0::default_most_restrictive(),
+                    );
+                    *self = TokenConfiguration::V0(base);
+                }
+            }
         }
     }
 }

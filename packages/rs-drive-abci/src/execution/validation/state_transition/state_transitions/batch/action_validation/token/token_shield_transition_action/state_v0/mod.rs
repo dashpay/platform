@@ -127,7 +127,6 @@ impl TokenShieldTransitionActionStateValidationV0 for TokenShieldTransitionActio
         // signature over the batch already binds the bundle to this token, owner and amount, so
         // no extra sighash data is bound (exactly like `ShieldFromIdentity`).
         verify_token_pool_bundle(
-            execution_context,
             validation_mode,
             self.actions(),
             FLAGS_OUTPUTS_ONLY,
@@ -136,7 +135,6 @@ impl TokenShieldTransitionActionStateValidationV0 for TokenShieldTransitionActio
             self.proof(),
             self.binding_signature(),
             &[],
-            platform_version,
         )
     }
 }

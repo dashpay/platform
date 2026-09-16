@@ -181,6 +181,31 @@ pub enum TokenEvent {
     /// Event representing a transfer inside the token's shielded pool. Nothing about the
     /// transfer (parties, amount) is public.
     ShieldedTransfer,
+
+    /// Event representing a mint straight into the token's shielded pool.
+    ///
+    /// - `TokenAmount`: The amount minted.
+    /// - `Identifier`: Digest of the Orchard actions, so a group action commits to the notes.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
+    MintToPool(TokenAmount, Identifier, TokenEventPublicNote),
+
+    /// Event representing a burn of notes held in the token's shielded pool.
+    ///
+    /// - `TokenAmount`: The amount destroyed.
+    /// - `Identifier`: Digest of the Orchard actions, so a group action commits to the notes.
+    /// - `TokenEventPublicNote`: Optional note associated with the event.
+    BurnFromPool(TokenAmount, Identifier, TokenEventPublicNote),
+
+    /// Event representing a distribution claim paid into the token's shielded pool.
+    ///
+    /// - `TokenAmount`: The amount claimed.
+    ClaimToPool(TokenAmount),
+
+    /// Event representing a direct purchase paid into the token's shielded pool.
+    ///
+    /// - `TokenAmount`: The amount of tokens purchased.
+    /// - `Credits`: The number of credits paid.
+    DirectPurchaseToPool(TokenAmount, Credits),
 }
 
 // Manual impl because TokenEvent is a flat enum with u64-alias tuple variants
@@ -318,6 +343,35 @@ impl serde::Serialize for TokenEvent {
                 m.serialize_entry("$type", "shieldedTransfer")?;
                 m.end()
             }
+            TokenEvent::MintToPool(amount, actions_digest, note) => {
+                let mut m = serializer.serialize_map(Some(4))?;
+                m.serialize_entry("$type", "mintToPool")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("actionsDigest", actions_digest)?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::BurnFromPool(amount, actions_digest, note) => {
+                let mut m = serializer.serialize_map(Some(4))?;
+                m.serialize_entry("$type", "burnFromPool")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("actionsDigest", actions_digest)?;
+                m.serialize_entry("publicNote", note)?;
+                m.end()
+            }
+            TokenEvent::ClaimToPool(amount) => {
+                let mut m = serializer.serialize_map(Some(2))?;
+                m.serialize_entry("$type", "claimToPool")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.end()
+            }
+            TokenEvent::DirectPurchaseToPool(amount, credits) => {
+                let mut m = serializer.serialize_map(Some(3))?;
+                m.serialize_entry("$type", "directPurchaseToPool")?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("credits", &SafeU64(credits))?;
+                m.end()
+            }
         }
     }
 }
@@ -358,6 +412,7 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                 let mut amount: Option<u64> = None;
                 let mut credits: Option<u64> = None;
                 let mut recipient: Option<Identifier> = None;
+                let mut actions_digest: Option<Identifier> = None;
                 let mut burn_from: Option<Identifier> = None;
                 let mut frozen: Option<Identifier> = None;
                 let mut public_note: Option<String> = None;
@@ -375,6 +430,7 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         "amount" => amount = Some(map.next_value::<U64Safe>()?.0),
                         "credits" => credits = Some(map.next_value::<U64Safe>()?.0),
                         "recipient" => recipient = Some(map.next_value()?),
+                        "actionsDigest" => actions_digest = Some(map.next_value()?),
                         "burnFromIdentifier" => burn_from = Some(map.next_value()?),
                         "frozenIdentifier" => frozen = Some(map.next_value()?),
                         "publicNote" => public_note = map.next_value()?,
@@ -457,6 +513,23 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         amount.ok_or_else(|| A::Error::missing_field("amount"))?,
                     )),
                     "shieldedTransfer" => Ok(TokenEvent::ShieldedTransfer),
+                    "mintToPool" => Ok(TokenEvent::MintToPool(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        actions_digest.ok_or_else(|| A::Error::missing_field("actionsDigest"))?,
+                        public_note,
+                    )),
+                    "burnFromPool" => Ok(TokenEvent::BurnFromPool(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        actions_digest.ok_or_else(|| A::Error::missing_field("actionsDigest"))?,
+                        public_note,
+                    )),
+                    "claimToPool" => Ok(TokenEvent::ClaimToPool(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                    )),
+                    "directPurchaseToPool" => Ok(TokenEvent::DirectPurchaseToPool(
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        credits.ok_or_else(|| A::Error::missing_field("credits"))?,
+                    )),
                     other => Err(A::Error::unknown_variant(
                         other,
                         &[
@@ -474,6 +547,10 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                             "shield",
                             "unshield",
                             "shieldedTransfer",
+                            "mintToPool",
+                            "burnFromPool",
+                            "claimToPool",
+                            "directPurchaseToPool",
                         ],
                     )),
                 }
@@ -678,6 +755,30 @@ impl fmt::Display for TokenEvent {
                 write!(f, "Unshield {} from the token pool to {}", amount, to)
             }
             TokenEvent::ShieldedTransfer => write!(f, "Shielded transfer inside the token pool"),
+            TokenEvent::MintToPool(amount, _, note) => {
+                write!(
+                    f,
+                    "Mint {} into the token pool{}",
+                    amount,
+                    format_note(note)
+                )
+            }
+            TokenEvent::BurnFromPool(amount, _, note) => {
+                write!(
+                    f,
+                    "Burn {} from the token pool{}",
+                    amount,
+                    format_note(note)
+                )
+            }
+            TokenEvent::ClaimToPool(amount) => {
+                write!(f, "Claim {} into the token pool", amount)
+            }
+            TokenEvent::DirectPurchaseToPool(amount, credits) => write!(
+                f,
+                "Direct purchase of {} into the token pool for {} credits",
+                amount, credits
+            ),
         }
     }
 }
@@ -706,6 +807,10 @@ impl TokenEvent {
             TokenEvent::Shield(..) => "shield",
             TokenEvent::Unshield(..) => "unshield",
             TokenEvent::ShieldedTransfer => "shieldedTransfer",
+            TokenEvent::MintToPool(..) => "mintToPool",
+            TokenEvent::BurnFromPool(..) => "burnFromPool",
+            TokenEvent::ClaimToPool(..) => "claimToPool",
+            TokenEvent::DirectPurchaseToPool(..) => "directPurchaseToPool",
         }
     }
 
@@ -933,6 +1038,21 @@ impl TokenEvent {
             TokenEvent::ShieldedTransfer => {
                 BTreeMap::from([("tokenId".to_string(), token_id.into())])
             }
+            TokenEvent::MintToPool(amount, _, _) | TokenEvent::BurnFromPool(amount, _, _) => {
+                BTreeMap::from([
+                    ("tokenId".to_string(), token_id.into()),
+                    ("amount".to_string(), amount.into()),
+                ])
+            }
+            TokenEvent::ClaimToPool(amount) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("amount".to_string(), amount.into()),
+            ]),
+            TokenEvent::DirectPurchaseToPool(amount, total_cost) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("tokenAmount".to_string(), amount.into()),
+                ("purchaseCost".to_string(), total_cost.into()),
+            ]),
         };
 
         let document: Document = DocumentV0 {

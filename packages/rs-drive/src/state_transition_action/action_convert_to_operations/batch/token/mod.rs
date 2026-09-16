@@ -1,10 +1,14 @@
+mod token_burn_from_pool_transition;
 mod token_burn_transition;
+mod token_claim_to_pool_transition;
 mod token_claim_transition;
 mod token_config_update_transition;
 mod token_destroy_frozen_funds_transition;
+mod token_direct_purchase_to_pool_transition;
 mod token_direct_purchase_transition;
 mod token_emergency_action_transition;
 mod token_freeze_transition;
+mod token_mint_to_pool_transition;
 mod token_mint_transition;
 mod token_set_price_for_direct_purchase_transition;
 mod token_shield_transition;

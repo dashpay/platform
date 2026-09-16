@@ -3121,6 +3121,20 @@ message GetGroupActionsResponse {
       optional string public_note = 3; // Public note
     }
 
+    // Mint straight into the token's shielded pool (protocol version 14+)
+    message MintToPoolEvent {
+      uint64 amount = 1;               // Amount minted into the pool
+      bytes actions_digest = 2;        // Digest of the Orchard actions every signer commits to
+      optional string public_note = 3; // Public note
+    }
+
+    // Burn of notes held in the token's shielded pool (protocol version 14+)
+    message BurnFromPoolEvent {
+      uint64 amount = 1;               // Amount destroyed
+      bytes actions_digest = 2;        // Digest of the Orchard actions every signer commits to
+      optional string public_note = 3; // Public note
+    }
+
     // Event associated with this action
     message GroupActionEvent {
       oneof event_type {
@@ -3160,6 +3174,8 @@ message GetGroupActionsResponse {
             7; // Token configuration update details
         UpdateDirectPurchasePriceEvent update_price =
             8; // Updating the token direct selling price
+        MintToPoolEvent mint_to_pool = 9;     // Mint into the token shielded pool
+        BurnFromPoolEvent burn_from_pool = 10; // Burn from the token shielded pool
       }
     }
 

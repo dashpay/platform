@@ -44,16 +44,30 @@ pub async fn build_token_shield_transition<S: Signer<IdentityPublicKey>, P: Orch
             "token shield amount must be greater than zero".to_string(),
         ));
     }
+    if amount > i64::MAX as u64 {
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "token shield amount {} exceeds maximum allowed value {}",
+            amount,
+            i64::MAX as u64
+        )));
+    }
 
     let bundle = build_output_only_bundle(recipient, amount, memo, sender_ovk, 0, prover)?;
     let sb = serialize_authorized_bundle(&bundle);
+
+    if sb.value_balance != -(amount as i64) {
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "token shield amount bundle value balance {} does not equal -{}",
+            sb.value_balance, amount
+        )));
+    }
 
     BatchTransition::new_token_shield_transition(
         token_id,
         owner_id,
         data_contract_id,
         token_contract_position,
-        sb.value_balance.unsigned_abs(),
+        amount,
         OrchardBundleParams {
             actions: sb.actions,
             anchor: sb.anchor,

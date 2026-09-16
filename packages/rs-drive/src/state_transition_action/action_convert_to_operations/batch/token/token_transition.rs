@@ -19,6 +19,11 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_shield_transition_action::TokenShieldTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_unshield_transition_action::TokenUnshieldTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_mint_to_pool_transition_action::TokenMintToPoolTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_from_pool_transition_action::TokenBurnFromPoolTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_to_pool_transition_action::TokenClaimToPoolTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionActionAccessorsV0;
+use dpp::shielded::serialized_actions_digest;
 
 impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
     fn into_high_level_batch_drive_operations<'b>(
@@ -74,6 +79,19 @@ impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
             }
             TokenTransitionAction::ShieldedTransferAction(shielded_transfer) => shielded_transfer
                 .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
+            TokenTransitionAction::MintToPoolAction(mint_to_pool) => mint_to_pool
+                .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
+            TokenTransitionAction::BurnFromPoolAction(burn_from_pool) => burn_from_pool
+                .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
+            TokenTransitionAction::ClaimToPoolAction(claim_to_pool) => claim_to_pool
+                .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
+            TokenTransitionAction::DirectPurchaseToPoolAction(direct_purchase_to_pool) => {
+                direct_purchase_to_pool.into_high_level_batch_drive_operations(
+                    epoch,
+                    owner_id,
+                    platform_version,
+                )
+            }
         }
     }
 }
@@ -152,6 +170,22 @@ impl TokenTransitionAction {
                 TokenEvent::Unshield(unshield_action.recipient_id(), unshield_action.amount())
             }
             TokenTransitionAction::ShieldedTransferAction(_) => TokenEvent::ShieldedTransfer,
+            TokenTransitionAction::MintToPoolAction(action) => TokenEvent::MintToPool(
+                action.amount(),
+                serialized_actions_digest(action.actions()).into(),
+                action.public_note().cloned(),
+            ),
+            TokenTransitionAction::BurnFromPoolAction(action) => TokenEvent::BurnFromPool(
+                action.amount(),
+                serialized_actions_digest(action.actions()).into(),
+                action.public_note().cloned(),
+            ),
+            TokenTransitionAction::ClaimToPoolAction(action) => {
+                TokenEvent::ClaimToPool(action.amount())
+            }
+            TokenTransitionAction::DirectPurchaseToPoolAction(action) => {
+                TokenEvent::DirectPurchaseToPool(action.token_count(), action.total_agreed_price())
+            }
         }
     }
 }

@@ -81,4 +81,8 @@ pub struct DriveTokenUpdateMethodVersions {
     pub unshield: FeatureVersion,
     /// Pool-internal token transfer.
     pub shielded_transfer: FeatureVersion,
+    /// Mint straight into the token shielded pool (supply and pool balance both grow).
+    pub mint_to_pool: FeatureVersion,
+    /// Burn notes held in the token shielded pool (pool balance and supply both shrink).
+    pub burn_from_pool: FeatureVersion,
 }

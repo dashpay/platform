@@ -89,6 +89,10 @@ use drive::state_transition_action::batch::batched_transition::token_transition:
 use drive::state_transition_action::batch::batched_transition::token_transition::token_shield_transition_action::TokenShieldTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_shielded_transfer_transition_action::TokenShieldedTransferTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_unshield_transition_action::TokenUnshieldTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_to_pool_transition_action::TokenMintToPoolTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_burn_from_pool_transition_action::TokenBurnFromPoolTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_claim_to_pool_transition_action::TokenClaimToPoolTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_set_price_for_direct_purchase_transition_action::TokenSetPriceForDirectPurchaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionAction;
@@ -706,6 +710,46 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             }
             TokenTransition::Shield(token_shield) => {
                 let (batched_action, fee_result) = TokenShieldTransitionAction::try_from_borrowed_token_shield_transition_with_contract_lookup(drive, owner_id, token_shield, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::MintToPool(token_mint_to_pool) => {
+                let (batched_action, fee_result) = TokenMintToPoolTransitionAction::try_from_borrowed_token_mint_to_pool_transition_with_contract_lookup(drive, owner_id, token_mint_to_pool, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::BurnFromPool(token_burn_from_pool) => {
+                let (batched_action, fee_result) = TokenBurnFromPoolTransitionAction::try_from_borrowed_token_burn_from_pool_transition_with_contract_lookup(drive, owner_id, token_burn_from_pool, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::ClaimToPool(token_claim_to_pool) => {
+                let (batched_action, fee_result) = TokenClaimToPoolTransitionAction::try_from_borrowed_token_claim_to_pool_transition_with_contract_lookup(drive, owner_id, token_claim_to_pool, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::DirectPurchaseToPool(token_direct_purchase_to_pool) => {
+                let (batched_action, fee_result) = TokenDirectPurchaseToPoolTransitionAction::try_from_borrowed_token_direct_purchase_to_pool_transition_with_contract_lookup(drive, owner_id, token_direct_purchase_to_pool, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 }, platform_version)?;
 

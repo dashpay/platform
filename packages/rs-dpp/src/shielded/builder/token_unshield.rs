@@ -56,7 +56,14 @@ pub async fn build_token_unshield_transition<S: Signer<IdentityPublicKey>, P: Or
         )));
     }
 
-    let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
+    let total_spent: u64 = spends
+        .iter()
+        .try_fold(0u64, |total, spend| {
+            total.checked_add(spend.note.value().inner())
+        })
+        .ok_or_else(|| {
+            ProtocolError::ShieldedBuildError("total spendable value overflows u64".to_string())
+        })?;
     if amount > total_spent {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "token unshield amount {} exceeds total spendable value {}",

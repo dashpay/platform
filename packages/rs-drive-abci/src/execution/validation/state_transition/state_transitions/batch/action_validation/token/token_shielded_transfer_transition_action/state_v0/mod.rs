@@ -129,7 +129,6 @@ impl TokenShieldedTransferTransitionActionStateValidationV0
         )?;
 
         verify_token_pool_bundle(
-            execution_context,
             validation_mode,
             self.actions(),
             FLAGS_SPENDS_AND_OUTPUTS,
@@ -138,7 +137,6 @@ impl TokenShieldedTransferTransitionActionStateValidationV0
             self.proof(),
             self.binding_signature(),
             &extra_sighash_data,
-            platform_version,
         )
     }
 }

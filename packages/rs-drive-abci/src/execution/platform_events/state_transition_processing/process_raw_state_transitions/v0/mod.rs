@@ -283,14 +283,13 @@ where
                             }
                         }
 
-                        // An applied transition (successful, or a paid failure whose writes
-                        // stay in the block) may have appended notes to a token pool. A paid
-                        // failure that only bumped the nonce is recorded too: recording is
-                        // "if changed", so an untouched pool costs one anchor read.
+                        // Only a successful execution writes to a token pool; a paid failure
+                        // bumps the nonce and nothing else, and its pool may not even exist
+                        // (a token without the flag, or a paid rejection before the pool
+                        // check), so it must not reach the block end anchor recorder.
                         if matches!(
                             execution_result,
                             StateTransitionExecutionResult::SuccessfulExecution { .. }
-                                | StateTransitionExecutionResult::PaidConsensusError { .. }
                         ) {
                             processing_result
                                 .add_token_shielded_pools_touched(token_shielded_pools_touched);
@@ -403,7 +402,11 @@ fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 
                 BatchedTransitionRef::Token(
                     token_transition @ (TokenTransition::Shield(_)
                     | TokenTransition::Unshield(_)
-                    | TokenTransition::ShieldedTransfer(_)),
+                    | TokenTransition::ShieldedTransfer(_)
+                    | TokenTransition::MintToPool(_)
+                    | TokenTransition::BurnFromPool(_)
+                    | TokenTransition::ClaimToPool(_)
+                    | TokenTransition::DirectPurchaseToPool(_)),
                 ) => Some(token_transition.token_id().to_buffer()),
                 _ => None,
             })

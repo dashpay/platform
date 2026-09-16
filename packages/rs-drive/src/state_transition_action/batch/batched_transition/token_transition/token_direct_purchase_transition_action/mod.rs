@@ -6,6 +6,7 @@ use dpp::fee::Credits;
 pub mod transformer;
 mod v0;
 
+pub(crate) use v0::resolve_direct_purchase_price;
 pub use v0::*;
 
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;

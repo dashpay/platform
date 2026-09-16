@@ -503,3 +503,15 @@ mod tests {
         assert_ne!(pool_path[2], by_height[2]);
     }
 }
+
+/// The proof query for a token pool's total balance: the `TOTAL_BALANCE` item of the pool.
+pub fn token_shielded_pool_state_path_query(token_id: [u8; 32]) -> PathQuery {
+    PathQuery {
+        path: token_shielded_pool_path_vec(token_id),
+        query: SizedQuery {
+            query: Query::new_single_key(vec![SHIELDED_TOTAL_BALANCE_KEY]),
+            limit: Some(1),
+            offset: None,
+        },
+    }
+}

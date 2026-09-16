@@ -5,10 +5,12 @@ use crate::state_transition::batch_transition::batched_transition::{
 use crate::state_transition::batch_transition::token_direct_purchase_transition::TokenDirectPurchaseTransition;
 use crate::state_transition::batch_transition::{
     DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-    TokenBurnTransition, TokenClaimTransition, TokenConfigUpdateTransition,
-    TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition,
-    TokenMintTransition, TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition,
-    TokenShieldedTransferTransition, TokenTransferTransition, TokenUnshieldTransition,
+    TokenBurnFromPoolTransition, TokenBurnTransition, TokenClaimToPoolTransition,
+    TokenClaimTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition,
+    TokenDirectPurchaseToPoolTransition, TokenEmergencyActionTransition, TokenFreezeTransition,
+    TokenMintToPoolTransition, TokenMintTransition, TokenSetPriceForDirectPurchaseTransition,
+    TokenShieldTransition, TokenShieldedTransferTransition, TokenTransferTransition,
+    TokenUnshieldTransition,
 };
 
 pub trait BatchTransitionResolversV0 {
@@ -37,4 +39,10 @@ pub trait BatchTransitionResolversV0 {
     fn as_transition_token_shield(&self) -> Option<&TokenShieldTransition>;
     fn as_transition_token_unshield(&self) -> Option<&TokenUnshieldTransition>;
     fn as_transition_token_shielded_transfer(&self) -> Option<&TokenShieldedTransferTransition>;
+    fn as_transition_token_mint_to_pool(&self) -> Option<&TokenMintToPoolTransition>;
+    fn as_transition_token_burn_from_pool(&self) -> Option<&TokenBurnFromPoolTransition>;
+    fn as_transition_token_claim_to_pool(&self) -> Option<&TokenClaimToPoolTransition>;
+    fn as_transition_token_direct_purchase_to_pool(
+        &self,
+    ) -> Option<&TokenDirectPurchaseToPoolTransition>;
 }

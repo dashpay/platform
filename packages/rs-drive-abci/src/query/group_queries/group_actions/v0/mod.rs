@@ -4,7 +4,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_group_actions_request::GetGroupActionsRequestV0;
-use dapi_grpc::platform::v0::get_group_actions_response::get_group_actions_response_v0::{emergency_action_event, group_action_event, token_event, BurnEvent, DestroyFrozenFundsEvent, EmergencyActionEvent, FreezeEvent, GroupActionEntry, GroupActionEvent, GroupActions, MintEvent, TokenConfigUpdateEvent, TokenEvent as TokenEventResponse, UnfreezeEvent, UpdateDirectPurchasePriceEvent};
+use dapi_grpc::platform::v0::get_group_actions_response::get_group_actions_response_v0::{emergency_action_event, group_action_event, token_event, BurnEvent, DestroyFrozenFundsEvent, EmergencyActionEvent, FreezeEvent, GroupActionEntry, GroupActionEvent, GroupActions, MintEvent, MintToPoolEvent, BurnFromPoolEvent, TokenConfigUpdateEvent, TokenEvent as TokenEventResponse, UnfreezeEvent, UpdateDirectPurchasePriceEvent};
 use dapi_grpc::platform::v0::get_group_actions_response::{
     get_group_actions_response_v0, GetGroupActionsResponseV0,
 };
@@ -224,12 +224,32 @@ impl<C> Platform<C> {
                                                 })),
                                             })
                                         }
+                                        TokenEvent::MintToPool(amount, actions_digest, public_note) => {
+                                            group_action_event::EventType::TokenEvent(TokenEventResponse {
+                                                r#type: Some(token_event::Type::MintToPool(MintToPoolEvent {
+                                                    amount,
+                                                    actions_digest: actions_digest.to_vec(),
+                                                    public_note,
+                                                })),
+                                            })
+                                        }
+                                        TokenEvent::BurnFromPool(amount, actions_digest, public_note) => {
+                                            group_action_event::EventType::TokenEvent(TokenEventResponse {
+                                                r#type: Some(token_event::Type::BurnFromPool(BurnFromPoolEvent {
+                                                    amount,
+                                                    actions_digest: actions_digest.to_vec(),
+                                                    public_note,
+                                                })),
+                                            })
+                                        }
                                         TokenEvent::Transfer(..)
                                         | TokenEvent::DirectPurchase(..)
                                         | TokenEvent::Claim(..)
                                         | TokenEvent::Shield(..)
                                         | TokenEvent::Unshield(..)
-                                        | TokenEvent::ShieldedTransfer => {
+                                        | TokenEvent::ShieldedTransfer
+                                        | TokenEvent::ClaimToPool(..)
+                                        | TokenEvent::DirectPurchaseToPool(..) => {
                                             return None;
                                         },
                                     },

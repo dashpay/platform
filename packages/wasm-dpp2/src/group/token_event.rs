@@ -28,6 +28,10 @@ const TS_TYPES: &str = r#"
  *   - Shield:  { $type: "shield", amount }
  *   - Unshield:{ $type: "unshield", recipientId, amount }
  *   - ShieldedTransfer: { $type: "shieldedTransfer" }
+ *   - MintToPool: { $type: "mintToPool", amount, actionsDigest, publicNote }
+ *   - BurnFromPool: { $type: "burnFromPool", amount, actionsDigest, publicNote }
+ *   - ClaimToPool: { $type: "claimToPool", amount }
+ *   - DirectPurchaseToPool: { $type: "directPurchaseToPool", amount, credits }
  *
  * `amount`/`credits` are routed through json_safe_u64 — small numbers, JS
  * BigInt-safe stringification above 2^53. Identifier fields use base58 in
@@ -75,6 +79,10 @@ pub enum TokenEventVariant {
     Shield = 11,
     Unshield = 12,
     ShieldedTransfer = 13,
+    MintToPool = 14,
+    BurnFromPool = 15,
+    ClaimToPool = 16,
+    DirectPurchaseToPool = 17,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -115,6 +123,10 @@ impl TokenEventWasm {
             TokenEvent::Shield(..) => TokenEventVariant::Shield,
             TokenEvent::Unshield(..) => TokenEventVariant::Unshield,
             TokenEvent::ShieldedTransfer => TokenEventVariant::ShieldedTransfer,
+            TokenEvent::MintToPool(..) => TokenEventVariant::MintToPool,
+            TokenEvent::BurnFromPool(..) => TokenEventVariant::BurnFromPool,
+            TokenEvent::ClaimToPool(..) => TokenEventVariant::ClaimToPool,
+            TokenEvent::DirectPurchaseToPool(..) => TokenEventVariant::DirectPurchaseToPool,
         }
     }
 }

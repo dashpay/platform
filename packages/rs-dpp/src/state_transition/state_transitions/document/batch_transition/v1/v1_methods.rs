@@ -71,11 +71,19 @@ use crate::shielded::OrchardBundleParams;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_shield_transition::TokenShieldTransitionV0;
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::token_mint_to_pool_transition::TokenMintToPoolTransitionV0;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::token_burn_from_pool_transition::TokenBurnFromPoolTransitionV0;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::token_claim_to_pool_transition::TokenClaimToPoolTransitionV0;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::token_direct_purchase_to_pool_transition::TokenDirectPurchaseToPoolTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_shielded_transfer_transition::TokenShieldedTransferTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_unshield_transition::TokenUnshieldTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::batch_transition::{TokenShieldTransition, TokenShieldedTransferTransition, TokenUnshieldTransition};
+use crate::state_transition::batch_transition::{TokenShieldTransition, TokenShieldedTransferTransition, TokenUnshieldTransition, TokenMintToPoolTransition, TokenBurnFromPoolTransition, TokenClaimToPoolTransition, TokenDirectPurchaseToPoolTransition};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_unfreeze_transition::TokenUnfreezeTransitionV0;
 #[cfg(feature = "state-transition-signing")]
@@ -358,6 +366,335 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             proof,
             binding_signature,
         });
+
+        let documents_batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(transition.into())],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut state_transition: StateTransition = documents_batch_transition.into();
+        if let Some(options) = options {
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
+        } else {
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
+        }
+
+        Ok(state_transition)
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    async fn new_token_mint_to_pool_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        bundle: OrchardBundleParams,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let OrchardBundleParams {
+            actions,
+            anchor,
+            proof,
+            binding_signature,
+        } = bundle;
+
+        let mut transition = TokenMintToPoolTransition::V0(TokenMintToPoolTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce,
+                token_contract_position,
+                data_contract_id,
+                token_id,
+                using_group_info: None,
+            }),
+            amount,
+            actions,
+            anchor,
+            proof,
+            binding_signature,
+            public_note,
+        });
+
+        if let Some(using_group_info_status) = using_group_info {
+            match using_group_info_status {
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
+                    group_contract_position,
+                ) => {
+                    let action_id = transition.calculate_action_id(owner_id, platform_version)?;
+                    transition
+                        .base_mut()
+                        .set_using_group_info(Some(GroupStateTransitionInfo {
+                            group_contract_position,
+                            action_id,
+                            action_is_proposer: true,
+                        }))
+                }
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(info) => {
+                    transition.base_mut().set_using_group_info(Some(info))
+                }
+            }
+        }
+
+        let documents_batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(transition.into())],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut state_transition: StateTransition = documents_batch_transition.into();
+        if let Some(options) = options {
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
+        } else {
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
+        }
+
+        Ok(state_transition)
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    async fn new_token_burn_from_pool_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        bundle: OrchardBundleParams,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let OrchardBundleParams {
+            actions,
+            anchor,
+            proof,
+            binding_signature,
+        } = bundle;
+
+        let mut transition = TokenBurnFromPoolTransition::V0(TokenBurnFromPoolTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce,
+                token_contract_position,
+                data_contract_id,
+                token_id,
+                using_group_info: None,
+            }),
+            amount,
+            actions,
+            anchor,
+            proof,
+            binding_signature,
+            public_note,
+        });
+
+        if let Some(using_group_info_status) = using_group_info {
+            match using_group_info_status {
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
+                    group_contract_position,
+                ) => {
+                    let action_id = transition.calculate_action_id(owner_id, platform_version)?;
+                    transition
+                        .base_mut()
+                        .set_using_group_info(Some(GroupStateTransitionInfo {
+                            group_contract_position,
+                            action_id,
+                            action_is_proposer: true,
+                        }))
+                }
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(info) => {
+                    transition.base_mut().set_using_group_info(Some(info))
+                }
+            }
+        }
+
+        let documents_batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(transition.into())],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut state_transition: StateTransition = documents_batch_transition.into();
+        if let Some(options) = options {
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
+        } else {
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
+        }
+
+        Ok(state_transition)
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    async fn new_token_claim_to_pool_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        distribution_type: TokenDistributionType,
+        claim_up_to: Option<u64>,
+        bundle: OrchardBundleParams,
+        public_note: Option<String>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        _platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let OrchardBundleParams {
+            actions,
+            anchor,
+            proof,
+            binding_signature,
+        } = bundle;
+
+        let transition = TokenClaimToPoolTransition::V0(TokenClaimToPoolTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce,
+                token_contract_position,
+                data_contract_id,
+                token_id,
+                using_group_info: None,
+            }),
+            distribution_type,
+            claim_up_to,
+            actions,
+            anchor,
+            proof,
+            binding_signature,
+            public_note,
+        });
+
+        let documents_batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(transition.into())],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut state_transition: StateTransition = documents_batch_transition.into();
+        if let Some(options) = options {
+            state_transition
+                .sign_external_with_options(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                    options.signing_options,
+                )
+                .await?;
+        } else {
+            state_transition
+                .sign_external(
+                    identity_public_key,
+                    signer,
+                    None::<GetDataContractSecurityLevelRequirementFn>,
+                )
+                .await?;
+        }
+
+        Ok(state_transition)
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    async fn new_token_direct_purchase_to_pool_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        token_count: TokenAmount,
+        total_agreed_price: Credits,
+        bundle: OrchardBundleParams,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        _platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let OrchardBundleParams {
+            actions,
+            anchor,
+            proof,
+            binding_signature,
+        } = bundle;
+
+        let transition =
+            TokenDirectPurchaseToPoolTransition::V0(TokenDirectPurchaseToPoolTransitionV0 {
+                base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                    identity_contract_nonce,
+                    token_contract_position,
+                    data_contract_id,
+                    token_id,
+                    using_group_info: None,
+                }),
+                token_count,
+                total_agreed_price,
+                actions,
+                anchor,
+                proof,
+                binding_signature,
+            });
 
         let documents_batch_transition: BatchTransition = BatchTransitionV1 {
             owner_id,

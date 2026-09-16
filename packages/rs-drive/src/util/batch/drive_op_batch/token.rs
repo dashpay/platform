@@ -158,6 +158,28 @@ pub enum TokenOperationType {
         /// The bundle's output notes, appended to the pool's commitment tree
         notes: Vec<ShieldedActionNote>,
     },
+    /// Mints tokens straight into the token's shielded pool (supply and pool balance grow).
+    TokenMintToPool {
+        /// The token id
+        token_id: Identifier,
+        /// The amount minted
+        amount: TokenAmount,
+        /// Should we allow this to be the first ever mint
+        allow_first_mint: bool,
+        /// The output notes of the bundle
+        notes: Vec<ShieldedActionNote>,
+    },
+    /// Burns tokens held in the token's shielded pool (pool balance and supply shrink).
+    TokenBurnFromPool {
+        /// The token id
+        token_id: Identifier,
+        /// The amount destroyed
+        amount: TokenAmount,
+        /// The spent nullifiers
+        nullifiers: Vec<[u8; 32]>,
+        /// The change notes of the bundle
+        notes: Vec<ShieldedActionNote>,
+    },
 }
 
 impl DriveLowLevelOperationConverter for TokenOperationType {
@@ -377,6 +399,34 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 notes,
             } => drive.token_shielded_transfer_operations(
                 token_id.to_buffer(),
+                &nullifiers,
+                &notes,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            TokenOperationType::TokenMintToPool {
+                token_id,
+                amount,
+                allow_first_mint,
+                notes,
+            } => drive.token_mint_to_pool_operations(
+                token_id.to_buffer(),
+                amount,
+                allow_first_mint,
+                &notes,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            TokenOperationType::TokenBurnFromPool {
+                token_id,
+                amount,
+                nullifiers,
+                notes,
+            } => drive.token_burn_from_pool_operations(
+                token_id.to_buffer(),
+                amount,
                 &nullifiers,
                 &notes,
                 estimated_costs_only_with_layer_info,
