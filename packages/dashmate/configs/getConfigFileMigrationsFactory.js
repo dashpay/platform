@@ -1709,6 +1709,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             // development build is stamped above that key and skips it.
             delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
 
+            // Move the Tenderdash image onto the tag the base config now pins
+            // (1.8.0), so operators pick it up without waiting for a
+            // Dashmate release. Mirrors the re-pin the 4.1.1 migration did for
+            // the 1.6 -> 1.7 move.
+            if (options.platform?.drive?.tenderdash?.docker) {
+              options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            }
+
             const providerConfigs = options.platform?.gateway?.ssl?.providerConfigs;
 
             if (providerConfigs?.letsencrypt
@@ -1724,27 +1732,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.core.tor = base.getStored('core.tor');
               options.core.tor.enabled = false;
               options.core.tor.control.password = generateRandomString(12);
-            }
-          });
-
-        return configFile;
-      },
-      '4.2.1': (configFile) => {
-        // The Tenderdash re-pin was first placed in the 4.2.0 migration above,
-        // but a config already stamped 4.2.0 by an earlier development build
-        // of this same release cycle has that key at or above its own
-        // fromVersion and skips it entirely (see getConfigFormatVersion: the
-        // target during this cycle is the newest migration key, not the
-        // package version). Keyed one release ahead, mirroring the 4.1.1
-        // migration's re-pin for the 1.6 -> 1.7 move, so every such config
-        // still picks up the tag without waiting for a Dashmate release.
-        Object.entries(configFile.configs)
-          .forEach(([, options]) => {
-            // Repeated from the 4.2.0 migration for the same reason as above.
-            delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
-
-            if (options.platform?.drive?.tenderdash?.docker) {
-              options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
             }
           });
 
