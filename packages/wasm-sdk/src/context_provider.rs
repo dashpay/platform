@@ -257,7 +257,27 @@ impl WasmTrustedContext {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to prefetch quorums: {}", e)))?;
 
-        let discovered_addresses = Self::fetch_addresses_from(&inner).await?;
+        // Masternode discovery is an optional convenience: it only feeds the
+        // no-explicit-addresses path in `withTrustedContext`, while the quorum
+        // data prefetched above is what proof verification actually needs. On
+        // a local network the sidecar's per-masternode version checks reject
+        // the gateway's self-signed TLS, so discovery failing there is the
+        // NORMAL case and must not make the whole trusted context unusable
+        // for an SDK constructed with explicit addresses. On public networks
+        // the failure stays fatal: it signals a genuine outage of the trusted
+        // endpoint, and degrading silently would hide it.
+        let discovered_addresses = match Self::fetch_addresses_from(&inner).await {
+            Ok(addresses) => addresses,
+            Err(e) if network == dash_sdk::dpp::dashcore::Network::Regtest => {
+                tracing::warn!(
+                    error = %e,
+                    "trusted context: masternode discovery unavailable, continuing without \
+                     discovered addresses (explicitly configured addresses are unaffected)"
+                );
+                Vec::new()
+            }
+            Err(e) => return Err(e),
+        };
 
         Ok(WasmTrustedContext {
             inner,
