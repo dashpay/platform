@@ -1,6 +1,6 @@
 # Contract Groups
 
-Most real applications are not one data contract. DashPay is a contacts contract plus a profile contract plus whatever a wallet adds next year. A game is a rules contract, a marketplace contract and two token contracts. Before protocol version 14 nothing in consensus state said those contracts belonged together. A client could guess from the owner identity, but that identity might own unrelated contracts too, and a guess cannot be proved.
+An application often outgrows one data contract. Indexes cannot be added to a document type after the contract is registered, so a project that grows tends to ship a second contract beside the first rather than reshape the original. A token is usually best kept in a contract of its own, so its change-control groups and supply rules are not entangled with an application's document types. And a project that publishes a version 2 contract keeps version 1 alive for the documents already stored in it. The result is a family of contracts under one owner, and before protocol version 14 nothing in consensus state said they belonged together. A client could guess from the owner identity, but that identity might own unrelated contracts too, and a guess cannot be proved.
 
 A **contract group** is the answer. It is an identity-owned set of contracts, contract document types and contract tokens. It is registered and grown through ordinary data contract create transitions, stored under its own root tree, and readable with one GroveDB proof. Anything that later needs to act on "the set as a whole", from an SDK deciding which contracts to preload to a future identity key bound to every contract in a group, gets a consensus-level answer to "which contracts are in this set".
 
@@ -118,12 +118,12 @@ In JSON the transition looks like this (identifiers abbreviated):
   "identityNonce": 7,
   "contractGroup": {
     "owner": { "singleOwner": "GWRSAVFM…S31Ec" },
-    "name": "dashpay",
-    "description": "Contacts, profiles and payment metadata"
+    "name": "cardgame",
+    "description": "Rules, marketplace and token contracts of the card game"
   },
   "contractGroupMemberships": [
     { "contractGroupId": "8sJ6Rk…Q2mV", "member": "contract" },
-    { "contractGroupId": "4hYb2N…kW9p", "member": { "documentType": "profile" } },
+    { "contractGroupId": "4hYb2N…kW9p", "member": { "documentType": "listing" } },
     { "contractGroupId": "4hYb2N…kW9p", "member": { "token": 0 } }
   ],
   "userFeeIncrease": 0,
