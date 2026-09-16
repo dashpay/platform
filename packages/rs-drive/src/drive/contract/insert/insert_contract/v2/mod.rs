@@ -425,7 +425,7 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+    use dpp::data_contract::accessors::v1::DataContractV1Setters;
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
@@ -441,8 +441,9 @@ mod tests {
 
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
-        let mut paused_config =
-            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+        let mut paused_config = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+        );
         paused_config.set_start_as_paused(true);
         contract.set_tokens(BTreeMap::from([
             (

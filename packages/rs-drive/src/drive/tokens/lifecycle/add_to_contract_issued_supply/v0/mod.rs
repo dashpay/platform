@@ -49,7 +49,7 @@ impl Drive {
         )?;
 
         if !apply {
-            // Price the record read and a replacement of the largest record under a key of
+            // Price the record read and a write of the largest record under a key of
             // contract id length; the issuer is unknown without state.
             self.fetch_contract_token_lifecycle_operations(
                 token_id,
@@ -58,8 +58,11 @@ impl Drive {
                 &mut drive_operations,
                 platform_version,
             )?;
+            // An insert rather than a replace: the estimator charges a replace no storage,
+            // while the real record grows when its rollup or wipe marker does, and the
+            // estimate has to cover the applied cost.
             drive_operations.push(
-                LowLevelDriveOperation::replace_for_estimated_path_key_element(
+                LowLevelDriveOperation::insert_for_estimated_path_key_element(
                     KeyInfoPath::from_known_owned_path(token_contract_lifecycles_root_path_vec()),
                     KeyInfo::MaxKeySize {
                         unique_id: token_id.to_vec(),

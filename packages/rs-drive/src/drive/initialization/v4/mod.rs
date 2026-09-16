@@ -124,7 +124,10 @@ mod tests {
             )
             .unwrap()
             .expect("the lifecycle ledger should exist at the latest genesis");
-        assert_eq!(ledger, Element::empty_tree());
+        assert!(
+            matches!(ledger, Element::Tree(Some(_), None)),
+            "the ledger must be a plain tree with children and no flags, got {ledger:?}"
+        );
 
         let destroyed_supply = drive
             .grove

@@ -132,8 +132,11 @@ impl Drive {
         let lifecycles_path = token_contract_lifecycles_root_path_vec();
 
         if !apply {
+            // An insert rather than a replace: the estimator charges a replace no storage,
+            // while the real record grows by the wipe marker, and the estimate has to cover
+            // the applied cost. The scalar keeps its 16 bytes, so its replace is exact.
             drive_operations.push(
-                LowLevelDriveOperation::replace_for_estimated_path_key_element(
+                LowLevelDriveOperation::insert_for_estimated_path_key_element(
                     KeyInfoPath::from_known_owned_path(lifecycles_path.clone()),
                     KeyInfo::MaxKeySize {
                         unique_id: contract_id.to_vec(),
@@ -422,6 +425,29 @@ mod tests {
             .expect("expected to read")
             .expect("expected a record")
             .is_wiped());
+
+        // The estimate has to cover the applied cost, wipe marker included.
+        let applied = drive
+            .destroy_token_issuer(
+                contract_id.to_buffer(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply");
+        assert!(
+            fees.processing_fee >= applied.processing_fee,
+            "estimated {} is below applied {}",
+            fees.processing_fee,
+            applied.processing_fee
+        );
+        assert!(
+            fees.storage_fee >= applied.storage_fee,
+            "estimated storage {} is below applied storage {}",
+            fees.storage_fee,
+            applied.storage_fee
+        );
     }
 
     #[test]

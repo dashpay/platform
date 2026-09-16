@@ -469,7 +469,12 @@ mod tests {
             estimated.processing_fee,
             applied.processing_fee
         );
-        assert!(estimated.storage_fee >= applied.storage_fee);
+        assert!(
+            estimated.storage_fee >= applied.storage_fee,
+            "estimated storage {} is below applied storage {}",
+            estimated.storage_fee,
+            applied.storage_fee
+        );
     }
 
     #[test]

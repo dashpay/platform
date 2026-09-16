@@ -135,6 +135,38 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
+        // Every layer this generation writes, so the estimate stands on its own; the
+        // callers that already added some of these layers overwrite them with the same
+        // values.
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_token_balances(
+                token_id,
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+            Self::add_estimation_costs_for_token_identity_infos(
+                token_id,
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+            Self::add_estimation_costs_for_token_status_infos(
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+            Self::add_estimation_costs_for_token_contract_infos(
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+            Self::add_estimation_costs_for_token_total_supply(
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+            Self::add_estimation_costs_for_token_contract_lifecycles(
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+        }
+
         let non_sum_tree_apply_type = if estimated_costs_only_with_layer_info.is_none() {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
