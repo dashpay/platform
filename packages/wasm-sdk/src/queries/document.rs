@@ -1,5 +1,5 @@
 use crate::queries::utils::deserialize_required_query;
-use crate::queries::{ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm};
+use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -795,7 +795,7 @@ impl WasmSdk {
     pub async fn get_document_history_with_proof_info(
         &self,
         query: DocumentHistoryQueryJs,
-    ) -> Result<DocumentHistoryProofMetadataResponseWasm, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let query = parse_document_history_query(query)?;
         let contract_id = query.data_contract_id;
         let document_type_name = query.document_type_name.clone();
@@ -814,11 +814,11 @@ impl WasmSdk {
                 "verified document history response carries no proof",
             ));
         };
-        Ok(DocumentHistoryProofMetadataResponseWasm {
-            data: document_history_to_js(result.history, contract_id, &document_type_name)?,
-            metadata: result.response.metadata.expect("verified metadata").into(),
-            proof: proof.into(),
-        })
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            document_history_to_js(result.history, contract_id, &document_type_name)?,
+            result.response.metadata.expect("verified metadata"),
+            proof,
+        ))
     }
 
     #[wasm_bindgen(
@@ -1432,14 +1432,14 @@ mod history_wasm_tests {
 
     #[wasm_bindgen_test]
     fn should_export_the_history_proof_as_one_proof_object() {
-        let result = DocumentHistoryProofMetadataResponseWasm {
-            data: JsValue::NULL,
-            metadata: dash_sdk::platform::proto::ResponseMetadata::default().into(),
-            proof: ProofInfoWasm::from(dash_sdk::platform::proto::Proof {
+        let result = ProofMetadataResponseWasm::from_sdk_parts(
+            JsValue::NULL,
+            dash_sdk::platform::proto::ResponseMetadata::default(),
+            dash_sdk::platform::proto::Proof {
                 grovedb_proof: vec![1, 2, 3],
                 ..Default::default()
-            }),
-        };
+            },
+        );
         let result = JsValue::from(result);
         let proof = Reflect::get(&result, &"proof".into()).unwrap();
         assert_eq!(
@@ -1512,32 +1512,7 @@ mod history_wasm_tests {
     }
 }
 
-/// History page with its proof and metadata. The proof's GroveDB payload is
-/// the history envelope carrying both underlying GroveDB proofs.
-#[wasm_bindgen(js_name = DocumentHistoryProofMetadataResponse)]
-pub struct DocumentHistoryProofMetadataResponseWasm {
-    data: JsValue,
-    metadata: ResponseMetadataWasm,
-    proof: ProofInfoWasm,
-}
-
-#[wasm_bindgen(js_class = DocumentHistoryProofMetadataResponse)]
-impl DocumentHistoryProofMetadataResponseWasm {
-    #[wasm_bindgen(getter)]
-    pub fn data(&self) -> JsValue {
-        self.data.clone()
-    }
-    #[wasm_bindgen(getter)]
-    pub fn metadata(&self) -> ResponseMetadataWasm {
-        self.metadata.clone()
-    }
-    #[wasm_bindgen(getter)]
-    pub fn proof(&self) -> ProofInfoWasm {
-        self.proof.clone()
-    }
-}
-
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENT_HISTORY_PROOF_INFO_TS: &str = r#"
-export type DocumentHistoryProofMetadataResponseTyped = DocumentHistoryProofMetadataResponse & { data: DocumentHistoryResult };
+export type DocumentHistoryProofMetadataResponseTyped = ProofMetadataResponseTyped<DocumentHistoryResult>;
 "#;
