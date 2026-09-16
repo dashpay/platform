@@ -223,7 +223,10 @@ where
     #[cfg(debug_assertions)]
     crate::perf::end_block(block_height);
 
-    Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
+    Ok(proto::ResponseFinalizeBlock {
+        retain_height: 0,
+        ..Default::default()
+    })
 }
 
 #[cfg(test)]
