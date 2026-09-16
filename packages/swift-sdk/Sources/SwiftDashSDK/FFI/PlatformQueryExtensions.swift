@@ -2074,3 +2074,91 @@ extension SDK {
         }
     }
 }
+
+// MARK: - Off-main data contract queries
+
+/// Contract reads that must not run on the caller's actor.
+///
+/// Deliberately outside the `@MainActor` extension above. Every query there
+/// is `async` but none of them suspends: the body calls its FFI entry point
+/// straight through, and that entry point parks the calling thread inside
+/// `runtime.block_on` until DAPI answers. Awaiting one from the main actor
+/// therefore holds the main actor for the whole round trip — and wrapping it
+/// in `Task.detached` does not help, because calling a `@MainActor` method
+/// hops back onto the main actor for the duration of the call. Isolation
+/// follows the declaration, not the thread the caller started on.
+extension SDK {
+    /// Serializes off-main contract reads.
+    ///
+    /// One serial queue rather than a concurrent pool: each read parks its
+    /// thread in `block_on`, so unbounded fan-out would cost one blocked
+    /// thread per caller.
+    private static let dataContractQueue = DispatchQueue(
+        label: "org.dash.swift-dash-sdk.data-contract-query")
+
+    /// `dataContractGet(id:)` without the main-actor hop.
+    ///
+    /// Returns parsed, copied values: the native result is released before
+    /// this returns, on every path, so nothing handed back points into
+    /// memory the FFI owns.
+    public nonisolated func dataContractGetOffMain(id: String) async throws -> [String: Any] {
+        guard handle != nil else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        let jsonString: String = try await withCheckedThrowingContinuation { continuation in
+            // `self` crosses into the queue, not the raw handle: `OpaquePointer`
+            // is not `Sendable`, while `SDK` is declared `@unchecked Sendable`.
+            // Reading `handle` here also re-checks it at execution time rather
+            // than trusting the check made before the hop.
+            Self.dataContractQueue.async { [self] in
+                do {
+                    guard let handle = handle else {
+                        throw SDKError.invalidState("SDK not initialized")
+                    }
+                    continuation.resume(
+                        returning: try Self.fetchDataContractJSON(handle: handle, id: id))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+
+        guard let jsonData = jsonString.data(using: .utf8),
+              let jsonObject = try? JSONSerialization.jsonObject(
+                  with: jsonData, options: []) as? [String: Any]
+        else {
+            throw SDKError.serializationError("Failed to parse contract JSON")
+        }
+
+        return jsonObject
+    }
+
+    /// The blocking half, run on `dataContractQueue`.
+    ///
+    /// `dash_sdk_data_contract_fetch_result_free` releases every field the
+    /// result owns — contract handle, JSON string, serialized bytes AND the
+    /// error — so one `defer` covers all exits and nothing else may free the
+    /// error separately. Returning a Swift `String` (a copy) keeps the
+    /// release inside this function.
+    private nonisolated static func fetchDataContractJSON(
+        handle: OpaquePointer,
+        id: String
+    ) throws -> String {
+        var result = id.withCString { idCStr in
+            dash_sdk_data_contract_fetch_with_serialization(handle, idCStr, true, false)
+        }
+        defer { dash_sdk_data_contract_fetch_result_free(&result) }
+
+        if let error = result.error {
+            let message = error.pointee.message.map { String(cString: $0) } ?? "Unknown error"
+            throw SDKError.internalError("Failed to fetch data contract: \(message)")
+        }
+
+        guard let json = result.json_string else {
+            throw SDKError.internalError("No JSON data returned from contract fetch")
+        }
+
+        return String(cString: json)
+    }
+}
