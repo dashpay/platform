@@ -20,6 +20,9 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 ///   `contract_info.refresh_potential_contract_info_key_references` 0 -> 1:
 ///   write and refresh scoped authentication-key references. Both v0s preserve the
 ///   historical rejection of authentication keys with contract bounds before v14.
+/// * `update.disable_identity_keys` 0 -> 1: fee estimation reads the stored keys so a
+///   scoped key's reference refreshes are priced; v0 estimated with an unbounded
+///   stand-in key.
 /// * `withdrawals.document.find_withdrawal_documents_by_status_and_transaction_indices`
 ///   0 -> 1, selecting the v1 withdrawal-by-transaction-index query builder
 ///   that carries the transaction-index `In` clause in
@@ -128,7 +131,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
             merge_identity_nonce: 0,
             update_identity_negative_credit_operation: 0,
             initialize_identity_revision: 0,
-            disable_identity_keys: 0,
+            disable_identity_keys: 1,
             re_enable_identity_keys: 0,
             add_new_non_unique_keys_to_identity: 0,
             add_new_unique_keys_to_identity: 0,
