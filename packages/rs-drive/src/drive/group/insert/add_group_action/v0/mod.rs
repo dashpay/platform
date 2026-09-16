@@ -13,6 +13,7 @@ use crate::util::grove_operations::{
 };
 use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::util::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::group::GroupMemberPower;
 use dpp::data_contract::GroupContractPosition;
@@ -26,7 +27,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::element::SumValue;
 use grovedb::MaybeTree::NotTree;
 use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
-use grovedb_epoch_based_storage_flags::StorageFlags;
 use std::collections::HashMap;
 
 impl Drive {

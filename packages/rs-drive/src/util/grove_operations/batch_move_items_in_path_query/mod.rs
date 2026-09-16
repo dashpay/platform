@@ -8,8 +8,8 @@ use crate::util::grove_operations::BatchMoveApplyType;
 
 use dpp::version::drive_versions::DriveVersion;
 
+use crate::util::storage_flags::StorageFlags;
 use grovedb::{PathQuery, TransactionArg};
-use grovedb_epoch_based_storage_flags::StorageFlags;
 
 impl Drive {
     /// Pushes multiple "delete element" and "insert element operations for items in a given path based on a `PathQuery` to `drive_operations`.

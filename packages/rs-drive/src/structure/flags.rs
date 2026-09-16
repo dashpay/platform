@@ -18,16 +18,23 @@ pub enum FlagsKind {
     /// Storage flags with an owner: the same, plus the identity a refund goes
     /// to.
     EpochOwned,
+    /// Storage flags owned by a contract credit bucket: the same epochs, plus
+    /// the contract and bucket position a refund goes to.
+    ///
+    /// Provisional: the type bytes 4 and 5 are proposed in the fees workstream
+    /// register (issue 4689) and pending the owner's confirmation.
+    EpochContractBucket,
     /// Flags that are not storage flags
     Other,
 }
 
 impl FlagsKind {
     /// Every kind, in declaration order
-    pub const ALL: [FlagsKind; 4] = [
+    pub const ALL: [FlagsKind; 5] = [
         FlagsKind::None,
         FlagsKind::Epoch,
         FlagsKind::EpochOwned,
+        FlagsKind::EpochContractBucket,
         FlagsKind::Other,
     ];
 
@@ -45,6 +52,10 @@ impl FlagsKind {
             Ok(Some(StorageFlags::SingleEpochOwned(..) | StorageFlags::MultiEpochOwned(..))) => {
                 FlagsKind::EpochOwned
             }
+            Ok(Some(
+                StorageFlags::SingleEpochContractBucket(..)
+                | StorageFlags::MultiEpochContractBucket(..),
+            )) => FlagsKind::EpochContractBucket,
             Err(_) => FlagsKind::Other,
         }
     }
@@ -72,6 +83,13 @@ impl FlagsKind {
                  identity that paid. When the element is deleted or shrinks, the unused part \
                  of the storage fee is refunded to that identity, epoch by epoch."
             }
+            FlagsKind::EpochContractBucket => {
+                "Storage flags owned by a contract credit bucket. They record the epoch in \
+                 which the element's bytes were paid for, the bytes added in each later epoch \
+                 if it grew, and the contract and bucket position that paid. When the element \
+                 is deleted or shrinks, the unused part of the storage fee is refunded to that \
+                 bucket, epoch by epoch."
+            }
             FlagsKind::Other => "Flags that are not Drive's storage flags.",
         }
     }
@@ -88,6 +106,11 @@ impl FlagsKind {
                 "type byte 2, owner id 32 bytes, base epoch u16 BE; or type byte 3, owner id \
                  32 bytes, base epoch u16 BE, then for each later epoch: epoch u16 BE and bytes \
                  added as a varint"
+            }
+            FlagsKind::EpochContractBucket => {
+                "type byte 4, contract id 32 bytes, bucket position u16 BE, base epoch u16 BE; \
+                 or type byte 5, the same header, then for each later epoch: epoch u16 BE and \
+                 bytes added as a varint"
             }
             FlagsKind::Other => "unknown",
         }

@@ -5,9 +5,9 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::BatchMoveApplyType;
+use crate::util::storage_flags::StorageFlags;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
-use grovedb_epoch_based_storage_flags::StorageFlags;
 use grovedb_path::SubtreePath;
 
 impl Drive {
