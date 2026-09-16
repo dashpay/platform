@@ -63,6 +63,21 @@ pub mod shielded_withdrawal;
 /// Module for unshield transition validation
 pub mod unshield;
 
+use dpp::document::Document;
+use dpp::version::PlatformVersion;
+
+pub(crate) fn stamp_withdrawal_document(
+    document: &mut Document,
+    platform_version: &PlatformVersion,
+) {
+    match document {
+        Document::V0(document) => {
+            document.contract_version =
+                Some(platform_version.system_data_contracts.withdrawals as u32);
+        }
+    }
+}
+
 /// The validation mode we are using
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ValidationMode {
