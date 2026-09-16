@@ -31,8 +31,6 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
-
-
 }
 
 impl IdentityCreateFromAddressesStateTransitionStateValidationV1
