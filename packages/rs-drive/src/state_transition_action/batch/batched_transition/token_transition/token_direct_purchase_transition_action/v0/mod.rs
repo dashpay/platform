@@ -1,4 +1,5 @@
 mod transformer;
+pub use transformer::required_direct_purchase_price;
 pub(crate) use transformer::resolve_direct_purchase_price;
 
 use std::sync::Arc;

@@ -41,6 +41,7 @@ mod token_burn_from_pool;
 mod token_claim_to_pool;
 mod token_direct_purchase_to_pool;
 mod token_mint_to_pool;
+mod token_pool_paid;
 mod token_shield;
 mod token_shielded_transfer;
 mod token_unshield;
@@ -62,6 +63,11 @@ pub use token_burn_from_pool::build_token_burn_from_pool_transition;
 pub use token_claim_to_pool::build_token_claim_to_pool_transition;
 pub use token_direct_purchase_to_pool::build_token_direct_purchase_to_pool_transition;
 pub use token_mint_to_pool::build_token_mint_to_pool_transition;
+pub use token_pool_paid::{
+    build_token_purchase_from_shielded_pool_transition,
+    build_token_shielded_transfer_with_shielded_fee_transition,
+    build_token_unshield_with_shielded_fee_transition, ShieldedFeePayer, TokenPoolSpender,
+};
 pub use token_shield::build_token_shield_transition;
 pub use token_shielded_transfer::build_token_shielded_transfer_transition;
 pub use token_unshield::build_token_unshield_transition;

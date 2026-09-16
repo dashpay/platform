@@ -18,7 +18,10 @@ pub use compute_minimum_shielded_fee::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
     compute_shielded_identity_create_fee, compute_shielded_identity_top_up_fee,
     compute_shielded_unshield_fee, compute_shielded_verification_fee,
-    compute_shielded_withdrawal_fee,
+    compute_shielded_withdrawal_fee, compute_token_pool_paid_shielded_fee,
+    compute_token_purchase_from_shielded_pool_fee,
+    compute_token_shielded_transfer_with_shielded_fee_fee,
+    compute_token_unshield_with_shielded_fee_fee,
 };
 
 // Re-exported so the public paths stay `dpp::shielded::<name>` after moving the sighash preimage
@@ -47,10 +50,18 @@ pub use sighash::{
     identity_top_up_from_shielded_extra_sighash_data,
     identity_top_up_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
     shielded_withdrawal_extra_sighash_data_v0, token_burn_from_pool_extra_sighash_data,
-    token_burn_from_pool_extra_sighash_data_v0, token_shielded_transfer_extra_sighash_data,
-    token_shielded_transfer_extra_sighash_data_v0, token_unshield_extra_sighash_data,
-    token_unshield_extra_sighash_data_v0, unshield_extra_sighash_data,
-    unshield_extra_sighash_data_v0,
+    token_burn_from_pool_extra_sighash_data_v0, token_pool_fee_bundle_extra_sighash_data,
+    token_pool_fee_bundle_extra_sighash_data_v0,
+    token_purchase_from_shielded_pool_extra_sighash_data,
+    token_purchase_from_shielded_pool_extra_sighash_data_v0,
+    token_shielded_transfer_extra_sighash_data, token_shielded_transfer_extra_sighash_data_v0,
+    token_shielded_transfer_with_shielded_fee_extra_sighash_data,
+    token_shielded_transfer_with_shielded_fee_extra_sighash_data_v0,
+    token_unshield_extra_sighash_data, token_unshield_extra_sighash_data_v0,
+    token_unshield_with_shielded_fee_extra_sighash_data,
+    token_unshield_with_shielded_fee_extra_sighash_data_v0, unshield_extra_sighash_data,
+    unshield_extra_sighash_data_v0, TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
+    TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
 };
 
 /// Calibrated effective storage-byte cost of the Core withdrawal document a

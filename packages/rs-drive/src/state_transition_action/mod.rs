@@ -39,6 +39,9 @@ use crate::state_transition_action::shielded::shield_from_asset_lock::ShieldFrom
 use crate::state_transition_action::shielded::shield_from_identity::ShieldFromIdentityTransitionAction;
 use crate::state_transition_action::shielded::shielded_transfer::ShieldedTransferTransitionAction;
 use crate::state_transition_action::shielded::shielded_withdrawal::ShieldedWithdrawalTransitionAction;
+use crate::state_transition_action::shielded::token_purchase_from_shielded_pool::TokenPurchaseFromShieldedPoolTransitionAction;
+use crate::state_transition_action::shielded::token_shielded_transfer_with_shielded_fee::TokenShieldedTransferWithShieldedFeeTransitionAction;
+use crate::state_transition_action::shielded::token_unshield_with_shielded_fee::TokenUnshieldWithShieldedFeeTransitionAction;
 use crate::state_transition_action::shielded::unshield::UnshieldTransitionAction;
 use crate::state_transition_action::system::bump_address_input_nonces_action::{
     BumpAddressInputNonceActionAccessorsV0, BumpAddressInputNoncesAction,
@@ -125,6 +128,14 @@ pub enum StateTransitionAction {
     ContractUserModerationAction(ContractUserModerationTransitionAction),
     /// contract fee claim: the payout of one of a contract's fee pots
     ContractFeeClaimAction(ContractFeeClaimTransitionAction),
+    /// a transfer inside a token's shielded pool, fee paid from the credit pool
+    TokenShieldedTransferWithShieldedFeeAction(
+        TokenShieldedTransferWithShieldedFeeTransitionAction,
+    ),
+    /// tokens leaving a token's shielded pool into an identity balance, fee paid from the credit pool
+    TokenUnshieldWithShieldedFeeAction(TokenUnshieldWithShieldedFeeTransitionAction),
+    /// tokens bought out of the credit pool and minted into the token's shielded pool
+    TokenPurchaseFromShieldedPoolAction(TokenPurchaseFromShieldedPoolTransitionAction),
 }
 
 impl StateTransitionAction {
@@ -196,6 +207,11 @@ impl StateTransitionAction {
             StateTransitionAction::ShieldFromIdentityAction(action) => action.user_fee_increase(),
             StateTransitionAction::IdentityTopUpFromShieldedPoolAction(_) => {
                 UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signature)
+            }
+            StateTransitionAction::TokenShieldedTransferWithShieldedFeeAction(_)
+            | StateTransitionAction::TokenUnshieldWithShieldedFeeAction(_)
+            | StateTransitionAction::TokenPurchaseFromShieldedPoolAction(_) => {
+                UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signatures)
             }
         }
     }

@@ -181,7 +181,6 @@ impl TokenDirectPurchaseTransitionActionV0 {
 /// `set_prices.keys().next().expect("Map is not empty")`, which panics on an empty map. That
 /// panic was uncaught during per-state-transition processing and would deterministically halt
 /// the chain across the quorum. Here an empty schedule resolves to `TokenNotForDirectSale`.
-
 /// Resolves the credits a direct purchase of `token_count` must pay right now, from the token's
 /// current pricing schedule: an error when the token is not for sale, the buyer agreed to too
 /// little, or the amount is under the minimum sale amount. Shared by `TokenDirectPurchase` and
@@ -213,22 +212,39 @@ pub(crate) fn resolve_direct_purchase_price(
             StateError::TokenNotForDirectSale(TokenNotForDirectSale::new(base.token_id())),
         )));
     };
+    Ok(required_direct_purchase_price(
+        base.token_id(),
+        &pricing_schedule,
+        token_count,
+        total_agreed_price,
+    ))
+}
 
+/// The credits `token_count` tokens cost under `pricing_schedule`, or the consensus error
+/// rejecting a purchase whose agreed price falls short of it. Shared by the batch direct
+/// purchases (identity-paid, into a balance or the pool) and the identity-less purchase paid
+/// from the credit shielded pool.
+pub fn required_direct_purchase_price(
+    token_id: Identifier,
+    pricing_schedule: &TokenPricingSchedule,
+    token_count: TokenAmount,
+    total_agreed_price: Credits,
+) -> Result<Credits, ConsensusError> {
     let required_price = match pricing_schedule {
         TokenPricingSchedule::SinglePrice(price_per_token) => {
             // We've already checked the user set price in structure validation
             // Hence we can do a saturating mul.
             let required_price = price_per_token.saturating_mul(token_count);
             if total_agreed_price < required_price {
-                return Ok(Err(ConsensusError::StateError(
+                return Err(ConsensusError::StateError(
                     StateError::TokenDirectPurchaseUserPriceTooLow(
                         TokenDirectPurchaseUserPriceTooLow::new(
-                            base.token_id(),
+                            token_id,
                             total_agreed_price,
                             required_price,
                         ),
                     ),
-                )));
+                ));
             }
             required_price
         }
@@ -238,19 +254,19 @@ pub(crate) fn resolve_direct_purchase_price(
             // helper so it can be unit-tested directly. On rejection we bump the nonce and
             // surface the consensus error.
             match resolve_set_prices_direct_purchase_price(
-                base.token_id(),
-                &set_prices,
+                token_id,
+                set_prices,
                 token_count,
                 total_agreed_price,
             ) {
                 Ok(required_total) => required_total,
                 Err(error) => {
-                    return Ok(Err(error));
+                    return Err(error);
                 }
             }
         }
     };
-    Ok(Ok(required_price))
+    Ok(required_price)
 }
 
 fn resolve_set_prices_direct_purchase_price(

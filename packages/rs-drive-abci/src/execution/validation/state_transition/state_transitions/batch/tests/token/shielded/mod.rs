@@ -2223,3 +2223,497 @@ mod document_shielded_token_payment_tests {
         );
     }
 }
+
+/// The identity-less token pool transitions (types 23, 24, 25): a bundle in the token's pool
+/// and a fee bundle in the credit pool, no identity anywhere. The test wallet owns notes in
+/// both pools; the credit pool is funded directly in state, the token pool through a shield.
+mod token_pool_paid_transitions_tests {
+    use super::token_shielded_pool_tests::{
+        assert_tokens_conserved, build_shield_bundle, dummy_bundle, enable_shielded_pool,
+        identity_token_balance, insert_token_pool_anchor, nullifier_is_spent,
+        platform_with_latest_version, pool_balance, process, spend_keys, spendable_note,
+        OWNER_INITIAL_BALANCE,
+    };
+    use super::*;
+    use crate::execution::validation::state_transition::state_transitions::shielded_common::read_pool_total_balance;
+    use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+        get_proving_key, insert_anchor_into_state, set_pool_total_balance,
+    };
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
+    use dpp::address_funds::OrchardAddress;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+    use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+    use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
+    use dpp::data_contract::change_control_rules::ChangeControlRules;
+    use dpp::data_contract::DataContract;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::{Identity, IdentityPublicKey};
+    use dpp::shielded::builder::{
+        build_token_purchase_from_shielded_pool_transition,
+        build_token_shielded_transfer_with_shielded_fee_transition,
+        build_token_unshield_with_shielded_fee_transition, OrchardProver, ShieldedFeePayer,
+        SpendableNote, TokenPoolSpender,
+    };
+    use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::TokenPurchaseFromShieldedPoolTransitionV0;
+    use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
+    use dpp::state_transition::StateTransition;
+    use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+    use dpp::version::feature_initial_protocol_versions::TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
+    use grovedb_commitment_tree::{Anchor, MerklePath, Note, ProvingKey};
+    use platform_version::version::PlatformVersion;
+    use simple_signer::signer::SimpleSigner;
+
+    /// A credit pool note the test wallet holds: enough for a purchase at 0.01 DASH a token.
+    const CREDIT_NOTE: u64 = 5_000_000_000;
+    const SHIELDED: u64 = 15;
+
+    struct Prover;
+
+    impl OrchardProver for Prover {
+        fn proving_key(&self) -> &ProvingKey {
+            get_proving_key()
+        }
+    }
+
+    fn wallet_address() -> OrchardAddress {
+        let (_, _, address) = spend_keys();
+        OrchardAddress::from_raw_bytes(&address.to_raw_address_bytes())
+            .expect("valid orchard address bytes")
+    }
+
+    fn spendable(note: Note, merkle_path: MerklePath) -> SpendableNote {
+        SpendableNote { note, merkle_path }
+    }
+
+    /// Puts a `CREDIT_NOTE` note of the test wallet into the credit pool: its anchor is
+    /// recorded and the pool total covers it.
+    fn fund_credit_pool(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        tag: u8,
+    ) -> (Note, Anchor, MerklePath) {
+        let (note, anchor, merkle_path) = spendable_note(CREDIT_NOTE, tag);
+        insert_anchor_into_state(platform, &anchor.to_bytes());
+        set_pool_total_balance(platform, CREDIT_NOTE);
+        (note, anchor, merkle_path)
+    }
+
+    fn credit_pool_balance(platform: &TempPlatform<MockCoreRPCLike>) -> u64 {
+        read_pool_total_balance(
+            &platform.drive,
+            None,
+            &mut vec![],
+            PlatformVersion::latest(),
+        )
+        .expect("credit pool balance")
+    }
+
+    /// Funds the buyer with `SHIELDED` tokens and shields all of them (identity contract nonce
+    /// 2, the contract creation used 1), then records an anchor for a `SHIELDED` note of the
+    /// test wallet in the token pool.
+    async fn fund_token_pool(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        contract: &DataContract,
+        token_id: Identifier,
+        holder: &Identity,
+        key: &IdentityPublicKey,
+        signer: &SimpleSigner,
+        seed: u64,
+        tag: u8,
+        platform_version: &PlatformVersion,
+    ) -> (Note, Anchor, MerklePath) {
+        let shield = BatchTransition::new_token_shield_transition(
+            token_id,
+            holder.id(),
+            contract.id(),
+            0,
+            SHIELDED,
+            build_shield_bundle(SHIELDED, seed),
+            key,
+            2,
+            0,
+            signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+        let result = process(platform, &shield);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert_eq!(pool_balance(platform, token_id), SHIELDED);
+        let (note, anchor, merkle_path) = spendable_note(SHIELDED, tag);
+        insert_token_pool_anchor(platform, token_id, &anchor);
+        (note, anchor, merkle_path)
+    }
+
+    #[tokio::test]
+    async fn test_token_shielded_transfer_with_shielded_fee() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9401);
+
+        let (owner, signer, key) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        let (token_note, token_anchor, token_path) = fund_token_pool(
+            &mut platform,
+            &contract,
+            token_id,
+            &owner,
+            &key,
+            &signer,
+            51,
+            11,
+            platform_version,
+        )
+        .await;
+        let (credit_note, credit_anchor, credit_path) = fund_credit_pool(&platform, 12);
+        let (fvk, ask, _) = spend_keys();
+        let address = wallet_address();
+
+        let (transition, fee) = build_token_shielded_transfer_with_shielded_fee_transition(
+            token_id,
+            contract.id(),
+            0,
+            TokenPoolSpender {
+                spends: vec![spendable(token_note, token_path)],
+                change_address: &address,
+                fvk: &fvk,
+                ask: &ask,
+                anchor: token_anchor,
+            },
+            &address,
+            6,
+            [0u8; 36],
+            ShieldedFeePayer {
+                spends: vec![spendable(credit_note, credit_path)],
+                change_address: &address,
+                fvk: &fvk,
+                ask: &ask,
+                anchor: credit_anchor,
+            },
+            &Prover,
+            platform_version,
+        )
+        .expect("build transition");
+        assert!(fee > 0);
+
+        let result = process(&platform, &transition);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        // Nothing left the token pool; the fee left the credit pool; both spends are final.
+        assert_eq!(pool_balance(&platform, token_id), SHIELDED);
+        assert_eq!(credit_pool_balance(&platform), CREDIT_NOTE - fee);
+        assert_eq!(
+            identity_token_balance(&platform, token_id, owner.id()),
+            Some(OWNER_INITIAL_BALANCE - SHIELDED)
+        );
+        let StateTransition::TokenShieldedTransferWithShieldedFee(inner) = &transition else {
+            unreachable!()
+        };
+        use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::accessors::TokenShieldedTransferWithShieldedFeeTransitionAccessorsV0;
+        assert!(nullifier_is_spent(
+            &platform,
+            token_id,
+            &inner.token_actions()[0].nullifier
+        ));
+        assert_tokens_conserved(&platform);
+
+        // The same notes cannot be spent twice; the rejection is unpaid (no identity).
+        let result = process(&platform, &transition);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::StateError(StateError::NullifierAlreadySpentError(_))
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_token_unshield_with_shielded_fee() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9402);
+
+        let (owner, signer, key) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (recipient, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.1));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        let (token_note, token_anchor, token_path) = fund_token_pool(
+            &mut platform,
+            &contract,
+            token_id,
+            &owner,
+            &key,
+            &signer,
+            52,
+            13,
+            platform_version,
+        )
+        .await;
+        let (credit_note, credit_anchor, credit_path) = fund_credit_pool(&platform, 14);
+        let (fvk, ask, _) = spend_keys();
+        let address = wallet_address();
+
+        let (transition, fee) = build_token_unshield_with_shielded_fee_transition(
+            token_id,
+            contract.id(),
+            0,
+            TokenPoolSpender {
+                spends: vec![spendable(token_note, token_path)],
+                change_address: &address,
+                fvk: &fvk,
+                ask: &ask,
+                anchor: token_anchor,
+            },
+            recipient.id(),
+            10,
+            [0u8; 36],
+            ShieldedFeePayer {
+                spends: vec![spendable(credit_note, credit_path)],
+                change_address: &address,
+                fvk: &fvk,
+                ask: &ask,
+                anchor: credit_anchor,
+            },
+            &Prover,
+            platform_version,
+        )
+        .expect("build transition");
+
+        let result = process(&platform, &transition);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        assert_eq!(pool_balance(&platform, token_id), SHIELDED - 10);
+        assert_eq!(
+            identity_token_balance(&platform, token_id, recipient.id()),
+            Some(10)
+        );
+        assert_eq!(credit_pool_balance(&platform), CREDIT_NOTE - fee);
+        assert_tokens_conserved(&platform);
+    }
+
+    #[tokio::test]
+    async fn test_token_purchase_from_shielded_pool() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9403);
+
+        let (seller, seller_signer, seller_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            seller.id(),
+            Some(|configuration: &mut TokenConfiguration| {
+                configuration.set_has_shielded_pool(true);
+                configuration
+                    .distribution_rules_mut()
+                    .set_change_direct_purchase_pricing_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        let price_per_token = dash_to_credits!(0.01);
+        let set_price = BatchTransition::new_token_change_direct_purchase_price_transition(
+            token_id,
+            seller.id(),
+            contract.id(),
+            0,
+            Some(TokenPricingSchedule::SinglePrice(price_per_token)),
+            None,
+            None,
+            &seller_key,
+            2,
+            0,
+            &seller_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("set price transition");
+        let result = process(&platform, &set_price);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        let seller_credits_before = platform
+            .drive
+            .fetch_identity_balance(seller.id().to_buffer(), None, platform_version)
+            .expect("balance")
+            .expect("seller exists");
+
+        let (credit_note, credit_anchor, credit_path) = fund_credit_pool(&platform, 15);
+        let (fvk, ask, _) = spend_keys();
+        let address = wallet_address();
+        let token_count = 3;
+        let price = price_per_token * token_count;
+
+        let (transition, fee) = build_token_purchase_from_shielded_pool_transition(
+            token_id,
+            contract.id(),
+            0,
+            &address,
+            &fvk,
+            token_count,
+            price,
+            [0u8; 36],
+            ShieldedFeePayer {
+                spends: vec![spendable(credit_note, credit_path)],
+                change_address: &address,
+                fvk: &fvk,
+                ask: &ask,
+                anchor: credit_anchor,
+            },
+            &Prover,
+            platform_version,
+        )
+        .expect("build transition");
+
+        let result = process(&platform, &transition);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        // The tokens were minted into the pool, the price reached the seller, the fee and the
+        // price left the credit pool.
+        assert_eq!(pool_balance(&platform, token_id), token_count);
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("total supply")
+            .expect("supply exists");
+        assert_eq!(total_supply, OWNER_INITIAL_BALANCE + token_count);
+        let seller_credits_after = platform
+            .drive
+            .fetch_identity_balance(seller.id().to_buffer(), None, platform_version)
+            .expect("balance")
+            .expect("seller exists");
+        assert_eq!(seller_credits_after, seller_credits_before + price);
+        assert_eq!(credit_pool_balance(&platform), CREDIT_NOTE - price - fee);
+        assert_tokens_conserved(&platform);
+
+        // Underpaying is rejected before any note is spent.
+        let (credit_note, credit_anchor, credit_path) = fund_credit_pool(&platform, 16);
+        let (underpaid, _) = build_token_purchase_from_shielded_pool_transition(
+            token_id,
+            contract.id(),
+            0,
+            &address,
+            &fvk,
+            token_count,
+            price - 1,
+            [0u8; 36],
+            ShieldedFeePayer {
+                spends: vec![spendable(credit_note, credit_path)],
+                change_address: &address,
+                fvk: &fvk,
+                ask: &ask,
+                anchor: credit_anchor,
+            },
+            &Prover,
+            platform_version,
+        )
+        .expect("build transition");
+        let result = process(&platform, &underpaid);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::StateError(StateError::TokenDirectPurchaseUserPriceTooLow(_))
+            )]
+        );
+        assert_eq!(pool_balance(&platform, token_id), token_count);
+    }
+
+    #[tokio::test]
+    async fn test_token_pool_paid_transitions_rejected_before_protocol_version_15() {
+        let platform_version =
+            PlatformVersion::get(TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
+                .expect("previous protocol version");
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(platform_version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let contract_id = Identifier::from([9u8; 32]);
+        let token_id: Identifier =
+            dpp::tokens::calculate_token_id(contract_id.as_bytes(), 0).into();
+        let bundle = dummy_bundle();
+        let transition: StateTransition = TokenPurchaseFromShieldedPoolTransition::V0(
+            TokenPurchaseFromShieldedPoolTransitionV0 {
+                data_contract_id: contract_id,
+                token_contract_position: 0,
+                token_id,
+                token_count: 1,
+                total_agreed_price: 1,
+                token_actions: bundle.actions.clone(),
+                token_anchor: bundle.anchor,
+                token_proof: bundle.proof.clone(),
+                token_binding_signature: bundle.binding_signature,
+                fee_actions: bundle.actions,
+                fee_anchor: bundle.anchor,
+                fee_proof: bundle.proof,
+                fee_binding_signature: bundle.binding_signature,
+                credit_amount: 2,
+            },
+        )
+        .into();
+
+        let platform_state = platform.state.load();
+        let serialized = transition.serialize_to_bytes().expect("serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("process state transition");
+
+        // A top-level transition outside its active version range does not even decode, exactly
+        // as on software that predates it; the batch token transitions are gated later because
+        // the batch itself decodes.
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::InternalError(message)]
+                if message.contains("TokenPurchaseFromShieldedPool") && message.contains("not active")
+        );
+    }
+}
