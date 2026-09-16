@@ -683,16 +683,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Flip `Pending` `Sent` [`PaymentEntry`]s to `Confirmed` when the
     /// persisted core transaction record reports the transaction final.
     ///
-    /// Recovery path for sent-payment confirmation. The live confirm path
-    /// ([`confirm_sent_dashpay_payment`](super::confirm_sent_dashpay_payment))
-    /// flips a sent payment the moment its block / InstantSend-lock event
-    /// arrives, but that is a single live event: if it is missed — a lagged
-    /// wallet-event broadcast, or a relaunch after the transaction confirmed
-    /// but before the flip was captured — the entry would otherwise stay
-    /// `Pending` forever (received payments self-heal from receival-account
-    /// UTXOs; sent payments have no such ground truth). This sweep consults
-    /// the persisted core tx record (txid + context) and flips any `Pending`
+    /// Recovery path for sent-payment confirmation. The live verdict path
+    /// (`sent_payment_verdicts` in the wallet-event adapter) flips a sent
+    /// payment the moment its block / InstantSend-lock event arrives, but
+    /// that is a single live event: if its store round was rejected, or a
+    /// relaunch landed after the transaction confirmed but before the flip
+    /// was captured, the entry would otherwise stay `Pending` forever
+    /// (received payments self-heal from receival-account UTXOs; sent
+    /// payments have no such ground truth). This sweep consults the
+    /// persisted core tx record (txid + context) and flips any `Pending`
     /// `Sent` entry whose transaction is mined or InstantSend-locked.
+    ///
+    /// Its evidence class is deliberately only `Pending`: a durable `Failed`
+    /// is a verdict the adapter reached with evidence this sweep cannot see
+    /// (the loser's record is gone, so a read here returns nothing anyway),
+    /// and confirming out of `Failed` is reserved for the adapter's own
+    /// reinstatement edge.
     ///
     /// Runs as a local-only step of `dashpay_sync()` — one persister read
     /// per pending sent payment, no network round-trips. Idempotent: a
@@ -951,7 +957,16 @@ fn wallet_tx_table_digest(listed: &[crate::changeset::traits::ListedCoreTxid]) -
     sha256::Hash::from_engine(engine).to_byte_array()
 }
 
-fn sent_payment_status_for_record(
+/// Whether a transaction record is final enough for a `Sent`
+/// [`PaymentEntry`] — the ONE definition of "final for DashPay display",
+/// shared by the wallet-event adapter's live verdict path
+/// (`sent_payment_verdicts`), the reconcile sweep, and the tx-history
+/// reconstruction sweep, so the three can never disagree.
+///
+/// An **InstantSend lock counts as final**: it is effectively irreversible,
+/// so the user sees `Confirmed` without waiting for the surrounding block. A
+/// bare mempool sighting does not — the payment genuinely is still pending.
+pub(crate) fn sent_payment_status_for_record(
     record: &key_wallet::managed_account::transaction_record::TransactionRecord,
 ) -> crate::wallet::identity::types::dashpay::payment::PaymentStatus {
     use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
@@ -962,59 +977,6 @@ fn sent_payment_status_for_record(
     } else {
         PaymentStatus::Pending
     }
-}
-
-/// Advance a sender's `Sent` [`PaymentEntry`] from `Pending` to
-/// `Confirmed` once its broadcast transaction reaches finality.
-///
-/// [`IdentityWallet::send_payment`] records the outgoing entry as
-/// `Pending` at broadcast time and nothing else advances it. The wallet
-/// re-emits the sender's own transaction as it moves through mempool →
-/// InstantSend → in-block → chain-locked, so when a re-detection reports
-/// the transaction final the matching entry is flipped in place.
-///
-/// An **InstantSend lock counts as final** for DashPay display: it is
-/// effectively irreversible, so the user sees `Confirmed` without waiting
-/// for the surrounding block. A bare mempool re-detection (no IS lock, not
-/// yet mined) leaves the entry `Pending` — which it genuinely still is.
-/// Idempotent: once `Confirmed`, later re-detections find nothing to
-/// change and skip the persistence round.
-pub(crate) async fn confirm_sent_dashpay_payment(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
-    persister: &crate::wallet::persister::WalletPersister,
-    record: &key_wallet::managed_account::transaction_record::TransactionRecord,
-) {
-    use key_wallet::transaction_checking::TransactionContext;
-    // Mined (InBlock / InChainLockedBlock) OR InstantSend-locked advances
-    // the entry. A plain mempool sighting does not.
-    let is_instant_send = matches!(record.context, TransactionContext::InstantSend(_));
-    if !record.is_confirmed() && !is_instant_send {
-        return;
-    }
-    confirm_sent_payment_by_txid(
-        wallet_manager,
-        wallet_id,
-        persister,
-        &record.txid.to_string(),
-    )
-    .await;
-}
-
-/// Confirm a sender's `Sent` [`PaymentEntry`] by txid alone, for a
-/// [`WalletEvent::TransactionInstantLocked`](key_wallet_manager::WalletEvent::TransactionInstantLocked)
-/// that applies an InstantSend lock to a previously-seen transaction.
-/// That event carries no [`TransactionRecord`](key_wallet::managed_account::transaction_record::TransactionRecord),
-/// only the txid; an IS lock is treated as final for DashPay display, so
-/// this flips a matching `Pending` `Sent` entry to `Confirmed`. Idempotent
-/// (the underlying flip skips entries already past `Pending`).
-pub(crate) async fn confirm_sent_dashpay_payment_by_txid(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
-    persister: &crate::wallet::persister::WalletPersister,
-    txid: &dashcore::Txid,
-) {
-    confirm_sent_payment_by_txid(wallet_manager, wallet_id, persister, &txid.to_string()).await;
 }
 
 /// Flip the `Pending` `Sent` [`PaymentEntry`] under `txid` (if any) to
@@ -3089,20 +3051,18 @@ mod tests {
     /// A sent payment confirmed by a block must flip `Pending → Confirmed`.
     ///
     /// The wallet sees its *own* broadcast in the mempool first
-    /// (`TransactionDetected`, context `Mempool`), where the confirm hook
-    /// early-returns because the transaction is not yet confirmed. The
+    /// (`TransactionDetected`, context `Mempool`), which is not final. The
     /// transaction reaches a confirmed context only when a block mines it —
     /// delivered as [`key_wallet_manager::WalletEvent::BlockProcessed`] with
     /// the record in `updated` (a previously-known record that just
-    /// confirmed). Routing the payment hooks only for `TransactionDetected`
-    /// would leave the entry `Pending` forever. This drives the real adapter
-    /// dispatch
-    /// ([`run_dashpay_payment_hooks`](crate::wallet::identity::network::run_dashpay_payment_hooks))
-    /// with a `BlockProcessed` event and pins the flip end-to-end, so a
-    /// regression that re-narrows the routing to `TransactionDetected` is
-    /// caught here. Also pins idempotency across a repeated block-processing
-    /// round and that the `matured` bucket (coinbase maturity) never
-    /// confirms a payment.
+    /// confirmed). Reading finality only from `TransactionDetected` would
+    /// leave the entry `Pending` forever. This drives the adapter's verdict
+    /// path with a `BlockProcessed` event and pins the flip end-to-end.
+    ///
+    /// Also pins that the incoming-payment handler leaves the sent entry
+    /// alone (the verdict is the adapter's, on the lossless channel),
+    /// idempotency across a repeated block-processing round, and that the
+    /// `matured` bucket (coinbase maturity) never confirms a payment.
     #[tokio::test]
     async fn block_processed_confirms_sent_payment() {
         use dashcore::blockdata::transaction::Transaction;
@@ -3194,6 +3154,10 @@ mod tests {
             addresses_derived: Vec::new(),
         };
 
+        // The payment handler must NOT write a sent-payment verdict: it runs
+        // off the lossy broadcast bus, so a verdict it wrote could be lost
+        // for good. Running it here first pins that separation — the entry is
+        // still `Pending` afterwards.
         crate::wallet::identity::network::run_dashpay_payment_hooks(
             &iw.wallet_manager,
             &wallet_id,
@@ -3201,6 +3165,15 @@ mod tests {
             &event,
         )
         .await;
+        assert_eq!(
+            read_status(iw, &wallet_id, &owner, &txid.to_string())
+                .await
+                .status,
+            PaymentStatus::Pending,
+            "the incoming-payment handler must not confirm a sent payment"
+        );
+
+        crate::changeset::core_bridge::sent_payment_verdicts(&iw.wallet_manager, &event).await;
 
         // Read the entry under a short-lived read lock so the re-fire below
         // can take the write lock.
@@ -3231,14 +3204,9 @@ mod tests {
         assert_eq!(entry.memo.as_deref(), Some("lunch"), "memo preserved");
 
         // Idempotent: a repeated block-processing round for the same txid
-        // changes nothing (the confirm path skips entries past `Pending`).
-        crate::wallet::identity::network::run_dashpay_payment_hooks(
-            &iw.wallet_manager,
-            &wallet_id,
-            &p,
-            &event,
-        )
-        .await;
+        // changes nothing (the transition table has no `Confirmed` + final
+        // edge, so no row is even emitted).
+        crate::changeset::core_bridge::sent_payment_verdicts(&iw.wallet_manager, &event).await;
         assert_eq!(
             read_status(iw, &wallet_id, &owner, &txid.to_string())
                 .await
@@ -3249,7 +3217,7 @@ mod tests {
 
         // A confirmed record arriving only in the `matured` bucket (coinbase
         // maturity) must NOT confirm a payment — `matured` is never a DashPay
-        // payment, so it is excluded from the payment hooks.
+        // payment, so it is excluded from the adapter's finality evidence.
         let matured_tx = Transaction {
             version: 2,
             lock_time: 0,
@@ -3305,13 +3273,8 @@ mod tests {
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
         };
-        crate::wallet::identity::network::run_dashpay_payment_hooks(
-            &iw.wallet_manager,
-            &wallet_id,
-            &p,
-            &matured_event,
-        )
-        .await;
+        crate::changeset::core_bridge::sent_payment_verdicts(&iw.wallet_manager, &matured_event)
+            .await;
         assert_eq!(
             read_status(iw, &wallet_id, &owner, &matured_txid.to_string())
                 .await
@@ -3325,7 +3288,8 @@ mod tests {
     /// confirms it without waiting for a block. The lock arrives as
     /// `WalletEvent::TransactionInstantLocked` (no record, just a txid); an
     /// IS lock is final for DashPay display, so the entry flips
-    /// `Pending → Confirmed`. Drives the real adapter dispatch.
+    /// `Pending → Confirmed`. Drives the adapter's verdict path — the event
+    /// carries no record, so the txid alone is the evidence.
     #[tokio::test]
     async fn instant_send_lock_confirms_sent_payment() {
         use dashcore::ephemerealdata::instant_lock::InstantLock;
@@ -3366,13 +3330,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
         };
-        crate::wallet::identity::network::run_dashpay_payment_hooks(
-            &iw.wallet_manager,
-            &wallet_id,
-            &p,
-            &event,
-        )
-        .await;
+        crate::changeset::core_bridge::sent_payment_verdicts(&iw.wallet_manager, &event).await;
 
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");
@@ -3472,13 +3430,7 @@ mod tests {
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
         };
-        crate::wallet::identity::network::run_dashpay_payment_hooks(
-            &iw.wallet_manager,
-            &wallet_id,
-            &p,
-            &event,
-        )
-        .await;
+        crate::changeset::core_bridge::sent_payment_verdicts(&iw.wallet_manager, &event).await;
 
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");

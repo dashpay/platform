@@ -2066,6 +2066,25 @@ pub fn upsert_pending_contact_crypto(
 // Top-Level PlatformWalletChangeSet
 // ---------------------------------------------------------------------------
 
+/// DashPay payment rows keyed by owning identity, then by transaction id —
+/// the shape [`PlatformWalletChangeSet::dashpay_payments_overlay`] carries.
+pub(crate) type PaymentOverlay = BTreeMap<Identifier, BTreeMap<String, PaymentEntry>>;
+
+/// Fold `other` into `target` with last-write-wins per `(owner, txid)`.
+///
+/// The overlay is a set of whole rows, so the later write of a row is the
+/// whole answer for it — there is nothing in an earlier row worth keeping.
+/// Shared with the wallet-event adapter, which folds a drain's sent-payment
+/// verdicts across events before they reach a changeset: coalescing per
+/// `(owner, txid)` is what lets a transaction that is swept and then
+/// reinstated inside one drain reach the store as the single verdict the
+/// drain ended on, rather than as two rows the persister must order.
+pub(crate) fn merge_payment_overlays(target: &mut PaymentOverlay, other: PaymentOverlay) {
+    for (id, payments) in other {
+        target.entry(id).or_default().extend(payments);
+    }
+}
+
 /// Delta of all wallet state changes from a single operation.
 ///
 /// `core` carries a [`CoreChangeSet`] — the platform-owned projection of
@@ -2260,12 +2279,11 @@ impl Merge for PlatformWalletChangeSet {
                 .extend(other_profiles);
         }
         if let Some(other_payments) = other.dashpay_payments_overlay {
-            let target = self
-                .dashpay_payments_overlay
-                .get_or_insert_with(Default::default);
-            for (id, payments) in other_payments {
-                target.entry(id).or_default().extend(payments);
-            }
+            merge_payment_overlays(
+                self.dashpay_payments_overlay
+                    .get_or_insert_with(Default::default),
+                other_payments,
+            );
         }
         // Wallet metadata: last-write-wins. `Network` doesn't
         // implement `Default`, so we can't lean on the `Option<T>:
