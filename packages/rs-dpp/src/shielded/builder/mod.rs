@@ -29,6 +29,7 @@
 //! )?;
 //! ```
 
+mod document_token_payment;
 mod identity_create_from_shielded_pool;
 mod identity_top_up_from_shielded_pool;
 mod shield;
@@ -46,6 +47,7 @@ mod token_unshield;
 mod unshield;
 
 pub use self::shield::build_shield_transition;
+pub use document_token_payment::build_document_shielded_token_payment;
 pub use identity_create_from_shielded_pool::{
     build_identity_create_from_shielded_pool_transition, IdentityCreateFromShieldedPoolBuildResult,
 };

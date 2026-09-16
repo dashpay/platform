@@ -29,7 +29,7 @@ pub(super) enum ShieldedPoolSelector {
 
 impl ShieldedPoolSelector {
     /// Resolves the optional `token_id` a request carries. A token pool is only addressable
-    /// once token shielded pools exist (protocol version 14), and the id must be 32 bytes.
+    /// once token shielded pools exist (protocol version 15), and the id must be 32 bytes.
     pub(super) fn from_request(
         token_id: Option<Vec<u8>>,
         platform_version: &PlatformVersion,

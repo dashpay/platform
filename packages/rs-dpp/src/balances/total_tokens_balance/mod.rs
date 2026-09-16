@@ -9,7 +9,7 @@ pub struct TotalTokensBalance {
     pub total_tokens_in_platform: SumTokenAmount,
     /// all the tokens in identity token balances
     pub total_identity_token_balances: SumTokenAmount,
-    /// all the tokens held in token shielded pools (0 before protocol version 14)
+    /// all the tokens held in token shielded pools (0 before protocol version 15)
     pub total_token_shielded_pool_balances: SumTokenAmount,
 }
 

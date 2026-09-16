@@ -46,11 +46,13 @@ pub(in crate::drive::tokens) enum TokenPoolBalanceChange {
 }
 
 impl Drive {
-    /// Whether the token owns a shielded pool subtree, without touching it.
+    /// Whether the token owns a shielded pool subtree, without touching it. The read is
+    /// collected into `drive_operations` so a caller validating a state transition can charge it.
     pub fn has_token_shielded_pool(
         &self,
         token_id: [u8; 32],
         transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
         self.grove_has_raw(
@@ -58,7 +60,7 @@ impl Drive {
             &token_id,
             DirectQueryType::StatefulDirectQuery,
             transaction,
-            &mut vec![],
+            drive_operations,
             &platform_version.drive,
         )
     }
@@ -540,10 +542,10 @@ mod tests {
         // The minter's own balance is not involved.
         assert_eq!(token_balance(&drive, identity_id), Some(1_000));
         assert!(drive
-            .has_token_shielded_pool(TOKEN_ID, None, platform_version)
+            .has_token_shielded_pool(TOKEN_ID, None, &mut vec![], platform_version)
             .expect("pool lookup"));
         assert!(!drive
-            .has_token_shielded_pool([9u8; 32], None, platform_version)
+            .has_token_shielded_pool([9u8; 32], None, &mut vec![], platform_version)
             .expect("pool lookup"));
     }
 

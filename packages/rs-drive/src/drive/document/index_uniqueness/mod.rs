@@ -130,6 +130,7 @@ mod tests {
             gas_fees_paid_by: GasFeesPaidBy::default(),
             contract_gas_fees_paid_by: GasFeesPaidBy::default(),
             declared_action_fee: None,
+            shielded_token_payment: None,
         });
 
         let data = BTreeMap::from([(

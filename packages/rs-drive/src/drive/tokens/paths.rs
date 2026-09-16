@@ -24,7 +24,7 @@ pub const TOKEN_DIRECT_SELL_PRICE_KEY: u8 = 92;
 pub const TOKEN_DISTRIBUTIONS_KEY: u8 = 32;
 /// Key for the token shielded pools tree (a BigSumTree of per-token pool SumTrees).
 ///
-/// Introduced in protocol version 14. Each token whose configuration has `has_shielded_pool`
+/// Introduced in protocol version 15. Each token whose configuration has `has_shielded_pool`
 /// owns one child SumTree keyed by its token id, laid out exactly like the credit shielded pool
 /// (`crate::drive::shielded::paths`): notes, nullifiers, anchors, anchors-by-height and a total
 /// balance SumItem. The BigSumTree total is the amount of every token currently shielded and

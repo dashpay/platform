@@ -35,7 +35,12 @@ where
             // does not exist must never turn the block end into a storage error.
             if !self
                 .drive
-                .has_token_shielded_pool(*token_id, Some(transaction), platform_version)
+                .has_token_shielded_pool(
+                    *token_id,
+                    Some(transaction),
+                    &mut vec![],
+                    platform_version,
+                )
                 .map_err(Error::Drive)?
             {
                 continue;

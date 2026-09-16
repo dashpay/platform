@@ -10,6 +10,7 @@ use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
+use dpp::tokens::token_payment_info::v1::TokenShieldedPayment;
 use dpp::ProtocolError;
 use std::sync::Arc;
 
@@ -49,6 +50,9 @@ pub struct DocumentBaseTransitionActionV0 {
     /// most actions declare none, and the action sits in the largest variant of the batched
     /// transition enum.
     pub declared_action_fee: Option<Box<DeclaredDocumentActionFee>>,
+    /// The spend bundle paying `token_cost` out of the token's shielded pool instead of the
+    /// owner's token balance (`TokenPaymentInfo::V1`). Only set when there is a token cost.
+    pub shielded_token_payment: Option<TokenShieldedPayment>,
 }
 
 /// document base transition action accessors v0
@@ -90,4 +94,6 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     /// The fee the document type declares for this action, with what the transition agreed
     /// to pay
     fn declared_action_fee_with_agreement(&self) -> Option<DeclaredDocumentActionFee>;
+    /// The shielded payment of the token cost, when the cost is paid out of the token's pool
+    fn shielded_token_payment(&self) -> Option<&TokenShieldedPayment>;
 }

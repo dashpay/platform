@@ -48,7 +48,7 @@ The fee is derived differently depending on the shielded transition type:
 
 ### Token shielded pool fees
 
-Token pools (protocol version 14, see [Token Shielded Pools](../data-model/token-shielded-pools.md))
+Token pools (protocol version 15, see [Token Shielded Pools](../data-model/token-shielded-pools.md))
 hold tokens, and tokens cannot pay fees, so none of the three token pool transitions carves a
 fee from the bundle. They are `TokenTransition` variants inside a `Batch`, and the batch's
 signing identity pays in credits through the standard identity-paid path.

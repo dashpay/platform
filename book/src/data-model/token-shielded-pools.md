@@ -1,6 +1,6 @@
 # Token Shielded Pools
 
-From protocol version 14 a token can own a shielded pool: an Orchard pool that holds that token
+From protocol version 15 a token can own a shielded pool: an Orchard pool that holds that token
 instead of credits. Holders move tokens between their identity balance and the pool with three
 token transitions inside a batch, and transfer inside the pool without revealing amounts or
 counterparties. This chapter describes the storage, the configuration flag, the transitions, the
@@ -35,7 +35,7 @@ a pool-agnostic form taking the pool path, and a token twin that supplies the to
 root of all token pools is a BigSumTree so the amount of every token that is shielded is one
 sum, which the token conservation check reads.
 
-The root tree is created by the version 14 upgrade transition (`transition_to_version_14`) on
+The root tree is created by the version 15 upgrade transition (`transition_to_version_15`) on
 an existing chain and by `create_initial_state_structure` version 4 on a new one. A pool's five
 trees are created when a contract with the flag is inserted or updated.
 
@@ -45,7 +45,7 @@ trees are created when a contract with the flag is inserted or updated.
 `hasShieldedPool: bool`. A version 0 configuration behaves as `hasShieldedPool: false`.
 The format version is admitted by
 `dpp.contract_versions.token_versions.token_configuration_format`: protocol versions 13 and
-below allow only version 0, protocol version 14 allows versions 0 and 1. Contract create and
+below allow only version 0, protocol version 15 allows versions 0 and 1. Contract create and
 update reject a token configuration outside the bounds with `UnsupportedVersionError`, so a
 pre-14 network never stores the flag.
 
@@ -148,7 +148,7 @@ The six shielded pool queries (`getShieldedPoolState`, `getShieldedNotesCount`,
 `getShieldedAnchors`, `getMostRecentShieldedAnchor`, `getShieldedEncryptedNotes`,
 `getShieldedNullifiers`) take an optional `token_id`. Without it they target the credit pool;
 with a 32-byte token id they target that token's pool and answer with the same response shape.
-A token id is rejected with `InvalidArgument` before protocol version 14 or when it is not 32
+A token id is rejected with `InvalidArgument` before protocol version 15 or when it is not 32
 bytes. The proof verifier routes on the same field to the token twins of the verify functions
 (`verify_token_shielded_pool_state` and the rest), and the Rust SDK exposes
 `TokenShieldedPoolQuery`, `TokenShieldedEncryptedNotesQuery` and `TokenShieldedNullifiersQuery`.
