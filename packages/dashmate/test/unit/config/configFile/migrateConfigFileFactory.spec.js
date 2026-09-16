@@ -245,6 +245,35 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
+  it('should re-pin the Tenderdash image for a config already stamped 4.2.0', async () => {
+    // getConfigFormatVersion targets the newest migration key during a
+    // development cycle, not package.json's version, so an earlier build in
+    // this same cycle can already stamp a config '4.2.0' before the
+    // Tenderdash re-pin moved to 4.2.1. migrateConfigFile returns immediately
+    // once fromVersion >= targetVersion, so such a config must cross 4.2.1
+    // specifically, not just any migration above it.
+    const fromVersion = '4.2.0';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const baseConfig = container.resolve('defaultConfigs').get('base');
+    const expectedTenderdashImage = baseConfig.get('platform.drive.tenderdash.docker.image');
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = fromVersion;
+    for (const options of Object.values(configFileData.configs)) {
+      options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.7';
+    }
+
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(options.platform.drive.tenderdash.docker.image).to.equal(
+        expectedTenderdashImage,
+        `4.2.1 did not re-pin the Tenderdash image for ${name}`,
+      );
+    }
+  });
+
   it('should load a config a development build stamped with its own prerelease version', async () => {
     // A development build records its own package version in the config, so
     // every node running one is stamped at a prerelease of the next release.
