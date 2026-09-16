@@ -17,5 +17,4 @@ pub const DRIVE_STRUCTURE_V1: DriveStructureVersion = DriveStructureVersion {
         max_version: 0,
         default_current_version: 0,
     },
-    keep_history_storage: 0,
 };

@@ -7,7 +7,7 @@ use crate::version::drive_versions::drive_group_method_versions::DriveShieldedMe
 use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_state_transition_method_versions::v4::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4;
-use crate::version::drive_versions::drive_structure_version::v2::DRIVE_STRUCTURE_V2;
+use crate::version::drive_versions::drive_structure_version::v1::DRIVE_STRUCTURE_V1;
 use crate::version::drive_versions::drive_token_method_versions::v1::DRIVE_TOKEN_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_verify_method_versions::v3::DRIVE_VERIFY_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_vote_method_versions::v2::DRIVE_VOTE_METHOD_VERSIONS_V2;
@@ -45,7 +45,7 @@ use grovedb_version::version::v4::GROVE_V4;
 ///
 /// Everything else matches `DRIVE_VERSION_V8`.
 pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
-    structure: DRIVE_STRUCTURE_V2, // changed: keep-history revisions move to the per-type history tree
+    structure: DRIVE_STRUCTURE_V1,
     methods: DriveMethodVersions {
         initialization: DriveInitializationMethodVersions {
             create_initial_state_structure: 3, // changed in v8: adds shielded pool trees (commitment tree, nullifiers, anchors)

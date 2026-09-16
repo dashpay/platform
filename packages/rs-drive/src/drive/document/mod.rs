@@ -301,8 +301,8 @@ fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
 }
 
 #[cfg(feature = "server")]
-/// Creates a reference to a document stored with the per-type history tree
-/// (drive structure `keep_history_storage` 1).
+/// Creates a reference to a document stored with the per-type history tree by
+/// primary-storage writer version 1.
 ///
 /// The reference always points at the primary key tree entry. For a
 /// keep-history type that entry is itself a reference to the current revision
