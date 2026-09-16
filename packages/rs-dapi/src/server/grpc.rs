@@ -10,6 +10,9 @@ use axum::http::{HeaderMap, Request, Response};
 use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::PlatformServer;
 use dapi_grpc::tonic::Status;
+use dapi_grpc::tonic::body::Body as TonicBody;
+use http_body::Body;
+use http_body_util::{BodyExt, Limited};
 use tower::layer::util::{Identity, Stack};
 use tower::util::Either;
 use tower::{Layer, Service};
@@ -22,6 +25,35 @@ const UNARY_TIMEOUT_SECS: u64 = 15;
 const STREAMING_TIMEOUT_SECS: u64 = 600;
 /// Safety margin to ensure we respond before client-side gRPC deadlines fire
 const GRPC_REQUEST_TIME_SAFETY_MARGIN: Duration = Duration::from_millis(50);
+
+/// Coarse DoS backstop on the *encoded* request body of every Platform method
+/// that does not carry a state transition. Must stay strictly above every
+/// per-method app-layer budget plus protobuf envelope overhead, so that
+/// oversized-but-parseable requests reach the app-layer validators and get
+/// their precise errors instead of dying here with a generic status. The
+/// largest legitimate query payload is `getPathElements` (MAX_PATH_QUERY_BYTES,
+/// 64 KiB of raw components, ~65 KiB encoded); every other query sits far
+/// below it. Enforced on the raw body before Prost materialises anything.
+const MAX_PLATFORM_QUERY_BODY_BYTES: usize = 128 * 1024; // 128 KiB
+// The body cap sits above the largest query's raw component budget plus framing, or that
+// query could never reach its own validator.
+const _: () = assert!(
+    MAX_PLATFORM_QUERY_BODY_BYTES > crate::services::platform_service::MAX_PATH_QUERY_BYTES
+);
+/// The one Platform method that legitimately carries a large body: a
+/// broadcast of a contract-code capable state transition
+/// (`max_contract_code_state_transition_size`, 32 MiB from protocol
+/// version 17) plus protobuf framing. This is also tonic's service-wide
+/// decode cap, so it is the ceiling for every method and the body limit
+/// below is what keeps the queries on the smaller allowance.
+const MAX_PLATFORM_TRANSACTION_BODY_BYTES: usize = 34 * 1024 * 1024; // 34 MiB
+/// The Platform methods allowed the transaction body allowance.
+const PLATFORM_TRANSACTION_METHODS: &[&str] =
+    &["/org.dash.platform.dapi.v0.Platform/broadcastStateTransition"];
+/// Same principle for Core: sized above the largest app-layer budget
+/// (raw transaction wire cap, 400 KB) plus envelope overhead.
+const MAX_CORE_DECODING_BYTES: usize = 512 * 1024; // 512 KiB
+const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
 
 impl DapiServer {
     /// Start the unified gRPC server that exposes both Platform and Core services.
@@ -36,22 +68,6 @@ impl DapiServer {
 
         let platform_service = self.platform_service.clone();
         let core_service = self.core_service.clone();
-
-        // Coarse DoS backstop on the *encoded* Platform request. Must stay
-        // strictly above every per-method app-layer budget plus protobuf
-        // envelope overhead, so that oversized-but-parseable requests reach
-        // the app-layer validators and get their precise errors instead of
-        // dying here with tonic's generic decode-limit status. The largest
-        // legitimate payload is a broadcast of a contract-code capable state
-        // transition (`max_contract_code_state_transition_size`, 32 MiB from
-        // protocol version 17); `getPathElements` (MAX_PATH_QUERY_BYTES,
-        // 64 KiB of raw components, ~65 KiB encoded) and every other family
-        // (`max_state_transition_size`, 20 KiB) sit far below it.
-        const MAX_PLATFORM_DECODING_BYTES: usize = 34 * 1024 * 1024; // 34 MiB
-        // Same principle for Core: sized above the largest app-layer budget
-        // (raw transaction wire cap, 400 KB) plus envelope overhead.
-        const MAX_CORE_DECODING_BYTES: usize = 512 * 1024; // 512 KiB
-        const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
 
         let builder = dapi_grpc::tonic::transport::Server::builder()
             .tcp_keepalive(Some(Duration::from_secs(25)))
@@ -72,14 +88,25 @@ impl DapiServer {
             Either::Right(Identity::new())
         };
 
-        // Stack layers (execution order: metrics -> access log -> timeout)
-        let combined_layer = Stack::new(Stack::new(timeout_layer, access_layer), metrics_layer);
+        // Per-method request body cap, ahead of tonic's service-wide decode
+        // cap: only the transaction ingress gets the large allowance.
+        let body_limit_layer = BodyLimitLayer::new(
+            MAX_PLATFORM_QUERY_BODY_BYTES,
+            MAX_PLATFORM_TRANSACTION_BODY_BYTES,
+            PLATFORM_TRANSACTION_METHODS,
+        );
+
+        // Stack layers (execution order: metrics -> access log -> timeout -> body limit)
+        let combined_layer = Stack::new(
+            Stack::new(Stack::new(body_limit_layer, timeout_layer), access_layer),
+            metrics_layer,
+        );
         let mut builder = builder.layer(combined_layer);
 
         builder
             .add_service(
                 PlatformServer::new(platform_service)
-                    .max_decoding_message_size(MAX_PLATFORM_DECODING_BYTES)
+                    .max_decoding_message_size(MAX_PLATFORM_TRANSACTION_BODY_BYTES)
                     .max_encoding_message_size(MAX_ENCODING_BYTES),
             )
             .add_service(
@@ -215,6 +242,99 @@ where
     }
 }
 
+/// Middleware layer that caps the request body per gRPC method before tonic
+/// decodes it.
+///
+/// Tonic's `max_decoding_message_size` is one number per service, so raising
+/// it for the state transition ingress would hand every query the same
+/// allowance. This layer wraps the request body in a length-limited body: a
+/// method on the allow list may send up to the large limit, every other method
+/// is cut off at the small one, and the cut happens while the body streams in,
+/// before Prost materialises a single field. Only Platform methods are
+/// distinguished; the Core service keeps its own service-wide cap and is
+/// below the small limit anyway.
+#[derive(Clone)]
+struct BodyLimitLayer {
+    default_limit: usize,
+    large_limit: usize,
+    large_limit_methods: &'static [&'static str],
+}
+
+impl BodyLimitLayer {
+    fn new(
+        default_limit: usize,
+        large_limit: usize,
+        large_limit_methods: &'static [&'static str],
+    ) -> Self {
+        Self {
+            default_limit,
+            large_limit,
+            large_limit_methods,
+        }
+    }
+
+    /// The body limit for a gRPC method path.
+    fn limit_for_method(&self, path: &str) -> usize {
+        if self.large_limit_methods.contains(&path) {
+            self.large_limit
+        } else {
+            self.default_limit
+        }
+    }
+}
+
+impl<S> Layer<S> for BodyLimitLayer {
+    type Service = BodyLimitService<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        BodyLimitService {
+            inner,
+            config: self.clone(),
+        }
+    }
+}
+
+/// Service wrapper that applies per-method request body limits.
+#[derive(Clone)]
+struct BodyLimitService<S> {
+    inner: S,
+    config: BodyLimitLayer,
+}
+
+impl<S, ReqBody> Service<Request<ReqBody>> for BodyLimitService<S>
+where
+    S: Service<Request<TonicBody>>,
+    ReqBody: Body<Data = dapi_grpc::tonic::codegen::Bytes> + Send + 'static,
+    ReqBody::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
+        let limit = self.config.limit_for_method(req.uri().path());
+        let (parts, body) = req.into_parts();
+        // A body that grows past the limit yields a `LengthLimitError`, which
+        // tonic maps to a status while reading the message; the limit is
+        // named so the client sees why.
+        let limited = Limited::new(body, limit).map_err(move |error| {
+            if error.is::<http_body_util::LengthLimitError>() {
+                Status::resource_exhausted(format!(
+                    "request body exceeds the {limit} byte limit of this method"
+                ))
+            } else {
+                Status::from_error(error)
+            }
+        });
+        self.inner
+            .call(Request::from_parts(parts, TonicBody::new(limited)))
+    }
+}
+
 /// Parse inbound grpc-timeout header into Duration (RFC 8681 style units)
 fn parse_grpc_timeout_header(headers: &HeaderMap) -> Option<Duration> {
     let value = headers.get("grpc-timeout")?;
@@ -260,6 +380,236 @@ mod tests {
                 Ok(Response::new(()))
             })
         }
+    }
+
+    /// A service that drains the request body and answers with its length, so a test can see
+    /// whether the limit layer let the bytes through.
+    #[derive(Clone)]
+    struct BodyLengthService;
+
+    impl Service<Request<TonicBody>> for BodyLengthService {
+        type Response = Response<usize>;
+        type Error = Box<dyn std::error::Error + Send + Sync>;
+        type Future =
+            Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, req: Request<TonicBody>) -> Self::Future {
+            Box::pin(async move {
+                let collected = req.into_body().collect().await?;
+                Ok(Response::new(collected.to_bytes().len()))
+            })
+        }
+    }
+
+    const QUERY_PATH: &str = "/org.dash.platform.dapi.v0.Platform/getPathElements";
+    const TRANSACTION_PATH: &str = "/org.dash.platform.dapi.v0.Platform/broadcastStateTransition";
+
+    fn body_limit_layer() -> BodyLimitLayer {
+        BodyLimitLayer::new(
+            MAX_PLATFORM_QUERY_BODY_BYTES,
+            MAX_PLATFORM_TRANSACTION_BODY_BYTES,
+            PLATFORM_TRANSACTION_METHODS,
+        )
+    }
+
+    async fn send(path: &str, body_len: usize) -> Result<usize, Status> {
+        let mut service = body_limit_layer().layer(BodyLengthService);
+        let request = Request::builder()
+            .uri(path)
+            .body(axum::body::Body::from(vec![0x5Au8; body_len]))
+            .expect("request");
+        service
+            .call(request)
+            .await
+            .map(|response| response.into_body())
+            .map_err(|error| {
+                *error
+                    .downcast::<Status>()
+                    .expect("the limit layer reports a tonic status")
+            })
+    }
+
+    /// A query at its limit passes intact and one byte over is refused before the service
+    /// sees it, while the transaction ingress accepts a body far above the query limit.
+    #[tokio::test]
+    async fn body_limit_is_per_method() {
+        assert_eq!(
+            send(QUERY_PATH, MAX_PLATFORM_QUERY_BODY_BYTES)
+                .await
+                .expect("a query at the limit passes"),
+            MAX_PLATFORM_QUERY_BODY_BYTES
+        );
+        let status = send(QUERY_PATH, MAX_PLATFORM_QUERY_BODY_BYTES + 1)
+            .await
+            .expect_err("a query over the limit is refused");
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
+        assert!(
+            status
+                .message()
+                .contains(&MAX_PLATFORM_QUERY_BODY_BYTES.to_string()),
+            "the status names the limit: {}",
+            status.message()
+        );
+
+        let family_cap = dpp::version::PlatformVersion::latest()
+            .system_limits
+            .max_contract_code_state_transition_size
+            .expect("the latest version bounds contract code envelopes")
+            as usize;
+        assert_eq!(
+            send(TRANSACTION_PATH, family_cap)
+                .await
+                .expect("a family-cap transaction passes the ingress"),
+            family_cap
+        );
+        let status = send(TRANSACTION_PATH, MAX_PLATFORM_TRANSACTION_BODY_BYTES + 1)
+            .await
+            .expect_err("the ingress has a ceiling too");
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
+    }
+
+    /// The transaction allowance must fit the largest state transition of every registered
+    /// protocol version plus framing.
+    #[test]
+    fn body_limits_cover_the_app_layer_budgets() {
+        const FRAMING_HEADROOM_BYTES: usize = 1024 * 1024;
+        for platform_version in dpp::version::PLATFORM_VERSIONS {
+            let limits = &platform_version.system_limits;
+            let largest_family_cap = limits
+                .max_contract_code_state_transition_size
+                .unwrap_or(0)
+                .max(limits.max_state_transition_size)
+                as usize;
+            assert!(
+                MAX_PLATFORM_TRANSACTION_BODY_BYTES >= largest_family_cap + FRAMING_HEADROOM_BYTES,
+                "protocol version {} admits a {largest_family_cap} byte state transition the \
+                 ingress could not receive",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    /// Through a real tonic server and HTTP/2 client: a `getPathElements` body above the query
+    /// allowance is refused by the layer (ResourceExhausted, naming the limit) even though it
+    /// is far below tonic's service-wide decode cap, and a broadcast carrying a family-cap
+    /// transition reaches the service intact. The service behind the layer is a plain gRPC
+    /// unary handler that answers with the byte count it received, so the assertion is on what
+    /// crossed the layer, not on Platform semantics.
+    #[tokio::test]
+    async fn real_server_applies_the_per_method_body_limit() {
+        use dapi_grpc::tonic::client::Grpc as GrpcClient;
+        use dapi_grpc::tonic::server::{Grpc as GrpcServer, NamedService, UnaryService};
+        use dapi_grpc::tonic::transport::server::TcpIncoming;
+        use dapi_grpc::tonic::transport::{Channel, Server};
+        use dapi_grpc::tonic::{Code, Request as TonicRequest, Response as TonicResponse};
+        use dapi_grpc::tonic_prost::ProstCodec;
+        use tokio::net::TcpListener;
+
+        /// A gRPC service whose every method takes raw bytes and returns their length.
+        #[derive(Clone)]
+        struct ByteCounter;
+
+        impl NamedService for ByteCounter {
+            const NAME: &'static str = "org.dash.platform.dapi.v0.Platform";
+        }
+
+        impl UnaryService<Vec<u8>> for ByteCounter {
+            type Response = u64;
+            type Future = std::future::Ready<Result<TonicResponse<u64>, Status>>;
+
+            fn call(&mut self, request: TonicRequest<Vec<u8>>) -> Self::Future {
+                std::future::ready(Ok(TonicResponse::new(request.into_inner().len() as u64)))
+            }
+        }
+
+        impl Service<Request<TonicBody>> for ByteCounter {
+            type Response = Response<TonicBody>;
+            type Error = std::convert::Infallible;
+            type Future =
+                Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+            fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, req: Request<TonicBody>) -> Self::Future {
+                let service = self.clone();
+                Box::pin(async move {
+                    let mut grpc = GrpcServer::new(ProstCodec::default())
+                        .max_decoding_message_size(MAX_PLATFORM_TRANSACTION_BODY_BYTES);
+                    Ok(grpc.unary(service, req).await)
+                })
+            }
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("local address");
+        let server = tokio::spawn(async move {
+            Server::builder()
+                .layer(body_limit_layer())
+                .add_service(ByteCounter)
+                .serve_with_incoming(TcpIncoming::from(listener))
+                .await
+                .expect("test server");
+        });
+
+        let channel = Channel::from_shared(format!("http://{address}"))
+            .expect("endpoint")
+            .connect()
+            .await
+            .expect("connect");
+        let mut client = GrpcClient::new(channel)
+            .max_encoding_message_size(MAX_PLATFORM_TRANSACTION_BODY_BYTES)
+            .max_decoding_message_size(MAX_PLATFORM_TRANSACTION_BODY_BYTES);
+        let mut call = async |path: &str, payload: Vec<u8>| {
+            client.ready().await.expect("client ready");
+            client
+                .unary(
+                    TonicRequest::new(payload),
+                    path.parse().expect("path"),
+                    ProstCodec::<Vec<u8>, u64>::default(),
+                )
+                .await
+                .map(|response| response.into_inner())
+        };
+
+        // A query body above the query allowance but below the service-wide cap is refused by
+        // the layer, and the status names the limit.
+        let status = call(QUERY_PATH, vec![0x5Au8; MAX_PLATFORM_QUERY_BODY_BYTES + 1])
+            .await
+            .expect_err("the oversized query is refused");
+        assert_eq!(status.code(), Code::ResourceExhausted, "{status:?}");
+        assert!(
+            status
+                .message()
+                .contains(&MAX_PLATFORM_QUERY_BODY_BYTES.to_string()),
+            "{status:?}"
+        );
+
+        // A query under its allowance and a family-cap transition both reach the service.
+        assert_eq!(
+            call(QUERY_PATH, vec![0x5Au8; 64 * 1024])
+                .await
+                .expect("a query under the allowance passes"),
+            64 * 1024
+        );
+        let family_cap = dpp::version::PlatformVersion::latest()
+            .system_limits
+            .max_contract_code_state_transition_size
+            .expect("the latest version bounds contract code envelopes")
+            as usize;
+        assert_eq!(
+            call(TRANSACTION_PATH, vec![0x5Au8; family_cap])
+                .await
+                .expect("a family-cap transition reaches the service"),
+            family_cap as u64
+        );
+
+        server.abort();
     }
 
     #[tokio::test]
