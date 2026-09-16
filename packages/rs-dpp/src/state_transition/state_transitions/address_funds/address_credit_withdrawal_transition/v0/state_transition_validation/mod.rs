@@ -1,253 +1,41 @@
-use crate::address_funds::AddressFundsFeeStrategyStep;
-use crate::consensus::basic::identity::{
-    InvalidCreditWithdrawalTransitionCoreFeeError,
-    InvalidCreditWithdrawalTransitionOutputScriptError,
-    NotImplementedCreditWithdrawalTransitionPoolingError,
-};
-use crate::consensus::basic::overflow_error::OverflowError;
-use crate::consensus::basic::state_transition::{
-    FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
-    FeeStrategyTooManyStepsError, InputBelowMinimumError, InputWitnessCountMismatchError,
-    OutputAddressAlsoInputError, OutputBelowMinimumError, TransitionNoInputsError,
-    TransitionOverMaxInputsError, WithdrawalBalanceMismatchError, WithdrawalBelowMinAmountError,
-};
+mod v0;
+mod v1;
+
+use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::BasicError;
 use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
-use crate::state_transition::address_credit_withdrawal_transition::MIN_CORE_FEE_PER_BYTE;
 use crate::state_transition::StateTransitionStructureValidation;
-use crate::util::is_non_zero_fibonacci_number::is_non_zero_fibonacci_number;
 use crate::validation::SimpleConsensusValidationResult;
-use crate::withdrawal::Pooling;
 use platform_version::version::PlatformVersion;
-use std::collections::HashSet;
 
 impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 {
     fn validate_structure(
         &self,
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
-        // Validate at least one input
-        if self.inputs.is_empty() {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::TransitionNoInputsError(TransitionNoInputsError::new()).into(),
-            );
-        }
-
-        // Validate maximum inputs
-        if self.inputs.len() > platform_version.dpp.state_transitions.max_address_inputs as usize {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::TransitionOverMaxInputsError(TransitionOverMaxInputsError::new(
-                    self.inputs.len().min(u16::MAX as usize) as u16,
-                    platform_version.dpp.state_transitions.max_address_inputs,
-                ))
-                .into(),
-            );
-        }
-
-        // Validate input witnesses count matches inputs count
-        if self.inputs.len() != self.input_witnesses.len() {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::InputWitnessCountMismatchError(InputWitnessCountMismatchError::new(
-                    self.inputs.len().min(u16::MAX as usize) as u16,
-                    self.input_witnesses.len().min(u16::MAX as usize) as u16,
-                ))
-                .into(),
-            );
-        }
-
-        // Validate output address is not also an input address
-        if let Some((output_address, _)) = &self.output {
-            if self.inputs.contains_key(output_address) {
-                return SimpleConsensusValidationResult::new_with_error(
-                    BasicError::OutputAddressAlsoInputError(OutputAddressAlsoInputError::new())
-                        .into(),
-                );
-            }
-        }
-
-        // Validate fee strategy is not empty
-        if self.fee_strategy.is_empty() {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::FeeStrategyEmptyError(FeeStrategyEmptyError::new()).into(),
-            );
-        }
-
-        // Validate fee strategy has at most max_address_fee_strategies steps
-        let max_fee_strategies = platform_version
-            .dpp
-            .state_transitions
-            .max_address_fee_strategies as usize;
-        if self.fee_strategy.len() > max_fee_strategies {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::FeeStrategyTooManyStepsError(FeeStrategyTooManyStepsError::new(
-                    self.fee_strategy.len().min(u8::MAX as usize) as u8,
-                    max_fee_strategies.min(u8::MAX as usize) as u8,
-                ))
-                .into(),
-            );
-        }
-
-        // Validate fee strategy has no duplicates
-        let mut seen = HashSet::with_capacity(self.fee_strategy.len());
-        for step in &self.fee_strategy {
-            if !seen.insert(step) {
-                return SimpleConsensusValidationResult::new_with_error(
-                    BasicError::FeeStrategyDuplicateError(FeeStrategyDuplicateError::new()).into(),
-                );
-            }
-        }
-
-        // Calculate number of outputs (0 or 1 for optional output)
-        let output_count = if self.output.is_some() { 1 } else { 0 };
-
-        // Validate fee strategy indices are within bounds
-        for step in &self.fee_strategy {
-            match step {
-                AddressFundsFeeStrategyStep::DeductFromInput(index) => {
-                    if *index as usize >= self.inputs.len() {
-                        return SimpleConsensusValidationResult::new_with_error(
-                            BasicError::FeeStrategyIndexOutOfBoundsError(
-                                FeeStrategyIndexOutOfBoundsError::new(
-                                    "DeductFromInput",
-                                    *index,
-                                    self.inputs.len().min(u16::MAX as usize) as u16,
-                                ),
-                            )
-                            .into(),
-                        );
-                    }
-                }
-                AddressFundsFeeStrategyStep::ReduceOutput(index) => {
-                    if *index as usize >= output_count {
-                        return SimpleConsensusValidationResult::new_with_error(
-                            BasicError::FeeStrategyIndexOutOfBoundsError(
-                                FeeStrategyIndexOutOfBoundsError::new(
-                                    "ReduceOutput",
-                                    *index,
-                                    output_count as u16,
-                                ),
-                            )
-                            .into(),
-                        );
-                    }
-                }
-            }
-        }
-
-        let min_input_amount = platform_version
+        match platform_version
             .dpp
             .state_transitions
             .address_funds
-            .min_input_amount;
-        let min_output_amount = platform_version
-            .dpp
-            .state_transitions
-            .address_funds
-            .min_output_amount;
-
-        // Validate each input is at least min_input_amount
-        for (_nonce, amount) in self.inputs.values() {
-            if *amount < min_input_amount {
-                return SimpleConsensusValidationResult::new_with_error(
-                    BasicError::InputBelowMinimumError(InputBelowMinimumError::new(
-                        *amount,
-                        min_input_amount,
-                    ))
-                    .into(),
-                );
-            }
-        }
-
-        // Validate output is at least min_output_amount (if present)
-        if let Some((_, amount)) = &self.output {
-            if *amount < min_output_amount {
-                return SimpleConsensusValidationResult::new_with_error(
-                    BasicError::OutputBelowMinimumError(OutputBelowMinimumError::new(
-                        *amount,
-                        min_output_amount,
-                    ))
-                    .into(),
-                );
-            }
-        }
-
-        // Validate pooling - currently we do not support pooling, so we must validate that pooling is `Never`
-        if self.pooling != Pooling::Never {
-            return SimpleConsensusValidationResult::new_with_error(
-                NotImplementedCreditWithdrawalTransitionPoolingError::new(self.pooling as u8)
-                    .into(),
-            );
-        }
-
-        // Validate core_fee_per_byte is a Fibonacci number
-        if !is_non_zero_fibonacci_number(self.core_fee_per_byte as u64) {
-            return SimpleConsensusValidationResult::new_with_error(
-                InvalidCreditWithdrawalTransitionCoreFeeError::new(
-                    self.core_fee_per_byte,
-                    MIN_CORE_FEE_PER_BYTE,
-                )
-                .into(),
-            );
-        }
-
-        // Validate output_script is P2PKH or P2SH
-        if !self.output_script.is_p2pkh() && !self.output_script.is_p2sh() {
-            return SimpleConsensusValidationResult::new_with_error(
-                InvalidCreditWithdrawalTransitionOutputScriptError::new(self.output_script.clone())
-                    .into(),
-            );
-        }
-        // Validate input sum doesn't overflow
-        let input_sum = self
-            .inputs
-            .values()
-            .try_fold(0u64, |acc, (_, amount)| acc.checked_add(*amount));
-        if input_sum.is_none() {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::OverflowError(OverflowError::new("Input sum overflow".to_string()))
-                    .into(),
-            );
-        }
-
-        // Validate that input_sum > output_amount (withdrawal amount must be positive)
-        let input_sum = input_sum.unwrap(); // Safe: checked above
-        let output_amount = self.output.as_ref().map_or(0, |(_, amount)| *amount);
-        if input_sum <= output_amount {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::WithdrawalBalanceMismatchError(WithdrawalBalanceMismatchError::new(
-                    input_sum,
-                    output_amount,
-                    input_sum.saturating_sub(output_amount),
-                ))
-                .into(),
-            );
-        }
-
-        // Validate withdrawal amount meets minimum and maximum
-        let withdrawal_amount = input_sum - output_amount; // Safe: checked input_sum > output_amount above
-        if withdrawal_amount < platform_version.system_limits.min_withdrawal_amount
-            || withdrawal_amount > platform_version.system_limits.max_withdrawal_amount
+            .validate_credit_withdrawal_structure
         {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::WithdrawalBelowMinAmountError(WithdrawalBelowMinAmountError::new(
-                    withdrawal_amount,
-                    platform_version.system_limits.min_withdrawal_amount,
-                    platform_version.system_limits.max_withdrawal_amount,
-                ))
-                .into(),
-            );
+            0 => self.validate_structure_v0(platform_version),
+            1 => self.validate_structure_v1(platform_version),
+            version => SimpleConsensusValidationResult::new_with_error(
+                BasicError::UnsupportedVersionError(UnsupportedVersionError::new(version, 0, 1))
+                    .into(),
+            ),
         }
-
-        SimpleConsensusValidationResult::new()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::address_funds::{AddressWitness, PlatformAddress};
+    use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
     use crate::consensus::ConsensusError;
     use crate::identity::core_script::CoreScript;
+    use crate::withdrawal::{core_fee_in_credits, Pooling};
     use assert_matches::assert_matches;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
@@ -534,6 +322,10 @@ mod tests {
         let fibonacci_numbers = [1, 2, 3, 5, 8, 13, 21];
         for fee in fibonacci_numbers {
             let mut transition = valid_withdrawal_transition();
+            // Large enough to leave the v14 floor above the Core fee at every rate in the sweep.
+            transition
+                .inputs
+                .insert(PlatformAddress::P2pkh([1u8; 20]), (0, 10_000_000));
             transition.core_fee_per_byte = fee;
             let result = transition.validate_structure(platform_version);
             assert!(
@@ -663,6 +455,64 @@ mod tests {
             result.is_valid(),
             "Expected valid with output change, got errors: {:?}",
             result.errors
+        );
+    }
+
+    fn transition(amount: u64, core_fee_per_byte: u32) -> AddressCreditWithdrawalTransitionV0 {
+        AddressCreditWithdrawalTransitionV0 {
+            inputs: BTreeMap::from([(PlatformAddress::P2pkh([1; 20]), (0, amount))]),
+            output: None,
+            fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            core_fee_per_byte,
+            pooling: Pooling::Never,
+            output_script: CoreScript::new_p2pkh([5; 20]),
+            user_fee_increase: 0,
+            input_witnesses: vec![AddressWitness::P2pkh {
+                signature: vec![0; 65].into(),
+            }],
+        }
+    }
+
+    #[test]
+    fn protocol_version_14_adds_the_core_fee_to_the_minimum() {
+        let version_13 = PlatformVersion::get(13).expect("protocol version 13");
+        let version_14 = PlatformVersion::get(14).expect("protocol version 14");
+        let at_the_old_minimum = transition(version_13.system_limits.min_withdrawal_amount, 1);
+
+        assert!(at_the_old_minimum.validate_structure(version_13).is_valid());
+        assert_matches!(
+            at_the_old_minimum
+                .validate_structure(version_14)
+                .errors
+                .as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::WithdrawalBelowMinAmountError(_)
+            )]
+        );
+
+        let above_the_fee = transition(
+            version_14.system_limits.min_withdrawal_amount
+                + core_fee_in_credits(1).expect("core fee"),
+            1,
+        );
+        assert!(above_the_fee.validate_structure(version_14).is_valid());
+    }
+
+    #[test]
+    fn protocol_version_14_caps_the_core_fee_rate() {
+        let version_13 = PlatformVersion::get(13).expect("protocol version 13");
+        let version_14 = PlatformVersion::get(14).expect("protocol version 14");
+        let over_the_cap = transition(3_000_000_000, 10_946);
+
+        assert!(over_the_cap.validate_structure(version_13).is_valid());
+        assert_matches!(
+            over_the_cap
+                .validate_structure(version_14)
+                .errors
+                .as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(_)
+            )]
         );
     }
 }

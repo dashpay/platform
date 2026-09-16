@@ -8,6 +8,17 @@ pub use core_dust_threshold::core_dust_threshold_duffs;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
+use crate::balances::credits::CREDITS_PER_DUFF;
+#[cfg(feature = "state-transitions")]
+use crate::consensus::basic::identity::InvalidCreditWithdrawalTransitionCoreFeeError;
+use crate::fee::Credits;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::identity_credit_withdrawal_transition::MIN_CORE_FEE_PER_BYTE;
+#[cfg(feature = "state-transitions")]
+use crate::validation::SimpleConsensusValidationResult;
+use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
+use platform_version::version::PlatformVersion;
+
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
@@ -45,6 +56,58 @@ pub type WithdrawalTransactionIndex = u64;
 
 /// Simple type alias for withdrawal transaction with it's index
 pub type WithdrawalTransactionIndexAndBytes = (WithdrawalTransactionIndex, Vec<u8>);
+
+/// Core fee charged by an asset unlock transaction, expressed in Platform credits.
+pub fn core_fee_in_credits(core_fee_per_byte: u32) -> Option<Credits> {
+    (ASSET_UNLOCK_TX_SIZE as u64)
+        .checked_mul(core_fee_per_byte as u64)?
+        .checked_mul(CREDITS_PER_DUFF)
+}
+
+/// Rejects a Core fee rate above the protocol version's `max_core_fee_per_byte`.
+///
+/// Stateless rule from protocol version 14, shared by the identity, address and shielded
+/// withdrawal structure validators of that generation. A protocol version without a cap
+/// accepts any rate here: `None` preserves the behavior of the protocol versions that predate
+/// the limit, per the field's contract.
+#[cfg(feature = "state-transitions")]
+pub fn validate_core_fee_per_byte_cap(
+    core_fee_per_byte: u32,
+    platform_version: &PlatformVersion,
+) -> SimpleConsensusValidationResult {
+    match platform_version.system_limits.max_core_fee_per_byte {
+        Some(max_core_fee_per_byte) if core_fee_per_byte > max_core_fee_per_byte => {
+            SimpleConsensusValidationResult::new_with_error(
+                InvalidCreditWithdrawalTransitionCoreFeeError::new(
+                    core_fee_per_byte,
+                    MIN_CORE_FEE_PER_BYTE,
+                )
+                .into(),
+            )
+        }
+        _ => SimpleConsensusValidationResult::new(),
+    }
+}
+
+/// Minimum amount a withdrawal must reserve for Core from protocol version 14:
+/// `min_withdrawal_amount` plus the Core fee of the asset unlock transaction at
+/// `core_fee_per_byte`. From that version the fee is carved out of the reserved amount instead
+/// of being drawn from the Core credit pool on top of it, so the amount has to leave the
+/// protocol floor above the fee.
+///
+/// The sum cannot overflow: the fee of a 190-byte transaction at a `u32` rate is below 2^50
+/// credits and the floor is a table constant. Saturating keeps the rejecting direction should
+/// either bound ever change.
+pub fn min_withdrawal_amount_with_core_fee(
+    core_fee_per_byte: u32,
+    platform_version: &PlatformVersion,
+) -> Credits {
+    let core_fee = core_fee_in_credits(core_fee_per_byte).unwrap_or(Credits::MAX);
+    platform_version
+        .system_limits
+        .min_withdrawal_amount
+        .saturating_add(core_fee)
+}
 
 /// Serde helper for `Pooling` fields exposed through the JS surface.
 ///
@@ -255,5 +318,57 @@ mod json_convertible_tests_pooling {
         assert_eq!(value, platform_value!(2u8));
         let recovered = Pooling::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+    }
+}
+
+#[cfg(all(test, feature = "state-transitions"))]
+mod core_fee_tests {
+    use super::*;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+    use assert_matches::assert_matches;
+
+    #[test]
+    fn should_reject_a_core_fee_rate_above_the_cap() {
+        let platform_version = PlatformVersion::latest();
+        let cap = platform_version
+            .system_limits
+            .max_core_fee_per_byte
+            .expect("the latest protocol version caps the Core fee rate");
+
+        assert!(validate_core_fee_per_byte_cap(cap, platform_version).is_valid());
+        assert_matches!(
+            validate_core_fee_per_byte_cap(cap + 1, platform_version)
+                .errors
+                .as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(error)
+            )] if error.core_fee_per_byte() == cap + 1
+        );
+    }
+
+    #[test]
+    fn should_accept_any_core_fee_rate_without_a_cap() {
+        // Protocol version 13 is live without the limit, so its table carries no cap.
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+        assert_eq!(platform_version.system_limits.max_core_fee_per_byte, None);
+
+        assert!(validate_core_fee_per_byte_cap(u32::MAX, platform_version).is_valid());
+    }
+
+    #[test]
+    fn should_add_the_core_fee_to_the_withdrawal_floor() {
+        let platform_version = PlatformVersion::latest();
+        let floor = platform_version.system_limits.min_withdrawal_amount;
+
+        assert_eq!(
+            min_withdrawal_amount_with_core_fee(1, platform_version),
+            floor + ASSET_UNLOCK_TX_SIZE as u64 * CREDITS_PER_DUFF
+        );
+        // The largest rate the wire format allows still sums exactly, without saturating.
+        assert_eq!(
+            min_withdrawal_amount_with_core_fee(u32::MAX, platform_version),
+            floor + core_fee_in_credits(u32::MAX).expect("a u32 rate fits in credits")
+        );
     }
 }

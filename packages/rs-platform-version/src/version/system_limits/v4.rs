@@ -35,6 +35,7 @@ use crate::version::system_limits::SystemLimits;
 /// * `minimum_grovedb_proof_envelope_version` becomes 1: clients verifying with v14 reject
 ///   the legacy GroveDB V0 proof envelope, whose item binding leaves returned item bytes
 ///   unauthenticated. Every live network has emitted V1 envelopes since v13.
+/// * Core withdrawal fee rates are capped at 6,765 duffs per byte.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -52,6 +53,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_daily_withdrawal_amount: Some(400_000_000_000_000), // 4000 Dash: Core's unlock capacity per day (LimitAmountV24)
     min_withdrawal_amount: 1_000_000,                       //1000 duffs (raised from 190 in v12)
     core_dust_relay_fee_per_kb: Some(3000), // Core's default dust relay fee: 546-duff P2PKH threshold; expired withdrawals below it fail instead of re-signing
+    max_core_fee_per_byte: Some(6_765),
     max_contract_group_size: 256,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on

@@ -248,14 +248,17 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                         // There is nothing expensive to add as validation methods to the execution context
                         Ok(st.validate_structure(platform_version))
                     }
-                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                        method: "identity create from addresses transition: validate_basic_structure"
-                            .to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    })),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method:
+                                "address credit withdrawal transition: validate_basic_structure"
+                                    .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
-                        method: "identity create from addresses transition: validate_basic_structure"
+                        method: "address credit withdrawal transition: validate_basic_structure"
                             .to_string(),
                         known_versions: vec![0],
                     })),
