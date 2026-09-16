@@ -27,4 +27,4 @@ jobs:
       github.event_name != 'issue_comment' ||
       contains(fromJSON('["coderabbitai", "coderabbitai[bot]", "thepastaclaw"]'), github.event.comment.user.login) ||
       contains(github.event.comment.body, '/self-reviewed')
-    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@b378d1d7f9c3949a5f73822362ca02d251ab8141
+    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@1ef768028f88b7f662fb260d9f8ba33fc0e48a44
