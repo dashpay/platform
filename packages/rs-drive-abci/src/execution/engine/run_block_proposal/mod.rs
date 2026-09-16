@@ -54,7 +54,7 @@ where
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         #[cfg(debug_assertions)]
-        let mut laps = crate::perf::Laps::new();
+        let mut phases = crate::perf::PhaseTimer::new("run_block_proposal");
 
         // Epoch information is always calculated with the last committed platform version
         // even if we are switching to a new version in this block.
@@ -70,7 +70,7 @@ where
         )?;
 
         #[cfg(debug_assertions)]
-        laps.lap("epoch_info");
+        phases.end_phase("gather_epoch_info");
 
         // Cleanup block cache before we execute a new proposal.
         //
@@ -79,9 +79,6 @@ where
         // rewrites, and clearing afterwards would wipe them before any state transition read
         // them, leaving those reads to fall back to pre-change global cache entries.
         self.clear_drive_block_cache(last_committed_platform_version)?;
-
-        #[cfg(debug_assertions)]
-        laps.lap("clear_block_cache");
 
         // Make sure the persisted protocol version votes are in the cache before anything in
         // this block reads them. The epoch tally in `upgrade_protocol_version_on_epoch_change`
@@ -101,11 +98,15 @@ where
                 &last_committed_platform_version.drive,
             )?;
 
+        // The block cache clear above plus the votes load, a no-op once the cache is warm.
+        #[cfg(debug_assertions)]
+        phases.end_phase("prepare_drive_caches");
+
         // Create a bock state from previous committed state
         let mut block_platform_state = platform_state.clone();
 
         #[cfg(debug_assertions)]
-        laps.lap("state_clone");
+        phases.end_phase("clone_platform_state");
 
         // Determine a platform version for this block
         let block_platform_version = if epoch_info.is_epoch_change_but_not_genesis()
