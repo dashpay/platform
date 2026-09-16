@@ -30,8 +30,15 @@ hex = "0.4"
 # (dashpay writer). `dash-sdk` is here for the `AddressFunds` re-export
 # in `schema/platform_addrs.rs`. Storage declares only the features it uses
 # directly; `platform-wallet` adds `dash-sdk/wallet` to Cargo's unified set.
+# `bls`/`eddsa` are required explicitly (not just inherited from
+# `platform-wallet`'s default features) because `rebuild_provider_key_account`
+# and `ProviderKeyExtendedPubKey`'s variants live behind those gates — a
+# `platform-wallet` built with `default-features = false` must not silently
+# break this crate's compile.
 platform-wallet = { path = "../rs-platform-wallet", features = [
     "serde",
+    "bls",
+    "eddsa",
 ], optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 key-wallet = { workspace = true, optional = true }
@@ -154,6 +161,10 @@ apple-native-keyring-store = { version = "=1.0.0", features = ["keychain"], opti
 windows-native-keyring-store = { version = "=1.0.0", optional = true }
 
 [dev-dependencies]
+# `test-utils` reaches `provider_key_test_wallet`, shared with
+# `platform-wallet`'s own `rebuild_provider_key_account` tests — see its use
+# in `sqlite/provider_accounts.rs`'s test module.
+platform-wallet = { path = "../rs-platform-wallet", features = ["test-utils"] }
 proptest = "1"
 assert_cmd = "2"
 static_assertions = "1"
