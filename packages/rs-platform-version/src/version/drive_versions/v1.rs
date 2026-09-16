@@ -90,6 +90,11 @@ pub const DRIVE_VERSION_V1: DriveVersion = DriveVersion {
         platform_state: DrivePlatformStateMethodVersions {
             fetch_platform_state_bytes: 0,
             store_platform_state_bytes: 0,
+            fetch_platform_state_recent_bytes: 0,
+            store_platform_state_recent_bytes: 0,
+            fetch_platform_state_entries_bytes: 0,
+            store_platform_state_entry_bytes: 0,
+            delete_platform_state_entry: 0,
         },
         fetch: DriveFetchMethodVersions { fetch_elements: 0 },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {

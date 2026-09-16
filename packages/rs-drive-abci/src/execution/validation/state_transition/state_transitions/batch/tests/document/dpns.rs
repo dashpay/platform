@@ -24,8 +24,11 @@ mod dpns_tests {
         run_dpns_contract_references_with_no_contested_unique_index_at_protocol_version(
             PlatformVersion::latest().protocol_version,
             // v14: GroveDB V4 writes through the Merk node it retains from
-            // reading the old value, billing one fewer seek than the V3 path
-            6_008_600, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            // reading the old value, billing one fewer seek than the V3 path.
+            // +740 per document write: the contract's version item is one more
+            // node to rehash. +4_300 per domain create: the v2 state validation
+            // probes contested storage for the id.
+            6_021_500,
         )
         .await;
     }
@@ -428,15 +431,15 @@ mod dpns_tests {
 
         assert_eq!(processing_result.valid_count(), 3);
 
-        // T1/T2 regression pin: the DPNS `create_domain_data_trigger`
-        // runs two `query_documents` calls per transition (parent-domain
-        // + preorder). On PV12+ (`transform_into_action: 1`) the
-        // accumulated cost is billed via the trigger's returned
-        // `FeeResult`. On PV11 the cost is discarded.
+        // Fee regression pin: the DPNS `create_domain_data_trigger` runs two
+        // `query_documents` calls per transition (parent-domain + preorder).
+        // On PV12+ (`transform_into_action: 1`) the accumulated cost is billed
+        // via the trigger's returned `FeeResult`; on PV11 it is discarded.
+        // PV14 adds one 4_300-credit contested-id probe per domain create.
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
             expected_processing_fee,
-            "PROTOCOL_VERSION_{}: DPNS domain create fee must match the version-specific baseline (T1 parent-domain + T2 preorder query costs billed only at PV12+)",
+            "PROTOCOL_VERSION_{}: DPNS domain create fee must match the version-specific baseline",
             protocol_version,
         );
 

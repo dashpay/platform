@@ -12,7 +12,10 @@ mod deletion_tests {
             PlatformVersion::latest().protocol_version,
             // v14: the deleted document carries the contract-version stamp
             // (one stored byte, five estimated), shifting processing costs
-            1700360, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            // Protocol version 14 adds +740 per document write (the contract's version
+            // item is one more node to rehash) and the larger DashPay v2 schema
+            // increases byte-billed contract-tree reads.
+            1721520,
         )
         .await;
     }

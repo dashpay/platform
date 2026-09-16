@@ -229,7 +229,8 @@ After commit, the block height counter is updated and, if needed, a GroveDB
 checkpoint is created for crash recovery.
 
 The finalize response also carries a proposer hint,
-`propose_next_block_immediately`. Drive sets it when the block leaves
+`propose_next_block_immediately` (Tenderdash 1.8.0, ABCI 1.4.0). Drive sets it
+when the block leaves
 withdrawal work for the next block: untied withdrawal transactions waiting in
 the queue to be signed, or expired withdrawal documents waiting to be
 re-queued. Tenderdash then proposes round 0 of the next height without waiting

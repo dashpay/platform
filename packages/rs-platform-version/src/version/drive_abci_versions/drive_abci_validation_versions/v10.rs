@@ -9,9 +9,11 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // PROTOCOL_VERSION_14: bump `document_create_transition_structure_validation` to
 // 1, which cross-checks the index named by a document create transition's
 // prefunded voting balance against the contested index the document itself
-// resolves to. Also bump document create state validation to 2 and document
-// replace state validation to 1, adding `refersTo` document reference
-// validation (referenced identities and contracts must exist), and introduce
+// resolves to. Also bump document create state validation to 2, adding
+// `refersTo` document reference validation (referenced identities and
+// contracts must exist) and rejecting a non-contested create whose id is
+// already held by a live contested document. Document replace state
+// validation 1 adds the same `refersTo` validation, and this table introduces
 // the `document_reference_validation` feature version. Also bump
 // `delete_withdrawal_data_trigger` to 2 so owners can delete withdrawals in the
 // terminal FAILED status the withdrawals contract v2 admits.

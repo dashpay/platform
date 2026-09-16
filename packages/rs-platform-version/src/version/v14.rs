@@ -17,7 +17,7 @@ use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v3::DRIVE_ABCI_QUERY_VERSIONS_V3;
-use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
+use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
@@ -65,7 +65,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    contest under a vote poll describing a different index than the one
 ///    the contest was created on — which halts the chain when that poll
 ///    ends — or open a contest for a document that is not a contested
-///    resource at all.
+///    resource at all. State validation also prevents a non-contested create
+///    from occupying a live contested document's id before the contest winner
+///    is awarded into primary storage. Drive's contested insert also recreates
+///    an abstain or lock vote tree over the storage an earlier poll's cleanup
+///    left orphaned (it only removed the trees that received votes), so a
+///    resource can be contested again instead of failing with
+///    `CorruptedContractIndexes`.
 /// 4. **Relative daily withdrawal limit**: the flat 2000 Dash per 24 hours that
 ///    applied from v8 becomes 15% of the total credits Platform held a day ago
 ///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
@@ -187,10 +193,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   contested create transition's prefunded voting balance to name the
 ///   same vote poll the document itself resolves to, and rejecting one on a
 ///   document that resolves to no contested index. It also bumps document
-///   create state validation to 2 and document replace state validation to
-///   1, enforcing `refersTo` document references: a document whose
-///   reference property names an identity or contract that does not exist
-///   is rejected. v13 keeps the v9 table and therefore keeps
+///   create state validation to 2, enforcing `refersTo` document references
+///   and rejecting a non-contested create whose id is already present in the
+///   contested tree. Document replace state validation 1 enforces the same
+///   reference checks. v13 keeps the v9 table and therefore keeps
 ///   accepting all of these, so replay of pre-upgrade blocks is unchanged.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
 ///   default 3: documents are stamped with the contract version their bytes
@@ -279,7 +285,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
     drive_abci: DriveAbciVersion {
-        structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
+        structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
@@ -504,6 +510,42 @@ mod tests {
                 .state_transitions
                 .batch_state_transition
                 .document_create_transition_structure_validation,
+            1
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .document_create_transition_state_validation,
+            1
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .document_create_transition_state_validation,
+            2
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .drive
+                .methods
+                .document
+                .insert_contested
+                .add_contested_vote_subtree_for_non_identities_operations,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive
+                .methods
+                .document
+                .insert_contested
+                .add_contested_vote_subtree_for_non_identities_operations,
             1
         );
     }
