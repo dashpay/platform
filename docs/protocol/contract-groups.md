@@ -63,9 +63,9 @@ Memberships are recorded at creation only. There is no update path and no leavin
   duplicates, redundancy and the membership cap.
   Errors 10360 to 10367.
 - State (paid, identity nonce bumped): the registered group must not exist
-  (`ContractGroupAlreadyExistsError`, 40218), every group joined must exist
-  (`ContractGroupNotFoundError`, 40219) and count the signer among its owners
-  (`IdentityNotContractGroupOwnerError`, 40220). Each group lookup is billed.
+  (`ContractGroupAlreadyExistsError`, 41000), every group joined must exist
+  (`ContractGroupNotFoundError`, 41001) and count the signer among its owners
+  (`IdentityNotContractGroupOwnerError`, 41002). Each group lookup is billed.
 
 Storage is paid at the standard rate: the info item and three empty subtrees for a
 registration, one empty item plus one reference per membership, plus the trees a new

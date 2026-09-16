@@ -201,11 +201,11 @@ A failure here returns a `BumpIdentityNonceAction` carrying the errors: the iden
 | 10365 | `ContractGroupRegistrantNotOwnerError` | structure |
 | 10366 | `InvalidContractGroupNameLengthError` | structure |
 | 10367 | `InvalidContractGroupDescriptionLengthError` | structure |
-| 40218 | `ContractGroupAlreadyExistsError` | state |
-| 40219 | `ContractGroupNotFoundError` | state |
-| 40220 | `IdentityNotContractGroupOwnerError` | state |
+| 41000 | `ContractGroupAlreadyExistsError` | state |
+| 41001 | `ContractGroupNotFoundError` | state |
+| 41002 | `IdentityNotContractGroupOwnerError` | state |
 
-The basic errors live in `packages/rs-dpp/src/errors/consensus/basic/contract_group/` and the state errors in `.../consensus/state/contract_group/`. Both sets were appended at the tail of their enums; `StateError` has a frozen-discriminant test that would catch an insertion in the middle. See [Error Codes](../error-handling/error-codes.md) for the code ranges.
+The basic errors live in `packages/rs-dpp/src/errors/consensus/basic/contract_group/` and the state errors in `.../consensus/state/contract_group/`. Both sets were appended at the tail of their enums; `StateError` has a frozen-discriminant test that would catch an insertion in the middle. The basic codes follow the change-control group range as their own block, and the state codes open a new hundred, 41000 to 41099, rather than borrowing from the identity range. See [Error Codes](../error-handling/error-codes.md) for the code ranges.
 
 ## From Transition to Action to Operations
 

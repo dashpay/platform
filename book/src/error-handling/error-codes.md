@@ -101,20 +101,21 @@ impl ErrorWithCode for FeeError {
 
 The fee category currently has a single code. The 30000 range is reserved for future fee-related errors.
 
-### StateError codes (40000-40899)
+### StateError codes (40000-41099)
 
 | Range | Category | Examples |
 |-------|----------|----------|
 | 40000-40009 | Data Contract | `DataContractAlreadyPresentError` (40000), `DataContractIsReadonlyError` (40001), `DataContractNotFoundError` (40008) |
 | 40100-40117 | Documents | `DocumentAlreadyPresentError` (40100), `DocumentNotFoundError` (40101), `DuplicateUniqueIndexError` (40105) |
 | 40200-40217 | Identity | `IdentityAlreadyExistsError` (40200), `InvalidIdentityRevisionError` (40203), `IdentityInsufficientBalanceError` (40210) |
-| 40218-40220 | Contract Groups | `ContractGroupAlreadyExistsError` (40218), `ContractGroupNotFoundError` (40219), `IdentityNotContractGroupOwnerError` (40220) |
 | 40300-40306 | Voting | `MasternodeNotFoundError` (40300), `MasternodeVoteAlreadyPresentError` (40304) |
 | 40400-40401 | Prefunded Balances | `PrefundedSpecializedBalanceInsufficientError` (40400) |
 | 40500-40502 | Data Triggers | `DataTriggerConditionError` (40500), `DataTriggerExecutionError` (40501) |
 | 40600-40603 | Addresses | `AddressDoesNotExistError` (40600), `AddressNotEnoughFundsError` (40601) |
 | 40700-40721 | Tokens | `IdentityDoesNotHaveEnoughTokenBalanceError` (40700), `UnauthorizedTokenActionError` (40701) |
 | 40800-40804 | Groups | `IdentityNotMemberOfGroupError` (40800), `GroupActionAlreadyCompletedError` (40802) |
+| 40900-40904 | Shielded | `InvalidAnchorError` (40900), `NullifierAlreadySpentError` (40901), `InsufficientShieldedFeeError` (40904) |
+| 41000-41002 | Contract Groups | `ContractGroupAlreadyExistsError` (41000), `ContractGroupNotFoundError` (41001), `IdentityNotContractGroupOwnerError` (41002) |
 
 Notice how the `DataTriggerError` sub-enum has its own `ErrorWithCode` implementation that the `StateError` delegates to:
 

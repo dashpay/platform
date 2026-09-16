@@ -352,10 +352,6 @@ impl ErrorWithCode for StateError {
             Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
             Self::RecipientIdentityDoesNotExistError(_) => 40216,
             Self::IdentityToFreezeDoesNotExistError(_) => 40217,
-            // Contract groups
-            Self::ContractGroupAlreadyExistsError(_) => 40218,
-            Self::ContractGroupNotFoundError(_) => 40219,
-            Self::IdentityNotContractGroupOwnerError(_) => 40220,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,
@@ -416,6 +412,11 @@ impl ErrorWithCode for StateError {
             Self::InvalidShieldedProofError(_) => 40902,
             Self::InsufficientPoolNotesError(_) => 40903,
             Self::InsufficientShieldedFeeError(_) => 40904,
+
+            // Contract group errors: 41000-41099
+            Self::ContractGroupAlreadyExistsError(_) => 41000,
+            Self::ContractGroupNotFoundError(_) => 41001,
+            Self::IdentityNotContractGroupOwnerError(_) => 41002,
         }
     }
 }
