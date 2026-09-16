@@ -721,6 +721,194 @@ mod tests {
         ));
     }
 
+    mod contested_index_parameters {
+        //! A contract update cannot re-parameterize an existing contest: the contested
+        //! declaration is part of the index definition the update freeze compares by
+        //! name, so a changed field match pattern is rejected, while a description-only
+        //! edit, which has no effect on the contest, is accepted.
+        use super::*;
+        use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use dpp::platform_value::Value;
+        use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
+        use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+        use dpp::tests::json_document::json_document_to_platform_value;
+
+        const CONTESTED_FIXTURE: &str =
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json";
+
+        /// Loads the contested DPNS fixture as a value and applies `edit` to the contested
+        /// declaration of its `parentNameAndLabel` index.
+        fn contested_fixture_with(
+            identity: &Identity,
+            edit: impl FnOnce(&mut Value),
+            platform_version: &PlatformVersion,
+        ) -> DataContract {
+            let mut value = json_document_to_platform_value(CONTESTED_FIXTURE)
+                .expect("expected to load the contested fixture");
+            let contested = value
+                .get_mut_value_at_path("documentSchemas.domain.indices")
+                .expect("expected the domain indices")
+                .to_array_mut()
+                .expect("expected the indices to be an array")
+                .first_mut()
+                .expect("expected the contested index first")
+                .get_mut_value_at_path("contested")
+                .expect("expected the contested declaration");
+            edit(contested);
+
+            let mut data_contract = DataContract::from_value(value, false, platform_version)
+                .expect("expected the fixture to parse");
+            data_contract.set_owner_id(identity.id());
+            data_contract
+                .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+            data_contract
+        }
+
+        async fn process(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            serialized_transition: Vec<u8>,
+            platform_version: &PlatformVersion,
+        ) -> StateTransitionExecutionResult {
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            processing_result.into_execution_results().remove(0)
+        }
+
+        /// Registers the unedited contested fixture and then submits an update whose
+        /// contested declaration was changed by `edit`.
+        async fn register_then_update(
+            edit: impl FnOnce(&mut Value),
+        ) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+
+            let data_contract = contested_fixture_with(&identity, |_| {}, platform_version);
+
+            let create_transition = DataContractCreateTransition::new_from_data_contract(
+                data_contract,
+                1,
+                &identity.clone().into_partial_identity_info(),
+                key.id(),
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create the contract create transition");
+
+            let result = process(
+                &platform,
+                create_transition
+                    .serialize_to_bytes()
+                    .expect("expected the create to serialize"),
+                platform_version,
+            )
+            .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+
+            let mut updated_contract = contested_fixture_with(&identity, edit, platform_version);
+            updated_contract.set_version(2);
+
+            let update_transition = DataContractUpdateTransition::new_from_data_contract(
+                updated_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create the contract update transition");
+
+            process(
+                &platform,
+                update_transition
+                    .serialize_to_bytes()
+                    .expect("expected the update to serialize"),
+                platform_version,
+            )
+            .await
+        }
+
+        #[tokio::test]
+        async fn test_data_contract_update_cannot_change_a_contested_field_match_pattern() {
+            let result = register_then_update(|contested| {
+                contested
+                    .get_mut_value_at_path("fieldMatches")
+                    .expect("expected the field matches")
+                    .to_array_mut()
+                    .expect("expected an array")
+                    .first_mut()
+                    .expect("expected one field match")
+                    .insert(
+                        "regexPattern".to_string(),
+                        Value::Text("^[a-zA-Z01]{3,10}$".to_string()),
+                    )
+                    .expect("expected to change the pattern");
+            })
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(
+                        BasicError::DataContractInvalidIndexDefinitionUpdateError(ref error)
+                    ),
+                    ..
+                } if error.index_path() == "changed index 'parentNameAndLabel'"
+            );
+        }
+
+        #[tokio::test]
+        async fn test_data_contract_update_accepts_a_contested_description_only_edit() {
+            let result = register_then_update(|contested| {
+                contested
+                    .insert(
+                        "description".to_string(),
+                        Value::Text("a reworded description with no effect".to_string()),
+                    )
+                    .expect("expected to change the description");
+            })
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+    }
+
     mod group_tests {
         use super::*;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::UnpaidConsensusError;

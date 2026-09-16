@@ -1115,7 +1115,7 @@ pub(in crate::execution) mod tests {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn create_dpns_name_contest_on_identities(
+    pub(in crate::execution) async fn create_dpns_name_contest_on_identities(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity_1: &(Identity, SimpleSigner, IdentityPublicKey),
         identity_2: &(Identity, SimpleSigner, IdentityPublicKey),

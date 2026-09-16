@@ -193,16 +193,19 @@ impl StateTransitionStateValidation for DataContractCreateTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::PlatformConfig;
     use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
     use crate::execution::validation::state_transition::tests::create_token_contract_with_owner_identity;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
-    use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use assert_matches::assert_matches;
     use dpp::balances::credits::TokenAmount;
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
+    use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
@@ -210,6 +213,7 @@ mod tests {
     use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
     use dpp::data_contract::change_control_rules::ChangeControlRules;
     use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contract::document_type::accessors::{
         DocumentTypeV0MutGetters, DocumentTypeV1Setters,
     };
@@ -226,7 +230,9 @@ mod tests {
     use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use dpp::state_transition::StateTransition;
-    use dpp::tests::json_document::json_document_to_contract_with_ids;
+    use dpp::tests::json_document::{
+        json_document_to_contract_with_ids, json_document_to_platform_value,
+    };
     use dpp::tokens::calculate_token_id;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use dpp::tokens::token_amount_on_contract_token::{
@@ -301,6 +307,148 @@ mod tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit transaction");
+    }
+
+    /// Loads the contested DPNS fixture and moves its `normalizedLabel` field match onto
+    /// `label`, a property that is not part of the contested index.
+    fn contested_contract_with_field_match_outside_the_index(
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let mut value = json_document_to_platform_value(
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+        )
+        .expect("expected to load the contested fixture");
+        let indices = value
+            .get_mut_value_at_path("documentSchemas.domain.indices")
+            .expect("expected the domain indices")
+            .to_array_mut()
+            .expect("expected the indices to be an array");
+        let field_matches = indices
+            .first_mut()
+            .expect("expected the contested index first")
+            .get_mut_value_at_path("contested.fieldMatches")
+            .expect("expected the field matches")
+            .to_array_mut()
+            .expect("expected the field matches to be an array");
+        field_matches
+            .first_mut()
+            .expect("expected one field match")
+            .insert("field".to_string(), Value::Text("label".to_string()))
+            .expect("expected to move the field match");
+
+        let mut data_contract = DataContract::from_value(value, false, platform_version)
+            .expect("expected the fixture to parse without validation");
+        data_contract
+            .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+        data_contract
+    }
+
+    async fn process_contract_create(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        data_contract: DataContract,
+        platform_version: &PlatformVersion,
+    ) -> StateTransitionExecutionResult {
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(platform, 958, dash_to_credits!(2.0));
+
+        let data_contract_create_transition = DataContractCreateTransition::new_from_data_contract(
+            data_contract,
+            1,
+            &identity.into_partial_identity_info(),
+            key.id(),
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expect to create data contract create transition");
+
+        let data_contract_create_serialized_transition = data_contract_create_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[data_contract_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result.into_execution_results().remove(0)
+    }
+
+    /// Contested index parameters are validated at protocol version 17: a field match on a
+    /// property outside the contested index registers at protocol version 14 and is rejected
+    /// with `ContestedIndexInvalidParametersError` at the latest version. Mainnet, because
+    /// the contested structure validation of document creates is skipped on testnet before
+    /// epoch 2080 and this pins the contract side on the network where contests run.
+    #[tokio::test]
+    async fn test_data_contract_creation_with_unsupported_contested_parameters_is_rejected_at_latest_version(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                network: Network::Mainnet,
+                ..Default::default()
+            })
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let data_contract = contested_contract_with_field_match_outside_the_index(platform_version);
+
+        let result = process_contract_create(&mut platform, data_contract, platform_version).await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::ContestedIndexInvalidParametersError(
+                    ref error
+                )),
+                ..
+            } if error.document_type() == "domain"
+                && error.index_name() == "parentNameAndLabel"
+                && error.reason() == "field match 'label' does not name a property of the index"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_data_contract_creation_with_unsupported_contested_parameters_is_accepted_at_protocol_version_14(
+    ) {
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                network: Network::Mainnet,
+                ..Default::default()
+            })
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let data_contract = contested_contract_with_field_match_outside_the_index(platform_version);
+
+        let result = process_contract_create(&mut platform, data_contract, platform_version).await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
     }
 
     /// End-to-end regression test for the nested-property `position` chain-halt.
