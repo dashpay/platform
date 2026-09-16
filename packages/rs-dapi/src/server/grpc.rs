@@ -11,8 +11,8 @@ use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::PlatformServer;
 use dapi_grpc::tonic::Status;
 use dapi_grpc::tonic::body::Body as TonicBody;
-use http_body::Body;
-use http_body_util::{BodyExt, Limited};
+use dapi_grpc::tonic::codegen::Bytes;
+use http_body::{Body, Frame};
 use tower::layer::util::{Identity, Stack};
 use tower::util::Either;
 use tower::{Layer, Service};
@@ -50,6 +50,9 @@ const MAX_PLATFORM_TRANSACTION_BODY_BYTES: usize = 34 * 1024 * 1024; // 34 MiB
 /// The Platform methods allowed the transaction body allowance.
 const PLATFORM_TRANSACTION_METHODS: &[&str] =
     &["/org.dash.platform.dapi.v0.Platform/broadcastStateTransition"];
+/// The gRPC service the body limits apply to; every other service (Core) keeps
+/// its own service-wide decode cap and is not touched by the layer.
+const PLATFORM_SERVICE_PATH_PREFIX: &str = "/org.dash.platform.dapi.v0.Platform/";
 /// Same principle for Core: sized above the largest app-layer budget
 /// (raw transaction wire cap, 400 KB) plus envelope overhead.
 const MAX_CORE_DECODING_BYTES: usize = 512 * 1024; // 512 KiB
@@ -88,9 +91,11 @@ impl DapiServer {
             Either::Right(Identity::new())
         };
 
-        // Per-method request body cap, ahead of tonic's service-wide decode
-        // cap: only the transaction ingress gets the large allowance.
+        // Per-method request body cap on the Platform service, ahead of
+        // tonic's service-wide decode cap: only the transaction ingress gets
+        // the large allowance.
         let body_limit_layer = BodyLimitLayer::new(
+            PLATFORM_SERVICE_PATH_PREFIX,
             MAX_PLATFORM_QUERY_BODY_BYTES,
             MAX_PLATFORM_TRANSACTION_BODY_BYTES,
             PLATFORM_TRANSACTION_METHODS,
@@ -242,19 +247,27 @@ where
     }
 }
 
-/// Middleware layer that caps the request body per gRPC method before tonic
-/// decodes it.
+/// Middleware layer that caps the request body per gRPC method of one service
+/// before tonic decodes it.
 ///
 /// Tonic's `max_decoding_message_size` is one number per service, so raising
 /// it for the state transition ingress would hand every query the same
-/// allowance. This layer wraps the request body in a length-limited body: a
-/// method on the allow list may send up to the large limit, every other method
-/// is cut off at the small one, and the cut happens while the body streams in,
-/// before Prost materialises a single field. Only Platform methods are
-/// distinguished; the Core service keeps its own service-wide cap and is
-/// below the small limit anyway.
+/// allowance. This layer wraps the request body of the methods of the
+/// configured service: a method on the allow list may send up to the large
+/// limit, every other method of that service is cut off at the small one.
+/// Two checks enforce the limit, both before Prost materialises a single
+/// field:
+///
+/// * the gRPC message header (the five bytes tonic reads first) declares the
+///   message length, and a declared length over the limit is refused at once,
+///   before tonic reserves a receive buffer of that size;
+/// * the bytes actually delivered are counted and the body is cut off when
+///   they pass the limit, so a header that lies small does not help either.
+///
+/// Requests to any other service pass through untouched.
 #[derive(Clone)]
 struct BodyLimitLayer {
+    service_path_prefix: &'static str,
     default_limit: usize,
     large_limit: usize,
     large_limit_methods: &'static [&'static str],
@@ -262,23 +275,29 @@ struct BodyLimitLayer {
 
 impl BodyLimitLayer {
     fn new(
+        service_path_prefix: &'static str,
         default_limit: usize,
         large_limit: usize,
         large_limit_methods: &'static [&'static str],
     ) -> Self {
         Self {
+            service_path_prefix,
             default_limit,
             large_limit,
             large_limit_methods,
         }
     }
 
-    /// The body limit for a gRPC method path.
-    fn limit_for_method(&self, path: &str) -> usize {
+    /// The body limit for a gRPC method path, `None` for a method of another
+    /// service.
+    fn limit_for_method(&self, path: &str) -> Option<usize> {
+        if !path.starts_with(self.service_path_prefix) {
+            return None;
+        }
         if self.large_limit_methods.contains(&path) {
-            self.large_limit
+            Some(self.large_limit)
         } else {
-            self.default_limit
+            Some(self.default_limit)
         }
     }
 }
@@ -304,7 +323,7 @@ struct BodyLimitService<S> {
 impl<S, ReqBody> Service<Request<ReqBody>> for BodyLimitService<S>
 where
     S: Service<Request<TonicBody>>,
-    ReqBody: Body<Data = dapi_grpc::tonic::codegen::Bytes> + Send + 'static,
+    ReqBody: Body<Data = Bytes> + Send + Unpin + 'static,
     ReqBody::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
     type Response = S::Response;
@@ -318,20 +337,103 @@ where
     fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
         let limit = self.config.limit_for_method(req.uri().path());
         let (parts, body) = req.into_parts();
-        // A body that grows past the limit yields a `LengthLimitError`, which
-        // tonic maps to a status while reading the message; the limit is
-        // named so the client sees why.
-        let limited = Limited::new(body, limit).map_err(move |error| {
-            if error.is::<http_body_util::LengthLimitError>() {
-                Status::resource_exhausted(format!(
-                    "request body exceeds the {limit} byte limit of this method"
-                ))
-            } else {
-                Status::from_error(error)
+        let body = match limit {
+            Some(limit) => TonicBody::new(LimitedMessageBody::new(body, limit)),
+            None => TonicBody::new(body),
+        };
+        self.inner.call(Request::from_parts(parts, body))
+    }
+}
+
+/// The gRPC message header: one compression flag byte and a big-endian `u32`
+/// message length.
+const GRPC_MESSAGE_HEADER_LEN: usize = 5;
+
+/// A request body bounded by a byte limit, checked on the declared length of
+/// the first gRPC message as soon as its header is in and on every byte
+/// delivered after that.
+struct LimitedMessageBody<B> {
+    inner: B,
+    limit: usize,
+    delivered: usize,
+    /// The first bytes of the body until the message header is complete;
+    /// `None` once it has been checked.
+    header: Option<Vec<u8>>,
+}
+
+impl<B> LimitedMessageBody<B> {
+    fn new(inner: B, limit: usize) -> Self {
+        Self {
+            inner,
+            limit,
+            delivered: 0,
+            header: Some(Vec::with_capacity(GRPC_MESSAGE_HEADER_LEN)),
+        }
+    }
+
+    fn over_limit(limit: usize) -> Status {
+        Status::resource_exhausted(format!(
+            "request body exceeds the {limit} byte limit of this method"
+        ))
+    }
+
+    /// Accounts for a delivered chunk: the declared length once the header is
+    /// complete, then the running total.
+    fn check_chunk(&mut self, chunk: &Bytes) -> Result<(), Status> {
+        self.delivered = self.delivered.saturating_add(chunk.len());
+        if self.delivered > self.limit {
+            return Err(Self::over_limit(self.limit));
+        }
+        if let Some(header) = self.header.as_mut() {
+            let missing = GRPC_MESSAGE_HEADER_LEN - header.len();
+            header.extend_from_slice(&chunk[..chunk.len().min(missing)]);
+            if header.len() == GRPC_MESSAGE_HEADER_LEN {
+                let declared =
+                    u32::from_be_bytes([header[1], header[2], header[3], header[4]]) as usize;
+                self.header = None;
+                if declared.saturating_add(GRPC_MESSAGE_HEADER_LEN) > self.limit {
+                    return Err(Self::over_limit(self.limit));
+                }
             }
-        });
-        self.inner
-            .call(Request::from_parts(parts, TonicBody::new(limited)))
+        }
+        Ok(())
+    }
+}
+
+impl<B> Body for LimitedMessageBody<B>
+where
+    B: Body<Data = Bytes> + Unpin,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    type Data = Bytes;
+    type Error = Status;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let this = &mut *self;
+        let frame = match std::task::ready!(Pin::new(&mut this.inner).poll_frame(cx)) {
+            None => return Poll::Ready(None),
+            Some(Err(error)) => {
+                return Poll::Ready(Some(Err(Status::from_error(error.into()))));
+            }
+            Some(Ok(frame)) => frame,
+        };
+        if let Some(chunk) = frame.data_ref()
+            && let Err(status) = this.check_chunk(chunk)
+        {
+            return Poll::Ready(Some(Err(status)));
+        }
+        Poll::Ready(Some(Ok(frame)))
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.inner.size_hint()
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
     }
 }
 
@@ -358,6 +460,7 @@ fn parse_grpc_timeout_header(headers: &HeaderMap) -> Option<Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use http_body_util::BodyExt;
     use std::future::Future;
     use std::task::{Context, Poll};
 
@@ -407,20 +510,30 @@ mod tests {
 
     const QUERY_PATH: &str = "/org.dash.platform.dapi.v0.Platform/getPathElements";
     const TRANSACTION_PATH: &str = "/org.dash.platform.dapi.v0.Platform/broadcastStateTransition";
+    const CORE_PATH: &str = "/org.dash.platform.dapi.v0.Core/broadcastTransaction";
 
     fn body_limit_layer() -> BodyLimitLayer {
         BodyLimitLayer::new(
+            PLATFORM_SERVICE_PATH_PREFIX,
             MAX_PLATFORM_QUERY_BODY_BYTES,
             MAX_PLATFORM_TRANSACTION_BODY_BYTES,
             PLATFORM_TRANSACTION_METHODS,
         )
     }
 
-    async fn send(path: &str, body_len: usize) -> Result<usize, Status> {
+    /// A gRPC message body of `payload_len` bytes with a header declaring `declared_len`.
+    fn grpc_message(declared_len: usize, payload_len: usize) -> Vec<u8> {
+        let mut body = vec![0u8];
+        body.extend_from_slice(&(declared_len as u32).to_be_bytes());
+        body.extend(std::iter::repeat_n(0x5Au8, payload_len));
+        body
+    }
+
+    async fn send_body(path: &str, body: Vec<u8>) -> Result<usize, Status> {
         let mut service = body_limit_layer().layer(BodyLengthService);
         let request = Request::builder()
             .uri(path)
-            .body(axum::body::Body::from(vec![0x5Au8; body_len]))
+            .body(axum::body::Body::from(body))
             .expect("request");
         service
             .call(request)
@@ -431,6 +544,12 @@ mod tests {
                     .downcast::<Status>()
                     .expect("the limit layer reports a tonic status")
             })
+    }
+
+    /// A well-formed gRPC message whose total body is `body_len` bytes.
+    async fn send(path: &str, body_len: usize) -> Result<usize, Status> {
+        let payload_len = body_len - GRPC_MESSAGE_HEADER_LEN;
+        send_body(path, grpc_message(payload_len, payload_len)).await
     }
 
     /// A query at its limit passes intact and one byte over is refused before the service
@@ -470,6 +589,53 @@ mod tests {
             .await
             .expect_err("the ingress has a ceiling too");
         assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
+    }
+
+    /// The declared message length is checked as soon as the header is in: a query that
+    /// announces a transaction-sized message is refused on its first bytes, before tonic
+    /// would reserve a receive buffer of that size, and a header that lies small is still
+    /// caught by the delivered-byte count.
+    #[tokio::test]
+    async fn body_limit_checks_the_declared_message_length_first() {
+        // Declares 30 MiB, sends 100 bytes: refused at once by the header check.
+        let status = send_body(QUERY_PATH, grpc_message(30 * 1024 * 1024, 100))
+            .await
+            .expect_err("a declared length over the limit is refused");
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
+        assert!(
+            status
+                .message()
+                .contains(&MAX_PLATFORM_QUERY_BODY_BYTES.to_string()),
+            "{status:?}"
+        );
+
+        // The same declaration is fine for the transaction ingress.
+        assert_eq!(
+            send_body(TRANSACTION_PATH, grpc_message(30 * 1024 * 1024, 100))
+                .await
+                .expect("the ingress admits a large declared length"),
+            100 + GRPC_MESSAGE_HEADER_LEN
+        );
+
+        // Declares 10 bytes but streams well past the limit: caught by the byte count.
+        let status = send_body(QUERY_PATH, grpc_message(10, MAX_PLATFORM_QUERY_BODY_BYTES))
+            .await
+            .expect_err("a body over the limit is refused whatever it declares");
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
+    }
+
+    /// The layer is scoped to the Platform service: a Core request above the Platform query
+    /// allowance passes through untouched, so Core keeps its own service-wide cap.
+    #[tokio::test]
+    async fn body_limit_leaves_core_methods_alone() {
+        let core_body_len = MAX_CORE_DECODING_BYTES - 1;
+        assert!(core_body_len > MAX_PLATFORM_QUERY_BODY_BYTES);
+        assert_eq!(
+            send(CORE_PATH, core_body_len)
+                .await
+                .expect("a Core request is not bounded by the Platform limits"),
+            core_body_len
+        );
     }
 
     /// The transaction allowance must fit the largest state transition of every registered
