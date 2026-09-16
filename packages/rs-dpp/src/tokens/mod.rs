@@ -6,6 +6,7 @@ use crate::util::hash::hash_double;
 
 pub mod allowed_currency;
 pub mod contract_info;
+pub mod contract_lifecycle;
 pub mod emergency_action;
 pub mod errors;
 pub mod gas_fees_paid_by;
