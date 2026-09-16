@@ -1,6 +1,4 @@
-use crate::drive::identity::contract_info::keys::{
-    drop_pending_operation_at, IdentityDataContractKeyApplyInfo,
-};
+use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInfo;
 use crate::drive::identity::contract_info::ContractInfoStructure::ContractInfoKeysKey;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
 use crate::drive::identity::{
@@ -332,9 +330,6 @@ impl Drive {
                     } else {
                         identity_contract_info_group_keys_path_vec(&identity_id, &root_id)
                     };
-                    // Two scoped keys covering this contract in one transition both write the
-                    // current-key slot; keep only the last one in the batch.
-                    drop_pending_operation_at(drive_operations, &sibling_path, &[]);
 
                     self.batch_insert(
                         PathKeyElementInfo::<0>::PathKeyElement((
@@ -528,8 +523,6 @@ impl Drive {
                             &contract_id_bytes_with_document_type_name,
                             purpose,
                         );
-                        // Same de-duplication as the contract-level current-key slot above.
-                        drop_pending_operation_at(drive_operations, &sibling_path, &[]);
 
                         self.batch_insert(
                             PathKeyElementInfo::<0>::PathKeyElement((

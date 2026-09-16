@@ -1,6 +1,4 @@
-use crate::drive::identity::contract_info::keys::{
-    drop_pending_operation_at, IdentityDataContractKeyApplyInfo,
-};
+use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInfo;
 use crate::drive::identity::{
     identity_contract_info_group_keys_path_vec, identity_contract_info_group_path_key_purpose_vec,
     identity_key_location_within_identity_vec,
@@ -123,6 +121,29 @@ impl Drive {
 
             let (document_keys, contract_or_family_keys) = contract_info.keys();
 
+            // v0 never registered the contract-level group layers here; unreachable there,
+            // because v0 key disabling estimated with a boundless stand-in key. v1 estimates
+            // with the stored key, so a refresh under `<contract>/keys/<purpose>` needs them.
+            if !contract_or_family_keys.is_empty() {
+                if let Some(estimated_costs_only_with_layer_info) =
+                    estimated_costs_only_with_layer_info
+                {
+                    Self::add_estimation_costs_for_contract_info_group(
+                        &identity_id,
+                        &root_id,
+                        estimated_costs_only_with_layer_info,
+                        &platform_version.drive,
+                    )?;
+
+                    Self::add_estimation_costs_for_contract_info_group_keys(
+                        &identity_id,
+                        &root_id,
+                        estimated_costs_only_with_layer_info,
+                        &platform_version.drive,
+                    )?;
+                }
+            }
+
             for (key_id, purpose) in contract_or_family_keys {
                 if let Some(estimated_costs_only_with_layer_info) =
                     estimated_costs_only_with_layer_info
@@ -218,7 +239,6 @@ impl Drive {
                     } else {
                         identity_contract_info_group_keys_path_vec(&identity_id, &root_id)
                     };
-                    drop_pending_operation_at(drive_operations, &sibling_path, &[]);
 
                     // Untrusted refresh: the slot may point at a newer key covering the same
                     // contract, so only the stored value hash is rebuilt; a trusted refresh
@@ -346,7 +366,6 @@ impl Drive {
                             &contract_id_bytes_with_document_type_name,
                             purpose,
                         );
-                        drop_pending_operation_at(drive_operations, &sibling_path, &[]);
 
                         // Untrusted for the same reason as the contract-level slot above.
                         self.batch_refresh_reference(

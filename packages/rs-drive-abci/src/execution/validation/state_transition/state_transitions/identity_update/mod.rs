@@ -938,19 +938,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_keep_the_newest_scoped_key_current_after_revoking_an_older_one() {
+    async fn should_keep_the_newest_scoped_key_current_across_registration_and_revocation() {
         use dpp::identity::contract_bounds::{
             authentication_scope::permissions, AuthenticationScope, AuthenticationScopeV0,
             ContractScope,
         };
         use drive::config::DriveConfig;
         use drive::drive::identity::key::fetch::{
-            IdentityKeysRequest, KeyKindRequestType, KeyRequestType,
+            IdentityKeysRequest, KeyIDVec, KeyKindRequestType, KeyRequestType,
         };
+        use std::collections::BTreeMap;
         let version = PlatformVersion::latest();
         // Consistency verification makes GroveDB reject two pending operations on one slot,
-        // which is exactly what two scoped keys covering one contract write for the
-        // current-key pointer of that contract.
+        // which is what scoped keys covering one contract queue for its current-key alias.
         let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig {
                 drive: DriveConfig {
@@ -970,141 +970,116 @@ mod tests {
             .system_data_contracts
             .load_dashpay(version)
             .unwrap();
-        let bounds = ContractBounds::Scoped(AuthenticationScope::V0(AuthenticationScopeV0 {
-            contracts: vec![ContractScope {
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(version)
+            .unwrap();
+        // One contract-level slot (dashpay) and one document-type slot (dpns preorder).
+        let mut contracts = vec![
+            ContractScope {
                 id: dashpay.id(),
                 document_types: None,
-            }],
+            },
+            ContractScope {
+                id: dpns.id(),
+                document_types: Some(vec!["preorder".into()]),
+            },
+        ];
+        contracts.sort_by_key(|entry| entry.id);
+        let bounds = ContractBounds::Scoped(AuthenticationScope::V0(AuthenticationScopeV0 {
+            contracts,
             permissions: permissions::DOCUMENT_CREATE,
             expires_at: None,
         }));
-
-        // Register two scoped keys covering the same contract in one transition.
         let secp = Secp256k1::new();
         let mut rng = StdRng::seed_from_u64(292);
-        let pairs: Vec<(u32, Keypair)> = [2u32, 3]
+        let pairs: BTreeMap<u32, Keypair> = [2u32, 3, 4]
             .into_iter()
             .map(|id| (id, Keypair::new(&secp, &mut rng)))
             .collect();
-        let mut new_keys: Vec<IdentityPublicKeyInCreationV0> = pairs
-            .iter()
-            .map(|(id, pair)| IdentityPublicKeyInCreationV0 {
-                id: *id,
-                purpose: Purpose::AUTHENTICATION,
-                security_level: SecurityLevel::HIGH,
-                key_type: ECDSA_SECP256K1,
-                read_only: false,
-                data: pair.public_key().serialize().to_vec().into(),
-                signature: Default::default(),
-                contract_bounds: Some(bounds.clone()),
-            })
-            .collect();
-        let registration = |keys: Vec<IdentityPublicKeyInCreationV0>| -> StateTransition {
+        let scoped_key = |id: u32| IdentityPublicKeyInCreationV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: ECDSA_SECP256K1,
+            read_only: false,
+            data: pairs[&id].public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+            contract_bounds: Some(bounds.clone()),
+        };
+        let unsigned = |revision: u64,
+                        add: Vec<IdentityPublicKeyInCreationV0>,
+                        disable: Vec<u32>|
+         -> StateTransition {
             IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
                 identity_id: identity.id(),
-                revision: 1,
-                nonce: 1,
-                add_public_keys: keys
+                revision,
+                nonce: revision,
+                add_public_keys: add
                     .into_iter()
                     .map(IdentityPublicKeyInCreation::V0)
                     .collect(),
-                disable_public_keys: vec![],
+                disable_public_keys: disable,
                 user_fee_increase: 0,
                 signature_public_key_id: master.id(),
                 signature: Default::default(),
             })
             .into()
         };
-        let signable_bytes = registration(new_keys.clone()).signable_bytes().unwrap();
-        for (key, (_, pair)) in new_keys.iter_mut().zip(&pairs) {
-            key.signature = signer::sign(&signable_bytes, &pair.secret_key().secret_bytes())
+        let apply = |transition: &StateTransition, time_ms: u64| {
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition.serialize_to_bytes().unwrap()],
+                    &platform.state.load(),
+                    &BlockInfo {
+                        time_ms,
+                        ..Default::default()
+                    },
+                    &transaction,
+                    version,
+                    true,
+                    None,
+                )
+                .unwrap();
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "update at {time_ms} must apply as one consistent batch"
+            );
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
                 .unwrap()
-                .to_vec()
-                .into();
-        }
-        let mut registration = registration(new_keys);
-        registration.set_signature(signer.sign(&master, &signable_bytes).await.unwrap());
-
-        let transaction = platform.drive.grove.start_transaction();
-        let result = platform
-            .platform
-            .process_raw_state_transitions(
-                &vec![registration.serialize_to_bytes().unwrap()],
-                &platform.state.load(),
-                &BlockInfo::default(),
-                &transaction,
-                version,
-                true,
-                None,
-            )
-            .unwrap();
-        assert_matches!(
-            result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution { .. }],
-            "two scoped keys on one contract must register in a single batch"
-        );
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .unwrap();
-
-        // Revoke the older key; the current-key pointer must keep naming the newer one.
-        let mut revocation: StateTransition =
-            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
-                identity_id: identity.id(),
-                revision: 2,
-                nonce: 2,
-                add_public_keys: vec![],
-                disable_public_keys: vec![2],
-                user_fee_increase: 0,
-                signature_public_key_id: master.id(),
-                signature: Default::default(),
-            })
-            .into();
-        revocation.set_signature(
-            signer
-                .sign(&master, &revocation.signable_bytes().unwrap())
-                .await
-                .unwrap(),
-        );
-        let block = BlockInfo {
-            time_ms: 1001,
-            ..Default::default()
+                .unwrap();
         };
-        let transaction = platform.drive.grove.start_transaction();
-        let result = platform
-            .platform
-            .process_raw_state_transitions(
-                &vec![revocation.serialize_to_bytes().unwrap()],
-                &platform.state.load(),
-                &block,
-                &transaction,
-                version,
-                true,
-                None,
-            )
-            .unwrap();
-        assert_matches!(
-            result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
-        );
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .unwrap();
-
-        let fetch = |request_type: KeyRequestType| {
+        let key_ids = |request_type: KeyRequestType| -> Vec<u32> {
+            platform
+                .drive
+                .fetch_identity_keys::<KeyIDVec>(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type,
+                        limit: Some(16),
+                        offset: None,
+                    },
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        let disabled_at = |key_id: u32| -> Option<u64> {
             platform
                 .drive
                 .fetch_identity_keys_as_partial_identity(
                     IdentityKeysRequest {
                         identity_id: identity.id().to_buffer(),
-                        request_type,
-                        limit: None,
+                        request_type: KeyRequestType::SpecificKeys(vec![key_id]),
+                        limit: Some(1),
                         offset: None,
                     },
                     None,
@@ -1112,26 +1087,80 @@ mod tests {
                 )
                 .unwrap()
                 .unwrap()
-                .loaded_public_keys
+                .loaded_public_keys[&key_id]
+                .disabled_at()
         };
-        let current = fetch(KeyRequestType::ContractBoundKey(
-            dashpay.id().to_buffer(),
-            Purpose::AUTHENTICATION,
-            KeyKindRequestType::CurrentKeyOfKindRequest,
-        ));
-        assert_eq!(
-            current.keys().copied().collect::<Vec<_>>(),
-            vec![3],
-            "revoking an older scoped key must not repoint the current key at it"
+        let slots = |kind: KeyKindRequestType| {
+            [
+                KeyRequestType::ContractBoundKey(
+                    dashpay.id().to_buffer(),
+                    Purpose::AUTHENTICATION,
+                    kind,
+                ),
+                KeyRequestType::ContractDocumentTypeBoundKey(
+                    dpns.id().to_buffer(),
+                    "preorder".into(),
+                    Purpose::AUTHENTICATION,
+                    kind,
+                ),
+            ]
+        };
+        let assert_slots = |current: u32, all: &[u32]| {
+            for slot in slots(KeyKindRequestType::CurrentKeyOfKindRequest) {
+                assert_eq!(key_ids(slot), vec![current], "current key");
+            }
+            for slot in slots(KeyKindRequestType::AllKeysOfKindRequest) {
+                assert_eq!(
+                    key_ids(slot),
+                    all,
+                    "listing must not repeat the current key alias"
+                );
+            }
+        };
+
+        // 1. Two scoped keys covering the same slots in one update, listed newest first: the
+        //    highest key id must be current in both slots regardless of input order.
+        let mut adds = vec![scoped_key(3), scoped_key(2)];
+        let signable = unsigned(1, adds.clone(), vec![]).signable_bytes().unwrap();
+        for key in &mut adds {
+            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().secret_bytes())
+                .unwrap()
+                .to_vec()
+                .into();
+        }
+        let mut registration = unsigned(1, adds, vec![]);
+        registration.set_signature(signer.sign(&master, &signable).await.unwrap());
+        apply(&registration, 1000);
+        assert_slots(3, &[2, 3]);
+
+        // 2. Register a replacement and revoke the current key in the same transition: the
+        //    replacement must become current, not the revoked key or a batch conflict.
+        let mut adds = vec![scoped_key(4)];
+        let signable = unsigned(2, adds.clone(), vec![3]).signable_bytes().unwrap();
+        for key in &mut adds {
+            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().secret_bytes())
+                .unwrap()
+                .to_vec()
+                .into();
+        }
+        let mut replacement = unsigned(2, adds, vec![3]);
+        replacement.set_signature(signer.sign(&master, &signable).await.unwrap());
+        apply(&replacement, 2000);
+        assert_slots(4, &[2, 3, 4]);
+        assert_eq!(disabled_at(3), Some(2000));
+        assert_eq!(disabled_at(4), None);
+
+        // 3. Revoking an older key on its own must not repoint the alias at it.
+        let mut revocation = unsigned(3, vec![], vec![2]);
+        revocation.set_signature(
+            signer
+                .sign(&master, &revocation.signable_bytes().unwrap())
+                .await
+                .unwrap(),
         );
-        assert_eq!(current[&3].disabled_at(), None);
-        let all = fetch(KeyRequestType::ContractBoundKey(
-            dashpay.id().to_buffer(),
-            Purpose::AUTHENTICATION,
-            KeyKindRequestType::AllKeysOfKindRequest,
-        ));
-        assert_eq!(all[&2].disabled_at(), Some(block.time_ms));
-        assert_eq!(all[&3].disabled_at(), None);
+        apply(&revocation, 3000);
+        assert_slots(4, &[2, 3, 4]);
+        assert_eq!(disabled_at(2), Some(3000));
         assert!(
             platform
                 .drive
@@ -1139,8 +1168,120 @@ mod tests {
                 .visualize_verify_grovedb(None, true, false, &version.drive.grove_version)
                 .unwrap()
                 .is_empty(),
-            "revocation must leave no stale GroveDB references"
+            "registration and revocation must leave no stale GroveDB references"
         );
+    }
+
+    #[tokio::test]
+    async fn should_estimate_scoped_key_revocation_at_least_at_its_execution_cost() {
+        use dpp::identity::contract_bounds::{
+            authentication_scope::permissions, AuthenticationScope, AuthenticationScopeV0,
+            ContractScope,
+        };
+        let version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (mut identity, mut signer, _, _) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(version)
+            .unwrap();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(version)
+            .unwrap();
+        let mut contracts = vec![
+            ContractScope {
+                id: dashpay.id(),
+                document_types: None,
+            },
+            ContractScope {
+                id: dpns.id(),
+                document_types: Some(vec!["domain".into(), "preorder".into()]),
+            },
+        ];
+        contracts.sort_by_key(|entry| entry.id);
+        let bounds = ContractBounds::Scoped(AuthenticationScope::V0(AuthenticationScopeV0 {
+            contracts,
+            permissions: permissions::DOCUMENT_CREATE,
+            expires_at: None,
+        }));
+        let scoped = setup_add_key_to_identity(
+            &mut platform,
+            &mut identity,
+            &mut signer,
+            4,
+            2,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+            Some(bounds),
+        );
+        let plain = setup_add_key_to_identity(
+            &mut platform,
+            &mut identity,
+            &mut signer,
+            5,
+            3,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+            None,
+        );
+        let block = BlockInfo {
+            time_ms: 1001,
+            ..Default::default()
+        };
+        let estimate = |key_id: u32| {
+            platform
+                .drive
+                .disable_identity_keys(
+                    identity.id().to_buffer(),
+                    vec![key_id],
+                    block.time_ms,
+                    &block,
+                    false,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        let estimated_scoped = estimate(scoped.id());
+        let estimated_plain = estimate(plain.id());
+        // The scope adds three contract-info groups whose references must be refreshed;
+        // v0 estimated with an unbounded stand-in key and priced none of them.
+        assert!(
+            estimated_scoped.processing_fee > estimated_plain.processing_fee,
+            "scoped revocation estimate {} must exceed the unbounded one {}",
+            estimated_scoped.processing_fee,
+            estimated_plain.processing_fee
+        );
+        let actual = platform
+            .drive
+            .disable_identity_keys(
+                identity.id().to_buffer(),
+                vec![scoped.id()],
+                block.time_ms,
+                &block,
+                true,
+                None,
+                version,
+            )
+            .unwrap();
+        assert!(
+            estimated_scoped.processing_fee >= actual.processing_fee,
+            "estimate {} must cover execution {}",
+            estimated_scoped.processing_fee,
+            actual.processing_fee
+        );
+        assert!(estimated_scoped.storage_fee >= actual.storage_fee);
     }
 
     #[tokio::test]

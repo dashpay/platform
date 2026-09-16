@@ -926,7 +926,13 @@ impl IdentityKeysRequest {
                         Query::new_single_key(vec![])
                     }
                     AllKeysOfKindRequest => {
-                        Query::new_single_query_item(QueryItem::RangeFull(RangeFull))
+                        if purpose == Purpose::AUTHENTICATION {
+                            // Scoped authentication keys keep their current-key alias at the
+                            // empty key of the purpose subtree; listing must not repeat it.
+                            Query::new_single_query_item(QueryItem::RangeAfter(vec![]..))
+                        } else {
+                            Query::new_single_query_item(QueryItem::RangeFull(RangeFull))
+                        }
                     }
                 };
                 PathQuery {
@@ -957,7 +963,13 @@ impl IdentityKeysRequest {
                         Query::new_single_key(vec![])
                     }
                     AllKeysOfKindRequest => {
-                        Query::new_single_query_item(QueryItem::RangeFull(RangeFull))
+                        if purpose == Purpose::AUTHENTICATION {
+                            // Scoped authentication keys keep their current-key alias at the
+                            // empty key of the purpose subtree; listing must not repeat it.
+                            Query::new_single_query_item(QueryItem::RangeAfter(vec![]..))
+                        } else {
+                            Query::new_single_query_item(QueryItem::RangeFull(RangeFull))
+                        }
                     }
                 };
                 PathQuery {

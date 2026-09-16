@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)] // Operation application returns drive::Error with rich causes
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
@@ -50,9 +51,16 @@ impl Drive {
                 drive_operations,
                 drive_version,
             ),
+            1 => self.apply_batch_low_level_drive_operations_v1(
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_batch_low_level_drive_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
