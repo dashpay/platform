@@ -1,6 +1,6 @@
 //! Updating the flags of an element that is replaced in a batch.
 
-use super::{CrateStorageFlags, MergingOwnersStrategy, StorageFlags};
+use super::{MergingOwnersStrategy, StorageFlags};
 use crate::error::Error;
 use grovedb::ElementFlags;
 use grovedb_costs::storage_cost::transition::OperationStorageTransitionType;
@@ -8,18 +8,6 @@ use grovedb_costs::storage_cost::StorageCost;
 use grovedb_epoch_based_storage_flags::error::StorageFlagsError;
 
 impl StorageFlags {
-    /// The batch flag update closure that shipped with identity-only owners.
-    ///
-    /// Hands the raw bytes to the crate, so a contract bucket type byte is
-    /// rejected as an unknown flags type.
-    pub fn update_element_flags(
-        cost: &StorageCost,
-        old_flags: Option<ElementFlags>,
-        new_flags: &mut ElementFlags,
-    ) -> Result<bool, StorageFlagsError> {
-        CrateStorageFlags::update_element_flags(cost, old_flags, new_flags)
-    }
-
     /// The batch flag update closure for typed owners: the crate's rule
     /// expressed over the typed flags.
     ///

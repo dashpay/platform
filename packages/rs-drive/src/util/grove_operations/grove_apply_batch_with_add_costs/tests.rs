@@ -17,7 +17,9 @@ use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::Element;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
-use grovedb_costs::storage_cost::removal::StorageRemovedBytes::SectionedStorageRemoval;
+use grovedb_costs::storage_cost::removal::StorageRemovedBytes::{
+    NoStorageRemoval, SectionedStorageRemoval,
+};
 use grovedb_costs::OperationCost;
 use platform_version::version::drive_versions::DriveVersion;
 
@@ -173,7 +175,12 @@ fn should_fail_closed_when_a_bucket_owned_item_is_deleted_under_v0() {
     insert_flagged_item(&drive, &flags, &typed);
     let before = root_hash(&drive, &shipped);
 
-    let error = delete_item(&drive, &shipped).expect_err("v0 cannot attribute bucket owned bytes");
+    let mut batch = GroveDbOpBatch::new();
+    batch.add_delete(misc_path_vec(), KEY.to_vec());
+    let mut drive_operations = vec![];
+    let error = drive
+        .grove_apply_batch_with_add_costs(batch, false, None, &mut drive_operations, &shipped)
+        .expect_err("v0 cannot attribute bucket owned bytes");
 
     assert!(
         error
@@ -183,6 +190,22 @@ fn should_fail_closed_when_a_bucket_owned_item_is_deleted_under_v0() {
         error
     );
     assert_eq!(root_hash(&drive, &shipped), before, "nothing was applied");
+    // the read cost incurred before the failure is still pushed, as for any
+    // failed grove operation, but no removed bytes and no owners reach the
+    // fee path
+    for op in &drive_operations {
+        let LowLevelDriveOperation::CalculatedCostOperation(cost) = op else {
+            panic!("only plain read costs may be pushed, got {:?}", op);
+        };
+        assert_eq!(*sectioned_removal(cost), NoStorageRemoval);
+    }
+
+    // the item is still there and version 1 removes it with the recorded owner
+    let ops = delete_item(&drive, &typed).expect("v1 should delete");
+    assert!(matches!(
+        ops.as_slice(),
+        [LowLevelDriveOperation::CalculatedCostOperationWithRefundOwners { .. }]
+    ));
 }
 
 #[test]

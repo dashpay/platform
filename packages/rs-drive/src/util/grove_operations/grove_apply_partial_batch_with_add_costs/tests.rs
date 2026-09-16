@@ -13,7 +13,9 @@ use dpp::fee::refund_owner::{RefundOwner, RefundOwnersByIdentifier};
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::Element;
-use grovedb_costs::storage_cost::removal::StorageRemovedBytes::SectionedStorageRemoval;
+use grovedb_costs::storage_cost::removal::StorageRemovedBytes::{
+    NoStorageRemoval, SectionedStorageRemoval,
+};
 use platform_version::version::drive_versions::DriveVersion;
 
 const OWNER_ID: [u8; 32] = [0x33; 32];
@@ -124,18 +126,13 @@ fn should_record_the_bucket_owner_when_a_bucket_owned_item_is_deleted_under_v1()
     );
 }
 
-/// The shipped partial batch generation inlines its flag closures instead of
-/// calling the crate-delegating entry points, so it parses bucket flags
-/// through the shared readers and sections the bytes under the carrier key
-/// without recording the owner. Unlike the full batch generation it does not
-/// fail closed. This is acceptable because no production path applies a
-/// partial batch (only its own module and the version tables name it) and
-/// bucket owned bytes are written only from the protocol version whose
-/// tables select version 1 of both batch apply methods. This test pins that
-/// reasoning: if a caller of the partial batch ever appears, the assertion
-/// below is the place that has to change.
+/// The shipped partial batch generation is bound to the crate's flags type,
+/// which does not know the bucket type bytes, so a bucket-owned removal fails
+/// the batch: nothing is applied and no cost operation is pushed. Without
+/// this, the bucket's carrier key would reach the shipped fee decoder as a
+/// plain sectioned removal and be read as an identity.
 #[test]
-fn should_section_bucket_bytes_without_a_recorded_owner_under_the_shipped_partial_generation() {
+fn should_fail_closed_when_a_bucket_owned_item_is_deleted_under_v0() {
     let shipped = PlatformVersion::latest().drive.clone();
     let typed = typed_drive_version();
     let owner = RefundOwner::ContractBucket {
@@ -146,16 +143,53 @@ fn should_section_bucket_bytes_without_a_recorded_owner_under_the_shipped_partia
 
     let drive = setup_drive_with_initial_state_structure(None);
     insert_flagged_item(&drive, &flags, &typed);
+    let before = drive
+        .grove
+        .root_hash(None, &shipped.grove_version)
+        .unwrap()
+        .expect("should get root hash");
 
-    let ops = delete_item_partially(&drive, &shipped).expect("v0 partial applies the delete");
-    let [LowLevelDriveOperation::CalculatedCostOperation(cost)] = ops.as_slice() else {
-        panic!("v0 pushes one plain cost operation, got {:?}", ops);
-    };
-    let SectionedStorageRemoval(removal) = &cost.storage_cost.removed_bytes else {
-        panic!("an owned delete sections its removed bytes");
-    };
-    assert_eq!(
-        removal.keys().copied().collect::<Vec<_>>(),
-        vec![owner.removal_key()]
+    let mut batch = GroveDbOpBatch::new();
+    batch.add_delete(misc_path_vec(), KEY.to_vec());
+    let mut drive_operations = vec![];
+    let error = drive
+        .grove_apply_partial_batch_with_add_costs(
+            batch,
+            false,
+            None,
+            |_cost, _ops_by_level| Ok(vec![]),
+            &mut drive_operations,
+            &shipped,
+        )
+        .expect_err("v0 cannot attribute bucket owned bytes");
+
+    assert!(
+        error
+            .to_string()
+            .contains("unknown storage flags serialization"),
+        "unexpected error: {}",
+        error
     );
+    // the read cost incurred before the failure is still pushed, as for any
+    // failed grove operation, but no removed bytes and no owners reach the
+    // fee path
+    for op in &drive_operations {
+        let LowLevelDriveOperation::CalculatedCostOperation(cost) = op else {
+            panic!("only plain read costs may be pushed, got {:?}", op);
+        };
+        assert_eq!(cost.storage_cost.removed_bytes, NoStorageRemoval);
+    }
+    let after = drive
+        .grove
+        .root_hash(None, &shipped.grove_version)
+        .unwrap()
+        .expect("should get root hash");
+    assert_eq!(after, before, "nothing was applied");
+
+    // the item is still there and version 1 can still remove it
+    let ops = delete_item_partially(&drive, &typed).expect("v1 should delete");
+    assert!(matches!(
+        ops.as_slice(),
+        [LowLevelDriveOperation::CalculatedCostOperationWithRefundOwners { .. }]
+    ));
 }
