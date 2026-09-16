@@ -1,4 +1,4 @@
-use super::super::embedded_data_contract;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::consensus::basic::data_contract::{
     InvalidTokenBaseSupplyError, NewTokensDestinationIdentityOptionRequiredError,
@@ -11,6 +11,7 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::methods:
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::data_contract::TokenContractPosition;
 use dpp::prelude::DataContract;
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -30,9 +31,10 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
         network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let data_contract = match embedded_data_contract(self, platform_version) {
-            Ok(data_contract) => data_contract,
-            Err(error) => return Ok(SimpleConsensusValidationResult::new_with_error(error)),
+        let Some(data_contract) = self.data_contract() else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "this generation validates full-contract updates only; the dispatcher rejects a delta-based update before it",
+            )));
         };
         let groups = data_contract.groups();
         if !groups.is_empty() {

@@ -1,4 +1,3 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::NonceOutOfBoundsError;
@@ -8,6 +7,7 @@ use dpp::identity::identity_nonce::{
 };
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::StateTransitionOwned;
 
 use dpp::validation::SimpleConsensusValidationResult;
 
@@ -19,9 +19,9 @@ use crate::platform_types::platform::PlatformStateRef;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
-pub(in crate::execution::validation::state_transition::state_transitions) trait DataContractUpdateStateTransitionIdentityContractNonceV0
+pub(in crate::execution::validation::state_transition::state_transitions) trait DataContractUpdateStateTransitionIdentityContractNonceV1
 {
-    fn validate_identity_contract_nonce_v0(
+    fn validate_identity_contract_nonce_v1(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -31,8 +31,11 @@ pub(in crate::execution::validation::state_transition::state_transitions) trait 
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl DataContractUpdateStateTransitionIdentityContractNonceV0 for DataContractUpdateTransition {
-    fn validate_identity_contract_nonce_v0(
+impl DataContractUpdateStateTransitionIdentityContractNonceV1 for DataContractUpdateTransition {
+    /// Generation 1 reads the owner and the contract id through the
+    /// transition accessors, so a delta-based (V1) update, which embeds no
+    /// contract, is checked like a full-contract one.
+    fn validate_identity_contract_nonce_v1(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -40,11 +43,6 @@ impl DataContractUpdateStateTransitionIdentityContractNonceV0 for DataContractUp
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let Some(data_contract) = self.data_contract() else {
-            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "this generation validates full-contract updates only; the dispatcher rejects a delta-based update before it",
-            )));
-        };
         let revision_nonce = self.identity_contract_nonce();
 
         if revision_nonce & MISSING_IDENTITY_REVISIONS_FILTER > 0 {
@@ -54,8 +52,8 @@ impl DataContractUpdateStateTransitionIdentityContractNonceV0 for DataContractUp
             ));
         }
 
-        let identity_id = data_contract.owner_id();
-        let contract_id = data_contract.id();
+        let identity_id = self.owner_id();
+        let contract_id = self.data_contract_id();
         let (existing_nonce, fee) = platform.drive.fetch_identity_contract_nonce_with_fees(
             identity_id.to_buffer(),
             contract_id.to_buffer(),

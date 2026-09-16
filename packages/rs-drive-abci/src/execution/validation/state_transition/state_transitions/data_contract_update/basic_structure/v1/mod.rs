@@ -1,7 +1,8 @@
-use super::super::embedded_data_contract;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use dpp::dashcore::Network;
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::{FeatureVersion, PlatformVersion};
@@ -23,16 +24,16 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV1 for DataContrac
         network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        let Some(data_contract) = self.data_contract() else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "this generation validates full-contract updates only; the dispatcher rejects a delta-based update before it",
+            )));
+        };
         // First run all v0 validations
         let v0_result = self.validate_basic_structure_v0(network_type, platform_version)?;
         if !v0_result.is_valid() {
             return Ok(v0_result);
         }
-
-        let data_contract = match embedded_data_contract(self, platform_version) {
-            Ok(data_contract) => data_contract,
-            Err(error) => return Ok(SimpleConsensusValidationResult::new_with_error(error)),
-        };
 
         // Validate config version meets minimum requirement for the current protocol version.
         // Since protocol version 12, V0 config is no longer accepted because it lacks

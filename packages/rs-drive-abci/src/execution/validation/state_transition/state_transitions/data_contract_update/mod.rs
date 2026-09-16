@@ -10,10 +10,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::UnsupportedVersionError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::Network;
-use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use std::collections::BTreeMap;
@@ -37,32 +35,29 @@ use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
-/// The contract a full-contract (V0) update embeds.
+/// The consensus error for a delta-based (V1) update reaching a generation
+/// that shipped before delta-based updates existed.
 ///
-/// Protocol version 15, which introduces delta-based (V1) updates, routes
-/// contract updates to generation 2. A V1 update that still reaches the
-/// generation-0 or generation-1 validators (a node below protocol version 15
-/// checking a transition built for a newer one) is rejected as an unsupported
-/// transition version: a consensus error, never an execution error, so a
-/// mis-versioned transition can not stall a proposal.
-pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) fn embedded_data_contract<
-    'a,
->(
-    transition: &'a DataContractUpdateTransition,
+/// Protocol version 15 routes contract updates to the generations that know
+/// the delta form; the dispatchers reject a V1 update ahead of any earlier
+/// generation (a node below protocol version 15 checking a transition built
+/// for a newer one) as an unsupported transition version: a consensus error,
+/// never an execution error, so a mis-versioned transition can not stall a
+/// proposal, and the shipped generations stay as they were.
+pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) fn unsupported_delta_error(
+    transition: &DataContractUpdateTransition,
     platform_version: &PlatformVersion,
-) -> Result<&'a DataContractInSerializationFormat, ConsensusError> {
-    transition.data_contract().ok_or_else(|| {
-        let bounds = &platform_version
-            .dpp
-            .state_transition_serialization_versions
-            .contract_update_state_transition;
-        UnsupportedVersionError::new(
-            transition.feature_version(),
-            bounds.min_version,
-            bounds.max_version,
-        )
-        .into()
-    })
+) -> ConsensusError {
+    let bounds = &platform_version
+        .dpp
+        .state_transition_serialization_versions
+        .contract_update_state_transition;
+    UnsupportedVersionError::new(
+        transition.feature_version(),
+        bounds.min_version,
+        bounds.max_version,
+    )
+    .into()
 }
 
 impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition {
@@ -71,13 +66,20 @@ impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition 
         network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        match platform_version
+        let version = platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .contract_update_state_transition
-            .basic_structure
+            .basic_structure;
+        if matches!(self, DataContractUpdateTransition::V1(_))
+            && matches!(version, Some(0) | Some(1))
         {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                unsupported_delta_error(self, platform_version),
+            ));
+        }
+        match version {
             Some(0) => self.validate_basic_structure_v0(network_type, platform_version),
             Some(1) => self.validate_basic_structure_v1(network_type, platform_version),
             Some(2) => self.validate_basic_structure_v2(network_type, platform_version),
@@ -108,13 +110,18 @@ impl StateTransitionActionTransformer for DataContractUpdateTransition {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
-        match platform_version
+        let version = platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .contract_update_state_transition
-            .transform_into_action
-        {
+            .transform_into_action;
+        if matches!(self, DataContractUpdateTransition::V1(_)) && version == 0 {
+            return Ok(ConsensusValidationResult::new_with_error(
+                unsupported_delta_error(self, platform_version),
+            ));
+        }
+        match version {
             0 => self.transform_into_action_v0(
                 block_info,
                 validation_mode,
@@ -150,6 +157,8 @@ mod tests {
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+    use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
@@ -552,7 +561,6 @@ mod tests {
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 
-        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 

@@ -11,9 +11,10 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // are checked against each other; V0 updates keep the generation-1 checks),
 // `state` to 2 (a delta is merged onto the stored contract before the
 // generation-1 update rules and refersTo reference checks run on the result)
-// and `transform_into_action` to 1 (a delta needs the stored contract to
-// become an action). v10 remains unchanged for PROTOCOL_VERSION_14 chain
-// replay.
+// `transform_into_action` to 1 (a delta needs the stored contract to
+// become an action) and `nonce` to 1 (the owner and contract id come from
+// the transition accessors, which a delta names directly). v10 remains
+// unchanged for PROTOCOL_VERSION_14 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
@@ -106,7 +107,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 basic_structure: Some(2), // changed: checks the sections of a delta-based (V1) update against each other; V0 updates keep the generation-1 checks
                 advanced_structure: None,
                 identity_signatures: None,
-                nonce: Some(0),
+                nonce: Some(1), // changed: reads owner and contract id through the transition accessors so a delta-based (V1) update is checked too
                 state: 2, // changed: merges a delta-based (V1) update onto the stored contract before the generation-1 checks (update rules + refersTo references)
                 transform_into_action: 1, // changed: a delta-based (V1) update needs the stored contract to become an action
             },

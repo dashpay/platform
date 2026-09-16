@@ -21,7 +21,7 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DRIVE_ABCI_VALIDATION_VERSIONS_V11;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
+use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
 use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
@@ -40,8 +40,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    whole contract the way V0 does. `STATE_TRANSITION_SERIALIZATION_VERSIONS_V4`
 ///    admits the form on the wire (bounds 0..=1) and makes it the client
 ///    default. `DRIVE_ABCI_VALIDATION_VERSIONS_V11` routes contract updates to
-///    generation 2 of basic structure and state validation and to
-///    `transform_into_action` 1: the delta is merged onto the stored contract
+///    generation 2 of basic structure and state validation, generation 1 of
+///    the identity contract nonce check and `transform_into_action` 1, and
+///    `DRIVE_VERSION_V10` to generation 1 of the state transition prover and
+///    execution-proof verifier: the delta is merged onto the stored contract
 ///    (`DataContract::apply_update`, `CONTRACT_VERSIONS_V7` slot `Some(0)`,
 ///    absent on every earlier snapshot) and the result then passes exactly the
 ///    checks a full-contract update passes: the generation-1 update rules,
@@ -58,7 +60,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 /// Everything else matches v14.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V9,
+    drive: DRIVE_VERSION_V10, // changed: prove v1 + verify v3 for the delta-based contract update
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10,

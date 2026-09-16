@@ -57,7 +57,7 @@ fn contract_ids_to_historical_path_query(contract_ids: &[Identifier]) -> PathQue
 }
 
 impl Drive {
-    pub(super) fn prove_state_transition_v0(
+    pub(super) fn prove_state_transition_v1(
         &self,
         state_transition: &StateTransition,
         transaction: TransactionArg,
@@ -72,17 +72,30 @@ impl Drive {
                 }
             }
             StateTransition::DataContractUpdate(st) => {
-                // generation 0 proves full-contract updates only; a delta-based
-                // update is proved by generation 1
-                let Some(data_contract) = st.data_contract() else {
-                    return Ok(ProofCreationResult::new_with_error(
-                        ProofError::InvalidTransition(
-                            "a delta-based data contract update needs prover generation 1"
-                                .to_string(),
-                        ),
-                    ));
+                let keeps_history = match st.data_contract() {
+                    Some(data_contract) => data_contract.config().keeps_history(),
+                    // A delta-based update carries no config; the stored
+                    // contract says whether it keeps history.
+                    None => {
+                        let contract_id = st.data_contract_id();
+                        let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
+                            contract_id.to_buffer(),
+                            false,
+                            transaction,
+                            platform_version,
+                        )?
+                        else {
+                            return Ok(ProofCreationResult::new_with_error(
+                                ProofError::UnknownContract(format!(
+                                    "unknown contract with id {} in contract update proving",
+                                    contract_id
+                                )),
+                            ));
+                        };
+                        contract_fetch_info.contract.config().keeps_history()
+                    }
                 };
-                if data_contract.config().keeps_history() {
+                if keeps_history {
                     contract_ids_to_historical_path_query(&st.modified_data_ids())
                 } else {
                     contract_ids_to_non_historical_path_query(&st.modified_data_ids())
