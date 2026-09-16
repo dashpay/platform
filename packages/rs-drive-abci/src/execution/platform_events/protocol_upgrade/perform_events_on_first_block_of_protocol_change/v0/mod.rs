@@ -8,13 +8,15 @@ use dpp::dashcore::hashes::Hash;
 use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::system_data_contracts::load_system_data_contract;
+use dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
+use dpp::tokens::contract_lifecycle::ContractTokenLifecycle;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use dpp::voting::vote_polls::VotePoll;
 use drive::drive::address_funds::queries::CLEAR_ADDRESS_POOL_U8;
-use drive::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
+use drive::drive::balances::{total_tokens_root_supply_path_vec, TOTAL_TOKEN_SUPPLIES_STORAGE_KEY};
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
@@ -30,18 +32,20 @@ use drive::drive::saved_block_transactions::{
 };
 use drive::drive::system::misc_path;
 use drive::drive::tokens::paths::{
-    token_distributions_root_path, token_timed_distributions_path, tokens_root_path,
-    TOKEN_BALANCES_KEY, TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY, TOKEN_CONTRACT_INFO_KEY,
-    TOKEN_DIRECT_SELL_PRICE_KEY, TOKEN_DISTRIBUTIONS_KEY, TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY,
-    TOKEN_IDENTITY_INFO_KEY, TOKEN_MS_TIMED_DISTRIBUTIONS_KEY, TOKEN_PERPETUAL_DISTRIBUTIONS_KEY,
+    token_contract_lifecycles_root_path, token_distributions_root_path,
+    token_timed_distributions_path, tokens_root_path, TOKEN_BALANCES_KEY,
+    TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY, TOKEN_CONTRACT_INFO_KEY, TOKEN_DIRECT_SELL_PRICE_KEY,
+    TOKEN_DISTRIBUTIONS_KEY, TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY, TOKEN_IDENTITY_INFO_KEY,
+    TOKEN_MS_TIMED_DISTRIBUTIONS_KEY, TOKEN_PERPETUAL_DISTRIBUTIONS_KEY,
     TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY, TOKEN_STATUS_INFO_KEY, TOKEN_TIMED_DISTRIBUTIONS_KEY,
 };
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 use drive::drive::{Drive, RootTree};
+use drive::error::drive::DriveError;
 use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction, TreeType};
 use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::ops::RangeFull;
 
 impl<C> Platform<C> {
@@ -117,6 +121,10 @@ impl<C> Platform<C> {
 
         if previous_protocol_version < 14 && platform_version.protocol_version >= 14 {
             self.transition_to_version_14(block_info, transaction, platform_version)?;
+        }
+
+        if previous_protocol_version < 17 && platform_version.protocol_version >= 17 {
+            self.transition_to_version_17_token_lifecycles(transaction, platform_version)?;
         }
 
         Ok(())
@@ -735,6 +743,130 @@ impl<C> Platform<C> {
             None,
             &platform_version.drive,
         )?;
+
+        Ok(())
+    }
+
+    /// When transitioning to version 17 we add the token contract lifecycle ledger under
+    /// `[Tokens]` and backfill one record per issuer from the supply leaves that exist.
+    ///
+    /// CONSENSUS-CRITICAL: the ledger's shape comes from the shared
+    /// `Drive::insert_token_contract_lifecycles_structure` helper that the genesis path
+    /// (`Drive::create_initial_state_structure_v4`) also calls, so a fresh genesis-v17 node
+    /// and an in-place-upgraded v17 node hold a byte-identical `[Tokens] / 224` subtree
+    /// before any record is written.
+    ///
+    /// The backfill reconciles every token once: its supply leaf must equal the stored sum of
+    /// its balance tree (one read of the parent element per token, no holder walk). A
+    /// mismatch fails the upgrade block deterministically on every node rather than letting
+    /// destruction rely on accounting that is already wrong; this is the fail-closed choice
+    /// recorded as provisional in the issue, where recording the mismatch and refusing
+    /// destruction for that issuer is the liveness-preserving alternative. Records are
+    /// inserted if absent, so a retried block after a rejected proposal is identical.
+    fn transition_to_version_17_token_lifecycles(
+        &self,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        fn corrupted_state(message: String) -> Error {
+            Error::Drive(drive::error::Error::Drive(DriveError::CorruptedDriveState(
+                message,
+            )))
+        }
+
+        self.drive
+            .insert_token_contract_lifecycles_structure(Some(transaction), platform_version)?;
+
+        let path_query = PathQuery::new_single_query_item(
+            total_tokens_root_supply_path_vec(),
+            QueryItem::RangeFull(RangeFull),
+        );
+        let (supplies, _) = self.drive.grove_get_raw_path_query(
+            &path_query,
+            Some(transaction),
+            QueryResultType::QueryKeyElementPairResultType,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+
+        let mut rollups: BTreeMap<[u8; 32], u128> = BTreeMap::new();
+
+        for (key, element) in supplies.to_key_elements() {
+            let token_id: [u8; 32] = key
+                .try_into()
+                .map_err(|_| corrupted_state("token supply key is not 32 bytes".to_string()))?;
+            let supply = match element {
+                Element::SumItem(supply, _) => supply,
+                _ => {
+                    return Err(corrupted_state(format!(
+                        "token supply of {} is not a sum item",
+                        Identifier::from(token_id)
+                    )))
+                }
+            };
+            let supply = u64::try_from(supply).map_err(|_| {
+                corrupted_state(format!(
+                    "token supply of {} is negative",
+                    Identifier::from(token_id)
+                ))
+            })?;
+
+            let balance_sum = self
+                .drive
+                .fetch_token_total_aggregated_identity_balances(
+                    token_id,
+                    Some(transaction),
+                    platform_version,
+                )?
+                .ok_or_else(|| {
+                    corrupted_state(format!(
+                        "token {} has a supply but no balance tree",
+                        Identifier::from(token_id)
+                    ))
+                })?;
+            if supply != balance_sum {
+                return Err(corrupted_state(format!(
+                    "token {} has a supply of {} but holder balances summing to {}",
+                    Identifier::from(token_id),
+                    supply,
+                    balance_sum
+                )));
+            }
+
+            let contract_id = self
+                .drive
+                .fetch_token_contract_info(token_id, Some(transaction), platform_version)?
+                .ok_or_else(|| {
+                    corrupted_state(format!(
+                        "token {} has no contract info",
+                        Identifier::from(token_id)
+                    ))
+                })?
+                .contract_id()
+                .to_buffer();
+
+            let rollup = rollups.entry(contract_id).or_insert(0);
+            *rollup = rollup.checked_add(supply as u128).ok_or_else(|| {
+                corrupted_state(format!(
+                    "summed token supplies of issuer {} overflow",
+                    Identifier::from(contract_id)
+                ))
+            })?;
+        }
+
+        let lifecycles_path = token_contract_lifecycles_root_path();
+        for (contract_id, issued_supply) in rollups {
+            let record_bytes = ContractTokenLifecycle::new(issued_supply, platform_version)?
+                .serialize_consume_to_bytes()?;
+            self.drive.grove_insert_if_not_exists(
+                (&lifecycles_path).into(),
+                &contract_id,
+                Element::new_item(record_bytes),
+                Some(transaction),
+                None,
+                &platform_version.drive,
+            )?;
+        }
 
         Ok(())
     }
@@ -2641,5 +2773,462 @@ mod tests {
              v11 construction to make this pass; surface and analyze the discrepancy.\n{}",
             diffs.join("\n"),
         );
+    }
+
+    /// Builds a protocol 16 platform holding two issuers: contract A with two tokens (base
+    /// supply 100_000 from the fixture at position 0, plus a minted token at position 1) and
+    /// contract B with one token. Returns the platform with the contracts and their token ids.
+    fn platform_16_with_two_issuers() -> (
+        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        [(Identifier, Vec<[u8; 32]>); 2],
+    ) {
+        use crate::execution::validation::state_transition::tests::create_token_contract_with_owner_identity;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+
+        let platform_version_16 = PlatformVersion::get(16).expect("expected v16");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(16)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let owner_a = Identifier::from([1u8; 32]);
+        let owner_b = Identifier::from([2u8; 32]);
+        let block_info = BlockInfo::default();
+
+        let (contract_a, token_a0) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner_a,
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            None,
+            platform_version_16,
+        );
+        let token_a1 = [0xA1u8; 32];
+        platform
+            .drive
+            .create_token_trees(
+                contract_a.id(),
+                1,
+                token_a1,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version_16,
+            )
+            .expect("expected to create the second token");
+        platform
+            .drive
+            .token_mint(
+                token_a1,
+                owner_a.to_buffer(),
+                2_500,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version_16,
+            )
+            .expect("expected to mint");
+
+        let (contract_b, token_b0) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner_b,
+            Some(|configuration: &mut TokenConfiguration| {
+                *configuration = TokenConfiguration::V0(
+                    TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+                );
+            }),
+            None,
+            None,
+            None,
+            platform_version_16,
+        );
+        platform
+            .drive
+            .token_mint(
+                token_b0.to_buffer(),
+                owner_b.to_buffer(),
+                77,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version_16,
+            )
+            .expect("expected to mint");
+
+        (
+            platform,
+            [
+                (contract_a.id(), vec![token_a0.to_buffer(), token_a1]),
+                (contract_b.id(), vec![token_b0.to_buffer()]),
+            ],
+        )
+    }
+
+    /// CONSENSUS-CRITICAL equivalence guard for the v16 -> v17 boundary.
+    ///
+    /// The `[Tokens] / 224` ledger is built two ways that MUST be byte-identical before any
+    /// issuer record is written:
+    ///
+    ///  * GENESIS path: `Drive::create_initial_state_structure_v4`.
+    ///  * UPGRADE path: `Platform::transition_to_version_17_token_lifecycles` at the
+    ///    activation block on a node born at v16.
+    ///
+    /// Both go through `Drive::insert_token_contract_lifecycles_structure`; this pins that
+    /// they keep doing so.
+    #[test]
+    fn test_genesis_v17_and_upgrade_to_v17_build_identical_token_lifecycle_ledger() {
+        use drive::drive::tokens::paths::{
+            token_contract_lifecycles_root_path_vec, TOKEN_CONTRACT_LIFECYCLES_KEY,
+        };
+
+        let platform_version_17 = PlatformVersion::get(17).expect("expected v17");
+        let grove_version = &platform_version_17.drive.grove_version;
+
+        let platform_a = TestPlatformBuilder::new()
+            .with_initial_protocol_version(17)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_b = TestPlatformBuilder::new()
+            .with_initial_protocol_version(16)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let ledger_pre = platform_b
+            .drive
+            .grove
+            .get(
+                &tokens_root_path(),
+                &[TOKEN_CONTRACT_LIFECYCLES_KEY],
+                None,
+                grove_version,
+            )
+            .unwrap();
+        assert!(
+            ledger_pre.is_err(),
+            "v16 genesis must not contain the lifecycle ledger before the upgrade; got {:?}",
+            ledger_pre
+        );
+
+        let txn_b = platform_b.drive.grove.start_transaction();
+        platform_b
+            .transition_to_version_17_token_lifecycles(&txn_b, platform_version_17)
+            .expect("upgrade: transition_to_version_17_token_lifecycles should succeed");
+
+        let element_a = platform_a
+            .drive
+            .grove
+            .get(
+                &tokens_root_path(),
+                &[TOKEN_CONTRACT_LIFECYCLES_KEY],
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("genesis: ledger element");
+        let element_b = platform_b
+            .drive
+            .grove
+            .get(
+                &tokens_root_path(),
+                &[TOKEN_CONTRACT_LIFECYCLES_KEY],
+                Some(&txn_b),
+                grove_version,
+            )
+            .unwrap()
+            .expect("upgrade: ledger element");
+        assert_eq!(
+            element_a, element_b,
+            "CONSENSUS FORK: the [Tokens] / 224 element differs between a fresh genesis-v17 \
+             node and an in-place-upgraded v17 node"
+        );
+
+        let diffs = collect_subtree_diffs(
+            &platform_a,
+            &platform_b,
+            &txn_b,
+            token_contract_lifecycles_root_path_vec(),
+        );
+        assert!(
+            diffs.is_empty(),
+            "CONSENSUS FORK: the [Tokens] / 224 subtree differs between a fresh genesis-v17 \
+             node and an in-place-upgraded v17 node.\n{}",
+            diffs.join("\n"),
+        );
+    }
+
+    /// The backfill writes one record per issuer holding the sum of its token supplies, and
+    /// the frozen v16 conservation check keeps ignoring the ledger.
+    #[test]
+    fn test_transition_to_version_17_backfills_one_record_per_issuer() {
+        use dpp::tokens::contract_lifecycle::v0::ContractTokenLifecycleV0Accessors;
+
+        let platform_version_16 = PlatformVersion::get(16).expect("expected v16");
+        let platform_version_17 = PlatformVersion::get(17).expect("expected v17");
+        let (platform, issuers) = platform_16_with_two_issuers();
+
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .transition_to_version_17_token_lifecycles(&transaction, platform_version_17)
+            .expect("expected the transition to succeed");
+
+        let record_a = platform
+            .drive
+            .fetch_contract_token_lifecycle(
+                issuers[0].0.to_buffer(),
+                Some(&transaction),
+                platform_version_17,
+            )
+            .expect("expected to read")
+            .expect("expected a record for contract A");
+        assert_eq!(record_a.issued_supply(), 100_000 + 2_500);
+        assert!(!record_a.is_wiped());
+
+        let record_b = platform
+            .drive
+            .fetch_contract_token_lifecycle(
+                issuers[1].0.to_buffer(),
+                Some(&transaction),
+                platform_version_17,
+            )
+            .expect("expected to read")
+            .expect("expected a record for contract B");
+        assert_eq!(record_b.issued_supply(), 77);
+
+        let totals_17 = platform
+            .drive
+            .calculate_total_tokens_balance(Some(&transaction), platform_version_17)
+            .expect("expected totals");
+        assert_eq!(totals_17.total_tokens_in_platform, 102_577);
+        assert_eq!(totals_17.total_destroyed_supply, 0);
+        assert!(totals_17.ok().expect("expected a verdict"));
+
+        let totals_16 = platform
+            .drive
+            .calculate_total_tokens_balance(Some(&transaction), platform_version_16)
+            .expect("expected totals");
+        assert_eq!(totals_16.total_tokens_in_platform, 102_577);
+        assert_eq!(totals_16.total_destroyed_supply, 0);
+        assert!(totals_16.ok().expect("expected a verdict"));
+    }
+
+    /// A token whose supply leaf disagrees with its holder balances makes the upgrade fail
+    /// on every node instead of trusting a rollup built on wrong accounting.
+    #[test]
+    fn test_transition_to_version_17_fails_closed_on_a_supply_mismatch() {
+        use drive::drive::balances::total_tokens_root_supply_path;
+
+        let platform_version_17 = PlatformVersion::get(17).expect("expected v17");
+        let (platform, issuers) = platform_16_with_two_issuers();
+        let token_id = issuers[1].1[0];
+
+        platform
+            .drive
+            .grove
+            .insert(
+                &total_tokens_root_supply_path(),
+                &token_id,
+                Element::new_sum_item(78),
+                None,
+                None,
+                &platform_version_17.drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected to corrupt the supply leaf");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let result =
+            platform.transition_to_version_17_token_lifecycles(&transaction, platform_version_17);
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(drive::error::Error::Drive(
+                    DriveError::CorruptedDriveState(_)
+                )))
+            ),
+            "expected a corrupted state error, got {:?}",
+            result
+        );
+    }
+
+    /// A rejected proposal drops its transaction; the retried block runs the transition again
+    /// on the same state and must produce the same root.
+    #[test]
+    fn test_transition_to_version_17_is_idempotent_and_replayable() {
+        let platform_version_17 = PlatformVersion::get(17).expect("expected v17");
+        let (platform, _) = platform_16_with_two_issuers();
+        let grove_version = &platform_version_17.drive.grove_version;
+
+        let dropped = platform.drive.grove.start_transaction();
+        platform
+            .transition_to_version_17_token_lifecycles(&dropped, platform_version_17)
+            .expect("expected the first attempt to succeed");
+        let root_after_first = platform
+            .drive
+            .grove
+            .root_hash(Some(&dropped), grove_version)
+            .unwrap()
+            .expect("expected a root hash");
+        platform
+            .drive
+            .grove
+            .rollback_transaction(&dropped)
+            .expect("expected to roll back");
+
+        let retried = platform.drive.grove.start_transaction();
+        platform
+            .transition_to_version_17_token_lifecycles(&retried, platform_version_17)
+            .expect("expected the retry to succeed");
+        platform
+            .transition_to_version_17_token_lifecycles(&retried, platform_version_17)
+            .expect("expected a second run in the same transaction to be a no-op");
+        let root_after_retry = platform
+            .drive
+            .grove
+            .root_hash(Some(&retried), grove_version)
+            .unwrap()
+            .expect("expected a root hash");
+
+        assert_eq!(root_after_first, root_after_retry);
+    }
+
+    /// After the upgrade the versioned supply writers keep the backfilled rollup current.
+    #[test]
+    fn test_rollup_follows_mint_and_burn_after_the_upgrade() {
+        use dpp::tokens::contract_lifecycle::v0::ContractTokenLifecycleV0Accessors;
+
+        let platform_version_17 = PlatformVersion::get(17).expect("expected v17");
+        let (platform, issuers) = platform_16_with_two_issuers();
+        let (contract_a, tokens_a) = &issuers[0];
+        let holder = [5u8; 32];
+        let block_info = BlockInfo::default();
+
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .transition_to_version_17_token_lifecycles(&transaction, platform_version_17)
+            .expect("expected the transition to succeed");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        platform
+            .drive
+            .token_mint(
+                tokens_a[1],
+                holder,
+                1_000,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version_17,
+            )
+            .expect("expected to mint");
+        platform
+            .drive
+            .token_burn(
+                tokens_a[0],
+                Identifier::from([1u8; 32]).to_buffer(),
+                400,
+                &block_info,
+                true,
+                None,
+                platform_version_17,
+            )
+            .expect("expected to burn");
+
+        let record = platform
+            .drive
+            .fetch_contract_token_lifecycle(contract_a.to_buffer(), None, platform_version_17)
+            .expect("expected to read")
+            .expect("expected a record");
+        assert_eq!(record.issued_supply(), 100_000 + 2_500 + 1_000 - 400);
+
+        let totals = platform
+            .drive
+            .calculate_total_tokens_balance(None, platform_version_17)
+            .expect("expected totals");
+        assert!(totals.ok().expect("expected a verdict"));
+    }
+
+    /// The dispatcher reaches the token lifecycle transition when crossing 17 and skips it
+    /// when the previous version is already 17.
+    #[test]
+    fn test_transition_from_version_16_triggers_17_only_once() {
+        use drive::drive::tokens::paths::TOKEN_CONTRACT_LIFECYCLES_KEY;
+
+        let platform_version_17 = PlatformVersion::get(17).expect("expected v17");
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(16)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state = platform.state.load();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        platform
+            .perform_events_on_first_block_of_protocol_change_v0(
+                &platform_state,
+                &block_info,
+                &transaction,
+                16,
+                platform_version_17,
+            )
+            .expect("expected the transition from 16 to succeed");
+
+        assert!(platform
+            .drive
+            .grove
+            .get(
+                &tokens_root_path(),
+                &[TOKEN_CONTRACT_LIFECYCLES_KEY],
+                Some(&transaction),
+                &platform_version_17.drive.grove_version,
+            )
+            .unwrap()
+            .is_ok());
+
+        let root_before = platform
+            .drive
+            .grove
+            .root_hash(Some(&transaction), &platform_version_17.drive.grove_version)
+            .unwrap()
+            .expect("expected a root hash");
+        platform
+            .perform_events_on_first_block_of_protocol_change_v0(
+                &platform_state,
+                &block_info,
+                &transaction,
+                17,
+                platform_version_17,
+            )
+            .expect("expected a same-version run to succeed");
+        let root_after = platform
+            .drive
+            .grove
+            .root_hash(Some(&transaction), &platform_version_17.drive.grove_version)
+            .unwrap()
+            .expect("expected a root hash");
+        assert_eq!(root_before, root_after);
     }
 }
