@@ -1,4 +1,16 @@
 use crate::drive::{constants, RootTree};
+#[cfg(feature = "server")]
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
+#[cfg(feature = "server")]
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+#[cfg(feature = "server")]
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+#[cfg(feature = "server")]
+use dpp::data_contract::document_type::DocumentTypeRef;
+#[cfg(feature = "server")]
+use grovedb::batch::key_info::KeyInfo;
+#[cfg(feature = "server")]
+use grovedb::batch::KeyInfoPath;
 
 /// Reserved document-type key containing the revision trees.
 pub const DOCUMENT_HISTORY_TREE_KEY: u8 = 2;
@@ -13,18 +25,6 @@ pub fn document_history_path(
     path.extend([vec![DOCUMENT_HISTORY_TREE_KEY], document_id.to_vec()]);
     path
 }
-#[cfg(feature = "server")]
-use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
-#[cfg(feature = "server")]
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-#[cfg(feature = "server")]
-use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-#[cfg(feature = "server")]
-use dpp::data_contract::document_type::DocumentTypeRef;
-#[cfg(feature = "server")]
-use grovedb::batch::key_info::KeyInfo;
-#[cfg(feature = "server")]
-use grovedb::batch::KeyInfoPath;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Returns the path to a contract document type.
