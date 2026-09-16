@@ -104,7 +104,7 @@ fn rt2_nonzero_balance_survives_reopen() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let (core, utxo_accounts) =
+    let (core, utxo_accounts, restored_spends) =
         core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
             .expect("load_state");
     drop(conn);
@@ -125,6 +125,7 @@ fn rt2_nonzero_balance_survives_reopen() {
         &core,
         &utxo_accounts,
         &Default::default(),
+        &restored_spends,
         &LoadCtx::strict(),
     )
     .expect("BIP44 reconstruction must not error");
@@ -165,7 +166,7 @@ fn b2_spent_utxo_excluded() {
     drop(persister);
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let (core, _utxo_accounts) =
+    let (core, _utxo_accounts, restored_spends) =
         core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
             .unwrap();
     drop(conn);
@@ -175,11 +176,10 @@ fn b2_spent_utxo_excluded() {
         !ops.contains(&u_spent.outpoint),
         "spent UTXO must not resurrect on reload"
     );
-    assert_eq!(core.spent_utxos.len(), 1);
-    assert_eq!(core.spent_utxos[0].outpoint, u_spent.outpoint);
+    assert_eq!(restored_spends.get(&u_spent.outpoint), Some(&None));
 }
 
-async fn assert_spent_utxo_is_not_resurrected(records_spend_first: bool) {
+async fn assert_spent_utxo_is_not_resurrected(records_spend_first: bool, record_only: bool) {
     use dashcore::{BlockHash, ScriptBuf, Transaction, TxIn, TxOut, Witness};
     use key_wallet::managed_account::transaction_record::{
         InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
@@ -277,11 +277,15 @@ async fn assert_spent_utxo_is_not_resurrected(records_spend_first: bool) {
     let spend_record = TransactionRecord::new(
         spend,
         account_type,
-        TransactionContext::InBlock(BlockInfo::new(
-            101,
-            BlockHash::from_byte_array([0x21; 32]),
-            1_700_000_100,
-        )),
+        if record_only {
+            TransactionContext::Mempool
+        } else {
+            TransactionContext::InBlock(BlockInfo::new(
+                101,
+                BlockHash::from_byte_array([0x21; 32]),
+                1_700_000_100,
+            ))
+        },
         TransactionType::Standard,
         TransactionDirection::Outgoing,
         vec![InputDetail {
@@ -298,6 +302,7 @@ async fn assert_spent_utxo_is_not_resurrected(records_spend_first: bool) {
         -5_000_000,
     );
 
+    let spend_txid = spend_record.txid;
     let records = if records_spend_first {
         vec![spend_record, funding_record]
     } else {
@@ -309,8 +314,12 @@ async fn assert_spent_utxo_is_not_resurrected(records_spend_first: bool) {
             PlatformWalletChangeSet {
                 core: Some(CoreChangeSet {
                     records,
-                    new_utxos: vec![utxo.clone()],
-                    spent_utxos: vec![utxo],
+                    new_utxos: if record_only {
+                        vec![]
+                    } else {
+                        vec![utxo.clone()]
+                    },
+                    spent_utxos: if record_only { vec![] } else { vec![utxo] },
                     last_processed_height: Some(101),
                     synced_height: Some(101),
                     ..Default::default()
@@ -322,7 +331,7 @@ async fn assert_spent_utxo_is_not_resurrected(records_spend_first: bool) {
     drop(persister);
 
     let reopened = reopen(&path);
-    let (core, utxo_accounts) = {
+    let (core, utxo_accounts, restored_spends) = {
         let conn = reopened.lock_conn_for_test();
         core_state::load_state(
             &conn,
@@ -340,6 +349,7 @@ async fn assert_spent_utxo_is_not_resurrected(records_spend_first: bool) {
         &core,
         &utxo_accounts,
         &Default::default(),
+        &restored_spends,
         &LoadCtx::strict(),
     )
     .expect("rehydrate");
@@ -354,7 +364,13 @@ async fn assert_spent_utxo_is_not_resurrected(records_spend_first: bool) {
 
     let mut restored_wallet = wallet.clone();
     restored_info
-        .check_core_transaction(&funding, funding_context, &mut restored_wallet, true, true)
+        .check_core_transaction(
+            &funding,
+            funding_context.clone(),
+            &mut restored_wallet,
+            true,
+            true,
+        )
         .await;
 
     assert!(
@@ -365,19 +381,40 @@ async fn assert_spent_utxo_is_not_resurrected(records_spend_first: bool) {
             .contains_key(&funding_outpoint),
         "persisted spend must prevent historical funding redelivery from resurrecting the coin"
     );
+    if record_only {
+        let abandoned = restored_info.abandon_transaction(spend_txid);
+        assert!(abandoned.abandoned.contains(&spend_txid));
+        restored_info
+            .check_core_transaction(&funding, funding_context, &mut restored_wallet, true, true)
+            .await;
+        assert!(
+            restored_info
+                .first_bip44_managed_account()
+                .unwrap()
+                .utxos
+                .contains_key(&funding_outpoint),
+            "abandoning the restored mempool spend must release its claim"
+        );
+    }
 }
 
 /// A confirmed spend remains authoritative after reload when its funding
 /// transaction is delivered again by a historical scan.
 #[tokio::test]
 async fn should_not_resurrect_spent_utxo_after_rehydration() {
-    assert_spent_utxo_is_not_resurrected(false).await;
+    assert_spent_utxo_is_not_resurrected(false, false).await;
 }
 
 /// Rehydration is independent of the persisted transaction iteration order.
 #[tokio::test]
 async fn should_not_resurrect_spent_utxo_when_spend_record_loads_first() {
-    assert_spent_utxo_is_not_resurrected(true).await;
+    assert_spent_utxo_is_not_resurrected(true, false).await;
+}
+
+/// Transaction inputs remain authoritative when no materialized spent row exists.
+#[tokio::test]
+async fn should_restore_and_release_mempool_claim_from_record_without_utxo_row() {
+    assert_spent_utxo_is_not_resurrected(true, true).await;
 }
 
 /// A corrupt `record_blob` is a typed hard error.
@@ -483,7 +520,7 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let (core, utxo_accounts) =
+    let (core, utxo_accounts, restored_spends) =
         core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
             .unwrap();
     drop(conn);
@@ -497,6 +534,7 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
         &core,
         &utxo_accounts,
         &Default::default(),
+        &restored_spends,
         &LoadCtx::strict(),
     )
     .expect("CoinJoin-only reconstruction must not error");
@@ -518,7 +556,7 @@ fn b4_empty_core_state_is_ok() {
     drop(persister);
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let (core, _utxo_accounts) =
+    let (core, _utxo_accounts, _restored_spends) =
         core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
             .unwrap();
     drop(conn);
@@ -567,7 +605,7 @@ fn b5_last_applied_chain_lock_round_trips() {
     let p2 = reopen(&path);
     {
         let conn = p2.lock_conn_for_test();
-        let (loaded, _utxo_accounts) =
+        let (loaded, _utxo_accounts, _restored_spends) =
             core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
                 .expect("load_state must succeed");
         assert_eq!(
@@ -641,7 +679,7 @@ fn chain_lock_does_not_regress_on_lower_height_update() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let (loaded, _utxo_accounts) =
+    let (loaded, _utxo_accounts, _restored_spends) =
         core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
             .expect("load_state must succeed");
     assert_eq!(
@@ -774,7 +812,7 @@ fn rehydration_routes_via_real_sql_resolver() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let (core, utxo_accounts) =
+    let (core, utxo_accounts, restored_spends) =
         core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
             .expect("load_state");
     drop(conn);
@@ -793,6 +831,7 @@ fn rehydration_routes_via_real_sql_resolver() {
         &core,
         &utxo_accounts,
         &Default::default(),
+        &restored_spends,
         &LoadCtx::strict(),
     )
     .expect("apply must not error");
@@ -902,7 +941,7 @@ fn rehydration_routes_used_addresses_to_owning_account() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let (core, utxo_accounts) =
+    let (core, utxo_accounts, restored_spends) =
         core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
             .expect("load_state");
 
@@ -953,6 +992,7 @@ fn rehydration_routes_used_addresses_to_owning_account() {
         &core,
         &utxo_accounts,
         &used,
+        &restored_spends,
         &LoadCtx::strict(),
     )
     .expect("apply must not error");
@@ -981,4 +1021,144 @@ fn rehydration_routes_used_addresses_to_owning_account() {
             "the CoinJoin used address must not appear in any BIP44 pool"
         );
     }
+}
+
+/// A sweep can leave only a spent outpoint: no script, owning account or winner record.
+#[tokio::test]
+async fn should_restore_sweep_placeholder_without_inventing_account_ownership() {
+    use dashcore::{ScriptBuf, Transaction, TxIn, TxOut, Witness};
+    use key_wallet::transaction_checking::TransactionContext;
+    use platform_wallet_storage::sqlite::schema::blob;
+
+    for height in [None, Some(101u32)] {
+        let (persister, _tmp, path) = fresh_persister();
+        let wallet_id = wid(0xC4);
+        ensure_wallet_meta(&persister, &wallet_id);
+        let (mut wallet, template) = wallet_and_utxo([0x78; 64], 50_000, 100, 0);
+        let funding = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(Txid::from_byte_array([0x77; 32]), 1),
+                script_sig: ScriptBuf::new(),
+                sequence: u32::MAX,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: 50_000,
+                script_pubkey: template.address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let outpoint = OutPoint::new(funding.txid(), 0);
+        {
+            let conn = persister.lock_conn_for_test();
+            conn.execute(
+                "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent, is_sweep_placeholder, winner_mined_height) VALUES (?1, ?2, 0, X'', 1, 1, ?3)",
+                rusqlite::params![wallet_id.as_slice(), blob::encode_outpoint(&outpoint).unwrap(), height],
+            ).unwrap();
+        }
+        drop(persister);
+        let reopened = reopen(&path);
+        let (core, owners, spent) = {
+            let conn = reopened.lock_conn_for_test();
+            core_state::load_state(
+                &conn,
+                &wallet_id,
+                key_wallet::Network::Testnet,
+                &LoadCtx::strict(),
+            )
+            .unwrap()
+        };
+        assert_eq!(spent.get(&outpoint), Some(&height));
+        assert!(!owners.contains_key(&outpoint));
+        assert!(core.records.is_empty());
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        platform_wallet_storage::sqlite::rehydrate::apply_persisted_core_state(
+            &mut info,
+            &manifest_for(&wallet),
+            &core,
+            &owners,
+            &Default::default(),
+            &spent,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+        info.check_core_transaction(
+            &funding,
+            TransactionContext::Mempool,
+            &mut wallet,
+            true,
+            true,
+        )
+        .await;
+        assert!(
+            !info
+                .first_bip44_managed_account()
+                .unwrap()
+                .utxos
+                .contains_key(&outpoint),
+            "a persisted settled claim must block funding even without its transaction or account"
+        );
+    }
+}
+
+#[test]
+fn should_reject_inconsistent_snapshot_without_mutating_wallet() {
+    use dashcore::{ScriptBuf, Transaction, TxIn, Witness};
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::transaction_record::{
+        TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+
+    let (wallet, utxo) = wallet_and_utxo([0x79; 64], 50_000, 100, 0);
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let initial_height = info.metadata.synced_height;
+    let record = TransactionRecord::new(
+        Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: utxo.outpoint,
+                script_sig: ScriptBuf::new(),
+                sequence: u32::MAX,
+                witness: Witness::new(),
+            }],
+            output: vec![],
+            special_transaction_payload: None,
+        },
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        },
+        TransactionContext::Mempool,
+        TransactionType::Standard,
+        TransactionDirection::Outgoing,
+        vec![],
+        vec![],
+        -50_000,
+    );
+    let core = CoreChangeSet {
+        new_utxos: vec![utxo.clone()],
+        records: vec![record],
+        synced_height: Some(200),
+        ..Default::default()
+    };
+    let error = platform_wallet_storage::sqlite::rehydrate::apply_persisted_core_state(
+        &mut info,
+        &manifest_for(&wallet),
+        &core,
+        &Default::default(),
+        &Default::default(),
+        &Default::default(),
+        &LoadCtx::strict(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, WalletStorageError::CoreStateRestore(
+        key_wallet::wallet::managed_wallet_info::RestoreError::SpentUtxo(op)
+    ) if op == utxo.outpoint));
+    assert_eq!(info.metadata.synced_height, initial_height);
+    assert!(info.first_bip44_managed_account().unwrap().utxos.is_empty());
+    assert!(info.observed_spent_outpoints().is_empty());
 }

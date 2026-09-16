@@ -7,7 +7,8 @@
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
-use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::wallet::managed_wallet_info::{ManagedWalletInfo, PersistedWalletState};
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
@@ -187,6 +188,8 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   to the funds account whose identity matches its entry; a UTXO absent
 ///   from the map (its script matched no pool row) falls back to the first
 ///   funds account and re-warms on the next sync.
+/// - `additional_spent_outpoints`: durable spend evidence, including sweep
+///   placeholders without an owning account or a complete transaction record.
 /// - `used_pool_addresses`: addresses the persisted pool snapshot marked
 ///   used, each mapped to its owning account (`None` when the script matched
 ///   no pool row). Each is routed to its owning funds account — via the same
@@ -263,16 +266,41 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// [`WalletStorageError::MissingAccount`] if there are persisted UTXOs to
 /// restore but the reconstructed account collection has **no**
 /// funds-bearing account to hold them. Fail-closed rather than
-/// reconstructing a silent zero balance (the no-silent-zero mandate). An
-/// empty UTXO set is always `Ok`.
+/// reconstructing a silent zero balance (the no-silent-zero mandate).
+/// [`WalletStorageError::CoreStateRestore`] if the snapshot is inconsistent
+/// or the receiving wallet already contains transaction or UTXO state.
 ///
-/// This never touches key material.
+/// On error the supplied wallet is unchanged. This never touches key material.
 pub fn apply_persisted_core_state(
     wallet_info: &mut ManagedWalletInfo,
     manifest: &[AccountRegistrationEntry],
     core: &CoreChangeSet,
     utxo_accounts: &std::collections::HashMap<dashcore::OutPoint, OwningAccount>,
     used_pool_addresses: &std::collections::HashMap<key_wallet::Address, Option<OwningAccount>>,
+    additional_spent_outpoints: &std::collections::BTreeMap<dashcore::OutPoint, Option<u32>>,
+    ctx: &LoadCtx,
+) -> Result<(), WalletStorageError> {
+    let mut restored = wallet_info.clone();
+    restore_core_state(
+        &mut restored,
+        manifest,
+        core,
+        utxo_accounts,
+        used_pool_addresses,
+        additional_spent_outpoints,
+        ctx,
+    )?;
+    *wallet_info = restored;
+    Ok(())
+}
+
+fn restore_core_state(
+    wallet_info: &mut ManagedWalletInfo,
+    manifest: &[AccountRegistrationEntry],
+    core: &CoreChangeSet,
+    utxo_accounts: &std::collections::HashMap<dashcore::OutPoint, OwningAccount>,
+    used_pool_addresses: &std::collections::HashMap<key_wallet::Address, Option<OwningAccount>>,
+    additional_spent_outpoints: &std::collections::BTreeMap<dashcore::OutPoint, Option<u32>>,
     ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
@@ -318,6 +346,17 @@ pub fn apply_persisted_core_state(
         .filter(|u| !spent_outpoints.contains(&u.outpoint))
         .collect();
 
+    let mut persisted = PersistedWalletState {
+        transactions: core.records.clone(),
+        additional_spent_outpoints: additional_spent_outpoints.clone(),
+        ..Default::default()
+    };
+    for utxo in &core.spent_utxos {
+        persisted
+            .additional_spent_outpoints
+            .entry(utxo.outpoint)
+            .or_insert(None);
+    }
     let mut funding = wallet_info.accounts.all_funding_accounts_mut();
     if (!unspent.is_empty() || !core.spent_utxos.is_empty()) && funding.is_empty() {
         return Err(WalletStorageError::MissingAccount { wallet_id });
@@ -341,21 +380,11 @@ pub fn apply_persisted_core_state(
                 utxo_accounts.get(&utxo.outpoint),
                 &mut orphaned_owners,
             );
-            funding[target].utxos.insert(utxo.outpoint, (*utxo).clone());
+            persisted.utxos.push((
+                funding[target].managed_account_type().to_account_type(),
+                (*utxo).clone(),
+            ));
             per_account_addrs[target].push(utxo.address.clone());
-        }
-
-        // Spent rows are absent from the balance but remain authoritative
-        // lifecycle claims. Restoring them into the same account-level set
-        // used during live processing prevents a historical funding delivery
-        // from recreating the coin after restart.
-        for utxo in &core.spent_utxos {
-            let target = route_to_funds_account(
-                &account_keys,
-                utxo_accounts.get(&utxo.outpoint),
-                &mut orphaned_owners,
-            );
-            funding[target].restore_spent_outpoints([utxo.outpoint]);
         }
 
         // The persisted pool used-state restores addresses whose funds were
@@ -410,19 +439,7 @@ pub fn apply_persisted_core_state(
     }
     drop(funding);
 
-    // Install persisted records directly rather than replaying their UTXO
-    // mutations in storage order. This restores observed on-chain spends and
-    // finalized transaction markers while the UTXO rows above remain the
-    // authoritative balance projection.
-    let unmatched_records = wallet_info.restore_persisted_transactions(core.records.clone());
-    if !unmatched_records.is_empty() {
-        tracing::warn!(
-            wallet_id = %hex::encode(wallet_id),
-            affected = unmatched_records.len(),
-            "persisted transaction records named accounts absent from the restored wallet; \
-             those records were skipped"
-        );
-    }
+    wallet_info.restore_persisted_state(persisted)?;
 
     // Replay persisted InstantSend locks AFTER the UTXO restore: this marks the
     // UTXOs it finds, so running it earlier would record the txid and mark
@@ -1176,6 +1193,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &Default::default(),
             &LoadCtx::strict(),
         )
         .unwrap();
@@ -1344,6 +1362,7 @@ mod tests {
             &core,
             &utxo_accounts,
             &Default::default(),
+            &Default::default(),
             &LoadCtx::strict(),
         )
         .unwrap();
@@ -1461,6 +1480,7 @@ mod tests {
             &core,
             &Default::default(),
             &used,
+            &Default::default(),
             &LoadCtx::strict(),
         )
         .unwrap();
@@ -1537,6 +1557,7 @@ mod tests {
             &core,
             &Default::default(),
             &used,
+            &Default::default(),
             &ctx,
         )
         .expect("an unroutable owner must never brick a strict load");
@@ -1596,6 +1617,7 @@ mod tests {
             &core,
             &Default::default(),
             &used,
+            &Default::default(),
             &ctx,
         )
         .expect("unroutable owners must never brick a strict load");
@@ -1770,6 +1792,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &Default::default(),
             &LoadCtx::strict(),
         )
         .unwrap();
@@ -1917,6 +1940,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &Default::default(),
             &LoadCtx::strict(),
         )
         .unwrap();
@@ -2026,6 +2050,7 @@ mod tests {
             &mut wallet_info,
             &manifest,
             &core,
+            &Default::default(),
             &Default::default(),
             &Default::default(),
             &LoadCtx::strict(),
@@ -2161,6 +2186,7 @@ mod tests {
                 &core,
                 &Default::default(),
                 &Default::default(),
+                &Default::default(),
                 &LoadCtx::strict(),
             )
             .unwrap();
@@ -2190,6 +2216,7 @@ mod tests {
             &core,
             &Default::default(),
             &used_core_addresses,
+            &Default::default(),
             &LoadCtx::strict(),
         )
         .unwrap();
@@ -2310,6 +2337,7 @@ mod tests {
             &core,
             &Default::default(),
             &used,
+            &Default::default(),
             &LoadCtx::strict(),
         )
         .unwrap();
@@ -2438,6 +2466,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &Default::default(),
             &ctx,
         )
         .expect("an unresolved address must never brick a strict load");
@@ -2549,6 +2578,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &Default::default(),
             &LoadCtx::strict(),
         )
         .expect_err("must fail closed when no funds account can hold the UTXOs");
@@ -2596,6 +2626,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &Default::default(),
             &LoadCtx::strict(),
         )
         .expect("empty UTXO set must be Ok even with no funds account");
@@ -2641,6 +2672,7 @@ mod tests {
             &mut wallet_info,
             &manifest,
             &core,
+            &Default::default(),
             &Default::default(),
             &Default::default(),
             &LoadCtx::strict(),
@@ -3161,6 +3193,7 @@ mod tests {
             &mut wallet_info,
             &manifest,
             &core,
+            &Default::default(),
             &Default::default(),
             &Default::default(),
             &LoadCtx::strict(),

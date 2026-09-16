@@ -1702,7 +1702,7 @@ fn load_one_wallet(
 
     let account_manifest =
         schema::accounts::load_state(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
-    let (core_state, utxo_accounts) =
+    let (core_state, utxo_accounts, restored_spends) =
         schema::core_state::load_state(conn, &wallet_id, network, ctx)
             .map_err(PersistenceError::from)?;
     // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
@@ -1828,14 +1828,10 @@ fn load_one_wallet(
         &core_state,
         &utxo_accounts,
         &used_core_addresses,
+        &restored_spends,
         ctx,
     )
-    .map_err(|e| {
-        PersistenceError::backend(format!(
-            "core-state rehydration failed for {}: {e}",
-            hex::encode(wallet_id)
-        ))
-    })?;
+    .map_err(PersistenceError::from)?;
     if account_manifest
         .provider
         .iter()

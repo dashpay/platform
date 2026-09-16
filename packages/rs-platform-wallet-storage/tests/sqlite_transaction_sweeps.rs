@@ -2942,7 +2942,7 @@ fn a_materialised_claim_is_never_collected() {
     );
 
     // The funding output classifies: the valve keeps the coin spent, the
-    // row gains real funding data, and the stale stamp clears.
+    // row gains real funding data, and the stale spend evidence remains.
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
@@ -2954,14 +2954,14 @@ fn a_materialised_claim_is_never_collected() {
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, false, None)),
-        "sanity: materialised — real height, stamp cleared, still spent"
+        Some((true, false, Some(i64::from(WINNER_HEIGHT)))),
+        "sanity: materialised — real height, spend evidence retained, still spent"
     );
 
     apply_heights(&mut conn, &w, 10_000);
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, false, None)),
+        Some((true, false, Some(i64::from(WINNER_HEIGHT)))),
         "a materialised claim is the wallet's own coin held spent — no \
          boundary may ever collect it"
     );
@@ -3000,7 +3000,7 @@ fn a_release_frees_a_materialised_claim_in_place() {
     apply_heights(&mut conn, &w, 100);
     seed_tombstone(&mut conn, &w, p, loser, winner, Some(WINNER_HEIGHT));
 
-    // The funding output classifies: real data, stamp cleared, still spent.
+    // The funding output classifies: real data, spend evidence retained, still spent.
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
@@ -3012,8 +3012,8 @@ fn a_release_frees_a_materialised_claim_in_place() {
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, false, None)),
-        "sanity: materialised — real height, stamp cleared, still spent"
+        Some((true, false, Some(i64::from(WINNER_HEIGHT)))),
+        "sanity: materialised — real height, spend evidence retained, still spent"
     );
     assert!(
         !unspent(&conn, &w).contains(&p),
@@ -3332,8 +3332,8 @@ fn a_materialised_coin_the_wallet_re_delivers_unspent_is_released_from_its_hold(
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &x),
-        Some((true, false, None)),
-        "sanity: the sweep holds the materialised coin, unstamped"
+        Some((true, false, Some(i64::from(WINNER_HEIGHT)))),
+        "the sweep retains block evidence for the materialised coin"
     );
 
     // The winner's block is reorged out; the wallet re-delivers the coin
@@ -3525,7 +3525,7 @@ fn a_placeholder_with_a_nulled_link_is_still_collected_at_its_stamp() {
 
 /// A delivery through `spent_utxos` is still a delivery: the wallet knows
 /// the coin and knows it spent. Landing on a held placeholder it must
-/// materialise the row — real funding data, placeholder flag clear, stamp cleared —
+/// materialise the row — real funding data and placeholder flag clear —
 /// not just mark it, or the collector would later delete the only durable
 /// record of the spend and a rescan re-delivery would land the coin
 /// unspent.
@@ -3561,8 +3561,8 @@ fn a_spent_delivery_materialises_a_held_placeholder_out_of_the_collectors_reach(
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &x),
-        Some((true, false, None)),
-        "the spent delivery materialises the row: placeholder flag clear, stamp cleared"
+        Some((true, false, Some(i64::from(WINNER_HEIGHT)))),
+        "the spent delivery materialises the row: placeholder flag clear, spend evidence retained"
     );
 
     apply_heights(&mut conn, &w, WINNER_HEIGHT + 100);
@@ -3725,7 +3725,7 @@ fn should_restore_used_addresses_without_decoding_sweep_placeholders() {
     );
     let addresses = core_state::load_used_addresses(&conn, &w, Network::Testnet).unwrap();
     assert!(addresses.is_empty());
-    let (state, _) = core_state::load_state(
+    let (state, _, _restored_spends) = core_state::load_state(
         &conn,
         &w,
         Network::Testnet,

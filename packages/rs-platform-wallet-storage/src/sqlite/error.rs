@@ -34,6 +34,10 @@ pub enum AutoBackupOperation {
 /// Errors produced by the wallet-storage SQLite backend.
 #[derive(Debug, thiserror::Error)]
 pub enum WalletStorageError {
+    /// Persisted Core lifecycle state violates the wallet restore contract.
+    #[error("persisted core wallet state is inconsistent")]
+    CoreStateRestore(#[from] key_wallet::wallet::managed_wallet_info::RestoreError),
+
     /// File-system I/O error reaching the database or backup files.
     #[error("io error")]
     Io(#[from] std::io::Error),
@@ -749,6 +753,7 @@ impl WalletStorageError {
             | Self::ProviderKeyAccountConflict { .. }
             | Self::TypedPoolKeyConflict { .. }
             | Self::AccountRecordInvalid { .. }
+            | Self::CoreStateRestore(_)
             | Self::MissingAccount { .. }
             | Self::AccountRejected { .. }
             | Self::AssetLockEntryMismatch { .. }
@@ -853,6 +858,7 @@ impl WalletStorageError {
             | Self::ProviderKeyAccountConflict { .. }
             | Self::TypedPoolKeyConflict { .. }
             | Self::AccountRecordInvalid { .. }
+            | Self::CoreStateRestore(_)
             | Self::MissingAccount { .. }
             | Self::AccountRejected { .. }
             | Self::AssetLockEntryMismatch { .. }
@@ -930,6 +936,7 @@ impl WalletStorageError {
             Self::WalletlessIdentityIndex { .. } => "walletless_identity_index",
             Self::OrphanedIdentityEntry { .. } => "orphaned_identity_entry",
             Self::AccountRecordInvalid { .. } => "account_record_invalid",
+            Self::CoreStateRestore(_) => "core_state_restore",
             Self::MissingAccount { .. } => "missing_account_registration_entry",
             Self::AccountRejected { .. } => "account_rejected",
             Self::AccountRegistrationEntryMismatch => "account_registration_entry_mismatch",

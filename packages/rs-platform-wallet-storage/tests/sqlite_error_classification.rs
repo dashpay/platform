@@ -285,6 +285,9 @@ fn samples() -> Vec<WalletStorageError> {
             value: u64::MAX,
             target: SafeCastTarget::U64,
         },
+        WalletStorageError::CoreStateRestore(
+            key_wallet::wallet::managed_wallet_info::RestoreError::NonEmptyWallet,
+        ),
         WalletStorageError::MissingAccount {
             wallet_id: [3u8; 32],
         },
@@ -459,6 +462,7 @@ fn tc_p2_005_is_transient_table() {
                 (false, "provider_key_account_conflict")
             }
             WalletStorageError::TypedPoolKeyConflict { .. } => (false, "typed_pool_key_conflict"),
+            WalletStorageError::CoreStateRestore(_) => (false, "core_state_restore"),
             WalletStorageError::MissingAccount { .. } => {
                 (false, "missing_account_registration_entry")
             }

@@ -117,7 +117,7 @@ fn utxo_on_fresh_gap_limit_address_rehydrates_under_first_funds_account() {
     )
     .expect("reopen persister");
     let conn = reopened.lock_conn_for_test();
-    let (core, utxo_accounts) =
+    let (core, utxo_accounts, restored_spends) =
         core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
             .expect("load state");
     drop(conn);
@@ -134,6 +134,7 @@ fn utxo_on_fresh_gap_limit_address_rehydrates_under_first_funds_account() {
         &core,
         &utxo_accounts,
         &Default::default(),
+        &restored_spends,
         &LoadCtx::strict(),
     )
     .expect("rehydration must apply the unattributed UTXO");
