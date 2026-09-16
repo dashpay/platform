@@ -30,6 +30,12 @@ impl TokenTransitionActionTypeGetter for TokenTransitionAction {
             TokenTransitionAction::ShieldedTransferAction(_) => {
                 TokenTransitionActionType::ShieldedTransfer
             }
+            TokenTransitionAction::MintToPoolAction(_) => TokenTransitionActionType::MintToPool,
+            TokenTransitionAction::BurnFromPoolAction(_) => TokenTransitionActionType::BurnFromPool,
+            TokenTransitionAction::ClaimToPoolAction(_) => TokenTransitionActionType::ClaimToPool,
+            TokenTransitionAction::DirectPurchaseToPoolAction(_) => {
+                TokenTransitionActionType::DirectPurchaseToPool
+            }
         }
     }
 }

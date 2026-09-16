@@ -38,6 +38,18 @@ pub mod token_shielded_transfer_transition_action;
 /// token_unshield_transition_action
 pub mod token_unshield_transition_action;
 
+/// Mint straight into the token shielded pool
+pub mod token_mint_to_pool_transition_action;
+
+/// Burn of notes held in the token shielded pool
+pub mod token_burn_from_pool_transition_action;
+
+/// Distribution claim paid into the token shielded pool
+pub mod token_claim_to_pool_transition_action;
+
+/// Direct purchase paid into the token shielded pool
+pub mod token_direct_purchase_to_pool_transition_action;
+
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -68,6 +80,10 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_shield_transition_action::{TokenShieldTransitionAction, TokenShieldTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_shielded_transfer_transition_action::{TokenShieldedTransferTransitionAction, TokenShieldedTransferTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_unshield_transition_action::{TokenUnshieldTransitionAction, TokenUnshieldTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_mint_to_pool_transition_action::{TokenMintToPoolTransitionAction, TokenMintToPoolTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_from_pool_transition_action::{TokenBurnFromPoolTransitionAction, TokenBurnFromPoolTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_to_pool_transition_action::{TokenClaimToPoolTransitionAction, TokenClaimToPoolTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::{TokenDirectPurchaseToPoolTransitionAction, TokenDirectPurchaseToPoolTransitionActionAccessorsV0};
 
 /// token action
 #[derive(Debug, Clone, From)]
@@ -100,6 +116,14 @@ pub enum TokenTransitionAction {
     UnshieldAction(TokenUnshieldTransitionAction),
     /// transfer inside the token shielded pool
     ShieldedTransferAction(TokenShieldedTransferTransitionAction),
+    /// mint straight into the token shielded pool
+    MintToPoolAction(TokenMintToPoolTransitionAction),
+    /// burn notes held in the token shielded pool
+    BurnFromPoolAction(TokenBurnFromPoolTransitionAction),
+    /// distribution claim paid into the token shielded pool
+    ClaimToPoolAction(TokenClaimToPoolTransitionAction),
+    /// direct purchase paid into the token shielded pool
+    DirectPurchaseToPoolAction(TokenDirectPurchaseToPoolTransitionAction),
 }
 
 impl TokenTransitionAction {
@@ -120,6 +144,10 @@ impl TokenTransitionAction {
             TokenTransitionAction::ShieldAction(action) => action.base(),
             TokenTransitionAction::UnshieldAction(action) => action.base(),
             TokenTransitionAction::ShieldedTransferAction(action) => action.base(),
+            TokenTransitionAction::MintToPoolAction(action) => action.base(),
+            TokenTransitionAction::BurnFromPoolAction(action) => action.base(),
+            TokenTransitionAction::ClaimToPoolAction(action) => action.base(),
+            TokenTransitionAction::DirectPurchaseToPoolAction(action) => action.base(),
         }
     }
 
@@ -140,6 +168,10 @@ impl TokenTransitionAction {
             TokenTransitionAction::ShieldAction(action) => action.base_owned(),
             TokenTransitionAction::UnshieldAction(action) => action.base_owned(),
             TokenTransitionAction::ShieldedTransferAction(action) => action.base_owned(),
+            TokenTransitionAction::MintToPoolAction(action) => action.base_owned(),
+            TokenTransitionAction::BurnFromPoolAction(action) => action.base_owned(),
+            TokenTransitionAction::ClaimToPoolAction(action) => action.base_owned(),
+            TokenTransitionAction::DirectPurchaseToPoolAction(action) => action.base_owned(),
         }
     }
 
@@ -160,6 +192,10 @@ impl TokenTransitionAction {
             TokenTransitionAction::ShieldAction(_) => "shield",
             TokenTransitionAction::UnshieldAction(_) => "unshield",
             TokenTransitionAction::ShieldedTransferAction(_) => "shieldedTransfer",
+            TokenTransitionAction::MintToPoolAction(_) => "mintToPool",
+            TokenTransitionAction::BurnFromPoolAction(_) => "burnFromPool",
+            TokenTransitionAction::ClaimToPoolAction(_) => "claimToPool",
+            TokenTransitionAction::DirectPurchaseToPoolAction(_) => "directPurchaseToPool",
         }
     }
 
@@ -227,7 +263,11 @@ impl TokenTransitionAction {
             // no document types for them and a shielded transfer has nothing public to record.
             TokenTransitionAction::ShieldAction(_)
             | TokenTransitionAction::UnshieldAction(_)
-            | TokenTransitionAction::ShieldedTransferAction(_) => Ok(false),
+            | TokenTransitionAction::ShieldedTransferAction(_)
+            | TokenTransitionAction::MintToPoolAction(_)
+            | TokenTransitionAction::BurnFromPoolAction(_)
+            | TokenTransitionAction::ClaimToPoolAction(_)
+            | TokenTransitionAction::DirectPurchaseToPoolAction(_) => Ok(false),
         }
     }
 }

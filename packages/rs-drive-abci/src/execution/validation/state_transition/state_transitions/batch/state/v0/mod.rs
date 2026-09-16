@@ -36,6 +36,10 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 use crate::execution::validation::state_transition::batch::action_validation::token::token_shield_transition_action::TokenShieldTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_shielded_transfer_transition_action::TokenShieldedTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_unshield_transition_action::TokenUnshieldTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_mint_to_pool_transition_action::TokenMintToPoolTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_burn_from_pool_transition_action::TokenBurnFromPoolTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_claim_to_pool_transition_action::TokenClaimToPoolTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
 use crate::execution::validation::state_transition::batch::state::v0::index_only_batch_entries::IndexOnlyBatchEntries;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
@@ -305,6 +309,50 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                             platform_version,
                         )?
                     }
+                    TokenTransitionAction::MintToPoolAction(mint_to_pool_action) => {
+                        mint_to_pool_action.validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?
+                    }
+                    TokenTransitionAction::BurnFromPoolAction(burn_from_pool_action) => {
+                        burn_from_pool_action.validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?
+                    }
+                    TokenTransitionAction::ClaimToPoolAction(claim_to_pool_action) => {
+                        claim_to_pool_action.validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?
+                    }
+                    TokenTransitionAction::DirectPurchaseToPoolAction(
+                        direct_purchase_to_pool_action,
+                    ) => direct_purchase_to_pool_action.validate_state(
+                        platform,
+                        owner_id,
+                        block_info,
+                        execution_context,
+                        validation_mode,
+                        transaction,
+                        platform_version,
+                    )?,
                 },
                 BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

@@ -28,7 +28,8 @@ use super::token::{
     VerifiedTokenGroupActionWithDocumentWasm, VerifiedTokenGroupActionWithTokenBalanceWasm,
     VerifiedTokenGroupActionWithTokenIdentityInfoWasm,
     VerifiedTokenGroupActionWithTokenPricingScheduleWasm, VerifiedTokenIdentitiesBalancesWasm,
-    VerifiedTokenIdentityInfoWasm, VerifiedTokenPricingScheduleWasm, VerifiedTokenStatusWasm,
+    VerifiedTokenIdentityInfoWasm, VerifiedTokenPricingScheduleWasm,
+    VerifiedTokenShieldedPoolBalanceWasm, VerifiedTokenStatusWasm,
 };
 use super::voting::{VerifiedMasternodeVoteWasm, VerifiedNextDistributionWasm};
 use crate::IdentifierWasm;
@@ -71,6 +72,7 @@ export type StateTransitionProofResultType =
   | VerifiedAssetLockConsumed
   | VerifiedAssetLockConsumedWithAddressInfos
   | VerifiedShieldedNullifiers
+  | VerifiedTokenShieldedPoolBalance
   | VerifiedShieldedNullifiersWithAddressInfos
   | VerifiedShieldedNullifiersWithWithdrawalDocument
   | VerifiedIdentityWithShieldedNullifiers
@@ -288,6 +290,14 @@ pub fn convert_proof_result(
 
         StateTransitionProofResult::VerifiedShieldedNullifiers(nullifiers) => {
             VerifiedShieldedNullifiersWasm::from_map(build_nullifier_map(nullifiers)).into()
+        }
+
+        StateTransitionProofResult::VerifiedTokenShieldedPoolBalance(id, amount) => {
+            VerifiedTokenShieldedPoolBalanceWasm {
+                token_id: id.into(),
+                balance: amount,
+            }
+            .into()
         }
 
         StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(

@@ -5,6 +5,7 @@ mod compute_minimum_shielded_fee;
 pub mod memo;
 mod sighash;
 
+use crate::util::hash::hash_single;
 pub use memo::{ShieldedMemo, MEMO_PAYLOAD_SIZE, MEMO_SIZE};
 
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -23,12 +24,29 @@ pub use compute_minimum_shielded_fee::{
 // Re-exported so the public paths stay `dpp::shielded::<name>` after moving the sighash preimage
 // builders into their own file. Both the version-dispatching wrappers and their `_v0` impls are
 // re-exported (callers use the wrappers; byte-layout tests use the `_v0` impls).
+/// A digest of serialized Orchard actions in wire order: every field of every action, hashed
+/// once. A group action stores it so every signer commits to exactly the same notes, and a
+/// pool mint or burn folds it into its group action id.
+pub fn serialized_actions_digest(actions: &[SerializedAction]) -> [u8; 32] {
+    let mut bytes = Vec::new();
+    for action in actions {
+        bytes.extend_from_slice(&action.nullifier);
+        bytes.extend_from_slice(&action.rk);
+        bytes.extend_from_slice(&action.cmx);
+        bytes.extend_from_slice(&action.encrypted_note);
+        bytes.extend_from_slice(&action.cv_net);
+        bytes.extend_from_slice(&action.spend_auth_sig);
+    }
+    hash_single(bytes)
+}
+
 pub use sighash::{
     compute_platform_sighash, identity_create_from_shielded_extra_sighash_data,
     identity_create_from_shielded_extra_sighash_data_v0,
     identity_top_up_from_shielded_extra_sighash_data,
     identity_top_up_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
-    shielded_withdrawal_extra_sighash_data_v0, token_shielded_transfer_extra_sighash_data,
+    shielded_withdrawal_extra_sighash_data_v0, token_burn_from_pool_extra_sighash_data,
+    token_burn_from_pool_extra_sighash_data_v0, token_shielded_transfer_extra_sighash_data,
     token_shielded_transfer_extra_sighash_data_v0, token_unshield_extra_sighash_data,
     token_unshield_extra_sighash_data_v0, unshield_extra_sighash_data,
     unshield_extra_sighash_data_v0,

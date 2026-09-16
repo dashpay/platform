@@ -1,4 +1,5 @@
 mod transformer;
+pub(crate) use transformer::resolve_direct_purchase_price;
 
 use std::sync::Arc;
 use dpp::balances::credits::TokenAmount;

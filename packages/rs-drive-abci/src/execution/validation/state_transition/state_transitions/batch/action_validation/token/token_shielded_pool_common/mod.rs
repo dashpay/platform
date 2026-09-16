@@ -27,9 +27,8 @@ use dpp::consensus::state::token::{
 };
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
-use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::Identifier;
-use dpp::shielded::{compute_shielded_verification_fee, SerializedAction};
+use dpp::shielded::{SerializedAction};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::tokens::status::v0::TokenStatusV0Accessors;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -254,7 +253,6 @@ pub(super) fn validate_minimum_token_pool_notes(
 /// once the fee estimate has shown the identity can pay for it.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn verify_token_pool_bundle(
-    execution_context: &mut StateTransitionExecutionContext,
     validation_mode: ValidationMode,
     actions: &[SerializedAction],
     flags: u8,
@@ -263,14 +261,9 @@ pub(super) fn verify_token_pool_bundle(
     proof: &[u8],
     binding_signature: &[u8; 64],
     extra_sighash_data: &[u8],
-    platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
-    let verification_fee = compute_shielded_verification_fee(actions.len(), platform_version)?;
-    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(FeeResult {
-        processing_fee: verification_fee,
-        ..Default::default()
-    }));
-
+    // The verification fee was charged when the action was built (see the token pool action
+    // transformers), so CheckTx admission and block execution price it once and identically.
     if !matches!(validation_mode, ValidationMode::Validator) {
         return Ok(SimpleConsensusValidationResult::new());
     }

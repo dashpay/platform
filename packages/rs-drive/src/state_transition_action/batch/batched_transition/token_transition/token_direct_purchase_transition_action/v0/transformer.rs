@@ -13,6 +13,7 @@ use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
+use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::v0::TokenDirectPurchaseTransitionActionV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
@@ -124,104 +125,33 @@ impl TokenDirectPurchaseTransitionActionV0 {
         };
 
         // We need to make sure the amount we want to pay is the amount we are expected to pay
-        let (pricing_schedule, fetch_token_direct_purchase_fee) = drive
-            .fetch_token_direct_purchase_price_with_costs(
-                base.token_id().to_buffer(),
-                block_info,
-                true,
-                transaction,
-                platform_version,
-            )?;
-
-        fee_result.checked_add_assign(fetch_token_direct_purchase_fee)?;
-
-        let Some(pricing_schedule) = pricing_schedule else {
-            let bump_action =
-                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                    base,
-                    owner_id,
-                    user_fee_increase,
-                );
-            let batched_action =
-                BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-            return Ok((
-                ConsensusValidationResult::new_with_data_and_errors(
-                    batched_action,
-                    vec![ConsensusError::StateError(
-                        StateError::TokenNotForDirectSale(TokenNotForDirectSale::new(
-                            base.token_id(),
-                        )),
-                    )],
-                ),
-                fee_result,
-            ));
-        };
-
-        let required_price = match pricing_schedule {
-            TokenPricingSchedule::SinglePrice(price_per_token) => {
-                // We've already checked the user set price in structure validation
-                // Hence we can do a saturating mul.
-                let required_price = price_per_token.saturating_mul(*token_count);
-                if *total_agreed_price < required_price {
-                    let bump_action =
-                        BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                            base,
-                            owner_id,
-                            user_fee_increase,
-                        );
-                    let batched_action =
-                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-                    return Ok((
-                        ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action,
-                            vec![ConsensusError::StateError(
-                                StateError::TokenDirectPurchaseUserPriceTooLow(
-                                    TokenDirectPurchaseUserPriceTooLow::new(
-                                        base.token_id(),
-                                        *total_agreed_price,
-                                        required_price,
-                                    ),
-                                ),
-                            )],
-                        ),
-                        fee_result,
-                    ));
-                }
-                required_price
-            }
-            TokenPricingSchedule::SetPrices(set_prices) => {
-                // All of the `SetPrices` resolution logic (tier lookup, overflow, under-minimum,
-                // and the empty-schedule case that must never `.expect()` a key) lives in a pure
-                // helper so it can be unit-tested directly. On rejection we bump the nonce and
-                // surface the consensus error.
-                match resolve_set_prices_direct_purchase_price(
-                    base.token_id(),
-                    &set_prices,
-                    *token_count,
-                    *total_agreed_price,
-                ) {
-                    Ok(required_total) => required_total,
-                    Err(error) => {
-                        let bump_action =
-                            BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                                base,
-                                owner_id,
-                                user_fee_increase,
-                            );
-                        let batched_action =
-                            BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-                        return Ok((
-                            ConsensusValidationResult::new_with_data_and_errors(
-                                batched_action,
-                                vec![error],
-                            ),
-                            fee_result,
-                        ));
-                    }
-                }
+        let required_price = match resolve_direct_purchase_price(
+            drive,
+            base,
+            *token_count,
+            *total_agreed_price,
+            block_info,
+            transaction,
+            &mut fee_result,
+            platform_version,
+        )? {
+            Ok(required_price) => required_price,
+            Err(error) => {
+                let bump_action =
+                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                        base,
+                        owner_id,
+                        user_fee_increase,
+                    );
+                let batched_action =
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+                return Ok((
+                    ConsensusValidationResult::new_with_data_and_errors(
+                        batched_action,
+                        vec![error],
+                    ),
+                    fee_result,
+                ));
             }
         };
 
@@ -251,6 +181,78 @@ impl TokenDirectPurchaseTransitionActionV0 {
 /// `set_prices.keys().next().expect("Map is not empty")`, which panics on an empty map. That
 /// panic was uncaught during per-state-transition processing and would deterministically halt
 /// the chain across the quorum. Here an empty schedule resolves to `TokenNotForDirectSale`.
+
+/// Resolves the credits a direct purchase of `token_count` must pay right now, from the token's
+/// current pricing schedule: an error when the token is not for sale, the buyer agreed to too
+/// little, or the amount is under the minimum sale amount. Shared by `TokenDirectPurchase` and
+/// `TokenDirectPurchaseToPool`. Read costs are added to `fee_result`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn resolve_direct_purchase_price(
+    drive: &Drive,
+    base: &TokenBaseTransition,
+    token_count: TokenAmount,
+    total_agreed_price: Credits,
+    block_info: &BlockInfo,
+    transaction: TransactionArg,
+    fee_result: &mut FeeResult,
+    platform_version: &PlatformVersion,
+) -> Result<Result<Credits, ConsensusError>, Error> {
+    let (pricing_schedule, fetch_token_direct_purchase_fee) = drive
+        .fetch_token_direct_purchase_price_with_costs(
+            base.token_id().to_buffer(),
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
+
+    fee_result.checked_add_assign(fetch_token_direct_purchase_fee)?;
+
+    let Some(pricing_schedule) = pricing_schedule else {
+        return Ok(Err(ConsensusError::StateError(
+            StateError::TokenNotForDirectSale(TokenNotForDirectSale::new(base.token_id())),
+        )));
+    };
+
+    let required_price = match pricing_schedule {
+        TokenPricingSchedule::SinglePrice(price_per_token) => {
+            // We've already checked the user set price in structure validation
+            // Hence we can do a saturating mul.
+            let required_price = price_per_token.saturating_mul(token_count);
+            if total_agreed_price < required_price {
+                return Ok(Err(ConsensusError::StateError(
+                    StateError::TokenDirectPurchaseUserPriceTooLow(
+                        TokenDirectPurchaseUserPriceTooLow::new(
+                            base.token_id(),
+                            total_agreed_price,
+                            required_price,
+                        ),
+                    ),
+                )));
+            }
+            required_price
+        }
+        TokenPricingSchedule::SetPrices(set_prices) => {
+            // All of the `SetPrices` resolution logic (tier lookup, overflow, under-minimum,
+            // and the empty-schedule case that must never `.expect()` a key) lives in a pure
+            // helper so it can be unit-tested directly. On rejection we bump the nonce and
+            // surface the consensus error.
+            match resolve_set_prices_direct_purchase_price(
+                base.token_id(),
+                &set_prices,
+                token_count,
+                total_agreed_price,
+            ) {
+                Ok(required_total) => required_total,
+                Err(error) => {
+                    return Ok(Err(error));
+                }
+            }
+        }
+    };
+    Ok(Ok(required_price))
+}
+
 fn resolve_set_prices_direct_purchase_price(
     token_id: Identifier,
     set_prices: &BTreeMap<TokenAmount, Credits>,

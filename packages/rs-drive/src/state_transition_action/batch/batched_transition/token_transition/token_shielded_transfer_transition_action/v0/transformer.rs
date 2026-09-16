@@ -8,6 +8,7 @@ use crate::state_transition_action::batch::BatchedTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
+use dpp::shielded::compute_shielded_verification_fee;
 use dpp::identifier::Identifier;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::state_transition::batch_transition::token_shielded_transfer_transition::v0::TokenShieldedTransferTransitionV0;
@@ -60,7 +61,7 @@ impl TokenShieldedTransferTransitionActionV0 {
                 platform_version,
             )?;
 
-        let fee_result = Drive::calculate_fee(
+        let mut fee_result = Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
@@ -70,6 +71,14 @@ impl TokenShieldedTransferTransitionActionV0 {
         )?;
 
         // Shielded token transitions carry no public note to change.
+        // The Halo 2 verification and per-action work GroveDB cannot meter, charged here so
+        // CheckTx admission and block execution price the bundle identically, whether or not
+        // the proof is (re)verified on this path.
+        fee_result.checked_add_assign(FeeResult {
+            processing_fee: compute_shielded_verification_fee(actions.len(), platform_version)?,
+            ..Default::default()
+        })?;
+
         let (base_action, _change_note) = match base_action_validation_result.is_valid() {
             true => base_action_validation_result.into_data()?,
             false => {
