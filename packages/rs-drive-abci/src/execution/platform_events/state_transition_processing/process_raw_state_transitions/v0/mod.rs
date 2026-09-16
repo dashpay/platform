@@ -13,6 +13,9 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
+use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::accessors::TokenShieldedTransferWithShieldedFeeTransitionAccessorsV0;
+use dpp::state_transition::token_unshield_with_shielded_fee_transition::accessors::TokenUnshieldWithShieldedFeeTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
 use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
@@ -398,7 +401,8 @@ fn error_to_internal_error_execution_result(
 }
 
 /// The token shielded pools a state transition writes to: the token ids of every token pool
-/// transition in a batch and of every document whose token cost is paid from a pool.
+/// transition in a batch, of every document whose token cost is paid from a pool, and of the
+/// identity-less token pool transitions.
 fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 32]> {
     match state_transition {
         StateTransition::Batch(batch) => batch
@@ -423,6 +427,11 @@ fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 
                 _ => None,
             })
             .collect(),
+        StateTransition::TokenShieldedTransferWithShieldedFee(st) => {
+            vec![st.token_id().to_buffer()]
+        }
+        StateTransition::TokenUnshieldWithShieldedFee(st) => vec![st.token_id().to_buffer()],
+        StateTransition::TokenPurchaseFromShieldedPool(st) => vec![st.token_id().to_buffer()],
         _ => vec![],
     }
 }

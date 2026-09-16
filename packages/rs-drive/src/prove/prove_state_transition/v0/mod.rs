@@ -507,6 +507,31 @@ impl Drive {
                     &platform_version.drive.grove_version,
                 )?
             }
+            // The token bundle's spent nullifiers in the token pool bind the exact actions of
+            // this transfer.
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => {
+                use crate::drive::shielded::paths::token_shielded_pool_nullifiers_path_query;
+                use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::accessors::TokenShieldedTransferWithShieldedFeeTransitionAccessorsV0;
+
+                let nullifiers: Vec<[u8; 32]> = st.token_nullifiers();
+                token_shielded_pool_nullifiers_path_query(st.token_id().to_buffer(), &nullifiers)
+            }
+            // The recipient's token balance after the unshield.
+            StateTransition::TokenUnshieldWithShieldedFee(st) => {
+                use dpp::state_transition::token_unshield_with_shielded_fee_transition::accessors::TokenUnshieldWithShieldedFeeTransitionAccessorsV0;
+
+                Drive::token_balance_for_identity_id_query(
+                    st.token_id().to_buffer(),
+                    st.recipient_id().to_buffer(),
+                )
+            }
+            // The token pool's total balance after the notes were minted into it.
+            StateTransition::TokenPurchaseFromShieldedPool(st) => {
+                use crate::drive::shielded::paths::token_shielded_pool_state_path_query;
+                use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
+
+                token_shielded_pool_state_path_query(st.token_id().to_buffer())
+            }
             StateTransition::IdentityTopUpFromShieldedPool(st) => {
                 use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
                 use dpp::state_transition::identity_top_up_from_shielded_pool_transition::accessors::IdentityTopUpFromShieldedPoolTransitionAccessorsV0;

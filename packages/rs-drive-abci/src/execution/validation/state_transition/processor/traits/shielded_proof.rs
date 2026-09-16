@@ -15,6 +15,9 @@ use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyI
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
+use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
+use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransition;
+use dpp::state_transition::token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransition;
 use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
@@ -141,6 +144,9 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_)
+                | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+                | StateTransition::TokenUnshieldWithShieldedFee(_)
+                | StateTransition::TokenPurchaseFromShieldedPool(_)
         )
     }
 
@@ -166,6 +172,22 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
             },
             StateTransition::IdentityTopUpFromShieldedPool(st) => match st {
                 IdentityTopUpFromShieldedPoolTransition::V0(v0) => v0.actions.len(),
+            },
+            // Two bundles are verified: both counts are admitted.
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => match st {
+                TokenShieldedTransferWithShieldedFeeTransition::V0(v0) => {
+                    v0.token_actions.len() + v0.fee_actions.len()
+                }
+            },
+            StateTransition::TokenUnshieldWithShieldedFee(st) => match st {
+                TokenUnshieldWithShieldedFeeTransition::V0(v0) => {
+                    v0.token_actions.len() + v0.fee_actions.len()
+                }
+            },
+            StateTransition::TokenPurchaseFromShieldedPool(st) => match st {
+                TokenPurchaseFromShieldedPoolTransition::V0(v0) => {
+                    v0.token_actions.len() + v0.fee_actions.len()
+                }
             },
             StateTransition::ShieldedWithdrawal(st) => match st {
                 dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
@@ -273,6 +295,9 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_)
+                | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+                | StateTransition::TokenUnshieldWithShieldedFee(_)
+                | StateTransition::TokenPurchaseFromShieldedPool(_)
         )
     }
 }
@@ -336,6 +361,22 @@ enum ShieldedMinFeeKind {
         num_keys: usize,
     },
     IdentityTopUp,
+    /// `compute_token_shielded_transfer_with_shielded_fee_fee` — two bundles (the token pool
+    /// transfer and the credit pool fee), nothing written outside the pools.
+    TokenShieldedTransfer {
+        token_actions: usize,
+    },
+    /// `compute_token_unshield_with_shielded_fee_fee` — two bundles plus the recipient's token
+    /// balance item.
+    TokenUnshield {
+        token_actions: usize,
+    },
+    /// `compute_token_purchase_from_shielded_pool_fee` — two bundles plus the contract owner's
+    /// balance write and the supply item; `validated_amount` is the fee bundle's value balance
+    /// minus the agreed price.
+    TokenPurchase {
+        token_actions: usize,
+    },
 }
 
 impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
@@ -442,6 +483,40 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                             )
                         }
                     },
+                    // The identity-less token pool transitions: `credit_amount` is the fee
+                    // bundle's value balance and IS the fee (pure fee, exact), except for a
+                    // purchase where the agreed price rides on top of it.
+                    StateTransition::TokenShieldedTransferWithShieldedFee(st) => match st {
+                        TokenShieldedTransferWithShieldedFeeTransition::V0(v0) => (
+                            v0.credit_amount as i64,
+                            v0.fee_actions.len(),
+                            0,
+                            u64::MAX,
+                            true,
+                            ShieldedMinFeeKind::TokenShieldedTransfer { token_actions: v0.token_actions.len() },
+                        ),
+                    },
+                    StateTransition::TokenUnshieldWithShieldedFee(st) => match st {
+                        TokenUnshieldWithShieldedFeeTransition::V0(v0) => (
+                            v0.credit_amount as i64,
+                            v0.fee_actions.len(),
+                            0,
+                            u64::MAX,
+                            true,
+                            ShieldedMinFeeKind::TokenUnshield { token_actions: v0.token_actions.len() },
+                        ),
+                    },
+                    StateTransition::TokenPurchaseFromShieldedPool(st) => match st {
+                        TokenPurchaseFromShieldedPoolTransition::V0(v0) => (
+                            // Structure validation guarantees credit_amount >= total_agreed_price.
+                            v0.credit_amount.saturating_sub(v0.total_agreed_price) as i64,
+                            v0.fee_actions.len(),
+                            0,
+                            u64::MAX,
+                            true,
+                            ShieldedMinFeeKind::TokenPurchase { token_actions: v0.token_actions.len() },
+                        ),
+                    },
                     // Other transitions don't go through shielded fee validation.
                     _ => return Ok(SimpleConsensusValidationResult::new()),
                 };
@@ -504,6 +579,27 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                     }
                     ShieldedMinFeeKind::IdentityTopUp => {
                         dpp::shielded::compute_shielded_identity_top_up_fee(
+                            num_actions,
+                            platform_version,
+                        )?
+                    }
+                    ShieldedMinFeeKind::TokenShieldedTransfer { token_actions } => {
+                        dpp::shielded::compute_token_shielded_transfer_with_shielded_fee_fee(
+                            token_actions,
+                            num_actions,
+                            platform_version,
+                        )?
+                    }
+                    ShieldedMinFeeKind::TokenUnshield { token_actions } => {
+                        dpp::shielded::compute_token_unshield_with_shielded_fee_fee(
+                            token_actions,
+                            num_actions,
+                            platform_version,
+                        )?
+                    }
+                    ShieldedMinFeeKind::TokenPurchase { token_actions } => {
+                        dpp::shielded::compute_token_purchase_from_shielded_pool_fee(
+                            token_actions,
                             num_actions,
                             platform_version,
                         )?
@@ -700,6 +796,115 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                                 &v0.binding_signature,
                                 &extra_sighash_data,
                             )
+                        }
+                    },
+                    StateTransition::TokenShieldedTransferWithShieldedFee(st) => match st {
+                        TokenShieldedTransferWithShieldedFeeTransition::V0(v0) => {
+                            let token_extra_sighash_data = dpp::shielded::token_shielded_transfer_with_shielded_fee_extra_sighash_data(
+                &v0.token_id.to_buffer(),
+                platform_version,
+            )?;
+                            let fee_extra_sighash_data =
+                                dpp::shielded::token_pool_fee_bundle_extra_sighash_data(
+                                    dpp::shielded::TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
+                                    &v0.token_id.to_buffer(),
+                                    &v0.token_actions,
+                                    platform_version,
+                                )?;
+                            reconstruct_and_verify_bundle(
+                                &v0.token_actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                0,
+                                &v0.token_anchor,
+                                v0.token_proof.as_slice(),
+                                &v0.token_binding_signature,
+                                &token_extra_sighash_data,
+                            )
+                            .and_then(|_| {
+                                reconstruct_and_verify_bundle(
+                                    &v0.fee_actions,
+                                    FLAGS_SPENDS_AND_OUTPUTS,
+                                    v0.credit_amount as i64,
+                                    &v0.fee_anchor,
+                                    v0.fee_proof.as_slice(),
+                                    &v0.fee_binding_signature,
+                                    &fee_extra_sighash_data,
+                                )
+                            })
+                        }
+                    },
+                    StateTransition::TokenUnshieldWithShieldedFee(st) => match st {
+                        TokenUnshieldWithShieldedFeeTransition::V0(v0) => {
+                            let token_extra_sighash_data = dpp::shielded::token_unshield_with_shielded_fee_extra_sighash_data(
+                &v0.token_id.to_buffer(),
+                &v0.recipient_id.to_buffer(),
+                v0.amount,
+                platform_version,
+            )?;
+                            let fee_extra_sighash_data =
+                                dpp::shielded::token_pool_fee_bundle_extra_sighash_data(
+                                    dpp::shielded::TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
+                                    &v0.token_id.to_buffer(),
+                                    &v0.token_actions,
+                                    platform_version,
+                                )?;
+                            reconstruct_and_verify_bundle(
+                                &v0.token_actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                v0.amount as i64,
+                                &v0.token_anchor,
+                                v0.token_proof.as_slice(),
+                                &v0.token_binding_signature,
+                                &token_extra_sighash_data,
+                            )
+                            .and_then(|_| {
+                                reconstruct_and_verify_bundle(
+                                    &v0.fee_actions,
+                                    FLAGS_SPENDS_AND_OUTPUTS,
+                                    v0.credit_amount as i64,
+                                    &v0.fee_anchor,
+                                    v0.fee_proof.as_slice(),
+                                    &v0.fee_binding_signature,
+                                    &fee_extra_sighash_data,
+                                )
+                            })
+                        }
+                    },
+                    StateTransition::TokenPurchaseFromShieldedPool(st) => match st {
+                        TokenPurchaseFromShieldedPoolTransition::V0(v0) => {
+                            let token_extra_sighash_data = dpp::shielded::token_purchase_from_shielded_pool_extra_sighash_data(
+                &v0.token_id.to_buffer(),
+                v0.token_count,
+                v0.total_agreed_price,
+                platform_version,
+            )?;
+                            let fee_extra_sighash_data =
+                                dpp::shielded::token_pool_fee_bundle_extra_sighash_data(
+                                    dpp::shielded::TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
+                                    &v0.token_id.to_buffer(),
+                                    &v0.token_actions,
+                                    platform_version,
+                                )?;
+                            reconstruct_and_verify_bundle(
+                                &v0.token_actions,
+                                FLAGS_OUTPUTS_ONLY,
+                                -(v0.token_count as i64),
+                                &v0.token_anchor,
+                                v0.token_proof.as_slice(),
+                                &v0.token_binding_signature,
+                                &token_extra_sighash_data,
+                            )
+                            .and_then(|_| {
+                                reconstruct_and_verify_bundle(
+                                    &v0.fee_actions,
+                                    FLAGS_SPENDS_AND_OUTPUTS,
+                                    v0.credit_amount as i64,
+                                    &v0.fee_anchor,
+                                    v0.fee_proof.as_slice(),
+                                    &v0.fee_binding_signature,
+                                    &fee_extra_sighash_data,
+                                )
+                            })
                         }
                     },
                     StateTransition::IdentityTopUpFromShieldedPool(st) => match st {

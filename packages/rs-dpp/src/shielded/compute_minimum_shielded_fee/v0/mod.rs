@@ -324,6 +324,37 @@ pub fn compute_shielded_identity_create_fee_v0(
         ))
 }
 
+/// Version 0 of the identity-less token pool transition fee: the base for each of the two
+/// bundles plus `extra_storage_bytes` at the storage rate.
+pub fn compute_token_pool_paid_shielded_fee_v0(
+    token_actions: usize,
+    fee_actions: usize,
+    extra_storage_bytes: u64,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    let storage = &platform_version.fee_version.storage;
+    let fee_bundle = compute_minimum_shielded_fee_v0(fee_actions, platform_version)?;
+    let token_bundle = compute_minimum_shielded_fee_v0(token_actions, platform_version)?;
+    let per_byte_rate = storage
+        .storage_disk_usage_credit_per_byte
+        .checked_add(storage.storage_processing_credit_per_byte)
+        .ok_or(ProtocolError::Overflow(
+            "shielded storage per-byte rate overflow",
+        ))?;
+    let extra_storage_fee =
+        extra_storage_bytes
+            .checked_mul(per_byte_rate)
+            .ok_or(ProtocolError::Overflow(
+                "token pool paid transition storage fee overflow",
+            ))?;
+    fee_bundle
+        .checked_add(token_bundle)
+        .and_then(|fee| fee.checked_add(extra_storage_fee))
+        .ok_or(ProtocolError::Overflow(
+            "token pool paid transition fee overflow",
+        ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

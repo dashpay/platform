@@ -8,6 +8,7 @@
 
 use crate::address_funds::PlatformAddress;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;
+use crate::shielded::{serialized_actions_digest, SerializedAction};
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::withdrawal::Pooling;
@@ -17,6 +18,14 @@ use sha2::{Digest, Sha256};
 
 /// Domain separator for Platform sighash computation.
 const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";
+
+/// The state transition type byte the token bundle of a `TokenShieldedTransferWithShieldedFee`
+/// commits to (`StateTransitionType::TokenShieldedTransferWithShieldedFee`).
+pub const TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE: u8 = 23;
+/// The state transition type byte the token bundle of a `TokenUnshieldWithShieldedFee` commits to.
+pub const TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE: u8 = 24;
+/// The state transition type byte the token bundle of a `TokenPurchaseFromShieldedPool` commits to.
+pub const TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE: u8 = 25;
 
 /// Computes the platform sighash from an Orchard bundle commitment and optional
 /// transparent field data.
@@ -412,6 +421,145 @@ pub fn document_token_payment_extra_sighash_data_v0(
     data
 }
 
+/// Extra sighash data of the token bundle of a `TokenShieldedTransferWithShieldedFee`: the
+/// state transition type and the token id, so the bundle is pinned to one token pool and one
+/// transition kind.
+pub fn token_shielded_transfer_with_shielded_fee_extra_sighash_data(
+    token_id: &[u8; 32],
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(token_shielded_transfer_with_shielded_fee_extra_sighash_data_v0(token_id)),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "token_shielded_transfer_with_shielded_fee_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Version 0 layout: `state transition type (1, = 23) || token_id (32)`. Frozen.
+pub fn token_shielded_transfer_with_shielded_fee_extra_sighash_data_v0(
+    token_id: &[u8; 32],
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(1 + 32);
+    data.push(TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE);
+    data.extend_from_slice(token_id);
+    data
+}
+
+/// Extra sighash data of the token bundle of a `TokenUnshieldWithShieldedFee`: the state
+/// transition type, the token id, the recipient and the amount, so the bundle cannot be
+/// replayed against another token, recipient or amount.
+pub fn token_unshield_with_shielded_fee_extra_sighash_data(
+    token_id: &[u8; 32],
+    recipient_id: &[u8; 32],
+    amount: u64,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(token_unshield_with_shielded_fee_extra_sighash_data_v0(
+            token_id,
+            recipient_id,
+            amount,
+        )),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "token_unshield_with_shielded_fee_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Version 0 layout: `state transition type (1, = 24) || token_id (32) || recipient_id (32)
+/// || amount (8, little endian)`. Frozen.
+pub fn token_unshield_with_shielded_fee_extra_sighash_data_v0(
+    token_id: &[u8; 32],
+    recipient_id: &[u8; 32],
+    amount: u64,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(1 + 32 + 32 + 8);
+    data.push(TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE);
+    data.extend_from_slice(token_id);
+    data.extend_from_slice(recipient_id);
+    data.extend_from_slice(&amount.to_le_bytes());
+    data
+}
+
+/// Extra sighash data of the token bundle of a `TokenPurchaseFromShieldedPool`: the state
+/// transition type, the token id, the token count and the agreed price.
+pub fn token_purchase_from_shielded_pool_extra_sighash_data(
+    token_id: &[u8; 32],
+    token_count: u64,
+    total_agreed_price: u64,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(token_purchase_from_shielded_pool_extra_sighash_data_v0(
+            token_id,
+            token_count,
+            total_agreed_price,
+        )),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "token_purchase_from_shielded_pool_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Version 0 layout: `state transition type (1, = 25) || token_id (32) || token_count (8, LE)
+/// || total_agreed_price (8, LE)`. Frozen.
+pub fn token_purchase_from_shielded_pool_extra_sighash_data_v0(
+    token_id: &[u8; 32],
+    token_count: u64,
+    total_agreed_price: u64,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(1 + 32 + 8 + 8);
+    data.push(TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE);
+    data.extend_from_slice(token_id);
+    data.extend_from_slice(&token_count.to_le_bytes());
+    data.extend_from_slice(&total_agreed_price.to_le_bytes());
+    data
+}
+
+/// Extra sighash data of the credit pool fee bundle of an identity-less token pool transition:
+/// the state transition type, the token id and a digest of the token bundle's actions, so the
+/// fee bundle can only ever pay for that exact token bundle.
+pub fn token_pool_fee_bundle_extra_sighash_data(
+    state_transition_type: u8,
+    token_id: &[u8; 32],
+    token_actions: &[SerializedAction],
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(token_pool_fee_bundle_extra_sighash_data_v0(
+            state_transition_type,
+            token_id,
+            &serialized_actions_digest(token_actions),
+        )),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "token_pool_fee_bundle_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Version 0 layout: `state transition type (1) || token_id (32) || token actions digest (32)`.
+/// Frozen.
+pub fn token_pool_fee_bundle_extra_sighash_data_v0(
+    state_transition_type: u8,
+    token_id: &[u8; 32],
+    token_actions_digest: &[u8; 32],
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(1 + 32 + 32);
+    data.push(state_transition_type);
+    data.extend_from_slice(token_id);
+    data.extend_from_slice(token_actions_digest);
+    data
+}
+
 /// Builds the transparent `extra_data` bound into a `TokenShieldedTransfer`'s platform sighash,
 /// with the byte layout `token_id (32) || owner_id (32)`.
 ///
@@ -746,6 +894,34 @@ mod tests {
         assert_eq!(&data[64..96], &[3u8; 32]);
         assert_eq!(&data[96..128], &[4u8; 32]);
         assert_eq!(&data[128..], &10u64.to_le_bytes());
+    }
+
+    #[test]
+    fn token_pool_paid_layouts_start_with_the_state_transition_type() {
+        let transfer = token_shielded_transfer_with_shielded_fee_extra_sighash_data_v0(&[1u8; 32]);
+        assert_eq!(transfer.len(), 33);
+        assert_eq!(transfer[0], 23);
+        assert_eq!(&transfer[1..], &[1u8; 32]);
+
+        let unshield =
+            token_unshield_with_shielded_fee_extra_sighash_data_v0(&[1u8; 32], &[2u8; 32], 300);
+        assert_eq!(unshield.len(), 73);
+        assert_eq!(unshield[0], 24);
+        assert_eq!(&unshield[1..33], &[1u8; 32]);
+        assert_eq!(&unshield[33..65], &[2u8; 32]);
+        assert_eq!(&unshield[65..], &300u64.to_le_bytes());
+
+        let purchase = token_purchase_from_shielded_pool_extra_sighash_data_v0(&[1u8; 32], 5, 900);
+        assert_eq!(purchase.len(), 49);
+        assert_eq!(purchase[0], 25);
+        assert_eq!(&purchase[33..41], &5u64.to_le_bytes());
+        assert_eq!(&purchase[41..], &900u64.to_le_bytes());
+
+        let fee = token_pool_fee_bundle_extra_sighash_data_v0(24, &[1u8; 32], &[3u8; 32]);
+        assert_eq!(fee.len(), 65);
+        assert_eq!(fee[0], 24);
+        assert_eq!(&fee[1..33], &[1u8; 32]);
+        assert_eq!(&fee[33..], &[3u8; 32]);
     }
 
     #[test]

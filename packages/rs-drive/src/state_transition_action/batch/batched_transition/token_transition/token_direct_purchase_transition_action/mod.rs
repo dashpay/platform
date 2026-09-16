@@ -6,6 +6,7 @@ use dpp::fee::Credits;
 pub mod transformer;
 mod v0;
 
+pub use v0::required_direct_purchase_price;
 pub(crate) use v0::resolve_direct_purchase_price;
 pub use v0::*;
 

@@ -60,6 +60,14 @@ pub mod shielded_common;
 pub mod shielded_transfer;
 /// Module for shielded withdrawal transition validation
 pub mod shielded_withdrawal;
+/// Checks shared by the identity-less token pool transitions
+pub mod token_pool_paid_common;
+/// Token purchase paid from the credit shielded pool into a token's pool
+pub mod token_purchase_from_shielded_pool;
+/// Token shielded transfer with the fee paid from the credit shielded pool
+pub mod token_shielded_transfer_with_shielded_fee;
+/// Token unshield with the fee paid from the credit shielded pool
+pub mod token_unshield_with_shielded_fee;
 /// Module for unshield transition validation
 pub mod unshield;
 

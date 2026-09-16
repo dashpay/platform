@@ -5,6 +5,9 @@ mod shield_from_identity_transition;
 mod shield_transition;
 mod shielded_transfer_transition;
 mod shielded_withdrawal_transition;
+mod token_purchase_from_shielded_pool_transition;
+mod token_shielded_transfer_with_shielded_fee_transition;
+mod token_unshield_with_shielded_fee_transition;
 mod unshield_transition;
 
 use crate::state_transition_action::shielded::ShieldedActionNote;

@@ -156,6 +156,16 @@ use crate::state_transition::shielded_withdrawal_transition::{
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use crate::state_transition::token_purchase_from_shielded_pool_transition::{
+    TokenPurchaseFromShieldedPoolTransition, TokenPurchaseFromShieldedPoolTransitionSignable,
+};
+use crate::state_transition::token_shielded_transfer_with_shielded_fee_transition::{
+    TokenShieldedTransferWithShieldedFeeTransition,
+    TokenShieldedTransferWithShieldedFeeTransitionSignable,
+};
+use crate::state_transition::token_unshield_with_shielded_fee_transition::{
+    TokenUnshieldWithShieldedFeeTransition, TokenUnshieldWithShieldedFeeTransitionSignable,
+};
 use crate::state_transition::unshield_transition::{
     UnshieldTransition, UnshieldTransitionSignable,
 };
@@ -187,6 +197,9 @@ macro_rules! call_method {
             StateTransition::ShieldedTransfer(st) => st.$method($args),
             StateTransition::Unshield(st) => st.$method($args),
             StateTransition::IdentityTopUpFromShieldedPool(st) => st.$method($args),
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => st.$method($args),
+            StateTransition::TokenUnshieldWithShieldedFee(st) => st.$method($args),
+            StateTransition::TokenPurchaseFromShieldedPool(st) => st.$method($args),
             StateTransition::ShieldFromAssetLock(st) => st.$method($args),
             StateTransition::ShieldedWithdrawal(st) => st.$method($args),
             StateTransition::IdentityCreateFromShieldedPool(st) => st.$method($args),
@@ -214,6 +227,9 @@ macro_rules! call_method {
             StateTransition::ShieldedTransfer(st) => st.$method(),
             StateTransition::Unshield(st) => st.$method(),
             StateTransition::IdentityTopUpFromShieldedPool(st) => st.$method(),
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => st.$method(),
+            StateTransition::TokenUnshieldWithShieldedFee(st) => st.$method(),
+            StateTransition::TokenPurchaseFromShieldedPool(st) => st.$method(),
             StateTransition::ShieldFromAssetLock(st) => st.$method(),
             StateTransition::ShieldedWithdrawal(st) => st.$method(),
             StateTransition::IdentityCreateFromShieldedPool(st) => st.$method(),
@@ -244,6 +260,9 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -271,6 +290,9 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -301,6 +323,9 @@ macro_rules! call_method_identity_signed {
             StateTransition::ShieldedTransfer(_) => {}
             StateTransition::Unshield(_) => {}
             StateTransition::IdentityTopUpFromShieldedPool(_) => {}
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {}
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {}
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {}
             StateTransition::ShieldFromAssetLock(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
@@ -328,6 +353,9 @@ macro_rules! call_method_identity_signed {
             StateTransition::ShieldedTransfer(_) => {}
             StateTransition::Unshield(_) => {}
             StateTransition::IdentityTopUpFromShieldedPool(_) => {}
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {}
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {}
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {}
             StateTransition::ShieldFromAssetLock(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
@@ -380,6 +408,15 @@ macro_rules! call_errorable_method_identity_signed {
             )),
             StateTransition::IdentityTopUpFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity top up from shielded pool transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token shielded transfer with shielded fee transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenUnshieldWithShieldedFee(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token unshield with shielded fee transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenPurchaseFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token purchase from shielded pool transition can not be called for identity signing".to_string(),
             )),
             StateTransition::ShieldFromAssetLock(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "shield from asset lock transition can not be called for identity signing".to_string(),
@@ -435,6 +472,15 @@ macro_rules! call_errorable_method_identity_signed {
             )),
             StateTransition::IdentityTopUpFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity top up from shielded pool transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token shielded transfer with shielded fee transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenUnshieldWithShieldedFee(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token unshield with shielded fee transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenPurchaseFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token purchase from shielded pool transition can not be called for identity signing".to_string(),
             )),
             StateTransition::ShieldFromAssetLock(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "shield from asset lock transition can not be called for identity signing".to_string(),
@@ -513,6 +559,9 @@ pub enum StateTransition {
     IdentityCreateFromShieldedPool(IdentityCreateFromShieldedPoolTransition),
     ShieldFromIdentity(ShieldFromIdentityTransition),
     IdentityTopUpFromShieldedPool(IdentityTopUpFromShieldedPoolTransition),
+    TokenShieldedTransferWithShieldedFee(TokenShieldedTransferWithShieldedFeeTransition),
+    TokenUnshieldWithShieldedFee(TokenUnshieldWithShieldedFeeTransition),
+    TokenPurchaseFromShieldedPool(TokenPurchaseFromShieldedPoolTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -810,6 +859,30 @@ mod json_convertible_tests {
             "identityTopUpFromShieldedPool",
         );
     }
+    #[test]
+    fn umbrella_token_shielded_transfer_with_shielded_fee() {
+        let inner = crate::state_transition::token_shielded_transfer_with_shielded_fee_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::TokenShieldedTransferWithShieldedFee(inner),
+            "tokenShieldedTransferWithShieldedFee",
+        );
+    }
+    #[test]
+    fn umbrella_token_unshield_with_shielded_fee() {
+        let inner = crate::state_transition::token_unshield_with_shielded_fee_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::TokenUnshieldWithShieldedFee(inner),
+            "tokenUnshieldWithShieldedFee",
+        );
+    }
+    #[test]
+    fn umbrella_token_purchase_from_shielded_pool() {
+        let inner = crate::state_transition::token_purchase_from_shielded_pool_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::TokenPurchaseFromShieldedPool(inner),
+            "tokenPurchaseFromShieldedPool",
+        );
+    }
 
     #[test]
     fn umbrella_shield_from_identity() {
@@ -917,6 +990,9 @@ impl StateTransition {
             | StateTransition::IdentityCreateFromShieldedPool(_) => 12..=LATEST_VERSION,
             StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_) => 14..=LATEST_VERSION,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_) => 15..=LATEST_VERSION,
         }
     }
 
@@ -932,6 +1008,9 @@ impl StateTransition {
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_)
                 | StateTransition::IdentityTopUpFromShieldedPool(_)
+                | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+                | StateTransition::TokenUnshieldWithShieldedFee(_)
+                | StateTransition::TokenPurchaseFromShieldedPool(_)
         )
     }
 
@@ -1057,6 +1136,11 @@ impl StateTransition {
             Self::ShieldedTransfer(_) => "ShieldedTransfer".to_string(),
             Self::Unshield(_) => "Unshield".to_string(),
             Self::IdentityTopUpFromShieldedPool(_) => "IdentityTopUpFromShieldedPool".to_string(),
+            Self::TokenShieldedTransferWithShieldedFee(_) => {
+                "TokenShieldedTransferWithShieldedFee".to_string()
+            }
+            Self::TokenUnshieldWithShieldedFee(_) => "TokenUnshieldWithShieldedFee".to_string(),
+            Self::TokenPurchaseFromShieldedPool(_) => "TokenPurchaseFromShieldedPool".to_string(),
             Self::ShieldFromAssetLock(_) => "ShieldFromAssetLock".to_string(),
             Self::ShieldedWithdrawal(_) => "ShieldedWithdrawal".to_string(),
             Self::IdentityCreateFromShieldedPool(_) => "IdentityCreateFromShieldedPool".to_string(),
@@ -1086,6 +1170,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(st) => Some(st.signature()),
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -1104,6 +1191,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => 0,
             StateTransition::Unshield(_) => 0,
             StateTransition::IdentityTopUpFromShieldedPool(_) => 0,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => 0,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => 0,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => 0,
             StateTransition::ShieldFromAssetLock(_) => 0,
             StateTransition::ShieldedWithdrawal(_) => 0,
             StateTransition::IdentityCreateFromShieldedPool(_) => 0,
@@ -1135,6 +1225,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => 0,
             StateTransition::Unshield(_) => 0,
             StateTransition::IdentityTopUpFromShieldedPool(_) => 0,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => 0,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => 0,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => 0,
             StateTransition::ShieldedWithdrawal(_) => 0,
             StateTransition::IdentityCreateFromShieldedPool(_) => 0,
             StateTransition::ShieldFromIdentity(st) => st.user_fee_increase(),
@@ -1204,6 +1297,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -1233,6 +1329,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -1301,6 +1400,9 @@ impl StateTransition {
             | StateTransition::Unshield(_)
             | StateTransition::ShieldedWithdrawal(_)
             | StateTransition::IdentityCreateFromShieldedPool(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_) => false,
             StateTransition::ShieldFromIdentity(st) => {
                 st.set_signature(signature);
@@ -1358,6 +1460,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => {}
             StateTransition::Unshield(_) => {}
             StateTransition::IdentityTopUpFromShieldedPool(_) => {}
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {}
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {}
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
             StateTransition::ShieldFromIdentity(st) => st.set_user_fee_increase(user_fee_increase),
@@ -1527,6 +1632,21 @@ impl StateTransition {
             StateTransition::IdentityTopUpFromShieldedPool(_) => {
                 return Err(ProtocolError::CorruptedCodeExecution(
                     "identity top up from shielded pool transition can not be called for identity signing".to_string(),
+                ))
+            }
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "token shielded transfer with shielded fee transition can not be called for identity signing".to_string(),
+                ))
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "token unshield with shielded fee transition can not be called for identity signing".to_string(),
+                ))
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "token purchase from shielded pool transition can not be called for identity signing".to_string(),
                 ))
             }
             StateTransition::ShieldFromAssetLock(_) => {
@@ -2052,6 +2172,15 @@ impl StateTransitionStructureValidation for StateTransition {
                 transition.validate_structure(platform_version)
             }
             StateTransition::IdentityTopUpFromShieldedPool(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::TokenShieldedTransferWithShieldedFee(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(transition) => {
                 transition.validate_structure(platform_version)
             }
             StateTransition::ShieldFromAssetLock(transition) => {

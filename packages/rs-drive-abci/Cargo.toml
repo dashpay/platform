@@ -98,6 +98,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "abci",
   "random-documents",
   "state-transition-signing",
+  "shielded-client",
   "random-identities",
   "random-public-keys",
   "random-document-types",

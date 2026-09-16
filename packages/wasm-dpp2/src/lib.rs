@@ -72,7 +72,10 @@ pub use platform_address::{
 pub use shielded::{
     AddressWitnessWasm, IdentityTopUpFromShieldedPoolTransitionWasm, SerializedOrchardActionWasm,
     ShieldFromAssetLockTransitionWasm, ShieldFromIdentityTransitionWasm, ShieldTransitionWasm,
-    ShieldedTransferTransitionWasm, ShieldedWithdrawalTransitionWasm, UnshieldTransitionWasm,
+    ShieldedTransferTransitionWasm, ShieldedWithdrawalTransitionWasm,
+    TokenPurchaseFromShieldedPoolTransitionWasm,
+    TokenShieldedTransferWithShieldedFeeTransitionWasm, TokenUnshieldWithShieldedFeeTransitionWasm,
+    UnshieldTransitionWasm,
 };
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use state_transitions::proof_result::{StateTransitionProofResultTypeJs, convert_proof_result};

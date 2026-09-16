@@ -58,9 +58,29 @@ signing identity pays in credits through the standard identity-paid path.
 | **TokenShield** | `fee = metered(storage + processing) + shielded_verification_fee`, paid by the signing identity | Same model as `ShieldFromIdentity`: the note appends, the identity token balance write and the pool balance write are metered, and `compute_shielded_verification_fee(num_actions)` is added as a precalculated operation before the proof is verified. `value_balance` is `-amount` in tokens and carries no fee. |
 | **TokenUnshield** | `fee = metered(storage + processing) + shielded_verification_fee`, paid by the signing identity | `value_balance` equals the unshielded token amount exactly; the recipient receives the full amount. Nullifier inserts, note appends and the two balance writes are metered. |
 | **TokenShieldedTransfer** | `fee = metered(storage + processing) + shielded_verification_fee`, paid by the signing identity | `value_balance` is exactly zero; consensus rejects any other value. Only the nullifier inserts and note appends are metered. |
+| **TokenMintToPool**, **TokenClaimToPool**, **TokenDirectPurchaseToPool** | same model | Outputs-only bundles; the note appends and the supply and pool balance writes are metered, the verification fee is charged by the action transformer so CheckTx and block execution price the bundle identically. |
+| **TokenBurnFromPool** | same model | Nullifier inserts, change note appends and the supply and pool balance writes are metered. |
+| Document with a **TokenPaymentInfo::V1** | same model, on top of the document's own fee | The shielded payment bundle's verification fee is added by the batch transformer before anything can fail; the pool writes it causes are metered. |
 
 Because the verification fee is charged before the proof is checked, an invalid proof is a paid
 failure: the identity is charged, its identity contract nonce advances, and no token moves.
+
+### Identity-less token pool transitions
+
+`TokenShieldedTransferWithShieldedFee` (23), `TokenUnshieldWithShieldedFee` (24) and
+`TokenPurchaseFromShieldedPool` (25) have no identity: the fee is carved from a second bundle
+spent in the credit shielded pool, exactly as `ShieldedTransfer` carves its own fee.
+
+| Transition | Fee Formula | Explanation |
+|---|---|---|
+| **TokenShieldedTransferWithShieldedFee** | `credit_amount == base(fee_actions) + base(token_actions)` | Two bundles are verified and stored, so the fee is the base shielded fee of each (`compute_token_pool_paid_shielded_fee`). Pure fee: overpayment is rejected. |
+| **TokenUnshieldWithShieldedFee** | `credit_amount == base(fee_actions) + base(token_actions) + identity balance bytes` | Adds the flat storage of the recipient's token balance item. Pure fee. |
+| **TokenPurchaseFromShieldedPool** | `credit_amount == total_agreed_price + base(fee_actions) + base(token_actions) + balance write + supply bytes` | The agreed price rides on top of the fee and is credited to the contract owner; `credit_amount - total_agreed_price` must equal the fee exactly. |
+
+The fee bundle's value balance is `credit_amount`; the minimum-fee validation, the SDK builders
+and the transformer all use the same `compute_token_*` function so the threshold never drifts
+from what is carved. An invalid proof or a spent nullifier is an unpaid rejection: nothing is
+committed and no fee is charged, the same as for the credit pool's pool-paid transitions.
 
 For `ShieldedTransfer`, the client constructs the bundle so that `total_spent −
 total_output = desired_fee`. The Orchard circuit proves that value is conserved

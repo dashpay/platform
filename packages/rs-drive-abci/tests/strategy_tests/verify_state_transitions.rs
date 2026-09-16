@@ -1314,7 +1314,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 | StateTransitionAction::ShieldedWithdrawalAction(_)
                 | StateTransitionAction::IdentityCreateFromShieldedPoolAction(_)
                 | StateTransitionAction::ShieldFromIdentityAction(_)
-                | StateTransitionAction::IdentityTopUpFromShieldedPoolAction(_) => {
+                | StateTransitionAction::IdentityTopUpFromShieldedPoolAction(_)
+                | StateTransitionAction::TokenShieldedTransferWithShieldedFeeAction(_)
+                | StateTransitionAction::TokenUnshieldWithShieldedFeeAction(_)
+                | StateTransitionAction::TokenPurchaseFromShieldedPoolAction(_) => {
                     // The strategy harness does not generate shielded transitions (no shielded
                     // `OperationType`), so their proof-verification roundtrip isn't exercised here.
                     // IdentityCreateFromShieldedPool's strict prove/verify is covered by the unit

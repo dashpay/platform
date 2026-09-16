@@ -375,6 +375,72 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     })),
                 }
             }
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .token_shielded_transfer_with_shielded_fee_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "token shielded transfer with shielded fee transition: validate_basic_structure".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "token shielded transfer with shielded fee transition: validate_basic_structure".to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .token_unshield_with_shielded_fee_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "token unshield with shielded fee transition: validate_basic_structure".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "token unshield with shielded fee transition: validate_basic_structure".to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .token_purchase_from_shielded_pool_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "token purchase from shielded pool transition: validate_basic_structure".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "token purchase from shielded pool transition: validate_basic_structure".to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
             StateTransition::ShieldFromAssetLock(st) => {
                 match platform_version
                     .drive_abci
@@ -527,6 +593,27 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                 .validation_and_processing
                 .state_transitions
                 .identity_top_up_from_shielded_pool_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .token_shielded_transfer_with_shielded_fee_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::TokenUnshieldWithShieldedFee(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .token_unshield_with_shielded_fee_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::TokenPurchaseFromShieldedPool(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .token_purchase_from_shielded_pool_state_transition
                 .basic_structure
                 .is_some(),
             StateTransition::ShieldFromAssetLock(_) => platform_version
@@ -912,6 +999,9 @@ mod tests {
                 | StateTransition::Shield(_)
                 | StateTransition::ShieldedTransfer(_)
                 | StateTransition::IdentityTopUpFromShieldedPool(_)
+                | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+                | StateTransition::TokenUnshieldWithShieldedFee(_)
+                | StateTransition::TokenPurchaseFromShieldedPool(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_) => false,

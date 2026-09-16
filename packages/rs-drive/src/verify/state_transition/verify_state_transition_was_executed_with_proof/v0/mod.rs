@@ -2185,6 +2185,66 @@ impl Drive {
                     VerifiedIdentityWithShieldedNullifiers(identity, statuses),
                 ))
             }
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => {
+                use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiers;
+                use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::accessors::TokenShieldedTransferWithShieldedFeeTransitionAccessorsV0;
+
+                let nullifier_keys: Vec<Vec<u8>> = st.token_nullifiers();
+                let (root_hash, statuses) = Drive::verify_token_shielded_pool_nullifiers(
+                    proof,
+                    st.token_id().to_buffer(),
+                    &nullifier_keys,
+                    false,
+                    platform_version,
+                )?;
+                if statuses.len() != nullifier_keys.len()
+                    || statuses.iter().any(|(_, spent)| !spent)
+                {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        "proof did not show every nullifier of the token shielded transfer as spent".to_string(),
+                    )));
+                }
+                Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(st) => {
+                use dpp::state_transition::token_unshield_with_shielded_fee_transition::accessors::TokenUnshieldWithShieldedFeeTransitionAccessorsV0;
+
+                let recipient_id = st.recipient_id();
+                let (root_hash, Some(balance)) = Drive::verify_token_balance_for_identity_id(
+                    proof,
+                    st.token_id().to_buffer(),
+                    recipient_id.to_buffer(),
+                    false,
+                    platform_version,
+                )?
+                else {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "proof did not contain token balance for identity {} expected to exist because of state transition (token unshield with shielded fee)",
+                        recipient_id
+                    ))));
+                };
+                Ok((root_hash, VerifiedTokenBalance(recipient_id, balance)))
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(st) => {
+                use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
+
+                let token_id = st.token_id();
+                let (root_hash, Some(balance)) = Drive::verify_token_shielded_pool_state(
+                    proof,
+                    token_id.to_buffer(),
+                    false,
+                    platform_version,
+                )?
+                else {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        "proof did not contain the token shielded pool balance expected to exist because of state transition (token purchase from shielded pool)".to_string(),
+                    )));
+                };
+                Ok((
+                    root_hash,
+                    VerifiedTokenShieldedPoolBalance(token_id, balance),
+                ))
+            }
             StateTransition::IdentityTopUpFromShieldedPool(st) => {
                 use crate::drive::balances::balance_path;
                 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
@@ -2539,6 +2599,11 @@ impl Drive {
             // identity, and the credited identity's balance is a snapshot at
             // the proof's block.
             StateTransition::IdentityTopUpFromShieldedPool(_) => false,
+            // The token pool nullifiers bind the exact token bundle of this transfer.
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => true,
+            // Balance and pool snapshots at the proof's block: not bindable to one transition.
+            StateTransition::TokenUnshieldWithShieldedFee(_) => false,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => false,
         };
 
         Ok(binds)
