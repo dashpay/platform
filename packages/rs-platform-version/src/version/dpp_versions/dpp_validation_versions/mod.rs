@@ -1,10 +1,11 @@
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
 pub mod v5;
+pub mod v6;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPValidationVersions {
@@ -58,6 +59,14 @@ pub struct DocumentTypeValidationVersions {
     pub validate_update: FeatureVersion,
     pub unique_index_limit: u16,
     pub contested_index_limit: u16,
+    /// Version of `DocumentType::validate_contested_index_parameters`, the
+    /// registration-time check that a contested index declares only
+    /// parameters the native contest machinery can honour (top-level required
+    /// user properties, field matches naming string properties of the index).
+    /// `None` on the versions that predate the check: they accept every
+    /// declaration the parser accepts, exactly as they always did, so stored
+    /// contracts and pre-activation history are never re-judged.
+    pub validate_contested_index_parameters: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
