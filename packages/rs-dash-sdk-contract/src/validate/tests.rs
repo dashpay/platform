@@ -789,21 +789,66 @@ fn should_accept_a_contested_index_next_to_a_create_rule() {
         .is_some());
 }
 
+fn created_at_window() -> TimeRangeSpec {
+    TimeRangeSpec {
+        on: path("$createdAt"),
+        range_secs: 3600,
+        step_secs: 60,
+        phase_secs: 0,
+    }
+}
+
 #[test]
 fn should_report_time_range_source_not_first() {
-    let spec = minimal("c").index(
-        IndexSpec::new(index_name("i"), vec![path("a"), path("$createdAt")]).time_range(
-            TimeRangeSpec {
-                on: path("$createdAt"),
-                range_secs: 3600,
-                step_secs: 60,
-                phase_secs: 0,
-            },
-        ),
+    let spec = minimal("c").requires(path("$createdAt")).index(
+        IndexSpec::new(index_name("i"), vec![path("a"), path("$createdAt")])
+            .time_range(created_at_window()),
     );
-    assert_reports(
+    let diagnostics = assert_reports(
         &ContractDeclaration::new().collection(spec),
         "TimeRangeSourceNotFirst",
+    );
+    assert_eq!(diagnostics.len(), 1);
+}
+
+#[test]
+fn should_report_time_range_source_not_required() {
+    let spec = minimal("c").index(
+        IndexSpec::new(index_name("i"), vec![path("$createdAt")]).time_range(created_at_window()),
+    );
+    let diagnostics = assert_reports(
+        &ContractDeclaration::new().collection(spec),
+        "TimeRangeSourceNotRequired",
+    );
+    assert_eq!(diagnostics.len(), 1);
+}
+
+#[test]
+fn should_carry_required_system_properties_sorted_in_the_manifest() {
+    let spec = minimal("c")
+        .requires(path("$updatedAt"))
+        .requires(path("$createdAt"))
+        .index(
+            IndexSpec::new(index_name("i"), vec![path("$createdAt")])
+                .time_range(created_at_window()),
+        );
+    let manifest = expect_manifest(&ContractDeclaration::new().collection(spec));
+    assert_eq!(
+        manifest.collection("c").unwrap().requires,
+        [path("$createdAt"), path("$updatedAt")]
+    );
+}
+
+#[test]
+fn should_report_required_property_not_system_and_duplicate_required_property() {
+    let spec = minimal("c")
+        .requires(path("a"))
+        .requires(path("$createdAt"))
+        .requires(path("$createdAt"));
+    let diagnostics = expect_diagnostics(&ContractDeclaration::new().collection(spec));
+    assert_eq!(
+        kinds(&diagnostics),
+        ["RequiredPropertyNotSystem", "DuplicateRequiredProperty"]
     );
 }
 
@@ -847,6 +892,21 @@ fn should_report_ranked_level_not_indexed() {
         &ContractDeclaration::new().collection(spec),
         "RankedLevelNotIndexed",
     );
+}
+
+#[test]
+fn should_report_duplicate_ranked_level() {
+    let spec = minimal("c").index(
+        IndexSpec::new(index_name("i"), vec![path("a")])
+            .count()
+            .range_count(true)
+            .ranked_count_at(vec![path("a"), path("a")]),
+    );
+    let diagnostics = assert_reports(
+        &ContractDeclaration::new().collection(spec),
+        "DuplicateRankedLevel",
+    );
+    assert_eq!(diagnostics.len(), 1);
 }
 
 #[test]
@@ -1236,12 +1296,54 @@ fn should_report_unbounded_field_in_interface_parameters_and_returns() {
     assert_eq!(kinds(&diagnostics), ["UnboundedField", "UnboundedField"]);
     assert_eq!(
         diagnostics[0].path().to_string(),
-        "interface text, function join, parameter parts"
+        "interface text, function join, parameter parts, member [].text"
     );
     assert_eq!(
         diagnostics[1].path().to_string(),
         "interface text, function join, parameter return"
     );
+}
+
+#[test]
+fn should_point_nested_wire_diagnostics_at_the_member() {
+    let profile = ValueType::Struct(vec![
+        ("name".to_string(), ValueType::String { max_chars: None }),
+        ("avatar".to_string(), ValueType::Bytes { max_len: None }),
+        (
+            "tags".to_string(),
+            ValueType::list(4, ValueType::String { max_chars: None }),
+        ),
+    ]);
+    let declaration = ContractDeclaration::new()
+        .module(ModuleSpec::new(module("main")))
+        .interface(
+            InterfaceSpec::new(interface("text"), module("main")).function(
+                "describe",
+                vec![],
+                ValueType::option(profile.clone()),
+            ),
+        )
+        .entry(
+            EntrySpec::new(method("f"))
+                .module(module("main"))
+                .param("profile", profile),
+        );
+    let diagnostics = expect_diagnostics(&declaration);
+    let paths: Vec<String> = diagnostics.iter().map(|d| d.path().to_string()).collect();
+    assert_eq!(
+        paths,
+        [
+            "interface text, function describe, parameter return, member name",
+            "interface text, function describe, parameter return, member avatar",
+            "interface text, function describe, parameter return, member tags.[]",
+            "entry f, parameter profile, member name",
+            "entry f, parameter profile, member avatar",
+            "entry f, parameter profile, member tags.[]",
+        ]
+    );
+    assert!(diagnostics
+        .iter()
+        .all(|d| d.kind.name() == "UnboundedField"));
 }
 
 #[test]
