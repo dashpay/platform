@@ -80,7 +80,7 @@ export class DocumentsFacade {
 
   async historyWithProof(
     query: wasm.DocumentHistoryQuery,
-  ): Promise<wasm.DocumentHistoryProofMetadataResponseTyped> {
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.DocumentHistoryResult>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentHistoryWithProofInfo(query);
   }

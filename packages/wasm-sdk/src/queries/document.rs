@@ -17,12 +17,13 @@ use drive::query::{OrderClause, TimeRangeGridSpec, TimeRangeSelector, WhereClaus
 use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryProofInfo};
 use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
 use js_sys::{BigInt, Map};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
+use wasm_dpp2::serialization;
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENTS_QUERY_TS: &'static str = r#"
@@ -292,6 +293,14 @@ pub struct DocumentHistoryEntryWasm {
     document: DocumentWasm,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentHistoryEntrySerde {
+    time_ms: String,
+    revision: String,
+    document: JsonValue,
+}
+
 #[wasm_bindgen(js_class = DocumentHistoryEntry)]
 impl DocumentHistoryEntryWasm {
     #[wasm_bindgen(getter = "timeMs")]
@@ -308,6 +317,22 @@ impl DocumentHistoryEntryWasm {
     pub fn document(&self) -> DocumentWasm {
         self.document.clone()
     }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
+        serialization::to_json(&self.to_serde()?).map_err(WasmSdkError::from)
+    }
+}
+
+impl DocumentHistoryEntryWasm {
+    fn to_serde(&self) -> Result<DocumentHistoryEntrySerde, WasmSdkError> {
+        Ok(DocumentHistoryEntrySerde {
+            time_ms: self.time_ms.to_string(),
+            revision: self.revision.to_string(),
+            document: serialization::js_value_to_json(&JsValue::from(self.document.clone()))
+                .map_err(WasmSdkError::from)?,
+        })
+    }
 }
 
 #[wasm_bindgen(js_name = "DocumentHistoryLifecycle")]
@@ -315,6 +340,13 @@ impl DocumentHistoryEntryWasm {
 pub struct DocumentHistoryLifecycleWasm {
     state: String,
     remaining_revisions: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentHistoryLifecycleSerde {
+    state: String,
+    remaining_revisions: String,
 }
 
 #[wasm_bindgen(js_class = DocumentHistoryLifecycle)]
@@ -328,13 +360,35 @@ impl DocumentHistoryLifecycleWasm {
     pub fn remaining_revisions(&self) -> BigInt {
         BigInt::from(self.remaining_revisions)
     }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
+        serialization::to_json(&self.to_serde()).map_err(WasmSdkError::from)
+    }
+}
+
+impl DocumentHistoryLifecycleWasm {
+    fn to_serde(&self) -> DocumentHistoryLifecycleSerde {
+        DocumentHistoryLifecycleSerde {
+            state: self.state.clone(),
+            remaining_revisions: self.remaining_revisions.to_string(),
+        }
+    }
 }
 
 #[wasm_bindgen(js_name = "DocumentHistoryResult")]
 #[derive(Clone)]
 pub struct DocumentHistoryResultWasm {
     entries: Vec<DocumentHistoryEntryWasm>,
-    lifecycle: DocumentHistoryLifecycleWasm,
+    lifecycle: Option<DocumentHistoryLifecycleWasm>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentHistoryResultSerde {
+    entries: Vec<DocumentHistoryEntrySerde>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lifecycle: Option<DocumentHistoryLifecycleSerde>,
 }
 
 #[wasm_bindgen(js_class = DocumentHistoryResult)]
@@ -345,12 +399,31 @@ impl DocumentHistoryResultWasm {
     }
 
     #[wasm_bindgen(getter)]
-    pub fn lifecycle(&self) -> DocumentHistoryLifecycleWasm {
+    pub fn lifecycle(&self) -> Option<DocumentHistoryLifecycleWasm> {
         self.lifecycle.clone()
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
+        serialization::to_json(&self.to_serde()?).map_err(WasmSdkError::from)
     }
 }
 
 impl DocumentHistoryResultWasm {
+    fn to_serde(&self) -> Result<DocumentHistoryResultSerde, WasmSdkError> {
+        Ok(DocumentHistoryResultSerde {
+            entries: self
+                .entries
+                .iter()
+                .map(DocumentHistoryEntryWasm::to_serde)
+                .collect::<Result<Vec<_>, _>>()?,
+            lifecycle: self
+                .lifecycle
+                .as_ref()
+                .map(DocumentHistoryLifecycleWasm::to_serde),
+        })
+    }
+
     fn from_history(
         history: DocumentHistory,
         contract_id: Identifier,
@@ -372,21 +445,18 @@ impl DocumentHistoryResultWasm {
                 ),
             })
             .collect();
-        let lifecycle = history.lifecycle.ok_or_else(|| {
-            WasmSdkError::invalid_argument(
-                "history response did not authenticate lifecycle metadata",
-            )
-        })?;
         Ok(Self {
             entries,
-            lifecycle: DocumentHistoryLifecycleWasm {
-                state: match lifecycle.state {
-                    DocumentHistoryState::Active => "ACTIVE",
-                    DocumentHistoryState::Absent => "ABSENT",
-                }
-                .to_owned(),
-                remaining_revisions: lifecycle.remaining_revisions,
-            },
+            lifecycle: history
+                .lifecycle
+                .map(|lifecycle| DocumentHistoryLifecycleWasm {
+                    state: match lifecycle.state {
+                        DocumentHistoryState::Active => "ACTIVE",
+                        DocumentHistoryState::Absent => "ABSENT",
+                    }
+                    .to_owned(),
+                    remaining_revisions: lifecycle.remaining_revisions,
+                }),
         })
     }
 }
@@ -1323,6 +1393,19 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[test]
+    fn accepts_legacy_history_without_lifecycle_metadata() {
+        let history = DocumentHistory {
+            entries: vec![],
+            lifecycle: None,
+        };
+
+        let result = DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note")
+            .expect("protocol 13 history has no lifecycle metadata");
+
+        assert!(result.lifecycle.is_none());
+    }
+
     /// This parser is the only boundary turning the public JavaScript
     /// `{ field, selector, startMs?, grid? }` shape into a typed time-range
     /// clause — native and protobuf tests construct their queries after it,
@@ -1535,6 +1618,61 @@ mod history_wasm_tests {
             Reflect::get(&lifecycle, &"state".into()).unwrap(),
             JsValue::from_str("ACTIVE")
         );
+    }
+
+    #[wasm_bindgen_test]
+    fn should_serialize_history_data_in_a_proof_metadata_response() {
+        let history = DocumentHistory {
+            entries: vec![DocumentHistoryEntry {
+                time_ms: 2000,
+                revision: 1,
+                document: Document::V0(Default::default()),
+            }],
+            lifecycle: Some(DocumentHistoryLifecycle {
+                state: DocumentHistoryState::Active,
+                remaining_revisions: (1u64 << 53) + 1,
+            }),
+        };
+        let response = ProofMetadataResponseWasm::from_sdk_parts(
+            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
+            Default::default(),
+            Default::default(),
+        );
+
+        let json = response.to_json().unwrap();
+        let data = Reflect::get(&json, &"data".into()).unwrap();
+        let entries = Array::from(&Reflect::get(&data, &"entries".into()).unwrap());
+        assert_eq!(entries.length(), 1);
+        assert_eq!(
+            Reflect::get(&entries.get(0), &"timeMs".into()).unwrap(),
+            JsValue::from_str("2000")
+        );
+        assert_eq!(
+            Reflect::get(&entries.get(0), &"revision".into()).unwrap(),
+            JsValue::from_str("1")
+        );
+        let document = Reflect::get(&entries.get(0), &"document".into()).unwrap();
+        assert!(Reflect::has(&document, &"$dataContractId".into()).unwrap());
+        let lifecycle = Reflect::get(&data, &"lifecycle".into()).unwrap();
+        assert_eq!(
+            Reflect::get(&lifecycle, &"remainingRevisions".into()).unwrap(),
+            JsValue::from_str("9007199254740993")
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn should_expose_legacy_history_without_lifecycle_metadata() {
+        let history = DocumentHistory {
+            entries: vec![],
+            lifecycle: None,
+        };
+        let result = JsValue::from(
+            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
+        );
+
+        assert!(Reflect::get(&result, &"lifecycle".into())
+            .unwrap()
+            .is_undefined());
     }
 
     #[wasm_bindgen_test]

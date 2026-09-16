@@ -114,7 +114,7 @@ fn read_and_prove_index_matrix(countable: bool) {
             let mut path = type_path.clone();
             path.push(name.as_bytes().to_vec());
             drive
-                .history_migration_index_entries(path, &transaction, old, &mut stats, &mut before)
+                .history_migration_index_entries(path, &transaction, &mut stats, &mut before, old)
                 .unwrap();
         }
         assert_eq!(stats.index_entries, 6);

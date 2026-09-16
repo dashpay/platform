@@ -674,6 +674,8 @@ mod tests {
     use dpp::data_contract::config::v0::DataContractConfigSettersV0;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+    use dpp::platform_value::platform_value;
     use dpp::prelude::Identifier;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::get_dashpay_contract_fixture;
@@ -683,8 +685,6 @@ mod tests {
     /// Exercises `update_contract_operations_v2` when the updated contract
     /// gains tokens that weren't in the original. This covers the loop that
     /// calls `create_token_trees_operations` for each token.
-    /// PR #3516 inserts contracts with tokens but does not exercise an
-    /// UPDATE that adds tokens.
     #[test]
     fn test_update_contract_v1_adds_tokens_creates_token_trees() {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -774,8 +774,6 @@ mod tests {
     /// update a contract that starts with some keywords to a new set of
     /// keywords (different set), routed through the full `update_contract_v2`
     /// path rather than the dedicated `update_contract_keywords` API.
-    /// PR #3516 covers the dedicated API but not the embedded path invoked
-    /// via `update_contract`.
     #[test]
     fn test_update_contract_v1_keyword_delta_via_update_contract() {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -1010,5 +1008,75 @@ mod tests {
                 None,
             )
             .expect("update description via update_contract should succeed");
+    }
+
+    /// A keep-history type introduced by a contract update uses the legacy
+    /// layout at protocol 13 and the per-type history tree from protocol 14.
+    #[test]
+    fn should_create_history_tree_for_a_new_type_only_from_protocol_14() {
+        use crate::drive::document::paths::{
+            contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY,
+        };
+
+        for (protocol, expected) in [(13, false), (14, true)] {
+            let version = PlatformVersion::get(protocol).expect("protocol version");
+            let drive = setup_drive_with_initial_state_structure(Some(version));
+            let mut contract = get_dashpay_contract_fixture(None, 0, version.protocol_version)
+                .data_contract_owned();
+            drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    version,
+                )
+                .expect("insert original contract");
+
+            contract
+                .set_document_schema(
+                    "historyNote",
+                    platform_value!({
+                        "type": "object",
+                        "documentsKeepHistory": true,
+                        "documentsMutable": true,
+                        "canBeDeleted": false,
+                        "properties": {
+                            "message": {
+                                "type": "string",
+                                "position": 0,
+                                "maxLength": 100,
+                            }
+                        },
+                        "additionalProperties": false,
+                    }),
+                    true,
+                    &mut vec![],
+                    version,
+                )
+                .expect("add keep-history document type");
+            contract.increment_version();
+            drive
+                .update_contract(&contract, BlockInfo::default(), true, None, version, None)
+                .expect("update contract with keep-history document type");
+
+            let type_path =
+                contract_document_type_path_vec(contract.id().as_slice(), "historyNote");
+            let history_tree = drive
+                .grove
+                .get_raw(
+                    type_path.as_slice().into(),
+                    &[DOCUMENT_HISTORY_TREE_KEY],
+                    None,
+                    &version.drive.grove_version,
+                )
+                .value;
+            assert_eq!(
+                history_tree.is_ok(),
+                expected,
+                "protocol {protocol}: {history_tree:?}"
+            );
+        }
     }
 }

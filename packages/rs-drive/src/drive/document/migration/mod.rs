@@ -169,9 +169,9 @@ impl Drive {
                                 self.history_migration_index_entries(
                                     path,
                                     transaction,
-                                    platform_version,
                                     &mut stats,
                                     &mut index_entries,
+                                    platform_version,
                                 )?;
                             }
                         }
@@ -196,8 +196,8 @@ impl Drive {
                                 Element::empty_tree_with_flags(contract_flags.clone()),
                             )],
                             transaction,
-                            platform_version,
                             &mut stats,
+                            platform_version,
                         )?;
                     }
                     let mut primary_path = type_path.clone();
@@ -292,8 +292,8 @@ impl Drive {
                         self.history_migration_batch(
                             copies,
                             transaction,
-                            platform_version,
                             &mut stats,
+                            platform_version,
                         )?;
                         let mut deletes = entries
                             .into_iter()
@@ -308,8 +308,8 @@ impl Drive {
                         self.history_migration_batch(
                             deletes,
                             transaction,
-                            platform_version,
                             &mut stats,
+                            platform_version,
                         )?;
                         self.history_migration_batch(
                             vec![QualifiedGroveDbOp::insert_or_replace_op(
@@ -318,8 +318,8 @@ impl Drive {
                                 pointer,
                             )],
                             transaction,
-                            platform_version,
                             &mut stats,
+                            platform_version,
                         )?;
                         if let Some(references) = index_entries.remove(&document_id) {
                             let rewrites = references
@@ -349,15 +349,15 @@ impl Drive {
                             self.history_migration_batch(
                                 rewrites,
                                 transaction,
-                                platform_version,
                                 &mut stats,
+                                platform_version,
                             )?;
                             self.history_migration_check_index_rewrites(
                                 &references,
                                 &document_id,
                                 transaction,
-                                platform_version,
                                 &mut stats,
+                                platform_version,
                             )?;
                         }
                         stats.migrated_documents += 1;
@@ -376,8 +376,8 @@ impl Drive {
         references: &[IndexReference],
         document_id: &[u8],
         transaction: &Transaction,
-        version: &PlatformVersion,
         stats: &mut DocumentHistoryMigrationStats,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut rewritten = 0;
         for (path, key, original) in references {
@@ -397,7 +397,7 @@ impl Drive {
                     path.as_slice().into(),
                     key,
                     Some(transaction),
-                    &version.drive.grove_version,
+                    &platform_version.drive.grove_version,
                 )
                 .value?;
             if stored == expected {
@@ -502,20 +502,22 @@ impl Drive {
         &self,
         path: Vec<Vec<u8>>,
         transaction: &Transaction,
-        version: &PlatformVersion,
         stats: &mut DocumentHistoryMigrationStats,
         references: &mut IndexEntries,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        for (key, element) in self.history_migration_entries(&path, transaction, version)? {
+        for (key, element) in
+            self.history_migration_entries(&path, transaction, platform_version)?
+        {
             if element.is_any_tree() {
                 let mut child = path.clone();
                 child.push(key);
                 self.history_migration_index_entries(
                     child,
                     transaction,
-                    version,
                     stats,
                     references,
+                    platform_version,
                 )?;
             } else if let Element::Reference(UpstreamRootHeightReference(4, target), ..)
             | Element::ReferenceWithSumItem(
@@ -544,15 +546,15 @@ impl Drive {
         &self,
         operations: Vec<QualifiedGroveDbOp>,
         transaction: &Transaction,
-        version: &PlatformVersion,
         stats: &mut DocumentHistoryMigrationStats,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         self.grove
             .apply_batch(
                 operations,
                 None,
                 Some(transaction),
-                &version.drive.grove_version,
+                &platform_version.drive.grove_version,
             )
             .value?;
         stats.batches += 1;

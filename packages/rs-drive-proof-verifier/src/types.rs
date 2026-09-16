@@ -118,12 +118,12 @@ pub use drive::query::document_history_drive_query::{
     DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
 };
 
-/// Ordered document revisions and authenticated lifecycle metadata.
+/// Ordered document revisions with lifecycle metadata when the storage layout supports it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentHistory {
     /// Entries retain their complete cursor, including edits sharing a timestamp.
     pub entries: Vec<DocumentHistoryEntry>,
-    /// Filled by proof verification; optional only so unproved mock responses can omit it.
+    /// Absent for the legacy protocol-13 layout and authenticated by protocol-14 proofs.
     pub lifecycle: Option<DocumentHistoryLifecycle>,
 }
 /// Verified history with the complete wire response needed for independent verification.

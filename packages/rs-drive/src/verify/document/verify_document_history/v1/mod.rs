@@ -34,12 +34,17 @@ fn require_count_binding_envelope(
             reason: error.to_string(),
         })
     })?;
-    if version < COUNT_BINDING_GROVEDB_PROOF_ENVELOPE_VERSION {
+    let minimum = COUNT_BINDING_GROVEDB_PROOF_ENVELOPE_VERSION.max(
+        platform_version
+            .system_limits
+            .minimum_grovedb_proof_envelope_version,
+    );
+    if version < minimum {
         return Err(Error::Proof(
             ProofError::UnsupportedGroveDBProofEnvelopeVersion {
                 proof: label,
                 version,
-                minimum: COUNT_BINDING_GROVEDB_PROOF_ENVELOPE_VERSION,
+                minimum,
                 protocol_version: platform_version.protocol_version,
             },
         ));
@@ -119,5 +124,41 @@ impl Drive {
                 lifecycle: Some(lifecycle),
             },
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::require_count_binding_envelope;
+    use crate::error::proof::ProofError;
+    use crate::error::Error;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_honor_a_future_global_grovedb_proof_envelope_floor() {
+        let proof = bincode::encode_to_vec(
+            1u32,
+            bincode::config::standard()
+                .with_big_endian()
+                .with_no_limit(),
+        )
+        .expect("encode the GroveDB proof envelope version");
+        let mut future_version = PlatformVersion::latest().clone();
+        future_version
+            .system_limits
+            .minimum_grovedb_proof_envelope_version = 2;
+
+        let error =
+            require_count_binding_envelope(&proof, "history metadata proof", &future_version)
+                .expect_err("a history proof below the protocol-wide floor must be rejected");
+
+        assert!(matches!(
+            error,
+            Error::Proof(ProofError::UnsupportedGroveDBProofEnvelopeVersion {
+                version: 1,
+                minimum: 2,
+                ..
+            })
+        ));
     }
 }

@@ -777,10 +777,6 @@ mod tests {
     /// Exercises the `base_supply > i64::MAX as u64` overflow branch in
     /// `insert_contract_operations_v2`, which returns
     /// `ProtocolError::CriticalCorruptedCreditsCodeExecution`.
-    ///
-    /// PR #3516 only covered base_supply==0, base_supply>0 within range, and
-    /// base_supply==0 with custom destination identity. This test specifically
-    /// drives the `i64::MAX` guard.
     #[test]
     fn test_insert_contract_with_token_base_supply_overflow_fails() {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -822,8 +818,7 @@ mod tests {
     /// populates `estimated_costs_only_with_layer_info = Some(..)`, causing the
     /// `add_estimation_costs_for_token_*` calls (token_status_infos,
     /// token_contract_infos, token_balances, token_identity_infos,
-    /// token_total_supply) to execute. This is a separate branch from the
-    /// apply=true path PR #3516 covered.
+    /// token_total_supply) to execute.
     #[test]
     fn test_insert_contract_v1_token_estimated_costs_branches() {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -859,10 +854,8 @@ mod tests {
         );
     }
 
-    /// Exercises the `insert_contract_v2` early-exit for `contract.groups().is_empty()`:
-    /// PR #3516 covered the non-empty groups branch. This test complements by driving
-    /// the empty-groups path (false-branch of `if !contract.groups().is_empty()`) while
-    /// also asserting token+keyword insertion still works on a separate contract id.
+    /// Exercises the `insert_contract_v2` early-exit for `contract.groups().is_empty()`
+    /// while also asserting token insertion still works on a separate contract id.
     #[test]
     fn test_insert_contract_v1_empty_groups_with_tokens_and_keywords() {
         let drive = setup_drive_with_initial_state_structure(None);

@@ -606,7 +606,7 @@ fn should_halt_migration_when_an_inventoried_index_reference_was_not_rewritten()
         let mut path = type_path.clone();
         path.push(key);
         drive
-            .history_migration_index_entries(path, &transaction, old, &mut stats, &mut inventory)
+            .history_migration_index_entries(path, &transaction, &mut stats, &mut inventory, old)
             .unwrap();
     }
     let references = inventory.remove(document.id().as_slice()).unwrap();
@@ -616,8 +616,8 @@ fn should_halt_migration_when_an_inventoried_index_reference_was_not_rewritten()
             &references,
             document.id().as_slice(),
             &transaction,
-            new,
             &mut stats,
+            new,
         )
         .expect_err("an omitted rewrite must halt instead of being counted as rewritten");
     assert!(error
@@ -632,8 +632,8 @@ fn should_halt_migration_when_an_inventoried_index_reference_was_not_rewritten()
             &references,
             document.id().as_slice(),
             &transaction,
-            new,
             &mut stats,
+            new,
         )
         .unwrap();
     assert_eq!(stats.rewritten_index_entries, references.len() as u64);
