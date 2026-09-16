@@ -196,7 +196,6 @@ platform-wallet-storage = { path = ".", default-features = false, features = ["s
 # which `sqlite_sent_payment_verdict_durability.rs` needs to stand up a real
 # `WalletManager` and drive the wallet-event adapter against this crate's
 # SQLite persister. Additive over the production dep above.
-platform-wallet = { path = "../rs-platform-wallet", features = ["test-utils"] }
 # The adapter is a tokio task; the durability test drives it and awaits its
 # join handle. Current-thread runtime only — nothing here needs threads.
 tokio = { version = "1", features = ["rt", "macros", "sync"] }
