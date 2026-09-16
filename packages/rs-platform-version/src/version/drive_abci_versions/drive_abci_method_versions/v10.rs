@@ -95,6 +95,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         update_broadcasted_withdrawal_statuses: 0,
         rebroadcast_expired_withdrawal_documents: 2, // changed in v14: an expired withdrawal whose payout is Core dust is marked FAILED instead of re-signed
         append_signatures_and_broadcast_withdrawal_transactions: 0,
+        has_pending_withdrawal_work: 0,
         cleanup_expired_locks_of_withdrawal_amounts: 1, // changed in v14: also prunes expired entries of the credit inflows sum tree
         record_credit_inflows_for_withdrawals: Some(0), // new in v14: the block's credit mints recorded as an inflow for the net daily withdrawal limit
         record_total_credits_history_for_withdrawals: Some(0), // changed in v14: per-block total credits history for the day-lagged daily withdrawal limit
@@ -140,7 +141,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         prune_shielded_pool_anchors: Some(0),
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
-        fetch_platform_state: 0,
-        store_platform_state: 0,
+        fetch_platform_state: 1, // changed: reads structure 1 records together with their masternode and validator set entries
+        store_platform_state: 1, // changed: writes the base record every block and only the masternode and validator set entries that changed
     },
 };

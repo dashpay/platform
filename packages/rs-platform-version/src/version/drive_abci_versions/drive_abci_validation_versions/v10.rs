@@ -62,14 +62,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             },
             identity_credit_withdrawal_state_transition:
                 DriveAbciStateTransitionValidationVersion {
-                    // v1 adds config min_version enforcement: since protocol version 12, V0 config is no longer
-                    // accepted because it lacks sized_integer_types support.
-                    basic_structure: Some(1),
+                    // v2 adds the protocol-14 Core fee limit and post-fee output floor.
+                    basic_structure: Some(2),
                     advanced_structure: None,
                     identity_signatures: None,
                     nonce: Some(0),
                     state: 0,
-                    transform_into_action: 0,
+                    transform_into_action: 1,
                 },
             identity_credit_withdrawal_state_transition_purpose_matches_requirements: 0,
             identity_credit_transfer_state_transition: DriveAbciStateTransitionValidationVersion {
@@ -252,7 +251,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: Some(0),
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1,
             },
             address_funds_from_asset_lock: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
@@ -308,7 +307,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1,
             },
             identity_create_from_shielded_pool_state_transition:
                 DriveAbciStateTransitionValidationVersion {

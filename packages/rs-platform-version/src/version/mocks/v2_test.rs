@@ -129,6 +129,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             platform_state: DrivePlatformStateMethodVersions {
                 fetch_platform_state_bytes: 0,
                 store_platform_state_bytes: 0,
+                fetch_platform_state_recent_bytes: 0,
+                store_platform_state_recent_bytes: 0,
+                fetch_platform_state_entries_bytes: 0,
+                store_platform_state_entry_bytes: 0,
+                delete_platform_state_entry: 0,
             },
             fetch: DriveFetchMethodVersions { fetch_elements: 0 },
             prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
@@ -527,6 +532,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_daily_withdrawal_amount: None,
         min_withdrawal_amount: 190_000,
         core_dust_relay_fee_per_kb: None,
+        max_core_fee_per_byte: None,
         max_contract_group_size: 256,
         max_token_redemption_cycles: 128,
         max_shielded_transition_actions: 16,
