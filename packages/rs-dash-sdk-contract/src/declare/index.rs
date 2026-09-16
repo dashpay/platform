@@ -103,6 +103,11 @@ pub struct TimeRangeSpec {
     pub step_secs: u64,
     /// Grid offset in seconds.
     pub phase_secs: u64,
+    /// Time to live in seconds: entries expire this long after their bucket
+    /// starts and expired windows are not queryable. `None` keeps entries
+    /// indefinitely. The native cap and the shared-grid rules are native
+    /// validation.
+    pub ttl_secs: Option<u64>,
 }
 
 /// Index-only options: only meaningful when the collection is index-only.

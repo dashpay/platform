@@ -256,6 +256,12 @@ const TIME_RANGE_KEYS: &[KeySpec] = &[
         required: false,
         doc: "window grid offset in seconds, default 0",
     },
+    KeySpec {
+        name: "ttl_secs",
+        value: ValueShape::Int,
+        required: false,
+        doc: "time to live in seconds; entries expire this long after their bucket starts, default indefinite",
+    },
 ];
 
 const PERSISTENT_KEYS: &[KeySpec] = &[
