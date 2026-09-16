@@ -674,10 +674,28 @@ open class KeystoreManager(
 
     // ── MASTER_ALIAS: non-auth AES-256-GCM (mnemonics / general secrets) ──
 
-    private fun secretKey(alias: String): SecretKey {
-        (androidKeyStore().getKey(alias, null) as? SecretKey)?.let { return it }
-        return generateAesKey(alias)
-    }
+    /**
+     * Return the AES key at [alias], creating it on first use.
+     *
+     * Lookup-then-generate is serialized on a process-wide lock and
+     * double-checked under it, exactly like [ensureKeysKeyPair] for the RSA
+     * aliases: the AndroidKeyStore alias is process-global while this manager
+     * is instantiated per [WalletStorage], so two callers — a mnemonic write
+     * healing onto [MASTER_ALIAS_UNBOUND] and a denied-read recorder
+     * provisioning the same alias as defect evidence, possibly from different
+     * `WalletStorage` instances — can both observe the alias absent. Unlocked,
+     * both would generate, and the second `generateKey` silently replaces the
+     * key the first already encrypted and persisted a mnemonic under, leaving
+     * that ciphertext permanently unopenable. DataStore's atomic edits and the
+     * ciphertext compare-and-set cannot see the Keystore key lifecycle, so the
+     * lock lives here at the provisioning boundary.
+     */
+    private fun secretKey(alias: String): SecretKey =
+        provisionAliasOnce(
+            lock = MASTER_ALIAS_LOCK,
+            lookup = { androidKeyStore().getKey(alias, null) as? SecretKey },
+            generate = { generateAesKey(alias) },
+        )
 
     private fun generateAesKey(alias: String): SecretKey {
         fun spec(strongBox: Boolean, lockBound: Boolean): KeyGenParameterSpec {
@@ -1257,6 +1275,34 @@ open class KeystoreManager(
         // identity-keys entries across concurrent callers (and across the
         // per-WalletStorage KeystoreManager instances).
         private val KEYS_ALIAS_LOCK = Any()
+
+        // Guards first-use creation of the process-global AES aliases
+        // ([MASTER_ALIAS] / [MASTER_ALIAS_UNBOUND]) the same way; see
+        // [secretKey]. Separate from [KEYS_ALIAS_LOCK] so a slow RSA-2048
+        // generation never stalls an unrelated mnemonic read.
+        private val MASTER_ALIAS_LOCK = Any()
+
+        /**
+         * First-use provisioning of a process-global Keystore alias:
+         * [lookup] outside [lock] for the hot path, then — only when the
+         * alias is absent — re-[lookup] under [lock] and [generate] solely
+         * if it is STILL absent. Concurrent first-use callers therefore
+         * produce exactly one key and all observe that same key; a caller
+         * that lost the race reuses the winner's key instead of replacing
+         * it. Factored out of [secretKey] so the boundary is unit-testable
+         * without an AndroidKeyStore runtime (which has no JVM/Robolectric
+         * provider): see `KeystoreAliasProvisioningTest`.
+         */
+        internal fun <K : Any> provisionAliasOnce(
+            lock: Any,
+            lookup: () -> K?,
+            generate: () -> K,
+        ): K {
+            lookup()?.let { return it }
+            return synchronized(lock) {
+                lookup() ?: generate()
+            }
+        }
 
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val AES_TRANSFORMATION = "AES/GCM/NoPadding"
