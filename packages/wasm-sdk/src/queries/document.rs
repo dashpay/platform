@@ -184,12 +184,6 @@ export interface DocumentHistoryQuery {
   /** Maximum ten entries. A single revision requires limit one. */
   limit?: number;
 }
-
-export interface DocumentHistoryResult {
-  entries: { timeMs: bigint; revision: bigint; document: Document }[];
-  lifecycle: { state: "ACTIVE" | "ABSENT"; remainingRevisions: bigint };
-
-}
 "#;
 
 #[wasm_bindgen]
@@ -290,57 +284,111 @@ fn parse_document_history_query(
     })
 }
 
-fn document_history_to_js(
-    history: DocumentHistory,
-    contract_id: Identifier,
-    document_type_name: &str,
-) -> Result<JsValue, WasmSdkError> {
-    use drive_proof_verifier::types::DocumentHistoryState;
-    use js_sys::{Array, Object, Reflect};
-    let set = |object: &Object, key: &str, value: &JsValue| {
-        Reflect::set(object, &JsValue::from_str(key), value).map_err(|_| {
-            WasmSdkError::invalid_argument("could not construct document history result")
-        })
-    };
-    let entries = Array::new();
-    for entry in history.entries {
-        let object = Object::new();
-        set(&object, "timeMs", &BigInt::from(entry.time_ms).into())?;
-        set(&object, "revision", &BigInt::from(entry.revision).into())?;
-        set(
-            &object,
-            "document",
-            &DocumentWasm::new(
-                entry.document,
-                contract_id,
-                document_type_name.to_owned(),
-                None,
-            )
-            .into(),
-        )?;
-        entries.push(&object);
+#[wasm_bindgen(js_name = "DocumentHistoryEntry")]
+#[derive(Clone)]
+pub struct DocumentHistoryEntryWasm {
+    time_ms: u64,
+    revision: u64,
+    document: DocumentWasm,
+}
+
+#[wasm_bindgen(js_class = DocumentHistoryEntry)]
+impl DocumentHistoryEntryWasm {
+    #[wasm_bindgen(getter = "timeMs")]
+    pub fn time_ms(&self) -> BigInt {
+        BigInt::from(self.time_ms)
     }
-    let lifecycle = history.lifecycle.ok_or_else(|| {
-        WasmSdkError::invalid_argument("history response did not authenticate lifecycle metadata")
-    })?;
-    let metadata = Object::new();
-    set(
-        &metadata,
-        "state",
-        &JsValue::from_str(match lifecycle.state {
-            DocumentHistoryState::Active => "ACTIVE",
-            DocumentHistoryState::Absent => "ABSENT",
-        }),
-    )?;
-    set(
-        &metadata,
-        "remainingRevisions",
-        &BigInt::from(lifecycle.remaining_revisions).into(),
-    )?;
-    let result = Object::new();
-    set(&result, "entries", &entries.into())?;
-    set(&result, "lifecycle", &metadata.into())?;
-    Ok(result.into())
+
+    #[wasm_bindgen(getter)]
+    pub fn revision(&self) -> BigInt {
+        BigInt::from(self.revision)
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn document(&self) -> DocumentWasm {
+        self.document.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = "DocumentHistoryLifecycle")]
+#[derive(Clone)]
+pub struct DocumentHistoryLifecycleWasm {
+    state: String,
+    remaining_revisions: u64,
+}
+
+#[wasm_bindgen(js_class = DocumentHistoryLifecycle)]
+impl DocumentHistoryLifecycleWasm {
+    #[wasm_bindgen(getter)]
+    pub fn state(&self) -> String {
+        self.state.clone()
+    }
+
+    #[wasm_bindgen(getter = "remainingRevisions")]
+    pub fn remaining_revisions(&self) -> BigInt {
+        BigInt::from(self.remaining_revisions)
+    }
+}
+
+#[wasm_bindgen(js_name = "DocumentHistoryResult")]
+#[derive(Clone)]
+pub struct DocumentHistoryResultWasm {
+    entries: Vec<DocumentHistoryEntryWasm>,
+    lifecycle: DocumentHistoryLifecycleWasm,
+}
+
+#[wasm_bindgen(js_class = DocumentHistoryResult)]
+impl DocumentHistoryResultWasm {
+    #[wasm_bindgen(getter)]
+    pub fn entries(&self) -> Vec<DocumentHistoryEntryWasm> {
+        self.entries.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn lifecycle(&self) -> DocumentHistoryLifecycleWasm {
+        self.lifecycle.clone()
+    }
+}
+
+impl DocumentHistoryResultWasm {
+    fn from_history(
+        history: DocumentHistory,
+        contract_id: Identifier,
+        document_type_name: &str,
+    ) -> Result<Self, WasmSdkError> {
+        use drive_proof_verifier::types::DocumentHistoryState;
+
+        let entries = history
+            .entries
+            .into_iter()
+            .map(|entry| DocumentHistoryEntryWasm {
+                time_ms: entry.time_ms,
+                revision: entry.revision,
+                document: DocumentWasm::new(
+                    entry.document,
+                    contract_id,
+                    document_type_name.to_owned(),
+                    None,
+                ),
+            })
+            .collect();
+        let lifecycle = history.lifecycle.ok_or_else(|| {
+            WasmSdkError::invalid_argument(
+                "history response did not authenticate lifecycle metadata",
+            )
+        })?;
+        Ok(Self {
+            entries,
+            lifecycle: DocumentHistoryLifecycleWasm {
+                state: match lifecycle.state {
+                    DocumentHistoryState::Active => "ACTIVE",
+                    DocumentHistoryState::Absent => "ABSENT",
+                }
+                .to_owned(),
+                remaining_revisions: lifecycle.remaining_revisions,
+            },
+        })
+    }
 }
 
 pub(super) async fn build_documents_query(
@@ -765,14 +813,11 @@ pub(super) fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, Wasm
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen(
-        js_name = "getDocumentHistory",
-        unchecked_return_type = "DocumentHistoryResult"
-    )]
+    #[wasm_bindgen(js_name = "getDocumentHistory")]
     pub async fn get_document_history(
         &self,
         query: DocumentHistoryQueryJs,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<DocumentHistoryResultWasm, WasmSdkError> {
         let query = parse_document_history_query(query)?;
         let contract_id = query.data_contract_id;
         let document_type_name = query.document_type_name.clone();
@@ -785,12 +830,12 @@ impl WasmSdk {
         let history = DocumentHistory::fetch(self.as_ref(), query)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
-        document_history_to_js(history, contract_id, &document_type_name)
+        DocumentHistoryResultWasm::from_history(history, contract_id, &document_type_name)
     }
 
     #[wasm_bindgen(
         js_name = "getDocumentHistoryWithProofInfo",
-        unchecked_return_type = "DocumentHistoryProofMetadataResponseTyped"
+        unchecked_return_type = "ProofMetadataResponseTyped<DocumentHistoryResult>"
     )]
     pub async fn get_document_history_with_proof_info(
         &self,
@@ -815,7 +860,11 @@ impl WasmSdk {
             ));
         };
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            document_history_to_js(result.history, contract_id, &document_type_name)?,
+            DocumentHistoryResultWasm::from_history(
+                result.history,
+                contract_id,
+                &document_type_name,
+            )?,
             result.response.metadata.expect("verified metadata"),
             proof,
         ))
@@ -1466,7 +1515,9 @@ mod history_wasm_tests {
                 remaining_revisions: count,
             }),
         };
-        let result = document_history_to_js(history, [1; 32].into(), "note").unwrap();
+        let result = JsValue::from(
+            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
+        );
         let entries = Array::from(&Reflect::get(&result, &"entries".into()).unwrap());
         assert_eq!(entries.length(), 2);
         for (index, revision) in [1u64, 2].into_iter().enumerate() {
@@ -1511,8 +1562,3 @@ mod history_wasm_tests {
         );
     }
 }
-
-#[wasm_bindgen(typescript_custom_section)]
-const DOCUMENT_HISTORY_PROOF_INFO_TS: &str = r#"
-export type DocumentHistoryProofMetadataResponseTyped = ProofMetadataResponseTyped<DocumentHistoryResult>;
-"#;
