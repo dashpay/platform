@@ -36,6 +36,13 @@ mod add_contested_indices_for_contract_operations;
 mod add_contested_reference_and_vote_subtree_to_document_operations;
 mod add_contested_vote_subtrees_for_non_identities_operations;
 
+// Module: award_contested_document_vote_poll
+// The native award: selects the winner of an ended contested resource vote poll from state and
+// inserts the winning document in one operation
+mod award_contested_document_vote_poll;
+
+pub use award_contested_document_vote_poll::ContestedDocumentVotePollAwardOutcome;
+
 // TODO: Disabled module add_contested_indices_for_index_level_for_contract_operations
 
 #[cfg(test)]
