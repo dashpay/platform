@@ -1,6 +1,17 @@
 use platform_version::version::PlatformVersion;
 
 #[test]
+fn should_keep_released_primary_key_path_queries_unchanged() {
+    for protocol in 1..=13 {
+        let version = PlatformVersion::get(protocol).unwrap();
+        assert_eq!(
+            version.drive.methods.document.query.primary_key_path_query, 0,
+            "protocol {protocol} must keep the shipped primary-key query"
+        );
+    }
+}
+
+#[test]
 fn should_keep_released_document_history_storage_and_proofs_unchanged() {
     for protocol in [12, 13] {
         let version = PlatformVersion::get(protocol).unwrap();
@@ -74,6 +85,7 @@ fn should_activate_storage_migration_and_history_proofs_together() {
     assert_eq!(document.query.fetch_document_history_query, 1);
     assert_eq!(document.query.fetch_document_history, 1);
     assert_eq!(document.query.prove_document_history, 1);
+    assert_eq!(document.query.primary_key_path_query, 1);
     assert_eq!(
         version
             .drive

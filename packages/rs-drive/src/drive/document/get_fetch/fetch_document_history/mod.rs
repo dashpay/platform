@@ -267,7 +267,7 @@ mod legacy_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::drive::document::paths::KeepHistoryStorage;
+    use crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -386,15 +386,7 @@ mod tests {
 
         let mut history_path =
             contract_document_type_path_vec(contract.id().as_slice(), DOCUMENT_TYPE_NAME);
-        let history_key = if KeepHistoryStorage::for_drive_version(&platform_version.drive)
-            .expect("keep-history storage layout")
-            == KeepHistoryStorage::DocumentSubtree
-        {
-            0
-        } else {
-            2
-        };
-        history_path.extend([vec![history_key], document.id().to_vec()]);
+        history_path.extend([vec![DOCUMENT_HISTORY_TREE_KEY], document.id().to_vec()]);
         let mut query = Query::new();
         query.insert_range_from(encode_u64(0)..);
         let (results, _) = drive

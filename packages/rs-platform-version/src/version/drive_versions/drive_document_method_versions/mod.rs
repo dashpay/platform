@@ -33,6 +33,10 @@ pub struct DriveDocumentQueryMethodVersions {
     pub fetch_document_history_query: FeatureVersion,
     pub fetch_document_history: FeatureVersion,
     pub prove_document_history: FeatureVersion,
+    /// Construction of document queries that address the primary-key tree.
+    /// Version 1 selects the protocol-14 keep-history layout, where the
+    /// primary-key entry is the current document rather than a history tree.
+    pub primary_key_path_query: FeatureVersion,
     /// Mode-detection routing table for `SELECT COUNT` queries.
     /// Versioned because the routing table is consensus-relevant on
     /// the query surface — a future protocol version that changes

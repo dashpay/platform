@@ -3,44 +3,6 @@ use crate::drive::{constants, RootTree};
 /// Reserved document-type key containing the revision trees.
 pub const DOCUMENT_HISTORY_TREE_KEY: u8 = 2;
 
-/// Where a keep-history document type stores its retained revisions.
-///
-/// Decoded from the primary-storage writer's method version so every path,
-/// reference and query agrees with the writer that produced the stored state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KeepHistoryStorage {
-    /// Every revision lives in the document's own subtree under the primary
-    /// key tree, keyed by block time, with the current revision at `[0]`.
-    DocumentSubtree,
-    /// The primary key tree points at the current revision; the revisions
-    /// live in the type's history tree under `DOCUMENT_HISTORY_TREE_KEY`.
-    HistoryTree,
-}
-
-impl KeepHistoryStorage {
-    /// The layout selected by the primary-storage writer at this drive version.
-    pub fn for_drive_version(
-        drive_version: &dpp::version::drive_versions::DriveVersion,
-    ) -> Result<Self, crate::error::Error> {
-        match drive_version
-            .methods
-            .document
-            .insert
-            .add_document_to_primary_storage
-        {
-            0 => Ok(Self::DocumentSubtree),
-            1 => Ok(Self::HistoryTree),
-            received => Err(crate::error::Error::Drive(
-                crate::error::drive::DriveError::UnknownVersionMismatch {
-                    method: "add_document_to_primary_storage".to_string(),
-                    known_versions: vec![0, 1],
-                    received,
-                },
-            )),
-        }
-    }
-}
-
 /// Path to all retained revisions of one document.
 pub fn document_history_path(
     contract_id: &[u8],
@@ -160,35 +122,4 @@ pub fn contract_documents_keeping_history_storage_time_reference_path_size(
 ) -> u32 {
     constants::BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_STORAGE_TIME_REFERENCE_PATH
         + document_type_name_len
-}
-
-#[cfg(test)]
-mod tests {
-    use super::KeepHistoryStorage;
-    use crate::error::drive::DriveError;
-    use crate::error::Error;
-    use dpp::version::PlatformVersion;
-
-    #[test]
-    fn should_reject_unknown_primary_storage_writer_version() {
-        let mut platform_version = PlatformVersion::latest().clone();
-        platform_version
-            .drive
-            .methods
-            .document
-            .insert
-            .add_document_to_primary_storage = 2;
-
-        let error = KeepHistoryStorage::for_drive_version(&platform_version.drive)
-            .expect_err("an unknown writer version must not imply a storage layout");
-
-        assert!(matches!(
-            error,
-            Error::Drive(DriveError::UnknownVersionMismatch {
-                method,
-                known_versions,
-                received: 2,
-            }) if method == "add_document_to_primary_storage" && known_versions == vec![0, 1]
-        ));
-    }
 }

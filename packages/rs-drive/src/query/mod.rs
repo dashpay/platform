@@ -1,4 +1,3 @@
-use crate::drive::document::paths::KeepHistoryStorage;
 use dpp::data_contract::document_type::{DocumentPropertyType, TimeRangeTransform};
 use std::sync::Arc;
 
@@ -152,6 +151,27 @@ use crate::config::DriveConfig;
 use crate::util::common::encode::encode_u64;
 #[cfg(feature = "server")]
 use crate::util::grove_operations::QueryType::StatefulQuery;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(in crate::query) fn primary_key_path_query_uses_current_document(
+    platform_version: &PlatformVersion,
+) -> Result<bool, Error> {
+    match platform_version
+        .drive
+        .methods
+        .document
+        .query
+        .primary_key_path_query
+    {
+        0 => Ok(false),
+        1 => Ok(true),
+        received => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            method: "primary_key_path_query".to_string(),
+            known_versions: vec![0, 1],
+            received,
+        })),
+    }
+}
 
 // Module declarations that are conditional on either "server" or "verify" features
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -1961,8 +1981,7 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<PathQuery, Error> {
         if self.document_type.documents_keep_history()
             && self.block_time_ms.is_some()
-            && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
-                == KeepHistoryStorage::HistoryTree
+            && primary_key_path_query_uses_current_document(platform_version)?
         {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "point-in-time reads are unavailable for history-keeping document types"
@@ -2024,13 +2043,10 @@ impl<'a> DriveDocumentQuery<'a> {
                 // from the backing store
 
                 let (start_at_document_path, start_at_document_key) =
-                    match KeepHistoryStorage::for_drive_version(&platform_version.drive)? {
-                        KeepHistoryStorage::DocumentSubtree => {
-                            self.start_at_document_path_and_key(starts_at)
-                        }
-                        KeepHistoryStorage::HistoryTree => {
-                            self.start_at_document_path_and_key_v1(starts_at)
-                        }
+                    if primary_key_path_query_uses_current_document(platform_version)? {
+                        self.start_at_document_path_and_key_v1(starts_at)
+                    } else {
+                        self.start_at_document_path_and_key(starts_at)
                     };
                 let start_at_document = drive
                     .grove_get(
@@ -2195,8 +2211,7 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<PathQuery, Error> {
         if self.document_type.documents_keep_history()
             && self.block_time_ms.is_some()
-            && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
-                == KeepHistoryStorage::HistoryTree
+            && primary_key_path_query_uses_current_document(platform_version)?
         {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "point-in-time reads are unavailable for history-keeping document types"
@@ -2416,6 +2431,7 @@ impl<'a> DriveDocumentQuery<'a> {
         starts_at_document: Option<(Document, bool)>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        let uses_current_document = primary_key_path_query_uses_current_document(platform_version)?;
         let mut path = document_type_path;
 
         // Add primary key ($id) subtree
@@ -2430,10 +2446,7 @@ impl<'a> DriveDocumentQuery<'a> {
             )?;
             query.insert_key(key);
 
-            if self.document_type.documents_keep_history()
-                && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
-                    == KeepHistoryStorage::DocumentSubtree
-            {
+            if self.document_type.documents_keep_history() && !uses_current_document {
                 // if the documents keep history then we should insert a subquery
                 if let Some(block_time) = self.block_time_ms {
                     let encoded_block_time = encode_u64(block_time);
@@ -2512,10 +2525,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     }
                 }
 
-                if self.document_type.documents_keep_history()
-                    && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
-                        == KeepHistoryStorage::DocumentSubtree
-                {
+                if self.document_type.documents_keep_history() && !uses_current_document {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
                         //todo
@@ -2556,10 +2566,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     },
                 }
 
-                if self.document_type.documents_keep_history()
-                    && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
-                        == KeepHistoryStorage::DocumentSubtree
-                {
+                if self.document_type.documents_keep_history() && !uses_current_document {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
                         return Err(Error::Query(QuerySyntaxError::Unsupported(
@@ -3237,6 +3244,8 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::drive::Drive;
+    use crate::error::{drive::DriveError, Error};
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::query::{
         DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator,
     };
@@ -3290,6 +3299,118 @@ mod tests {
             .expect("expected to apply contract successfully");
 
         (drive, contract)
+    }
+
+    fn keep_history_contract() -> DataContract {
+        json_document_to_contract(
+            "tests/supporting_files/contract/family/family-contract-with-history.json",
+            false,
+            PlatformVersion::latest(),
+        )
+        .expect("expected history contract")
+    }
+
+    fn keep_history_primary_query(contract: &DataContract) -> DriveDocumentQuery<'_> {
+        DriveDocumentQuery {
+            contract,
+            document_type: contract
+                .document_type_for_name("person")
+                .expect("person document type"),
+            internal_clauses: InternalClauses::default(),
+            offset: None,
+            limit: Some(10),
+            order_by: IndexMap::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        }
+    }
+
+    #[test]
+    fn should_select_keep_history_primary_path_by_query_version() {
+        let contract = keep_history_contract();
+        let query = keep_history_primary_query(&contract);
+        let legacy = query
+            .construct_path_query(None, PlatformVersion::get(13).expect("protocol 13"))
+            .expect("legacy query");
+        assert_eq!(
+            legacy.query.query.default_subquery_branch.subquery_path,
+            Some(vec![vec![0]])
+        );
+
+        let current = query
+            .construct_path_query(None, PlatformVersion::get(14).expect("protocol 14"))
+            .expect("protocol 14 query");
+        assert_eq!(
+            current.query.query.default_subquery_branch.subquery_path,
+            None
+        );
+    }
+
+    #[test]
+    fn should_reject_unknown_primary_key_path_query_version_in_pure_query() {
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/family/family-contract.json",
+            false,
+            PlatformVersion::latest(),
+        )
+        .expect("expected non-history contract");
+        let query = keep_history_primary_query(&contract);
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .primary_key_path_query = 2;
+
+        let error = query
+            .construct_path_query(None, &platform_version)
+            .expect_err("unknown path-query versions must fail closed");
+        assert!(matches!(
+            error,
+            Error::Drive(DriveError::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received: 2,
+            }) if method == "primary_key_path_query" && known_versions == vec![0, 1]
+        ));
+    }
+
+    #[test]
+    fn should_reject_unknown_primary_key_path_query_version_in_stateful_cursor_lookup() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract = keep_history_contract();
+        let mut query = keep_history_primary_query(&contract);
+        query.start_at = Some([3; 32]);
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .primary_key_path_query = 2;
+        let mut operations: Vec<LowLevelDriveOperation> = vec![];
+
+        let error = query
+            .construct_path_query_operations(
+                &drive,
+                false,
+                None,
+                &mut operations,
+                &platform_version,
+            )
+            .expect_err("unknown path-query versions must fail closed");
+        assert!(matches!(
+            error,
+            Error::Drive(DriveError::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received: 2,
+            }) if method == "primary_key_path_query" && known_versions == vec![0, 1]
+        ));
     }
 
     fn setup_withdrawal_contract() -> (Drive, DataContract) {
