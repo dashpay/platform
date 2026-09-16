@@ -294,7 +294,9 @@ jobs:
             metadata=$(tar -xOf "$tarball" package/package.json)
             name=$(jq -r '.name' <<<"$metadata")
             version=$(jq -r '.version' <<<"$metadata")
-            encoded_name=${name//@/%2f}
+            # npm addresses scoped packages as @scope%2fname: keep the leading @,
+            # percent-encode only the scope separator.
+            encoded_name=${name//\//%2f}
             status=$(curl --silent --show-error --location --output "$RUNNER_TEMP/npm-metadata.json" \
               --write-out '%{http_code}' --connect-timeout 10 --max-time 30 \
               "$REGISTRY/$encoded_name") || {
