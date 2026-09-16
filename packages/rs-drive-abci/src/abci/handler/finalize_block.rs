@@ -19,6 +19,8 @@ where
     C: CoreRPCLike,
 {
     let _timer = crate::metrics::abci_request_duration("finalize_block");
+    #[cfg(debug_assertions)]
+    let mut phases = crate::perf::PhaseTimer::new("finalize_block");
 
     let transaction_guard = app.transaction().read().unwrap();
     let transaction =
@@ -46,12 +48,18 @@ where
 
     let block_height = request_finalize_block.height;
 
+    #[cfg(debug_assertions)]
+    phases.end_phase("setup");
+
     let block_finalization_outcome = app.platform().finalize_block_proposal(
         request_finalize_block,
         block_execution_context,
         transaction,
         platform_version,
     )?;
+
+    #[cfg(debug_assertions)]
+    phases.end_phase("finalize_block_proposal");
 
     drop(transaction_guard);
 
@@ -113,6 +121,9 @@ where
         result.expect("commit transaction");
     }
 
+    #[cfg(debug_assertions)]
+    phases.end_phase("commit_transaction");
+
     // The block is durable now, so the contracts it read and rewrote through its transaction
     // are committed state: promote them to the global cache. This must follow the commit.
     // Promoting earlier would serve an uncommitted block's definitions to committed-state
@@ -123,6 +134,9 @@ where
         .cache
         .data_contracts
         .merge_and_clear_block_cache();
+
+    #[cfg(debug_assertions)]
+    phases.end_phase("promote_data_contract_cache");
 
     app.platform()
         .committed_block_height_guard
@@ -157,6 +171,9 @@ where
             );
         }
     }
+
+    #[cfg(debug_assertions)]
+    phases.end_phase("flush_pending_prefix_drops");
 
     // Create GroveDB checkpoint after the transaction is committed (so it captures
     // committed state). Checkpoints are restore points, auxiliary to the block: the
@@ -194,6 +211,17 @@ where
             }
         }
     }
+
+    #[cfg(debug_assertions)]
+    phases.end_phase_if(
+        block_finalization_outcome.checkpoint_needed,
+        "create_grovedb_checkpoint",
+    );
+    // Merge this handler's phases into the totals before the block is counted.
+    #[cfg(debug_assertions)]
+    drop(phases);
+    #[cfg(debug_assertions)]
+    crate::perf::end_block(block_height);
 
     Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
 }
