@@ -91,7 +91,7 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
 
     fn shielded_token_payment(&self) -> Option<&TokenShieldedPayment> {
         match self {
-            DocumentBaseTransitionAction::V0(v0) => v0.shielded_token_payment.as_ref(),
+            DocumentBaseTransitionAction::V0(v0) => v0.shielded_token_payment.as_deref(),
         }
     }
 }

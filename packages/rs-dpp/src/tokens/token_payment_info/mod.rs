@@ -133,7 +133,7 @@ impl TokenPaymentInfoAccessorsV1 for TokenPaymentInfo {
                 TokenPaymentInfo::V1(TokenPaymentInfoV1::from_v0(v0, payment))
             }
             (TokenPaymentInfo::V1(v1), Some(payment)) => TokenPaymentInfo::V1(TokenPaymentInfoV1 {
-                shielded_payment: payment,
+                shielded_payment: Box::new(payment),
                 ..v1
             }),
             (TokenPaymentInfo::V1(v1), None) => TokenPaymentInfo::V0(v1.into_v0()),
@@ -322,7 +322,7 @@ mod json_convertible_tests {
             minimum_token_cost: None,
             maximum_token_cost: Some(10),
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
-            shielded_payment: TokenShieldedPayment {
+            shielded_payment: Box::new(TokenShieldedPayment {
                 amount: 10,
                 actions: vec![SerializedAction {
                     nullifier: [1u8; 32],
@@ -335,7 +335,7 @@ mod json_convertible_tests {
                 anchor: [7u8; 32],
                 proof: vec![8u8; 10],
                 binding_signature: [9u8; 64],
-            },
+            }),
         })
     }
 
@@ -363,9 +363,9 @@ mod json_convertible_tests {
         let TokenPaymentInfo::V1(v1) = v1_fixture() else {
             unreachable!()
         };
-        info.set_shielded_payment(Some(v1.shielded_payment.clone()));
+        info.set_shielded_payment(Some((*v1.shielded_payment).clone()));
         assert!(matches!(info, TokenPaymentInfo::V1(_)));
-        assert_eq!(info.shielded_payment(), Some(&v1.shielded_payment));
+        assert_eq!(info.shielded_payment(), Some(&*v1.shielded_payment));
         assert_eq!(info.maximum_token_cost(), Some(1_000));
         info.set_shielded_payment(None);
         assert_eq!(info, fixture());

@@ -1844,7 +1844,7 @@ mod document_shielded_token_payment_tests {
             minimum_token_cost: None,
             maximum_token_cost: Some(CARD_COST),
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
-            shielded_payment,
+            shielded_payment: Box::new(shielded_payment),
         })
     }
 

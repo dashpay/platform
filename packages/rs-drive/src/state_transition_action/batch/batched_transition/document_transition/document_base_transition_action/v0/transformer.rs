@@ -118,7 +118,7 @@ impl DocumentBaseTransitionActionV0 {
                         ),
                     ));
                 }
-                shielded_token_payment = Some(payment.clone());
+                shielded_token_payment = Some(Box::new(payment.clone()));
             }
         } else if let Some(token_payment_info) = value.token_payment_info_ref() {
             // A bundle with nothing to pay would be verified for free and never applied.
