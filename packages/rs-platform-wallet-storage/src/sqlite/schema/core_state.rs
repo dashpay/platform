@@ -10,6 +10,7 @@ use dashcore::ephemerealdata::chain_lock::ChainLock;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
+use platform_wallet::changeset::changeset::UtxoCreditVerdict;
 use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -144,7 +145,17 @@ pub fn apply(
                      refresh the record itself to update its confirmation height"
                 );
             }
-            execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, false)?;
+            match cs.utxo_credit_verdicts.get(&utxo.outpoint) {
+                Some(UtxoCreditVerdict::ObservedSpent { .. } | UtxoCreditVerdict::Doomed) => {
+                    execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, true)?;
+                }
+                Some(UtxoCreditVerdict::Uncredited) => {
+                    // The wallet deliberately did not credit this output but
+                    // has no durable spend context to attach. Preserve any
+                    // existing row and never create an unspent one.
+                }
+                None => execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, false)?,
+            }
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -881,7 +892,7 @@ fn upsert_sync_state(
 /// persisted `script` back into an `Address`.
 ///
 /// [`CoreChangeSet::new_utxos`] cannot carry each UTXO's owning account (it is a
-/// bare `Vec<Utxo>`), so the returned map surfaces, per unspent outpoint, the
+/// bare `Vec<Utxo>`), so the returned map surfaces, per materialized outpoint, the
 /// funds account that owns it — resolved by matching the UTXO's script against
 /// `core_address_pool`. [`apply_persisted_core_state`](crate::sqlite::rehydrate::apply_persisted_core_state)
 /// consumes it to route each UTXO to its true account. An outpoint whose script
@@ -890,9 +901,10 @@ fn upsert_sync_state(
 ///
 /// # Reconstructed (safety-critical-correct)
 ///
-/// - **Unspent UTXOs** (`new_utxos`): every `spent = 0` row — the balance
-///   source (no-silent-zero); confirmation height comes from the matching
-///   `core_transactions` row. A missing row or height loads as unconfirmed.
+/// - **Materialized UTXOs**: `spent = 0` rows enter `new_utxos` as the balance
+///   source, while `spent = 1` rows enter `spent_utxos` as durable spend claims.
+///   Confirmation height comes from the matching `core_transactions` row. A
+///   missing row or height loads as unconfirmed.
 /// - **Transaction records**: height-only rows supply UTXO confirmation
 ///   metadata but are not emitted as records. Blob-bearing rows are decoded
 ///   and checked against their typed txid and height columns.
@@ -962,15 +974,16 @@ pub fn load_state(
         }
     }
 
-    // Unspent UTXOs → new_utxos (the balance source).
+    // Materialized UTXOs → new_utxos or spent_utxos. Sweep placeholders are
+    // lifecycle tombstones rather than complete UTXOs and stay excluded.
     // Pre-read `length()` gates on `outpoint` and `script` before materializing
     // the Vec so tampered oversize values are caught before heap allocation.
     // Uses `prepare + query + while let` (not `query_map`) so the typed
     // `BlobTooLarge` error can be returned from the loop body directly.
     {
         let mut stmt = conn.prepare(
-            "SELECT length(outpoint), outpoint, value, length(script), script \
-             FROM core_utxos WHERE wallet_id = ?1 AND spent = 0",
+            "SELECT length(outpoint), outpoint, value, length(script), script, spent \
+             FROM core_utxos WHERE wallet_id = ?1 AND is_sweep_placeholder = 0",
         )?;
         let mut rows = stmt.query(params![wallet_id.as_slice()])?;
         while let Some(row) = rows.next()? {
@@ -981,7 +994,19 @@ pub fn load_state(
             // col 3: length(script) — gate before materializing
             blob::check_size(row.get::<_, i64>(3)?)?;
             let script_bytes: Vec<u8> = row.get(4)?;
-            let outpoint = blob::decode_outpoint(&op_bytes)?;
+            let spent: bool = row.get(5)?;
+            let outpoint = match blob::decode_outpoint(&op_bytes) {
+                Ok(outpoint) => outpoint,
+                Err(error) if spent => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        %error,
+                        "skipping a legacy spent UTXO whose outpoint cannot be decoded"
+                    );
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
             let height = transaction_heights.get(&outpoint.txid).copied().flatten();
             let script = dashcore::ScriptBuf::from_bytes(script_bytes);
@@ -999,7 +1024,19 @@ pub fn load_state(
             // after it completes. Under Recovery — the mode whose purpose
             // is to hand back whatever it can — one bad row still costs
             // the user every wallet in the file.
-            let address = dashcore::Address::from_script(&script, network)?;
+            let address = match dashcore::Address::from_script(&script, network) {
+                Ok(address) => address,
+                Err(error) if spent => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        outpoint = %outpoint,
+                        %error,
+                        "skipping a legacy spent UTXO whose script is not an address"
+                    );
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
+            };
             let utxo = Utxo {
                 outpoint,
                 txout: dashcore::TxOut {
@@ -1014,7 +1051,11 @@ pub fn load_state(
                 is_locked: false,
                 is_trusted: false,
             };
-            cs.new_utxos.push(utxo);
+            if spent {
+                cs.spent_utxos.push(utxo);
+            } else {
+                cs.new_utxos.push(utxo);
+            }
         }
     }
 
@@ -2223,6 +2264,75 @@ mod tests {
             .query_row("SELECT spent FROM core_utxos", [], |row| row.get(0))
             .unwrap();
         assert!(spent, "the existing row must be marked spent");
+    }
+
+    #[test]
+    fn apply_honors_wallet_utxo_credit_verdicts() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0x6Eu8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+
+        let preserved = sample_utxo(Txid::from_byte_array([0x6Eu8; 32]), 10, true);
+        let observed = sample_utxo(Txid::from_byte_array([0x6Fu8; 32]), 11, true);
+        let uncredited = sample_utxo(Txid::from_byte_array([0x70u8; 32]), 12, true);
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                spent_utxos: vec![preserved.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let mut verdicts = std::collections::BTreeMap::new();
+        verdicts.insert(preserved.outpoint, UtxoCreditVerdict::Uncredited);
+        verdicts.insert(
+            observed.outpoint,
+            UtxoCreditVerdict::ObservedSpent { height: 11 },
+        );
+        verdicts.insert(uncredited.outpoint, UtxoCreditVerdict::Uncredited);
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                new_utxos: vec![preserved.clone(), observed.clone(), uncredited.clone()],
+                utxo_credit_verdicts: verdicts,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let spent: bool = tx
+            .query_row(
+                "SELECT spent FROM core_utxos WHERE outpoint = ?1",
+                [blob::encode_outpoint(&preserved.outpoint).unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(spent, "Uncredited must preserve an existing spent row");
+        let spent: bool = tx
+            .query_row(
+                "SELECT spent FROM core_utxos WHERE outpoint = ?1",
+                [blob::encode_outpoint(&observed.outpoint).unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(spent, "ObservedSpent must materialize a spent row");
+        let count: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM core_utxos WHERE outpoint = ?1",
+                [blob::encode_outpoint(&uncredited.outpoint).unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0, "Uncredited must not invent a durable claim");
     }
 
     #[test]

@@ -161,6 +161,7 @@ apple-native-keyring-store = { version = "=1.0.0", features = ["keychain"], opti
 windows-native-keyring-store = { version = "=1.0.0", optional = true }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
 # `test-utils` reaches `provider_key_test_wallet`, shared with
 # `platform-wallet`'s own `rebuild_provider_key_account` tests — see its use
 # in `sqlite/provider_accounts.rs`'s test module.

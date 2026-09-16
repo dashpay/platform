@@ -258,9 +258,6 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   Coinbase-maturity nuance re-warms on sync. `is_instantlocked` is NOT
 ///   among them: it is rebuilt from `core_instant_locks` above, for every
 ///   UTXO a replayed lock covers.
-/// - **Transaction-record history**: rebuilt by the next scan; not a
-///   balance input.
-///
 /// # Errors
 ///
 /// [`WalletStorageError::MissingAccount`] if there are persisted UTXOs to
@@ -300,13 +297,7 @@ pub fn apply_persisted_core_state(
         wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
     }
 
-    // INTENTIONAL(tx-record-rehydration-gap): `core` also carries transaction
-    // records, but they cannot be replayed here — injecting one needs the raw
-    // `dashcore::Transaction`, and this crate persists only the abstracted
-    // `TransactionRecord` blob. History re-warms on the next scan and is not a
-    // balance input.
-
-    // Restore the UTXO set, routing each unspent outpoint to its true owning
+    // Restore the UTXO set, routing each materialized outpoint to its true owning
     // funds account via `utxo_accounts` (matched on the same account identity
     // the writer keyed the pool row on). Two miss cases share the first-account
     // best-effort fallback but differ in signal:
@@ -328,7 +319,7 @@ pub fn apply_persisted_core_state(
         .collect();
 
     let mut funding = wallet_info.accounts.all_funding_accounts_mut();
-    if !unspent.is_empty() && funding.is_empty() {
+    if (!unspent.is_empty() || !core.spent_utxos.is_empty()) && funding.is_empty() {
         return Err(WalletStorageError::MissingAccount { wallet_id });
     }
     if !funding.is_empty() {
@@ -352,6 +343,19 @@ pub fn apply_persisted_core_state(
             );
             funding[target].utxos.insert(utxo.outpoint, (*utxo).clone());
             per_account_addrs[target].push(utxo.address.clone());
+        }
+
+        // Spent rows are absent from the balance but remain authoritative
+        // lifecycle claims. Restoring them into the same account-level set
+        // used during live processing prevents a historical funding delivery
+        // from recreating the coin after restart.
+        for utxo in &core.spent_utxos {
+            let target = route_to_funds_account(
+                &account_keys,
+                utxo_accounts.get(&utxo.outpoint),
+                &mut orphaned_owners,
+            );
+            funding[target].restore_spent_outpoints([utxo.outpoint]);
         }
 
         // The persisted pool used-state restores addresses whose funds were
@@ -403,6 +407,21 @@ pub fn apply_persisted_core_state(
                 )?;
             }
         }
+    }
+    drop(funding);
+
+    // Install persisted records directly rather than replaying their UTXO
+    // mutations in storage order. This restores observed on-chain spends and
+    // finalized transaction markers while the UTXO rows above remain the
+    // authoritative balance projection.
+    let unmatched_records = wallet_info.restore_persisted_transactions(core.records.clone());
+    if !unmatched_records.is_empty() {
+        tracing::warn!(
+            wallet_id = %hex::encode(wallet_id),
+            affected = unmatched_records.len(),
+            "persisted transaction records named accounts absent from the restored wallet; \
+             those records were skipped"
+        );
     }
 
     // Replay persisted InstantSend locks AFTER the UTXO restore: this marks the
