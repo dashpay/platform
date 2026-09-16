@@ -103,6 +103,29 @@ fn validate_collection(
         diagnostics,
     );
 
+    let mut requires: Vec<PropertyPath> = Vec::new();
+    for property in &collection.requires {
+        if !property.is_system() {
+            diagnostics.push(Diagnostic::new(
+                path.clone(),
+                DiagnosticKind::RequiredPropertyNotSystem {
+                    property: property.to_string(),
+                },
+            ));
+        }
+        if requires.contains(property) {
+            diagnostics.push(Diagnostic::new(
+                path.clone(),
+                DiagnosticKind::DuplicateRequiredProperty {
+                    property: property.to_string(),
+                },
+            ));
+        } else {
+            requires.push(property.clone());
+        }
+    }
+    requires.sort();
+
     let mut token_costs = collection.token_costs.clone();
     token_costs.sort_by_key(|cost| cost.action);
     let mut seen_actions = Vec::new();
@@ -220,6 +243,7 @@ fn validate_collection(
         sum,
         range_sum,
         index_only: collection.index_only,
+        requires,
         token_costs,
         store: collection.store,
         fields,
@@ -641,6 +665,7 @@ fn validate_index(
     }
 
     if let RankedCount::At(levels) = &index.ranked.count {
+        let mut seen: Vec<&PropertyPath> = Vec::new();
         for level in levels {
             if !index.properties.contains(level) {
                 diagnostics.push(Diagnostic::new(
@@ -650,6 +675,16 @@ fn validate_index(
                     },
                 ));
             }
+            if seen.contains(&level) {
+                diagnostics.push(Diagnostic::new(
+                    path.clone(),
+                    DiagnosticKind::DuplicateRankedLevel {
+                        property: level.to_string(),
+                    },
+                ));
+            } else {
+                seen.push(level);
+            }
         }
     }
 
@@ -658,6 +693,14 @@ fn validate_index(
             diagnostics.push(Diagnostic::new(
                 path.clone(),
                 DiagnosticKind::TimeRangeSourceNotFirst {
+                    property: time_range.on.to_string(),
+                },
+            ));
+        }
+        if time_range.on.is_system() && !collection.requires.contains(&time_range.on) {
+            diagnostics.push(Diagnostic::new(
+                path.clone(),
+                DiagnosticKind::TimeRangeSourceNotRequired {
                     property: time_range.on.to_string(),
                 },
             ));
@@ -687,7 +730,6 @@ fn validate_index(
     let mut ranked = index.ranked.clone();
     if let RankedCount::At(levels) = &mut ranked.count {
         levels.sort();
-        levels.dedup();
     }
 
     IndexManifest {
@@ -745,6 +787,8 @@ pub(super) fn validate_typed_collections(
 }
 
 /// Every string, byte array and list in a wire type declares a maximum.
+/// Diagnostics inside a struct or list point at the member through
+/// [`DeclarationPath::member`], so two unbounded members are distinguishable.
 pub(super) fn check_value_type(
     path: &DeclarationPath,
     ty: &ValueType,
@@ -764,7 +808,7 @@ pub(super) fn check_value_type(
                     DiagnosticKind::UnboundedField,
                 ));
             }
-            check_value_type(path, item, diagnostics);
+            check_value_type(&path.member("[]"), item, diagnostics);
         }
         ValueType::Option(inner) => check_value_type(path, inner, diagnostics),
         ValueType::Struct(members) => {
@@ -780,7 +824,7 @@ pub(super) fn check_value_type(
                 } else {
                     seen.push(name);
                 }
-                check_value_type(path, member, diagnostics);
+                check_value_type(&path.member(name), member, diagnostics);
             }
         }
         ValueType::Unit
