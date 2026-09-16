@@ -52,6 +52,9 @@ mod contract_info;
 mod direct_purchase;
 /// Distribution module
 pub mod distribution;
+/// Per-issuer token lifecycle: supply rollups, the destroyed-issuer ledger and the reads
+/// that resolve a token to its issuer's state.
+pub mod lifecycle;
 /// Token paths
 pub mod paths;
 /// Token status module, like if the token is paused

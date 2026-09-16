@@ -1,4 +1,5 @@
 use crate::drive::balances::{total_tokens_root_supply_path, total_tokens_root_supply_path_vec};
+use crate::drive::tokens::lifecycle::add_to_contract_issued_supply::IssuedSupplyChange;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -15,8 +16,10 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
+    /// Generation 1: the same supply write as v0, plus the issuer's lifecycle rollup moved by
+    /// the amount actually added, in the same batch.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn add_to_token_total_supply_v0(
+    pub(super) fn add_to_token_total_supply_v1(
         &self,
         token_id: [u8; 32],
         amount: TokenAmount,
@@ -29,7 +32,7 @@ impl Drive {
     ) -> Result<(FeeResult, TokenAmount), Error> {
         let mut drive_operations = vec![];
 
-        let token_amount = self.add_to_token_total_supply_add_to_operations_v0(
+        let token_amount = self.add_to_token_total_supply_add_to_operations_v1(
             token_id,
             amount,
             allow_first_mint,
@@ -53,7 +56,7 @@ impl Drive {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn add_to_token_total_supply_add_to_operations_v0(
+    pub(super) fn add_to_token_total_supply_add_to_operations_v1(
         &self,
         token_id: [u8; 32],
         amount: TokenAmount,
@@ -67,7 +70,7 @@ impl Drive {
         let mut estimated_costs_only_with_layer_info =
             if apply { None } else { Some(HashMap::new()) };
 
-        let (batch_operations, token_amount) = self.add_to_token_total_supply_operations_v0(
+        let (batch_operations, token_amount) = self.add_to_token_total_supply_operations_v1(
             token_id,
             amount,
             allow_first_mint,
@@ -88,7 +91,7 @@ impl Drive {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn add_to_token_total_supply_operations_v0(
+    pub(super) fn add_to_token_total_supply_operations_v1(
         &self,
         token_id: [u8; 32],
         amount: u64,
@@ -104,7 +107,7 @@ impl Drive {
 
         // If we only estimate, add estimation costs
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            // Add your estimation logic similar to add_to_system_credits_operations_v0
+            // Add your estimation logic similar to add_to_system_credits_operations_v1
             // For example:
             Self::add_estimation_costs_for_token_total_supply(
                 estimated_costs_only_with_layer_info,
@@ -160,25 +163,37 @@ impl Drive {
                 )));
             };
 
+        // The issuer's rollup moves by the amount actually added to the supply leaf, which
+        // is the saturated amount when saturation was allowed. In estimation mode the amount
+        // is priced as any write of the record; a destroyed issuer is refused inside.
+        drive_operations.extend(self.add_to_contract_issued_supply_operations(
+            token_id,
+            IssuedSupplyChange::Increase(added_amount),
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )?);
+
         Ok((drive_operations, added_amount))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::tokens::lifecycle::add_to_contract_issued_supply::IssuedSupplyChange;
+    use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::Identifier;
+    use dpp::tokens::contract_lifecycle::v0::ContractTokenLifecycleV0Accessors;
     use dpp::version::PlatformVersion;
 
-    #[test]
-    fn should_add_to_existing_token_total_supply() {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let block_info = BlockInfo::default();
-        let token_id = [1u8; 32];
+    fn drive_with_token() -> (Drive, Identifier, [u8; 32]) {
+        let drive = setup_drive_with_initial_state_structure(None);
         let contract_id = Identifier::from([3u8; 32]);
-
+        let token_id = [1u8; 32];
         drive
             .create_token_trees(
                 contract_id,
@@ -186,17 +201,35 @@ mod tests {
                 token_id,
                 false,
                 false,
-                &block_info,
+                &BlockInfo::default(),
                 true,
                 None,
-                platform_version,
+                PlatformVersion::latest(),
             )
             .expect("expected to create token trees");
+        (drive, contract_id, token_id)
+    }
 
-        // create_token_trees initializes supply to 0 — a subsequent call requires
-        // an existing supply entry so the replace_op path is exercised.
-        let (_fees, added) = drive
-            .add_to_token_total_supply_v0(
+    fn rollup(drive: &Drive, contract_id: Identifier) -> u128 {
+        drive
+            .fetch_contract_token_lifecycle(
+                contract_id.to_buffer(),
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to read")
+            .expect("expected a record")
+            .issued_supply()
+    }
+
+    #[test]
+    fn should_move_the_supply_and_the_rollup_together() {
+        let (drive, contract_id, token_id) = drive_with_token();
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+
+        let (_, added) = drive
+            .add_to_token_total_supply(
                 token_id,
                 500,
                 false,
@@ -208,15 +241,8 @@ mod tests {
             )
             .expect("expected to add to total supply");
         assert_eq!(added, 500);
-
-        let supply = drive
-            .fetch_token_total_supply(token_id, None, platform_version)
-            .expect("expected to fetch supply");
-        assert_eq!(supply, Some(500));
-
-        // Add more to exercise the replace path against a non-zero prior value
-        let (_fees, added2) = drive
-            .add_to_token_total_supply_v0(
+        let (_, added) = drive
+            .add_to_token_total_supply(
                 token_id,
                 250,
                 false,
@@ -227,119 +253,26 @@ mod tests {
                 platform_version,
             )
             .expect("expected to add to total supply again");
-        assert_eq!(added2, 250);
+        assert_eq!(added, 250);
 
-        let supply = drive
-            .fetch_token_total_supply(token_id, None, platform_version)
-            .expect("expected to fetch supply");
-        assert_eq!(supply, Some(750));
+        assert_eq!(
+            drive
+                .fetch_token_total_supply(token_id, None, platform_version)
+                .expect("expected to fetch supply"),
+            Some(750)
+        );
+        assert_eq!(rollup(&drive, contract_id), 750);
     }
 
     #[test]
-    fn should_error_when_adding_to_non_existent_token_without_allow_first_mint() {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    fn should_move_the_rollup_by_the_saturated_amount() {
+        let (drive, contract_id, token_id) = drive_with_token();
+        let platform_version = PlatformVersion::latest();
         let block_info = BlockInfo::default();
-        let token_id = [7u8; 32];
-
-        // No token tree created — supply does not exist, allow_first_mint=false -> error
-        let result = drive.add_to_token_total_supply_v0(
-            token_id,
-            100,
-            false, // allow_first_mint
-            false,
-            true,
-            &block_info,
-            None,
-            platform_version,
-        );
-
-        assert!(
-            result.is_err(),
-            "expected CriticalCorruptedState error when adding to non-existent supply"
-        );
-    }
-
-    #[test]
-    fn should_error_on_overflow_when_allow_saturation_is_false() {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let block_info = BlockInfo::default();
-        let token_id = [2u8; 32];
-        let contract_id = Identifier::from([4u8; 32]);
-
-        drive
-            .create_token_trees(
-                contract_id,
-                0,
-                token_id,
-                false,
-                false,
-                &block_info,
-                true,
-                None,
-                platform_version,
-            )
-            .expect("expected to create token trees");
-
-        // Seed with a large but valid value
-        drive
-            .add_to_token_total_supply_v0(
-                token_id,
-                (i64::MAX as u64) - 10,
-                false,
-                false,
-                true,
-                &block_info,
-                None,
-                platform_version,
-            )
-            .expect("expected to add a large seed supply");
-
-        // Now try to add enough to overflow i64 — without saturation this must error
-        let result = drive.add_to_token_total_supply_v0(
-            token_id,
-            100,
-            false,
-            false, // allow_saturation
-            true,
-            &block_info,
-            None,
-            platform_version,
-        );
-
-        assert!(
-            result.is_err(),
-            "expected overflow error when allow_saturation is false"
-        );
-    }
-
-    #[test]
-    fn should_saturate_on_overflow_when_allow_saturation_is_true() {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let block_info = BlockInfo::default();
-        let token_id = [3u8; 32];
-        let contract_id = Identifier::from([5u8; 32]);
-
-        drive
-            .create_token_trees(
-                contract_id,
-                0,
-                token_id,
-                false,
-                false,
-                &block_info,
-                true,
-                None,
-                platform_version,
-            )
-            .expect("expected to create token trees");
-
-        // Seed near i64::MAX
         let seed = (i64::MAX as u64) - 10;
+
         drive
-            .add_to_token_total_supply_v0(
+            .add_to_token_total_supply(
                 token_id,
                 seed,
                 false,
@@ -349,15 +282,13 @@ mod tests {
                 None,
                 platform_version,
             )
-            .expect("expected to add a large seed supply");
-
-        // Add more than headroom — saturation path must clamp to i64::MAX
-        let (_fees, added) = drive
-            .add_to_token_total_supply_v0(
+            .expect("expected to seed supply");
+        let (_, added) = drive
+            .add_to_token_total_supply(
                 token_id,
                 100,
                 false,
-                true, // allow_saturation
+                true,
                 true,
                 &block_info,
                 None,
@@ -365,115 +296,32 @@ mod tests {
             )
             .expect("expected saturation to succeed");
 
-        // Only the headroom (10) should have been added
         assert_eq!(added, 10);
-
-        let supply = drive
-            .fetch_token_total_supply(token_id, None, platform_version)
-            .expect("expected to fetch supply");
-        assert_eq!(supply, Some(i64::MAX as u64));
+        assert_eq!(rollup(&drive, contract_id), i64::MAX as u128);
     }
 
     #[test]
-    fn should_estimate_costs_without_mutating_state_when_apply_false() {
-        // apply=false triggers the estimated_costs_only_with_layer_info branch.
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    fn should_error_on_overflow_when_allow_saturation_is_false() {
+        let (drive, contract_id, token_id) = drive_with_token();
+        let platform_version = PlatformVersion::latest();
         let block_info = BlockInfo::default();
-        let token_id = [70u8; 32];
-        let contract_id = Identifier::from([71u8; 32]);
 
         drive
-            .create_token_trees(
-                contract_id,
-                0,
+            .add_to_token_total_supply(
                 token_id,
+                (i64::MAX as u64) - 10,
                 false,
-                false,
-                &block_info,
-                true,
-                None,
-                platform_version,
-            )
-            .expect("expected to create token trees");
-
-        let app_hash_before = drive
-            .grove
-            .root_hash(None, &platform_version.drive.grove_version)
-            .unwrap()
-            .expect("expected root hash");
-
-        let (fees, _added) = drive
-            .add_to_token_total_supply_v0(
-                token_id,
-                500,
-                false,
-                false,
-                false, // apply=false -> estimation path
-                &block_info,
-                None,
-                platform_version,
-            )
-            .expect("expected estimation to succeed");
-
-        let app_hash_after = drive
-            .grove
-            .root_hash(None, &platform_version.drive.grove_version)
-            .unwrap()
-            .expect("expected root hash");
-
-        assert_eq!(app_hash_before, app_hash_after);
-        assert!(fees.processing_fee > 0);
-
-        // Supply unchanged (still 0)
-        let supply = drive
-            .fetch_token_total_supply(token_id, None, platform_version)
-            .expect("expected to fetch supply");
-        assert_eq!(supply, Some(0));
-    }
-
-    #[test]
-    fn should_report_full_added_amount_on_fresh_first_mint() {
-        // First mint branch returns `amount` as added; covers the `allow_first_mint` insert path.
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let block_info = BlockInfo::default();
-        let token_id = [80u8; 32];
-
-        // Do NOT call create_token_trees so the supply entry is truly absent.
-        let (_fees, added) = drive
-            .add_to_token_total_supply_v0(
-                token_id,
-                1_234_567,
-                true, // allow_first_mint
                 false,
                 true,
                 &block_info,
                 None,
                 platform_version,
             )
-            .expect("expected first-mint insert to succeed");
-
-        assert_eq!(added, 1_234_567);
-
-        let supply = drive
-            .fetch_token_total_supply(token_id, None, platform_version)
-            .expect("expected to fetch supply");
-        assert_eq!(supply, Some(1_234_567));
-    }
-
-    #[test]
-    fn should_error_when_first_mint_amount_exceeds_i64_max() {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let block_info = BlockInfo::default();
-        let token_id = [9u8; 32];
-
-        // allow_first_mint=true but amount > i64::MAX -> CriticalCorruptedState
-        let result = drive.add_to_token_total_supply_v0(
+            .expect("expected to seed supply");
+        let result = drive.add_to_token_total_supply(
             token_id,
-            (i64::MAX as u64) + 1,
-            true, // allow_first_mint
+            100,
+            false,
             false,
             true,
             &block_info,
@@ -481,9 +329,171 @@ mod tests {
             platform_version,
         );
 
-        assert!(
-            result.is_err(),
-            "expected error for first-mint amount over i64::MAX"
+        assert!(result.is_err());
+        assert_eq!(rollup(&drive, contract_id), (i64::MAX as u128) - 10);
+    }
+
+    #[test]
+    fn should_refuse_a_first_mint_of_a_token_without_an_issuer() {
+        // v0 allowed the supply leaf of an unknown token to appear on first mint; with the
+        // ledger a token must resolve to its issuer, so a token that was never created is
+        // corrupted state.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let result = drive.add_to_token_total_supply(
+            [80u8; 32],
+            1_234_567,
+            true,
+            false,
+            true,
+            &BlockInfo::default(),
+            None,
+            platform_version,
         );
+
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+        ));
+    }
+
+    #[test]
+    fn should_refuse_a_destroyed_issuer() {
+        let (drive, contract_id, token_id) = drive_with_token();
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+
+        drive
+            .destroy_token_issuer(
+                contract_id.to_buffer(),
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to destroy the issuer");
+
+        let result = drive.add_to_token_total_supply(
+            token_id,
+            1,
+            false,
+            false,
+            true,
+            &block_info,
+            None,
+            platform_version,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+        ));
+        assert_eq!(
+            drive
+                .fetch_token_total_supply(token_id, None, platform_version)
+                .expect("expected to fetch supply"),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn should_estimate_costs_without_mutating_state_when_apply_false() {
+        let (drive, contract_id, token_id) = drive_with_token();
+        let platform_version = PlatformVersion::latest();
+        let root_hash_before = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
+
+        let (fees, _) = drive
+            .add_to_token_total_supply(
+                token_id,
+                500,
+                false,
+                false,
+                false,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected estimation to succeed");
+
+        assert!(fees.processing_fee > 0);
+        let root_hash_after = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
+        assert_eq!(root_hash_before, root_hash_after);
+        assert_eq!(rollup(&drive, contract_id), 0);
+    }
+
+    #[test]
+    fn should_price_at_least_the_applied_cost() {
+        // Fees are charged from the estimate and the applied cost must never exceed it, so
+        // the estimated write of the record has to cover the real one.
+        let (drive, _, token_id) = drive_with_token();
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+
+        let (estimated, _) = drive
+            .add_to_token_total_supply(
+                token_id,
+                500,
+                false,
+                false,
+                false,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected an estimate");
+        let (applied, _) = drive
+            .add_to_token_total_supply(
+                token_id,
+                500,
+                false,
+                false,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply");
+
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "estimated {} is below applied {}",
+            estimated.processing_fee,
+            applied.processing_fee
+        );
+        assert!(estimated.storage_fee >= applied.storage_fee);
+    }
+
+    #[test]
+    fn should_keep_the_rollup_change_type_in_sync_with_the_supply_delta() {
+        let (drive, contract_id, token_id) = drive_with_token();
+        let platform_version = PlatformVersion::latest();
+        let operations = drive
+            .add_to_contract_issued_supply_operations(
+                token_id,
+                IssuedSupplyChange::Increase(7),
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected operations");
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to apply");
+        assert_eq!(rollup(&drive, contract_id), 7);
     }
 }

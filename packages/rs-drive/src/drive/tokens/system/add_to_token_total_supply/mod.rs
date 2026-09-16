@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -43,9 +44,19 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.add_to_token_total_supply_v1(
+                token_id,
+                amount,
+                allow_first_mint,
+                allow_saturation,
+                apply,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_token_total_supply".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -81,9 +92,19 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
+            1 => self.add_to_token_total_supply_add_to_operations_v1(
+                token_id,
+                amount,
+                allow_first_mint,
+                allow_saturation,
+                apply,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_token_total_supply_add_to_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -119,9 +140,18 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.add_to_token_total_supply_operations_v1(
+                token_id,
+                amount,
+                allow_first_mint,
+                allow_saturation,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_token_total_supply_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

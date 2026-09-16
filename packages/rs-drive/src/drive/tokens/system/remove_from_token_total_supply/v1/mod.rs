@@ -1,4 +1,5 @@
 use crate::drive::balances::{total_tokens_root_supply_path, total_tokens_root_supply_path_vec};
+use crate::drive::tokens::lifecycle::add_to_contract_issued_supply::IssuedSupplyChange;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -16,7 +17,9 @@ use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg, Tre
 use std::collections::HashMap;
 
 impl Drive {
-    pub(super) fn remove_from_token_total_supply_v0(
+    /// Generation 1: the same supply write as v0, plus the issuer's lifecycle rollup lowered
+    /// by the same amount, in the same batch.
+    pub(super) fn remove_from_token_total_supply_v1(
         &self,
         token_id: [u8; 32],
         amount: u64,
@@ -27,7 +30,7 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let mut drive_operations = vec![];
 
-        self.remove_from_token_total_supply_add_to_operations_v0(
+        self.remove_from_token_total_supply_add_to_operations_v1(
             token_id,
             amount,
             apply,
@@ -48,7 +51,7 @@ impl Drive {
         Ok(fees)
     }
 
-    pub(super) fn remove_from_token_total_supply_add_to_operations_v0(
+    pub(super) fn remove_from_token_total_supply_add_to_operations_v1(
         &self,
         token_id: [u8; 32],
         amount: u64,
@@ -60,7 +63,7 @@ impl Drive {
         let mut estimated_costs_only_with_layer_info =
             if apply { None } else { Some(HashMap::new()) };
 
-        let batch_operations = self.remove_from_token_total_supply_operations_v0(
+        let batch_operations = self.remove_from_token_total_supply_operations_v1(
             token_id,
             amount,
             &mut estimated_costs_only_with_layer_info,
@@ -77,7 +80,7 @@ impl Drive {
         )
     }
 
-    pub(super) fn remove_from_token_total_supply_operations_v0(
+    pub(super) fn remove_from_token_total_supply_operations_v1(
         &self,
         token_id: [u8; 32],
         amount: u64,
@@ -91,8 +94,6 @@ impl Drive {
 
         // If we only estimate, add estimation costs
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            // Add your estimation logic similar to add_to_token_total_supply if needed
-            // For example (this is a placeholder method, you must implement similarly as others):
             Self::add_estimation_costs_for_token_total_supply(
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
@@ -141,20 +142,34 @@ impl Drive {
         );
         drive_operations.push(GroveOperation(replace_op));
 
+        // The issuer's rollup moves by the same amount in the same batch; a destroyed issuer
+        // is refused inside.
+        drive_operations.extend(self.add_to_contract_issued_supply_operations(
+            token_id,
+            IssuedSupplyChange::Decrease(amount),
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )?);
+
         Ok(drive_operations)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::Identifier;
+    use dpp::tokens::contract_lifecycle::v0::ContractTokenLifecycleV0Accessors;
     use dpp::version::PlatformVersion;
 
-    fn setup_token_with_supply(initial_supply: u64) -> (crate::drive::Drive, [u8; 32], BlockInfo) {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    fn setup_token_with_supply(initial_supply: u64) -> (Drive, Identifier, [u8; 32]) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
         let block_info = BlockInfo::default();
         let token_id = [1u8; 32];
         let contract_id = Identifier::from([3u8; 32]);
@@ -188,133 +203,147 @@ mod tests {
                 .expect("expected to seed supply");
         }
 
-        (drive, token_id, block_info)
+        (drive, contract_id, token_id)
+    }
+
+    fn rollup(drive: &Drive, contract_id: Identifier) -> u128 {
+        drive
+            .fetch_contract_token_lifecycle(
+                contract_id.to_buffer(),
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to read")
+            .expect("expected a record")
+            .issued_supply()
     }
 
     #[test]
-    fn should_remove_from_existing_total_supply() {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let (drive, token_id, block_info) = setup_token_with_supply(1000);
+    fn should_lower_the_supply_and_the_rollup_together() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract_id, token_id) = setup_token_with_supply(1000);
 
         drive
-            .remove_from_token_total_supply_v0(
+            .remove_from_token_total_supply(
                 token_id,
                 300,
-                &block_info,
+                &BlockInfo::default(),
                 true,
                 None,
                 platform_version,
             )
             .expect("expected to remove from total supply");
 
-        let supply = drive
-            .fetch_token_total_supply(token_id, None, platform_version)
-            .expect("expected to fetch supply");
-        assert_eq!(supply, Some(700));
+        assert_eq!(
+            drive
+                .fetch_token_total_supply(token_id, None, platform_version)
+                .expect("expected to fetch supply"),
+            Some(700)
+        );
+        assert_eq!(rollup(&drive, contract_id), 700);
     }
 
     #[test]
-    fn should_remove_to_exact_zero() {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let (drive, token_id, block_info) = setup_token_with_supply(500);
+    fn should_error_on_underflow_and_leave_the_rollup_untouched() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract_id, token_id) = setup_token_with_supply(100);
 
-        drive
-            .remove_from_token_total_supply_v0(
-                token_id,
-                500,
-                &block_info,
-                true,
-                None,
-                platform_version,
-            )
-            .expect("expected to remove to zero");
-
-        let supply = drive
-            .fetch_token_total_supply(token_id, None, platform_version)
-            .expect("expected to fetch supply");
-        assert_eq!(supply, Some(0));
-    }
-
-    #[test]
-    fn should_error_on_underflow() {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let (drive, token_id, block_info) = setup_token_with_supply(100);
-
-        let result = drive.remove_from_token_total_supply_v0(
+        let result = drive.remove_from_token_total_supply(
             token_id,
             200,
-            &block_info,
+            &BlockInfo::default(),
             true,
             None,
             platform_version,
         );
 
-        assert!(
-            result.is_err(),
-            "expected CorruptedDriveState underflow error"
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+        ));
+        assert_eq!(rollup(&drive, contract_id), 100);
+    }
+
+    #[test]
+    fn should_refuse_a_destroyed_issuer() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract_id, token_id) = setup_token_with_supply(100);
+        drive
+            .destroy_token_issuer(
+                contract_id.to_buffer(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to destroy the issuer");
+
+        let result = drive.remove_from_token_total_supply(
+            token_id,
+            1,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+        ));
+        assert_eq!(
+            drive
+                .fetch_token_total_supply(token_id, None, platform_version)
+                .expect("expected to fetch supply"),
+            Some(100)
         );
     }
 
     #[test]
     fn should_estimate_costs_without_mutating_state_when_apply_false() {
-        // Exercise the estimated_costs_only_with_layer_info branch and the
-        // u64::MAX placeholder path inside operations_v0.
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let (drive, token_id, block_info) = setup_token_with_supply(5_000);
-
-        let app_hash_before = drive
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract_id, token_id) = setup_token_with_supply(5_000);
+        let root_hash_before = drive
             .grove
             .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected root hash");
 
-        let fees = drive
-            .remove_from_token_total_supply_v0(
+        let estimated = drive
+            .remove_from_token_total_supply(
                 token_id,
                 100,
-                &block_info,
-                false, // apply=false -> estimation branch
+                &BlockInfo::default(),
+                false,
                 None,
                 platform_version,
             )
             .expect("expected estimation to succeed");
 
-        let app_hash_after = drive
+        assert!(estimated.processing_fee > 0);
+        let root_hash_after = drive
             .grove
             .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected root hash");
+        assert_eq!(root_hash_before, root_hash_after);
+        assert_eq!(rollup(&drive, contract_id), 5_000);
 
-        assert_eq!(app_hash_before, app_hash_after);
-        assert!(fees.processing_fee > 0);
-
-        // Supply unchanged
-        let supply = drive
-            .fetch_token_total_supply(token_id, None, platform_version)
-            .expect("expected to fetch supply");
-        assert_eq!(supply, Some(5_000));
-    }
-
-    #[test]
-    fn should_error_when_removing_from_non_existent_token() {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let block_info = BlockInfo::default();
-        let token_id = [42u8; 32];
-
-        // Never created the token tree — supply entry missing
-        let result = drive.remove_from_token_total_supply_v0(
-            token_id,
-            10,
-            &block_info,
-            true,
-            None,
-            platform_version,
-        );
-
+        let applied = drive
+            .remove_from_token_total_supply(
+                token_id,
+                100,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply");
         assert!(
-            result.is_err(),
-            "expected CorruptedDriveState when token supply missing"
+            estimated.processing_fee >= applied.processing_fee,
+            "estimated {} is below applied {}",
+            estimated.processing_fee,
+            applied.processing_fee
         );
     }
 }
