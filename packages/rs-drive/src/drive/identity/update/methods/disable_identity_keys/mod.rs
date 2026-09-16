@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -59,9 +60,18 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.disable_identity_keys_v1(
+                identity_id,
+                keys_ids,
+                disable_at,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "disable_identity_keys".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -110,9 +120,18 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.disable_identity_keys_operations_v1(
+                identity_id,
+                key_ids,
+                disable_at,
+                epoch,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "disable_identity_keys_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

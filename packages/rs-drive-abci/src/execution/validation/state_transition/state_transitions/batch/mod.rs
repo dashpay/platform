@@ -1,3 +1,4 @@
+use advanced_structure::v1::DocumentsBatchStateTransitionStructureValidationV1;
 mod action_validation;
 mod advanced_structure;
 mod data_triggers;
@@ -175,7 +176,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
             .batch_state_transition
             .advanced_structure
         {
-            0 => {
+            0 | 1 => {
                 let identity =
                     identity.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "The identity must be known on advanced structure validation",
@@ -186,18 +187,36 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
                         "action must be a documents batch transition action",
                     )));
                 };
-                self.validate_advanced_structure_from_state_v0(
-                    block_info,
-                    network,
-                    documents_batch_transition_action,
-                    identity,
-                    execution_context,
-                    platform_version,
-                )
+                if platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .batch_state_transition
+                    .advanced_structure
+                    == 1
+                {
+                    self.validate_advanced_structure_from_state_v1(
+                        block_info,
+                        network,
+                        documents_batch_transition_action,
+                        identity,
+                        execution_context,
+                        platform_version,
+                    )
+                } else {
+                    self.validate_advanced_structure_from_state_v0(
+                        block_info,
+                        network,
+                        documents_batch_transition_action,
+                        identity,
+                        execution_context,
+                        platform_version,
+                    )
+                }
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: advanced structure from state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

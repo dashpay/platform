@@ -13,12 +13,14 @@ use drive::grovedb::TransactionArg;
 
 pub mod v0;
 pub mod v1;
+pub mod v2;
 
 /// Validates the contract bounds attached to each public key in `identity_public_keys_with_witness`.
 ///
 /// `epoch` is used by v1+ to bill the underlying grovedb reads to `execution_context`; v0
 /// ignores it (v0 didn't bill these reads — pre-PROTOCOL_VERSION_12 behavior is preserved
 /// verbatim for chain replay).
+#[allow(clippy::too_many_arguments)] // Keep explicit versioned validation inputs.
 pub(crate) fn validate_identity_public_keys_contract_bounds(
     identity_id: Identifier,
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
@@ -55,9 +57,18 @@ pub(crate) fn validate_identity_public_keys_contract_bounds(
             execution_context,
             platform_version,
         ),
+        2 => v2::validate_identity_public_keys_contract_bounds_v2(
+            identity_id,
+            identity_public_keys_with_witness,
+            drive,
+            epoch,
+            transaction,
+            execution_context,
+            platform_version,
+        ),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "validate_identity_public_keys_contract_bounds".to_string(),
-            known_versions: vec![0, 1],
+            known_versions: vec![0, 1, 2],
             received: version,
         })),
     }
@@ -438,14 +449,14 @@ mod tests {
     }
 
     /// Covers the integration this PR is wiring up — that the public dispatcher actually
-    /// routes to v1 under `PlatformVersion::latest()` (which sets the bounds-validator
-    /// version field to 1) and that the `epoch` parameter is forwarded through. If the
+    /// routes legacy bounds through v1 under `PlatformVersion::latest()` (which sets the bounds-validator
+    /// version field to 2) and that the `epoch` parameter is forwarded through. If the
     /// dispatcher were accidentally routing to v0 — which has the DECRYPTION-branch bug —
     /// the assertion below would flip from `is_valid` to invalid.
     #[test]
-    fn dispatcher_routes_to_v1_at_latest_platform_version() {
+    fn dispatcher_preserves_v1_encryption_rules_at_latest_platform_version() {
         let platform_version = PlatformVersion::latest();
-        // Sanity: `latest` should select v1 of the bounds validator.
+        // Sanity: `latest` should select v2 of the bounds validator.
         assert_eq!(
             platform_version
                 .drive_abci
@@ -453,8 +464,8 @@ mod tests {
                 .state_transitions
                 .common_validation_methods
                 .validate_identity_public_key_contract_bounds,
-            1,
-            "test premise: latest platform version is expected to select v1; \
+            2,
+            "test premise: latest platform version is expected to select v2; \
              update this test if the version field moves"
         );
 
@@ -510,5 +521,76 @@ mod tests {
             "dispatcher must forward epoch to v1 so reads get billed; got {} entries",
             billed_count
         );
+    }
+    #[test]
+    fn should_validate_bound_authentication_keys_against_contracts() {
+        use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+        let version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        // The contract declares no authentication opt-in: any contract may bind an
+        // authentication key, unlike encryption and decryption bounds.
+        let contract = build_contract_with_decryption_only_bounds(version);
+        platform
+            .drive
+            .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+            .unwrap();
+        for case in [
+            "valid_type",
+            "valid_contract",
+            "missing_type",
+            "missing_contract",
+            "wrong_purpose",
+            "master",
+        ] {
+            let id = if case == "missing_contract" {
+                Identifier::from([42; 32])
+            } else {
+                contract.id()
+            };
+            let bounds = match case {
+                "valid_contract" => ContractBounds::SingleContract { id },
+                "missing_type" => ContractBounds::SingleContractDocumentType {
+                    id,
+                    document_type_name: "absent".into(),
+                },
+                _ => ContractBounds::SingleContractDocumentType {
+                    id,
+                    document_type_name: "note".into(),
+                },
+            };
+            let mut key = make_decryption_key_bound_to_doc_type(contract.id(), "note".into());
+            key.set_contract_bounds(Some(bounds));
+            key.set_purpose(if case == "wrong_purpose" {
+                Purpose::TRANSFER
+            } else {
+                Purpose::AUTHENTICATION
+            });
+            key.set_security_level(if case == "master" {
+                SecurityLevel::MASTER
+            } else {
+                SecurityLevel::HIGH
+            });
+            let mut context =
+                StateTransitionExecutionContext::default_for_platform_version(version).unwrap();
+            let result = validate_identity_public_keys_contract_bounds(
+                Identifier::from([1; 32]),
+                &[key],
+                &platform.drive,
+                &Epoch::new(0).unwrap(),
+                None,
+                &mut context,
+                version,
+            )
+            .unwrap();
+            assert_eq!(
+                result.is_valid(),
+                case.starts_with("valid"),
+                "{case}: {:?}",
+                result.errors
+            );
+        }
     }
 }

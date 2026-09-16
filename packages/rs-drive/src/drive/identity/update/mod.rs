@@ -443,11 +443,25 @@ mod tests {
         }
 
         #[test]
-        fn should_disable_a_few_keys_latest_version_estimated() {
-            let platform_version = PlatformVersion::latest();
+        fn should_disable_a_few_keys_protocol_version_13_estimated() {
+            // Protocol 13 estimates with a maximal stand-in key (disable_identity_keys v0).
+            let platform_version = PlatformVersion::get(13).expect("protocol 13");
             let expected_fee_result = FeeResult {
                 storage_fee: 486000,
                 processing_fee: 3216860,
+                ..Default::default()
+            };
+            do_should_disable_a_few_keys(false, platform_version, expected_fee_result);
+        }
+
+        #[test]
+        fn should_disable_a_few_keys_latest_version_estimated() {
+            // Protocol 14 estimates from the stored keys (disable_identity_keys v1), so the
+            // storage estimate matches the applied cost exactly.
+            let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                storage_fee: 513000,
+                processing_fee: 3195760,
                 ..Default::default()
             };
             do_should_disable_a_few_keys(false, platform_version, expected_fee_result);
@@ -548,11 +562,32 @@ mod tests {
         }
 
         #[test]
-        fn estimated_costs_should_have_same_storage_cost_latest_version() {
-            let platform_version = PlatformVersion::latest();
+        fn estimated_costs_should_have_same_storage_cost_protocol_version_13() {
+            let platform_version = PlatformVersion::get(13).expect("protocol 13");
             let expected_estimated_fee_result = FeeResult {
                 storage_fee: 486000,
                 processing_fee: 3216860,
+                ..Default::default()
+            };
+            let expected_fee_result = FeeResult {
+                storage_fee: 486000,
+                processing_fee: 794720,
+                ..Default::default()
+            };
+            estimated_costs_should_have_same_storage_cost(
+                platform_version,
+                expected_estimated_fee_result,
+                expected_fee_result,
+            );
+        }
+
+        #[test]
+        fn estimated_costs_should_have_same_storage_cost_latest_version() {
+            let platform_version = PlatformVersion::latest();
+            // disable_identity_keys v1 also reads the stored keys during estimation.
+            let expected_estimated_fee_result = FeeResult {
+                storage_fee: 486000,
+                processing_fee: 3251060,
                 ..Default::default()
             };
             let expected_fee_result = FeeResult {

@@ -265,6 +265,8 @@ impl ErrorWithCode for SignatureError {
             Self::BasicBLSError(_) => 20010,
             Self::InvalidSignaturePublicKeyPurposeError(_) => 20011,
             Self::UncompressedPublicKeyNotAllowedError(_) => 20012,
+            Self::ContractBoundedKeyOutOfBoundsError(_) => 20014,
+            Self::ContractBoundedKeyNonBatchError(_) => 20013,
         }
     }
 }

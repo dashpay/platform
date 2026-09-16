@@ -27,3 +27,9 @@ pub use crate::consensus::signature::signature_error::SignatureError;
 pub use crate::consensus::signature::signature_should_not_be_present_error::SignatureShouldNotBePresentError;
 pub use crate::consensus::signature::uncompressed_public_key_not_allowed_error::UncompressedPublicKeyNotAllowedError;
 pub use crate::consensus::signature::wrong_public_key_purpose_error::WrongPublicKeyPurposeError;
+
+mod contract_bounded_key_non_batch_error;
+pub use contract_bounded_key_non_batch_error::ContractBoundedKeyNonBatchError;
+
+mod contract_bounded_key_out_of_bounds_error;
+pub use contract_bounded_key_out_of_bounds_error::ContractBoundedKeyOutOfBoundsError;

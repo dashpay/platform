@@ -25,6 +25,7 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::identity_update::basic_structure::v0::IdentityUpdateStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::identity_update::state::v0::IdentityUpdateStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::identity_update::state::v1::IdentityUpdateStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
@@ -95,8 +96,8 @@ impl StateTransitionStateValidation for IdentityUpdateTransition {
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
-        _block_info: &BlockInfo,
-        _execution_context: &mut StateTransitionExecutionContext,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -108,9 +109,16 @@ impl StateTransitionStateValidation for IdentityUpdateTransition {
             .state
         {
             0 => self.validate_state_v0(platform, tx, platform_version),
+            1 => self.validate_state_v1(
+                platform,
+                block_info,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity update transition: validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -374,6 +382,930 @@ mod tests {
                 verification_result
             );
         };
+    }
+
+    #[test]
+    fn should_retain_contract_lookup_fees_only_after_activation() {
+        use super::*;
+        use crate::execution::types::execution_operation::ValidationOperation;
+        use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
+        use dpp::data_contract::factory::DataContractFactory;
+        use dpp::platform_value::platform_value;
+        use dpp::version::DefaultForPlatformVersion;
+
+        for protocol in [13, 14] {
+            let version = PlatformVersion::get(protocol).unwrap();
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(protocol)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, _, _, master) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+            let factory = DataContractFactory::new(protocol).unwrap();
+            let contract = factory
+                .create_with_value_config(
+                    identity.id(),
+                    1,
+                    platform_value!({
+                        "note": { "type": "object", "requiresIdentityDecryptionBoundedKey": 0_u64,
+                            "properties": {"text": {"type": "string", "maxLength": 64, "position": 0}}, "additionalProperties": false }
+                    }),
+                    None,
+                    None,
+                )
+                .unwrap()
+                .data_contract_owned();
+            platform
+                .drive
+                .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+                .unwrap();
+            let state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            for missing in [false, true] {
+                let id = if missing {
+                    Identifier::from([0x73; 32])
+                } else {
+                    contract.id()
+                };
+                platform.drive.cache.data_contracts.clear();
+                let expected = platform
+                    .drive
+                    .get_system_or_user_contract_with_fee(
+                        id.to_buffer(),
+                        &BlockInfo::default().epoch,
+                        None,
+                        version,
+                    )
+                    .unwrap();
+                let expected_fee = expected.fee().unwrap().clone();
+                assert!(expected_fee.processing_fee > 0);
+                platform.drive.cache.data_contracts.clear();
+                let update: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                    identity_id: identity.id(),
+                    revision: 1,
+                    nonce: 1,
+                    add_public_keys: vec![IdentityPublicKeyInCreationV0 {
+                        id: 2,
+                        purpose: Purpose::DECRYPTION,
+                        security_level: SecurityLevel::HIGH,
+                        key_type: KeyType::ECDSA_HASH160,
+                        data: vec![0x74; 20].into(),
+                        read_only: false,
+                        signature: Default::default(),
+                        contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                            id,
+                            document_type_name: "note".into(),
+                        }),
+                    }
+                    .into()],
+                    disable_public_keys: vec![],
+                    user_fee_increase: 0,
+                    signature_public_key_id: master.id(),
+                    signature: Default::default(),
+                }
+                .into();
+                let mut context =
+                    StateTransitionExecutionContext::default_for_platform_version(version).unwrap();
+                let result = update
+                    .validate_state(
+                        None,
+                        &platform_ref,
+                        ValidationMode::Validator,
+                        &BlockInfo::default(),
+                        &mut context,
+                        None,
+                    )
+                    .unwrap();
+                assert_eq!(
+                    result.is_valid(),
+                    !missing,
+                    "protocol {protocol}: {:?}",
+                    result.errors
+                );
+                if missing {
+                    assert_matches!(
+                        result.into_data().unwrap(),
+                        StateTransitionAction::BumpIdentityNonceAction(_)
+                    );
+                }
+                if protocol == 13 {
+                    assert!(
+                        context.operations_slice().is_empty(),
+                        "historical v0 discards its local validation costs"
+                    );
+                } else {
+                    assert!(context.operations_slice().iter().any(|operation| matches!(operation,
+                        ValidationOperation::PrecalculatedOperation(fee) if fee == &expected_fee
+                    )), "contract lookup costs must reach the caller even on paid failure");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn should_register_bound_authentication_key_and_preserve_proof_metadata() {
+        use drive::drive::identity::key::fetch::{
+            IdentityKeysRequest, KeyKindRequestType, KeyRequestType,
+        };
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, signer, _, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .unwrap();
+        let bounds = ContractBounds::SingleContractDocumentType {
+            id: dashpay.id(),
+            document_type_name: "profile".into(),
+        };
+        let platform_state = platform.state.load();
+        let secp = Secp256k1::new();
+        let mut rng = StdRng::seed_from_u64(292);
+        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let mut new_key = IdentityPublicKeyInCreationV0 {
+            id: 2,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: ECDSA_SECP256K1,
+            read_only: false,
+            data: new_key_pair.public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+            contract_bounds: Some(bounds.clone()),
+        };
+        let build = |new_key: IdentityPublicKeyInCreationV0| -> StateTransition {
+            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
+                disable_public_keys: vec![],
+                user_fee_increase: 0,
+                signature_public_key_id: key.id(),
+                signature: Default::default(),
+            })
+            .into()
+        };
+        let signable_bytes = build(new_key.clone()).signable_bytes().unwrap();
+        new_key.signature =
+            signer::sign(&signable_bytes, &new_key_pair.secret_key().secret_bytes())
+                .unwrap()
+                .to_vec()
+                .into();
+        let mut update_transition = build(new_key);
+        update_transition
+            .set_signature(signer.sign(&key, signable_bytes.as_slice()).await.unwrap());
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![update_transition.serialize_to_bytes().unwrap()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+
+        // The state transition proof carries the bounds of the registered key.
+        let proof_result = platform
+            .platform
+            .drive
+            .prove_state_transition(&update_transition, None, platform_version)
+            .map_err(|e| e.to_string())
+            .expect("expected to create proof");
+        if let Some(proof_error) = proof_result.first_error() {
+            panic!("proof_result is not valid with error {}", proof_error);
+        }
+        let proof_data = proof_result
+            .into_data()
+            .map_err(|e| e.to_string())
+            .expect("expected to get proof data");
+        let (_, verification_result) = Drive::verify_state_transition_was_executed_with_proof(
+            &update_transition,
+            &BlockInfo::default(),
+            &proof_data,
+            &|_id: &Identifier| Ok(None),
+            platform_version,
+        )
+        .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
+        .map_err(|e| e.to_string())
+        .expect("expected to verify state transition");
+        let StateTransitionProofResult::VerifiedPartialIdentity(proven) = verification_result
+        else {
+            panic!("expected a partial identity, got {verification_result:?}");
+        };
+        assert_eq!(
+            proven.loaded_public_keys.get(&2).unwrap().contract_bounds(),
+            Some(&bounds)
+        );
+        // The key is indexed as the current authentication key of the bound document type.
+        let indexed = platform
+            .drive
+            .fetch_identity_keys_as_partial_identity(
+                IdentityKeysRequest {
+                    identity_id: identity.id().to_buffer(),
+                    request_type: KeyRequestType::ContractDocumentTypeBoundKey(
+                        dashpay.id().to_buffer(),
+                        "profile".into(),
+                        Purpose::AUTHENTICATION,
+                        KeyKindRequestType::CurrentKeyOfKindRequest,
+                    ),
+                    limit: None,
+                    offset: None,
+                },
+                None,
+                platform_version,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            indexed
+                .loaded_public_keys
+                .get(&2)
+                .unwrap()
+                .contract_bounds(),
+            Some(&bounds)
+        );
+
+        // Revocation through the master key keeps the bounds on the disabled key.
+        let mut revoke: StateTransition =
+            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 2,
+                nonce: 2,
+                add_public_keys: vec![],
+                disable_public_keys: vec![2],
+                user_fee_increase: 0,
+                signature_public_key_id: key.id(),
+                signature: Default::default(),
+            })
+            .into();
+        revoke.set_signature(
+            signer
+                .sign(&key, &revoke.signable_bytes().unwrap())
+                .await
+                .unwrap(),
+        );
+        let block = BlockInfo {
+            time_ms: 50,
+            ..Default::default()
+        };
+        let tx = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![revoke.serialize_to_bytes().unwrap()],
+                &platform_state,
+                &block,
+                &tx,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_eq!(result.valid_count(), 1);
+        platform
+            .drive
+            .grove
+            .commit_transaction(tx)
+            .unwrap()
+            .unwrap();
+        let fetched = platform
+            .drive
+            .fetch_identity_keys_as_partial_identity(
+                IdentityKeysRequest::new_specific_key_query(&identity.id().to_buffer(), 2),
+                None,
+                platform_version,
+            )
+            .unwrap()
+            .unwrap();
+        let revoked = fetched.loaded_public_keys.get(&2).unwrap();
+        assert_eq!(revoked.disabled_at(), Some(50));
+        assert_eq!(revoked.contract_bounds(), Some(&bounds));
+        assert!(platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_refresh_every_bound_key_reference_after_revocation() {
+        use drive::drive::identity::key::fetch::{
+            IdentityKeysRequest, KeyKindRequestType, KeyRequestType,
+        };
+        let version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (mut identity, mut signer, _, master) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(version)
+            .unwrap();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(version)
+            .unwrap();
+        let contract_bound = ContractBounds::SingleContract { id: dashpay.id() };
+        let type_bound = ContractBounds::SingleContractDocumentType {
+            id: dpns.id(),
+            document_type_name: "preorder".into(),
+        };
+        let contract_key = setup_add_key_to_identity(
+            &mut platform,
+            &mut identity,
+            &mut signer,
+            4,
+            2,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+            Some(contract_bound.clone()),
+        );
+        let type_key = setup_add_key_to_identity(
+            &mut platform,
+            &mut identity,
+            &mut signer,
+            5,
+            3,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+            Some(type_bound.clone()),
+        );
+        let mut update: StateTransition =
+            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![],
+                disable_public_keys: vec![contract_key.id(), type_key.id()],
+                user_fee_increase: 0,
+                signature_public_key_id: master.id(),
+                signature: Default::default(),
+            })
+            .into();
+        update.set_signature(
+            signer
+                .sign(&master, &update.signable_bytes().unwrap())
+                .await
+                .unwrap(),
+        );
+        let block = BlockInfo {
+            time_ms: 1001,
+            ..Default::default()
+        };
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![update.serialize_to_bytes().unwrap()],
+                &platform.state.load(),
+                &block,
+                &transaction,
+                version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+
+        // Both current-key references must resolve to the updated keys, not their old hashes.
+        for (key, bounds, request_type) in [
+            (
+                &contract_key,
+                &contract_bound,
+                KeyRequestType::ContractBoundKey(
+                    dashpay.id().to_buffer(),
+                    Purpose::AUTHENTICATION,
+                    KeyKindRequestType::CurrentKeyOfKindRequest,
+                ),
+            ),
+            (
+                &type_key,
+                &type_bound,
+                KeyRequestType::ContractDocumentTypeBoundKey(
+                    dpns.id().to_buffer(),
+                    "preorder".into(),
+                    Purpose::AUTHENTICATION,
+                    KeyKindRequestType::CurrentKeyOfKindRequest,
+                ),
+            ),
+        ] {
+            let fetched = platform
+                .drive
+                .fetch_identity_keys_as_partial_identity(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type,
+                        limit: None,
+                        offset: None,
+                    },
+                    None,
+                    version,
+                )
+                .unwrap()
+                .unwrap();
+            let refreshed = fetched
+                .loaded_public_keys
+                .get(&key.id())
+                .expect("bound key reference");
+            assert_eq!(refreshed.disabled_at(), Some(block.time_ms));
+            assert_eq!(refreshed.contract_bounds(), Some(bounds));
+        }
+        assert!(
+            platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &version.drive.grove_version)
+                .unwrap()
+                .is_empty(),
+            "revocation must leave no stale GroveDB references"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_newest_bound_key_current_across_registration_and_revocation() {
+        use drive::config::DriveConfig;
+        use drive::drive::identity::key::fetch::{
+            IdentityKeysRequest, KeyIDVec, KeyKindRequestType, KeyRequestType,
+        };
+        use std::collections::BTreeMap;
+        let version = PlatformVersion::latest();
+        // Consistency verification makes GroveDB reject two pending operations on one slot,
+        // which is what bound keys covering one contract queue for its current-key alias.
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                drive: DriveConfig {
+                    batching_consistency_verification: true,
+                    ..DriveConfig::default_testnet()
+                },
+                ..Default::default()
+            })
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, signer, _, master) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(version)
+            .unwrap();
+        let bounds = ContractBounds::SingleContract { id: dashpay.id() };
+        let secp = Secp256k1::new();
+        let mut rng = StdRng::seed_from_u64(292);
+        let pairs: BTreeMap<u32, Keypair> = [2u32, 3, 4]
+            .into_iter()
+            .map(|id| (id, Keypair::new(&secp, &mut rng)))
+            .collect();
+        let bound_key = |id: u32| IdentityPublicKeyInCreationV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: ECDSA_SECP256K1,
+            read_only: false,
+            data: pairs[&id].public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+            contract_bounds: Some(bounds.clone()),
+        };
+        let unsigned = |revision: u64,
+                        add: Vec<IdentityPublicKeyInCreationV0>,
+                        disable: Vec<u32>|
+         -> StateTransition {
+            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision,
+                nonce: revision,
+                add_public_keys: add
+                    .into_iter()
+                    .map(IdentityPublicKeyInCreation::V0)
+                    .collect(),
+                disable_public_keys: disable,
+                user_fee_increase: 0,
+                signature_public_key_id: master.id(),
+                signature: Default::default(),
+            })
+            .into()
+        };
+        let apply = |transition: &StateTransition, time_ms: u64| {
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition.serialize_to_bytes().unwrap()],
+                    &platform.state.load(),
+                    &BlockInfo {
+                        time_ms,
+                        ..Default::default()
+                    },
+                    &transaction,
+                    version,
+                    true,
+                    None,
+                )
+                .unwrap();
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "update at {time_ms} must apply as one consistent batch"
+            );
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .unwrap();
+        };
+        let key_ids = |kind: KeyKindRequestType| -> Vec<u32> {
+            platform
+                .drive
+                .fetch_identity_keys::<KeyIDVec>(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type: KeyRequestType::ContractBoundKey(
+                            dashpay.id().to_buffer(),
+                            Purpose::AUTHENTICATION,
+                            kind,
+                        ),
+                        limit: Some(16),
+                        offset: None,
+                    },
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        let disabled_at = |key_id: u32| -> Option<u64> {
+            platform
+                .drive
+                .fetch_identity_keys_as_partial_identity(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type: KeyRequestType::SpecificKeys(vec![key_id]),
+                        limit: Some(1),
+                        offset: None,
+                    },
+                    None,
+                    version,
+                )
+                .unwrap()
+                .unwrap()
+                .loaded_public_keys[&key_id]
+                .disabled_at()
+        };
+        let assert_slot = |current: u32, all: &[u32]| {
+            assert_eq!(
+                key_ids(KeyKindRequestType::CurrentKeyOfKindRequest),
+                vec![current],
+                "current key"
+            );
+            assert_eq!(
+                key_ids(KeyKindRequestType::AllKeysOfKindRequest),
+                all,
+                "listing must not repeat the current key alias"
+            );
+        };
+
+        // 1. Two bound keys in one update, listed newest first: the highest key id must be
+        //    current regardless of input order.
+        let mut adds = vec![bound_key(3), bound_key(2)];
+        let signable = unsigned(1, adds.clone(), vec![]).signable_bytes().unwrap();
+        for key in &mut adds {
+            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().secret_bytes())
+                .unwrap()
+                .to_vec()
+                .into();
+        }
+        let mut registration = unsigned(1, adds, vec![]);
+        registration.set_signature(signer.sign(&master, &signable).await.unwrap());
+        apply(&registration, 1000);
+        assert_slot(3, &[2, 3]);
+
+        // 2. Register a replacement and revoke the current key in the same transition: the
+        //    replacement must become current, not the revoked key or a batch conflict.
+        let mut adds = vec![bound_key(4)];
+        let signable = unsigned(2, adds.clone(), vec![3]).signable_bytes().unwrap();
+        for key in &mut adds {
+            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().secret_bytes())
+                .unwrap()
+                .to_vec()
+                .into();
+        }
+        let mut replacement = unsigned(2, adds, vec![3]);
+        replacement.set_signature(signer.sign(&master, &signable).await.unwrap());
+        apply(&replacement, 2000);
+        assert_slot(4, &[2, 3, 4]);
+        assert_eq!(disabled_at(3), Some(2000));
+        assert_eq!(disabled_at(4), None);
+
+        // 3. Revoking an older key on its own must not repoint the alias at it.
+        let mut revocation = unsigned(3, vec![], vec![2]);
+        revocation.set_signature(
+            signer
+                .sign(&master, &revocation.signable_bytes().unwrap())
+                .await
+                .unwrap(),
+        );
+        apply(&revocation, 3000);
+        assert_slot(4, &[2, 3, 4]);
+        assert_eq!(disabled_at(2), Some(3000));
+        assert!(
+            platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &version.drive.grove_version)
+                .unwrap()
+                .is_empty(),
+            "registration and revocation must leave no stale GroveDB references"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_estimate_bound_key_revocation_at_least_at_its_execution_cost() {
+        let version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (mut identity, mut signer, _, _) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(version)
+            .unwrap();
+        let bound = setup_add_key_to_identity(
+            &mut platform,
+            &mut identity,
+            &mut signer,
+            4,
+            2,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+            Some(ContractBounds::SingleContract { id: dashpay.id() }),
+        );
+        let plain = setup_add_key_to_identity(
+            &mut platform,
+            &mut identity,
+            &mut signer,
+            5,
+            3,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+            None,
+        );
+        let block = BlockInfo {
+            time_ms: 1001,
+            ..Default::default()
+        };
+        let estimate = |key_id: u32| {
+            platform
+                .drive
+                .disable_identity_keys(
+                    identity.id().to_buffer(),
+                    vec![key_id],
+                    block.time_ms,
+                    &block,
+                    false,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        let estimated_bound = estimate(bound.id());
+        let estimated_plain = estimate(plain.id());
+        // The bound key has contract-info references to refresh; v0 estimated with an unbounded
+        // stand-in key and priced none of them.
+        assert!(
+            estimated_bound.processing_fee > estimated_plain.processing_fee,
+            "bound revocation estimate {} must exceed the unbounded one {}",
+            estimated_bound.processing_fee,
+            estimated_plain.processing_fee
+        );
+        let actual = platform
+            .drive
+            .disable_identity_keys(
+                identity.id().to_buffer(),
+                vec![bound.id()],
+                block.time_ms,
+                &block,
+                true,
+                None,
+                version,
+            )
+            .unwrap();
+        assert!(
+            estimated_bound.processing_fee >= actual.processing_fee,
+            "estimate {} must cover execution {}",
+            estimated_bound.processing_fee,
+            actual.processing_fee
+        );
+        assert!(estimated_bound.storage_fee >= actual.storage_fee);
+    }
+
+    #[tokio::test]
+    async fn should_estimate_bound_key_fees_from_the_real_contract_lookup() {
+        use dpp::data_contract::factory::DataContractFactory;
+        use dpp::identity::IdentityPublicKey;
+        use dpp::platform_value::{platform_value, Value};
+        let version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, _, _, _) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        // Two user contracts, one bound at contract level and one at document-type level.
+        // Neither is served from the system-contract cache.
+        let factory = DataContractFactory::new(version.protocol_version).unwrap();
+        let document_type = |n: usize| {
+            (
+                Value::Text(format!("t{n:02}")),
+                platform_value!({"type": "object",
+                    "properties": {"text": {"type": "string", "maxLength": 64, "position": 0},
+                        "note": {"type": "string", "maxLength": 128, "position": 1}},
+                    "additionalProperties": false}),
+            )
+        };
+        let mut contracts = Vec::new();
+        for (nonce, document_types) in [(1u64, 1usize), (2, 16)] {
+            let contract = factory
+                .create_with_value_config(
+                    identity.id(),
+                    nonce,
+                    Value::Map((0..document_types).map(document_type).collect()),
+                    None,
+                    None,
+                )
+                .unwrap()
+                .data_contract_owned();
+            platform
+                .drive
+                .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+                .unwrap();
+            contracts.push(contract);
+        }
+        let mut rng = StdRng::seed_from_u64(77);
+        let keys: Vec<IdentityPublicKey> = contracts
+            .iter()
+            .enumerate()
+            .map(|(index, contract)| {
+                IdentityPublicKey::random_key_with_known_attributes(
+                    2 + index as u32,
+                    &mut rng,
+                    Purpose::AUTHENTICATION,
+                    SecurityLevel::HIGH,
+                    KeyType::ECDSA_SECP256K1,
+                    Some(ContractBounds::SingleContractDocumentType {
+                        id: contract.id(),
+                        document_type_name: "t00".into(),
+                    }),
+                    version,
+                )
+                .unwrap()
+                .0
+            })
+            .collect();
+        let block = BlockInfo {
+            time_ms: 1001,
+            ..Default::default()
+        };
+        let register = |key: &IdentityPublicKey, apply: bool| {
+            platform.drive.cache.data_contracts.clear();
+            platform
+                .drive
+                .add_new_unique_keys_to_identity(
+                    identity.id().to_buffer(),
+                    vec![key.clone()],
+                    &block,
+                    apply,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        let revoke = |key: &IdentityPublicKey, apply: bool| {
+            platform.drive.cache.data_contracts.clear();
+            platform
+                .drive
+                .disable_identity_keys(
+                    identity.id().to_buffer(),
+                    vec![key.id()],
+                    block.time_ms,
+                    &block,
+                    apply,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+
+        let estimated_registration: Vec<_> = keys.iter().map(|key| register(key, false)).collect();
+        let actual_registration: Vec<_> = keys.iter().map(|key| register(key, true)).collect();
+
+        // The estimated operations must bill the same contract lookups as the applied
+        // operations: one real fee per bound group, not a fixed stand-in.
+        use dpp::block::epoch::Epoch;
+        use drive::fees::op::LowLevelDriveOperation;
+        use std::collections::HashMap;
+        let lookup_fees = |operations: &[LowLevelDriveOperation]| -> Vec<u64> {
+            operations
+                .iter()
+                .filter_map(|operation| match operation {
+                    LowLevelDriveOperation::PreCalculatedFeeResult(fee) => Some(fee.processing_fee),
+                    _ => None,
+                })
+                .collect()
+        };
+        let key_ids: Vec<_> = keys.iter().map(|key| key.id()).collect();
+        let revocation_operations = |estimate: bool| {
+            platform.drive.cache.data_contracts.clear();
+            let mut layer_info = estimate.then(HashMap::new);
+            platform
+                .drive
+                .disable_identity_keys_operations(
+                    identity.id().to_buffer(),
+                    key_ids.clone(),
+                    block.time_ms,
+                    &Epoch::new(0).unwrap(),
+                    &mut layer_info,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        let estimated_lookups = lookup_fees(&revocation_operations(true));
+        let applied_lookups = lookup_fees(&revocation_operations(false));
+        assert!(
+            estimated_lookups.len() >= keys.len(),
+            "at least one contract lookup fee per bound key: {estimated_lookups:?}"
+        );
+        assert_eq!(
+            estimated_lookups, applied_lookups,
+            "the estimate must price the same contract lookups the apply path bills"
+        );
+
+        let estimated_revocation: Vec<_> = keys.iter().map(|key| revoke(key, false)).collect();
+        let actual_revocation: Vec<_> = keys.iter().map(|key| revoke(key, true)).collect();
+        for (estimated, actual) in estimated_registration
+            .iter()
+            .zip(&actual_registration)
+            .chain(estimated_revocation.iter().zip(&actual_revocation))
+        {
+            assert!(
+                estimated.processing_fee >= actual.processing_fee,
+                "estimate {} must cover execution {}",
+                estimated.processing_fee,
+                actual.processing_fee
+            );
+            assert!(estimated.storage_fee >= actual.storage_fee);
+        }
     }
 
     #[tokio::test]

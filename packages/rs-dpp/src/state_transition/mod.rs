@@ -48,6 +48,10 @@ mod traits;
 use crate::consensus::basic::UnsupportedFeatureError;
 #[cfg(feature = "state-transition-signing")]
 use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
+#[cfg(feature = "state-transition-signing")]
+use crate::consensus::signature::{
+    ContractBoundedKeyNonBatchError, ContractBoundedKeyOutOfBoundsError,
+};
 #[cfg(feature = "state-transition-validation")]
 use crate::consensus::signature::{
     InvalidStateTransitionSignatureError, PublicKeyIsDisabledError, SignatureError,
@@ -1378,6 +1382,7 @@ impl StateTransition {
         >,
         options: StateTransitionSigningOptions,
     ) -> Result<(), ProtocolError> {
+        self.verify_identity_key_bounds(identity_public_key)?;
         match self {
             StateTransition::DataContractCreate(st) => {
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
@@ -1539,6 +1544,40 @@ impl StateTransition {
         Ok(())
     }
 
+    /// A contract-bound AUTHENTICATION key may only sign a Batch whose members are all inside
+    /// its bounds. Consensus enforces the same rule from the stored key; checking here saves the
+    /// round trip when the signing API is handed the key metadata.
+    #[cfg(feature = "state-transition-signing")]
+    fn verify_identity_key_bounds(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+    ) -> Result<(), ProtocolError> {
+        if identity_public_key.purpose() != Purpose::AUTHENTICATION {
+            return Ok(());
+        }
+        let Some(bounds) = identity_public_key.contract_bounds() else {
+            return Ok(());
+        };
+        match self {
+            StateTransition::Batch(batch) => {
+                use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+                if batch
+                    .transitions_iter()
+                    .all(|member| bounds.allows_batched_transition(member))
+                {
+                    Ok(())
+                } else {
+                    Err(ProtocolError::ConsensusError(Box::new(
+                        ContractBoundedKeyOutOfBoundsError::new(identity_public_key.id()).into(),
+                    )))
+                }
+            }
+            _ => Err(ProtocolError::ConsensusError(Box::new(
+                ContractBoundedKeyNonBatchError::new(identity_public_key.id()).into(),
+            ))),
+        }
+    }
+
     #[cfg(feature = "state-transition-signing")]
     pub fn sign(
         &mut self,
@@ -1562,6 +1601,7 @@ impl StateTransition {
         bls: &impl BlsModule,
         options: StateTransitionSigningOptions,
     ) -> Result<(), ProtocolError> {
+        self.verify_identity_key_bounds(identity_public_key)?;
         call_errorable_method_identity_signed!(
             self,
             verify_public_key_level_and_purpose,
@@ -2539,6 +2579,81 @@ mod tests {
                 signature: BinaryData::new(vec![0xCD; 65]),
             },
         ))
+    }
+
+    #[cfg(all(feature = "state-transition-signing", feature = "bls-signatures"))]
+    #[test]
+    fn should_enforce_contract_bounds_before_private_key_signing() {
+        use crate::consensus::signature::{
+            ContractBoundedKeyNonBatchError, ContractBoundedKeyOutOfBoundsError,
+        };
+        use crate::identity::contract_bounds::ContractBounds;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
+        let private_key = [1; 32];
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        // `sample_batch_st_with_delete` deletes a "preorder" document of contract [2; 32].
+        let mut key = IdentityPublicKeyV0 {
+            id: 7,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: KeyType::ECDSA_SECP256K1,
+            data: get_compressed_public_ec_key(&private_key)
+                .unwrap()
+                .to_vec()
+                .into(),
+            contract_bounds: Some(ContractBounds::SingleContract {
+                id: Identifier::from([2; 32]),
+            }),
+            ..Default::default()
+        };
+        sample_batch_st_with_delete()
+            .sign(&key.clone().into(), &private_key, &bls)
+            .expect("a batch inside the bounds must sign");
+        key.contract_bounds = Some(ContractBounds::SingleContractDocumentType {
+            id: Identifier::from([2; 32]),
+            document_type_name: "preorder".to_string(),
+        });
+        sample_batch_st_with_delete()
+            .sign(&key.clone().into(), &private_key, &bls)
+            .expect("a batch of the bound document type must sign");
+
+        let err = sample_transfer_st()
+            .sign(&key.clone().into(), &private_key, &bls)
+            .unwrap_err();
+        assert!(matches!(err, ProtocolError::ConsensusError(error)
+            if *error == ContractBoundedKeyNonBatchError::new(key.id).into()));
+
+        for denied in [
+            ContractBounds::SingleContract {
+                id: Identifier::from([3; 32]),
+            },
+            ContractBounds::SingleContractDocumentType {
+                id: Identifier::from([2; 32]),
+                document_type_name: "other".to_string(),
+            },
+        ] {
+            key.contract_bounds = Some(denied.clone());
+            let mut transition = sample_batch_st_with_delete();
+            let original = transition.clone();
+            let err = transition
+                .sign(&key.clone().into(), &private_key, &bls)
+                .unwrap_err();
+            assert!(
+                matches!(err, ProtocolError::ConsensusError(error)
+                if *error == ContractBoundedKeyOutOfBoundsError::new(key.id).into()),
+                "{denied:?}"
+            );
+            assert_eq!(
+                transition, original,
+                "rejection must preserve the transition"
+            );
+        }
+
+        key.contract_bounds = None;
+        sample_batch_st_with_delete()
+            .sign(&key.into(), &private_key, &bls)
+            .expect("unbounded keys must still sign");
     }
 
     fn sample_batch_st_with_delete() -> StateTransition {

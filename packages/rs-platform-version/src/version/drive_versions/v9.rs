@@ -101,7 +101,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             commit_transaction: 0,
             apply_partial_batch_low_level_drive_operations: 0,
             apply_partial_batch_grovedb_operations: 0,
-            apply_batch_low_level_drive_operations: 0,
+            apply_batch_low_level_drive_operations: 1, // changed: coalesces bound current-key alias writes per batch
             apply_batch_grovedb_operations: 0,
         },
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4, // changed: document_from_action generation 1 stamps built documents with the contract version (create assigns, replace re-assigns; paired with document serialization format 3)

@@ -281,6 +281,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// where-clause operator enum gains `IN_TIME_RANGE = 11`, which pre-v14
 /// servers reject as an unknown operator rather than misread (the v0 wire
 /// has no time-range operator at all).
+/// Contract-bound authentication keys activate through contract-bounds validation v2,
+/// identity-signature validation v1 and batch advanced-structure v1. Identity creation
+/// validates key bounds (state v1) and identity-update state v1 retains the contract
+/// lookup fees; Drive identity methods v2 index and refresh the bound keys.
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
