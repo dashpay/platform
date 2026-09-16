@@ -1,6 +1,6 @@
 use crate::drive::document::insert_contested::award_contested_document_vote_poll::ContestedDocumentVotePollAwardOutcome;
 use crate::drive::votes::paths::vote_contested_resource_end_date_queries_at_time_tree_path_vec;
-use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -20,7 +20,9 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
 };
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::TransactionArg;
+use grovedb_costs::CostContext;
 use itertools::Itertools;
 
 /// How many of the contenders sharing the top tally are deserialized for the tie-break.
@@ -32,6 +34,9 @@ impl Drive {
     ///
     /// The checks run in order and return before anything is written:
     ///
+    /// 0. The contract the poll names exists in state. It is fetched by id here, and its
+    ///    document type and index definition are the ones every later step reads: the
+    ///    caller supplies the poll's identity and nothing about the contract.
     /// 1. The poll's stored info exists and its status is `Started`. A poll that was already
     ///    awarded or locked, or that never started, is not awardable; this is the same
     ///    demand the record keeper makes when it finalizes the stored info afterwards.
@@ -53,12 +58,35 @@ impl Drive {
     #[inline(always)]
     pub(super) fn award_contested_document_vote_poll_v0(
         &self,
-        vote_poll: &ContestedDocumentResourceVotePollWithContractInfo,
+        vote_poll: &ContestedDocumentResourceVotePoll,
         end_date: TimestampMillis,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ContestedDocumentVotePollAwardOutcome, Error> {
+        // 0. The contract comes from state, never from the caller.
+        let CostContext {
+            value: maybe_contract_fetch_info,
+            ..
+        } = self.fetch_contract(
+            vote_poll.contract_id.to_buffer(),
+            None,
+            None,
+            transaction,
+            platform_version,
+        );
+
+        let Some(contract_fetch_info) = maybe_contract_fetch_info? else {
+            return Err(Error::Drive(DriveError::ContestedAwardRejected(format!(
+                "vote poll names a contract that is not in state: {}",
+                vote_poll.contract_id
+            ))));
+        };
+
+        let vote_poll =
+            vote_poll.resolve_with_provided_arc_contract_fetch_info(contract_fetch_info)?;
+        let vote_poll = &vote_poll;
+
         // 1. The poll must be a started contest.
         let (_, stored_info) = self.fetch_contested_document_vote_poll_stored_info(
             vote_poll,
@@ -178,6 +206,7 @@ impl Drive {
 
         let Some(top_contender) = maybe_top_contender else {
             return Ok(ContestedDocumentVotePollAwardOutcome {
+                vote_poll: vote_poll.clone(),
                 winner: ContestedDocumentVotePollWinnerInfo::NoWinner,
                 contenders: sorted_contenders,
             });
@@ -186,6 +215,7 @@ impl Drive {
         // A lock tied with the top contender does not lock: the top contender gets it.
         if locked_vote_tally > top_contender.final_vote_tally {
             return Ok(ContestedDocumentVotePollAwardOutcome {
+                vote_poll: vote_poll.clone(),
                 winner: ContestedDocumentVotePollWinnerInfo::Locked,
                 contenders: sorted_contenders,
             });
@@ -220,6 +250,7 @@ impl Drive {
         )?;
 
         Ok(ContestedDocumentVotePollAwardOutcome {
+            vote_poll: vote_poll.clone(),
             winner: ContestedDocumentVotePollWinnerInfo::WonByIdentity(identity_id),
             contenders: sorted_contenders,
         })
@@ -230,6 +261,7 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::config::DriveConfig;
+    use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
     use crate::util::object_size_info::DataContractOwnedResolvedInfo;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -264,6 +296,8 @@ mod tests {
     struct Contest {
         drive: Drive,
         contract: DataContract,
+        /// The poll resolved against the applied contract, for the setup helpers that need a
+        /// resolved poll (votes, stored info); the award itself only ever sees `poll_id()`.
         vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         /// The end date the contest was queued under.
         end_date: TimestampMillis,
@@ -387,6 +421,11 @@ mod tests {
                 .vote_poll_status()
         }
 
+        /// The poll's identity, which is all the award accepts.
+        fn poll_id(&self) -> ContestedDocumentResourceVotePoll {
+            (&self.vote_poll).into()
+        }
+
         /// Awards at the contest's end date, exactly as the finalization sweep would.
         fn award(&self) -> Result<ContestedDocumentVotePollAwardOutcome, Error> {
             self.award_at(self.end_date, self.end_date)
@@ -399,7 +438,7 @@ mod tests {
         ) -> Result<ContestedDocumentVotePollAwardOutcome, Error> {
             let platform_version = PlatformVersion::latest();
             self.drive.award_contested_document_vote_poll(
-                &self.vote_poll,
+                &self.poll_id(),
                 end_date,
                 &BlockInfo::default_with_time(block_time_ms),
                 None,
@@ -838,12 +877,12 @@ mod tests {
         let contest = setup_contest([0, 0]);
         // A poll for a name nobody contested: it resolves against the same contract but has
         // no stored info, no queue entry and no contenders.
-        let unknown_poll = ContestedDocumentResourceVotePollWithContractInfo {
+        let unknown_poll = ContestedDocumentResourceVotePoll {
             index_values: vec![
                 Value::Text("dash".to_string()),
                 Value::Text("nobody".to_string()),
             ],
-            ..contest.vote_poll.clone()
+            ..contest.poll_id()
         };
         let root_hash_before = contest.root_hash();
 
@@ -862,6 +901,76 @@ mod tests {
             matches!(error, Error::Drive(DriveError::ContestedAwardRejected(ref reason)) if reason.ends_with("it has no stored info")),
             "unexpected error: {error:?}"
         );
+        assert_eq!(contest.root_hash(), root_hash_before);
+    }
+
+    /// The contract is read from state by the id the poll names, so a caller cannot route
+    /// the award through metadata of its own: a poll naming a contract id that is not in
+    /// state is rejected before anything else is read, with nothing applied.
+    #[test]
+    fn should_reject_an_award_naming_a_contract_that_is_not_in_state() {
+        let platform_version = PlatformVersion::latest();
+        let contest = setup_contest([0, 0]);
+        let [(first, _), _] = &contest.contenders;
+        contest.vote(ResourceVoteChoice::TowardsIdentity(*first), 5, 0xA0);
+        let root_hash_before = contest.root_hash();
+
+        let forged_contract_poll = ContestedDocumentResourceVotePoll {
+            contract_id: Identifier::new([0xFE; 32]),
+            ..contest.poll_id()
+        };
+
+        let error = contest
+            .drive
+            .award_contested_document_vote_poll(
+                &forged_contract_poll,
+                contest.end_date,
+                &BlockInfo::default_with_time(contest.end_date),
+                None,
+                platform_version,
+            )
+            .expect_err("a poll naming an unknown contract must not be awarded");
+
+        assert!(
+            matches!(error, Error::Drive(DriveError::ContestedAwardRejected(ref reason)) if reason.starts_with("vote poll names a contract that is not in state")),
+            "unexpected error: {error:?}"
+        );
+        assert!(contest.awarded_documents().is_empty());
+        assert_eq!(contest.root_hash(), root_hash_before);
+    }
+
+    /// The document type and index the award uses are the committed contract's, so a poll
+    /// naming an index the committed contract does not define is a typed rejection with
+    /// nothing applied, whatever the caller believes the index to be.
+    #[test]
+    fn should_reject_an_award_naming_an_index_the_committed_contract_does_not_define() {
+        let platform_version = PlatformVersion::latest();
+        let contest = setup_contest([0, 0]);
+        let [(first, _), _] = &contest.contenders;
+        contest.vote(ResourceVoteChoice::TowardsIdentity(*first), 5, 0xA0);
+        let root_hash_before = contest.root_hash();
+
+        let forged_index_poll = ContestedDocumentResourceVotePoll {
+            index_name: "forgedIndex".to_string(),
+            ..contest.poll_id()
+        };
+
+        let error = contest
+            .drive
+            .award_contested_document_vote_poll(
+                &forged_index_poll,
+                contest.end_date,
+                &BlockInfo::default_with_time(contest.end_date),
+                None,
+                platform_version,
+            )
+            .expect_err("a poll naming an index the contract does not define must not be awarded");
+
+        assert!(
+            matches!(error, Error::Drive(DriveError::ContestedIndexNotFound(_))),
+            "unexpected error: {error:?}"
+        );
+        assert!(contest.awarded_documents().is_empty());
         assert_eq!(contest.root_hash(), root_hash_before);
     }
 

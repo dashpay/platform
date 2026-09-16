@@ -9,11 +9,16 @@ use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedContenderWithSerializedDocument;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::TransactionArg;
 
 /// What the native award decided for an ended contested resource vote poll.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContestedDocumentVotePollAwardOutcome {
+    /// The poll as the award resolved it against state: the identity the caller named, with
+    /// the contract fetched from state by its id. The caller records and cleans the poll up
+    /// with this, never with contract metadata of its own.
+    pub vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
     /// The outcome the native rules selected: the awarded identity, a lock, or no winner.
     pub winner: ContestedDocumentVotePollWinnerInfo,
     /// Every contender the selection considered, with the vote tally each one finished with,
@@ -25,8 +30,12 @@ impl Drive {
     /// Awards an ended contested resource vote poll: selects the winner with the native rules
     /// and inserts the winning document, in one operation.
     ///
-    /// The operation takes no contender. Everything it awards is read from state: the poll's
-    /// stored status must be `Started`, the poll must be queued for finalization at `end_date`
+    /// The operation takes no contender and no contract. The caller names the poll (contract
+    /// id, document type name, index name and index values) and the end date; the contract,
+    /// its document type and its index definition are fetched from state by that id inside
+    /// the operation, so no caller-supplied metadata reaches the write. Everything else it
+    /// awards is read from state too: the poll's stored status must be `Started`, the poll
+    /// must be queued for finalization at `end_date`
     /// and the block time must have reached that end date, the winner is the contender with
     /// the highest vote tally (ties broken by the greatest creation time, then the greatest
     /// document id, exactly as the block executor selected before this operation existed), a lock tally
@@ -35,10 +44,10 @@ impl Drive {
     /// restriction or other document rule runs on the insert: the award is a native block
     /// event outside every ordinary-action rule scope.
     ///
-    /// Any call that does not describe a live, ended, queued poll is rejected with
-    /// `DriveError::ContestedAwardRejected` before anything is written, so a caller cannot
-    /// award early, award a poll that was already finalized, or name an end date the poll
-    /// was never queued under. The end-date queue entry is written once when the contest
+    /// Any call that does not describe a live, ended, queued poll on a contract in state is
+    /// rejected with `DriveError::ContestedAwardRejected` before anything is written, so a
+    /// caller cannot award early, award a poll that was already finalized, name an end date
+    /// the poll was never queued under, or name a contract that does not exist. The end-date queue entry is written once when the contest
     /// starts and removed by the cleanup that follows a legitimate award, which is what makes
     /// a second award of the same poll impossible after cleanup; between the award and that
     /// cleanup, a second call fails on the primary storage existence check of the insert.
@@ -47,23 +56,24 @@ impl Drive {
     /// state transition, batched action or Drive batch operation maps to it.
     ///
     /// # Parameters
-    /// * `vote_poll`: The resolved vote poll to award, with its contract.
+    /// * `vote_poll`: The identity of the poll to award; its contract is fetched from state.
     /// * `end_date`: The end date the poll is queued under, as the finalization sweep found it.
     /// * `block_info`: The block the award is applied in.
     /// * `transaction`: The transaction argument.
     /// * `platform_version`: The platform version to select the correct function version to run.
     ///
     /// # Returns
-    /// * `Ok(ContestedDocumentVotePollAwardOutcome)` with the winner the native rules selected
-    ///   and the contenders they considered.
-    /// * `Err(DriveError::ContestedAwardRejected)` if the poll is not a started contest, has not
-    ///   ended, or is not queued at `end_date`; nothing was applied.
+    /// * `Ok(ContestedDocumentVotePollAwardOutcome)` with the poll resolved against state, the
+    ///   winner the native rules selected and the contenders they considered.
+    /// * `Err(DriveError::ContestedAwardRejected)` if the poll names a contract that is not in
+    ///   state, is not a started contest, has not ended, or is not queued at `end_date`;
+    ///   nothing was applied.
     /// * `Err(DriveError::VersionNotActive)` if the platform version predates the operation.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known
     ///   versions.
     pub fn award_contested_document_vote_poll(
         &self,
-        vote_poll: &ContestedDocumentResourceVotePollWithContractInfo,
+        vote_poll: &ContestedDocumentResourceVotePoll,
         end_date: TimestampMillis,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -102,10 +112,8 @@ mod tests {
     use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
     use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
     use crate::util::batch::{DocumentOperationType, DriveOperation};
-    use crate::util::object_size_info::DataContractOwnedResolvedInfo;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::platform_value::Value;
-    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+    use dpp::platform_value::{Identifier, Value};
 
     /// A protocol version whose document method table predates the operation cannot
     /// dispatch it: the slot is `None`, and the dispatcher refuses before reading any
@@ -115,10 +123,8 @@ mod tests {
         let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
-        let contract = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-        let vote_poll = ContestedDocumentResourceVotePollWithContractInfo {
-            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract),
+        let vote_poll = ContestedDocumentResourceVotePoll {
+            contract_id: Identifier::new([7; 32]),
             document_type_name: "domain".to_string(),
             index_name: "parentNameAndLabel".to_string(),
             index_values: vec![

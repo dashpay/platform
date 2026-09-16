@@ -6,8 +6,9 @@ use dpp::block::block_info::BlockInfo;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
-use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
-use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
+use dpp::voting::vote_polls::VotePoll;
+use drive::drive::document::ContestedDocumentVotePollAwardOutcome;
+use drive::drive::votes::resolved::vote_polls::ResolvedVotePollWithVotes;
 use drive::grovedb::TransactionArg;
 use drive::query::VotePollsByEndDateDriveQuery;
 use std::collections::BTreeMap;
@@ -19,10 +20,12 @@ where
     /// Finalizes every contested resource vote poll whose end date the block time has reached.
     ///
     /// Generation 1 awards through `Drive::award_contested_document_vote_poll`, the native
-    /// award operation: the winner is selected and its document inserted inside Drive, from
-    /// state alone, so this event supplies no contender and cannot redirect an award. It then
-    /// records the finalized poll with the votes it received and cleans the poll up, all on
-    /// the block transaction, exactly as generation 0 did after selecting the winner itself.
+    /// award operation: the poll's contract is fetched from state by id, the winner is
+    /// selected and its document inserted inside Drive, from state alone, so this event
+    /// supplies no contender and no contract metadata and cannot redirect an award. It then
+    /// records the finalized poll, resolved as the award resolved it, with the votes it
+    /// received and cleans the poll up, all on the block transaction, exactly as generation
+    /// 0 did after selecting the winner itself.
     ///
     /// Generation 0's two testnet repair branches (the protocol 1 to 2 upgrade and the epoch
     /// 1434 to 1435 boundary) cannot trigger at any protocol version that selects this
@@ -55,17 +58,21 @@ where
                 let vote_polls_with_votes = vote_polls
                     .into_iter()
                     .map(|vote_poll| {
-                        let resolved_vote_poll =
-                            vote_poll.resolve(&self.drive, transaction, platform_version)?;
-                        match resolved_vote_poll {
-                            ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
-                                resolved_contested_document_resource_vote_poll,
+                        match vote_poll {
+                            VotePoll::ContestedDocumentResourceVotePoll(
+                                contested_document_resource_vote_poll,
                             ) => {
-                                // The native award: Drive checks that the poll is a started
-                                // contest queued at this end date, selects the winner and
-                                // inserts its document, or locks, or finds no winner.
-                                let outcome = self.drive.award_contested_document_vote_poll(
-                                    &resolved_contested_document_resource_vote_poll,
+                                // The native award: Drive fetches the poll's contract from
+                                // state, checks that the poll is a started contest queued at
+                                // this end date, selects the winner and inserts its document,
+                                // or locks, or finds no winner. The poll it hands back is the
+                                // one it resolved against state.
+                                let ContestedDocumentVotePollAwardOutcome {
+                                    vote_poll: resolved_contested_document_resource_vote_poll,
+                                    winner,
+                                    contenders,
+                                } = self.drive.award_contested_document_vote_poll(
+                                    &contested_document_resource_vote_poll,
                                     end_date,
                                     block_info,
                                     transaction,
@@ -78,8 +85,7 @@ where
                                 let (contenders_with_votes, contenders_with_no_votes): (
                                     Vec<_>,
                                     Vec<_>,
-                                ) = outcome
-                                    .contenders
+                                ) = contenders
                                     .iter()
                                     .partition(|contender| contender.final_vote_tally > 0);
 
@@ -112,7 +118,7 @@ where
                                     block_info,
                                     &resolved_contested_document_resource_vote_poll,
                                     &identifiers_voting_for_contenders,
-                                    outcome.winner,
+                                    winner,
                                     transaction,
                                     platform_version,
                                 )?;
