@@ -19,7 +19,6 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::{SiblingReference, UpstreamRootHeightReference};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use grovedb_costs::OperationCost;
 use integer_encoding::VarInt;
 use std::collections::HashMap;
 
@@ -88,36 +87,25 @@ impl Drive {
         for contract_info in contract_infos.into_iter() {
             let root_id = contract_info.root_id();
 
-            let contract = if estimated_costs_only_with_layer_info.is_none() {
-                // we should start by fetching the contract
-                let (fee, contract) = self.get_contract_with_fetch_info_and_fee(
-                    root_id,
-                    Some(epoch),
-                    true,
-                    transaction,
-                    platform_version,
-                )?;
+            // v1 fetches the contract in estimation mode as well. v0 priced the lookup with a
+            // fixed 100-byte stand-in, which under-estimates a cold user contract; the apply
+            // path bills the real fetch, so the estimate must too.
+            let (fee, contract) = self.get_contract_with_fetch_info_and_fee(
+                root_id,
+                Some(epoch),
+                true,
+                transaction,
+                platform_version,
+            )?;
 
-                let fee = fee.ok_or(Error::Identity(
-                    IdentityError::IdentityKeyDataContractNotFound,
-                ))?;
-                let contract = contract.ok_or(Error::Identity(
-                    IdentityError::IdentityKeyDataContractNotFound,
-                ))?;
-                drive_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(fee));
-                Some(contract)
-            } else {
-                drive_operations.push(LowLevelDriveOperation::CalculatedCostOperation(
-                    OperationCost {
-                        seek_count: 1,
-                        storage_cost: Default::default(),
-                        storage_loaded_bytes: 100,
-                        hash_node_calls: 0,
-                        sinsemilla_hash_calls: 0,
-                    },
-                ));
-                None
-            };
+            let fee = fee.ok_or(Error::Identity(
+                IdentityError::IdentityKeyDataContractNotFound,
+            ))?;
+            let contract = contract.ok_or(Error::Identity(
+                IdentityError::IdentityKeyDataContractNotFound,
+            ))?;
+            drive_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(fee));
+            let contract = Some(contract);
 
             let (document_keys, contract_or_family_keys) = contract_info.keys();
 

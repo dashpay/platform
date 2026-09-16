@@ -1150,6 +1150,165 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_estimate_bound_key_fees_from_the_real_contract_lookup() {
+        use dpp::data_contract::factory::DataContractFactory;
+        use dpp::identity::IdentityPublicKey;
+        use dpp::platform_value::{platform_value, Value};
+        let version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, _, _, _) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        // Two user contracts, one bound at contract level and one at document-type level.
+        // Neither is served from the system-contract cache.
+        let factory = DataContractFactory::new(version.protocol_version).unwrap();
+        let document_type = |n: usize| {
+            (
+                Value::Text(format!("t{n:02}")),
+                platform_value!({"type": "object",
+                    "properties": {"text": {"type": "string", "maxLength": 64, "position": 0},
+                        "note": {"type": "string", "maxLength": 128, "position": 1}},
+                    "additionalProperties": false}),
+            )
+        };
+        let mut contracts = Vec::new();
+        for (nonce, document_types) in [(1u64, 1usize), (2, 16)] {
+            let contract = factory
+                .create_with_value_config(
+                    identity.id(),
+                    nonce,
+                    Value::Map((0..document_types).map(document_type).collect()),
+                    None,
+                    None,
+                )
+                .unwrap()
+                .data_contract_owned();
+            platform
+                .drive
+                .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+                .unwrap();
+            contracts.push(contract);
+        }
+        let mut rng = StdRng::seed_from_u64(77);
+        let keys: Vec<IdentityPublicKey> = contracts
+            .iter()
+            .enumerate()
+            .map(|(index, contract)| {
+                IdentityPublicKey::random_key_with_known_attributes(
+                    2 + index as u32,
+                    &mut rng,
+                    Purpose::AUTHENTICATION,
+                    SecurityLevel::HIGH,
+                    KeyType::ECDSA_SECP256K1,
+                    Some(ContractBounds::SingleContractDocumentType {
+                        id: contract.id(),
+                        document_type_name: "t00".into(),
+                    }),
+                    version,
+                )
+                .unwrap()
+                .0
+            })
+            .collect();
+        let block = BlockInfo {
+            time_ms: 1001,
+            ..Default::default()
+        };
+        let register = |key: &IdentityPublicKey, apply: bool| {
+            platform.drive.cache.data_contracts.clear();
+            platform
+                .drive
+                .add_new_unique_keys_to_identity(
+                    identity.id().to_buffer(),
+                    vec![key.clone()],
+                    &block,
+                    apply,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        let revoke = |key: &IdentityPublicKey, apply: bool| {
+            platform.drive.cache.data_contracts.clear();
+            platform
+                .drive
+                .disable_identity_keys(
+                    identity.id().to_buffer(),
+                    vec![key.id()],
+                    block.time_ms,
+                    &block,
+                    apply,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+
+        let estimated_registration: Vec<_> = keys.iter().map(|key| register(key, false)).collect();
+        let actual_registration: Vec<_> = keys.iter().map(|key| register(key, true)).collect();
+
+        // The estimated operations must bill the same contract lookups as the applied
+        // operations: one real fee per bound group, not a fixed stand-in.
+        use dpp::block::epoch::Epoch;
+        use drive::fees::op::LowLevelDriveOperation;
+        use std::collections::HashMap;
+        let lookup_fees = |operations: &[LowLevelDriveOperation]| -> Vec<u64> {
+            operations
+                .iter()
+                .filter_map(|operation| match operation {
+                    LowLevelDriveOperation::PreCalculatedFeeResult(fee) => Some(fee.processing_fee),
+                    _ => None,
+                })
+                .collect()
+        };
+        let key_ids: Vec<_> = keys.iter().map(|key| key.id()).collect();
+        let revocation_operations = |estimate: bool| {
+            platform.drive.cache.data_contracts.clear();
+            let mut layer_info = estimate.then(HashMap::new);
+            platform
+                .drive
+                .disable_identity_keys_operations(
+                    identity.id().to_buffer(),
+                    key_ids.clone(),
+                    block.time_ms,
+                    &Epoch::new(0).unwrap(),
+                    &mut layer_info,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        let estimated_lookups = lookup_fees(&revocation_operations(true));
+        let applied_lookups = lookup_fees(&revocation_operations(false));
+        assert!(
+            estimated_lookups.len() >= keys.len(),
+            "at least one contract lookup fee per bound key: {estimated_lookups:?}"
+        );
+        assert_eq!(
+            estimated_lookups, applied_lookups,
+            "the estimate must price the same contract lookups the apply path bills"
+        );
+
+        let estimated_revocation: Vec<_> = keys.iter().map(|key| revoke(key, false)).collect();
+        let actual_revocation: Vec<_> = keys.iter().map(|key| revoke(key, true)).collect();
+        for (estimated, actual) in estimated_registration
+            .iter()
+            .zip(&actual_registration)
+            .chain(estimated_revocation.iter().zip(&actual_revocation))
+        {
+            assert!(
+                estimated.processing_fee >= actual.processing_fee,
+                "estimate {} must cover execution {}",
+                estimated.processing_fee,
+                actual.processing_fee
+            );
+            assert!(estimated.storage_fee >= actual.storage_fee);
+        }
+    }
+
+    #[tokio::test]
     async fn test_identity_update_that_disables_an_encryption_key() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
