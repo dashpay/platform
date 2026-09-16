@@ -3,6 +3,9 @@ import { spawn } from 'child_process';
 import { expect } from 'chai';
 import tenderdashSeeds from '../../../../configs/defaults/tenderdashSeeds.js';
 import seedSetHash from '../../../../src/tenderdash/seedSetHash.js';
+import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
+import renderServiceTemplatesFactory from '../../../../src/templates/renderServiceTemplatesFactory.js';
+import renderTemplateFactory from '../../../../src/templates/renderTemplateFactory.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
@@ -190,6 +193,46 @@ describe('ConfigFileJsonRepository', () => {
       expect(() => repository.read({ skipValidation: skipBaseValidation }))
         .to.throw('network must be equal to one of the allowed values');
     });
+
+    it('should honor recovery validation bypasses when refreshing seeds and completing a fullnode identity', () => {
+      const defaults = tenderdashSeeds.mainnet;
+      const oldSeeds = defaults.seeds.slice(0, 1);
+      const history = defaults.previousSeedSetHashes;
+      try {
+        defaults.previousSeedSetHashes = [...history, seedSetHash(oldSeeds)];
+        const data = JSON.parse(seedConfigFile());
+        data.configs.node1 = structuredClone(data.configs.base);
+        Object.assign(data.configs.node1, { network: 'mainnet', description: { invalid: true } });
+        data.configs.node1.core.masternode.enable = false;
+        data.configs.node1.platform.drive.tenderdash.p2p.seeds = oldSeeds;
+        const original = JSON.stringify(data);
+        fs.writeFileSync(configFilePath, original);
+        const repository = new ConfigFileJsonRepository(
+          identityMigration,
+          homeDir,
+          createDefaults,
+          CURRENT_FORMAT_VERSION,
+        );
+        const render = renderServiceTemplatesFactory(renderTemplateFactory());
+        expect(() => repository.read()).to.throw('description');
+
+        for (const skipValidation of [true, ({ name }) => name === 'node1']) {
+          fs.writeFileSync(configFilePath, original);
+          let renderedKey;
+          const { configFile } = repository.readAndMigrate({ skipValidation }, ([config]) => {
+            renderedKey = JSON.parse(render(config)['platform/drive/tenderdash/node_key.json']).priv_key.value;
+          });
+          const config = configFile.getConfig('node1');
+          expect(config.get('description')).to.deep.equal({ invalid: true });
+          expect(config.get('platform.drive.tenderdash.p2p.seeds')).to.deep.equal(defaults.seeds);
+          expect(renderedKey).to.be.a('string').and.not.to.equal('null');
+          const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+          expect(saved.configs.node1.platform.drive.tenderdash.node.key).to.equal(renderedKey);
+        }
+      } finally {
+        defaults.previousSeedSetHashes = history;
+      }
+    });
   });
 
   describe('#write', () => {
@@ -251,43 +294,31 @@ describe('ConfigFileJsonRepository', () => {
       expect(reread.getConfig('base').get('description')).to.equal('second');
     });
 
-    it('should complete a platform node identity before it reaches disk', () => {
-      // The saved JSON and the node_key.json rendered from the same config must
-      // name one identity, so it is filled in on the way to disk rather than by
-      // a second, nested save.
-      const generated = [];
-      const ensureTenderdashNodeKey = (config) => {
-        if (config.get('platform.drive.tenderdash.node.key') === null) {
-          config.set('platform.drive.tenderdash.node.id', `id-${config.getName()}`);
-          config.set('platform.drive.tenderdash.node.key', `key-${config.getName()}`);
-          generated.push(config.getName());
-        }
-      };
-
+    it('should save and render the same identity only for changed fullnodes', () => {
       const repository = new ConfigFileJsonRepository(
         identityMigration,
         homeDir,
         createDefaults,
         CURRENT_FORMAT_VERSION,
-        {},
-        ensureTenderdashNodeKey,
       );
-
       const configFile = createDefaults();
-      configFile.createConfig('node1', 'base');
+      for (const name of ['node1', 'untouched']) {
+        configFile.createConfig(name, 'base');
+        configFile.getConfig(name).set('core.masternode.enable', false);
+      }
+      configFile.getConfig('untouched').markAsSaved();
 
       repository.write(configFile);
 
-      // Only the config with pending changes - the one about to be rendered
-      expect(generated).to.deep.equal(['node1']);
-      expect(configFile.getConfig('base').get('platform.drive.tenderdash.node.key')).to.equal(null);
-
       const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
-      expect(saved.configs.node1.platform.drive.tenderdash.node.key).to.equal('key-node1');
-      expect(saved.configs.node1.platform.drive.tenderdash.node.id).to.equal('id-node1');
-
-      // Completed configs stay dirty so the caller renders their service files.
+      const identity = saved.configs.node1.platform.drive.tenderdash.node;
+      expect(identity.id).to.equal(deriveTenderdashNodeId(identity.key));
+      expect(saved.configs.untouched.platform.drive.tenderdash.node.key).to.equal(null);
+      expect(saved.configs.base.platform.drive.tenderdash.node.key).to.equal(null);
       expect(configFile.getConfig('node1').isChanged()).to.be.true();
+      const rendered = renderServiceTemplatesFactory(renderTemplateFactory())(configFile.getConfig('node1'));
+      expect(JSON.parse(rendered['platform/drive/tenderdash/node_key.json']).priv_key.value)
+        .to.equal(identity.key);
     });
   });
 
@@ -367,48 +398,44 @@ describe('ConfigFileJsonRepository', () => {
         .to.equal('9.9.9');
     });
 
-    it('should leave the old format on disk when rendering a migrated config fails after completing its identity', () => {
-      seedConfigFile();
-
-      const migration = (data) => ({ ...data, configFormatVersion: '9.9.9' });
-      // No target format version: a migration is always due, as in the retry
-      // test above.
+    it('should retry every migrated identity when rendering fails before the save', () => {
+      const configFile = createDefaults();
+      for (const name of ['node1', 'node2']) {
+        configFile.createConfig(name, 'base');
+        configFile.getConfig(name).set('core.masternode.enable', false);
+      }
+      const original = JSON.stringify(configFile.toObject());
+      fs.writeFileSync(configFilePath, original);
       const repository = new ConfigFileJsonRepository(
-        migration,
+        (data) => ({ ...data, configFormatVersion: '9.9.9' }),
         homeDir,
         createDefaults,
-        undefined,
-        {},
-        (config) => {
-          if (config.get('platform.drive.tenderdash.node.key') === null) {
-            config.set('platform.drive.tenderdash.node.key', 'generated-key');
-          }
-        },
+        '9.9.9',
       );
+      const render = renderServiceTemplatesFactory(renderTemplateFactory());
 
-      expect(() => repository.readAndMigrate({}, ([config]) => {
-        // What rendering does before writing the service files
-        repository.ensureTenderdashNodeKey(config);
-
+      expect(() => repository.readAndMigrate({}, (configs) => {
+        const firstNode = configs.find(config => config.getName() === 'node1');
+        render(firstNode);
+        expect(firstNode.get('platform.drive.tenderdash.node.key')).to.be.a('string');
         throw new Error('template write failed');
       })).to.throw('template write failed');
+      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(original);
 
-      // Nothing reached disk: the next command sees the migration as still due
-      // and repairs the service files.
-      const onDisk = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
-      expect(onDisk.configFormatVersion).to.equal(CURRENT_FORMAT_VERSION);
-      expect(onDisk.configs.base.platform.drive.tenderdash.node.key).to.equal(null);
-
-      let rendered;
-      repository.readAndMigrate({}, ([config]) => {
-        repository.ensureTenderdashNodeKey(config);
-        rendered = config.get('platform.drive.tenderdash.node.key');
+      const rendered = {};
+      repository.readAndMigrate({}, (configs) => {
+        configs.forEach(config => {
+          rendered[config.getName()] = JSON.parse(
+            render(config)['platform/drive/tenderdash/node_key.json'],
+          );
+        });
       });
-
       const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
       expect(saved.configFormatVersion).to.equal('9.9.9');
-      // The identity rendered and the identity saved are the same one.
-      expect(saved.configs.base.platform.drive.tenderdash.node.key).to.equal(rendered);
+      for (const name of ['node1', 'node2']) {
+        expect(saved.configs[name].platform.drive.tenderdash.node.key)
+          .to.equal(rendered[name].priv_key.value).and.to.be.a('string');
+      }
     });
 
     it('should not wait for a lock when reading does not migrate', () => {

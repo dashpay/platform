@@ -1,12 +1,12 @@
 import * as glob from 'glob';
 import { TEMPLATES_DIR } from '../constants.js';
+import ensureTenderdashNodeKey from '../tenderdash/ensureTenderdashNodeKey.js';
 
 /**
  * @param {renderTemplate} renderTemplate
- * @param {ensureTenderdashNodeKey} ensureTenderdashNodeKey
  * @return {renderServiceTemplates}
  */
-export default function renderServiceTemplatesFactory(renderTemplate, ensureTenderdashNodeKey) {
+export default function renderServiceTemplatesFactory(renderTemplate) {
   /**
    * Render templates for services
    *
@@ -16,10 +16,7 @@ export default function renderServiceTemplatesFactory(renderTemplate, ensureTend
    * @return {Object<string,string>}
    */
   function renderServiceTemplates(config) {
-    // node_key.json interpolates platform.drive.tenderdash.node.{id,key}
-    // literally, so a null key must be filled in before rendering or
-    // tenderdash panics at startup on the string "null". Saving does the same,
-    // so the identity rendered here is the one that reaches config.json.
+    // Prevent node_key.json from containing the literal string "null".
     ensureTenderdashNodeKey(config);
 
     const templatePaths = glob.sync(`${TEMPLATES_DIR}/**/*.dot`, {

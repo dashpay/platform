@@ -1,6 +1,5 @@
 import fs from 'fs';
-import { execFileSync } from 'child_process';
-import { checkSnapshot, generateSnapshot, fetchQuorumSnapshot } from './tenderdashSeeds.js';
+import { checkSnapshot, fetchSnapshot } from './tenderdash-seeds.js';
 
 const file = new URL('../configs/defaults/tenderdash-seeds.json', import.meta.url);
 const snapshots = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -17,41 +16,10 @@ if (args[0] === '--check' && snapshots.version !== version) {
 for (const network of ['mainnet', 'testnet']) {
   if (args[0] === '--check') {
     checkSnapshot(snapshots[network], network);
-  } else if (process.env[`DASHMATE_${network.toUpperCase()}_CLI`] === undefined) {
-    snapshots[network] = await fetchQuorumSnapshot(network, snapshots[network]);
   } else {
-    const variable = `DASHMATE_${network.toUpperCase()}_CLI`;
-    // JSON argv supports local dash-cli, docker exec, and SSH without shell evaluation.
-    let command;
-    try {
-      command = JSON.parse(process.env[variable] || 'null');
-    } catch {
-      throw new Error(`${variable} must be a JSON argv array`);
-    }
-    if (!Array.isArray(command) || command.length === 0
-      || command.some(arg => typeof arg !== 'string' || arg.length === 0)) {
-      throw new Error(`Set ${variable} to a JSON argv array for a synced dash-cli (see docs/tenderdash-seeds.md)`);
-    }
-    const rpc = (...rpcArgs) => {
-      try {
-        const output = execFileSync(command[0], [...command.slice(1), ...rpcArgs], {
-          encoding: 'utf8',
-          timeout: 60000,
-          maxBuffer: 16 * 1024 * 1024,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        }).trim();
-        return rpcArgs[0] === 'getblockhash' ? output : JSON.parse(output);
-      } catch {
-        // Do not echo commands, credentials, or remote stderr into release logs.
-        throw new Error(`${network}: Core RPC ${rpcArgs[0]} failed`);
-      }
-    };
-    snapshots[network] = generateSnapshot(rpc, network, snapshots[network]);
+    snapshots[network] = await fetchSnapshot(network, snapshots[network]);
   }
-  const source = snapshots[network].source
-    ? `quorum registry updated at ${snapshots[network].lastUpdated}`
-    : `Core block ${snapshots[network].height}`;
-  process.stdout.write(`${network}: ${snapshots[network].seeds.length} seeds from ${source}\n`);
+  process.stdout.write(`${network}: ${snapshots[network].seeds.length} seeds from ${snapshots[network].source}\n`);
 }
 
 // Publish neither network until both succeeded. The release commits this file before building.
