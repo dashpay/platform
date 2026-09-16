@@ -214,6 +214,7 @@ mod tests {
         DMNState, DMNStateDiff, MasternodeListDiff, MasternodeListItem, MasternodeType,
     };
     use dpp::version::PlatformVersion;
+    use std::collections::BTreeSet;
 
     fn masternode(pro_tx_hash: ProTxHash) -> MasternodeListItem {
         MasternodeListItem {
@@ -364,5 +365,79 @@ mod tests {
                 .service,
             new_service
         );
+    }
+
+    #[test]
+    fn should_only_upsert_changed_entries_in_a_mixed_masternode_diff() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let mut state = PlatformState::default_with_protocol_versions(
+            platform_version.protocol_version,
+            platform_version.protocol_version,
+            &PlatformConfig::default_for_network(Network::Testnet),
+        )
+        .expect("platform state");
+        let changed_hash = ProTxHash::from_byte_array([0x11; 32]);
+        let payment_only_hash = ProTxHash::from_byte_array([0x22; 32]);
+        for pro_tx_hash in [changed_hash, payment_only_hash] {
+            let mut item = masternode(pro_tx_hash);
+            item.node_type = MasternodeType::Evo;
+            state.insert_masternode(item);
+        }
+        state.mark_saved();
+        let unchanged = state.full_masternode_list()[&payment_only_hash].clone();
+        let new_service = "5.6.7.8:5678".parse().expect("socket address");
+
+        platform
+            .core_rpc
+            .expect_get_protx_diff_with_masternodes()
+            .returning(move |base_block, block| {
+                Ok(MasternodeListDiff {
+                    base_height: base_block.unwrap_or_default(),
+                    block_height: block,
+                    added_mns: vec![],
+                    removed_mns: vec![],
+                    updated_mns: vec![
+                        (
+                            changed_hash,
+                            DMNStateDiff {
+                                service: Some(new_service),
+                                ..empty_state_diff()
+                            },
+                        ),
+                        (
+                            payment_only_hash,
+                            DMNStateDiff {
+                                last_paid_height: Some(2_129_183),
+                                consecutive_payments: Some(1),
+                                pose_penalty: Some(0),
+                                ..empty_state_diff()
+                            },
+                        ),
+                    ],
+                })
+            });
+
+        platform
+            .update_state_masternode_list_v0(&mut state, 1, false)
+            .expect("update must succeed");
+
+        assert_eq!(state.full_masternode_list()[&payment_only_hash], unchanged);
+        assert_eq!(state.hpmn_masternode_list()[&payment_only_hash], unchanged);
+        assert_eq!(
+            state.full_masternode_list()[&changed_hash].state.service,
+            new_service
+        );
+        assert_eq!(
+            state.hpmn_masternode_list()[&changed_hash].state.service,
+            new_service
+        );
+        assert_eq!(
+            state.masternode_changes.upserted,
+            BTreeSet::from([changed_hash]),
+            "payment-only updates must not cause writes alongside a real change"
+        );
+        assert!(state.masternode_changes.removed.is_empty());
+        assert!(!state.masternode_changes.rewrite_all);
     }
 }

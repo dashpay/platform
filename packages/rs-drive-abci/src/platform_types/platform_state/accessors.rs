@@ -180,8 +180,9 @@ pub trait PlatformStateV0Methods {
     /// it is an Evo node. Records the change for the per-entry store.
     fn insert_masternode(&mut self, masternode: MasternodeListItem);
 
-    /// Applies a Core state diff to a listed masternode in both lists. Returns
-    /// false, changing nothing, when the masternode is not listed.
+    /// Applies a Core state diff to a listed masternode in both lists, recording
+    /// an entry change only when its stored state changes. Returns false,
+    /// changing nothing, when the masternode is not listed.
     fn apply_masternode_state_diff(
         &mut self,
         pro_tx_hash: &ProTxHash,
@@ -576,12 +577,18 @@ impl PlatformStateV0Methods for PlatformState {
         let Some(masternode) = self.full_masternode_list.get_mut(pro_tx_hash) else {
             return false;
         };
+        let previous_state = masternode.state.clone();
         masternode.state.apply_diff(state_diff.clone());
+        let entry_changed = masternode.state != previous_state;
         if let Some(hpmn) = self.hpmn_masternode_list.get_mut(pro_tx_hash) {
             hpmn.state.apply_diff(state_diff.clone());
         }
         self.heavy_fields_dirty = true;
-        self.masternode_changes.upsert(*pro_tx_hash);
+        // A mixed Core diff can include payment-only updates alongside real
+        // changes. Those payment fields are not stored in a masternode entry.
+        if entry_changed {
+            self.masternode_changes.upsert(*pro_tx_hash);
+        }
         true
     }
 
