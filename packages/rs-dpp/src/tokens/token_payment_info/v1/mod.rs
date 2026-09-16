@@ -45,6 +45,12 @@ pub struct TokenShieldedPayment {
     pub binding_signature: [u8; 64],
 }
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenShieldedPayment {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenShieldedPayment {}
+
 impl Default for TokenShieldedPayment {
     fn default() -> Self {
         Self {
@@ -127,8 +133,9 @@ pub struct TokenPaymentInfoV1 {
     pub maximum_token_cost: Option<TokenAmount>,
     /// Who pays the gas fees, this needs to match what the contract allows.
     pub gas_fees_paid_by: GasFeesPaidBy,
-    /// The spend bundle paying the token cost from the token's shielded pool.
-    pub shielded_payment: TokenShieldedPayment,
+    /// The spend bundle paying the token cost from the token's shielded pool. Boxed so a
+    /// payment info without one stays small.
+    pub shielded_payment: Box<TokenShieldedPayment>,
 }
 
 impl fmt::Display for TokenPaymentInfoV1 {
@@ -155,7 +162,7 @@ impl TokenPaymentInfoV1 {
             minimum_token_cost: v0.minimum_token_cost,
             maximum_token_cost: v0.maximum_token_cost,
             gas_fees_paid_by: v0.gas_fees_paid_by,
-            shielded_payment,
+            shielded_payment: Box::new(shielded_payment),
         }
     }
 

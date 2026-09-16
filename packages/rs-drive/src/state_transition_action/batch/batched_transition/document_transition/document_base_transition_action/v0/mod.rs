@@ -52,7 +52,7 @@ pub struct DocumentBaseTransitionActionV0 {
     pub declared_action_fee: Option<Box<DeclaredDocumentActionFee>>,
     /// The spend bundle paying `token_cost` out of the token's shielded pool instead of the
     /// owner's token balance (`TokenPaymentInfo::V1`). Only set when there is a token cost.
-    pub shielded_token_payment: Option<TokenShieldedPayment>,
+    pub shielded_token_payment: Option<Box<TokenShieldedPayment>>,
 }
 
 /// document base transition action accessors v0

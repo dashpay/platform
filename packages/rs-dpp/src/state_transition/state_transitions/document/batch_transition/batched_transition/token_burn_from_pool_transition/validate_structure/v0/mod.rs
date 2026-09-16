@@ -117,7 +117,7 @@ mod tests {
                 token_id: Identifier::default(),
                 using_group_info: None,
             }),
-            amount: amount,
+            amount,
             actions: vec![action()],
             anchor: [9u8; 32],
             proof: vec![1u8; 10],
