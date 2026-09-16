@@ -1847,38 +1847,51 @@ impl<'a> DriveDocumentQuery<'a> {
 
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Operations to construct a path query.
-    pub fn start_at_document_path_and_key(
-        &self,
-        starts_at: &[u8; 32],
-        platform_version: &PlatformVersion,
-    ) -> Result<(Vec<Vec<u8>>, Vec<u8>), Error> {
-        if self.document_type.documents_keep_history()
-            && KeepHistoryStorage::for_drive_version(&platform_version.drive)?
-                == KeepHistoryStorage::DocumentSubtree
-        {
+    pub fn start_at_document_path_and_key(&self, starts_at: &[u8; 32]) -> (Vec<Vec<u8>>, Vec<u8>) {
+        if self.document_type.documents_keep_history() {
             let document_holding_path = self.contract.documents_with_history_primary_key_path(
                 self.document_type.name().as_str(),
                 starts_at,
             );
-            Ok((
+            (
                 document_holding_path
                     .into_iter()
                     .map(|key| key.to_vec())
                     .collect::<Vec<_>>(),
                 vec![0],
-            ))
+            )
         } else {
             let document_holding_path = self
                 .contract
                 .documents_primary_key_path(self.document_type.name().as_str());
-            Ok((
+            (
                 document_holding_path
                     .into_iter()
                     .map(|key| key.to_vec())
                     .collect::<Vec<_>>(),
                 starts_at.to_vec(),
-            ))
+            )
         }
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// The cursor lookup for the protocol 14 layout, where a keep-history
+    /// document's primary key tree entry points at its current revision: the
+    /// cursor is always the document id in the primary key tree.
+    pub fn start_at_document_path_and_key_v1(
+        &self,
+        starts_at: &[u8; 32],
+    ) -> (Vec<Vec<u8>>, Vec<u8>) {
+        let document_holding_path = self
+            .contract
+            .documents_primary_key_path(self.document_type.name().as_str());
+        (
+            document_holding_path
+                .into_iter()
+                .map(|key| key.to_vec())
+                .collect::<Vec<_>>(),
+            starts_at.to_vec(),
+        )
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
@@ -2002,7 +2015,14 @@ impl<'a> DriveDocumentQuery<'a> {
                 // from the backing store
 
                 let (start_at_document_path, start_at_document_key) =
-                    self.start_at_document_path_and_key(starts_at, platform_version)?;
+                    match KeepHistoryStorage::for_drive_version(&platform_version.drive)? {
+                        KeepHistoryStorage::DocumentSubtree => {
+                            self.start_at_document_path_and_key(starts_at)
+                        }
+                        KeepHistoryStorage::HistoryTree => {
+                            self.start_at_document_path_and_key_v1(starts_at)
+                        }
+                    };
                 let start_at_document = drive
                     .grove_get(
                         start_at_document_path.as_slice().into(),

@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::drive::DriveError;
 use crate::verify::RootHash;
@@ -51,9 +52,15 @@ impl DriveDocumentQuery<'_> {
                 document_id,
                 platform_version,
             ),
+            1 => self.verify_start_at_document_in_proof_v1(
+                proof,
+                is_proof_subset,
+                document_id,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_start_at_document_in_proof".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -104,7 +111,7 @@ mod tests {
 
         assert!(
             matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
-                if method == "verify_start_at_document_in_proof" && known_versions == vec![0] && received == 255
+                if method == "verify_start_at_document_in_proof" && known_versions == vec![0, 1] && received == 255
             )
         );
     }
