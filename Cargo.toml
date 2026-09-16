@@ -62,14 +62,14 @@ grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "a579d52fc
 grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "a579d52fcf68c3cbd798c5a94e73afdc41b5f5a6" }
 grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "a579d52fcf68c3cbd798c5a94e73afdc41b5f5a6" }
 grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "a579d52fcf68c3cbd798c5a94e73afdc41b5f5a6" }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "cacc2a46240251bf471fcba38fb563f97239406d" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "cacc2a46240251bf471fcba38fb563f97239406d" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "cacc2a46240251bf471fcba38fb563f97239406d" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "cacc2a46240251bf471fcba38fb563f97239406d" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "cacc2a46240251bf471fcba38fb563f97239406d" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "cacc2a46240251bf471fcba38fb563f97239406d" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "cacc2a46240251bf471fcba38fb563f97239406d" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "cacc2a46240251bf471fcba38fb563f97239406d" }
+dashcore = { git = "https://github.com/Claudius-Maginificent/rust-dashcore", rev = "e0787ee4562a2de12ba3d9f805d879390ba0f16e" }
+dash-network-seeds = { git = "https://github.com/Claudius-Maginificent/rust-dashcore", rev = "e0787ee4562a2de12ba3d9f805d879390ba0f16e" }
+dash-spv = { git = "https://github.com/Claudius-Maginificent/rust-dashcore", rev = "e0787ee4562a2de12ba3d9f805d879390ba0f16e" }
+key-wallet = { git = "https://github.com/Claudius-Maginificent/rust-dashcore", rev = "e0787ee4562a2de12ba3d9f805d879390ba0f16e" }
+key-wallet-ffi = { git = "https://github.com/Claudius-Maginificent/rust-dashcore", rev = "e0787ee4562a2de12ba3d9f805d879390ba0f16e" }
+key-wallet-manager = { git = "https://github.com/Claudius-Maginificent/rust-dashcore", rev = "e0787ee4562a2de12ba3d9f805d879390ba0f16e" }
+dash-network = { git = "https://github.com/Claudius-Maginificent/rust-dashcore", rev = "e0787ee4562a2de12ba3d9f805d879390ba0f16e" }
+dashcore-rpc = { git = "https://github.com/Claudius-Maginificent/rust-dashcore", rev = "e0787ee4562a2de12ba3d9f805d879390ba0f16e" }
 tokio-metrics = "0.5"
 
 # Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which

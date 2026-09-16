@@ -1643,7 +1643,7 @@ dependencies = [
 [[package]]
 name = "dash-network"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cacc2a46240251bf471fcba38fb563f97239406d#cacc2a46240251bf471fcba38fb563f97239406d"
+source = "git+https://github.com/Claudius-Maginificent/rust-dashcore?rev=e0787ee4562a2de12ba3d9f805d879390ba0f16e#e0787ee4562a2de12ba3d9f805d879390ba0f16e"
 dependencies = [
  "cbindgen 0.29.4",
  "grovedb-bincode",
@@ -1654,7 +1654,7 @@ dependencies = [
 [[package]]
 name = "dash-network-seeds"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cacc2a46240251bf471fcba38fb563f97239406d#cacc2a46240251bf471fcba38fb563f97239406d"
+source = "git+https://github.com/Claudius-Maginificent/rust-dashcore?rev=e0787ee4562a2de12ba3d9f805d879390ba0f16e#e0787ee4562a2de12ba3d9f805d879390ba0f16e"
 dependencies = [
  "dash-network",
 ]
@@ -1749,7 +1749,7 @@ dependencies = [
 [[package]]
 name = "dash-spv"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cacc2a46240251bf471fcba38fb563f97239406d#cacc2a46240251bf471fcba38fb563f97239406d"
+source = "git+https://github.com/Claudius-Maginificent/rust-dashcore?rev=e0787ee4562a2de12ba3d9f805d879390ba0f16e#e0787ee4562a2de12ba3d9f805d879390ba0f16e"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1778,7 +1778,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cacc2a46240251bf471fcba38fb563f97239406d#cacc2a46240251bf471fcba38fb563f97239406d"
+source = "git+https://github.com/Claudius-Maginificent/rust-dashcore?rev=e0787ee4562a2de12ba3d9f805d879390ba0f16e#e0787ee4562a2de12ba3d9f805d879390ba0f16e"
 dependencies = [
  "anyhow",
  "base64-compat",
@@ -1804,12 +1804,12 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cacc2a46240251bf471fcba38fb563f97239406d#cacc2a46240251bf471fcba38fb563f97239406d"
+source = "git+https://github.com/Claudius-Maginificent/rust-dashcore?rev=e0787ee4562a2de12ba3d9f805d879390ba0f16e#e0787ee4562a2de12ba3d9f805d879390ba0f16e"
 
 [[package]]
 name = "dashcore-rpc"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cacc2a46240251bf471fcba38fb563f97239406d#cacc2a46240251bf471fcba38fb563f97239406d"
+source = "git+https://github.com/Claudius-Maginificent/rust-dashcore?rev=e0787ee4562a2de12ba3d9f805d879390ba0f16e#e0787ee4562a2de12ba3d9f805d879390ba0f16e"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -1822,7 +1822,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cacc2a46240251bf471fcba38fb563f97239406d#cacc2a46240251bf471fcba38fb563f97239406d"
+source = "git+https://github.com/Claudius-Maginificent/rust-dashcore?rev=e0787ee4562a2de12ba3d9f805d879390ba0f16e#e0787ee4562a2de12ba3d9f805d879390ba0f16e"
 dependencies = [
  "dashcore",
  "grovedb-bincode",
@@ -1837,7 +1837,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cacc2a46240251bf471fcba38fb563f97239406d#cacc2a46240251bf471fcba38fb563f97239406d"
+source = "git+https://github.com/Claudius-Maginificent/rust-dashcore?rev=e0787ee4562a2de12ba3d9f805d879390ba0f16e#e0787ee4562a2de12ba3d9f805d879390ba0f16e"
 dependencies = [
  "dashcore-private",
  "grovedb-bincode",
@@ -2907,7 +2907,7 @@ dependencies = [
 [[package]]
 name = "git-state"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cacc2a46240251bf471fcba38fb563f97239406d#cacc2a46240251bf471fcba38fb563f97239406d"
+source = "git+https://github.com/Claudius-Maginificent/rust-dashcore?rev=e0787ee4562a2de12ba3d9f805d879390ba0f16e#e0787ee4562a2de12ba3d9f805d879390ba0f16e"
 
 [[package]]
 name = "glob"
@@ -4139,7 +4139,7 @@ dependencies = [
 [[package]]
 name = "key-wallet"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cacc2a46240251bf471fcba38fb563f97239406d#cacc2a46240251bf471fcba38fb563f97239406d"
+source = "git+https://github.com/Claudius-Maginificent/rust-dashcore?rev=e0787ee4562a2de12ba3d9f805d879390ba0f16e#e0787ee4562a2de12ba3d9f805d879390ba0f16e"
 dependencies = [
  "aes",
  "async-trait",
@@ -4168,7 +4168,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-ffi"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cacc2a46240251bf471fcba38fb563f97239406d#cacc2a46240251bf471fcba38fb563f97239406d"
+source = "git+https://github.com/Claudius-Maginificent/rust-dashcore?rev=e0787ee4562a2de12ba3d9f805d879390ba0f16e#e0787ee4562a2de12ba3d9f805d879390ba0f16e"
 dependencies = [
  "cbindgen 0.29.4",
  "dash-network",
@@ -4184,7 +4184,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-manager"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cacc2a46240251bf471fcba38fb563f97239406d#cacc2a46240251bf471fcba38fb563f97239406d"
+source = "git+https://github.com/Claudius-Maginificent/rust-dashcore?rev=e0787ee4562a2de12ba3d9f805d879390ba0f16e#e0787ee4562a2de12ba3d9f805d879390ba0f16e"
 dependencies = [
  "async-trait",
  "dashcore",
