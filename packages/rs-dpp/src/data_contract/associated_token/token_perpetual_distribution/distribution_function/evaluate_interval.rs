@@ -1,5 +1,5 @@
 use std::ops::{Div, RangeInclusive};
-use platform_version::version::PlatformVersion;
+use platform_version::version::{FeatureVersion, PlatformVersion};
 use crate::balances::credits::TokenAmount;
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
@@ -1544,6 +1544,41 @@ impl IntervalEvaluationExplanation {
     }
 }
 
+/// The epochs whose block proposers share the reward of the cycle at `step_index` of an
+/// epoch-based distribution paying every `epochs_per_cycle` epochs, selected by
+/// `platform_version.dpp.token_versions.distribution_function_cycle_epochs_version`.
+///
+/// Version 0 read the step index itself as an epoch, which is right only while a cycle is one
+/// epoch long; for a wider interval it named epochs before the distribution even started, and
+/// the claim failed for want of their epoch info. Version 1 names the epochs the cycle spans,
+/// ending at the cycle moment: the same span the fixed-amount fast path weights.
+fn cycle_epochs_versioned(
+    step_index: EpochIndex,
+    epochs_per_cycle: EpochIndex,
+    version: FeatureVersion,
+) -> Result<RangeInclusive<EpochIndex>, ProtocolError> {
+    match version {
+        0 => Ok(step_index..=step_index),
+        1 => {
+            let cycle_moment =
+                step_index
+                    .checked_mul(epochs_per_cycle)
+                    .ok_or(ProtocolError::Overflow(
+                        "perpetual distribution cycle moment past the epoch range",
+                    ))?;
+            let first_epoch = cycle_moment
+                .saturating_sub(epochs_per_cycle)
+                .saturating_add(1);
+            Ok(first_epoch..=cycle_moment)
+        }
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DistributionFunction::evaluate_interval cycle epochs".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
+    }
+}
+
 impl DistributionFunction {
     /// Evaluates the total amount of tokens emitted over a specified interval.
     ///
@@ -1645,6 +1680,10 @@ impl DistributionFunction {
         }
 
         let distribution_start_step = distribution_start.div(step)?;
+        let cycle_epochs_version = platform_version
+            .dpp
+            .token_versions
+            .distribution_function_cycle_epochs_version;
 
         let mut total: u64 = 0;
         let mut current_point = first_step;
@@ -1657,11 +1696,14 @@ impl DistributionFunction {
             )?;
 
             let amount = if let (
-                RewardDistributionMoment::EpochBasedMoment(epoch_index),
+                RewardDistributionMoment::EpochBasedMoment(step_index),
+                RewardDistributionMoment::EpochBasedMoment(epochs_per_cycle),
                 Some(ref get_ratio_fn),
-            ) = (current_point, get_epoch_reward_ratio.as_ref())
+            ) = (current_point, step, get_epoch_reward_ratio.as_ref())
             {
-                if let Some(ratio) = get_ratio_fn(epoch_index..=epoch_index) {
+                let cycle_epochs =
+                    cycle_epochs_versioned(step_index, epochs_per_cycle, cycle_epochs_version)?;
+                if let Some(ratio) = get_ratio_fn(cycle_epochs.clone()) {
                     base_amount
                         .checked_mul(ratio.numerator)
                         .and_then(|v| v.checked_div(ratio.denominator))
@@ -1672,8 +1714,8 @@ impl DistributionFunction {
                         })?
                 } else {
                     return Err(ProtocolError::MissingEpochInfo(format!(
-                        "missing epoch info for epoch {}",
-                        epoch_index
+                        "missing epoch info for epochs {:?}",
+                        cycle_epochs
                     )));
                 }
             } else {
@@ -1838,6 +1880,11 @@ impl DistributionFunction {
 
         let distribution_start_step = distribution_start.div(step)?;
 
+        let cycle_epochs_version = platform_version
+            .dpp
+            .token_versions
+            .distribution_function_cycle_epochs_version;
+
         let mut total: u64 = 0;
         let mut current_point = first_step;
         let mut step_index = 1u64;
@@ -1851,11 +1898,18 @@ impl DistributionFunction {
             )?;
 
             let (amount, reward_ratio) = if let (
-                RewardDistributionMoment::EpochBasedMoment(epoch_index),
+                RewardDistributionMoment::EpochBasedMoment(cycle_step_index),
+                RewardDistributionMoment::EpochBasedMoment(epochs_per_cycle),
                 Some(ref get_ratio_fn),
-            ) = (current_point, get_epoch_reward_ratio.as_ref())
+            ) =
+                (current_point, step, get_epoch_reward_ratio.as_ref())
             {
-                if let Some(ratio) = get_ratio_fn(epoch_index..=epoch_index) {
+                let cycle_epochs = cycle_epochs_versioned(
+                    cycle_step_index,
+                    epochs_per_cycle,
+                    cycle_epochs_version,
+                )?;
+                if let Some(ratio) = get_ratio_fn(cycle_epochs.clone()) {
                     collected_ratios.push((ratio.numerator, ratio.denominator));
                     let adjusted_amount = base_amount
                         .checked_mul(ratio.numerator)
@@ -1868,8 +1922,8 @@ impl DistributionFunction {
                     (adjusted_amount, Some(ratio))
                 } else {
                     return Err(ProtocolError::MissingEpochInfo(format!(
-                        "missing epoch info for epoch {}",
-                        epoch_index
+                        "missing epoch info for epochs {:?}",
+                        cycle_epochs
                     )));
                 }
             } else {
@@ -1904,6 +1958,191 @@ impl DistributionFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod cycle_epochs_tests {
+        use super::*;
+        use std::cell::RefCell;
+
+        /// 500 tokens at the creation cycle, 100 more each cycle after it.
+        fn linear() -> DistributionFunction {
+            DistributionFunction::Linear {
+                a: 100,
+                d: 1,
+                start_step: None,
+                starting_amount: 500,
+                min_value: None,
+                max_value: None,
+            }
+        }
+
+        /// The last protocol version that read a cycle's step index as an epoch.
+        fn v13() -> &'static PlatformVersion {
+            PlatformVersion::get(13).expect("expected protocol version 13")
+        }
+
+        /// Records every epoch range the evaluator asks the participation ratio for and grants
+        /// a half share for each.
+        fn recording_half_share(
+            requested: &RefCell<Vec<RangeInclusive<EpochIndex>>>,
+        ) -> impl Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio> + '_ {
+            move |range| {
+                requested.borrow_mut().push(range);
+                Some(RewardRatio {
+                    numerator: 1,
+                    denominator: 2,
+                })
+            }
+        }
+
+        /// Like Drive's claim path, knows only the epochs from the claim's start onward.
+        fn half_share_known_from(
+            first_known_epoch: EpochIndex,
+        ) -> impl Fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio> {
+            move |range| {
+                (*range.start() >= first_known_epoch).then_some(RewardRatio {
+                    numerator: 1,
+                    denominator: 2,
+                })
+            }
+        }
+
+        /// Interval 2 from epoch 6, claimable through the cycle at epoch 10: the cycles at 8 and
+        /// 10 are step indexes 4 and 5 from the creation index 3, paying 600 and 700, halved.
+        #[test]
+        fn should_weight_each_cycle_by_the_epochs_it_spans_from_protocol_version_14() {
+            for (platform_version, expected_ranges) in [
+                (PlatformVersion::latest(), vec![7..=8, 9..=10]),
+                (v13(), vec![4..=4, 5..=5]),
+            ] {
+                let requested = RefCell::new(Vec::new());
+                let total = linear()
+                    .evaluate_interval(
+                        RewardDistributionMoment::EpochBasedMoment(6),
+                        RewardDistributionMoment::EpochBasedMoment(6),
+                        RewardDistributionMoment::EpochBasedMoment(10),
+                        RewardDistributionMoment::EpochBasedMoment(2),
+                        Some(recording_half_share(&requested)),
+                        platform_version,
+                    )
+                    .expect("expected the interval to evaluate");
+                assert_eq!(total, 650, "v{}", platform_version.protocol_version);
+                assert_eq!(
+                    requested.into_inner(),
+                    expected_ranges,
+                    "v{}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+
+        /// For an interval of one the step index is the epoch, so nothing changes.
+        #[test]
+        fn should_ask_for_the_same_epochs_in_every_version_for_an_interval_of_one() {
+            for platform_version in [PlatformVersion::latest(), v13()] {
+                let requested = RefCell::new(Vec::new());
+                let total = linear()
+                    .evaluate_interval(
+                        RewardDistributionMoment::EpochBasedMoment(6),
+                        RewardDistributionMoment::EpochBasedMoment(6),
+                        RewardDistributionMoment::EpochBasedMoment(8),
+                        RewardDistributionMoment::EpochBasedMoment(1),
+                        Some(recording_half_share(&requested)),
+                        platform_version,
+                    )
+                    .expect("expected the interval to evaluate");
+                // Epochs 7 and 8 from the creation epoch 6 pay 600 and 700, halved.
+                assert_eq!(total, 650, "v{}", platform_version.protocol_version);
+                assert_eq!(
+                    requested.into_inner(),
+                    vec![7..=7, 8..=8],
+                    "v{}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+
+        /// Drive loads epoch info from the claim's start epoch onward, so the epochs version 0
+        /// named for a wider interval are never there.
+        #[test]
+        fn should_find_every_cycle_epoch_in_the_claim_window_from_protocol_version_14() {
+            let evaluate = |platform_version| {
+                linear().evaluate_interval(
+                    RewardDistributionMoment::EpochBasedMoment(6),
+                    RewardDistributionMoment::EpochBasedMoment(6),
+                    RewardDistributionMoment::EpochBasedMoment(10),
+                    RewardDistributionMoment::EpochBasedMoment(2),
+                    Some(half_share_known_from(6)),
+                    platform_version,
+                )
+            };
+            assert!(matches!(
+                evaluate(v13()),
+                Err(ProtocolError::MissingEpochInfo(_))
+            ));
+            assert_eq!(
+                evaluate(PlatformVersion::latest()).expect("expected the interval to evaluate"),
+                650
+            );
+        }
+
+        #[cfg(feature = "token-reward-explanations")]
+        #[test]
+        fn should_explain_each_cycle_with_the_epochs_it_spans_from_protocol_version_14() {
+            let explain = |platform_version| {
+                linear().evaluate_interval_with_explanation(
+                    RewardDistributionMoment::EpochBasedMoment(6),
+                    RewardDistributionMoment::EpochBasedMoment(6),
+                    RewardDistributionMoment::EpochBasedMoment(10),
+                    RewardDistributionMoment::EpochBasedMoment(2),
+                    Some(half_share_known_from(6)),
+                    true,
+                    platform_version,
+                )
+            };
+            assert!(matches!(
+                explain(v13()),
+                Err(ProtocolError::MissingEpochInfo(_))
+            ));
+            let explanation =
+                explain(PlatformVersion::latest()).expect("expected the interval to evaluate");
+            assert_eq!(explanation.total_amount, 650);
+            assert_eq!(
+                explanation.reward_ratios_applied,
+                Some(vec![(1, 2), (1, 2)])
+            );
+        }
+
+        #[test]
+        fn should_reject_an_unknown_cycle_epochs_version() {
+            let mut platform_version = PlatformVersion::latest().clone();
+            platform_version
+                .dpp
+                .token_versions
+                .distribution_function_cycle_epochs_version = 2;
+            let result = linear().evaluate_interval(
+                RewardDistributionMoment::EpochBasedMoment(6),
+                RewardDistributionMoment::EpochBasedMoment(6),
+                RewardDistributionMoment::EpochBasedMoment(10),
+                RewardDistributionMoment::EpochBasedMoment(2),
+                Some(half_share_known_from(0)),
+                &platform_version,
+            );
+            assert!(matches!(
+                result,
+                Err(ProtocolError::UnknownVersionMismatch { received: 2, .. })
+            ));
+            // Without a participation ratio the cycle epochs are never needed.
+            let result = linear().evaluate_interval(
+                RewardDistributionMoment::EpochBasedMoment(6),
+                RewardDistributionMoment::EpochBasedMoment(6),
+                RewardDistributionMoment::EpochBasedMoment(10),
+                RewardDistributionMoment::EpochBasedMoment(2),
+                None::<fn(RangeInclusive<EpochIndex>) -> Option<RewardRatio>>,
+                &platform_version,
+            );
+            assert_eq!(result.expect("expected the interval to evaluate"), 1_300);
+        }
+    }
 
     mod epoch_tests {
         use super::*;

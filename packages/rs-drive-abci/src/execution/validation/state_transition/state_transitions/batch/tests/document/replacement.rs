@@ -498,8 +498,13 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_mutable() {
         run_document_replace_on_document_type_that_is_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            // v14: replaced documents carry the contract-version stamp
-            1433220,
+            // v14: replaced documents carry the contract-version stamp, and
+            // GroveDB V4 writes through the Merk node it retains from reading
+            // the old value, billing slightly fewer reads than the V3 path
+            // Protocol version 14 adds +740 per document write (the contract's version
+            // item is one more node to rehash) and the larger DashPay v2 schema
+            // increases byte-billed contract-tree reads.
+            1450220,
         )
         .await;
     }
@@ -1259,7 +1264,7 @@ mod replacement_tests {
         use crate::execution::check_tx::CheckTxLevel;
         use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
         use crate::platform_types::platform::PlatformRef;
-        use dpp::serialization::PlatformDeserializable;
+        use dpp::serialization::PlatformDeserializableUntrusted;
         use dpp::state_transition::StateTransition;
 
         let platform_version = PlatformVersion::latest();
@@ -1445,7 +1450,7 @@ mod replacement_tests {
         // 4) Re-submitting identical bytes through CheckTx FirstTimeCheck must
         //    hit the nonce check first and reject.
         let replayed_state_transition =
-            StateTransition::deserialize_from_bytes(&replace_serialized)
+            StateTransition::deserialize_from_bytes_untrusted(&replace_serialized)
                 .expect("expected to deserialize replayed transition");
 
         let platform_state = platform.state.load();
@@ -1458,7 +1463,7 @@ mod replacement_tests {
 
         let check_tx_result = state_transition_to_execution_event_for_check_tx(
             &platform_ref,
-            replayed_state_transition,
+            &replayed_state_transition,
             CheckTxLevel::FirstTimeCheck,
             &platform.check_tx_proof_verifier,
             platform_version,
@@ -1986,7 +1991,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         let documents_batch_update_transition_1 =
             BatchTransition::new_document_replacement_transition_from_document(
@@ -2067,7 +2072,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         let issues = platform
             .drive
@@ -2210,7 +2215,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
 
@@ -2292,7 +2297,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Samuel platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Samuel platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         fast_forward_to_block(&platform, 1_600_000_000, 902, 44, 1, false); //next epoch
 
@@ -2336,7 +2341,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         let issues = platform
             .drive
@@ -2475,7 +2480,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
 
@@ -2557,7 +2562,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         fast_forward_to_block(&platform, 1_600_000_000, 902, 44, 1, false); //next epoch
 
@@ -2601,7 +2606,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         let issues = platform
             .drive
@@ -2744,7 +2749,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
 
@@ -2826,7 +2831,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Samuel platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Samuel platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         fast_forward_to_block(&platform, 1_600_000_000, 905, 44, 2, true); //next epoch
 
@@ -2870,7 +2875,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         let issues = platform
             .drive

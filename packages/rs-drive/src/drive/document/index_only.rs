@@ -9,7 +9,8 @@
 //!   a shorter index thereby doubles as a uniqueness constraint over its
 //!   value projection plus owner (for Yappr's likes the `[postId]` index
 //!   is the one-like-per-(post, owner) rule).
-//! * **delete**: probe every index entry, all must exist. Every index
+//! * **delete**: probe every surviving index entry. Only paths already
+//!   drained from expired buckets are exempt. Every index
 //!   embeds `$ownerId` (the parser enforces it), so each probe — computed
 //!   with owner = signer — proves ownership as well as existence, and
 //!   requiring all of them keeps the apply-side batch infallible even
@@ -19,11 +20,15 @@
 //! the same function the index walkers key trees with — the probe cannot
 //! drift from the write path.
 
+use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
+use crate::drive::document::time_range_ttl::entry_key_bucket_start;
+use crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::grove_operations::DirectQueryType;
+use crate::util::grove_operations::{DirectQueryType, QueryTarget};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -180,7 +185,7 @@ impl Drive {
         Ok((paths, member_key))
     }
 
-    /// Whether `document`'s entry under `index` exists AND carries
+    /// Whether every surviving entry under `index` carries
     /// `expected_commitment` — the row commitment `document`'s full tuple
     /// produces (compute it ONCE per document with
     /// [`index_only_row_commitment`](crate::drive::document::index_only_row_commitment)
@@ -197,6 +202,7 @@ impl Drive {
         index: &Index,
         document: &Document,
         expected_commitment: &[u8; 32],
+        block_time_ms: u64,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -208,13 +214,26 @@ impl Drive {
             document,
             platform_version,
         )?;
-        // ALL of the index's entries must carry the commitment — for a
-        // bucketed index that is every containing bucket's entry (the
-        // write path creates them atomically, so anything less means the
-        // values do not describe an existing row). Zero paths (a bucketed
-        // index over a pre-origin timestamp) is vacuously consistent: the
-        // write path wrote nothing there either.
+        // Every surviving entry must carry the commitment. An expired
+        // bucket can have lost any intermediate tree to lazy drainage;
+        // only that case is exempt. A missing live path, a missing member
+        // in a standing tree, or a different commitment still fails.
+        // If all paths have expired and drained, this index contributes
+        // no mutations to the delete and is vacuously consistent.
         for path in paths {
+            let bucket_depth = CONTRACT_DOCUMENTS_PATH_HEIGHT as usize + 1;
+            if index.time_range.as_ref().is_some_and(|transform| {
+                path.get(bucket_depth)
+                    .and_then(|key| entry_key_bucket_start(key))
+                    .is_some_and(|start| transform.bucket_expired(start, block_time_ms))
+            }) && !self.expired_entry_path_exists(
+                &path,
+                bucket_depth,
+                transaction,
+                platform_version,
+            )? {
+                continue;
+            }
             let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
             let element = self.grove_get_raw_optional(
                 path_refs.as_slice().into(),
@@ -243,6 +262,75 @@ impl Drive {
             }
         }
         Ok(true)
+    }
+
+    /// The fee-estimation twin of [`Self::index_only_entry_commitment_matches`]:
+    /// prices the reads the applying delete bills, without touching state.
+    /// One stateless `get_raw` per entry path (the paths the probe reads,
+    /// derived by [`Self::index_only_entry_paths_and_key`]) inside the
+    /// terminal `0` member tree the walkers created, sized like every other
+    /// indexOnly entry estimate. The probe's expired-bucket path walk is
+    /// unbilled scratch reading in both modes, so it has no estimate.
+    ///
+    /// Without this the dry run (`apply = false`, the check-tx balance
+    /// pre-check) omits reads the applying path bills, so a transition
+    /// could pass the pre-check and then cost more in the block.
+    pub(crate) fn add_estimation_costs_for_index_only_commitment_probes(
+        &self,
+        contract_id: Identifier,
+        document_type: DocumentTypeRef,
+        document: &Document,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        for index in document_type.indexes().values() {
+            let (paths, member_key) = Self::index_only_entry_paths_and_key(
+                contract_id,
+                document_type,
+                index,
+                document,
+                platform_version,
+            )?;
+            // The level the index terminates at, reached by the same level
+            // keys the paths are built from, so the claimed tree type is
+            // the one the walkers created the `0` member bucket with.
+            let mut level = document_type.index_structure();
+            for (position, property) in index.properties.iter().enumerate() {
+                let level_key = index.level_key(position, &property.name);
+                level = level.sub_levels().get(&*level_key).ok_or(Error::Drive(
+                    DriveError::CorruptedCodeExecution(
+                        "every property of an indexOnly index resolves to an index level: the \
+                         structure is built from the same indexes",
+                    ),
+                ))?;
+            }
+            let type_info = level.has_index_with_type().ok_or(Error::Drive(
+                DriveError::CorruptedCodeExecution(
+                    "an indexOnly index terminates at its last property",
+                ),
+            ))?;
+            let in_tree_type = terminal_member_tree_type(type_info);
+            let estimated_value_size = if type_info.summable.is_some() {
+                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE + 10
+            } else {
+                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE
+            };
+            for path in paths {
+                let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
+                self.grove_get_raw_optional(
+                    path_refs.as_slice().into(),
+                    member_key.as_slice(),
+                    DirectQueryType::StatelessDirectQuery {
+                        in_tree_type,
+                        query_target: QueryTarget::QueryTargetValue(estimated_value_size),
+                    },
+                    None,
+                    drive_operations,
+                    &platform_version.drive,
+                )?;
+            }
+        }
+        Ok(())
     }
 
     /// Whether any of `document`'s entries under `index` exists (stateful

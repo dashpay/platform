@@ -1,11 +1,21 @@
 use crate::version::drive_abci_versions::drive_abci_query_versions::v2::DRIVE_ABCI_QUERY_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
-    DriveAbciDocumentQueryHelperVersions, DriveAbciQueryVersions,
+    DriveAbciDataContractQueryHelperVersions, DriveAbciDocumentQueryHelperVersions,
+    DriveAbciQueryVersions,
 };
 
 /// Version 3 of the Drive ABCI query versions.
 ///
-/// Differs from v2 in exactly one slot:
+/// Differs from v2 in two slots.
+///
+/// `data_contract_query_helpers.latest_versions_read` is 1 rather than 0:
+/// from protocol version 14 every contract carries a four-byte version item
+/// beside it (`[64, id] / 2`, backfilled on the first block of the version),
+/// so `getDataContractsLatestVersions` without `include_contracts` reads that
+/// item and proves it instead of the contracts. The tables protocol versions
+/// 1 to 13 select keep helper version 0, which reads and proves the contracts
+/// a state without the items still has.
+///
 /// `document_query_helpers.compute_aggregate_mode_and_check_limit` is 2
 /// rather than 1. That is the boolean-`HAVING` routing gate. The v1
 /// helper rejects every non-empty `having` ("HAVING clause is not yet
@@ -28,6 +38,9 @@ use crate::version::drive_abci_versions::drive_abci_query_versions::{
 pub const DRIVE_ABCI_QUERY_VERSIONS_V3: DriveAbciQueryVersions = DriveAbciQueryVersions {
     document_query_helpers: DriveAbciDocumentQueryHelperVersions {
         compute_aggregate_mode_and_check_limit: 2,
+    },
+    data_contract_query_helpers: DriveAbciDataContractQueryHelperVersions {
+        latest_versions_read: 1,
     },
     ..DRIVE_ABCI_QUERY_VERSIONS_V2
 };

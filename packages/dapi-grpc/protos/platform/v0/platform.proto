@@ -33,7 +33,11 @@ service Platform {
   rpc getDataContract(GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDataContractHistory(GetDataContractHistoryRequest)
       returns (GetDataContractHistoryResponse);
+  rpc getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest)
+      returns (GetDataContractsLatestVersionsResponse);
   rpc getDataContracts(GetDataContractsRequest)
+      returns (GetDataContractsResponse);
+  rpc getDataContractsByRange(GetDataContractsByRangeRequest)
       returns (GetDataContractsResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
       returns (GetDocumentHistoryResponse);
@@ -497,6 +501,57 @@ message GetDataContractResponse {
   oneof version { GetDataContractResponseV0 v0 = 1; }
 }
 
+// Returns the current version number of each requested data contract: the
+// cheap way for a client to check that the contracts it already holds are
+// still current. Every distinct requested id gets an entry; an id no contract has gets
+// an entry without `version`. Serialized contracts are added only when
+// `include_contracts` is set.
+//
+// From protocol version 14 every contract carries a four-byte version item
+// beside it in state. Without `include_contracts`, the unproved form answers
+// from Drive's contract cache or that item without loading a contract, and
+// the proof covers the items, a few hundred bytes of hash path per contract.
+// With `include_contracts`, and on earlier protocol versions, the unproved
+// form reads the contracts through the cache and the proof is the
+// multi-contract proof `getDataContracts` returns, which carries the
+// contracts.
+message GetDataContractsLatestVersionsRequest {
+  message GetDataContractsLatestVersionsRequestV0 {
+    repeated bytes ids =
+        1; // The IDs of the data contracts, at least one and at most 100
+    bool include_contracts =
+        2; // When set, found entries also carry the serialized contract
+    bool prove = 3; // Flag to request a proof as the response
+  }
+  oneof version { GetDataContractsLatestVersionsRequestV0 v0 = 1; }
+}
+
+message GetDataContractsLatestVersionsResponse {
+  message DataContractLatestVersionEntry {
+    bytes identifier = 1; // The requested contract id
+    optional uint32 version =
+        2; // The contract's current version number; absent when no contract has this id
+    optional bytes data_contract =
+        3; // The serialized contract, only when `include_contracts` was set and the contract exists
+  }
+
+  message DataContractsLatestVersions {
+    repeated DataContractLatestVersionEntry entries =
+        1; // One entry per requested contract id
+  }
+
+  message GetDataContractsLatestVersionsResponseV0 {
+    oneof result {
+      DataContractsLatestVersions data_contracts_latest_versions =
+          1; // The current versions, and the contracts if requested
+      Proof proof =
+          2; // Cryptographic proof of the data contracts, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetDataContractsLatestVersionsResponseV0 v0 = 1; }
+}
+
 message GetDataContractsRequest {
   message GetDataContractsRequestV0 {
     repeated bytes ids =
@@ -504,6 +559,28 @@ message GetDataContractsRequest {
     bool prove = 2; // Flag to request a proof as the response
   }
   oneof version { GetDataContractsRequestV0 v0 = 1; }
+}
+
+// Enumerates every data contract on Platform, one page at a time, in
+// ascending contract id order. Answered with `GetDataContractsResponse`:
+// each `DataContractEntry` carries the contract id and, unless `ids_only`
+// is set, the serialized contract. An empty page (no more contracts) is an
+// empty `data_contract_entries` list, never NotFound. A page shorter than
+// `limit` is the last page; otherwise pass the last entry's identifier as
+// `start_after` to fetch the next one.
+message GetDataContractsByRangeRequest {
+  message GetDataContractsByRangeRequestV0 {
+    optional uint32 limit =
+        1; // Maximum number of contracts to return, 1..=100; absent means 100
+    oneof start {
+      bytes start_after = 2; // 32-byte contract id; the page starts after it
+      bytes start_at = 3;    // 32-byte contract id; the page starts at it
+    }
+    bool ids_only =
+        4; // When set, entries carry only `identifier`; `data_contract` is unset
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetDataContractsByRangeRequestV0 v0 = 1; }
 }
 
 message GetDataContractsResponse {

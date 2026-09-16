@@ -3899,3 +3899,111 @@ fn throw_pwffi(env: &mut JNIEnv, result: &mut PlatformWalletFFIResult) {
     throw_sdk_exception(env, result.code as i32 + PWFFI_CODE_OFFSET, &message);
     unsafe { platform_wallet_ffi_result_free(result) };
 }
+
+/// Ordered wallet bring-up: identity → contacts → contact-account drain, run
+/// as one bounded call so the host can start Core SPV knowing the DIP-15
+/// contact addresses exist and will be in the first filter set — the JNI
+/// bridge over `platform_wallet_manager_start_wallet_subsystems`. The
+/// ordering, retry policy and budget all live Rust-side
+/// (`platform_wallet::manager::startup`); iOS binds the same call as
+/// `PlatformWalletManagerStartup.swift`.
+///
+/// `mnemonicResolverHandle` is nullable (0): required for a Keychain-backed
+/// external-signable wallet; 0 means the wallet holds resident keys. Without
+/// it the drain is skipped and the pending count reported.
+/// `identitySignerHandle` is nullable (0): 0 skips the DIP-15 auto-accept
+/// pass. `budgetSecs` 0 selects the crate default (20s) — the call always
+/// terminates, because it gates Core SPV. `gapLimit` 0 selects the default.
+///
+/// Returns the outcome as a fixed 57-byte big-endian blob (decoded by
+/// `WalletStartupOutcome.decode` in Kotlin — the layouts must match):
+///
+/// | offset | size | field |
+/// |---|---|---|
+/// | 0  | 1  | status (`WalletStartupStatusFFI` discriminant) |
+/// | 1  | 1  | hasIdentityId (0/1) |
+/// | 2  | 32 | identityId (valid only when hasIdentityId=1) |
+/// | 34 | 4  | discoveryAttempts (u32) |
+/// | 38 | 1  | dashpaySyncRan (0/1) |
+/// | 39 | 1  | seedBindingUnverified (0/1) |
+/// | 40 | 1  | identityScanIncomplete (0/1) |
+/// | 41 | 4  | contactAccountsDrained (u32) |
+/// | 45 | 4  | contactAccountsPending (u32) |
+/// | 49 | 8  | elapsedMs (u64) |
+///
+/// Throws only for a malformed request (bad handle, unknown wallet, bad
+/// argument) — an unreachable Platform, a failed sync pass or an unfinished
+/// drain all come back through the blob's status, because the host must be
+/// able to start Core SPV regardless.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_startWalletSubsystems(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    mnemonic_resolver_handle: jlong,
+    identity_signer_handle: jlong,
+    budget_secs: jlong,
+    gap_limit: jint,
+) -> jbyteArray {
+    guard(&mut env, std::ptr::null_mut(), |env| {
+        let Some(wallet_id) = read_id32(env, &wallet_id) else {
+            return std::ptr::null_mut();
+        };
+        if budget_secs < 0 {
+            throw_sdk_exception(env, 1, "budgetSecs must be non-negative");
+            return std::ptr::null_mut();
+        }
+        if gap_limit < 0 {
+            throw_sdk_exception(env, 1, "gapLimit must be non-negative");
+            return std::ptr::null_mut();
+        }
+
+        let mut outcome = platform_wallet_ffi::wallet_startup::WalletStartupOutcomeFFI {
+            status: 0,
+            has_identity_id: false,
+            identity_id: [0u8; 32],
+            discovery_attempts: 0,
+            dashpay_sync_ran: false,
+            seed_binding_unverified: false,
+            identity_scan_incomplete: false,
+            contact_accounts_drained: 0,
+            contact_accounts_pending: 0,
+            elapsed_ms: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::wallet_startup::platform_wallet_manager_start_wallet_subsystems(
+                manager_handle as Handle,
+                wallet_id.as_ptr(),
+                mnemonic_resolver_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+                identity_signer_handle as *mut rs_sdk_ffi::SignerHandle,
+                budget_secs as u64,
+                gap_limit as u32,
+                &mut outcome,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return std::ptr::null_mut();
+        }
+
+        let mut blob = [0u8; 57];
+        blob[0] = outcome.status;
+        blob[1] = outcome.has_identity_id as u8;
+        blob[2..34].copy_from_slice(&outcome.identity_id);
+        blob[34..38].copy_from_slice(&outcome.discovery_attempts.to_be_bytes());
+        blob[38] = outcome.dashpay_sync_ran as u8;
+        blob[39] = outcome.seed_binding_unverified as u8;
+        blob[40] = outcome.identity_scan_incomplete as u8;
+        blob[41..45].copy_from_slice(&outcome.contact_accounts_drained.to_be_bytes());
+        blob[45..49].copy_from_slice(&outcome.contact_accounts_pending.to_be_bytes());
+        blob[49..57].copy_from_slice(&outcome.elapsed_ms.to_be_bytes());
+        match env.byte_array_from_slice(&blob) {
+            Ok(array) => array.into_raw(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "startup outcome blob allocation failed");
+                std::ptr::null_mut()
+            }
+        }
+    })
+}

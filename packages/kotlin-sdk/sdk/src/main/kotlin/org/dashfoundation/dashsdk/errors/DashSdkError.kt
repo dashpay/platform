@@ -585,6 +585,25 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorShieldedIdentityDebitPending` (native code 55). An earlier
+         * identity-funded shield is unresolved. This request was not built
+         * or broadcast. Wait for shielded sync to reconcile the earlier
+         * debit before starting another shield from this identity.
+         * Mirrors Swift's `PlatformWalletError.shieldedIdentityDebitPending`
+         * in `PlatformWalletResult.swift`.
+         */
+        class ShieldedIdentityDebitPending(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /** Native code 56: a durable recovery record is malformed or invalid. Retain it for diagnosis. */
+        class ShieldedRecoveryCorrupted(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /** Native code 57: recovery needs its account and compatible keys; damaged ciphertext can look the same. */
+        class ShieldedRecoveryKeysRequired(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -774,6 +793,9 @@ sealed class DashSdkError(
             52 -> PlatformWallet.PersisterStoreFatal(message, cause)
             53 -> PlatformWallet.PersisterStoreConstraint(message, cause)
             54 -> PlatformWallet.PersisterRestore(message, cause)
+            55 -> PlatformWallet.ShieldedIdentityDebitPending(message, cause)
+            56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
+            57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

@@ -1,14 +1,26 @@
 use crate::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("Core chain locked height {proof_core_chain_locked_height:?} must be higher than block {transaction_height:?} with Asset Lock transaction")]
 #[platform_serialize(unversioned)]

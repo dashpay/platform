@@ -43,6 +43,7 @@ use crate::drive::document::index_level_tree_types::{
 };
 use crate::drive::document::paths::contract_document_type_path_vec;
 use crate::drive::document::unique_event_id;
+use crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
@@ -466,8 +467,6 @@ impl Drive {
             // Same per-entry padding (and sum-item worst case) the
             // entry-insert terminal claims for this layer — see
             // `add_index_only_terminal_item_operations`.
-            const INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE: u32 =
-                crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE + 32;
             let estimated_value_size = if level_info.summable.is_some() {
                 INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE + 10
             } else {

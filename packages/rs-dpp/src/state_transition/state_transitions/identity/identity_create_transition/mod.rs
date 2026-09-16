@@ -16,10 +16,12 @@ use crate::state_transition::identity_create_transition::v0::IdentityCreateTrans
 use crate::state_transition::StateTransitionFieldTypes;
 
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use fields::*;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "serde-conversion")]
@@ -36,12 +38,14 @@ pub type IdentityCreateTransitionLatest = IdentityCreateTransitionV0;
     Clone,
     Decode,
     Encode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -95,7 +99,7 @@ impl StateTransitionFieldTypes for IdentityCreateTransition {
 mod test {
     use super::*;
     use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
     use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use crate::state_transition::{
         StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
@@ -128,8 +132,8 @@ mod test {
     fn test_serialization_roundtrip() {
         let t = make_create();
         let bytes = t.serialize_to_bytes().expect("should serialize");
-        let restored =
-            IdentityCreateTransition::deserialize_from_bytes(&bytes).expect("should deserialize");
+        let restored = IdentityCreateTransition::deserialize_from_bytes_untrusted(&bytes)
+            .expect("should deserialize");
         assert_eq!(t, restored);
     }
 
