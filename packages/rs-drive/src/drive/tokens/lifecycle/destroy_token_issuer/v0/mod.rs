@@ -1,5 +1,5 @@
-use crate::drive::tokens::lifecycle::encode_destroyed_supply;
 use crate::drive::tokens::lifecycle::estimated_costs::ESTIMATED_TOKEN_CONTRACT_LIFECYCLE_SIZE_BYTES;
+use crate::drive::tokens::lifecycle::{encode_destroyed_supply, TOKEN_DESTROYED_SUPPLY_SIZE};
 use crate::drive::tokens::paths::{
     token_contract_lifecycles_root_path_vec, TOKEN_DESTROYED_SUPPLY_KEY,
 };
@@ -117,9 +117,7 @@ impl Drive {
         } else {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_type: TreeType::NormalTree,
-                query_target: QueryTargetValue(
-                    crate::drive::tokens::lifecycle::TOKEN_DESTROYED_SUPPLY_SIZE as u32,
-                ),
+                query_target: QueryTargetValue(TOKEN_DESTROYED_SUPPLY_SIZE as u32),
             }
         };
         let destroyed_supply = self.fetch_token_destroyed_supply_operations(
