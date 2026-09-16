@@ -187,17 +187,21 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864009940)
+        assert_eq!(balance, 99864008460)
     }
 
     #[tokio::test]
     async fn run_chain_one_identity_in_solitude_protocol_version_13() {
         // Pins the fee shape at protocol version 13. The grove v4 cleanup
         // gates active from v14 derive their inspection from data the merk
-        // apply already loads, so they are cost-neutral: this balance is
-        // identical to the latest-version test's, and the pair proves the
-        // v13 -> v14 boundary changes nothing about this run's fees.
-        // This is different because in the root tree we added GroupActions
+        // apply already loads, so they are cost-neutral. What does move the
+        // balance is the ContractGroups root tree (key 68) that v14 adds: it
+        // lands as the left child of SpentAssetLockTransactions (72) in the
+        // root Merk drawn below, so the spent asset lock write of the identity
+        // creation rewrites that node with one more child link, and the
+        // latest-version balance is 1480 credits lower than this one. This pin
+        // is what fails if that tree ever leaks into v13.
+        // The same thing happened once before, when GroupActions was added:
         //                                                                                DataContract_Documents 64
         //                                 /                                                                                                       \
         //                       Identities 32                                                                                                 Balances 96
