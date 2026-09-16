@@ -1,5 +1,5 @@
 use crate::drive::contract_groups::paths::contract_groups_groups_path;
-use crate::drive::contract_groups::types::{ContractGroup, DecodeTrust};
+use crate::drive::contract_groups::types::{ContractGroupMembersPage, ContractGroupMembersQuery};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -10,12 +10,16 @@ use grovedb::query_result_type::QueryResultType;
 use grovedb::TransactionArg;
 
 impl Drive {
-    pub(super) fn fetch_contract_group_v0(
+    pub(super) fn fetch_contract_group_members_v0(
         &self,
         contract_group_id: Identifier,
+        query: &ContractGroupMembersQuery,
+        limit: u16,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<ContractGroup>, Error> {
+    ) -> Result<ContractGroupMembersPage, Error> {
+        self.check_contract_group_members_limit(limit)?;
+
         // A path query over a missing group tree is an error in GroveDB, so check first.
         let exists = self.grove_has_raw(
             (&contract_groups_groups_path()).into(),
@@ -26,10 +30,11 @@ impl Drive {
             &platform_version.drive,
         )?;
         if !exists {
-            return Ok(None);
+            return Ok(ContractGroupMembersPage::empty_for(query));
         }
 
-        let path_query = Self::contract_group_query(contract_group_id.to_buffer());
+        let path_query =
+            Self::contract_group_members_query(contract_group_id.to_buffer(), query, limit);
         let (results, _) = self.grove_get_raw_path_query(
             &path_query,
             transaction,
@@ -38,16 +43,12 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        ContractGroup::from_path_key_elements(
-            contract_group_id,
-            results.to_path_key_elements(),
-            DecodeTrust::Trusted,
-        )
-        .map_err(|description| {
-            Error::Drive(DriveError::CorruptedDriveState(format!(
-                "contract group {} is malformed: {}",
-                contract_group_id, description
-            )))
-        })
+        ContractGroupMembersPage::from_path_key_elements(query, results.to_path_key_elements())
+            .map_err(|description| {
+                Error::Drive(DriveError::CorruptedDriveState(format!(
+                    "contract group {} members are malformed: {}",
+                    contract_group_id, description
+                )))
+            })
     }
 }

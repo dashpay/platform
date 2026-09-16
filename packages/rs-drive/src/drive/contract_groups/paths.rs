@@ -119,6 +119,16 @@ pub fn contract_group_document_types_path(contract_group_id: &[u8]) -> [&[u8]; 4
     ]
 }
 
+/// `[ContractGroups, Groups, <group id>, DocumentTypes]`
+pub fn contract_group_document_types_path_vec(contract_group_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::ContractGroups as u8],
+        CONTRACT_GROUPS_GROUPS_KEY.to_vec(),
+        contract_group_id.to_vec(),
+        CONTRACT_GROUP_DOCUMENT_TYPES_KEY.to_vec(),
+    ]
+}
+
 /// `[ContractGroups, Groups, <group id>, DocumentTypes, <contract id>]`
 pub fn contract_group_document_types_for_contract_path<'a>(
     contract_group_id: &'a [u8],
@@ -154,6 +164,16 @@ pub fn contract_group_tokens_path(contract_group_id: &[u8]) -> [&[u8]; 4] {
         CONTRACT_GROUPS_GROUPS_KEY,
         contract_group_id,
         CONTRACT_GROUP_TOKENS_KEY,
+    ]
+}
+
+/// `[ContractGroups, Groups, <group id>, Tokens]`
+pub fn contract_group_tokens_path_vec(contract_group_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::ContractGroups as u8],
+        CONTRACT_GROUPS_GROUPS_KEY.to_vec(),
+        contract_group_id.to_vec(),
+        CONTRACT_GROUP_TOKENS_KEY.to_vec(),
     ]
 }
 

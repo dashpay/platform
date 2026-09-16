@@ -78,7 +78,8 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_action_signers_total_power: 0,
     },
     contract_group: DriveVerifyContractGroupMethodVersions {
-        verify_contract_group: 0,
+        verify_contract_group_info: 0,
+        verify_contract_group_members: 0,
         verify_contract_group_memberships_for_contract: 0,
     },
     token: DriveVerifyTokenMethodVersions {

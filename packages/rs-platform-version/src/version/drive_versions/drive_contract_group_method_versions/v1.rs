@@ -12,11 +12,12 @@ pub const DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1: DriveContractGroupMethodVersi
         },
         fetch: DriveContractGroupFetchMethodVersions {
             fetch_contract_group_info: 0,
-            fetch_contract_group: 0,
+            fetch_contract_group_members: 0,
             fetch_contract_group_memberships_for_contract: 0,
         },
         prove: DriveContractGroupProveMethodVersions {
-            prove_contract_group: 0,
+            prove_contract_group_info: 0,
+            prove_contract_group_members: 0,
             prove_contract_group_memberships_for_contract: 0,
         },
         cost_estimation: DriveContractGroupCostEstimationMethodVersions {

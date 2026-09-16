@@ -28,7 +28,8 @@ pub struct DriveVerifyMethodVersions {
 /// groups a contract (or its document types and tokens) belongs to.
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyContractGroupMethodVersions {
-    pub verify_contract_group: FeatureVersion,
+    pub verify_contract_group_info: FeatureVersion,
+    pub verify_contract_group_members: FeatureVersion,
     pub verify_contract_group_memberships_for_contract: FeatureVersion,
 }
 

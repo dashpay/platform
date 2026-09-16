@@ -27,15 +27,36 @@ use dpp::state_transition::data_contract_create_transition::DataContractCreateTr
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::tests::json_document::json_document_to_contract_with_ids;
 use drive::drive::contract_groups::types::{
-    ContractGroupMembers, ContractGroupMembershipsForContract,
+    ContractGroupMembersPage, ContractGroupMembersQuery, ContractGroupMembershipsForContract,
 };
-use drive::grovedb::Transaction;
+use drive::grovedb::{Transaction, TransactionArg};
 use platform_version::version::PlatformVersion;
 use simple_signer::signer::SimpleSigner;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The document types the contract fixture declares; used as document type members.
 const FIXTURE_DOCUMENT_TYPE: &str = "niceDocument";
+
+/// The page size used to read a group's members in these tests; every group here is smaller.
+const PAGE_LIMIT: u16 = 16;
+
+fn members_page(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    contract_group_id: Identifier,
+    query: ContractGroupMembersQuery,
+    transaction: TransactionArg,
+) -> ContractGroupMembersPage {
+    platform
+        .drive
+        .fetch_contract_group_members(
+            contract_group_id,
+            &query,
+            PAGE_LIMIT,
+            transaction,
+            PlatformVersion::latest(),
+        )
+        .expect("expected to fetch the members page")
+}
 
 fn membership(
     contract_group_id: Identifier,
@@ -170,24 +191,28 @@ async fn should_register_a_contract_group_and_join_it_in_the_same_create() {
         StateTransitionExecutionResult::SuccessfulExecution { .. }
     );
 
-    let group = platform
+    let info = platform
         .drive
-        .fetch_contract_group(contract_group_id, Some(&transaction), platform_version)
-        .expect("expected to fetch the group")
+        .fetch_contract_group_info(contract_group_id, Some(&transaction), platform_version)
+        .expect("expected to fetch the group info")
         .expect("expected the group to be registered");
+    assert_eq!(info.owner(), &ContractGroupOwner::SingleOwner(owner_id));
+    assert_eq!(info.name(), Some("dashpay"));
     assert_eq!(
-        group.info.owner(),
-        &ContractGroupOwner::SingleOwner(owner_id)
+        members_page(
+            &platform,
+            contract_group_id,
+            ContractGroupMembersQuery::Contracts { start_after: None },
+            Some(&transaction),
+        ),
+        ContractGroupMembersPage::Contracts(vec![contract_id])
     );
-    assert_eq!(group.info.name(), Some("dashpay"));
-    assert_eq!(
-        group.members,
-        ContractGroupMembers {
-            contracts: BTreeSet::from([contract_id]),
-            document_types: BTreeMap::new(),
-            tokens: BTreeMap::new(),
-        }
-    );
+    for query in [
+        ContractGroupMembersQuery::DocumentTypes { start_after: None },
+        ContractGroupMembersQuery::Tokens { start_after: None },
+    ] {
+        assert!(members_page(&platform, contract_group_id, query, Some(&transaction)).is_empty());
+    }
     let memberships = platform
         .drive
         .fetch_contract_group_memberships_for_contract(
@@ -278,22 +303,36 @@ async fn should_let_an_owner_add_a_later_contract_by_document_type_and_token() {
         StateTransitionExecutionResult::SuccessfulExecution { .. }
     );
 
-    let group = platform
-        .drive
-        .fetch_contract_group(contract_group_id, Some(&transaction), platform_version)
-        .expect("expected to fetch the group")
-        .expect("expected the group");
-    assert_eq!(
-        group.members,
-        ContractGroupMembers {
-            contracts: BTreeSet::new(),
-            document_types: BTreeMap::from([(
-                documents_contract_id,
-                BTreeSet::from([FIXTURE_DOCUMENT_TYPE.to_string()])
-            )]),
-            tokens: BTreeMap::from([(token_contract_id, BTreeSet::from([0]))]),
-        }
+    let document_types_query = ContractGroupMembersQuery::DocumentTypes { start_after: None };
+    let document_types_page = members_page(
+        &platform,
+        contract_group_id,
+        document_types_query.clone(),
+        Some(&transaction),
     );
+    assert_eq!(
+        document_types_page,
+        ContractGroupMembersPage::DocumentTypes(vec![(
+            documents_contract_id,
+            FIXTURE_DOCUMENT_TYPE.to_string()
+        )])
+    );
+    assert_eq!(
+        members_page(
+            &platform,
+            contract_group_id,
+            ContractGroupMembersQuery::Tokens { start_after: None },
+            Some(&transaction),
+        ),
+        ContractGroupMembersPage::Tokens(vec![(token_contract_id, 0)])
+    );
+    assert!(members_page(
+        &platform,
+        contract_group_id,
+        ContractGroupMembersQuery::Contracts { start_after: None },
+        Some(&transaction),
+    )
+    .is_empty());
     assert_eq!(
         platform
             .drive
@@ -319,12 +358,23 @@ async fn should_let_an_owner_add_a_later_contract_by_document_type_and_token() {
         .expect("expected to commit the transaction");
     let proof = platform
         .drive
-        .prove_contract_group(contract_group_id, None, platform_version)
+        .prove_contract_group_members(
+            contract_group_id,
+            &document_types_query,
+            PAGE_LIMIT,
+            None,
+            platform_version,
+        )
         .expect("expected a proof");
-    let (proved_root, proved) =
-        drive::drive::Drive::verify_contract_group(&proof, contract_group_id, platform_version)
-            .expect("expected the proof to verify");
-    assert_eq!(proved, Some(group));
+    let (proved_root, proved) = drive::drive::Drive::verify_contract_group_members(
+        &proof,
+        contract_group_id,
+        &document_types_query,
+        PAGE_LIMIT,
+        platform_version,
+    )
+    .expect("expected the proof to verify");
+    assert_eq!(proved, document_types_page);
     assert_eq!(
         proved_root,
         platform
@@ -399,17 +449,13 @@ async fn should_reject_joining_a_group_the_identity_does_not_own_as_a_paid_failu
         .value
         .expect("expected to query the contract")
         .is_none());
-    assert!(platform
-        .drive
-        .fetch_contract_group(
-            contract_group_id,
-            Some(&transaction),
-            PlatformVersion::latest()
-        )
-        .expect("expected to fetch the group")
-        .expect("expected the group")
-        .members
-        .is_empty());
+    for query in [
+        ContractGroupMembersQuery::Contracts { start_after: None },
+        ContractGroupMembersQuery::DocumentTypes { start_after: None },
+        ContractGroupMembersQuery::Tokens { start_after: None },
+    ] {
+        assert!(members_page(&platform, contract_group_id, query, Some(&transaction)).is_empty());
+    }
 }
 
 #[tokio::test]
@@ -515,14 +561,22 @@ async fn should_let_the_owner_and_each_admin_add_members_and_refuse_outsiders() 
         }
     );
 
-    let group = platform
-        .drive
-        .fetch_contract_group(contract_group_id, Some(&transaction), platform_version)
-        .expect("expected to fetch the group")
-        .expect("expected the group");
-    assert_eq!(group.members.contracts, BTreeSet::from([bob_contract_id]));
     assert_eq!(
-        group.info.description(),
+        members_page(
+            &platform,
+            contract_group_id,
+            ContractGroupMembersQuery::Contracts { start_after: None },
+            Some(&transaction),
+        ),
+        ContractGroupMembersPage::Contracts(vec![bob_contract_id])
+    );
+    let info = platform
+        .drive
+        .fetch_contract_group_info(contract_group_id, Some(&transaction), platform_version)
+        .expect("expected to fetch the group info")
+        .expect("expected the group");
+    assert_eq!(
+        info.description(),
         Some("owned by alice, administered by bob")
     );
 }

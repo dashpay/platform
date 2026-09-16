@@ -280,23 +280,22 @@ A fresh chain creates the root tree and its two subtrees in `create_initial_stat
 
 ## Reading and Proving
 
-Drive exposes three fetches and two proofs, all versioned through `DriveContractGroupMethodVersions`:
+A group can be joined by any number of contracts, so nothing reads or proves a whole group at once. Drive splits reading into the group's information, a single item, and its members, read one kind at a time in pages bounded by a limit. Everything is versioned through `DriveContractGroupMethodVersions`:
 
-- `fetch_contract_group_info(group_id)` reads only the `Info` item. State validation uses its `_with_fee` variant, which returns the `FeeResult` for the lookup alongside the result.
-- `fetch_contract_group(group_id)` returns a `ContractGroup { id, info, members }`, with members split into whole contracts, document types by contract and tokens by contract.
-- `fetch_contract_group_memberships_for_contract(contract_id)` returns a `ContractGroupMembershipsForContract`: the groups the whole contract joined, the groups each document type joined and the groups each token joined.
-- `prove_contract_group(group_id)` and `prove_contract_group_memberships_for_contract(contract_id)` produce one GroveDB proof each.
+- `fetch_contract_group_info(group_id)` reads only the `Info` item. State validation uses its `_with_fee` variant, which returns the `FeeResult` for the lookup alongside the result. `prove_contract_group_info` and `verify_contract_group_info` do the same through a proof, with `None` for a group that is provably absent.
+- `fetch_contract_group_members(group_id, &query, limit)` returns one `ContractGroupMembersPage` of one kind. The `ContractGroupMembersQuery` names the kind, `Contracts`, `DocumentTypes` or `Tokens`, and carries a `start_after` cursor: a contract id alone, or a contract id with a document type name or a token position. Entries come back in key order, at most `limit` of them, and `page.next_query()` is the query for the page after it, `None` once a page is empty. `limit` must lie between 1 and the node's `max_query_limit`, on the fetch side and on the proof side, so no page and no proof grows with the size of the group. `prove_contract_group_members` and `verify_contract_group_members` take the same query and limit.
+- `fetch_contract_group_memberships_for_contract(contract_id)` returns a `ContractGroupMembershipsForContract`: the groups the whole contract joined, the groups each document type joined and the groups each token joined. It needs no limit: memberships are recorded at creation only and capped per transition, so a contract belongs to at most sixteen. `prove_contract_group_memberships_for_contract` and `verify_contract_group_memberships_for_contract` are its proof pair.
 
-Two path queries in `packages/rs-drive/src/drive/contract_groups/queries.rs` drive all of them. `contract_group_query` reads the group's tree with a range-full query and conditional subqueries: one level under `Contracts`, two levels under `DocumentTypes` and `Tokens`. `contract_group_memberships_for_contract_query` does the same under a contract's `Members` entry. The same `PathQuery` is used to fetch and to prove, so what a node reads locally and what a client verifies are the same set of elements.
+Three path queries in `packages/rs-drive/src/drive/contract_groups/queries.rs` drive all of them. `contract_group_info_query` asks for the one info key under the group's tree. `contract_group_members_query` reads one kind's subtree: a range after the cursor for `Contracts`; for `DocumentTypes` and `Tokens`, a range from the cursor's contract onward with a range-full default subquery, plus a conditional subquery on the cursor's contract itself that starts after the cursor's name or position, so a page can end in the middle of one contract's entries and the next page resumes exactly there. `contract_group_memberships_for_contract_query` reads a contract's `Members` entry with a conditional subquery per kind. The same `PathQuery` is used to fetch and to prove, so what a node reads locally and what a client verifies are the same set of elements.
 
-Verification lives in `packages/rs-drive/src/verify/contract_groups/`. `verify_contract_group` returns `(RootHash, Option<ContractGroup>)`, with `None` for a group that is provably absent; `verify_contract_group_memberships_for_contract` returns `(RootHash, ContractGroupMembershipsForContract)`, empty for a contract that belongs to nothing. Both decode the proved `(path, key, element)` triples with the same `from_path_key_elements` functions the fetches use, in `types.rs`. The one difference is a `DecodeTrust` flag: a fetch passes `Trusted` and decodes the info item with the trusted decoder, a verify passes `Untrusted` and uses the bounded one, because proof bytes came from someone else.
+Verification lives in `packages/rs-drive/src/verify/contract_groups/`. Each verify function rebuilds its result from the proved `(path, key, element)` triples with the same decoders the fetches use, in `types.rs`. Member pages carry no data in their elements: every entry is read from its path and key. The info item is the one thing that decodes bytes, and the verifier uses the untrusted `ContractGroupInfo` decoder because proof bytes came from someone else, where the fetch uses the trusted one.
 
 Two GroveDB behaviours shape this code and are worth knowing before you touch it:
 
 - **A path query over a tree that does not exist is an error, not an empty result.** The fetches call `grove_has_raw` on the group's or contract's tree first and return `None` or an empty result when it is absent.
 - **GroveDB cannot build a proof inside an open transaction.** `prove_*` with `Some(&transaction)` fails with `NotSupported`. Tests commit first and prove with `None`.
 
-The DAPI queries and SDK `Fetch` implementations that will sit on top of these proofs are a separate change; see the section on what is not there yet.
+The DAPI queries and SDK `Fetch` implementations that will sit on top of these proofs are a separate change; see the section on what is not there yet. They will carry the same cursor and limit, so a client pages a large group the way it pages documents.
 
 ## Versioning Touchpoints
 
@@ -335,7 +334,7 @@ The first protocol version 14 change ships the consensus core only. Known gaps, 
 - **Updating or leaving.** Memberships are creation-only. A later `DataContractUpdateTransition` version would be needed to add members from an existing contract or to remove any.
 - **Relaxing redundancy.** A document type membership is refused when the whole contract already joins the same group. That could be allowed if a consumer wants the explicit entry.
 - **An owners index.** There is no `identity → groups it owns` tree. Finding the groups an identity owns means scanning `Groups`.
-- **Queries and SDKs.** `getContractGroup` and `getContractGroupsForContract` in DAPI, their `rs-drive-proof-verifier` types, `rs-sdk` `Fetch` impls and the wasm-sdk bindings follow separately, as do the creation surfaces in wasm-dpp and the JavaScript, Kotlin and Swift SDKs.
+- **Queries and SDKs.** `getContractGroupInfo`, a paged `getContractGroupMembers` and `getContractGroupsForContract` in DAPI, their `rs-drive-proof-verifier` types, `rs-sdk` `Fetch` impls and the wasm-sdk bindings follow separately, as do the creation surfaces in wasm-dpp and the JavaScript, Kotlin and Swift SDKs.
 - **`ContractBounds::ContractGroup`.** Binding an identity key to every contract in a group is the consumer the `Members` layout was built for. The commented `MultipleContractsOfSameOwner` remnants in `packages/rs-dpp/src/identity/identity_public_key/contract_bounds/mod.rs` mark the spot.
 
 ## Tests
@@ -343,7 +342,7 @@ The first protocol version 14 change ships the consensus core only. Known gaps, 
 Coverage sits at the three layers the feature touches (see [Unit Tests](../testing/unit-tests.md)):
 
 - **dpp** (`contract_group/mod.rs`): the id derivation differs from the contract id and depends on both inputs; both owner kinds resolve membership; the stored info round-trips through bincode with the untrusted decoder.
-- **drive** (`drive/contract_groups/tests.rs`): the root tree exists in the initial structure at protocol version 14 and not before; a group can be registered and proved present or absent; memberships land on both sides and prove; estimation and apply build the same operations; registering an existing group is refused.
+- **drive** (`drive/contract_groups/tests.rs`): the root tree exists in the initial structure at protocol version 14 and not before; a group can be registered and proved present or absent; memberships land on both sides and prove; members page through with a cursor, and a zero or over-the-maximum page size is refused on both the fetch and the proof side; estimation and apply build the same operations; registering an existing group is refused.
 - **drive-abci** (`data_contract_create/contract_group_tests.rs`): end-to-end through `process_raw_state_transitions`, covering register-and-join in one transition, an owner adding a later contract by document type and token, joining a group the identity does not own as a paid failure, joining an unknown group, a group with admins accepting the owner and each admin and refusing outsiders, a registrant who is not the owner (even when named as an admin) rejected before paying, and the full set of malformed registrations and memberships rejected in basic structure.
 
 ```bash
@@ -359,7 +358,7 @@ cargo test -p drive-abci -- contract_group data_contract_create
 - Derive the group id with `generate_contract_group_id` or `contract_group_id()`. Never hash by hand and never accept an id from the wire.
 - Keep lookups in state validation and everything else in basic structure. A check that needs Drive must be paid for.
 - Use the path helpers in `paths.rs`. The subtree keys are single bytes and easy to transpose.
-- Fetch with `Trusted` and verify with `Untrusted`; the flag is the only difference between the two decoders, and it is the one that matters.
+- Read members in pages with a limit. Never add a query that enumerates a whole group; the info item is the only thing read without a bound.
 
 **Do not:**
 - Confuse contract groups with a contract's change-control `groups`. Different types, different limits, different trees.

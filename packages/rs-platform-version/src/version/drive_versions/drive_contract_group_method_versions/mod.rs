@@ -21,13 +21,14 @@ pub struct DriveContractGroupInsertMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveContractGroupFetchMethodVersions {
     pub fetch_contract_group_info: FeatureVersion,
-    pub fetch_contract_group: FeatureVersion,
+    pub fetch_contract_group_members: FeatureVersion,
     pub fetch_contract_group_memberships_for_contract: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveContractGroupProveMethodVersions {
-    pub prove_contract_group: FeatureVersion,
+    pub prove_contract_group_info: FeatureVersion,
+    pub prove_contract_group_members: FeatureVersion,
     pub prove_contract_group_memberships_for_contract: FeatureVersion,
 }
 

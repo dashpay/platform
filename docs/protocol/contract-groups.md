@@ -106,12 +106,22 @@ the new version.
 
 ## Proofs
 
-Two path queries cover the tree:
+A group can be joined by any number of contracts, so nothing reads or proves a whole group
+at once. Three path queries cover the tree:
 
-- `Drive::contract_group_query(groupId)`: the info item and every member of one group,
-  verified with `Drive::verify_contract_group`, which returns `None` for an absent group.
+- `Drive::contract_group_info_query(groupId)`: the info item alone, verified with
+  `Drive::verify_contract_group_info`, which returns `None` for an absent group.
+- `Drive::contract_group_members_query(groupId, query, limit)`: one page of one kind of
+  member, `contracts`, `documentTypes` or `tokens`, in key order, at most `limit` entries,
+  continuing after the cursor the query carries (a contract id, or a contract id with a
+  document type name or a token position). Verified with
+  `Drive::verify_contract_group_members` for the same query and limit. The limit must be
+  between 1 and the node's maximum query limit, so no proof grows with the size of a group.
+  An absent group proves as an empty page.
 - `Drive::contract_group_memberships_for_contract_query(contractId)`: every group a
   contract belongs to, verified with `Drive::verify_contract_group_memberships_for_contract`.
+  It needs no limit: a contract's memberships are recorded at creation only, at most
+  `maxContractGroupMembershipsPerContract` of them.
 
-Both are single GroveDB proofs against the state root. DAPI queries and SDK surfaces
-for them follow separately.
+Each is a single GroveDB proof against the state root. DAPI queries and SDK surfaces for
+them follow separately and carry the same cursor and limit.

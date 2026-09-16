@@ -8,8 +8,8 @@ use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
-    /// Proves a contract group: its information and every member, or its absence.
-    pub fn prove_contract_group(
+    /// Proves a contract group's stored information (owner, name, description), or its absence.
+    pub fn prove_contract_group_info(
         &self,
         contract_group_id: Identifier,
         transaction: TransactionArg,
@@ -20,11 +20,13 @@ impl Drive {
             .methods
             .contract_group
             .prove
-            .prove_contract_group
+            .prove_contract_group_info
         {
-            0 => self.prove_contract_group_v0(contract_group_id, transaction, platform_version),
+            0 => {
+                self.prove_contract_group_info_v0(contract_group_id, transaction, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "prove_contract_group".to_string(),
+                method: "prove_contract_group_info".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

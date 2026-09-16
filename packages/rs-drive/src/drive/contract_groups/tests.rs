@@ -2,7 +2,7 @@ use crate::drive::contract_groups::paths::{
     contract_groups_root_path, CONTRACT_GROUPS_GROUPS_KEY, CONTRACT_GROUPS_MEMBERS_KEY,
 };
 use crate::drive::contract_groups::types::{
-    ContractGroup, ContractGroupMembers, ContractGroupMembershipsForContract,
+    ContractGroupMembersPage, ContractGroupMembersQuery, ContractGroupMembershipsForContract,
 };
 use crate::drive::{Drive, RootTree};
 use crate::util::grove_operations::DirectQueryType;
@@ -46,6 +46,43 @@ fn root_hash(drive: &Drive, platform_version: &PlatformVersion) -> [u8; 32] {
         .root_hash(None, &platform_version.drive.grove_version)
         .unwrap()
         .expect("expected a root hash")
+}
+
+/// Fetches, proves and verifies one members page and checks all three agree with `expected`.
+fn assert_members_page(
+    drive: &Drive,
+    contract_group_id: Identifier,
+    query: &ContractGroupMembersQuery,
+    limit: u16,
+    expected: &ContractGroupMembersPage,
+    platform_version: &PlatformVersion,
+) {
+    let fetched = drive
+        .fetch_contract_group_members(contract_group_id, query, limit, None, platform_version)
+        .expect("expected to fetch the members page");
+    assert_eq!(
+        &fetched, expected,
+        "fetched {:?} of group {}",
+        query, contract_group_id
+    );
+
+    let proof = drive
+        .prove_contract_group_members(contract_group_id, query, limit, None, platform_version)
+        .expect("expected a members page proof");
+    let (proved_root, proved) = Drive::verify_contract_group_members(
+        &proof,
+        contract_group_id,
+        query,
+        limit,
+        platform_version,
+    )
+    .expect("expected to verify the members page proof");
+    assert_eq!(proved_root, root_hash(drive, platform_version));
+    assert_eq!(
+        &proved, expected,
+        "proved {:?} of group {}",
+        query, contract_group_id
+    );
 }
 
 fn has_root_tree_key(drive: &Drive, key: &[u8], platform_version: &PlatformVersion) -> bool {
@@ -107,20 +144,30 @@ fn should_register_a_contract_group_and_prove_it_present_or_absent() {
     let owner = identity(1);
     let contract_group_id = generate_contract_group_id(&owner, 7);
     let info = single_owner_info(owner, "dashpay");
+    let contracts_query = ContractGroupMembersQuery::Contracts { start_after: None };
 
     // Absent before registration, on the fetch and on the proof side.
     assert!(drive
-        .fetch_contract_group(contract_group_id, None, platform_version)
+        .fetch_contract_group_info(contract_group_id, None, platform_version)
         .expect("expected to fetch")
         .is_none());
     let absence_proof = drive
-        .prove_contract_group(contract_group_id, None, platform_version)
+        .prove_contract_group_info(contract_group_id, None, platform_version)
         .expect("expected an absence proof");
     let (proved_root, absent) =
-        Drive::verify_contract_group(&absence_proof, contract_group_id, platform_version)
+        Drive::verify_contract_group_info(&absence_proof, contract_group_id, platform_version)
             .expect("expected to verify the absence proof");
     assert_eq!(proved_root, root_hash(&drive, platform_version));
     assert!(absent.is_none());
+    // The members of an absent group read and prove as an empty page.
+    assert_members_page(
+        &drive,
+        contract_group_id,
+        &contracts_query,
+        10,
+        &ContractGroupMembersPage::Contracts(vec![]),
+        platform_version,
+    );
 
     let fee = drive
         .insert_contract_group(
@@ -140,26 +187,30 @@ fn should_register_a_contract_group_and_prove_it_present_or_absent() {
             .expect("expected to fetch the info"),
         Some(info.clone())
     );
-    let expected = ContractGroup {
-        id: contract_group_id,
-        info: info.clone(),
-        members: ContractGroupMembers::default(),
-    };
-    assert_eq!(
-        drive
-            .fetch_contract_group(contract_group_id, None, platform_version)
-            .expect("expected to fetch the group"),
-        Some(expected.clone())
-    );
-
     let proof = drive
-        .prove_contract_group(contract_group_id, None, platform_version)
+        .prove_contract_group_info(contract_group_id, None, platform_version)
         .expect("expected a proof");
-    let (proved_root, proved_group) =
-        Drive::verify_contract_group(&proof, contract_group_id, platform_version)
+    let (proved_root, proved_info) =
+        Drive::verify_contract_group_info(&proof, contract_group_id, platform_version)
             .expect("expected to verify the proof");
     assert_eq!(proved_root, root_hash(&drive, platform_version));
-    assert_eq!(proved_group, Some(expected));
+    assert_eq!(proved_info, Some(info));
+
+    // A registered group without members has an empty page of every kind.
+    for query in [
+        contracts_query,
+        ContractGroupMembersQuery::DocumentTypes { start_after: None },
+        ContractGroupMembersQuery::Tokens { start_after: None },
+    ] {
+        assert_members_page(
+            &drive,
+            contract_group_id,
+            &query,
+            10,
+            &ContractGroupMembersPage::empty_for(&query),
+            platform_version,
+        );
+    }
 }
 
 #[test]
@@ -220,42 +271,46 @@ fn should_record_memberships_on_both_sides_and_prove_them() {
         )
         .expect("expected to record the second contract's membership");
 
-    // Forward side.
-    let expected_group_1_members = ContractGroupMembers {
-        contracts: BTreeSet::from([contract_1, contract_2]),
-        document_types: BTreeMap::new(),
-        tokens: BTreeMap::from([(contract_1, BTreeSet::from([1]))]),
-    };
-    let expected_group_2_members = ContractGroupMembers {
-        contracts: BTreeSet::new(),
-        document_types: BTreeMap::from([(
-            contract_1,
-            BTreeSet::from(["contactRequest".to_string(), "profile".to_string()]),
-        )]),
-        tokens: BTreeMap::from([(contract_1, BTreeSet::from([0]))]),
-    };
-    for (group_id, expected_members) in [
-        (group_1, &expected_group_1_members),
-        (group_2, &expected_group_2_members),
+    // Forward side, one kind at a time.
+    let contracts = ContractGroupMembersQuery::Contracts { start_after: None };
+    let document_types = ContractGroupMembersQuery::DocumentTypes { start_after: None };
+    let tokens = ContractGroupMembersQuery::Tokens { start_after: None };
+    for (group_id, query, expected) in [
+        (
+            group_1,
+            &contracts,
+            ContractGroupMembersPage::Contracts(vec![contract_1, contract_2]),
+        ),
+        (
+            group_1,
+            &document_types,
+            ContractGroupMembersPage::DocumentTypes(vec![]),
+        ),
+        (
+            group_1,
+            &tokens,
+            ContractGroupMembersPage::Tokens(vec![(contract_1, 1)]),
+        ),
+        (
+            group_2,
+            &contracts,
+            ContractGroupMembersPage::Contracts(vec![]),
+        ),
+        (
+            group_2,
+            &document_types,
+            ContractGroupMembersPage::DocumentTypes(vec![
+                (contract_1, "contactRequest".to_string()),
+                (contract_1, "profile".to_string()),
+            ]),
+        ),
+        (
+            group_2,
+            &tokens,
+            ContractGroupMembersPage::Tokens(vec![(contract_1, 0)]),
+        ),
     ] {
-        let fetched = drive
-            .fetch_contract_group(group_id, None, platform_version)
-            .expect("expected to fetch")
-            .expect("expected the group to exist");
-        assert_eq!(
-            &fetched.members, expected_members,
-            "members of group {}",
-            group_id
-        );
-
-        let proof = drive
-            .prove_contract_group(group_id, None, platform_version)
-            .expect("expected a proof");
-        let (proved_root, proved) =
-            Drive::verify_contract_group(&proof, group_id, platform_version)
-                .expect("expected to verify");
-        assert_eq!(proved_root, root_hash(&drive, platform_version));
-        assert_eq!(proved, Some(fetched));
+        assert_members_page(&drive, group_id, query, 10, &expected, platform_version);
     }
 
     // Backwards side.
@@ -454,4 +509,140 @@ fn should_refuse_to_register_an_existing_contract_group() {
         second.is_err(),
         "a second registration must not overwrite the group"
     );
+}
+
+#[test]
+fn should_page_through_members_with_a_cursor_and_bound_the_limit() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let owner = identity(1);
+    let group_id = generate_contract_group_id(&owner, 5);
+    drive
+        .insert_contract_group(
+            group_id,
+            &single_owner_info(owner, "paged"),
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to register the group");
+
+    let whole_contracts = [identity(10), identity(11), identity(12)];
+    for contract_id in whole_contracts {
+        drive
+            .insert_contract_group_memberships(
+                contract_id,
+                &[membership(group_id, ContractGroupMember::Contract)],
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to record the membership");
+    }
+    let typed_contract = identity(20);
+    drive
+        .insert_contract_group_memberships(
+            typed_contract,
+            &[
+                membership(group_id, ContractGroupMember::DocumentType("a".to_string())),
+                membership(group_id, ContractGroupMember::DocumentType("b".to_string())),
+                membership(group_id, ContractGroupMember::DocumentType("c".to_string())),
+                membership(group_id, ContractGroupMember::Token(0)),
+                membership(group_id, ContractGroupMember::Token(1)),
+            ],
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to record the memberships");
+    let other_typed_contract = identity(21);
+    drive
+        .insert_contract_group_memberships(
+            other_typed_contract,
+            &[membership(
+                group_id,
+                ContractGroupMember::DocumentType("a".to_string()),
+            )],
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to record the membership");
+
+    // Walks every page of one kind with the cursor each page hands back, proving each page.
+    let walk = |first: ContractGroupMembersQuery, limit: u16| -> Vec<ContractGroupMembersPage> {
+        let mut pages = vec![];
+        let mut query = first;
+        loop {
+            let page = drive
+                .fetch_contract_group_members(group_id, &query, limit, None, platform_version)
+                .expect("expected to fetch a page");
+            assert_members_page(&drive, group_id, &query, limit, &page, platform_version);
+            assert!(
+                page.len() <= limit as usize,
+                "a page never exceeds its limit"
+            );
+            match page.next_query() {
+                Some(next) => {
+                    pages.push(page);
+                    query = next;
+                }
+                None => {
+                    assert!(page.is_empty());
+                    return pages;
+                }
+            }
+        }
+    };
+
+    assert_eq!(
+        walk(
+            ContractGroupMembersQuery::Contracts { start_after: None },
+            2
+        ),
+        vec![
+            ContractGroupMembersPage::Contracts(vec![identity(10), identity(11)]),
+            ContractGroupMembersPage::Contracts(vec![identity(12)]),
+        ]
+    );
+    // The cursor continues inside a contract's document types, then moves to the next contract.
+    assert_eq!(
+        walk(
+            ContractGroupMembersQuery::DocumentTypes { start_after: None },
+            2
+        ),
+        vec![
+            ContractGroupMembersPage::DocumentTypes(vec![
+                (typed_contract, "a".to_string()),
+                (typed_contract, "b".to_string()),
+            ]),
+            ContractGroupMembersPage::DocumentTypes(vec![
+                (typed_contract, "c".to_string()),
+                (other_typed_contract, "a".to_string()),
+            ]),
+        ]
+    );
+    assert_eq!(
+        walk(ContractGroupMembersQuery::Tokens { start_after: None }, 1),
+        vec![
+            ContractGroupMembersPage::Tokens(vec![(typed_contract, 0)]),
+            ContractGroupMembersPage::Tokens(vec![(typed_contract, 1)]),
+        ]
+    );
+
+    // A page is never unbounded: zero and over-the-maximum limits are refused on both the
+    // fetch and the proof side.
+    let query = ContractGroupMembersQuery::Contracts { start_after: None };
+    for limit in [0, drive.config.max_query_limit + 1] {
+        assert!(drive
+            .fetch_contract_group_members(group_id, &query, limit, None, platform_version)
+            .is_err());
+        assert!(drive
+            .prove_contract_group_members(group_id, &query, limit, None, platform_version)
+            .is_err());
+    }
 }

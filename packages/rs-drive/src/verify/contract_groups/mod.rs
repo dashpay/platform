@@ -1,2 +1,3 @@
-mod verify_contract_group;
+mod verify_contract_group_info;
+mod verify_contract_group_members;
 mod verify_contract_group_memberships_for_contract;
