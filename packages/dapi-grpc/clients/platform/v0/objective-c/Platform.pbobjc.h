@@ -95,6 +95,7 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsRequest_DocumentFieldValue_ValueList;
 @class GetDocumentsRequest_GetDocumentsRequestV0;
 @class GetDocumentsRequest_GetDocumentsRequestV1;
+@class GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin;
 @class GetDocumentsRequest_GetDocumentsRequestV1_Select;
 @class GetDocumentsRequest_HavingAggregate;
 @class GetDocumentsRequest_HavingClause;
@@ -107,6 +108,7 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries;
 @class GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry;
 @class GetDocumentsResponse_GetDocumentsResponseV1_AverageResults;
+@class GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountEntries;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountEntry;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountResults;
@@ -2887,6 +2889,7 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber) {
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_GroupByArray = 10,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_HavingArray = 11,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Offset = 12,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Chained = 13,
 };
 
 typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
@@ -2960,7 +2963,7 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
  * - `DESC` is the "top n" reading (walk the axis from the largest aggregate down), `ASC` the "bottom n" reading. Worked example: `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 1 OFFSET 4` is the 5th-best restaurant.
  *
  * `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], having=[<the selected aggregate> <op> <value>]` (protocol v14+) — **having-range mode**:
- * - exactly one `group_by` property, exactly one `having` clause whose aggregate is the select's aggregate, an operator describing one contiguous range (`EQUAL`, `GREATER_THAN[_OR_EQUALS]`, `LESS_THAN[_OR_EQUALS]`, `BETWEEN*`; `NOT_EQUAL` / `IN` rejected), a `limit` in `1 ..= 100`, an optional `order_by` naming the same aggregate (walk direction; ascending by default), and no `offset` / `start_at` / `start_after`, on an index declaring the matching ranked axis → having-range executor, answered in `ResultData.ranked`. `where` follows the same rule as ranked mode: none on a single-property ranked index; exactly one pin per leading index property on a compound ranked index, at most one of them an `IN` (2..=10 distinct elements) that fans the bound out across prefix branches and merges, entries carrying `in_key`.
+ * - exactly one `group_by` property, exactly one `having` clause whose aggregate is the select's aggregate, an operator describing one contiguous range (`EQUAL`, `GREATER_THAN[_OR_EQUALS]`, `LESS_THAN[_OR_EQUALS]`, `BETWEEN*`; `NOT_EQUAL` / `IN` rejected), a `limit` in `1 ..= 100`, an optional `order_by` naming the same aggregate (walk direction; ascending by default), and no `offset` / `start_at` / `start_after`, on an index declaring the matching ranked axis → having-range executor, answered in `ResultData.ranked`. `where` follows the same rule as ranked mode: none on a single-property ranked index; exactly one pin per leading index property on a compound ranked index, at most one of them an `IN` (2..=10 distinct elements; a never-written element contributes an empty branch) that fans the bound out across prefix branches and merges, entries carrying `in_key`.
  * - no offset or cursor pagination: a page cut at `limit` continues only by tightening the bound past the last *distinct* aggregate value seen; a cut inside a tie (several groups sharing the boundary aggregate) cannot be continued, so size `limit` above the widest expected tie.
  *
  * **Rejected shapes** (return `Unsupported`):
@@ -3194,6 +3197,10 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
 @property(nonatomic, readwrite) uint32_t offset;
 
 @property(nonatomic, readwrite) BOOL hasOffset;
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin *chained;
+/** Test to see if @c chained has been set. */
+@property(nonatomic, readwrite) BOOL hasChained;
+
 @end
 
 /**
@@ -3265,6 +3272,60 @@ int32_t GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_RawValue(GetDo
  * was generated.
  **/
 void SetGetDocumentsRequest_GetDocumentsRequestV1_Select_Function_RawValue(GetDocumentsRequest_GetDocumentsRequestV1_Select *message, int32_t value);
+
+#pragma mark - GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin
+
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin_FieldNumber) {
+  GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin_FieldNumber_JoinProperty = 1,
+  GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin_FieldNumber_OuterDocumentType = 2,
+};
+
+/**
+ * Chained mode — a provable semi-join:
+ * `SELECT * FROM <outer_document_type> WHERE $id IN
+ *   (SELECT <join_property> FROM <document_type> WHERE ...)`.
+ *
+ * Presence of this message selects chained mode: this request's
+ * own `document_type` / `where_clauses` / `order_by` / `limit`
+ * describe the INNER indexOnly query, and the outer half is
+ * DERIVED from its results — the request carries no outer
+ * clauses by design, and the verifier re-derives the outer
+ * query from the proven inner values, so the join cannot be
+ * steered by the responding node.
+ *
+ * Mode gates (rejected otherwise): the inner type must be
+ * indexOnly and resolve to an index carrying `join_property`;
+ * `join_property` must declare a same-contract
+ * `refersTo: permanentDocument` targeting
+ * `outer_document_type`; `limit` is REQUIRED (it bounds the
+ * derived outer query — no server-default fallback) and capped
+ * by the outer `$id IN` clause's 100-value limit; `selects`
+ * must be empty or a single DOCUMENTS projection; `group_by`,
+ * `having`, time-range clauses, cursors, and `offset` are all
+ * rejected. Pagination is a range clause on `join_property`.
+ *
+ * The verifier needs nothing beyond the proof itself: it
+ * subset-verifies the inner query against the merged proof to
+ * extract the join values, re-derives the outer component, and
+ * verifies the whole composition. A node that predates this
+ * field ignores it (proto3 unknown field) and serves the plain
+ * inner query — which FAILS CLOSED client-side: an inner-only
+ * proof cannot satisfy the re-derived merged query for a
+ * non-empty page, and an unproven response carries the wrong
+ * ResultData variant.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin : GPBMessage
+
+/**
+ * The inner property whose proven values become the outer
+ * documents' `$id`s.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSString *joinProperty;
+
+/** The joined document type — the `refersTo` target. */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *outerDocumentType;
+
+@end
 
 #pragma mark - GetDocumentsResponse
 
@@ -3914,6 +3975,7 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNum
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Sums = 3,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Averages = 4,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Ranked = 5,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Chained = 6,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase) {
@@ -3923,6 +3985,7 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Sums = 3,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Averages = 4,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Ranked = 5,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Chained = 6,
 };
 
 /**
@@ -3974,12 +4037,45 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GP
  **/
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries *ranked;
 
+/**
+ * Chained-mode result: both halves of the provable
+ * semi-join, in inner order (the last inner projection's
+ * join-property value is the pagination cursor; outer
+ * documents are ordered by first appearance of their id
+ * among the inner projections, deduplicated). Routed when
+ * the request's `chained` message is present.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments *chained;
+
 @end
 
 /**
  * Clears whatever value was set for the oneof 'variant'.
  **/
 void GetDocumentsResponse_GetDocumentsResponseV1_ResultData_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_ResultData *message);
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_InnerDocumentsArray = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_OuterDocumentsArray = 2,
+};
+
+/**
+ * Both halves of a chained (semi-join) query, each serialized
+ * with its own document type.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *innerDocumentsArray;
+/** The number of items in @c innerDocumentsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger innerDocumentsArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *outerDocumentsArray;
+/** The number of items in @c outerDocumentsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger outerDocumentsArray_Count;
+
+@end
 
 #pragma mark - GetDocumentHistoryRequest
 

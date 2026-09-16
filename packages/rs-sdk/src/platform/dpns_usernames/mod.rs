@@ -342,6 +342,7 @@ impl Sdk {
                 },
             ],
             time_range_clauses: vec![],
+            sub_queries: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![],
@@ -402,6 +403,7 @@ impl Sdk {
                 },
             ],
             time_range_clauses: vec![],
+            sub_queries: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![],
@@ -412,23 +414,37 @@ impl Sdk {
 
         let documents = Document::fetch_many(self, query).await?;
 
-        if let Some((_, Some(doc))) = documents.into_iter().next() {
-            // Extract the identity from records.identity
-            if let Some(Value::Map(records)) = doc.properties().get("records") {
-                for (key, value) in records {
-                    if let (Value::Text(k), Value::Identifier(id_bytes)) = (key, value) {
-                        if k == "identity" {
-                            return Ok(Some(Identifier::from_bytes(id_bytes).map_err(|e| {
-                                Error::Generic(format!("Invalid identifier: {}", e))
-                            })?));
-                        }
-                    }
-                }
-            }
+        match documents.into_iter().next() {
+            Some((_, Some(doc))) => identity_from_domain_records(doc.properties()),
+            _ => Ok(None),
         }
-
-        Ok(None)
     }
+}
+
+/// Read the identity a `domain` document points at from its `records` map.
+///
+/// A document decoded from a proof carries the identifier as
+/// `Value::Identifier`, but the same document after a serde round trip
+/// (CBOR, JSON, mock fixtures) comes back as `Value::Bytes` or
+/// `Value::Bytes32`, because serde has no identifier type. Accept every
+/// representation `to_identifier` understands, and report a malformed value
+/// as an error rather than as an unresolved name.
+fn identity_from_domain_records(
+    properties: &BTreeMap<String, Value>,
+) -> Result<Option<Identifier>, Error> {
+    let Some(Value::Map(records)) = properties.get("records") else {
+        return Ok(None);
+    };
+
+    records
+        .iter()
+        .find(|(key, _)| key.as_text() == Some("identity"))
+        .map(|(_, value)| {
+            value
+                .to_identifier()
+                .map_err(|e| Error::Generic(format!("Invalid identifier: {e}")))
+        })
+        .transpose()
 }
 
 #[cfg(test)]
@@ -456,6 +472,56 @@ mod tests {
         assert_eq!(normalize_dpns_label(""), "");
         assert_eq!(normalize_dpns_label(".dash"), "");
         assert_eq!(normalize_dpns_label(".DASH"), "");
+    }
+
+    fn domain_properties(identity: Value) -> BTreeMap<String, Value> {
+        BTreeMap::from([(
+            "records".to_string(),
+            Value::Map(vec![(Value::Text("identity".to_string()), identity)]),
+        )])
+    }
+
+    #[test]
+    fn identity_from_domain_records_accepts_every_identifier_representation() {
+        // A proof-decoded document carries `Value::Identifier`; the same
+        // document after a serde round trip carries `Bytes` / `Bytes32`
+        // (serde has no identifier type), and JSON carries base58 text.
+        // Every one of them names the same identity.
+        let id = Identifier::new([7u8; 32]);
+        for value in [
+            Value::Identifier(id.to_buffer()),
+            Value::Bytes32(id.to_buffer()),
+            Value::Bytes(id.to_vec()),
+            Value::Text(id.to_string(dpp::platform_value::string_encoding::Encoding::Base58)),
+        ] {
+            let resolved = identity_from_domain_records(&domain_properties(value.clone()))
+                .unwrap_or_else(|e| panic!("{value:?} should resolve: {e}"));
+            assert_eq!(resolved, Some(id), "{value:?}");
+        }
+    }
+
+    #[test]
+    fn identity_from_domain_records_distinguishes_missing_from_malformed() {
+        // No records map, or a records map without an identity entry, is an
+        // unresolved name.
+        assert_eq!(
+            identity_from_domain_records(&BTreeMap::new()).unwrap(),
+            None
+        );
+        let no_identity = BTreeMap::from([("records".to_string(), Value::Map(vec![]))]);
+        assert_eq!(identity_from_domain_records(&no_identity).unwrap(), None);
+
+        // A present but malformed identity is an error, never "not found".
+        for malformed in [
+            Value::Bytes(vec![1u8; 31]),
+            Value::Text("not base58!".to_string()),
+            Value::U64(7),
+        ] {
+            assert!(
+                identity_from_domain_records(&domain_properties(malformed.clone())).is_err(),
+                "{malformed:?} should be rejected"
+            );
+        }
     }
 
     #[test]

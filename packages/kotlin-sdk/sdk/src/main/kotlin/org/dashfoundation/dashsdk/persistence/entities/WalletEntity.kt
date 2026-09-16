@@ -55,6 +55,19 @@ data class WalletEntity(
      * Opaque passthrough — decoded only by Rust; never re-encoded here.
      */
     val lastAppliedChainLockBytes: ByteArray? = null,
+    /**
+     * The numeric block height of the last applied chainlock, delivered
+     * separately by `onWalletChangesetChainLockHeight` (the bincode blob
+     * above is opaque on this side of the FFI) and written through the
+     * narrow `WalletDao.advanceChainLockHeight` UPDATE. Monotonic max — a
+     * stale round never lowers it. This is the chainlock half of the
+     * swept-tombstone collection boundary `min(chainlockHeight,
+     * syncedHeight)` the end-of-round collector reads back from this row;
+     * while NULL no finality boundary exists and the collector never
+     * runs, mirroring the SQLite store's "no-op until a chainlock height
+     * has been persisted".
+     */
+    val lastAppliedChainLockHeight: Int? = null,
     val isImported: Boolean = false,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),

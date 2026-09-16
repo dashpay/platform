@@ -83,6 +83,24 @@ where
         #[cfg(debug_assertions)]
         laps.lap("clear_block_cache");
 
+        // Make sure the persisted protocol version votes are in the cache before anything in
+        // this block reads them. The epoch tally in `upgrade_protocol_version_on_epoch_change`
+        // reads the cache directly and runs before the block records its first vote, which is
+        // what used to load the cache. On a Drive that was just reopened the tally would
+        // otherwise count zero votes while warm peers count the persisted ones, and this node
+        // would lock in a different next protocol version. Loading through the block
+        // transaction keeps the read consistent with the rest of the block; it is a no-op once
+        // the cache is loaded.
+        self.drive
+            .cache
+            .protocol_versions_counter
+            .write()
+            .load_if_needed(
+                &self.drive,
+                Some(transaction),
+                &last_committed_platform_version.drive,
+            )?;
+
         // Create a bock state from previous committed state
         let mut block_platform_state = platform_state.clone();
 

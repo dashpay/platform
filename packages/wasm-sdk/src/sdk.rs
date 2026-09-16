@@ -1,12 +1,31 @@
 use crate::context_provider::{WasmContext, WasmTrustedContext};
 use crate::error::WasmSdkError;
+use crate::{contract_store, protocol_version_store};
+use dash_sdk::dpp::dashcore::Network;
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters as _;
+use dash_sdk::dpp::document::DocumentV0Getters as _;
 use dash_sdk::dpp::version::PlatformVersion;
+use dash_sdk::platform::Document;
+use dash_sdk::platform::{DataContract, Identifier};
 use dash_sdk::sdk::Uri;
 use dash_sdk::{Sdk, SdkBuilder};
+use futures::future::{FutureExt, LocalBoxFuture, Shared};
 use rs_dapi_client::{Address, RequestSettings};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::future::Future;
 use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_dpp2::DataContractWasm;
+
+/// One contract fetch in flight, shareable by every concurrent cache miss
+/// for the same id. The output is cloned into each waiter, so it must be
+/// `Clone` — which is why the error side is the (cloneable)
+/// [`WasmSdkError`] rather than the SDK's own error.
+type SharedContractFetch = Shared<LocalBoxFuture<'static, Result<DataContract, WasmSdkError>>>;
 
 fn parse_addresses(addresses: &'static [&str]) -> Vec<Address> {
     addresses
@@ -27,6 +46,27 @@ fn default_local_addresses() -> Vec<Address> {
 pub struct WasmSdk {
     sdk: Sdk,
     trusted_context: Option<WasmTrustedContext>,
+    /// Contract fetches currently on the wire, keyed by contract id.
+    ///
+    /// A cold cache is hit by a BURST, not a single call: an app's first
+    /// paint fires several document queries against the same contract
+    /// before any of them has cached it, and without this map every one
+    /// of them would issue its own `getDataContract`. A miss either joins
+    /// the fetch already in flight for its id or starts (and registers)
+    /// one; the entry is removed by the fetch itself when it settles.
+    /// `Rc<RefCell>` because the wasm target is single-threaded and the
+    /// map is only ever touched between `.await`s.
+    inflight_contract_fetches: Rc<RefCell<HashMap<Identifier, SharedContractFetch>>>,
+}
+
+impl WasmSdk {
+    fn new(sdk: Sdk, trusted_context: Option<WasmTrustedContext>) -> Self {
+        Self {
+            sdk,
+            trusted_context,
+            inflight_contract_fetches: Rc::new(RefCell::new(HashMap::new())),
+        }
+    }
 }
 
 // Dereference WasmSdk to Sdk so that we can use &WasmSdk everywhere where &Sdk is needed
@@ -61,14 +101,13 @@ impl WasmSdk {
 }
 
 impl WasmSdk {
-    /// Add a data contract to the context provider's cache.
+    /// Add a data contract to the context provider's cache (and persist it,
+    /// see [`Self::cache_contract`]).
     pub(crate) fn add_contract_to_context_cache(
         &self,
         contract: &dash_sdk::dpp::data_contract::DataContract,
     ) -> Result<(), crate::error::WasmSdkError> {
-        if let Some(ref context) = self.trusted_context {
-            context.add_known_contract(contract.clone());
-        }
+        self.cache_contract(contract.clone());
         Ok(())
     }
 }
@@ -91,11 +130,35 @@ impl WasmSdk {
             .and_then(|ctx| ctx.get_known_contract(contract_id))
     }
 
-    /// Cache a contract in the trusted context
+    /// Cache a contract in the trusted context, and persist it for the next
+    /// page load (see [`contract_store`]).
     pub(crate) fn cache_contract(&self, contract: dash_sdk::platform::DataContract) {
         if let Some(ref context) = self.trusted_context {
+            contract_store::store(self.sdk.network, &contract, self.sdk.version());
             context.add_known_contract(contract);
         }
+    }
+
+    /// Drop the cached contract when any of `documents` was written under a
+    /// newer contract version than the cached one, so the next query fetches
+    /// the current contract instead of decoding documents with a stale
+    /// layout. Returns whether the cache was dropped. Documents predating the
+    /// `$contractVersion` stamp carry no version and are ignored.
+    pub(crate) fn drop_stale_contract<'a>(
+        &self,
+        contract: &dash_sdk::platform::DataContract,
+        documents: impl IntoIterator<Item = &'a Document>,
+    ) -> bool {
+        let stale = documents_outrun_contract(
+            contract.version(),
+            documents
+                .into_iter()
+                .map(|document| document.contract_version()),
+        );
+        if stale {
+            self.remove_cached_contract(&contract.id());
+        }
+        stale
     }
 
     /// Fetch a proved contract and replace its trusted-context cache entry.
@@ -103,18 +166,15 @@ impl WasmSdk {
         &self,
         contract_id: dash_sdk::platform::Identifier,
     ) -> Result<dash_sdk::platform::DataContract, crate::error::WasmSdkError> {
-        use dash_sdk::platform::Fetch;
-
-        let contract = dash_sdk::platform::DataContract::fetch(self.as_ref(), contract_id)
-            .await?
-            .ok_or_else(|| crate::error::WasmSdkError::not_found("Data contract not found"))?;
-
-        self.cache_contract(contract.clone());
-
-        Ok(contract)
+        fetch_contract_into_cache(self.sdk.clone(), self.trusted_context.clone(), contract_id).await
     }
 
-    /// Fetch a contract, checking cache first
+    /// Fetch a contract, checking the cache first.
+    ///
+    /// A miss does not always fetch: when a fetch for the same id is
+    /// already in flight (another query missed the cold cache a moment
+    /// ago), this call joins it and every waiter receives that one
+    /// fetch's result — see [`Self::join_or_start_contract_fetch`].
     pub(crate) async fn get_or_fetch_contract(
         &self,
         contract_id: dash_sdk::platform::Identifier,
@@ -123,14 +183,58 @@ impl WasmSdk {
             return Ok((*cached).clone());
         }
 
-        self.refresh_contract(contract_id).await
+        let sdk = self.sdk.clone();
+        let trusted_context = self.trusted_context.clone();
+        self.join_or_start_contract_fetch(contract_id, move || {
+            fetch_contract_into_cache(sdk, trusted_context, contract_id)
+        })
+        .await
     }
 
-    /// Remove a contract from the cache
+    /// Single-flight over contract fetches: join the fetch already in
+    /// flight for `contract_id`, or start the one `make_fetch` builds and
+    /// register it for later arrivals. The registration is removed by the
+    /// fetch itself once it settles, AFTER the cache is seeded, so a call
+    /// arriving after removal finds the cache rather than fetching again.
+    ///
+    /// `make_fetch` is only invoked when no fetch is in flight — the whole
+    /// point — which is what the single-flight test pins.
+    pub(crate) async fn join_or_start_contract_fetch<F>(
+        &self,
+        contract_id: Identifier,
+        make_fetch: impl FnOnce() -> F,
+    ) -> Result<DataContract, WasmSdkError>
+    where
+        F: Future<Output = Result<DataContract, WasmSdkError>> + 'static,
+    {
+        let fetch = {
+            let mut inflight = self.inflight_contract_fetches.borrow_mut();
+            match inflight.get(&contract_id) {
+                Some(existing) => existing.clone(),
+                None => {
+                    let registry = Rc::clone(&self.inflight_contract_fetches);
+                    let fetch = make_fetch();
+                    let shared: SharedContractFetch = async move {
+                        let result = fetch.await;
+                        registry.borrow_mut().remove(&contract_id);
+                        result
+                    }
+                    .boxed_local()
+                    .shared();
+                    inflight.insert(contract_id, shared.clone());
+                    shared
+                }
+            }
+        };
+        fetch.await
+    }
+
+    /// Remove a contract from the cache and from the persisted store.
     pub(crate) fn remove_cached_contract(
         &self,
         contract_id: &dash_sdk::platform::Identifier,
     ) -> bool {
+        contract_store::remove(self.sdk.network, contract_id);
         self.trusted_context
             .as_ref()
             .map(|ctx| ctx.remove_known_contract(contract_id))
@@ -140,6 +244,22 @@ impl WasmSdk {
 
 #[wasm_bindgen]
 impl WasmSdk {
+    /// Seed the contract cache with a contract the caller already holds: a
+    /// snapshot bundled with the app, or one it just published. Queries against
+    /// it then need no contract fetch, and it is persisted like a fetched one.
+    /// Pair with `getDataContractsLatestVersions` (off the critical path) to
+    /// learn whether the held contract is still the network's current version.
+    ///
+    /// Returns false when the SDK has no trusted context to cache into.
+    #[wasm_bindgen(js_name = "addKnownContract")]
+    pub fn add_known_contract_js(&self, contract: &DataContractWasm) -> bool {
+        if self.trusted_context.is_none() {
+            return false;
+        }
+        self.cache_contract(contract.clone().into());
+        true
+    }
+
     /// Remove a data contract from the cache.
     /// Returns true if the contract was in the cache and was removed.
     #[wasm_bindgen(js_name = "removeCachedContract")]
@@ -163,6 +283,13 @@ pub struct WasmSdkBuilder {
     /// `withTrustedContext` keeps the user-provided addresses and only
     /// attaches the context for proof verification.
     has_user_addresses: bool,
+    /// The network the builder targets; selects the persisted protocol-version
+    /// slot (see [`protocol_version_store`]).
+    network: Network,
+    /// True once the caller chose a version through `withVersion(...)`. The
+    /// persisted version is then neither read nor written: a pinned SDK never
+    /// ratchets, and the caller's choice wins.
+    version_configured: bool,
 }
 
 impl Deref for WasmSdkBuilder {
@@ -239,6 +366,8 @@ impl WasmSdkBuilder {
             inner: sdk_builder,
             trusted_context: None,
             has_user_addresses: true,
+            network,
+            version_configured: false,
         })
     }
 
@@ -250,6 +379,8 @@ impl WasmSdkBuilder {
             inner: sdk_builder,
             trusted_context: None,
             has_user_addresses: false,
+            network: Network::Mainnet,
+            version_configured: false,
         }
     }
 
@@ -261,6 +392,8 @@ impl WasmSdkBuilder {
             inner: sdk_builder,
             trusted_context: None,
             has_user_addresses: false,
+            network: Network::Testnet,
+            version_configured: false,
         }
     }
 
@@ -281,6 +414,8 @@ impl WasmSdkBuilder {
             inner: sdk_builder,
             trusted_context: None,
             has_user_addresses: false,
+            network: Network::Devnet,
+            version_configured: false,
         }
     }
 
@@ -296,6 +431,8 @@ impl WasmSdkBuilder {
             inner: sdk_builder,
             trusted_context: None,
             has_user_addresses: false,
+            network: Network::Regtest,
+            version_configured: false,
         }
     }
 
@@ -311,7 +448,8 @@ impl WasmSdkBuilder {
     /// - If the builder was created via `withAddresses(...)`, the
     ///   user-provided addresses are preserved and discovered addresses
     ///   from the context are ignored. The context is still attached for
-    ///   proof verification.
+    ///   proof verification. Prefetch such a context with
+    ///   `discoverAddresses: false` to skip the discovery request outright.
     ///
     /// # Example
     /// ```javascript
@@ -342,11 +480,30 @@ impl WasmSdkBuilder {
     }
 
     pub fn build(self) -> Result<WasmSdk, WasmSdkError> {
-        let sdk = self.inner.build().map_err(WasmSdkError::from)?;
-        Ok(WasmSdk {
-            sdk,
-            trusted_context: self.trusted_context,
-        })
+        let mut inner = self.inner;
+        if !self.version_configured {
+            // Start where the last SDK for this network ended, so the first proved
+            // request already runs at the version the network reported, and keep
+            // the store current as auto-detect ratchets further. Persisted for
+            // mainnet and testnet only; see `protocol_version_store`.
+            let network = self.network;
+            if let Some(version) = protocol_version_store::load(network) {
+                inner = inner.with_initial_version(version);
+            }
+            inner = inner.with_protocol_version_observer(Arc::new(move |version| {
+                protocol_version_store::store(network, version)
+            }));
+        }
+        let sdk = inner.build().map_err(WasmSdkError::from)?;
+        // Contracts fetched on earlier page loads: seed the trusted-context
+        // cache so the first proved document query needs no contract round
+        // trip. Persisted for mainnet and testnet only; see `contract_store`.
+        if let Some(context) = &self.trusted_context {
+            for contract in contract_store::load_all(self.network, sdk.version()) {
+                context.add_known_contract(contract);
+            }
+        }
+        Ok(WasmSdk::new(sdk, self.trusted_context))
     }
 
     #[wasm_bindgen(js_name = "withContextProvider")]
@@ -383,6 +540,7 @@ impl WasmSdkBuilder {
 
         Ok(Self {
             inner: self.inner.with_version(version),
+            version_configured: true,
             ..self
         })
     }
@@ -478,11 +636,49 @@ impl WasmSdk {
     /// Pair a mock `Sdk` with a trusted context so tests in sibling modules can
     /// drive the paths that read the contract and quorum caches.
     pub(crate) fn new_for_testing(sdk: Sdk, trusted_context: Option<WasmTrustedContext>) -> Self {
-        Self {
-            sdk,
-            trusted_context,
-        }
+        Self::new(sdk, trusted_context)
     }
+
+    /// How many contract fetches are registered as in flight right now.
+    pub(crate) fn inflight_contract_fetch_count(&self) -> usize {
+        self.inflight_contract_fetches.borrow().len()
+    }
+}
+
+/// The one real contract fetch: a proved `DataContract::fetch`, whose
+/// result seeds the trusted-context cache before it is handed back. Takes
+/// the SDK and context by value so the returned future is `'static` and
+/// can be registered as a shared in-flight fetch.
+async fn fetch_contract_into_cache(
+    sdk: Sdk,
+    trusted_context: Option<WasmTrustedContext>,
+    contract_id: Identifier,
+) -> Result<DataContract, WasmSdkError> {
+    use dash_sdk::platform::Fetch;
+
+    let contract = DataContract::fetch(&sdk, contract_id)
+        .await?
+        .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+
+    if let Some(context) = trusted_context {
+        contract_store::store(sdk.network, &contract, sdk.version());
+        context.add_known_contract(contract.clone());
+    }
+
+    Ok(contract)
+}
+
+/// Whether any document version stamp exceeds the contract version it was
+/// decoded with. `None` stamps (documents serialized before the stamp
+/// existed) never count as newer.
+fn documents_outrun_contract(
+    contract_version: u32,
+    document_versions: impl IntoIterator<Item = Option<u32>>,
+) -> bool {
+    document_versions
+        .into_iter()
+        .flatten()
+        .any(|version| version > contract_version)
 }
 
 #[cfg(test)]
@@ -568,6 +764,205 @@ mod tests {
             .with_proofs(true)
             .with_settings(None, None, None, None);
         assert!(!preset.has_user_addresses());
+    }
+
+    /// The persisted protocol version seeds an unpinned builder, the ratchet
+    /// writes back through the observer, and a pinned builder ignores the store.
+    /// Runs natively against the thread-local storage fallback, so the same
+    /// code path the browser takes is exercised without `localStorage`.
+    #[test]
+    fn persisted_protocol_version_seeds_unpinned_builders_and_ratchets_back() {
+        use dapi_grpc::platform::v0::ResponseMetadata;
+        use dash_sdk::dpp::dashcore::Network;
+        use dash_sdk::sdk::min_protocol_version;
+
+        let floor = min_protocol_version(Network::Testnet);
+        let latest = dash_sdk::dpp::version::LATEST_VERSION;
+        assert!(
+            latest > floor,
+            "the test needs a version above the testnet floor"
+        );
+
+        // Nothing stored: an unpinned testnet builder boots at the floor, and a
+        // verified response carrying a newer version ratchets it and persists it.
+        assert!(crate::protocol_version_store::load(Network::Testnet).is_none());
+        let sdk = user_builder().build().expect("build");
+        assert_eq!(sdk.version(), floor);
+        // A network (non-mock) SDK checks metadata freshness against the local
+        // clock, so the response has to carry a current time to be accepted.
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock after the epoch")
+            .as_millis() as u64;
+        sdk.verify_response_metadata(
+            "test",
+            &ResponseMetadata {
+                protocol_version: latest,
+                height: 1,
+                time_ms: now_ms,
+                ..Default::default()
+            },
+        )
+        .expect("metadata should verify");
+        assert_eq!(sdk.version(), latest, "the ratchet must move the SDK");
+        assert_eq!(
+            crate::protocol_version_store::load(Network::Testnet).map(|v| v.protocol_version),
+            Some(latest),
+            "the observer must persist the ratcheted version"
+        );
+
+        // The next unpinned builder starts where the last one ended.
+        let next = user_builder().build().expect("build");
+        assert_eq!(
+            next.version(),
+            latest,
+            "a stored version must seed the next SDK"
+        );
+
+        // A pinned builder neither reads nor writes the store.
+        let pinned = user_builder()
+            .with_version(floor)
+            .expect("floor is a valid version")
+            .build()
+            .expect("build");
+        assert_eq!(pinned.version(), floor, "withVersion must ignore the store");
+    }
+
+    /// A contract cached by one SDK is seeded into the next SDK built for the
+    /// same network, without a fetch; removing it clears the store too.
+    #[test]
+    fn cached_contracts_persist_across_sdk_instances() {
+        let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
+        let sdk = user_builder()
+            .with_trusted_context(&ctx)
+            .build()
+            .expect("build");
+        let contract = custom_contract(0x55, 2, sdk.inner_sdk().version());
+        let id = contract.id();
+        assert!(sdk.get_cached_contract(&id).is_none());
+        sdk.cache_contract(contract);
+
+        let next_ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
+        let next = user_builder()
+            .with_trusted_context(&next_ctx)
+            .build()
+            .expect("build");
+        let seeded = next
+            .get_cached_contract(&id)
+            .expect("the next SDK must be seeded from the store");
+        assert_eq!(seeded.version(), 2);
+
+        assert!(next.remove_cached_contract(&id));
+        let third_ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
+        let third = user_builder()
+            .with_trusted_context(&third_ctx)
+            .build()
+            .expect("build");
+        assert!(
+            third.get_cached_contract(&id).is_none(),
+            "removal must reach the persisted store"
+        );
+    }
+
+    /// Without a trusted context there is no cache to seed and nothing is
+    /// persisted; a devnet builder caches in memory but never persists.
+    #[test]
+    fn contracts_are_not_persisted_without_a_context_or_on_devnets() {
+        use dash_sdk::dpp::dashcore::Network;
+        let sdk = user_builder().build().expect("build");
+        sdk.cache_contract(custom_contract(0x66, 1, sdk.inner_sdk().version()));
+        assert!(
+            crate::contract_store::load_all(Network::Testnet, sdk.inner_sdk().version()).is_empty()
+        );
+
+        let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
+        let devnet = WasmSdkBuilder::new_devnet()
+            .with_trusted_context(&ctx)
+            .build()
+            .expect("build");
+        devnet.cache_contract(custom_contract(0x77, 1, devnet.inner_sdk().version()));
+        assert!(devnet
+            .get_cached_contract(&Identifier::new([0x77; 32]))
+            .is_some());
+        assert!(
+            crate::contract_store::load_all(Network::Devnet, devnet.inner_sdk().version())
+                .is_empty()
+        );
+    }
+
+    /// A contract the app holds is seeded through the JS-facing entry point,
+    /// lands in the cache and the store, and is a no-op without a trusted context.
+    #[test]
+    fn add_known_contract_seeds_cache_and_store() {
+        let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
+        let sdk = user_builder()
+            .with_trusted_context(&ctx)
+            .build()
+            .expect("build");
+        let contract = custom_contract(0x99, 4, sdk.inner_sdk().version());
+        let id = contract.id();
+        assert!(sdk.add_known_contract_js(&DataContractWasm::from(contract)));
+        assert_eq!(
+            sdk.get_cached_contract(&id)
+                .expect("seeded contract must be cached")
+                .version(),
+            4
+        );
+        let next_ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
+        let next = user_builder()
+            .with_trusted_context(&next_ctx)
+            .build()
+            .expect("build");
+        assert!(
+            next.get_cached_contract(&id).is_some(),
+            "seeding must persist"
+        );
+
+        let bare = user_builder().build().expect("build");
+        let other = custom_contract(0x9A, 1, bare.inner_sdk().version());
+        assert!(!bare.add_known_contract_js(&DataContractWasm::from(other)));
+    }
+
+    /// A document stamped above the cached contract's version drops the
+    /// cache entry and its persisted copy; older or unstamped documents do not.
+    #[test]
+    fn stale_contract_is_dropped_when_documents_outrun_it() {
+        assert!(!documents_outrun_contract(2, [None, Some(1), Some(2)]));
+        assert!(documents_outrun_contract(2, [None, Some(3)]));
+        assert!(!documents_outrun_contract(2, std::iter::empty()));
+
+        let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
+        let sdk = user_builder()
+            .with_trusted_context(&ctx)
+            .build()
+            .expect("build");
+        let contract = custom_contract(0x88, 2, sdk.inner_sdk().version());
+        let id = contract.id();
+        sdk.cache_contract(contract.clone());
+
+        let current = Document::V0(dash_sdk::dpp::document::DocumentV0 {
+            contract_version: Some(2),
+            ..Default::default()
+        });
+        let newer = Document::V0(dash_sdk::dpp::document::DocumentV0 {
+            contract_version: Some(3),
+            ..Default::default()
+        });
+
+        assert!(!sdk.drop_stale_contract(&contract, [&current]));
+        assert!(sdk.get_cached_contract(&id).is_some());
+
+        assert!(sdk.drop_stale_contract(&contract, [&current, &newer]));
+        assert!(sdk.get_cached_contract(&id).is_none());
+        let next_ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
+        let next = user_builder()
+            .with_trusted_context(&next_ctx)
+            .build()
+            .expect("build");
+        assert!(
+            next.get_cached_contract(&id).is_none(),
+            "a stale entry must not come back on the next load"
+        );
     }
 
     /// Repro of the bug behind the fix: a user calling
@@ -673,10 +1068,8 @@ mod tests {
             .await
             .expect("mock contract response should be configured");
 
-        let sdk = WasmSdk {
-            sdk: inner_sdk,
-            trusted_context: Some(WasmTrustedContext::for_testing(vec![])),
-        };
+        let sdk =
+            WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
         assert!(sdk.get_cached_contract(&contract_id).is_none());
 
         let refreshed = sdk
@@ -708,10 +1101,7 @@ mod tests {
             .await
             .expect("mock contract response should be configured");
 
-        let sdk = WasmSdk {
-            sdk: inner_sdk,
-            trusted_context: Some(context),
-        };
+        let sdk = WasmSdk::new_for_testing(inner_sdk, Some(context));
         let refreshed = sdk
             .refresh_contract(contract_id)
             .await
@@ -736,10 +1126,8 @@ mod tests {
             .await
             .expect("mock absence response should be configured");
 
-        let sdk = WasmSdk {
-            sdk: inner_sdk,
-            trusted_context: Some(WasmTrustedContext::for_testing(vec![])),
-        };
+        let sdk =
+            WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
 
         assert!(sdk.refresh_contract(contract_id).await.is_err());
         assert!(sdk.get_cached_contract(&contract_id).is_none());
@@ -748,12 +1136,101 @@ mod tests {
     #[tokio::test]
     async fn refresh_contract_propagates_fetch_errors() {
         let contract_id = dash_sdk::platform::Identifier::new([0x77; 32]);
-        let sdk = WasmSdk {
-            sdk: Sdk::new_mock(),
-            trusted_context: Some(WasmTrustedContext::for_testing(vec![])),
-        };
+        let sdk = WasmSdk::new_for_testing(
+            Sdk::new_mock(),
+            Some(WasmTrustedContext::for_testing(vec![])),
+        );
 
         assert!(sdk.refresh_contract(contract_id).await.is_err());
         assert!(sdk.get_cached_contract(&contract_id).is_none());
+    }
+
+    /// The single-flight contract: two misses for one id while nothing
+    /// is cached start ONE fetch, both receive its result, and the
+    /// registration is gone once it settles. The fetch is gated on a
+    /// channel the test holds, so both arrivals are observably in flight
+    /// together regardless of how fast a real fetch would resolve.
+    #[tokio::test]
+    async fn concurrent_cache_misses_share_one_in_flight_fetch() {
+        use std::cell::Cell;
+
+        let sdk = WasmSdk::new_for_testing(
+            Sdk::new_mock(),
+            Some(WasmTrustedContext::for_testing(vec![])),
+        );
+        let expected = custom_contract(0x88, 1, sdk.sdk.version());
+        let contract_id = expected.id();
+
+        let (release, gate) = futures::channel::oneshot::channel::<()>();
+        let gate = gate.shared();
+        let fetches_started = Rc::new(Cell::new(0usize));
+        let make_fetch = |contract: DataContract| {
+            let gate = gate.clone();
+            let fetches_started = Rc::clone(&fetches_started);
+            move || {
+                fetches_started.set(fetches_started.get() + 1);
+                async move {
+                    gate.await.expect("the test releases the gate");
+                    Ok(contract)
+                }
+            }
+        };
+
+        let mut first =
+            Box::pin(sdk.join_or_start_contract_fetch(contract_id, make_fetch(expected.clone())));
+        let mut second =
+            Box::pin(sdk.join_or_start_contract_fetch(contract_id, make_fetch(expected.clone())));
+
+        assert!(futures::poll!(first.as_mut()).is_pending());
+        assert!(futures::poll!(second.as_mut()).is_pending());
+        assert_eq!(
+            fetches_started.get(),
+            1,
+            "the second miss must join the in-flight fetch, not start its own"
+        );
+        assert_eq!(sdk.inflight_contract_fetch_count(), 1);
+
+        release.send(()).expect("both waiters are alive");
+        let (first, second) = futures::join!(first, second);
+        assert_eq!(first.expect("first waiter"), expected);
+        assert_eq!(second.expect("second waiter"), expected);
+        assert_eq!(
+            sdk.inflight_contract_fetch_count(),
+            0,
+            "a settled fetch deregisters itself"
+        );
+    }
+
+    /// A miss arriving AFTER the shared fetch settled must find the cache
+    /// the fetch seeded, not start a second fetch: `get_or_fetch_contract`
+    /// checks the cache before consulting the in-flight registry.
+    #[tokio::test]
+    async fn a_miss_after_the_shared_fetch_settles_is_served_from_the_cache() {
+        let mut inner_sdk = Sdk::new_mock();
+        let expected = custom_contract(0x99, 1, inner_sdk.version());
+        let contract_id = expected.id();
+        inner_sdk
+            .mock()
+            .expect_fetch(contract_id, Some(expected.clone()))
+            .await
+            .expect("mock contract response should be configured");
+        let sdk =
+            WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
+
+        let fetched = sdk
+            .get_or_fetch_contract(contract_id)
+            .await
+            .expect("the first miss fetches");
+        assert_eq!(fetched, expected);
+        assert_eq!(sdk.inflight_contract_fetch_count(), 0);
+
+        // Nothing is registered, so a fetch here could only come from a
+        // cache miss — and the cache was seeded by the fetch above.
+        assert!(sdk.get_cached_contract(&contract_id).is_some());
+        let again = sdk
+            .get_or_fetch_contract(contract_id)
+            .await
+            .expect("served from the cache");
+        assert_eq!(again, expected);
     }
 }

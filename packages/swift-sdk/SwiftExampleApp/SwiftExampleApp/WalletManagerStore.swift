@@ -173,10 +173,13 @@ final class WalletManagerStore: ObservableObject {
                 }
                 return
             }
-            SDKLogger.log(
-                "WalletManagerStore: SDK changed for \(network.displayName); "
-                    + "rebuilding cached manager",
-                minimumLevel: .medium
+            SDKLogger.event(
+                "manager_cache_invalidated",
+                category: .lifecycle,
+                fields: [
+                    "network": .publicText(network.displayName),
+                    "reason": .publicText("sdk_changed"),
+                ]
             )
             // No `activeManager = nil` — the field isn't optional. The
             // rebuild below will overwrite it via `if makeActive {
@@ -198,9 +201,12 @@ final class WalletManagerStore: ObservableObject {
         do {
             _ = try manager.loadFromPersistor()
         } catch {
-            SDKLogger.error(
-                "WalletManagerStore: load-from-persistor failed for "
-                    + "\(network.displayName): \(error.localizedDescription)"
+            SDKLogger.event(
+                "manager_restore_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["network": .publicText(network.displayName)],
+                error: error
             )
         }
         managers[network] = manager
@@ -213,6 +219,15 @@ final class WalletManagerStore: ObservableObject {
             invalidatePendingSpvStarts()
             activeManager = manager
         }
+        SDKLogger.event(
+            "manager_materialized",
+            category: .lifecycle,
+            fields: [
+                "active": .boolean(makeActive),
+                "network": .publicText(network.displayName),
+                "wallet_count": .integer(Int64(manager.wallets.count)),
+            ]
+        )
     }
 
     /// Manager for `network` if one has been activated this session;

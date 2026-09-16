@@ -6,10 +6,12 @@ use crate::core_types::validator_set::v0::{
 #[cfg(feature = "core-types-serialization")]
 use crate::ProtocolError;
 #[cfg(feature = "core-types-serialization")]
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::{ProTxHash, QuorumHash};
 #[cfg(feature = "core-types-serialization")]
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -28,7 +30,14 @@ pub mod v0;
 )]
 #[cfg_attr(
     feature = "core-types-serialization",
-    derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
+    derive(
+        Encode,
+        Decode,
+        DecodeUntrusted,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
+        PlatformSerialize
+    ),
     platform_serialize(limit = 15000, unversioned)
 )]
 pub enum ValidatorSet {

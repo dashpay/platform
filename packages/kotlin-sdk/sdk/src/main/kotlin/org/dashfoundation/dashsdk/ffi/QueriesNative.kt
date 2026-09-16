@@ -41,6 +41,20 @@ internal object QueriesNative {
      */
     external fun dataContractFetchWithSerialization(sdk: Long, contractId: String): Array<Any?>?
 
+    /**
+     * One page of every data contract, in ascending contract id order, as a JSON
+     * array of `{"id", "dataContract"}` objects. [startAfter]/[startAt] (base58
+     * contract id) may be null and are mutually exclusive; [limit] 0 means the
+     * default page size. With [idsOnly] every `dataContract` field is null.
+     */
+    external fun dataContractsFetchByRange(
+        sdk: Long,
+        limit: Int,
+        startAfter: String?,
+        startAt: String?,
+        idsOnly: Boolean,
+    ): String?
+
     /** Release a handle from [dataContractFetch]. Safe on 0. */
     external fun dataContractDestroy(handle: Long)
 

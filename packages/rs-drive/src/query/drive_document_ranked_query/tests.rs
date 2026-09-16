@@ -727,12 +727,13 @@ fn picker_requires_the_index_to_declare_the_requested_axis() {
     let indexes = index_map(vec![index]);
 
     assert!(
-        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], RankedAxis::Count, "").is_some(),
+        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], RankedAxis::Count, "", &[])
+            .is_some(),
         "the declared axis resolves"
     );
     for (axis, field) in [(RankedAxis::Sum, "grade"), (RankedAxis::Avg, "grade")] {
         assert!(
-            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, field).is_none(),
+            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, field, &[]).is_none(),
             "{axis:?} is not declared even though the index is summable and the stored \
              element could host that secondary"
         );
@@ -751,11 +752,12 @@ fn picker_requires_the_select_field_to_be_the_indexed_summable() {
 
     for axis in [RankedAxis::Sum, RankedAxis::Avg] {
         assert!(
-            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, "grade").is_some(),
+            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, "grade", &[]).is_some(),
             "{axis:?} on the indexed summable resolves"
         );
         assert!(
-            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, "tipAmount").is_none(),
+            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, "tipAmount", &[])
+                .is_none(),
             "{axis:?} on a different field must not resolve"
         );
     }
@@ -770,7 +772,8 @@ fn picker_rejects_an_unknown_group_property() {
     let indexes = index_map(vec![index]);
 
     assert!(
-        find_ranked_index_for_axis(&indexes, "chefId", &[], RankedAxis::Avg, "grade").is_none(),
+        find_ranked_index_for_axis(&indexes, "chefId", &[], RankedAxis::Avg, "grade", &[])
+            .is_none(),
         "no index groups by `chefId`"
     );
 }
@@ -790,10 +793,15 @@ fn picker_rejects_compound_indexes() {
     index.ranked_averageable = true;
     let indexes = index_map(vec![index]);
 
-    assert!(
-        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "price")
-            .is_none()
-    );
+    assert!(find_ranked_index_for_axis(
+        &indexes,
+        GROUP_PROPERTY,
+        &[],
+        RankedAxis::Avg,
+        "price",
+        &[]
+    )
+    .is_none());
 }
 
 // ===================================================================
@@ -1047,6 +1055,7 @@ fn client_side_query<'a>(
         case.document_type_name.to_string(),
         indexes,
         &mode,
+        &[],
         platform_version(),
     )
     .expect("the fixture declares the axis")
@@ -2050,13 +2059,13 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
     );
     assert_eq!(client_side_query(&contract, &by_chef).index.name, "byChef");
     assert_eq!(
-        find_ranked_index_for_axis(indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "grade")
+        find_ranked_index_for_axis(indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "grade", &[])
             .expect("the Avg ranking resolves")
             .name,
         "byRestaurant",
     );
     assert_eq!(
-        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, &[], RankedAxis::Count, "")
+        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, &[], RankedAxis::Count, "", &[])
             .expect("the Count ranking resolves")
             .name,
         "byChef",
@@ -2107,7 +2116,8 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
     // ranking over chefs has no index — and `byChefRestaurant` must not
     // be press-ganged into serving it.
     assert!(
-        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, &[], RankedAxis::Avg, "grade").is_none(),
+        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, &[], RankedAxis::Avg, "grade", &[])
+            .is_none(),
         "`byChefRestaurant` leads with chefId but is compound and unranked"
     );
     let avg_by_chef = RankedCase {
@@ -2311,6 +2321,7 @@ mod pinned_prefix {
             DOCUMENT_TYPE.to_string(),
             indexes,
             &mode,
+            &[],
             platform_version(),
         )
         .expect("the fixture's compound index covers the pinned request")
@@ -2548,6 +2559,7 @@ mod pinned_prefix {
                 .expect("taggedGrade doctype exists")
                 .indexes(),
             &mode,
+            &[],
             pv,
         )
         .expect("the compound index covers the null-pinned request");
@@ -2919,6 +2931,7 @@ mod pinned_prefix {
                 .expect("grade doctype exists")
                 .indexes(),
             &mode,
+            &[],
             platform_version(),
         )
         .expect_err("duplicate encoded elements must be rejected");
@@ -2966,6 +2979,131 @@ mod pinned_prefix {
             .verify_ranked_top_k_proof(&proof, platform_version())
             .expect("the envelope authenticates the absent branch");
         assert_eq!(verified.entries, page.entries);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
+
+    /// A `==` pin on an identity that never inserted a document
+    /// addresses a prefix value tree that does not exist — the same
+    /// state a `timeRange` window is in before its first document lands
+    /// (a bucket is created by the first write under it, not at
+    /// contract registration). That is an EMPTY ranking, not corrupted
+    /// state: grovedb answers a single-path axis read over an absent
+    /// path with the empty page on the read and the proof alike, the
+    /// absence authenticated by the layers the walk emits — the
+    /// verifier reconstructs the live root hash from an empty page.
+    /// Before grovedb #965 both paths failed with "a single-path axis
+    /// read must produce exactly one axis descent", which reached
+    /// clients as an internal error on every fresh window.
+    #[test]
+    fn an_absent_equality_pin_reads_empty_and_proves_empty() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "art", 90)]);
+
+        let never_written = pin([9u8; 32]);
+        let page = match run(&drive, &contract, &never_written, 2, false)
+            .expect("a never-written prefix reads as an empty ranking")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(page.skipped, 0);
+        assert!(
+            page.entries.is_empty(),
+            "nothing is ranked under an unwritten prefix"
+        );
+
+        let proof = match run(&drive, &contract, &never_written, 2, true)
+            .expect("a never-written prefix proves as an empty ranking")
+        {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let (root_hash, verified) = client_side_query(&contract, &never_written, 2)
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("the envelope authenticates the absent prefix");
+        assert_eq!(verified, page);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+
+        // The written prefix still reads with its entry and no `in_key`:
+        // absence semantics change nothing about what a present prefix
+        // returns.
+        let present = match run(&drive, &contract, &pin(IDENTITY_X), 2, false)
+            .expect("a written prefix reads")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            present.entries,
+            vec![RankedEntry {
+                in_key: None,
+                key: b"art".to_vec(),
+                value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(90, 1)),
+            }]
+        );
+
+        // A page past rank 0 over the unwritten prefix is the same empty
+        // answer: the population is zero, so nothing could be skipped
+        // and the attested skip is 0, not the requested offset.
+        let mode = detect_ranked_mode(
+            &SelectProjection::avg("grade"),
+            &[CLASS_PROPERTY.to_string()],
+            &[],
+            &[OrderClause {
+                field: "grade".to_string(),
+                ascending: false,
+            }],
+            &never_written,
+            RankedPaginationInputs {
+                limit: Some(2),
+                offset: Some(1),
+                has_start_at: false,
+            },
+            platform_version(),
+        )
+        .expect("an offset with a `==` pin is grammatical");
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("grade doctype exists");
+        let paged = resolve_ranked_query_for_mode(
+            contract.id_ref().to_buffer(),
+            document_type,
+            DOCUMENT_TYPE.to_string(),
+            document_type.indexes(),
+            &mode,
+            &[],
+            platform_version(),
+        )
+        .expect("the compound index covers the pinned request");
+        let offset_page = paged
+            .execute_top_k_no_proof(&drive, None, platform_version())
+            .expect("an offset page of an unwritten prefix reads as an empty ranking");
+        assert_eq!(
+            offset_page.skipped, 0,
+            "nothing to skip in an empty population"
+        );
+        assert!(offset_page.entries.is_empty());
+        let proof = paged
+            .execute_top_k_with_proof(&drive, None, platform_version())
+            .expect("an offset page of an unwritten prefix proves as an empty ranking");
+        let (root_hash, verified) = paged
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("the absent-path proof verifies the offset page");
+        assert_eq!(verified, offset_page);
         assert_eq!(
             root_hash,
             drive
@@ -3153,6 +3291,7 @@ mod pinned_prefix {
                 .expect("dualGrade doctype exists")
                 .indexes(),
             &mode,
+            &[],
             pv,
         )
         .expect("covered");
@@ -3805,6 +3944,7 @@ mod prefix_level {
             document_type_name.to_string(),
             indexes,
             &mode,
+            &[],
             platform_version(),
         )
         .expect("the fixture declares the prefix-level ranking")

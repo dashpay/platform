@@ -5,14 +5,19 @@ use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
 };
 
-/// V4 is protocol version 14's document-method table. It hosts three
+/// V4 is protocol version 14's document-method table. It hosts four
 /// independent changes that all gate at v14 (ranked aggregates, the
-/// shared-prefix aggregate index fix, and the reworked non-primary-key
+/// shared-prefix aggregate index fix, the reworked non-primary-key
 /// query lowering via `query.non_primary_key_path_query: 1` — multiple
 /// `In` clauses, sibling-branch-correct cursor pagination over
 /// multi-branch levels, and order-by-aware left-over directions; v13
 /// and earlier keep the v0 lowering, which rejects more than one `In`
-/// clause and bakes the cursor's start keys into every sibling branch).
+/// clause and bakes the cursor's start keys into every sibling branch —
+/// and `insert_contested.add_contested_vote_subtree_for_non_identities_operations: 1`,
+/// which lets a resource be contested again over the storage of an
+/// abstain or lock vote tree an earlier poll's cleanup left orphaned: the
+/// raw existence probe reports it, v0 raised `CorruptedContractIndexes`,
+/// v1 checks that nothing is reachable there and creates the tree).
 ///
 /// ## 1. Contract-level ranked aggregates
 ///
@@ -68,6 +73,8 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
             query_documents: 0,
+            query_chained_documents: 0,
+            query_composite_documents: 0,
             query_contested_documents: 0,
             query_contested_documents_vote_state: 0,
             query_documents_with_flags: 0,
@@ -125,7 +132,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             add_contested_document_to_primary_storage: 0,
             add_contested_indices_for_contract_operations: 0,
             add_contested_reference_and_vote_subtree_to_document_operations: 0,
-            add_contested_vote_subtree_for_non_identities_operations: 0,
+            add_contested_vote_subtree_for_non_identities_operations: 1, // changed in v4: recreates the abstain or lock vote tree over the storage an earlier poll's cleanup left orphaned when a resource is contested again
         },
         update: DriveDocumentUpdateMethodVersions {
             add_update_multiple_documents_operations: 0,

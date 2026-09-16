@@ -19,12 +19,16 @@ use dpp::{
     platform_serialization::{platform_encode_to_vec, platform_versioned_decode_from_slice},
     prelude::{DataContract, Identity},
     serialization::{
-        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
         PlatformSerializableWithPlatformVersion,
     },
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
 use drive::grovedb::Element;
+use drive_proof_verifier::types::data_contracts_latest_versions::{
+    DataContractLatestVersion, DataContractsLatestVersions,
+};
+use drive_proof_verifier::types::data_contracts_by_range::DataContractsByRange;
 use drive_proof_verifier::types::evonode_status::EvoNodeStatus;
 use drive_proof_verifier::types::groups::GroupActions;
 use drive_proof_verifier::types::identity_token_balance::{
@@ -191,7 +195,8 @@ impl MockResponse for DataContract {
     where
         Self: Sized,
     {
-        DataContract::versioned_deserialize(buf, true, sdk.version()).expect("decode data")
+        DataContract::versioned_deserialize_untrusted(buf, true, sdk.version())
+            .expect("decode data")
     }
 }
 
@@ -207,7 +212,8 @@ impl MockResponse for (DataContract, Vec<u8>) {
         Self: Sized,
     {
         (
-            DataContract::versioned_deserialize(buf, true, sdk.version()).expect("decode data"),
+            DataContract::versioned_deserialize_untrusted(buf, true, sdk.version())
+                .expect("decode data"),
             buf.to_vec(),
         )
     }
@@ -308,6 +314,56 @@ impl MockResponse for ProposerBlockCounts {
     {
         let data = RetrievedValues::<Identifier, u64>::mock_deserialize(sdk, buf);
         ProposerBlockCounts(data)
+    }
+}
+
+impl MockResponse for DataContractsByRange {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.0.mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        DataContractsByRange(
+            IndexMap::<Identifier, Option<DataContract>>::mock_deserialize(sdk, buf),
+        )
+    }
+}
+
+/// Four big-endian version bytes followed by the optional contract (empty when absent).
+impl MockResponse for DataContractLatestVersion {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let mut buf = self.version.to_be_bytes().to_vec();
+        buf.extend(self.data_contract.mock_serialize(sdk));
+        buf
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (version, data_contract) = buf.split_at(4);
+        DataContractLatestVersion {
+            version: u32::from_be_bytes(version.try_into().expect("4 byte version prefix")),
+            data_contract: Option::<DataContract>::mock_deserialize(sdk, data_contract),
+        }
+    }
+}
+
+impl MockResponse for DataContractsLatestVersions {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.0.mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        DataContractsLatestVersions(
+            IndexMap::<Identifier, Option<DataContractLatestVersion>>::mock_deserialize(sdk, buf),
+        )
     }
 }
 
@@ -815,6 +871,136 @@ impl MockResponse for drive_proof_verifier::DocumentHavingEntries {
         let page = drive_proof_verifier::DocumentRankedEntries::mock_deserialize(sdk, buf);
         drive_proof_verifier::DocumentHavingEntries {
             entries: page.entries,
+        }
+    }
+}
+
+/// Wire shape for `ChainedDocuments` mock round-trip: both halves as
+/// per-document CBOR lists.
+type MockChainedHalves = (Vec<Vec<u8>>, Vec<Vec<u8>>);
+
+impl MockResponse for drive_proof_verifier::ChainedDocuments {
+    /// Both halves as per-document CBOR, bincode-framed as
+    /// `(inner, outer)` — list order IS the answer (inner-proof order,
+    /// outer by first appearance), so a map-shaped encoding would
+    /// destroy it.
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let halves: MockChainedHalves = (
+            self.inner_documents
+                .iter()
+                .map(|d| d.to_cbor().expect("encode inner document"))
+                .collect(),
+            self.outer_documents
+                .iter()
+                .map(|d| d.to_cbor().expect("encode outer document"))
+                .collect(),
+        );
+        bincode::encode_to_vec(halves, bincode_config).expect("encode ChainedDocuments")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let ((inner, outer), _): (MockChainedHalves, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode ChainedDocuments");
+        let decode = |bufs: Vec<Vec<u8>>| {
+            bufs.into_iter()
+                .map(|b| {
+                    Document::from_cbor(&b, None, None, sdk.version()).expect("decode document")
+                })
+                .collect()
+        };
+        drive_proof_verifier::ChainedDocuments {
+            inner_documents: decode(inner),
+            outer_documents: decode(outer),
+        }
+    }
+}
+
+/// Wire shape for one `CompositeDocuments` sub-result mock round-trip:
+/// `(is_documents, documents, count triples)`, only one side populated.
+type MockCompositeSubResult = (bool, Vec<Vec<u8>>, DocumentSplitCountTriples);
+
+/// Wire shape for `CompositeDocuments` mock round-trip: the page as a
+/// per-document CBOR list, then one entry per sub-query.
+type MockCompositeShape = (Vec<Vec<u8>>, Vec<MockCompositeSubResult>);
+
+impl MockResponse for drive_proof_verifier::CompositeDocuments {
+    /// The page and every documents sub-result as per-document CBOR,
+    /// count sub-results as `(in_key, key, count)` triples, all
+    /// bincode-framed in request order — list order IS the answer
+    /// (page order, a join's first-appearance order), so a map-shaped
+    /// encoding would destroy it.
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let encode = |documents: &[Document]| -> Vec<Vec<u8>> {
+            documents
+                .iter()
+                .map(|d| d.to_cbor().expect("encode document"))
+                .collect()
+        };
+        let shape: MockCompositeShape = (
+            encode(&self.page_documents),
+            self.sub_results
+                .iter()
+                .map(|result| match result {
+                    drive_proof_verifier::CompositeSubQueryResult::Documents(documents) => {
+                        (true, encode(documents), Vec::new())
+                    }
+                    drive_proof_verifier::CompositeSubQueryResult::Counts(entries) => (
+                        false,
+                        Vec::new(),
+                        entries
+                            .iter()
+                            .map(|e| (e.in_key.clone(), e.key.clone(), e.count))
+                            .collect(),
+                    ),
+                })
+                .collect(),
+        );
+        bincode::encode_to_vec(shape, bincode_config).expect("encode CompositeDocuments")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let ((page, sub_results), _): (MockCompositeShape, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode CompositeDocuments");
+        let decode = |bufs: Vec<Vec<u8>>| -> Vec<Document> {
+            bufs.into_iter()
+                .map(|b| {
+                    Document::from_cbor(&b, None, None, sdk.version()).expect("decode document")
+                })
+                .collect()
+        };
+        drive_proof_verifier::CompositeDocuments {
+            page_documents: decode(page),
+            sub_results: sub_results
+                .into_iter()
+                .map(|(is_documents, documents, triples)| {
+                    if is_documents {
+                        drive_proof_verifier::CompositeSubQueryResult::Documents(decode(documents))
+                    } else {
+                        drive_proof_verifier::CompositeSubQueryResult::Counts(
+                            triples
+                                .into_iter()
+                                .map(
+                                    |(in_key, key, count)| drive_proof_verifier::SplitCountEntry {
+                                        in_key,
+                                        key,
+                                        count,
+                                    },
+                                )
+                                .collect(),
+                        )
+                    }
+                })
+                .collect(),
         }
     }
 }

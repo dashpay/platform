@@ -2704,9 +2704,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            53, 9, 163, 92, 116, 134, 17, 186, 21, 68, 156, 162, 47, 181, 214, 162, 253, 4, 246, 8,
-            41, 187, 151, 152, 216, 164, 206, 110, 230, 176, 124, 225,
+            115, 71, 32, 19, 19, 28, 185, 173, 19, 83, 31, 196, 218, 150, 103, 242, 170, 82, 31,
+            219, 106, 186, 227, 137, 222, 8, 119, 190, 132, 141, 5, 129,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4025,11 +4027,13 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         assert_eq!(
             root_hash.as_slice(),
             vec![
-                144, 154, 147, 246, 236, 57, 41, 67, 21, 26, 212, 158, 68, 159, 206, 26, 158, 50,
-                252, 62, 143, 176, 149, 50, 19, 226, 239, 65, 112, 243, 225, 64
+                219, 212, 38, 199, 221, 53, 199, 246, 2, 67, 249, 145, 196, 196, 101, 196, 78, 109,
+                123, 83, 87, 87, 128, 249, 130, 7, 56, 229, 223, 246, 8, 76,
             ],
         );
     }
@@ -4179,9 +4183,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            53, 9, 163, 92, 116, 134, 17, 186, 21, 68, 156, 162, 47, 181, 214, 162, 253, 4, 246, 8,
-            41, 187, 151, 152, 216, 164, 206, 110, 230, 176, 124, 225,
+            115, 71, 32, 19, 19, 28, 185, 173, 19, 83, 31, 196, 218, 150, 103, 242, 170, 82, 31,
+            219, 106, 186, 227, 137, 222, 8, 119, 190, 132, 141, 5, 129,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5053,9 +5059,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            75, 38, 164, 96, 117, 46, 13, 23, 183, 41, 83, 163, 112, 55, 172, 37, 186, 36, 223, 39,
-            106, 201, 46, 222, 167, 79, 236, 122, 12, 210, 29, 123,
+            119, 63, 228, 222, 146, 3, 214, 206, 200, 85, 238, 169, 61, 76, 179, 15, 177, 234, 189,
+            243, 215, 36, 123, 160, 213, 152, 77, 100, 96, 29, 85, 193,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5177,9 +5185,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // Make sure the state is deterministic
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            53, 9, 163, 92, 116, 134, 17, 186, 21, 68, 156, 162, 47, 181, 214, 162, 253, 4, 246, 8,
-            41, 187, 151, 152, 216, 164, 206, 110, 230, 176, 124, 225,
+            115, 71, 32, 19, 19, 28, 185, 173, 19, 83, 31, 196, 218, 150, 103, 242, 170, 82, 31,
+            219, 106, 186, 227, 137, 222, 8, 119, 190, 132, 141, 5, 129,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6151,9 +6161,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            72, 10, 0, 120, 37, 84, 157, 63, 20, 182, 20, 142, 211, 145, 233, 100, 29, 203, 146,
+            87, 162, 128, 198, 53, 155, 57, 42, 81, 94, 17, 83, 240,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -6248,9 +6260,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            72, 10, 0, 120, 37, 84, 157, 63, 20, 182, 20, 142, 211, 145, 233, 100, 29, 203, 146,
+            87, 162, 128, 198, 53, 155, 57, 42, 81, 94, 17, 83, 240,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6345,9 +6359,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            72, 10, 0, 120, 37, 84, 157, 63, 20, 182, 20, 142, 211, 145, 233, 100, 29, 203, 146,
+            87, 162, 128, 198, 53, 155, 57, 42, 81, 94, 17, 83, 240,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6442,9 +6458,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            72, 10, 0, 120, 37, 84, 157, 63, 20, 182, 20, 142, 211, 145, 233, 100, 29, 203, 146,
+            87, 162, 128, 198, 53, 155, 57, 42, 81, 94, 17, 83, 240,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6638,9 +6656,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            233, 90, 110, 8, 43, 137, 139, 242, 8, 152, 175, 246, 177, 73, 49, 137, 61, 142, 2, 49,
-            158, 134, 13, 222, 60, 223, 139, 41, 66, 131, 135, 38,
+            191, 77, 82, 194, 247, 92, 67, 134, 235, 75, 244, 116, 69, 154, 189, 12, 249, 5, 25,
+            139, 146, 147, 153, 24, 198, 87, 19, 147, 13, 11, 118, 10,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6846,9 +6866,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            233, 90, 110, 8, 43, 137, 139, 242, 8, 152, 175, 246, 177, 73, 49, 137, 61, 142, 2, 49,
-            158, 134, 13, 222, 60, 223, 139, 41, 66, 131, 135, 38,
+            191, 77, 82, 194, 247, 92, 67, 134, 235, 75, 244, 116, 69, 154, 189, 12, 249, 5, 25,
+            139, 146, 147, 153, 24, 198, 87, 19, 147, 13, 11, 118, 10,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6925,7 +6947,14 @@ mod tests {
             })
             .collect();
 
-        let a_names = ["amalle".to_string(), "anna-diane".to_string()];
+        // The page is full: the cursor's own label key holds nothing after
+        // the cursor, and the lowering no longer lets that empty subtree
+        // consume a slot of the limit.
+        let a_names = [
+            "amalle".to_string(),
+            "anna-diane".to_string(),
+            "atalanta".to_string(),
+        ];
 
         assert_eq!(names, a_names);
 
@@ -7057,9 +7086,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            233, 90, 110, 8, 43, 137, 139, 242, 8, 152, 175, 246, 177, 73, 49, 137, 61, 142, 2, 49,
-            158, 134, 13, 222, 60, 223, 139, 41, 66, 131, 135, 38,
+            191, 77, 82, 194, 247, 92, 67, 134, 235, 75, 244, 116, 69, 154, 189, 12, 249, 5, 25,
+            139, 146, 147, 153, 24, 198, 87, 19, 147, 13, 11, 118, 10,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -7274,9 +7305,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
-            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
+            205, 146, 93, 135, 221, 204, 196, 241, 245, 249, 201, 39, 63, 75, 164, 201, 54, 207,
+            217, 96, 254, 99, 76, 95, 100, 185, 69, 107, 39, 249, 103, 12,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7355,9 +7388,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
-            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
+            205, 146, 93, 135, 221, 204, 196, 241, 245, 249, 201, 39, 63, 75, 164, 201, 54, 207,
+            217, 96, 254, 99, 76, 95, 100, 185, 69, 107, 39, 249, 103, 12,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7425,11 +7460,14 @@ mod tests {
             })
             .collect();
 
-        // We only get back 2 values, even though we put limit 3 because the time with status 0 is an
-        // empty tree and consumes a limit
+        // All 3 values come back: the cursor's time key holds nothing after
+        // the cursor, and the lowering no longer lets that empty subtree
+        // consume a slot of the limit (it did before protocol version 14,
+        // returning 2 values for a limit of 3).
         let a_names = [
             "DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou".to_string(),
             "2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu".to_string(),
+            "74giZJn9fNczYRsxxh3wVnktJS1vzTiRWYinKK1rRcyj".to_string(),
         ];
 
         assert_eq!(names, a_names);
@@ -7457,9 +7495,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
-            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
+            205, 146, 93, 135, 221, 204, 196, 241, 245, 249, 201, 39, 63, 75, 164, 201, 54, 207,
+            217, 96, 254, 99, 76, 95, 100, 185, 69, 107, 39, 249, 103, 12,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7530,11 +7570,14 @@ mod tests {
             })
             .collect();
 
-        // We only get back 2 values, even though we put limit 3 because the time with status 0 is an
-        // empty tree and consumes a limit
+        // All 3 values come back: the cursor's time key holds nothing after
+        // the cursor, and the lowering no longer lets that empty subtree
+        // consume a slot of the limit (it did before protocol version 14,
+        // returning 2 values for a limit of 3).
         let a_names = [
             "DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou".to_string(),
             "CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD".to_string(),
+            "5ikeRNwvFekr6ex32B4dLEcCaSsgXXHJBx5rJ2rwuhEV".to_string(),
         ];
 
         assert_eq!(names, a_names);
@@ -8167,6 +8210,97 @@ mod tests {
     }
 
     #[cfg(all(feature = "server", feature = "verify"))]
+    #[test]
+    fn test_proved_primary_key_cursor_pages_in_both_directions() {
+        // A `$id`-ordered page with a cursor merges the cursor lookup and the
+        // page query at the same path: the primary-key tree. The merge then has
+        // no synthesized root above the page query, so the document layer must
+        // keep the requested direction in the proof; the verifier reads both
+        // the cursor lookup and the page in that direction, and GroveDB refuses
+        // a V1 layer proof read in the other op family.
+        use dpp::document::DocumentV0Getters;
+        use dpp::prelude::Identifier;
+        use platform_value::string_encoding::Encoding;
+
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+
+        let ids_of = |results: &[Vec<u8>]| -> Vec<Identifier> {
+            results
+                .iter()
+                .map(|bytes| {
+                    Document::from_bytes(bytes, person_document_type, platform_version)
+                        .expect("we should be able to deserialize the document")
+                        .id()
+                })
+                .collect()
+        };
+        let build = |query_value: serde_json::Value| {
+            let cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+                .expect("expected to serialize to cbor");
+            DriveDocumentQuery::from_cbor(
+                cbor.as_slice(),
+                &contract,
+                person_document_type,
+                &drive.config,
+                platform_version,
+            )
+            .expect("query should be built")
+        };
+
+        let (all_results, _, _) = build(json!({
+            "limit": 100,
+            "orderBy": [["$id", "asc"]],
+        }))
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+        .expect("query should be executed");
+        let ascending_ids = ids_of(&all_results);
+        assert_eq!(ascending_ids.len(), 10);
+
+        for (ascending, included) in [(true, true), (true, false), (false, true), (false, false)] {
+            let ordered: Vec<Identifier> = if ascending {
+                ascending_ids.clone()
+            } else {
+                ascending_ids.iter().rev().cloned().collect()
+            };
+            let cursor = ordered[3];
+            let expected: Vec<Identifier> = if included {
+                ordered[3..6].to_vec()
+            } else {
+                ordered[4..7].to_vec()
+            };
+            let cursor_key = if included { "startAt" } else { "startAfter" };
+            let case = format!(
+                "orderBy $id {} with {cursor_key}",
+                if ascending { "asc" } else { "desc" }
+            );
+
+            let query = build(json!({
+                cursor_key: cursor.to_string(Encoding::Base58),
+                "limit": 3,
+                "orderBy": [["$id", if ascending { "asc" } else { "desc" }]],
+            }));
+            let (results, _, _) = query
+                .execute_raw_results_no_proof(&drive, None, None, platform_version)
+                .expect("query should be executed");
+            assert_eq!(ids_of(&results), expected, "{case}: unproved page");
+
+            let (proof_root_hash, proof_results, _) = query
+                .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+                .unwrap_or_else(|e| panic!("{case}: proved page should verify: {e}"));
+            assert_eq!(root_hash, proof_root_hash, "{case}: proof root hash");
+            assert_eq!(results, proof_results, "{case}: proved page");
+        }
+    }
+
     #[test]
     fn test_proved_desc_range_continuation_page_includes_cursor_document() {
         // Issue #4540: a continuation page over a non-unique
@@ -9303,6 +9437,7 @@ mod withdrawal_in_clause_placement_equivalence {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         // The current shape: the In clause in in_clauses
@@ -9325,6 +9460,7 @@ mod withdrawal_in_clause_placement_equivalence {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         for protocol_version in [13u32, 14u32] {

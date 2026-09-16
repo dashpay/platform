@@ -25,6 +25,9 @@ lru = "0.16.3"
 arc-swap = "1.7.1"
 hex = "0.4.3"
 url = "2.5"
+# `try_join!` / `join!` for the concurrent quorum fetches in `update_quorum_caches`
+# and `refresh_quorum_caches`.
+futures = { version = "0.3.30" }
 
 [features]
 default = []

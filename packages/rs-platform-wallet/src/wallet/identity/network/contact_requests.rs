@@ -1217,7 +1217,7 @@ fn count_account_build_ops(queue: &[crate::changeset::PendingContactCrypto]) -> 
 /// on the wallet. That is right for a recurring background sweep and wrong for
 /// anything that treats the pass as a precondition, because the two endings it
 /// collapses are opposites — "Platform answered, and there is nothing new" and
-/// "Platform answered nobody, so we do not know". Both used to arrive as
+/// "Platform answered nobody, so we do not know". Both arrive as
 /// `Ok(vec![])`.
 ///
 /// The distinction matters most at startup, where a completed pass is the
@@ -1807,24 +1807,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             })
             .collect();
 
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-                return;
-            };
-            let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
-                tracing::warn!(
-                    owner = %identity_id,
-                    "auto-accept enqueue for a non-resident identity; dropping"
-                );
-                return;
-            };
-            for entry in &entries {
-                upsert_pending_contact_crypto(
-                    managed.dashpay_pending_contact_crypto_mut(),
-                    entry.clone(),
-                );
-            }
+        // Serialize the queue write with identity removal under the same guard.
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            tracing::warn!(
+                owner = %identity_id,
+                "auto-accept enqueue for a non-resident identity; dropping"
+            );
+            return;
+        };
+        for entry in &entries {
+            upsert_pending_contact_crypto(
+                managed.dashpay_pending_contact_crypto_mut(),
+                entry.clone(),
+            );
         }
         let changeset = PlatformWalletChangeSet {
             pending_contact_crypto_added: entries,
@@ -1996,26 +1995,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             },
         ];
 
-        // In-memory upsert onto the owner identity's queue, under the write
-        // lock (released before persisting). All entries share this owner.
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-                return;
-            };
-            let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
-                tracing::warn!(
-                    identity = %identity_id, contact = %candidate.contact_id,
-                    "deferred contact-crypto enqueue for a non-resident identity; dropping"
-                );
-                return;
-            };
-            for entry in &entries {
-                upsert_pending_contact_crypto(
-                    managed.dashpay_pending_contact_crypto_mut(),
-                    entry.clone(),
-                );
-            }
+        // Serialize the queue write with identity removal under the same guard.
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            tracing::warn!(
+                identity = %identity_id, contact = %candidate.contact_id,
+                "deferred contact-crypto enqueue for a non-resident identity; dropping"
+            );
+            return;
+        };
+        for entry in &entries {
+            upsert_pending_contact_crypto(
+                managed.dashpay_pending_contact_crypto_mut(),
+                entry.clone(),
+            );
         }
 
         // Persist the add-delta so the queue survives a restart. Best-effort:
@@ -2318,11 +2314,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     //
                     // Deciding here means a MIXED failure — our key
                     // purpose-rejected and the contact's key hard-faulted —
-                    // now leaves the entry queued where the composed validator
-                    // would have marked the channel broken. Deliberate: see
+                    // leaves the entry queued where a composed validator would
+                    // mark the channel broken. Deliberate: see
                     // `validate_recipient_key`. Marking broken is unappealable
-                    // by the user, and the retry it avoids no longer costs a
-                    // fetch.
+                    // by the user, and the retry it avoids costs no fetch.
                     let our_identity = {
                         let wm = self.wallet_manager.read().await;
                         wm.get_wallet_info(&self.wallet_id)
@@ -2882,10 +2877,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return 0;
         }
 
-        let now_secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let now_secs = crate::util::now_secs();
 
         let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
         // Permanent verify failures to mark so the sync sweep's enqueue gate
@@ -5462,14 +5454,14 @@ mod contact_info_provider_tests {
     use crate::wallet::identity::crypto::contact_info::derive_contact_info_keys;
     use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
     use key_wallet::bip32::KeyDerivationType;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::Network;
 
     // Canonical BIP-39 test mnemonic.
     const PHRASE: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
-    /// MUST-FIX (security review): the contactInfo seal/open the signer produces
+    /// Invariant: the contactInfo seal/open the signer produces
     /// must be byte-identical to the resident `derive_contact_info_keys` AT THE
     /// REAL identity-auth root path — not an arbitrary path. contactInfo is
     /// self-encrypted (no counterparty round-trip), so a wrong root silently
@@ -5478,7 +5470,7 @@ mod contact_info_provider_tests {
     /// open round-trips.
     #[tokio::test]
     async fn contact_info_seal_open_matches_resident_derivation_at_real_auth_path() {
-        let seed = Mnemonic::from_phrase(PHRASE, Language::English)
+        let seed = Mnemonic::from_phrase(PHRASE)
             .expect("valid mnemonic")
             .to_seed("");
         let network = Network::Testnet;
@@ -5561,7 +5553,7 @@ mod contact_info_provider_tests {
     async fn ecdh_shared_secret_returns_zeroizing_matching_resident_derivation() {
         use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 
-        let seed = Mnemonic::from_phrase(PHRASE, Language::English)
+        let seed = Mnemonic::from_phrase(PHRASE)
             .expect("valid mnemonic")
             .to_seed("");
         let network = Network::Testnet;
@@ -5663,7 +5655,7 @@ mod stamp_race_tests {
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::Identity;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
     use std::collections::BTreeMap;
@@ -5699,8 +5691,7 @@ mod stamp_race_tests {
             Arc::clone(&persister),
             handler,
         ));
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet = manager
             .create_wallet_from_seed_bytes(
@@ -5819,5 +5810,54 @@ mod drain_budget_tests {
         })
         .await;
         assert_eq!(result, None, "the step outlasted the budget");
+    }
+}
+
+#[cfg(test)]
+mod pending_enqueue_tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[tokio::test]
+    async fn should_serialize_deferred_enqueue_with_identity_removal() {
+        let (iw, owner, backend) = super::super::pending_crypto_tests::fixture().await;
+        let candidate = AccountBuildCandidate {
+            contact_id: Identifier::from([0xBB; 32]),
+            encrypted_public_key: vec![0; 96],
+            our_decryption_key_index: 0,
+            contact_encryption_key_index: 1,
+        };
+        iw.dashpay()
+            .enqueue_deferred_contact_crypto(&owner, &candidate)
+            .await;
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 2);
+        super::super::pending_crypto_tests::remove_owner(&iw, &owner).await;
+        iw.dashpay()
+            .enqueue_deferred_contact_crypto(&owner, &candidate)
+            .await;
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn should_serialize_auto_accept_enqueue_with_identity_removal() {
+        let (iw, owner, backend) = super::super::pending_crypto_tests::fixture().await;
+        let sender = Identifier::from([0xBB; 32]);
+        let mut request = ContactRequest::new(sender, owner, 0, 0, 0, vec![0; 96], 100, 0);
+        request.auto_accept_proof = Some(vec![0; 70]);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&iw.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .unwrap()
+                .add_incoming_contact_request(request, &iw.persister)
+                .unwrap();
+        }
+        iw.dashpay().enqueue_pending_auto_accepts(&owner).await;
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 1);
+        super::super::pending_crypto_tests::remove_owner(&iw, &owner).await;
+        iw.dashpay().enqueue_pending_auto_accepts(&owner).await;
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 1);
     }
 }

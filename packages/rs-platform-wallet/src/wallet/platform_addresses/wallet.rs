@@ -542,8 +542,7 @@ impl PlatformAddressWallet {
     ///
     /// Equivalent to [`initialize`]: the unified provider is rebuilt
     /// from the current account set in the wallet manager. The name
-    /// is kept for API continuity with call sites that used to add
-    /// per-account providers.
+    /// is kept for API continuity with per-account-provider call sites.
     pub async fn add_provider(&self, _account_index: u32) -> Result<(), PlatformWalletError> {
         self.initialize().await;
         Ok(())

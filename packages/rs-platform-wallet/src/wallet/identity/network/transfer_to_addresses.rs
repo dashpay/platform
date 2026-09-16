@@ -112,8 +112,7 @@ impl IdentityWallet {
             .map_err(|e| {
                 // Preserve a structured key-unavailable signer failure so the
                 // FFI boundary can still restore code 31; only genuine
-                // operation failures get stringified into `InvalidIdentityData`
-                // (dashpay/platform#4183 review).
+                // operation failures get stringified into `InvalidIdentityData`.
                 crate::error::preserve_signer_key_unavailable_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to transfer credits to addresses: {}",

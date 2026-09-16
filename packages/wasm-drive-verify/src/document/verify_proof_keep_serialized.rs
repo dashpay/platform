@@ -1,8 +1,9 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use indexmap::IndexMap;
@@ -63,8 +64,9 @@ pub fn verify_document_proof_keep_serialized(
         ));
     };
 
-    let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
-        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
+    let contract =
+        DataContract::versioned_deserialize_untrusted(&contract_bytes, true, platform_version)
+            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
 
     // Get document type
     let document_type = contract
@@ -106,10 +108,14 @@ pub fn verify_document_proof_keep_serialized(
         // verification fails closed. Use the SDK's FromProof path (which
         // resolves from the signed metadata time) for those proofs.
         resolved_time_ranges: vec![],
+        sub_queries: vec![],
     };
 
     let (root_hash, serialized_docs) = query
-        .verify_proof_keep_serialized(&proof_vec, platform_version)
+        .verify_proof_keep_serialized(
+            supported_grovedb_proof(&proof_vec, platform_version)?,
+            platform_version,
+        )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert serialized documents to JS array of Uint8Arrays

@@ -65,7 +65,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// inputs leave this wallet's selectable set within milliseconds;
     /// `DapiBroadcaster::broadcast` only awaits `sdk.execute` and injects
     /// nothing, so on that path the inputs are still selectable while the
-    /// transaction is in flight (`dashpay/platform#4309`). So:
+    /// transaction is in flight. So:
     ///
     /// * **Definitive pre-send rejection** (`BroadcastError::Rejected`) — the
     ///   transaction provably did not reach the network. The fence is dropped
@@ -79,16 +79,15 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ///
     /// # Why the fence waits for an observation instead of a height bound
     ///
-    /// Three earlier revisions bounded the pending-spend phase at
-    /// `last_processed_height + N` and disagreed only about where to sample the
-    /// height — before the await, after it, after it under a still-held guard.
-    /// Every one of them can be consumed by a routine historical catch-up: the
-    /// wallet advances that height by thousands of blocks in seconds, and those
-    /// blocks were mined BEFORE this transaction was submitted, so they are not
-    /// evidence that it has been seen or dropped. On the `DapiBroadcaster` path
-    /// — which returns from `sdk.execute` without injecting anything into local
-    /// wallet state — the input then becomes reselectable while the transaction
-    /// is in flight (`dashpay/platform#4309`, review round 5).
+    /// A pending-spend phase bounded at `last_processed_height + N` is unsound
+    /// wherever the height is sampled — before the await, after it, after it
+    /// under a still-held guard. Any such bound can be consumed by a routine
+    /// historical catch-up: the wallet advances that height by thousands of
+    /// blocks in seconds, and those blocks were mined BEFORE this transaction
+    /// was submitted, so they are not evidence that it has been seen or
+    /// dropped. On the `DapiBroadcaster` path — which returns from
+    /// `sdk.execute` without injecting anything into local wallet state — the
+    /// input then becomes reselectable while the transaction is in flight.
     ///
     /// The release condition is therefore evidence, not elapsed chain: the
     /// outpoint is freed when the wallet sees it spent. That is a fact about
@@ -97,11 +96,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// pipeline, DAPI when the transaction is relayed back or lands in a block.
     ///
     /// There is NO backstop timeout behind that, and deliberately so. A
-    /// one-hour monotonic deadline used to sit here as a liveness valve; a
-    /// clock catch-up cannot fast-forward is still not evidence about this
-    /// transaction, and once it lapsed the next build could sign a conflicting
-    /// spend of inputs the original might still take (`dashpay/platform#4309`,
-    /// review round 7). A transaction the wallet never observes at all — evicted
+    /// monotonic deadline as a liveness valve would not help: a clock catch-up
+    /// cannot fast-forward is still not evidence about this transaction, and
+    /// once it lapsed the next build could sign a conflicting spend of inputs
+    /// the original might still take. A transaction the wallet never observes
+    /// at all — evicted
     /// for fee, conflicted away unseen — therefore holds its inputs for the rest
     /// of the process. That is the correct trade: those are exactly the inputs a
     /// possibly-live signed transaction spends. See the
@@ -109,16 +108,16 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// and for the two liveness shapes that may shorten the wait without
     /// weakening it.
     ///
-    /// # Why there is no post-await manager guard any more
+    /// # Why there is no post-await manager guard
     ///
-    /// Round 4 of this review added one: the fence's height had to be sampled
-    /// and installed inside a single manager read guard, or a writer queued
-    /// behind it could advance the clock in between and the fence would land
-    /// already lapsed. With no clock to sample at all there is nothing for a
-    /// height writer to interleave with — the settle sets a flag inside the
-    /// `in_broadcast` critical section. So it needs no manager lock, and this
-    /// method now touches the wallet-manager lock exactly once, before the
-    /// send, which also removes a lock acquisition from every dispatch.
+    /// A height-bounded fence would need one: its height would have to be
+    /// sampled and installed inside a single manager read guard, or a writer
+    /// queued behind it could advance the clock in between and the fence
+    /// would land already lapsed. With no clock to sample at all there is
+    /// nothing for a height writer to interleave with — the settle sets a flag
+    /// inside the `in_broadcast` critical section. So it needs no manager
+    /// lock, and this method touches the wallet-manager lock exactly once,
+    /// before the send, which also spares every dispatch a lock acquisition.
     ///
     /// A wallet no longer in the manager skips the pin (there is no
     /// registered generation to fence builds on — they cannot fund from a
@@ -162,7 +161,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // the dispatching future being cancelled, or an unwind, mid-`broadcast`.
         // Neither says anything about whether the transaction reached the
         // network, and freeing the inputs there lets an immediate reselection
-        // double-spend a transaction already on the wire (`dashpay/platform#4309`).
+        // double-spend a transaction already on the wire.
         //
         // Only a definitive pre-send rejection proves nothing was sent, so it is
         // the one outcome that releases. An ambiguous `MaybeSent` stays fenced.
@@ -194,7 +193,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// broadcast is `.await`ed, and during that await key-wallet's TTL sweep can
     /// reclaim this build's reservation and a concurrent build re-reserve the
     /// same inputs under a new token. Releasing by outpoint alone would then
-    /// free that other build's inputs (the `dashpay/platform#4185` double-spend
+    /// free that other build's inputs (the release/re-reserve double-spend
     /// window); presenting the token frees only inputs this build still owns.
     ///
     /// # Reservation age guard
@@ -335,7 +334,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// used by the immediate send path, this takes an [`AccountTypePreference`]
     /// so it ALSO reconciles a CoinJoin-funded deferred payment — one whose
     /// `build_signed`/`finalize` reserved the selected inputs but which has no
-    /// `StandardAccountType`, and which previously kept its reservation held
+    /// `StandardAccountType`, and whose reservation would otherwise stay held
     /// until the TTL backstop.
     ///
     /// The release delegates to
@@ -345,8 +344,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// reservation freed by this token) AND — via `token` — only on inputs this
     /// build still owns. The deferred registry can hold the reservation across a
     /// long build→broadcast gap, so a TTL sweep re-reserving the same inputs
-    /// under a new token is a real risk; the owner guard closes the
-    /// `dashpay/platform#4185` release/re-reserve race.
+    /// under a new token is a real risk; the owner guard closes that
+    /// release/re-reserve race.
     ///
     /// `accounts` are the concrete accounts that contributed the transaction's
     /// inputs (`SignedCoreTransaction::funding_accounts`) — a pooled send spans
@@ -824,15 +823,13 @@ mod tests {
     }
 
     /// A wallets map — the production `BTreeMap<WalletId, Arc<PlatformWallet>>`
-    /// behind its own `RwLock` — holding one entry per fixture wallet.
+    /// behind its own `ArcSwap` — holding one entry per fixture wallet.
     fn wallets_map<B: TransactionBroadcaster>(
         cores: &[&CoreWallet<B>],
     ) -> Arc<
-        tokio::sync::RwLock<
-            std::collections::BTreeMap<WalletId, Arc<crate::wallet::PlatformWallet>>,
-        >,
+        arc_swap::ArcSwap<std::collections::BTreeMap<WalletId, Arc<crate::wallet::PlatformWallet>>>,
     > {
-        Arc::new(tokio::sync::RwLock::new(
+        Arc::new(arc_swap::ArcSwap::from_pointee(
             cores
                 .iter()
                 .map(|core| (core.wallet_id(), platform_wallet_sharing(core)))
@@ -846,8 +843,7 @@ mod tests {
     /// therefore exercises the whole handler path — the variant gate
     /// (`observing_wallet`), the projection (`observed_spends`), the
     /// wallets-map `try_read`, the wallet-id lookup, and the selected
-    /// generation's release — not a shortcut to `observe_spent`
-    /// (`dashpay/platform#4309`, review round 6).
+    /// generation's release — not a shortcut to `observe_spent`.
     fn observe_via_event_handler<B: TransactionBroadcaster>(
         core: &CoreWallet<B>,
         event: key_wallet_manager::WalletEvent,
@@ -864,10 +860,9 @@ mod tests {
     /// Assert that `result` is the typed in-broadcast conflict, and return the
     /// outpoint it names.
     ///
-    /// The tests used to spell this `message.contains("mid-broadcast")`, which
-    /// is exactly the substring-matching the typed
-    /// `PlatformWalletError::InputMidBroadcast` variant removes
-    /// (`dashpay/platform#4309`, review round 5 suggestion).
+    /// Matching the typed `PlatformWalletError::InputMidBroadcast` variant,
+    /// never `message.contains("mid-broadcast")`: substring-matching prose is
+    /// exactly what the typed variant exists to make unnecessary.
     fn expect_mid_broadcast(
         result: Result<SignedCoreTransaction, PlatformWalletError>,
         context: &str,
@@ -940,13 +935,11 @@ mod tests {
         );
 
         // The dispatching pin has now lifted — and the input is STILL not
-        // selectable. This assertion has been through three revisions of
-        // `dashpay/platform#4309`: it originally asserted the input was free
-        // again (the bug), then that it was fenced until a height-anchored
-        // bound. It now holds regardless of the chain clock, because the fence
-        // is waiting for an observed spend that this mock manager — which runs
-        // no mempool pipeline, exactly like the `DapiBroadcaster` path — never
-        // produces.
+        // selectable. Asserting that it is free again would be the bug, and a
+        // height-anchored bound would only defer it. The assertion holds
+        // regardless of the chain clock, because the fence is waiting for an
+        // observed spend that this mock manager — which runs no mempool
+        // pipeline, exactly like the `DapiBroadcaster` path — never produces.
         let still_fenced =
             try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
         expect_mid_broadcast(
@@ -956,7 +949,7 @@ mod tests {
         );
     }
 
-    /// `dashpay/platform#4309`, THE ROUND-5 BLOCKER, VERBATIM.
+    /// THE HISTORICAL-CATCH-UP HAZARD, STATED DIRECTLY.
     ///
     /// > after [the guard is released], a synchronization writer queued during
     /// > the short critical section — or ordinary catch-up completing before
@@ -965,13 +958,13 @@ mod tests {
     /// > mined BEFORE the transaction was submitted, so they provide no
     /// > evidence that the submitted transaction has been observed or dropped.
     ///
-    /// This is the test that FAILS on every prior revision of this PR. Each of
-    /// them installed `pending_until = <some height> + IN_BROADCAST_FENCE_BLOCKS`
-    /// and reaped the fence once `last_processed_height` reached it; the
-    /// catch-up below clears that bound by a wide margin no matter which height
-    /// was sampled — pre-await, post-await, or post-await under a held guard —
-    /// so all three leave the input reselectable here while the transaction is
-    /// on the network.
+    /// This is the test that FAILS for any height-bounded fence. An
+    /// implementation that installs `pending_until = <some height> + N` and
+    /// reaps the fence once `last_processed_height` reaches it loses here: the
+    /// catch-up below clears that bound by a wide margin no matter which
+    /// height is sampled — pre-await, post-await, or post-await under a held
+    /// guard — so every such variant leaves the input reselectable while the
+    /// transaction is on the network.
     ///
     /// The broadcaster is `AlwaysOk`: the transaction is ACCEPTED, so it is
     /// certainly on the wire. The manager runs no mempool pipeline, which is
@@ -999,8 +992,8 @@ mod tests {
         // Historical catch-up. Not a few blocks past some bound — a whole
         // month of blocks, all of them mined long before this transaction was
         // submitted, applied in the instant between the dispatch returning and
-        // the next build. This is the ordinary mobile resync, and it is what
-        // consumed every height-anchored bound this PR previously shipped.
+        // the next build. This is the ordinary mobile resync, and it consumes
+        // any height-anchored bound.
         let caught_up = stamped + 17_000;
         advance_processed_height(&core, caught_up).await;
 
@@ -1141,26 +1134,26 @@ mod tests {
         core.abandon_transaction(&after).await;
     }
 
-    /// `dashpay/platform#4309` — A CONTENDED WALLETS MAP MUST DEFER A SPEND
-    /// OBSERVATION, NEVER DISCARD IT.
+    /// A WALLETS-MAP WRITE IN FLIGHT MUST NOT COST A SPEND OBSERVATION.
     ///
-    /// `SpendObservationHandler::on_wallet_event` is synchronous, so it probes
-    /// the wallets map with `try_read`. That probe fails while wallet
-    /// registration/removal holds the map's write lock — and the handler used
-    /// to DROP the observation on that failure. For a DAPI-path dispatch the
-    /// dropped `TransactionDetected` can be the only spend-bearing event the
-    /// wallet ever gets: InstantLock promotions carry no record here by
-    /// design, and an evicted or never-confirmed transaction produces no
-    /// inserted `BlockProcessed` record. With no deadline behind the
-    /// pending-spend fence, one moment of lock contention then left the input
-    /// fenced for the manager's lifetime even though the wallet HAD observed
-    /// it spent.
+    /// `SpendObservationHandler::on_wallet_event` is synchronous, so over a
+    /// `tokio::sync::RwLock` wallets map it could only probe with `try_read` —
+    /// a probe that fails while wallet registration/removal holds the write
+    /// lock. For a DAPI-path dispatch the observation lost that way can be the
+    /// only spend-bearing event the wallet ever gets: InstantLock promotions
+    /// carry no record here by design, and an evicted or never-confirmed
+    /// transaction produces no inserted `BlockProcessed` record. With no
+    /// deadline behind the pending-spend fence, one moment of lock contention
+    /// would leave the input fenced for the manager's lifetime even though the
+    /// wallet HAD observed it spent.
     ///
-    /// The handler now queues the observation and applies it on the next
-    /// delivered event — ANY event, including one carrying no spend at all —
-    /// so the evidence survives the contention instead of vanishing with it.
+    /// The map is an `ArcSwap`, so the read cannot fail and the handler
+    /// applies every observation at delivery — no deferral queue, no window
+    /// to lose it in. The closest reachable analogue of that contention is a
+    /// lifecycle writer parked mid-`rcu`, which this test pins open across the
+    /// delivery: the fence must clear anyway, before that writer commits.
     #[tokio::test]
-    async fn a_contended_wallets_map_defers_but_never_drops_a_spend_observation() {
+    async fn a_wallets_map_write_in_flight_does_not_cost_a_spend_observation() {
         let (core, signer, outputs) = funded_core_wallet(
             StandardAccountType::BIP44Account,
             Arc::new(AlwaysOkBroadcaster),
@@ -1189,45 +1182,52 @@ mod tests {
         let map = wallets_map(&[&core]);
         let handler = SpendObservationHandler::new(Arc::clone(&map));
 
-        // Wallet registration/removal holds the wallets-map WRITE lock at the
-        // instant the wallet's own spend event is delivered: `try_read` fails.
-        let contended = map.write().await;
+        // Park a lifecycle writer mid-publication: its `rcu` closure has read
+        // the current map but not yet committed the replacement. This is the
+        // window the lock-based map failed its `try_read` in.
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let map_for_writer = Arc::clone(&map);
+        let writer = std::thread::spawn(move || {
+            // `rcu` re-runs its closure if the compare-and-swap loses, so the
+            // release must be waited on ONCE: a second `recv()` would block
+            // forever on a channel the test only sends to once, and
+            // `writer.join()` below would hang the suite instead of failing
+            // it. Nothing else writes this map today, so the retry is latent
+            // — which is exactly why it must not be able to wedge the test.
+            let mut parked = false;
+            map_for_writer.rcu(|current| {
+                if !parked {
+                    parked = true;
+                    let _ = entered_tx.send(());
+                    let _ = release_rx.recv();
+                }
+                Arc::clone(current)
+            });
+        });
+        entered_rx
+            .recv()
+            .expect("the writer must reach its rcu closure");
+
         dash_spv::EventHandler::on_wallet_event(&handler, &spend_event(&core, &sent_tx));
-        drop(contended);
 
-        // The observation was deferred, not applied: the fence still stands.
-        // (Pre-fix this holds too — by discarding rather than deferring — so
-        // the discriminating half is what the NEXT event does.)
-        expect_mid_broadcast(
-            try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await,
-            "a deferred observation must not have been applied under contention",
-        );
-
-        // The next delivered event drains the queue — even a bare watermark
-        // advance that resolves no wallet and carries no spend of its own.
-        // This does NOT retire the fence by chain progress: it applies
-        // evidence that already arrived and was queued.
-        dash_spv::EventHandler::on_wallet_event(
-            &handler,
-            &key_wallet_manager::WalletEvent::SyncHeightAdvanced {
-                wallet_id: core.wallet_id(),
-                height: stamped + 17_001,
-            },
-        );
-
+        // Applied at delivery — before the parked writer commits.
         let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
         let after = after.unwrap_or_else(|error| {
             panic!(
-                "an observation deferred by wallets-map contention must be \
-                 applied on the next event, not dropped — the fence never \
-                 cleared: {error:?}"
+                "an observation delivered while a wallets-map write was in \
+                 flight must still release the fence: {error:?}"
             )
         });
+
+        release_tx.send(()).expect("writer still parked");
+        writer.join().expect("writer thread completes");
+
         core.abandon_transaction(&after).await;
     }
 
     /// The handler releases ONLY the generation registered under the event's
-    /// wallet id (`dashpay/platform#4309`, review round 6). Two fenced wallets
+    /// wallet id. Two fenced wallets
     /// share ONE wallets map — the production shape — and: an event naming a
     /// wallet id registered NOWHERE releases neither fence, and wallet A's own
     /// spend event releases A's fence while B's stands. A handler that routed
@@ -1313,25 +1313,25 @@ mod tests {
         );
     }
 
-    /// `dashpay/platform#4309`, REVIEW ROUND 7 — THE END-TO-END REGRESSION.
+    /// THE END-TO-END ELAPSED-TIME REGRESSION.
     ///
-    /// The pending-spend phase used to expire one hour after the dispatch
-    /// settled, on a monotonic clock. The clock was the right kind — catch-up
+    /// A pending-spend phase that expires one hour after the dispatch settles,
+    /// on a monotonic clock, is unsound. The clock is the right kind — catch-up
     /// cannot move it — but a deadline of ANY kind is the wrong instrument: the
     /// signed transaction stays valid, and an hour passing proves nothing about
     /// whether a peer retained it. A DAPI endpoint that accepts the transaction
     /// while withholding it from the network, or an app backgrounded past the
-    /// deadline, was enough. With key-wallet's reservation also swept by
-    /// catch-up, the next build then re-selected the input and SIGNED A
+    /// deadline, is enough. With key-wallet's reservation also swept by
+    /// catch-up, the next build then re-selects the input and SIGNS A
     /// CONFLICTING TRANSACTION over a spend that might still land.
     ///
     /// This drives that exact sequence through the real send path: accept the
     /// transaction (`AlwaysOk`, and this manager runs no mempool pipeline — the
     /// `DapiBroadcaster` shape, so nothing observes the spend), run catch-up far
     /// past key-wallet's reservation TTL, bring due every timeout the fence might
-    /// carry, and build again. On the deadline-bearing revision that second build
-    /// SUCCEEDED and returned a second signed transaction spending the same
-    /// input. It must now be refused, and released only by the observed spend.
+    /// carry, and build again. Under a deadline-bearing fence that second build
+    /// SUCCEEDS and returns a second signed transaction spending the same
+    /// input. It must be refused, and released only by the observed spend.
     #[tokio::test]
     async fn an_elapsed_deadline_cannot_retire_the_fence_a_spend_still_needs() {
         let (core, signer, outputs) = funded_core_wallet(
@@ -1361,7 +1361,7 @@ mod tests {
         );
 
         // Now let every elapsed-time release the fence might carry come due —
-        // the hour of wall clock the old backstop waited out.
+        // the hour of wall clock a monotonic backstop would wait out.
         assert!(
             core.generation().test_elapse_time_based_release(&fenced),
             "the accepted dispatch must be in the pending-spend phase"
@@ -1386,19 +1386,19 @@ mod tests {
         core.abandon_transaction(&after).await;
     }
 
-    /// `dashpay/platform#4309`, the CANCELLATION path.
+    /// The CANCELLATION path.
     ///
     /// A caller wrapping the send in `timeout`/`select!` drops the dispatching
     /// future mid-`broadcast`. That path reaches neither the release nor any
     /// return value, and cancellation proves nothing: DAPI may have delivered
     /// the request while awaiting its response, SPV may have dispatched to
     /// peers while awaiting an echo or IS-lock. So the fence must survive it —
-    /// and, unlike in earlier revisions, it needs no special case to do so:
-    /// `Drop` sets the same flag the normal path does, so a cancelled dispatch
-    /// settles exactly like a returning one.
+    /// and it needs no special case to do so: `Drop` sets the same flag the
+    /// normal path does, so a cancelled dispatch settles exactly like a
+    /// returning one.
     ///
-    /// Catch-up runs far past any bound a previous revision would have
-    /// installed before the abort.
+    /// Catch-up runs far past any height bound a fence could have installed
+    /// before the abort.
     #[tokio::test]
     async fn cancelled_dispatch_keeps_its_fence_across_catch_up() {
         let entered = Arc::new(tokio::sync::Barrier::new(2));

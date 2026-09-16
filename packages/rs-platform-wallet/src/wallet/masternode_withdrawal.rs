@@ -389,8 +389,8 @@ impl PlatformWallet {
 /// `expected_hash160`, sign with `signer` at `path` through
 /// [`DerivedKeyIdentitySigner`] (which re-checks the derived key against
 /// `expected_hash160` before emitting a signature), broadcast, and wait for
-/// the proved balance. Error semantics are unchanged from #4451: definitive
-/// rejections stay retryable, ambiguous outcomes are
+/// the proved balance. Error semantics: definitive rejections stay
+/// retryable, ambiguous outcomes are
 /// [`PlatformWalletError::MasternodeWithdrawalUnconfirmed`].
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>(

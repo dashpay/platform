@@ -1,5 +1,5 @@
 use crate::version::drive_versions::drive_address_funds_method_versions::v2::DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V2;
-use crate::version::drive_versions::drive_contract_method_versions::v3::DRIVE_CONTRACT_METHOD_VERSIONS_V3;
+use crate::version::drive_versions::drive_contract_method_versions::v4::DRIVE_CONTRACT_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v4::DRIVE_DOCUMENT_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_group_method_versions::v1::DRIVE_GROUP_METHOD_VERSIONS_V1;
@@ -36,6 +36,12 @@ use grovedb_version::version::v4::GROVE_V4;
 ///   `document_ranked.verify_ranked_top_k_proof`. All are 0 at
 ///   introduction; the ranked grammar itself is gated one layer up by
 ///   `CONTRACT_VERSIONS_V6`'s meta schema v3.
+/// * **Contest restart over orphaned vote trees** — the same V4 table bumps
+///   `insert_contested.add_contested_vote_subtree_for_non_identities_operations`
+///   to 1 so a new contest recreates the abstain or lock vote tree over the
+///   storage an earlier poll's cleanup left behind (it only removed the
+///   trees that received votes) instead of failing with
+///   `CorruptedContractIndexes`.
 ///
 /// Everything else matches `DRIVE_VERSION_V8`.
 pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
@@ -68,7 +74,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
         },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed in v9: v2 index walkers + v1 update walker (shared-prefix aggregate indexes become insertable) and the detect_ranked_mode slot
         vote: DRIVE_VOTE_METHOD_VERSIONS_V2,
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V3, // changed in v8: count-tree-aware contract-insertion cost estimation (v12+ countable/range_countable doctypes)
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V4, // changed in v9: add_contract_to_storage v1 writes the contract version item beside the contract
         fees: DriveFeesMethodVersions { calculate_fee: 0 },
         estimated_costs: DriveEstimatedCostsMethodVersions {
             add_estimation_costs_for_levels_up_to_contract: 0,
@@ -106,6 +112,11 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
         platform_state: DrivePlatformStateMethodVersions {
             fetch_platform_state_bytes: 0,
             store_platform_state_bytes: 0,
+            fetch_platform_state_recent_bytes: 0,
+            store_platform_state_recent_bytes: 0,
+            fetch_platform_state_entries_bytes: 0,
+            store_platform_state_entry_bytes: 0,
+            delete_platform_state_entry: 0,
         },
         fetch: DriveFetchMethodVersions { fetch_elements: 0 },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {

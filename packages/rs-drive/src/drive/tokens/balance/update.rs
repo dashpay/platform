@@ -619,14 +619,14 @@ mod tests {
                     _,
                     _,
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::SumItem(refund_amount, None),
                         },
                         ..
                     }),
                     ..,
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::SumItem(other_refund_amount, None),
                         },
                         ..
@@ -715,13 +715,13 @@ mod tests {
                     _,
                     _,
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::SumItem(refund_amount, None),
                         },
                     ..
                     }),
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
@@ -790,7 +790,7 @@ mod tests {
                     _,
                     _,
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
@@ -845,7 +845,7 @@ mod tests {
             assert!(matches!(
                 drive_operations[..],
                 [_, LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                    op: GroveOp::Replace {
+                    op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                         element: Element::SumItem(balance, None),
                     },
                     ..
@@ -904,13 +904,13 @@ mod tests {
                 [
                     _,
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::SumItem(balance, None),
                         },
                         ..
                     }),
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..

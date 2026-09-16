@@ -224,6 +224,20 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Local-only and idempotent: an existing payment entry under the
     /// txid is never overwritten.
+    ///
+    /// # Errors
+    ///
+    /// Every persister read here — the txid enumeration and each record —
+    /// reports as [`PlatformWalletError::PersisterLoad`], carrying the
+    /// backend's own retry classification.
+    ///
+    /// Transient tx-record read failures leave the scan incomplete, so the
+    /// guard stays unstamped and the next sweep retries. A permanent one is
+    /// reported rather than deferred — retrying it every sweep would never
+    /// succeed and never be reported — but only after the pass finishes: the
+    /// records that ARE readable are still reconstructed, and the first
+    /// permanent failure surfaces on the way out. A failed enumeration has no
+    /// pass to finish and returns immediately.
     pub async fn reconcile_sent_payments_from_tx_history(
         &self,
     ) -> Result<usize, PlatformWalletError> {
@@ -295,9 +309,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return Ok(0);
         }
 
-        let Some(listed) = self.persister.list_wallet_core_txids().map_err(|e| {
-            PlatformWalletError::Persistence(format!("failed to enumerate wallet txids: {e}"))
-        })?
+        let Some(listed) = self
+            .persister
+            .list_wallet_core_txids()
+            .map_err(PlatformWalletError::from_load_failure)?
         else {
             // The backend does not index wallet-scoped transaction history
             // (e.g. the Android vtable leaves the enumeration callbacks
@@ -402,12 +417,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let mut incomplete_scan = false;
         let txid_count = listed.len();
         let mut funded: Vec<FundedTx> = Vec::new();
+        // Reported once when this sweep ends, however it ends.
+        let mut transient_misses = crate::wallet::persister::TransientMissTally::default();
+        // The first permanent read failure, surfaced only once the pass has
+        // finished. Aborting here would throw away every record already read.
+        let mut permanent_read_failure: Option<crate::changeset::PersistenceError> = None;
         for entry in listed {
             if !entry.spends_wallet_input {
                 continue;
             }
             let txid = entry.txid;
-            match self.persister.get_core_tx_record(&txid) {
+            // TODO(host-transient-read-classification): preserve host record-read errors;
+            // FFI currently maps every nonzero callback status to Ok(None).
+            match self
+                .persister
+                .get_core_tx_record_or_transient_miss(&txid, &mut transient_misses)
+            {
                 Ok(Some(record)) => {
                     // Walk the decoded transaction's outputs, NOT
                     // `record.output_details`. Records handed back by
@@ -427,6 +452,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             .collect(),
                     });
                 }
+                // Not readable yet, or a transient failure read as a miss.
+                // Both mean: retry on the next sweep.
                 Ok(None) => {
                     incomplete_scan = true;
                     tracing::debug!(
@@ -434,13 +461,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         "reconcile_sent_payments_from_tx_history: listed tx record unavailable; will retry next sweep"
                     );
                 }
+                // A permanent failure will not fix itself, so deferring it
+                // re-runs the whole sweep on every sync forever. Keep the first
+                // one and report it after the pass: one unreadable row must not
+                // void the reconstruction of every readable one.
                 Err(e) => {
                     incomplete_scan = true;
-                    tracing::warn!(
-                        error = %e,
-                        %txid,
-                        "reconcile_sent_payments_from_tx_history: tx-record read failed; will retry next sweep"
-                    );
+                    permanent_read_failure.get_or_insert(e);
                 }
             }
         }
@@ -647,6 +674,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     .insert(window.contact, table_digest);
             }
         }
+        if let Some(e) = permanent_read_failure {
+            return Err(PlatformWalletError::from_load_failure(e));
+        }
         Ok(recorded)
     }
 
@@ -670,6 +700,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// retried on the next sweep.
     ///
     /// Returns the number of entries confirmed this pass.
+    ///
+    /// # Errors
+    ///
+    /// Transient persistence read failures are deferred to the next sweep;
+    /// permanent ones return [`PlatformWalletError::PersisterLoad`] once the
+    /// sweep has finished, so an unreadable record costs only its own
+    /// confirmation and not every other pending payment's.
     pub async fn reconcile_sent_payments(&self) -> Result<usize, PlatformWalletError> {
         use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
 
@@ -697,19 +734,27 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
 
         let mut confirmed = 0usize;
+        // Reported once when this sweep ends, however it ends.
+        let mut transient_misses = crate::wallet::persister::TransientMissTally::default();
+        // The first permanent read failure, surfaced after the sweep so the
+        // other pending payments still get their chance to confirm.
+        let mut permanent_read_failure: Option<crate::changeset::PersistenceError> = None;
         for (_owner, txid_str) in pending {
             let Ok(txid) = txid_str.parse::<dashcore::Txid>() else {
                 continue;
             };
-            let record = match self.persister.get_core_tx_record(&txid) {
+            // A transient failure reads as a miss, so both are the same
+            // "not final yet, look again next sweep" outcome.
+            // TODO(host-transient-read-classification): preserve host record-read errors;
+            // FFI currently maps every nonzero callback status to Ok(None).
+            let record = match self
+                .persister
+                .get_core_tx_record_or_transient_miss(&txid, &mut transient_misses)
+            {
                 Ok(Some(record)) => record,
                 Ok(None) => continue,
                 Err(e) => {
-                    tracing::warn!(
-                        error = %e,
-                        txid = %txid_str,
-                        "reconcile_sent_payments: tx-record read failed; will retry next sweep"
-                    );
+                    permanent_read_failure.get_or_insert(e);
                     continue;
                 }
             };
@@ -730,6 +775,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )
             .await;
             confirmed += 1;
+        }
+        if let Some(e) = permanent_read_failure {
+            return Err(PlatformWalletError::from_load_failure(e));
         }
         Ok(confirmed)
     }
@@ -1218,17 +1266,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
             let current_height = info.core_wallet.synced_height();
 
-            // Pool the same funding set as a plain send (#4329): BIP44 +
-            // BIP32 + every DashPay receiving account. Pinning this path to
-            // BIP44 alone was the reason a wallet whose balance had moved into
+            // Pool the same funding set as a plain send: BIP44 + BIP32 +
+            // every DashPay receiving account. Pinning this path to BIP44
+            // alone would make a wallet whose balance has moved into
             // contact-receiving accounts hit "Insufficient funds" on a screen
-            // showing plenty — the exact symptom #4329 fixed for the core send
-            // path, which this path never picked up (it only took that PR's
-            // `set_funding` → `add_funding` rename).
+            // showing plenty.
             //
             // Order is load-bearing: BIP44 is offered first, and the builder
             // takes the change address from the first funding source, so
-            // change keeps returning to BIP44 as before. CoinJoin stays out by
+            // change keeps returning to BIP44. CoinJoin stays out by
             // construction — spending mixed outputs alongside transparent ones
             // links them and undoes the mixing — and so do the contact
             // *external* accounts, which hold the counterparty's xpub and no
@@ -1239,7 +1285,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .add_output(&payment_address, amount_duffs);
 
             // Derivation paths for every offered UTXO, since the signer closure
-            // below can no longer resolve them from one account.
+            // below cannot resolve them from one account.
             let mut funding_paths: std::collections::HashMap<
                 dashcore::Address,
                 key_wallet::bip32::DerivationPath,
@@ -1373,8 +1419,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // this very input, finds no fence on it, passes its own copy of the
             // check above, and completes — after which THIS future resumes and
             // puts its already-signed transaction on the wire against an input
-            // reassigned to another payment (`dashpay/platform#4309`, review
-            // round 7).
+            // reassigned to another payment.
             //
             // So the pin is installed under the guard that just proved the
             // reservation is ours, making check-and-pin one atomic step, and it
@@ -1432,8 +1477,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // The pin installed under the build guard is held across this await —
         // that is the whole point of it — and settled on the way out. Only a
         // definitive rejection releases the inputs; every other outcome leaves
-        // the pending-spend fence standing until the wallet observes the spend
-        // (`dashpay/platform#4309`). A cancellation or unwind inside `broadcast`
+        // the pending-spend fence standing until the wallet observes the spend.
+        // A cancellation or unwind inside `broadcast`
         // reaches neither arm and settles as pending through
         // `InBroadcastPin::drop`, which is the conservative direction.
         let broadcast_result = match self.broadcaster.broadcast(&tx).await {
@@ -1452,25 +1497,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 // fence inputs of a transaction proven never sent — a fence no
                 // observed spend could ever clear, held for the manager's
                 // lifetime since the pending phase carries no deadline by
-                // design (`dashpay/platform#4309`).
+                // design.
                 let mut in_broadcast_pin = in_broadcast_pin;
                 in_broadcast_pin.settle_released_on_drop();
                 //
                 // ORDER MATTERS — the cleanup runs FIRST, under the still-live
-                // fence, and only then does the pin come down
-                // (`dashpay/platform#4309`, review round 8). The cleanup is an
+                // fence, and only then does the pin come down. The cleanup is an
                 // `.await`: it must re-acquire the wallet-manager read lock, and
                 // on this path it carries NO reservation token, so it performs an
                 // unconditional `release_reservation`. Releasing the fence first
-                // opened a window in which this input was neither fenced nor —
-                // once catch-up had swept the build's reservation — reserved. A
-                // build already queued on the manager write lock could take it in
-                // that window, pass the now-absent conflict check, and drop the
-                // lock with its external signer still pending (finalized builds
-                // install no pin until broadcast); the unconditional cleanup then
-                // deleted THAT build's newer reservation, and a second
-                // finalization could reserve and sign the same input — two live
-                // conflicting handles.
+                // would open a window in which this input is neither fenced nor
+                // — once catch-up has swept the build's reservation — reserved.
+                // A build already queued on the manager write lock could take it
+                // in that window, pass the now-absent conflict check, and drop
+                // the lock with its external signer still pending (finalized
+                // builds install no pin until broadcast); the unconditional
+                // cleanup would then delete THAT build's newer reservation, and
+                // a second finalization could reserve and sign the same input —
+                // two live conflicting handles.
                 //
                 // With the fence held across the cleanup there is no such window:
                 // a queued build that runs first meets the fence and rolls back
@@ -1643,12 +1687,13 @@ mod tests {
     use dpp::prelude::Identifier;
     use key_wallet::account::account_collection::DashpayAccountKey;
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
 
     use crate::changeset::{
-        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        ClientStartState, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
+        PlatformWalletPersistence,
     };
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler};
@@ -1698,6 +1743,11 @@ mod tests {
                 key_wallet::managed_account::transaction_record::TransactionRecord,
             >,
         >,
+        /// `Some(kind)` fails every `get_core_tx_record` with that class.
+        read_error_kind: Mutex<Option<PersistenceErrorKind>>,
+        /// Txids whose `get_core_tx_record` fails permanently while the rest
+        /// of the table stays readable — a single corrupt row.
+        permanently_unreadable: Mutex<std::collections::BTreeSet<dashcore::Txid>>,
         /// Txids the enumeration lists but `get_core_tx_record` answers
         /// `Ok(None)` for — the FFI shape for "row exists, record not
         /// available yet" (missing bytes, undecodable, pending InstantSend).
@@ -1746,6 +1796,18 @@ mod tests {
             PersistenceError,
         > {
             *self.get_core_tx_record_calls.lock().unwrap() += 1;
+            if let Some(kind) = *self.read_error_kind.lock().unwrap() {
+                return Err(PersistenceError::backend_with_kind(
+                    kind,
+                    "simulated tx-record read failure",
+                ));
+            }
+            if self.permanently_unreadable.lock().unwrap().contains(txid) {
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Fatal,
+                    "simulated permanently unreadable tx record",
+                ));
+            }
             if self.listed_but_unavailable.lock().unwrap().contains(txid) {
                 return Ok(None);
             }
@@ -1880,8 +1942,7 @@ mod tests {
             Arc::clone(&persister),
             handler,
         ));
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet = manager
             .create_wallet_from_seed_bytes(
@@ -1913,8 +1974,7 @@ mod tests {
             Arc::clone(&persister),
             handler,
         ));
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet = manager
             .create_wallet_from_seed_bytes(
@@ -1949,8 +2009,7 @@ mod tests {
             Arc::clone(&persister),
             handler,
         ));
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet = manager
             .create_wallet_from_seed_bytes(
@@ -1976,7 +2035,7 @@ mod tests {
         owner: &Identifier,
         contact: &Identifier,
     ) -> key_wallet::bip32::ExtendedPubKey {
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let wallet = key_wallet::wallet::Wallet::from_seed_bytes(
@@ -2596,8 +2655,7 @@ mod tests {
             Arc::clone(&persister),
             handler,
         ));
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet = manager
             .create_wallet_from_seed_bytes(
@@ -3584,6 +3642,26 @@ mod tests {
             0,
             "reconcile must be idempotent"
         );
+
+        *persister.read_error_kind.lock().unwrap() = Some(PersistenceErrorKind::Transient);
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments()
+                .await
+                .expect("transient read failure must wait for the next sweep"),
+            0
+        );
+
+        *persister.read_error_kind.lock().unwrap() = Some(PersistenceErrorKind::Fatal);
+        let err = iw
+            .dashpay()
+            .reconcile_sent_payments()
+            .await
+            .expect_err("permanent read failure must abort the reconcile sweep");
+        assert!(matches!(
+            err,
+            PlatformWalletError::PersisterLoad(ref source) if !source.is_transient()
+        ));
     }
 
     #[tokio::test]
@@ -3661,6 +3739,162 @@ mod tests {
                 .expect("second pass"),
             0,
             "reconstruction must be idempotent"
+        );
+    }
+
+    /// Only a transient failure folds into "incomplete, retry next time" — the
+    /// distinction stops a permanently unreadable store from silently
+    /// re-running the whole sweep on every dashpay sync.
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_surfaces_permanent_read_failures() {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+        let contact_addresses = install_external_account(&manager, wallet_id, owner, contact).await;
+        let change_address = first_standard_wallet_address(&manager, wallet_id).await;
+        let record = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(123, BlockHash::all_zeros(), 0)),
+            vec![
+                (contact_addresses[0].clone(), 25_000, OutputRole::Sent),
+                (change_address, 90_000, OutputRole::Change),
+            ],
+        );
+        persister
+            .records
+            .lock()
+            .unwrap()
+            .insert(record.txid, record);
+
+        // Transient: the sweep defers, exactly as before.
+        *persister.read_error_kind.lock().unwrap() = Some(PersistenceErrorKind::Transient);
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("a transient read failure must wait for the next sweep"),
+            0
+        );
+
+        // Permanent: the sweep reports it as a failed read.
+        *persister.read_error_kind.lock().unwrap() = Some(PersistenceErrorKind::Fatal);
+        let err = iw
+            .dashpay()
+            .reconcile_sent_payments_from_tx_history()
+            .await
+            .expect_err("a permanent read failure must surface, not loop forever");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::PersisterLoad(ref source) if !source.is_transient()
+            ),
+            "expected a permanent PersisterLoad, got {err:?}"
+        );
+    }
+
+    /// One permanently unreadable row costs only its own reconstruction.
+    ///
+    /// Returning from inside the collection loop threw away every record read
+    /// before it AND the whole matching phase, so a single corrupt row
+    /// suppressed the wallet's entire `Sent` history — on every sweep, forever.
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_reconstructs_around_an_unreadable_record() {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+        let contact_addresses = install_external_account(&manager, wallet_id, owner, contact).await;
+        let change_address = first_standard_wallet_address(&manager, wallet_id).await;
+
+        let readable = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(123, BlockHash::all_zeros(), 0)),
+            vec![
+                (contact_addresses[0].clone(), 25_000, OutputRole::Sent),
+                (change_address.clone(), 90_000, OutputRole::Change),
+            ],
+        );
+        let corrupt = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(124, BlockHash::all_zeros(), 0)),
+            vec![
+                (contact_addresses[1].clone(), 30_000, OutputRole::Sent),
+                (change_address, 80_000, OutputRole::Change),
+            ],
+        );
+        let readable_txid = readable.txid;
+        let corrupt_txid = corrupt.txid;
+        assert_ne!(readable_txid, corrupt_txid, "the rows must be distinct");
+        {
+            let mut records = persister.records.lock().unwrap();
+            records.insert(readable_txid, readable);
+            records.insert(corrupt_txid, corrupt);
+        }
+        persister
+            .permanently_unreadable
+            .lock()
+            .unwrap()
+            .insert(corrupt_txid);
+
+        let err = iw
+            .dashpay()
+            .reconcile_sent_payments_from_tx_history()
+            .await
+            .expect_err("a permanent read failure must still be reported");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::PersisterLoad(ref source) if !source.is_transient()
+            ),
+            "expected a permanent PersisterLoad, got {err:?}"
+        );
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        let payments = &info
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("managed")
+            .dashpay()
+            .payments;
+        assert!(
+            payments.contains_key(&readable_txid.to_string()),
+            "the readable record must still be reconstructed: one unreadable row \
+             may not void the rest of the sweep"
+        );
+        assert!(
+            !payments.contains_key(&corrupt_txid.to_string()),
+            "the unreadable record has nothing to reconstruct from"
         );
     }
 
@@ -4772,7 +5006,7 @@ mod tests {
         let shared_key = [0x55u8; 32];
         let iv = [0x11u8; 16];
         let compact = {
-            let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
                 .expect("mnemonic")
                 .to_seed("");
             let w = key_wallet::wallet::Wallet::from_seed_bytes(
@@ -5078,8 +5312,7 @@ mod tests {
 
         // The signer's seed (the faithful test stand-in derives from it).
         let seed = {
-            let mnemonic =
-                Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+            let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
             mnemonic.to_seed("")
         };
 
@@ -5223,7 +5456,7 @@ mod tests {
 
         let watched = Identifier::from([0x42; 32]);
         let contact = Identifier::from([0x22; 32]);
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
 
@@ -5286,7 +5519,7 @@ mod tests {
     /// * It pins the deliberate mixed-failure policy change: purpose-rejected
     ///   on our side wins, and the entry stays recoverable.
     ///
-    /// Drained twice, because the cost this PR removes is per sweep, not once.
+    /// Drained twice, because the cost avoided is per sweep, not once.
     #[tokio::test]
     async fn unaccepted_recipient_purpose_never_fetches_and_stays_recoverable() {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
@@ -5350,7 +5583,7 @@ mod tests {
             Arc::clone(&persister),
             handler,
         ));
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let wallet_id = manager
@@ -5495,7 +5728,7 @@ mod tests {
         }
 
         let provider = SeedCryptoProvider::from_seed(
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            Mnemonic::from_phrase(TEST_MNEMONIC)
                 .expect("valid mnemonic")
                 .to_seed(""),
             Network::Testnet,
@@ -5571,7 +5804,7 @@ mod tests {
             )
             .expect("auth path at the legacy key id");
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
@@ -5718,7 +5951,7 @@ mod tests {
             Arc::clone(&persister),
             handler,
         ));
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let wallet_id = manager
@@ -5949,7 +6182,7 @@ mod tests {
         let (manager, _persister, wallet_id) = make_watch_only_wallet().await;
         let iw = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = iw.identity();
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("mnemonic")
             .to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
@@ -6057,7 +6290,7 @@ mod tests {
         // so the send fails AFTER the drain has run.
         let pay_contact = Identifier::from([0x22; 32]);
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
 
@@ -6162,7 +6395,7 @@ mod tests {
         let shared_key = [0x55u8; 32];
         let iv = [0x11u8; 16];
         let compact = {
-            let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
                 .expect("mnemonic")
                 .to_seed("");
             let w = key_wallet::wallet::Wallet::from_seed_bytes(
@@ -6195,7 +6428,7 @@ mod tests {
             .await
             .expect("register external account");
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
@@ -6223,13 +6456,11 @@ mod tests {
     }
 
     /// A contact payment funds from a DashPay **receiving** account when BIP44
-    /// alone cannot cover it — the pooled funding set a plain send has used
-    /// since #4329.
+    /// alone cannot cover it — the same pooled funding set a plain send uses.
     ///
-    /// This path kept its BIP44-only pin through that PR (it took only the
-    /// `set_funding` → `add_funding` rename), so a wallet whose balance had
-    /// moved into contact-receiving accounts saw the funds in its total and got
-    /// `Insufficient funds` trying to pay a contact. Reported from mainnet
+    /// A BIP44-only pin on this path lets a wallet whose balance has moved
+    /// into contact-receiving accounts see the funds in its total and still
+    /// get `Insufficient funds` trying to pay a contact. Observed on mainnet
     /// after 8 successful contact payments drained BIP44: `available 41505,
     /// required 100000`, on a screen showing plenty.
     ///
@@ -6273,7 +6504,7 @@ mod tests {
 
         // The sending side, so the external-account lookup passes.
         let shared_key = [0x55u8; 32];
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("mnemonic")
             .to_seed("");
         let compact = {
@@ -6358,7 +6589,7 @@ mod tests {
         let shared_key = [0x55u8; 32];
         let iv = [0x11u8; 16];
         let compact = {
-            let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
                 .expect("mnemonic")
                 .to_seed("");
             let w = key_wallet::wallet::Wallet::from_seed_bytes(
@@ -6391,7 +6622,7 @@ mod tests {
             .await
             .expect("register external account");
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
@@ -6472,7 +6703,7 @@ mod tests {
             .expect("register receiving account");
         plant_receival_utxo(&manager, wallet_id, owner_id, contact_id, 0xC2, 60_000).await;
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
@@ -6520,7 +6751,7 @@ mod tests {
         // broadcast (and its preceding used-flip persist).
         fund_bip44_account_0(&manager, wallet_id, 0xB7, 120_000).await;
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
@@ -6695,7 +6926,7 @@ mod tests {
         let shared_key = [0x55u8; 32];
         let iv = [0x11u8; 16];
         let compact = {
-            let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
                 .expect("mnemonic")
                 .to_seed("");
             let w = key_wallet::wallet::Wallet::from_seed_bytes(
@@ -6738,7 +6969,7 @@ mod tests {
         // broadcast (a funding-build failure returns before it).
         fund_bip44_account_0(&manager, wallet_id, 0xA1, 60_000).await;
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
@@ -6784,14 +7015,13 @@ mod tests {
         }
     }
 
-    /// `dashpay/platform#4309`, REVIEW ROUND 7 — THE CONTACT-PAYMENT BUILD'S
-    /// OWN FENCE.
+    /// THE CONTACT-PAYMENT BUILD'S OWN FENCE.
     ///
-    /// The build's conflict check stopped it from CONSUMING an input another
-    /// dispatch had fenced. It did not fence the selection it had just made, so
+    /// The build's conflict check stops it from CONSUMING an input another
+    /// dispatch has fenced. Without a fence on the selection it has just made,
     /// the stretch after the manager write guard drops — the durability store
-    /// and `broadcaster.broadcast(&tx)` — ran with no pin at all. This test
-    /// drives the resulting race end to end:
+    /// and `broadcaster.broadcast(&tx)` — would run with no pin at all. This
+    /// test drives the resulting race end to end:
     ///
     /// 1. A contact payment builds, signs, releases the guard, and SUSPENDS
     ///    inside the broadcaster before submission.
@@ -6802,10 +7032,10 @@ mod tests {
     ///    UTXO, so it selects the same input the parked transaction already
     ///    spends.
     ///
-    /// Before the fix step 3 SUCCEEDED — it found no fence (the parked build
-    /// never installed one), passed its own conflict check, and returned a
-    /// second signed transaction against the same input, which the resuming
-    /// original then raced on the wire. It must now be refused.
+    /// Without the build's own fence step 3 would SUCCEED — it would find no
+    /// fence (the parked build installed none), pass its own conflict check,
+    /// and return a second signed transaction against the same input, which
+    /// the resuming original then races on the wire. It must be refused.
     #[tokio::test]
     async fn a_suspended_contact_payment_fences_its_inputs_against_a_competing_build() {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
@@ -6824,7 +7054,7 @@ mod tests {
             vout: 0,
         };
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
@@ -6881,20 +7111,20 @@ mod tests {
         );
     }
 
-    /// `dashpay/platform#4309`, REVIEW ROUND 8 — THE FENCE MUST OUTLIVE THE
-    /// REJECTED-BROADCAST RESERVATION CLEANUP.
+    /// THE FENCE MUST OUTLIVE THE REJECTED-BROADCAST RESERVATION CLEANUP.
     ///
-    /// The definitive-rejection arm used to drop the fence FIRST and only then
-    /// await `release_reservation_after_rejected_broadcast`. That cleanup is
-    /// token-less on this path, so it performs an UNCONDITIONAL
-    /// `release_reservation`, and it can only run after re-acquiring the
-    /// wallet-manager read lock — an await. In that window the input was
-    /// neither fenced nor (once catch-up had swept it) reserved, so a build
-    /// already queued on the manager write lock could reserve it, pass the
-    /// now-absent conflict check, and drop the lock with an external signer
-    /// still pending. The unconditional cleanup then deleted THAT build's
-    /// newer reservation, leaving the outpoint free for a second finalization
-    /// to reserve and sign — two fresh conflicting handles over one input.
+    /// If the definitive-rejection arm dropped the fence FIRST and only then
+    /// awaited `release_reservation_after_rejected_broadcast`, there would be
+    /// a window: that cleanup is token-less on this path, so it performs an
+    /// UNCONDITIONAL `release_reservation`, and it can only run after
+    /// re-acquiring the wallet-manager read lock — an await. In that window
+    /// the input is neither fenced nor (once catch-up has swept it) reserved,
+    /// so a build already queued on the manager write lock could reserve it,
+    /// pass the now-absent conflict check, and drop the lock with an external
+    /// signer still pending. The unconditional cleanup would then delete THAT
+    /// build's newer reservation, leaving the outpoint free for a second
+    /// finalization to reserve and sign — two fresh conflicting handles over
+    /// one input.
     ///
     /// The invariant that closes it: the fence stays up THROUGH the cleanup and
     /// comes down only after it. A queued build that runs first then meets a
@@ -6903,10 +7133,10 @@ mod tests {
     /// Driven here by holding the wallet-manager WRITE lock across the
     /// broadcaster's rejection. The cleanup needs the READ lock, so it cannot
     /// complete while the test holds the write side — which makes the assertion
-    /// an invariant rather than a race: with the fix the fence CANNOT be gone at
-    /// this observation point, because the only code that releases it runs after
-    /// a cleanup that is provably still blocked. Before the fix the release ran
-    /// synchronously the instant `broadcast` returned, so the fence was gone.
+    /// an invariant rather than a race: the fence CANNOT be gone at this
+    /// observation point, because the only code that releases it runs after a
+    /// cleanup that is provably still blocked. A release that ran synchronously
+    /// the instant `broadcast` returned would already have taken it down.
     #[tokio::test]
     async fn the_contact_send_fence_outlives_its_rejected_broadcast_reservation_cleanup() {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
@@ -6923,7 +7153,7 @@ mod tests {
             vout: 0,
         };
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
@@ -6985,28 +7215,29 @@ mod tests {
         );
     }
 
-    /// `dashpay/platform#4309` — CANCELLATION DURING THE REJECTED-BROADCAST
-    /// CLEANUP MUST NOT LEAVE A PERMANENT FENCE.
+    /// CANCELLATION DURING THE REJECTED-BROADCAST CLEANUP MUST NOT LEAVE A
+    /// PERMANENT FENCE.
     ///
     /// After `broadcast()` definitively returns `Rejected`, the send awaits
     /// the token-less reservation cleanup under the still-raised fence (the
-    /// round-8 ordering, proven by the sibling test above). The pin used to
-    /// carry its DEFAULT pending-on-drop verdict through that await, so
-    /// cancelling the send future while the cleanup waited on the manager
-    /// lock dropped the pin as `Pending`: a pending-spend fence over the
-    /// inputs of a transaction PROVEN never sent. No spend of it can ever be
-    /// observed, and the pending phase has no deadline by design, so the
-    /// outpoint stayed fenced for the manager's lifetime.
+    /// ordering proven by the sibling test above). Were the pin to carry its
+    /// DEFAULT pending-on-drop verdict through that await, cancelling the send
+    /// future while the cleanup waits on the manager lock would drop the pin
+    /// as `Pending`: a pending-spend fence over the inputs of a transaction
+    /// PROVEN never sent. No spend of it can ever be observed, and the pending
+    /// phase has no deadline by design, so the outpoint would stay fenced for
+    /// the manager's lifetime.
     ///
-    /// The rejection verdict is now recorded on the pin synchronously, before
-    /// the cleanup's first await gives cancellation its first opportunity, so
-    /// a drop ANYWHERE afterwards settles the fence as released.
+    /// The rejection verdict is therefore recorded on the pin synchronously,
+    /// before the cleanup's first await gives cancellation its first
+    /// opportunity, so a drop ANYWHERE afterwards settles the fence as
+    /// released.
     ///
     /// The test drives the send future by hand (noop waker) so every step is
     /// deterministic: park it inside the broadcaster, pin the cleanup behind
     /// a held manager WRITE lock, poll the rejection through to the cleanup
-    /// await, then DROP the future there — the cancellation the finding
-    /// describes — and require the outpoint to be left unfenced.
+    /// await, then DROP the future there — the cancellation described above
+    /// — and require the outpoint to be left unfenced.
     #[tokio::test]
     async fn cancelling_the_rejected_broadcast_cleanup_leaves_no_fence() {
         use std::task::{Context, Poll, Waker};
@@ -7034,7 +7265,7 @@ mod tests {
             vout: 0,
         };
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
@@ -7331,7 +7562,7 @@ mod tests {
         let shared_key = [0x55u8; 32];
         let iv = [0x11u8; 16];
         let compact = {
-            let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
                 .expect("mnemonic")
                 .to_seed("");
             let w = key_wallet::wallet::Wallet::from_seed_bytes(
@@ -7391,7 +7622,7 @@ mod tests {
         let funded = amount + 526;
         fund_bip44_account_0(&manager, wallet_id, 0xA1, funded).await;
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
@@ -7446,7 +7677,7 @@ mod tests {
         let funded = amount + 1226;
         fund_bip44_account_0(&manager, wallet_id, 0xB2, funded).await;
 
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);

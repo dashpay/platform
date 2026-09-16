@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -22,9 +23,10 @@ impl<C> Platform<C> {
             .store_platform_state
         {
             0 => self.store_platform_state_v0(state, transaction, platform_version),
+            1 => self.store_platform_state_v1(state, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "store_platform_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

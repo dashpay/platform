@@ -32,6 +32,34 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldPreserveShieldedIdentityDebitPendingWithoutClaimingSubmission() {
+        val message = "Identity has an unresolved shielded debit; " +
+            "this request was not started. Wait for shielded sync"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 55, message)
+        val mapped = DashSdkError.fromNative(native)
+
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedIdentityDebitPending)
+        assertEquals(message, mapped.message)
+        assertEquals(native, mapped.cause)
+        assertFalse("wait for the earlier debit to reconcile before retrying", mapped.isRetryable)
+    }
+
+    @Test
+    fun shouldPreserveRecoveryErrorTypesWithoutRetryingBlindly() {
+        for ((code, expected) in mapOf(
+            56 to DashSdkError.PlatformWallet.ShieldedRecoveryCorrupted::class,
+            57 to DashSdkError.PlatformWallet.ShieldedRecoveryKeysRequired::class,
+        )) {
+            val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, "record unreadable")
+            val mapped = DashSdkError.fromNative(native)
+            assertEquals(expected, mapped::class)
+            assertEquals("record unreadable", mapped.message)
+            assertEquals(native, mapped.cause)
+            assertFalse(mapped.isRetryable)
+        }
+    }
+
+    @Test
     fun unknownNativeCodesFallBackToInternalError() {
         // A code in the rs-sdk-ffi range (< the platform-wallet offset) with
         // no dedicated mapping stays an InternalError.
@@ -215,6 +243,71 @@ class DashSdkErrorTest {
             "unchanged amount must not be retried without refreshing preflight",
             mapped.isRetryable,
         )
+    }
+
+    @Test
+    fun persisterCodes49Through54MapTypedWithCorrectRetryability() {
+        // The whole point of the persister block: a host must be able to tell
+        // a busy store from a corrupt one WITHOUT parsing the message. Before
+        // these codes all three wallet variants flattened to ErrorUnknown and
+        // the classification died at the boundary.
+        val cases = listOf(
+            Triple(49, DashSdkError.PlatformWallet.PersisterLoadTransient::class.java, true),
+            Triple(50, DashSdkError.PlatformWallet.PersisterLoadFatal::class.java, false),
+            Triple(51, DashSdkError.PlatformWallet.PersisterStoreTransient::class.java, true),
+            Triple(52, DashSdkError.PlatformWallet.PersisterStoreFatal::class.java, false),
+            Triple(53, DashSdkError.PlatformWallet.PersisterStoreConstraint::class.java, false),
+            Triple(54, DashSdkError.PlatformWallet.PersisterRestore::class.java, false),
+        )
+
+        for ((code, type, retryable) in cases) {
+            val message = "persistence backend error from code $code"
+            val mapped = DashSdkError.fromNative(
+                DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, message),
+            )
+
+            assertTrue(
+                "code $code must not fall through to Generic",
+                type.isInstance(mapped),
+            )
+            assertEquals(message, mapped.message)
+            assertEquals(
+                "code $code retryability is part of its contract",
+                retryable,
+                mapped.isRetryable,
+            )
+        }
+    }
+
+    @Test
+    fun persisterCodesSplitUserMessageFromDiagnosticMessage() {
+        // The native message is a nested Rust error chain naming the
+        // operation, the backend classification and the store's phrasing. It
+        // must stay on `message` for logs and must never be what a UI shows;
+        // `userMessage` is the displayable half, and a failed write must not
+        // be described to a person as a failed read.
+        val chain = "failed to persist wallet registration changeset: " +
+            "persistence backend error (Transient): database is locked"
+        val busy = "The wallet database is busy. Try again in a moment."
+        val unreadable = "The wallet data could not be read and may need to be restored."
+        val unsaved = "The wallet data could not be saved and may need to be restored."
+        val expected = mapOf(
+            49 to busy,
+            50 to unreadable,
+            51 to busy,
+            52 to unsaved,
+            53 to unsaved,
+            54 to unreadable,
+        )
+
+        expected.forEach { (code, userMessage) ->
+            val mapped = DashSdkError.fromNative(
+                DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, chain),
+            )
+
+            assertEquals("code $code user text", userMessage, mapped.userMessage)
+            assertEquals("code $code must keep the chain for logs", chain, mapped.message)
+        }
     }
 
     @Test

@@ -1,3 +1,266 @@
+## [4.2.0-dev.11](https://github.com/dashpay/platform/compare/v4.2.0-dev.10...v4.2.0-dev.11) (2026-09-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** prove data contract versions without the contracts via a PV14 version item (#4749)
+* **dpp:** reject a zero epoch interval for perpetual distributions at registration (#4752)
+* **dpp:** weight evonode reward cycles by the epochs they span, not the step index (#4750)
+* **dpp:** stop epoch-based perpetual distribution claims wrapping their cycle cap (#4747)
+* **drive-abci:** fail expired withdrawals below Core's dust threshold instead of re-signing them forever (#4737)
+
+### Features
+
+* **platform:** add getDataContractsByRange paginated contract enumeration query ([#4733](https://github.com/dashpay/platform/issues/4733))
+* **platform:** add getDataContractsLatestVersions query for cheap contract staleness checks ([#4739](https://github.com/dashpay/platform/issues/4739))
+* **platform:** prove data contract versions without the contracts via a PV14 version item ([#4749](https://github.com/dashpay/platform/issues/4749))
+* **rs-sdk-ffi:** expose getDataContractsByRange to Swift and Kotlin ([#4734](https://github.com/dashpay/platform/issues/4734))
+* **sdk:** seed devnets at protocol version 14 and persist the learned version ([#4735](https://github.com/dashpay/platform/issues/4735))
+* **wasm-sdk:** let apps seed the contracts they already hold ([#4746](https://github.com/dashpay/platform/issues/4746))
+* **wasm-sdk:** persist fetched data contracts and seed the next SDK from them ([#4744](https://github.com/dashpay/platform/issues/4744))
+
+
+### Bug Fixes
+
+* **dpp:** reject a zero epoch interval for perpetual distributions at registration ([#4752](https://github.com/dashpay/platform/issues/4752))
+* **dpp:** stop epoch-based perpetual distribution claims wrapping their cycle cap ([#4747](https://github.com/dashpay/platform/issues/4747))
+* **dpp:** weight evonode reward cycles by the epochs they span, not the step index ([#4750](https://github.com/dashpay/platform/issues/4750))
+* **drive-abci:** fail expired withdrawals below Core's dust threshold instead of re-signing them forever ([#4737](https://github.com/dashpay/platform/issues/4737))
+* **drive-abci:** keep a committed block final when its post-commit checkpoint fails ([#4748](https://github.com/dashpay/platform/issues/4748))
+* **drive:** bump grovedb so a ranking over an unwritten pinned prefix proves an empty page ([#4753](https://github.com/dashpay/platform/issues/4753))
+* **sdk:** leave shielded snapshot retry policy to hosts
+* **swift-sdk:** expose reservation-aware local shielded balance snapshots
+* **swift-sdk:** stop shielded sync before draining snapshots
+* **wallet:** avoid note copies and fence callbacks during shutdown
+* **wallet:** bound shielded snapshots and preserve bind delivery
+* **wallet:** harden local shielded balance snapshots
+* **wallet:** isolate shielded reads and check balance totals
+* **wallet:** recognize scanned shielded ledgers after interrupted restore
+* **wallet:** release lifecycle while waiting for shielded snapshots
+* **wallet:** revoke public native access before shutdown drains
+* **wasm-sdk:** keep the protocol-version store off wasm-bindgen imports natively ([#4743](https://github.com/dashpay/platform/issues/4743))
+
+
+### Tests
+
+* **wallet:** preserve snapshot delivery before wallet deletion
+
+
+### Continuous Integration
+
+* re-pin PR Hygiene ([#4736](https://github.com/dashpay/platform/issues/4736))
+
+## [4.2.0-dev.10](https://github.com/dashpay/platform/compare/v4.2.0-dev.9...v4.2.0-dev.10) (2026-09-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** decode remote input with untrusted bincode and disk loads with trusted decoders (#4625)
+
+### Bug Fixes
+
+* **drive-abci:** bound and deduplicate SpecificKeys identity key requests ([#4724](https://github.com/dashpay/platform/issues/4724))
+* **drive:** scope compound cursor bounds to matching branches ([#4726](https://github.com/dashpay/platform/issues/4726))
+* **drive:** verify composite page and lookup components under their lifted limits ([#4729](https://github.com/dashpay/platform/issues/4729))
+* **platform:** decode remote input with untrusted bincode and disk loads with trusted decoders ([#4625](https://github.com/dashpay/platform/issues/4625))
+
+
+### Tests
+
+* **dpp:** run deep value serialization tests on a large stack ([#4725](https://github.com/dashpay/platform/issues/4725))
+
+
+### Continuous Integration
+
+* **release:** wait for published npm packages before packing dashmate ([#4727](https://github.com/dashpay/platform/issues/4727))
+
+## [4.2.0-dev.9](https://github.com/dashpay/platform/compare/v4.2.0-dev.8...v4.2.0-dev.9) (2026-09-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** enforce a per-protocol-version minimum GroveDB proof envelope (V1 from v14) (#4701)
+* **platform:** add IdentityTopUpFromShieldedPool state transition (shielded pool to identity) (#4711)
+* **platform:** adopt GroveDB 6.0 with automatic backward references and grovedb-bincode 2.1.0 (#4635)
+* **platform:** halve contested name fee in protocol 14 (#4634)
+* **platform:** add ShieldFromIdentity state transition (identity balance to shielded pool) (#4708)
+* **dpp:** deterministic token distribution math across architectures (#4645)
+* **platform-wallet-storage:** delete removed identities instead of tombstoning (#4496)
+* **sdk:** DocumentQuery struct literals must initialize sub_queries.
+CompositeDocumentQuery from the earlier PR draft is replaced by
+DocumentQuery::with_sub_query and DocumentQuery::with_sub_queries.
+
+### Features
+
+* **dapi:** composite document queries on the getDocuments V1 wire
+* **dashmate:** run a Tor sidecar so Core reaches onion peers and publishes an onion service ([#4622](https://github.com/dashpay/platform/issues/4622))
+* **drive:** composite document queries: a page plus derived sub-queries under one merged proof, closes [#850](https://github.com/dashpay/platform/issues/850)
+* **drive:** time-range index TTL — O(1) flat-drop drainage and ephemeral-bytes fees ([#4581](https://github.com/dashpay/platform/issues/4581))
+* **kotlin-sdk:** expose the drain strategy and the amount it delivers ([#4324](https://github.com/dashpay/platform/issues/4324))
+* **platform-wallet-storage:** embeddable SQLite persistence backend with seedless rehydration ([#3968](https://github.com/dashpay/platform/issues/3968))
+* **platform-wallet:** let a Core build fund from only the inputs it was given, closes [dashpay/rust-dashcore#994](https://github.com/dashpay/rust-dashcore/issues/994)
+* **platform-wallet:** let a Core build fund from only the inputs it was given, closes [#866](https://github.com/dashpay/platform/issues/866) [#974](https://github.com/dashpay/platform/issues/974) [#4406](https://github.com/dashpay/platform/issues/4406)
+* **platform-wallet:** let a Core build fund from only the inputs it was given ([#4548](https://github.com/dashpay/platform/issues/4548))
+* **platform-wallet:** parse a state transition's kind and token-purchase intent
+* **platform-wallet:** price the fee into a pooled send-max figure
+* **platform-wallet:** report the balance a pooled build can actually spend
+* **platform-wallet:** sweep changeset types, FFI seam, and persistence capability bits
+* **platform:** add IdentityTopUpFromShieldedPool state transition (shielded pool to identity) ([#4711](https://github.com/dashpay/platform/issues/4711))
+* **platform:** add ShieldFromIdentity state transition (identity balance to shielded pool) ([#4708](https://github.com/dashpay/platform/issues/4708))
+* **platform:** halve contested name fee in protocol 14 ([#4634](https://github.com/dashpay/platform/issues/4634))
+* **sdk:** composite document queries, the client stack
+* **swift-sdk:** generate the frozen SwiftData schema models, and guard them with real stores ([#4644](https://github.com/dashpay/platform/issues/4644))
+* **wasm-sdk:** composite document queries on the JS surface
+
+
+### Bug Fixes
+
+* **ci:** refresh local discovery after DAPI is ready
+* **dapi:** reject oversized composite queries before processing
+* **dapi:** truthful state sync status, health height field collision, client crash on absent sections ([#4532](https://github.com/dashpay/platform/issues/4532))
+* **dpp:** bound untrusted length prefixes on the proof-verification decode path ([#4629](https://github.com/dashpay/platform/issues/4629))
+* **dpp:** deterministic token distribution math across architectures ([#4645](https://github.com/dashpay/platform/issues/4645))
+* **drive-abci:** bind the instant lock to its transaction on the new asset lock funding routes ([#3](https://github.com/dashpay/platform/issues/3)), closes [dashpay/platform-internal#1](https://github.com/dashpay/platform-internal/issues/1)
+* **drive-abci:** execute a different block at the same height/round instead of serving the stale context, closes [dashpay/tenderdash#1413](https://github.com/dashpay/tenderdash/issues/1413)
+* **drive-abci:** match hashless prepared contexts on full proposal content
+* **drive-abci:** sync mainnet blocks 32326-32329 without crash-restarts ([#4536](https://github.com/dashpay/platform/issues/4536))
+* **drive-abci:** use nanosecond scale for proposal test timestamps
+* **drive:** close the composite review findings
+* **drive:** preserve composite query selections and binding order
+* **drive:** unordered composite lookups inherit the page's direction
+* **platform-wallet-ffi:** look the pooled-balance handle up in the core-wallet table, closes [dashwallet-ios#1107](https://github.com/dashpay/dashwallet-ios/issues/1107)
+* **platform-wallet-ffi:** size the slot gate from the type, not from a reference into the host
+* **platform-wallet-ffi:** tie the slot gate to its field, and stop claiming what the seam does not do
+* **platform-wallet-storage:** delete a swept loser's InstantSend lock even without its record
+* **platform-wallet-storage:** durably apply swept transactions in the SQLite store, closes [rust-dashcore#968](https://github.com/dashpay/rust-dashcore/issues/968)
+* **platform-wallet-storage:** key the sweep hold on the placeholder's shape, not on its link
+* **platform-wallet:** act on swept transactions at the persistence seam ([#4560](https://github.com/dashpay/platform/issues/4560))
+* **platform-wallet:** bound bincode decode size on asset-lock proof bytes ([#4585](https://github.com/dashpay/platform/issues/4585))
+* **platform-wallet:** cap pooled_max_sendable at the standard input limit
+* **platform-wallet:** close the restore path's balance window, and correct what the docs claim
+* **platform-wallet:** dead registration scan, recursive asset-lock read, poller off main ([#4611](https://github.com/dashpay/platform/issues/4611))
+* **platform-wallet:** keep a load rollback to the generation it published
+* **platform-wallet:** keep HIGHEST_DECLARED_BIT alive outside cfg(test)
+* **platform-wallet:** make the pooled send-max figure safe to act on
+* **platform-wallet:** never drop a wallet event on the wallets-map lock, closes [dashpay/platform#4309](https://github.com/dashpay/platform/issues/4309)
+* **platform-wallet:** price the pooled maximum the way coin selection prices it
+* **platform-wallet:** re-seed shield regression fixture for the protocol 14 fee rebalance ([#4489](https://github.com/dashpay/platform/issues/4489))
+* **platform-wallet:** serialize pending crypto writes with identity removal ([#4649](https://github.com/dashpay/platform/issues/4649))
+* **platform-wallet:** typed persister errors with caller-visible retry classification ([#4586](https://github.com/dashpay/platform/issues/4586))
+* **platform-wallet:** wait for SPV transport before resuming asset locks that need broadcast ([#4355](https://github.com/dashpay/platform/issues/4355))
+* **platform:** reject contradictory keep-history document deletes ([#4218](https://github.com/dashpay/platform/issues/4218))
+* **sdk:** enforce a per-protocol-version minimum GroveDB proof envelope (V1 from v14) ([#4701](https://github.com/dashpay/platform/issues/4701))
+* **sdk:** reject plain conversion of composed drive queries
+* **swift-sdk:** act on swept transactions in the SwiftData store ([#4589](https://github.com/dashpay/platform/issues/4589))
+* **swift-sdk:** build the shippable profile by default ([#4371](https://github.com/dashpay/platform/issues/4371))
+* **swift-sdk:** stop born-spent TXO rows at the persistence seam and reconcile the store after a full scan ([#4638](https://github.com/dashpay/platform/issues/4638))
+* **wasm-sdk:** address composite query review feedback
+* **wasm-sdk:** build composite requests with DocumentQuery
+* **wasm-sdk:** seed the contract cache from contract fetches and share in-flight fetches
+
+
+### Performance Improvements
+
+* **drive-abci:** don't create GroveDB checkpoints while replaying history ([#4570](https://github.com/dashpay/platform/issues/4570))
+* **drive-abci:** fetch the next core height's masternode and quorum lists ahead of time ([#4572](https://github.com/dashpay/platform/issues/4572))
+* **drive-abci:** remove historical withdrawal status diagnostic ([#4569](https://github.com/dashpay/platform/issues/4569))
+* **sdk:** reuse connections via sticky address rotation ([#4545](https://github.com/dashpay/platform/issues/4545))
+
+
+### Styles
+
+* rustfmt the new pooled-max-sendable FFI entry point
+
+
+### Code Refactoring
+
+* **drive:** fold DriveChainedDocumentQuery into DriveDocumentQuery
+* **drive:** fold DriveCompositeDocumentQuery into DriveDocumentQuery
+* **platform-wallet-storage:** delete removed identities instead of tombstoning ([#4496](https://github.com/dashpay/platform/issues/4496))
+* **platform-wallet:** drive both funding paths from one account resolver
+* **sdk:** consolidate composite queries into DocumentQuery
+
+
+### Documentation
+
+* **drive:** update ranked dispatcher docs stale since pinned-prefix form
+* **platform-wallet-ffi:** name the reader that actually gates the sweeps slot
+* **platform-wallet-storage:** document V007 and pin the materialised release
+* **platform-wallet:** make comments explain the decision, not the PR history ([#4594](https://github.com/dashpay/platform/issues/4594))
+* **platform:** add coding conventions chapter and refresh versioning chapters ([#4650](https://github.com/dashpay/platform/issues/4650))
+
+
+### Miscellaneous Chores
+
+* adopt the shared PR review policy from dashpay/stale_prs_are_bad ([#4449](https://github.com/dashpay/platform/issues/4449))
+* bump grovedb to 2d95c567 ([#850](https://github.com/dashpay/platform/issues/850) merged: limited branches graft below a shared key), closes [#849](https://github.com/dashpay/platform/issues/849)
+* bump grovedb to 6fc7e1e8 ([#851](https://github.com/dashpay/platform/issues/851) merged: synthesized split bodies keep the inputs' direction), closes [#850](https://github.com/dashpay/platform/issues/850)
+
+
+### Tests
+
+* **dashmate:** use a sentinel wake-up counter the clock cannot collide with ([#4565](https://github.com/dashpay/platform/issues/4565))
+* **dpp:** stabilize distribution evaluator tests ([#4656](https://github.com/dashpay/platform/issues/4656))
+* **drive:** assert the sibling-bound count's derived post
+* **drive:** cover a descending page with a cross-contract and a limited lookup, closes [#851](https://github.com/dashpay/platform/issues/851)
+* **platform-wallet-storage:** make restore exclusion probes conclusive ([#4714](https://github.com/dashpay/platform/issues/4714))
+* **platform-wallet:** cover insert_platform_node_pool_entry and its error paths ([#4628](https://github.com/dashpay/platform/issues/4628))
+* **platform-wallet:** pin pooled_spendable_balance to the funding set
+
+
+### Build System
+
+* make the workspace lockfile vendorable with --locked ([#4631](https://github.com/dashpay/platform/issues/4631))
+* **platform:** adopt GroveDB 6.0 with automatic backward references and grovedb-bincode 2.1.0 ([#4635](https://github.com/dashpay/platform/issues/4635))
+* update rust to 1.98.1 ([#4721](https://github.com/dashpay/platform/issues/4721))
+
+
+### Continuous Integration
+
+* re-pin PR Hygiene ([#4722](https://github.com/dashpay/platform/issues/4722))
+* re-pin PR Hygiene and adopt the suite name ([#4720](https://github.com/dashpay/platform/issues/4720))
+* re-pin the shared review engine and receive review events directly ([#4710](https://github.com/dashpay/platform/issues/4710))
+* re-pin the shared review engine and receive review events directly ([#4713](https://github.com/dashpay/platform/issues/4713))
+* restore Rust dependency security auditing ([#4621](https://github.com/dashpay/platform/issues/4621))
+* run the process_proposal collision regression tests on pull requests
+* verify preinstalled macOS build dependencies ([#4646](https://github.com/dashpay/platform/issues/4646))
+
+## [4.2.0-dev.8](https://github.com/dashpay/platform/compare/v4.2.0-dev.7...v4.2.0-dev.8) (2026-09-02)
+
+
+### Features
+
+* **dapi:** chained document queries on the getDocuments V1 wire ([#4549](https://github.com/dashpay/platform/issues/4549))
+* **dapi:** typed IN_TIME_RANGE operand with BY_START historic window selection ([#4574](https://github.com/dashpay/platform/issues/4574))
+* **drive:** chained document queries — provable semi-join (posts I liked) ([#4547](https://github.com/dashpay/platform/issues/4547))
+* **drive:** ranked windowed top-K — ranked indexes below timeRange buckets, served through time-range selections
+* **platform-wallet:** expose address funding fee estimate
+* **sdk:** chained document queries — ChainedDocuments fetch with composed proof verification ([#4552](https://github.com/dashpay/platform/issues/4552))
+* **swift-sdk:** include critical Swift diagnostics in log exports ([#4544](https://github.com/dashpay/platform/issues/4544))
+* **wasm-sdk:** chained document queries with js-evo-sdk facade and suite coverage ([#4567](https://github.com/dashpay/platform/issues/4567))
+
+
+### Bug Fixes
+
+* **dpp:** surface identifier-typed document properties as base58 in JS ([#4577](https://github.com/dashpay/platform/issues/4577))
+* **platform-wallet:** guard address funding asset locks
+* **platform-wallet:** make asset-lock spends visible to every balance reader ([#4336](https://github.com/dashpay/platform/issues/4336))
+* **platform-wallet:** satisfy address funding clippy lint
+* **platform-wallet:** use dash-spv's own acceptance timeout instead of a 30s override ([#4481](https://github.com/dashpay/platform/issues/4481))
+
+
+### Miscellaneous Chores
+
+* bump grovedb to 33a3ad34 (per-instance query limits) ([#4564](https://github.com/dashpay/platform/issues/4564))
+* bump grovedb to 97250247 (per-instance limit review follow-ups) ([#4566](https://github.com/dashpay/platform/issues/4566))
+
+
+### Tests
+
+* **dashmate:** ignore ANSI in renewal counter assertion
+* **drive-abci:** chained trust-boundary suite — SDK entry points against server proofs ([#4568](https://github.com/dashpay/platform/issues/4568))
+* **platform-suite:** normalize chained cursor identifier
+
 ## [4.2.0-dev.7](https://github.com/dashpay/platform/compare/v4.2.0-dev.6...v4.2.0-dev.7) (2026-08-31)
 
 

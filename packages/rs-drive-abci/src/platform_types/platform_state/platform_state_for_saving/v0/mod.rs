@@ -1,4 +1,5 @@
 use crate::platform_types::masternode::Masternode;
+use crate::platform_types::platform_state::entry_changes::EntryChanges;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSetForSaving;
 use bincode::Encode;
@@ -87,6 +88,11 @@ impl From<PlatformStateForSavingV0> for PlatformState {
                 .into_keys()
                 .map(|epoch_index| (epoch_index, FeeVersion::first()))
                 .collect(),
+            // a state read back from disk has not been written in full since
+            heavy_fields_dirty: true,
+            // this record carried the collections itself, so no entries back it on disk
+            masternode_changes: EntryChanges::all(),
+            validator_set_changes: EntryChanges::all(),
         }
     }
 }

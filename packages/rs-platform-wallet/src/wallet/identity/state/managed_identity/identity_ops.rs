@@ -42,8 +42,8 @@ impl ManagedIdentity {
     /// [`IdentityKeyEntry`] upsert per registered public key on this
     /// identity.
     ///
-    /// Private-key bytes / derivation breadcrumbs no longer ride along
-    /// here — `ManagedIdentity` doesn't carry `key_storage` anymore,
+    /// Private-key bytes / derivation breadcrumbs do not ride along
+    /// here — `ManagedIdentity` carries no `key_storage`,
     /// so every emitted entry has `wallet_id == None` and
     /// `derivation_indices == None`. Callers that need the
     /// breadcrumb (e.g. registration / discovery) emit a dedicated

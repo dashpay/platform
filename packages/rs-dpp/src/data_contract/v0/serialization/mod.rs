@@ -172,7 +172,7 @@ mod tests {
     use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::Identity;
     use crate::serialization::{
-        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
         PlatformSerializableWithPlatformVersion,
     };
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -192,7 +192,7 @@ mod tests {
             .serialize_to_bytes_with_platform_version(LATEST_PLATFORM_VERSION)
             .expect("expected to serialize");
         let recovered_contract =
-            DataContract::versioned_deserialize(&bytes, false, platform_version)
+            DataContract::versioned_deserialize_untrusted(&bytes, false, platform_version)
                 .expect("expected to deserialize state transition");
         assert_eq!(contract, recovered_contract);
     }

@@ -1,9 +1,8 @@
 //! Periodic platform-address balance sync coordinator.
 //!
-//! Mirrors what iOS used to do in `PlatformBalanceSyncService`: run
-//! [`PlatformAddressWallet::sync_balances`] for every registered wallet
-//! on a fixed cadence, and emit a summary event so UI and persistence
-//! layers can react.
+//! Runs [`PlatformAddressWallet::sync_balances`] for every registered
+//! wallet on a fixed cadence, and emits a summary event so UI and
+//! persistence layers can react.
 //!
 //! Not auto-started. Call [`PlatformAddressSyncManager::start`] once the
 //! wallets are registered and the SPV runtime is up.
@@ -15,12 +14,11 @@ use std::sync::{
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use arc_swap::ArcSwapOption;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use dash_sdk::platform::address_sync::{AddressSyncConfig, AddressSyncResult};
 use key_wallet::PlatformP2PKHAddress;
 
 use crate::wallet::PlatformAddressTag;
-use tokio::sync::RwLock;
 
 use dash_async::ThreadRegistry;
 
@@ -33,7 +31,7 @@ use crate::manager::{
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
-/// Default cadence — matches the 15s BLAST loop we previously ran in Swift.
+/// Default cadence.
 pub const DEFAULT_SYNC_INTERVAL_SECS: u64 = 15;
 
 /// Outcome of syncing a single wallet in a pass.
@@ -98,7 +96,7 @@ impl PlatformAddressSyncSummary {
 /// `sync_now` again returns an empty summary immediately (the caller can
 /// check `is_syncing()` to distinguish).
 pub struct PlatformAddressSyncManager {
-    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_manager: Arc<PlatformEventManager>,
     /// Shared registry that owns this loop's lifecycle: it spawns the
     /// OS thread, owns its cancellation token, and joins it at shutdown.
@@ -127,7 +125,7 @@ pub struct PlatformAddressSyncManager {
 
 impl PlatformAddressSyncManager {
     pub fn new(
-        wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+        wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
         event_manager: Arc<PlatformEventManager>,
         registry: Arc<ThreadRegistry<WalletWorker>>,
     ) -> Self {
@@ -357,7 +355,7 @@ impl PlatformAddressSyncManager {
         }
 
         let snapshot: Vec<(WalletId, Arc<PlatformWallet>)> = {
-            let wallets = self.wallets.read().await;
+            let wallets = self.wallets.load();
             wallets.iter().map(|(id, w)| (*id, Arc::clone(w))).collect()
         };
 
@@ -454,7 +452,7 @@ impl PlatformAddressSyncManager {
         }
 
         let wallet = {
-            let wallets = self.wallets.read().await;
+            let wallets = self.wallets.load();
             wallets.get(wallet_id).cloned()
         };
         let wallet =
@@ -514,7 +512,7 @@ mod tests {
     /// but still drives the full flag → gate → completion-event protocol
     /// we're testing here.
     fn make_manager() -> (Arc<PlatformAddressSyncManager>, Arc<CompletionCounter>) {
-        let wallets = Arc::new(RwLock::new(BTreeMap::new()));
+        let wallets = Arc::new(ArcSwap::from_pointee(BTreeMap::new()));
         let counter = Arc::new(CompletionCounter::new());
         let event_manager = Arc::new(PlatformEventManager::new(vec![
             Arc::clone(&counter) as Arc<dyn PlatformEventHandler>
@@ -719,10 +717,10 @@ mod tests {
     }
 
     /// `sync_wallet` is a second entry point into the same per-wallet
-    /// state, so it must observe the same admission as `sync_now` — it
-    /// used to bypass both the `is_syncing` slot and the gate entirely,
-    /// which let a per-wallet sync take a wallet's provider lock and
-    /// persist a fresh watermark right after a reset cleared it.
+    /// state, so it must observe the same admission as `sync_now` —
+    /// bypassing the `is_syncing` slot or the gate would let a per-wallet
+    /// sync take a wallet's provider lock and persist a fresh watermark
+    /// right after a reset cleared it.
     #[tokio::test]
     async fn sync_wallet_is_refused_while_admission_is_shut() {
         let (mgr, _counter) = make_manager();

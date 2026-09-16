@@ -87,6 +87,43 @@ mod tests {
         (asset_lock_proof, pk.to_vec())
     }
 
+    /// Creates an instant asset lock proof whose instant lock authenticates one transaction while a
+    /// completely unrelated asset lock transaction is attached to the proof.
+    ///
+    /// This is the shape an attacker would submit: the quorum signature is genuine, but it commits
+    /// to the txid of a transaction that is not the one supplying the credited output. Returns the
+    /// proof together with the one-time private key of the *attached* transaction, which is the key
+    /// the transition signature has to be made with for the attack to get past signature checks.
+    fn create_instant_asset_lock_proof_with_mismatched_transaction(
+        rng: &mut StdRng,
+    ) -> (AssetLockProof, Vec<u8>) {
+        use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+
+        let (locked_proof, _locked_pk) = create_asset_lock_proof_with_key(rng);
+        let (attached_proof, attached_pk) = create_asset_lock_proof_with_key(rng);
+
+        let (AssetLockProof::Instant(locked), AssetLockProof::Instant(attached)) =
+            (locked_proof, attached_proof)
+        else {
+            panic!("the fixture should produce instant asset lock proofs");
+        };
+
+        assert_ne!(
+            locked.instant_lock().txid,
+            attached.transaction().txid(),
+            "the two fixture transactions must differ for this to be a mismatch"
+        );
+
+        (
+            AssetLockProof::Instant(InstantAssetLockProof::new(
+                locked.instant_lock().clone(),
+                attached.transaction().clone(),
+                attached.output_index(),
+            )),
+            attached_pk,
+        )
+    }
+
     /// Creates a chain asset lock proof with transaction and private key.
     /// Returns (AssetLockProof, private_key_bytes, Transaction).
     /// The Transaction can be used to set up Core RPC mock expectations.
@@ -972,6 +1009,96 @@ mod tests {
                 [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::BasicError(BasicError::OutputBelowMinimumError(_))
                 )]
+            );
+        }
+
+        /// A genuine instant lock paired with an unrelated asset lock transaction must not credit
+        /// anything: the quorum only signs the lock's own txid, so without the transaction binding
+        /// check the attached transaction's output would be minted into credits out of thin air.
+        #[tokio::test]
+        async fn test_instant_lock_for_a_different_transaction_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let mut rng = StdRng::seed_from_u64(9911);
+            let (asset_lock_proof, attached_pk) =
+                create_instant_asset_lock_proof_with_mismatched_transaction(&mut rng);
+
+            let explicit_output_address = create_platform_address(1);
+            let remainder_output_address = create_platform_address(2);
+
+            let inputs = BTreeMap::new();
+            let mut outputs = BTreeMap::new();
+            outputs.insert(explicit_output_address, Some(dash_to_credits!(0.5)));
+            outputs.insert(remainder_output_address, None);
+
+            // Signed with the one-time key of the attached transaction, which is the key the
+            // credited output actually pays to.
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &attached_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            )
+            .await;
+
+            let serialized_transition = transition.serialize_to_bytes().expect("should serialize");
+
+            // The mempool must reject it on first-time check as well.
+            assert!(!check_tx_is_valid(
+                &platform,
+                &serialized_transition,
+                platform_version
+            ));
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::IdentityAssetLockProofLockedTransactionMismatchError(_)
+                    )
+                )]
+            );
+
+            // Nothing was credited.
+            assert_eq!(
+                get_address_balance(&platform, explicit_output_address, &transaction),
+                0
+            );
+            assert_eq!(
+                get_address_balance(&platform, remainder_output_address, &transaction),
+                0
             );
         }
     }

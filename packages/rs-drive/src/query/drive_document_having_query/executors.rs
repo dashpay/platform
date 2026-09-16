@@ -12,6 +12,7 @@ use super::super::drive_document_ranked_query::RankedEntry;
 use super::{resolve_having_query_for_mode, DocumentHavingMode};
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::query::ResolvedTimeRange;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
@@ -19,12 +20,14 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// One page of groups matching a having bound, read without a proof.
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_document_having_range_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         mode: &DocumentHavingMode,
+        resolved_time_ranges: &[ResolvedTimeRange],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<RankedEntry>, Error> {
@@ -35,6 +38,7 @@ impl Drive {
             document_type_name,
             indexes,
             mode,
+            resolved_time_ranges,
             platform_version,
         )?;
         having_query.execute_range_no_proof(self, transaction, platform_version)
@@ -46,12 +50,14 @@ impl Drive {
     /// [`DriveDocumentHavingQuery::verify_having_range_proof`](crate::query::DriveDocumentHavingQuery::verify_having_range_proof),
     /// reconstructing the same query from the same contract — which is
     /// why index resolution is shared with the no-proof executor.
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_document_having_range_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         mode: &DocumentHavingMode,
+        resolved_time_ranges: &[ResolvedTimeRange],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -62,6 +68,7 @@ impl Drive {
             document_type_name,
             indexes,
             mode,
+            resolved_time_ranges,
             platform_version,
         )?;
         having_query.execute_range_with_proof(self, transaction, platform_version)

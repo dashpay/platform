@@ -6,7 +6,7 @@ use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +23,9 @@ pub mod v0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 pub use fields::*;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 
 pub mod methods;
 pub use methods::*;
@@ -44,12 +46,14 @@ pub type TimestampMillis = u64;
     Deserialize,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     From,
     Hash,
     Ord,
     PartialOrd,
+    DecodeUntrusted,
 )]
 #[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
@@ -214,7 +218,7 @@ mod tests {
     use crate::identity::identity_public_key::contract_bounds::ContractBounds;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
     use platform_value::{BinaryData, Identifier};
     use platform_version::version::LATEST_PLATFORM_VERSION;
     use rand::SeedableRng;
@@ -233,8 +237,10 @@ mod tests {
             .into();
         let serialized = key.serialize_to_bytes().expect("expected to serialize key");
         let unserialized: IdentityPublicKey =
-            PlatformDeserializable::deserialize_from_bytes(serialized.as_slice())
-                .expect("expected to deserialize key");
+            PlatformDeserializableUntrusted::deserialize_from_bytes_untrusted(
+                serialized.as_slice(),
+            )
+            .expect("expected to deserialize key");
         assert_eq!(key, unserialized)
     }
 

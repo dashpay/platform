@@ -21,7 +21,9 @@
 //! network enforces.
 
 use crate::error::WasmSdkError;
-use crate::queries::document::{json_to_platform_value, parse_where_clause};
+use crate::queries::document::{
+    json_to_platform_value, parse_time_range_clause, parse_where_clause,
+};
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
@@ -201,6 +203,21 @@ export interface DocumentsRankedQuery {
    * @default []
    */
   where?: DocumentsIndexPin[];
+
+  /**
+   * Optional time-range bucket selection — at most one entry, pinning the
+   * covering bucketed index's window (same shape and semantics as
+   * `DocumentsQuery.timeRange`). `"newest"`/`"oldest"` rank the current
+   * window; `"byStart"` ranks any window, current or historic, named by
+   * its grid-aligned start in milliseconds.
+   * @default []
+   */
+  timeRange?: {
+    field: string;
+    selector: "newest" | "oldest" | "byStart";
+    startMs?: number;
+    grid?: { range: number; step: number; phase?: number };
+  }[];
 }
 
 /**
@@ -294,6 +311,21 @@ export interface DocumentsHavingQuery {
    * @default []
    */
   where?: DocumentsIndexPin[];
+
+  /**
+   * Optional time-range bucket selection — at most one entry, pinning the
+   * covering bucketed index's window (same shape and semantics as
+   * `DocumentsQuery.timeRange`). `"newest"`/`"oldest"` rank the current
+   * window; `"byStart"` ranks any window, current or historic, named by
+   * its grid-aligned start in milliseconds.
+   * @default []
+   */
+  timeRange?: {
+    field: string;
+    selector: "newest" | "oldest" | "byStart";
+    startMs?: number;
+    grid?: { range: number; step: number; phase?: number };
+  }[];
 }
 
 /** Which axis a returned aggregate value came from. */
@@ -499,6 +531,10 @@ struct DocumentsRankedQueryInput {
     /// `deny_unknown_fields` still holds).
     #[serde(rename = "where", default)]
     where_clauses: Option<Vec<JsonValue>>,
+    /// Time-range bucket selections — same shape as `DocumentsQuery`'s
+    /// `timeRange` member (`{ field, selector, startMs?, grid? }`).
+    #[serde(rename = "timeRange", default)]
+    time_range: Option<Vec<JsonValue>>,
 }
 
 #[derive(Deserialize)]
@@ -514,6 +550,10 @@ struct DocumentsHavingQueryInput {
     direction: Option<String>,
     #[serde(rename = "where", default)]
     where_clauses: Option<Vec<JsonValue>>,
+    /// Time-range bucket selections — same shape as `DocumentsQuery`'s
+    /// `timeRange` member (`{ field, selector, startMs?, grid? }`).
+    #[serde(rename = "timeRange", default)]
+    time_range: Option<Vec<JsonValue>>,
 }
 
 /// Translate the JS aggregate union into rs-drive's `SELECT` projection.
@@ -737,6 +777,26 @@ fn assert_having_shape(
     })
 }
 
+/// Attach the (at most one) time-range selection to an already-built
+/// query. The selection stays pending — the server resolves it from
+/// committed block time, the proof verifier from the signed metadata
+/// time (or, for `byStart`, from the query itself) — and its resolved
+/// bucket-start equality becomes the pin on the covering bucketed
+/// index's first level.
+fn apply_time_range_selections(
+    mut query: DocumentQuery,
+    entries: Option<&[JsonValue]>,
+) -> Result<DocumentQuery, WasmSdkError> {
+    for entry in entries.unwrap_or(&[]) {
+        let (field, selector, grid) = parse_time_range_clause(entry)?;
+        query = match grid {
+            None => query.with_time_range(field, selector),
+            Some(grid) => query.with_time_range_grid(field, selector, grid),
+        };
+    }
+    Ok(query)
+}
+
 /// Turn a `where` list into pins on an already-built query.
 fn apply_index_pins(
     mut query: DocumentQuery,
@@ -786,6 +846,7 @@ fn apply_ranked_shape(
     }
 
     let query = apply_index_pins(query, input.where_clauses.as_deref())?;
+    let query = apply_time_range_selections(query, input.time_range.as_deref())?;
 
     assert_ranked_shape(&query, platform_version)?;
     Ok(query)
@@ -824,6 +885,7 @@ fn apply_having_shape(
     }
 
     let query = apply_index_pins(query, input.where_clauses.as_deref())?;
+    let query = apply_time_range_selections(query, input.time_range.as_deref())?;
 
     assert_having_shape(&query, platform_version)?;
     Ok(query)
@@ -1498,6 +1560,7 @@ mod tests {
         where_clauses: Option<Vec<JsonValue>>,
     ) -> DocumentsRankedQueryInput {
         DocumentsRankedQueryInput {
+            time_range: None,
             data_contract_id: any_contract_id(),
             document_type_name: DOC_TYPE.to_string(),
             group_by: group_by.to_string(),
@@ -1516,6 +1579,7 @@ mod tests {
         direction: Option<&str>,
     ) -> DocumentsHavingQueryInput {
         DocumentsHavingQueryInput {
+            time_range: None,
             data_contract_id: any_contract_id(),
             document_type_name: DOC_TYPE.to_string(),
             group_by: GROUP_BY.to_string(),

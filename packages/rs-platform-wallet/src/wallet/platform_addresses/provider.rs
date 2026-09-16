@@ -1390,8 +1390,8 @@ mod tests {
 
     /// `sync_finished` must drop an address proven absent this pass from
     /// the committed `found` map so it stops seeding the next pass and
-    /// `current_balances()` no longer yields it. This is the core of the
-    /// stale-balance-after-chain-reset fix.
+    /// `current_balances()` no longer yields it. This is what keeps a stale
+    /// balance from surviving a chain reset.
     #[tokio::test]
     async fn sync_finished_removes_absent_from_committed_found() {
         let addr = p2pkh(1);
@@ -1775,11 +1775,11 @@ mod tests {
     /// ADDR-09, credit side: a committed credit is pinned at the proof
     /// height (`AddressFunds::as_of_height`), which is what stops the
     /// sync's delta replay from re-applying the on-chain `AddToCredits`
-    /// on top of the just-committed absolute — so the seam no longer
-    /// needs to invalidate the incremental watermark (the old gate,
-    /// which forced a full rescan yet could not protect the rescan
-    /// itself from the same replay). The fast incremental cadence is
-    /// preserved for every flow.
+    /// on top of the just-committed absolute — so the seam does not
+    /// need to invalidate the incremental watermark (a forced full
+    /// rescan could not protect the rescan itself from the same
+    /// replay). The fast incremental cadence is preserved for every
+    /// flow.
     #[tokio::test]
     async fn reconcile_pins_committed_credit_and_keeps_watermark() {
         use dash_sdk::query_types::AddressInfo;

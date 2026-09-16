@@ -16,7 +16,9 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
 /// `record_total_credits_history_for_withdrawals` (`Some(0)`), the per-block record of the total
 /// credits in Platform that the day-lagged daily withdrawal limit reads, and bumps
 /// `cleanup_expired_locks_of_withdrawal_amounts` to 1 so the per-block cleanup also prunes the
-/// expired entries of the credit inflows sum tree the net daily withdrawal limit reads.
+/// expired entries of the credit inflows sum tree the net daily withdrawal limit reads, and
+/// bumps `rebroadcast_expired_withdrawal_documents` to 2 so an expired withdrawal whose
+/// payout is below Core's dust threshold is marked FAILED instead of re-signed forever.
 /// Everything else matches `DRIVE_ABCI_METHOD_VERSIONS_V9`.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
@@ -91,7 +93,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         fetch_transactions_block_inclusion_status: 0,
         pool_withdrawals_into_transactions_queue: 1,
         update_broadcasted_withdrawal_statuses: 0,
-        rebroadcast_expired_withdrawal_documents: 1,
+        rebroadcast_expired_withdrawal_documents: 2, // changed in v14: an expired withdrawal whose payout is Core dust is marked FAILED instead of re-signed
         append_signatures_and_broadcast_withdrawal_transactions: 0,
         cleanup_expired_locks_of_withdrawal_amounts: 1, // changed in v14: also prunes expired entries of the credit inflows sum tree
         record_credit_inflows_for_withdrawals: Some(0), // new in v14: the block's credit mints recorded as an inflow for the net daily withdrawal limit
@@ -138,7 +140,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         prune_shielded_pool_anchors: Some(0),
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
-        fetch_platform_state: 0,
-        store_platform_state: 0,
+        fetch_platform_state: 1, // changed: reads structure 1 records together with their masternode and validator set entries
+        store_platform_state: 1, // changed: writes the base record every block and only the masternode and validator set entries that changed
     },
 };

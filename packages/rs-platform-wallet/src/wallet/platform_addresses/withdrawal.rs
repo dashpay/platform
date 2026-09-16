@@ -1040,11 +1040,10 @@ mod tests {
     // the fee-source input at `balance − fee`. These tests pin that invariant
     // — "every per-input requested amount ≤ that input's balance" — so a
     // future change to `reserve_withdrawal_fee_on_largest_input` can't
-    // reintroduce an over-request. The doubled-balance ADDR-04 repro was a
-    // WRONG INPUT to this function (a stale/doubled cached balance was passed
-    // in); `plan_withdrawal` now sources balances from the same on-chain
-    // `AddressInfo::fetch_many` proof the spend re-checks, so the values fed
-    // here are the authoritative ones.
+    // reintroduce an over-request. A stale/doubled cached balance would be a
+    // WRONG INPUT to this function; `plan_withdrawal` sources balances from
+    // the same on-chain `AddressInfo::fetch_many` proof the spend re-checks,
+    // so the values fed here are the authoritative ones.
 
     /// Assert the plan is spendable: for every input, the planned withdraw
     /// amount is ≤ the balance that input was selected with. `balances` maps
@@ -1209,13 +1208,12 @@ mod tests {
 /// SDK's `AddressInfo::fetch_many` proof query returns (the on-chain truth the
 /// spend re-checks), NOT from the wallet's cached `address_credit_balance`.
 ///
-/// This is the behavior the ADDR-04 fix actually changes; the pure-function
-/// tests above can't reach it because they call
-/// `reserve_withdrawal_fee_on_largest_input` directly with balances already
-/// chosen. Here we deliberately make the cache DISAGREE with the chain (a
-/// doubled/stale cached balance for one address) and assert the plan follows
-/// the chain. A future regression that reintroduced a cache read (e.g.
-/// `.unwrap_or_else(|| cached_balance)`) would fail this test.
+/// This is the behavior the pure-function tests above can't reach, because
+/// they call `reserve_withdrawal_fee_on_largest_input` directly with balances
+/// already chosen. Here we deliberately make the cache DISAGREE with the
+/// chain (a doubled/stale cached balance for one address) and assert the plan
+/// follows the chain. A future regression that reintroduced a cache read
+/// (e.g. `.unwrap_or_else(|| cached_balance)`) would fail this test.
 #[cfg(test)]
 mod plan_withdrawal_seam_tests {
     use std::collections::BTreeSet;

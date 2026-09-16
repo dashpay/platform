@@ -102,6 +102,8 @@ jobs:
               - packages/js-dash-sdk/**
               - packages/wallet-lib/**
               - packages/wasm-sdk/**
+              - packages/wasm-dpp2/**
+              - packages/js-evo-sdk/**
               - packages/dapi/.env.example
               - packages/rs-drive-abci/.env.local
               - .github/actions/aws_ecr_login/**
@@ -305,6 +307,7 @@ jobs:
           filters: |
             swift-sdk-changed:
               - .github/workflows/swift-sdk-build.yml
+              - .github/workflows/tests.yml
               - packages/swift-sdk/**
               - packages/dapi-grpc/**
               - packages/dashpay-contract/**
@@ -474,6 +477,26 @@ jobs:
       && needs.rs-wallet-tests.result != 'failure' }}
     secrets: inherit
     uses: ./.github/workflows/swift-sdk-build.yml
+
+  swift-sdk-frozen-schema:
+    name: Swift SDK frozen schema check
+    needs: changes
+    if: ${{ needs.changes.outputs.swift-sdk-changed == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          # The generator rebuilds every frozen SwiftData model from the
+          # commits its FREEZES table names, so the check needs history.
+          fetch-depth: 0
+
+      - name: Check the frozen SwiftData models match FREEZES
+        run: python3 packages/swift-sdk/scripts/freeze_schema_models.py --check
+
+      - name: Test the freeze generator
+        run: python3 -m unittest discover -s packages/swift-sdk/scripts -p 'test_*.py' -v
 
   js-packages:
     name: JS packages

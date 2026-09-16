@@ -202,6 +202,9 @@ chapter in The Dash Platform Book.
   and pull requests
 - See [AGENTS.md](AGENTS.md) for a concise contributor guide covering repo
   structure, commands, style, and tests
+- Read The Dash Platform Book in [book/](book/) for the design philosophy and
+  conventions of the Rust codebase, starting with
+  [Coding Conventions](book/src/contributing/coding-conventions.md)
 - File issues and feature requests at
   [platform/issues](https://github.com/dashpay/platform/issues)
 

@@ -1631,6 +1631,7 @@ impl Index {
                     let mut range_seconds: Option<u64> = None;
                     let mut step_seconds: Option<u64> = None;
                     let mut phase_seconds: u64 = 0;
+                    let mut ttl_seconds: Option<u64> = None;
 
                     for (tr_key_value, tr_value) in time_range_map {
                         let tr_key = tr_key_value
@@ -1668,6 +1669,13 @@ impl Index {
                                     )
                                 })?;
                             }
+                            "ttl" => {
+                                ttl_seconds = Some(tr_value.to_integer().map_err(|_| {
+                                    DataContractError::ValueWrongType(
+                                        "timeRange.ttl should be an integer".to_string(),
+                                    )
+                                })?);
+                            }
                             other => {
                                 return Err(DataContractError::InvalidContractStructure(format!(
                                     "unexpected timeRange field: {}",
@@ -1698,6 +1706,7 @@ impl Index {
                         range_seconds,
                         step_seconds,
                         phase_seconds,
+                        ttl_seconds,
                     });
                 }
                 // `terminal` is guarded the same way as the ranking keywords
@@ -2127,24 +2136,67 @@ impl Index {
                     "a timeRange index cannot be a contested resource".to_string(),
                 ));
             }
-            // The ranked query surface excludes bucketed indexes — a document
-            // is stored once per containing bucket, so ranking groups keyed by
-            // bucket starts would score each document `overlap_factor` times.
-            // Since no ranked query can ever select such an index, allowing
-            // the flags would only make the contract pay for ranked
-            // secondaries that are unreachable; reject the combination until
-            // bucket-aware ranked semantics are deliberately designed.
-            if ranked_countable
+            // Ranked axes compose with bucketing BELOW the bucketed level:
+            // a ranked level's per-prefix secondaries live inside their
+            // prefix's subtree, and a bucket start is just another prefix
+            // value — within any single bucket's subtree a document appears
+            // exactly once, so per-window rankings are exact regardless of
+            // window overlap (a document in several windows raises each
+            // window's own honest aggregate; that is the meaning of
+            // overlapping windows, not double counting). Ranked queries pin
+            // the bucket the same way they pin every other leading property
+            // — through a resolved time-range selection.
+            //
+            // What has no designed semantics yet is ranking the bucketed
+            // level ITSELF — ordering the windows by their aggregates. That
+            // needs its own routing shape (no prefix pin above the first
+            // level, a grid named by the query), so exactly that is still
+            // rejected, in its two spellings:
+            // - every ranked flag ranks the terminal level, so on a
+            //   single-property bucketed index the only rankable level IS
+            //   the bucketed one;
+            // - an `at` chain naming the transform's source ranks the
+            //   bucketed level explicitly.
+            let any_ranked_axis = ranked_countable
                 || !ranked_countable_at.is_empty()
                 || ranked_summable
-                || ranked_averageable
-            {
+                || ranked_averageable;
+            if any_ranked_axis && index_properties.len() == 1 {
                 return Err(DataContractError::InvalidContractStructure(
-                    "a timeRange index cannot be ranked (rankedCountable / rankedSummable / \
-                     rankedAverageable): ranked queries have no time-bucket semantics, so the \
-                     ranked secondaries would be maintained but never servable"
+                    "a single-property timeRange index cannot be ranked: its only level is \
+                     the bucketed one, and ranking the windows themselves (ordering bucket \
+                     starts by their aggregates) is not supported yet — add the property to \
+                     rank below the bucketed timestamp, e.g. [timestamp, hashtag]"
                         .to_string(),
                 ));
+            }
+            if ranked_countable_at.iter().any(|at| at == &transform.source) {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "rankedCountable.at cannot name \"{}\", a timeRange index's bucketed \
+                     source: ranking the windows themselves (ordering bucket starts by \
+                     their aggregates) is not supported yet — rank the levels below the \
+                     bucketed timestamp instead",
+                    transform.source
+                )));
+            }
+            // A TTL below the window length would expire a bucket that can
+            // still receive writes: `$createdAt` is consensus-assigned from
+            // block time, so a document entering the grid lands in every
+            // window containing *now* — the oldest of which started up to
+            // `range` ago. `ttl >= range` is the invariant that lets the
+            // cleanup, the delete walker's expired-entry skip and the
+            // `oldest` selector all assume a live window can never be
+            // expired. The upper bound (SystemLimits) is checked at the
+            // document-type level, where the platform version is in scope.
+            if let Some(ttl_seconds) = transform.ttl_seconds {
+                if ttl_seconds < transform.range_seconds {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "timeRange.ttl ({} seconds) must be at least the window length \
+                         ({} seconds): a window still able to receive consensus-timestamped \
+                         writes can never be expired",
+                        ttl_seconds, transform.range_seconds
+                    )));
+                }
             }
             // Same reasoning as the ranked `nullSearchable` rejection above,
             // plus a write-path invariant: the insert, delete and update
@@ -2171,6 +2223,7 @@ impl Index {
                 ("range", transform.range_seconds),
                 ("step", transform.step_seconds),
                 ("phase", transform.phase_seconds),
+                ("ttl", transform.ttl_seconds.unwrap_or(0)),
             ] {
                 if seconds > u64::MAX / 1_000 {
                     return Err(DataContractError::InvalidContractStructure(format!(
@@ -3288,6 +3341,7 @@ mod tests {
             range_seconds: 86_400,
             step_seconds: 86_400,
             phase_seconds: 0,
+            ttl_seconds: None,
         });
         index
     }
@@ -4976,7 +5030,36 @@ mod tests {
     fn test_index_try_from_ranked_countable_at_on_time_range_index_rejected() {
         let mut index_map = prefix_ranked_index_map(ranked_at("$createdAt"));
         // Make the fixture a [$createdAt, postId] compound so `at` names the
-        // bucketed leading property.
+        // bucketed leading property — ranking the windows themselves, the one
+        // spelling still deferred.
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("$createdAt".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        index_map.push((Value::Text("timeRange".to_string()), time_range_entry()));
+        let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
+        let msg = format!(
+            "{:?}",
+            result.expect_err("at naming the bucketed source must be rejected")
+        );
+        assert!(
+            msg.contains("bucketed source"),
+            "error must state that the bucketed level itself cannot rank; got {msg}"
+        );
+    }
+
+    /// `ttl` parses into the transform; a ttl below the window length is
+    /// structurally rejected (a window still able to receive
+    /// consensus-timestamped writes can never expire).
+    #[test]
+    fn test_index_try_from_time_range_ttl_parses_and_bounds_below() {
+        let mut index_map = prefix_ranked_index_map(Value::Bool(true));
         index_map[0].1 = Value::Array(vec![
             Value::Map(vec![(
                 Value::Text("$createdAt".to_string()),
@@ -4995,17 +5078,130 @@ mod tests {
                     Value::Text("$createdAt".to_string()),
                 ),
                 (Value::Text("range".to_string()), Value::U64(21_600)),
-                (Value::Text("step".to_string()), Value::U64(7_200)),
+                (Value::Text("step".to_string()), Value::U64(21_600)),
+                (Value::Text("ttl".to_string()), Value::U64(86_400)),
             ]),
         ));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("a ttl of at least the range parses");
+        assert_eq!(
+            index.time_range.expect("transform present").ttl_seconds,
+            Some(86_400)
+        );
+
+        let mut index_map = prefix_ranked_index_map(Value::Bool(true));
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("$createdAt".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        index_map.push((
+            Value::Text("timeRange".to_string()),
+            Value::Map(vec![
+                (
+                    Value::Text("on".to_string()),
+                    Value::Text("$createdAt".to_string()),
+                ),
+                (Value::Text("range".to_string()), Value::U64(21_600)),
+                (Value::Text("step".to_string()), Value::U64(21_600)),
+                (Value::Text("ttl".to_string()), Value::U64(21_599)),
+            ]),
+        ));
+        let msg = format!(
+            "{:?}",
+            Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+                .expect_err("a ttl below the window length must be rejected")
+        );
+        assert!(
+            msg.contains("must be at least the window length"),
+            "expected the lower-bound rejection, got {msg}"
+        );
+    }
+
+    fn time_range_entry() -> Value {
+        Value::Map(vec![
+            (
+                Value::Text("on".to_string()),
+                Value::Text("$createdAt".to_string()),
+            ),
+            (Value::Text("range".to_string()), Value::U64(21_600)),
+            (Value::Text("step".to_string()), Value::U64(7_200)),
+        ])
+    }
+
+    /// Ranked levels BELOW the bucketed one are legal (any grid — overlap
+    /// included): within one bucket's subtree a document appears once, so
+    /// per-window rankings are exact. Both the at-form on a middle level
+    /// and the canonicalized terminal form must parse.
+    #[test]
+    fn test_index_try_from_ranked_below_bucketed_level_parses() {
+        // [$createdAt, hashtag, postId] with at: "hashtag" — per-window top
+        // hashtags.
+        let mut index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("$createdAt".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("hashtag".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        index_map.push((Value::Text("timeRange".to_string()), time_range_entry()));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("ranked below the bucketed level must parse");
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
+        assert!(index.time_range.is_some());
+
+        // [$createdAt, postId] with the terminal boolean — per-window top
+        // posts.
+        let mut index_map = prefix_ranked_index_map(Value::Bool(true));
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("$createdAt".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        index_map.push((Value::Text("timeRange".to_string()), time_range_entry()));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the terminal ranked form below a bucketed level must parse");
+        assert!(index.ranked_countable);
+        assert!(index.time_range.is_some());
+    }
+
+    /// On a single-property bucketed index the only level IS the bucketed
+    /// one, so every ranked flag would rank the windows themselves — still
+    /// deferred, rejected with its own message.
+    #[test]
+    fn test_index_try_from_single_property_time_range_ranked_rejected() {
+        let mut index_map = prefix_ranked_index_map(Value::Bool(true));
+        index_map[0].1 = Value::Array(vec![Value::Map(vec![(
+            Value::Text("$createdAt".to_string()),
+            Value::Text("asc".to_string()),
+        )])]);
+        index_map.push((Value::Text("timeRange".to_string()), time_range_entry()));
         let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
         let msg = format!(
             "{:?}",
-            result.expect_err("prefix form on a timeRange index must be rejected")
+            result.expect_err("a single-property bucketed ranked index must be rejected")
         );
         assert!(
-            msg.contains("timeRange") && msg.contains("ranked"),
-            "error must state the timeRange/ranked conflict; got {msg}"
+            msg.contains("single-property timeRange"),
+            "error must name the single-property case; got {msg}"
         );
     }
 

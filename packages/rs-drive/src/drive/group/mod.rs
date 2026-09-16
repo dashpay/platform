@@ -32,7 +32,7 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
-    use dpp::serialization::PlatformDeserializable;
+    use dpp::serialization::PlatformDeserializableTrusted;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
@@ -522,7 +522,7 @@ mod tests {
             .fetch_action_id_info_keep_serialized(contract_id, 0, action_id, None, platform_version)
             .expect("expected to fetch serialized action info");
 
-        let deserialized = GroupAction::deserialize_from_bytes(&serialized)
+        let deserialized = GroupAction::deserialize_from_bytes_trusted(&serialized)
             .expect("expected to deserialize action info");
 
         let expected = GroupAction::V0(GroupActionV0 {

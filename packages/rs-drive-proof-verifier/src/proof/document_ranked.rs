@@ -26,7 +26,7 @@
 //! contract, which this crate does not carry.
 
 use crate::error::MapGroveDbError;
-use crate::verify::verify_tenderdash_proof;
+use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
     ranked_entry, result_data, RankedEntry as ProtoRankedEntry, ResultData,
@@ -226,6 +226,8 @@ pub(crate) fn result_variant_name(
             Some(result_data::Variant::Sums(_)) => "a ResultData.sums payload",
             Some(result_data::Variant::Averages(_)) => "a ResultData.averages payload",
             Some(result_data::Variant::Ranked(_)) => "a ResultData.ranked payload",
+            Some(result_data::Variant::Chained(_)) => "a ResultData.chained payload",
+            Some(result_data::Variant::Composite(_)) => "a ResultData.composite payload",
         },
     }
 }
@@ -330,10 +332,13 @@ pub fn verify_ranked_top_k_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, RankedPage), Error> {
     let (root_hash, page) = query
-        .verify_ranked_top_k_proof(&proof.grovedb_proof, platform_version)
+        .verify_ranked_top_k_proof(
+            supported_grovedb_proof_bytes(proof, platform_version)?,
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
 
     Ok((root_hash, page))
 }

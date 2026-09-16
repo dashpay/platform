@@ -12,6 +12,10 @@
 - [Monorepo Overview](architecture/overview.md)
 - [Component Pipeline](architecture/component-pipeline.md)
 
+# Contributing
+
+- [Coding Conventions](contributing/coding-conventions.md)
+
 # Versioning
 
 - [Platform Version](versioning/platform-version.md)
@@ -68,6 +72,7 @@
 - [Average Index Examples](drive/average-index-examples.md)
 - [Document Ranked Trees](drive/document-ranked-trees.md)
 - [Ranked Index Examples](drive/ranked-index-examples.md)
+- [Time-Range Index TTL](drive/time-range-ttl.md)
 - [Index-Only Document Types](drive/index-only-document-types.md)
 
 # Testing
