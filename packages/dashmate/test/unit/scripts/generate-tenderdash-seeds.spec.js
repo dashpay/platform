@@ -82,6 +82,55 @@ describe('generate-tenderdash-seeds CLI', () => {
     expect(check.status, check.stderr).to.equal(0);
   });
 
+  it('should reuse a validated snapshot for a new version without touching its data', () => {
+    expect(run().status).to.equal(0);
+    const generated = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ type: 'module', version: '5.0.1' }));
+
+    const result = run(['--reuse-snapshot'], { SEED_TEST_FETCH_MODE: 'forbid' });
+    expect(result.status, result.stderr).to.equal(0);
+    expect(result.stderr).to.include('WARNING: reusing the 5.0.0 seed snapshot for 5.0.1');
+    expect(result.stderr).to.include('must be published before');
+    const reused = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    expect(reused.version).to.equal('5.0.1');
+    expect(reused.mainnet).to.deep.equal(generated.mainnet);
+    expect(reused.testnet).to.deep.equal(generated.testnet);
+    // The publishing check accepts exactly what reuse produced.
+    const check = run(['--check'], { SEED_TEST_FETCH_MODE: 'forbid' });
+    expect(check.status, check.stderr).to.equal(0);
+  });
+
+  it('should refuse to reuse a snapshot the publishing check would reject', () => {
+    // The committed Core-derived snapshot has no quorum-server provenance.
+    let result = run(['--reuse-snapshot'], { SEED_TEST_FETCH_MODE: 'forbid' });
+    expect(result.status).not.to.equal(0);
+    expect(result.stderr).to.include('cannot be reused');
+    expect(fs.readFileSync(snapshotPath, 'utf8')).to.equal(original);
+
+    // A validated snapshot past the publishing age limit is equally unusable.
+    expect(run().status).to.equal(0);
+    const snapshots = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    snapshots.testnet.lastUpdated -= 8 * 24 * 60 * 60;
+    const stale = `${JSON.stringify(snapshots, null, 2)}\n`;
+    fs.writeFileSync(snapshotPath, stale);
+    result = run(['--reuse-snapshot'], { SEED_TEST_FETCH_MODE: 'forbid' });
+    expect(result.status).not.to.equal(0);
+    expect(result.stdout).to.include('mainnet: 5 seeds');
+    expect(result.stderr).to.include('stale');
+    expect(result.stderr).to.include('cannot be reused');
+    expect(fs.readFileSync(snapshotPath, 'utf8')).to.equal(stale);
+    expect(fs.existsSync(`${snapshotPath}.tmp`)).to.equal(false);
+  });
+
+  it('should reject unknown or combined modes', () => {
+    for (const args of [['--check', '--reuse-snapshot'], ['--reuse'], ['--reuse-snapshot', 'extra']]) {
+      const result = run(args, { SEED_TEST_FETCH_MODE: 'forbid' });
+      expect(result.status).not.to.equal(0);
+      expect(result.stderr).to.include('Usage');
+      expect(fs.readFileSync(snapshotPath, 'utf8')).to.equal(original);
+    }
+  });
+
   it('should preserve both snapshots when the second quorum server fails', () => {
     const result = run([], {
       SEED_TEST_FETCH_MODE: 'fail-testnet',

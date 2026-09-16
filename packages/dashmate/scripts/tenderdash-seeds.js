@@ -8,7 +8,7 @@ export const QUORUM_URLS = {
 };
 const MIN_SEEDS = 5;
 const MAX_SEEDS = 20;
-const MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+export const MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
 /** Validate an IPv4 Tenderdash identity and registered port. */
 function validSeed({ id, host, port }) {

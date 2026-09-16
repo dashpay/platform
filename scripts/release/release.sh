@@ -82,7 +82,14 @@ else
 fi
 
 # Refresh bootstrap data for this version; failure aborts release preparation.
-node "$DIR/../../packages/dashmate/scripts/generate-tenderdash-seeds.js"
+# REUSE_TENDERDASH_SEEDS=1 is the emergency path for a quorum-server outage: it
+# carries the last validated snapshot forward, subject to the same age limit the
+# publishing workflow enforces. See packages/dashmate/docs/tenderdash-seeds.md.
+if [ "${REUSE_TENDERDASH_SEEDS:-}" = "1" ]; then
+  node "$DIR/../../packages/dashmate/scripts/generate-tenderdash-seeds.js" --reuse-snapshot
+else
+  node "$DIR/../../packages/dashmate/scripts/generate-tenderdash-seeds.js"
+fi
 
 cargo metadata --format-version 1 > /dev/null
 

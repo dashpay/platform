@@ -20,7 +20,28 @@ Both servers must deploy the bootstrap metadata API from
 It supplies `lastUpdated` in Unix seconds, `platformNodeID`, and registered P2P
 endpoints. Generation rejects missing metadata, caches older than 30 minutes,
 HTTP errors, redirects, and requests exceeding 15 seconds. Neither snapshot is
-replaced unless both networks succeed. There is no Core RPC override or fallback.
+replaced unless both networks succeed. There is no Core RPC override.
+
+### Quorum-server outage
+
+If a server is down or its cache is older than 30 minutes when a release must go
+out, an operator can explicitly carry the last validated snapshot forward:
+
+```sh
+REUSE_TENDERDASH_SEEDS=1 yarn release ...
+# or, by hand:
+node packages/dashmate/scripts/generate-tenderdash-seeds.js --reuse-snapshot
+```
+
+Reuse never contacts the servers and never rewrites peers, `source`,
+`lastUpdated`, or `previousSeedSetHashes`; it only sets the snapshot's top-level
+`version` to the new package version, which the publishing check compares. The
+committed snapshot must still pass that same check, including the seven-day age
+limit, so a snapshot too old to publish is also too old to reuse. The script
+prints a warning with the date the reused data was generated and the last date
+the release can still be published; after that, publishing fails and the
+snapshot has to be regenerated from a working server. Reuse is a manual choice
+and is never selected automatically.
 
 The generator samples up to 20 enabled, version-checked evonodes using fresh
 cryptographic randomness after reading the registry. Each identity gets one
