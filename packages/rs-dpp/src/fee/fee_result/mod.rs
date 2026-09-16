@@ -40,6 +40,7 @@ use crate::consensus::fee::fee_error::FeeError;
 
 use crate::fee::fee_result::refunds::FeeRefunds;
 use crate::fee::fee_result::BalanceChange::{AddToBalance, NoBalanceChange, RemoveFromBalance};
+use crate::fee::refund_owner::RefundOwner;
 use crate::fee::Credits;
 use crate::prelude::UserFeeIncrease;
 use crate::ProtocolError;
@@ -126,6 +127,17 @@ impl BalanceChangeForIdentity {
         self.fee_result
             .fee_refunds
             .calculate_all_refunds_except_identity(self.identity_id)
+    }
+
+    /// Returns the refund amount of credits for every recorded owner other
+    /// than the paying identity, keyed by the typed owner.
+    ///
+    /// A carrier key without a recorded owner is an error: the refund cannot
+    /// be routed and must not be guessed at.
+    pub fn other_typed_refunds(&self) -> Result<BTreeMap<RefundOwner, Credits>, ProtocolError> {
+        self.fee_result
+            .fee_refunds
+            .calculate_all_refunds_except_owner(&RefundOwner::Identity(self.identity_id))
     }
 
     /// Convert into a fee result
@@ -286,7 +298,9 @@ mod tests {
     use super::*;
     use crate::consensus::fee::fee_error::FeeError;
     use crate::fee::epoch::CreditsPerEpoch;
-    use crate::fee::fee_result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
+    use crate::fee::fee_result::refunds::{
+        CreditsPerEpochByIdentifier, FeeRefunds, RefundOwnersByIdentifier,
+    };
 
     fn make_id(byte: u8) -> Identifier {
         Identifier::from([byte; 32])
@@ -298,7 +312,11 @@ mod tests {
         credits_per_epoch.insert(0, credits);
         let mut map = CreditsPerEpochByIdentifier::new();
         map.insert(*identity_id.as_bytes(), credits_per_epoch);
-        FeeRefunds(map)
+        let owners = RefundOwnersByIdentifier::from([(
+            *identity_id.as_bytes(),
+            RefundOwner::Identity(identity_id),
+        )]);
+        FeeRefunds(map, owners)
     }
 
     // --- BalanceChangeForIdentity::change() ---
@@ -344,7 +362,11 @@ mod tests {
         let mut map = CreditsPerEpochByIdentifier::new();
         map.insert(*id.as_bytes(), credits_per_epoch_self);
         map.insert(*other_id.as_bytes(), credits_per_epoch_other);
-        let refunds = FeeRefunds(map);
+        let owners = RefundOwnersByIdentifier::from([
+            (*id.as_bytes(), RefundOwner::Identity(id)),
+            (*other_id.as_bytes(), RefundOwner::Identity(other_id)),
+        ]);
+        let refunds = FeeRefunds(map, owners);
 
         let fee_result = FeeResult {
             storage_fee: 100,
