@@ -1,3 +1,14 @@
+//! Primary storage writer for the protocol 14 keep-history layout.
+//!
+//! What changed from v0: a keep-history document's revisions are no longer
+//! items in the document's own subtree of the primary key tree, keyed by
+//! block time with the current revision behind a `[0]` reference. The primary
+//! key tree entry is now a reference to the current revision (carrying the sum
+//! contribution for a summable type), and the revision itself is written into
+//! the document type's history tree, one provable count tree per document,
+//! keyed by block time followed by revision so that two revisions in one block
+//! stay distinct. Types that do not keep history are written exactly as in v0.
+
 use crate::drive::constants::DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE;
 use crate::drive::document::paths::{
     contract_documents_primary_key_path, DOCUMENT_HISTORY_TREE_KEY,

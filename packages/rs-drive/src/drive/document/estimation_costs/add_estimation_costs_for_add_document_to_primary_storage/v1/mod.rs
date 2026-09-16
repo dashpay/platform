@@ -1,3 +1,15 @@
+//! Cost estimation for the protocol 14 keep-history layout.
+//!
+//! What changed from v0: a keep-history document no longer occupies a subtree
+//! of the primary key tree with one item per revision. The primary key tree
+//! holds a fixed-size reference to the current revision, and the revisions
+//! live under the document type's history tree, one provable count tree per
+//! document keyed by block time and revision. The estimate therefore charges
+//! the primary key tree as references (or references with a sum item for a
+//! summable type) instead of subtrees, and adds the history tree, its
+//! provable count trees and the revision item to the layers. Types that do
+//! not keep history are estimated exactly as in v0.
+
 use crate::drive::constants::DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE;
 use crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
