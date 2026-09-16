@@ -111,7 +111,10 @@ where
         app.platform().create_grovedb_checkpoint(platform_version)?;
     }
 
-    Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
+    Ok(proto::ResponseFinalizeBlock {
+        retain_height: 0,
+        ..Default::default()
+    })
 }
 
 #[cfg(test)]
