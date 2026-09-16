@@ -9,11 +9,14 @@
 //! proposal where it names one. Cheap checks run first: the byte cap before any decoding, and
 //! every section in binary order so a module is refused at the first violation.
 
+use crate::abi_names::VM_MODULE;
 use crate::bundle::{
     FuncSignature, InitializationMeasurements, MemoryShape, StructuralMeasurements, TableShape,
     ValueType,
 };
-use crate::errors::{ForbiddenFeature, MemoryRule, ModuleError, StructuralCap, TableRule};
+use crate::errors::{
+    ForbiddenFeature, ImportRejection, MemoryRule, ModuleError, StructuralCap, TableRule,
+};
 use crate::profile::PreparationProfile;
 use crate::wasm_features::{
     admitted_features, classify_const_operator, classify_global_type, classify_memory_type,
@@ -117,12 +120,11 @@ pub(crate) struct ModuleFacts {
 }
 
 impl ModuleFacts {
-    /// Imported functions, which occupy the first function indices.
+    /// Imported functions, which occupy the first function indices. The measurement pass
+    /// records the count while reading the import section, so this is a field read, not a
+    /// scan of the import list on every signature lookup.
     pub fn imported_functions(&self) -> u32 {
-        self.imports
-            .iter()
-            .filter(|import| matches!(import.kind, ImportKind::Function { .. }))
-            .count() as u32
+        self.structure.imported_functions
     }
 
     /// The signature of the function at `index` in the function index space.
@@ -378,6 +380,25 @@ impl Pass<'_> {
     ) -> Result<(), ModuleError> {
         for import in section.into_iter_with_offsets() {
             let (offset, import) = import.map_err(invalid)?;
+            // The submitted stage refuses the two import shapes admission can never accept
+            // before recording anything about them: the reserved instrumentation module, and
+            // any non-function import (only the instrumenter's own globals may appear, and
+            // only in the prepared stage). Refusing here keeps the accumulation of import
+            // facts bounded by the function cap; the diagnostics are the ones the interface
+            // rules would have produced.
+            if self.stage == Stage::Submitted {
+                let refuse = |reason| ModuleError::Import {
+                    module: import.module.to_owned(),
+                    name: import.name.to_owned(),
+                    reason,
+                };
+                if import.module == VM_MODULE {
+                    return Err(refuse(ImportRejection::ReservedModule));
+                }
+                if let TypeRef::Global(_) = import.ty {
+                    return Err(refuse(ImportRejection::NotAFunction));
+                }
+            }
             let kind = match import.ty {
                 TypeRef::Func(type_index) => {
                     if self.facts.types.get(type_index as usize).is_none() {

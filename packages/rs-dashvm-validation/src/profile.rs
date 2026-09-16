@@ -14,19 +14,33 @@ use platform_version::version::PlatformVersion;
 pub const PREPARATION_GENERATION_0: FeatureVersion = 0;
 
 /// Everything preparation needs to know about the protocol version it runs under.
+///
+/// The two generations are private: a profile can only be built through
+/// [`PreparationProfile::from_dashvm_version`] (or `TryFrom<&PlatformVersion>`), which refuses
+/// a preparation generation this crate does not implement, so a profile in hand always names
+/// the generation whose rules the crate applies. The limits are public because they are the
+/// table's numbers projected as they are; tests tighten them to hit a cap.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreparationProfile {
-    /// The preparation generation the table selects. Recorded in every prepared module so the
-    /// runtime can bind it into the compiled artifact key.
-    pub generation: FeatureVersion,
-    /// The metering generation the table selects. Preparation does not meter, but a prepared
-    /// bundle carries the value so the runtime can key artifacts by it.
-    pub metering: FeatureVersion,
+    generation: FeatureVersion,
+    metering: FeatureVersion,
     /// The numeric limits.
     pub limits: DashVmLimits,
 }
 
 impl PreparationProfile {
+    /// The preparation generation the table selects. Recorded in every prepared module so the
+    /// runtime can bind it into the compiled artifact key.
+    pub fn generation(&self) -> FeatureVersion {
+        self.generation
+    }
+
+    /// The metering generation the table selects. Preparation does not meter, but a prepared
+    /// bundle carries the value so the runtime can key artifacts by it.
+    pub fn metering(&self) -> FeatureVersion {
+        self.metering
+    }
+
     /// Builds the profile from a DashVM table entry.
     ///
     /// Fails when the table selects a preparation generation this crate does not implement,
@@ -82,7 +96,11 @@ mod tests {
         }
         let latest = PlatformVersion::latest();
         let profile = PreparationProfile::try_from(latest).expect("the latest version prepares");
-        assert_eq!(profile.generation, PREPARATION_GENERATION_0);
+        assert_eq!(profile.generation(), PREPARATION_GENERATION_0);
+        assert_eq!(
+            profile.metering(),
+            latest.dashvm.as_ref().map(|d| d.metering).unwrap_or(0)
+        );
         assert_eq!(
             profile.limits,
             latest
@@ -91,6 +109,19 @@ mod tests {
                 .expect("the latest version carries the table")
                 .limits
         );
+    }
+
+    /// The generation a prepared module records is the one the crate applied: with the fields
+    /// private, the only way to hold a profile is through the checked constructors, so a
+    /// profile of generation 0 is the only profile that exists and its metadata cannot drift
+    /// from its behaviour.
+    #[test]
+    fn should_only_hand_out_profiles_of_the_generation_it_implements() {
+        let profile = PreparationProfile::from_dashvm_version(&DASHVM_VERSION_V1)
+            .expect("the first table selects generation 0");
+        assert_eq!(profile.generation(), PREPARATION_GENERATION_0);
+        assert_eq!(profile.metering(), DASHVM_VERSION_V1.metering);
+        assert_eq!(profile.limits, DASHVM_VERSION_V1.limits);
     }
 
     #[test]

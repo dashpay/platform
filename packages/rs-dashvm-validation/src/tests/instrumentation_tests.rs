@@ -452,3 +452,30 @@ fn should_report_malformed_or_forbidden_instrumenter_output_as_internal() {
         ModuleError::PreparedTooLarge { .. }
     ));
 }
+
+/// The prepared stage must keep accepting the instrumenter's own global imports, which the
+/// submitted stage refuses: the measurement on the prepared bytes records the two counters
+/// as global imports and the provenance check reads them back.
+#[test]
+fn should_accept_the_injected_globals_only_in_the_prepared_stage() {
+    let profile = latest_profile();
+    let bytes = wasm(THREE_FUNCTIONS);
+    let submitted = validate_submitted(&bytes, &profile).expect("admitted");
+    let (prepared, report) =
+        instrument(&bytes, &submitted.facts, &submitted.plan).expect("instrumented");
+    let facts = validate_prepared(&prepared, &profile, &submitted, &report).expect("provenance");
+    let globals = facts
+        .imports
+        .iter()
+        .filter(|import| matches!(import.kind, crate::structure::ImportKind::Global { .. }))
+        .count();
+    assert_eq!(globals, 2);
+    // The same bytes, submitted as canonical code, are refused at the first injected import.
+    assert!(matches!(
+        validate_submitted(&prepared, &profile).expect_err("refused"),
+        ModuleError::Import {
+            reason: crate::errors::ImportRejection::ReservedModule,
+            ..
+        }
+    ));
+}

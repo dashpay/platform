@@ -30,7 +30,7 @@ pub fn prepare_module(
         canonical_hash: CanonicalHash::of(canonical_bytes),
         prepared_hash: PreparedHash::of(&prepared_bytes),
         prepared_bytes,
-        preparation_generation: profile.generation,
+        preparation_generation: profile.generation(),
         interface: submitted.interface,
         structure,
         initialization: submitted.facts.initialization,

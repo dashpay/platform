@@ -52,7 +52,7 @@ fn should_admit_the_minimal_module_and_prepare_it() {
     );
     assert_eq!(prepared.instrumentation.wrapped_call_sites, 0);
     assert_ne!(prepared.canonical_hash.0, prepared.prepared_hash.0);
-    assert_eq!(prepared.preparation_generation, profile.generation);
+    assert_eq!(prepared.preparation_generation, profile.generation());
     assert!(prepared.structure.prepared_bytes > prepared.structure.canonical_bytes);
 }
 
@@ -802,5 +802,51 @@ fn should_refuse_an_oversized_function_section_at_the_cap_without_expanding_it()
     assert_eq!(
         cap_of(reject_bytes(&oversized_imports, &profile)),
         (StructuralCap::Functions, u64::from(cap) + 1, u64::from(cap))
+    );
+}
+
+/// Hand-encodes a module whose import section declares `count` mutable `i32` global imports
+/// from module "m", each one a few bytes, and nothing else.
+fn module_importing_globals(count: u32) -> Vec<u8> {
+    let mut bytes = b"\0asm\x01\0\0\0".to_vec();
+    let mut body = Vec::new();
+    leb128_u32(&mut body, count);
+    for _ in 0..count {
+        // module "m", name "g", kind global, i32, mutable.
+        body.extend_from_slice(&[1, b'm', 1, b'g', 3, 0x7f, 1]);
+    }
+    bytes.push(2);
+    leb128_u32(&mut bytes, body.len() as u32);
+    bytes.extend_from_slice(&body);
+    bytes
+}
+
+/// A submitted global import is refused at the first entry, before any fact is recorded for
+/// it or for the ones that follow: the function cap does not bound globals, so admission must
+/// refuse them where they appear. The diagnostic is the interface rule's own.
+#[test]
+fn should_refuse_a_submitted_global_import_at_the_first_entry_without_recording_the_section() {
+    let profile = latest_profile();
+    let many = module_importing_globals(200_000);
+    assert_eq!(
+        reject_bytes(&many, &profile),
+        ModuleError::Import {
+            module: "m".to_owned(),
+            name: "g".to_owned(),
+            reason: ImportRejection::NotAFunction,
+        }
+    );
+    // The reserved module is refused before the kind is even looked at, so a dash_vm function
+    // import reports the reserved-module reason, not the function it would otherwise pass as.
+    let reserved_first = module_with(
+        "(import \"dash_vm\" \"trap\" (func (param i32))) (import \"m\" \"g\" (global (mut i32)))",
+    );
+    assert_eq!(
+        reject(&reserved_first, &profile),
+        ModuleError::Import {
+            module: "dash_vm".to_owned(),
+            name: "trap".to_owned(),
+            reason: ImportRejection::ReservedModule,
+        }
     );
 }

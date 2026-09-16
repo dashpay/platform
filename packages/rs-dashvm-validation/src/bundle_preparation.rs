@@ -158,8 +158,8 @@ pub fn validate_and_prepare_bundle(
         bindings,
         entries: resolved_entries,
         initialization_order,
-        preparation_generation: profile.generation,
-        metering_generation: profile.metering,
+        preparation_generation: profile.generation(),
+        metering_generation: profile.metering(),
         digest: BundleDigest([0; 32]),
     };
     bundle.digest = BundleDigest::of_encoding(&bundle.digest_input());

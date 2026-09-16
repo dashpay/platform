@@ -86,8 +86,8 @@ fn should_prepare_a_two_module_bundle_and_order_dependencies_first() {
     assert_eq!(bundle.dependencies_of(&name("app")), vec![name("lib")]);
     assert!(bundle.dependencies_of(&name("lib")).is_empty());
     assert_eq!(bundle.entries.len(), 1);
-    assert_eq!(bundle.preparation_generation, profile.generation);
-    assert_eq!(bundle.metering_generation, profile.metering);
+    assert_eq!(bundle.preparation_generation, profile.generation());
+    assert_eq!(bundle.metering_generation, profile.metering());
     assert!(bundle.module(&name("lib")).is_some());
     assert!(bundle.module(&name("zzz")).is_none());
 }
