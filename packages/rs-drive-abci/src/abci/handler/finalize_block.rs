@@ -225,7 +225,7 @@ where
 
     Ok(proto::ResponseFinalizeBlock {
         retain_height: 0,
-        ..Default::default()
+        propose_next_block_immediately: block_finalization_outcome.propose_next_block_immediately,
     })
 }
 
@@ -244,6 +244,7 @@ mod tests {
     use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dpp::block::block_info::BlockInfo;
     use dpp::version::PlatformVersion;
     use drive::grovedb::Transaction;
     use std::sync::{Arc, Mutex, RwLock};
@@ -773,6 +774,60 @@ mod tests {
             ),
             "Expected CorruptedCodeExecution error, got: {result:?}"
         );
+    }
+
+    /// The hint Drive gives Tenderdash rides on the ABCI response: off when nothing waits for
+    /// the next block, on when a withdrawal transaction is queued and waits to be signed.
+    #[test]
+    fn finalize_block_reports_pending_withdrawal_work_to_tenderdash() {
+        let mut config = PlatformConfig::default_testnet();
+        config.testing_configs.block_commit_signature_verification = false;
+        let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
+            .with_config(config)
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_version = PlatformVersion::latest();
+        let app = FullAbciApplication::new(&platform.platform);
+        let first_time = 1_700_000_000_000u64;
+
+        // Nothing queued: Tenderdash may wait for transactions before the next block.
+        let response =
+            finalize_real_block(&platform, &app, 1, first_time, None).expect("finalize block");
+        assert!(!response.propose_next_block_immediately);
+
+        // A pooled withdrawal transaction waits in the queue for the next block to sign it.
+        let transaction = platform.drive.grove.start_transaction();
+        let mut drive_operations = vec![];
+        platform
+            .drive
+            .add_enqueue_untied_withdrawal_transaction_operations(
+                vec![(1, vec![7u8; 32])],
+                1_000_000,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("expected to enqueue a withdrawal transaction");
+        platform
+            .drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &BlockInfo::default(),
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to apply the enqueue operations");
+        platform
+            .drive
+            .commit_transaction(transaction, &platform_version.drive)
+            .expect("expected to commit the queued transaction");
+
+        let response =
+            finalize_real_block(&platform, &app, 2, first_time + 1_000, Some(first_time))
+                .expect("finalize block");
+        assert!(response.propose_next_block_immediately);
     }
 
     fn checkpointing_config() -> PlatformConfig {
