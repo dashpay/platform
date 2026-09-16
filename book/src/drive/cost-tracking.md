@@ -22,10 +22,14 @@ pub enum LowLevelDriveOperation {
     FunctionOperation(FunctionOp),
     CalculatedCostOperation(OperationCost),
     PreCalculatedFeeResult(FeeResult),
+    CalculatedCostOperationWithRefundOwners {
+        cost: OperationCost,
+        refund_owners: RefundOwnersByIdentifier,
+    },
 }
 ```
 
-Four variants, each representing a different kind of cost:
+Five variants, each representing a different kind of cost:
 
 ### GroveOperation
 
@@ -107,6 +111,10 @@ impl FunctionOp {
 ### PreCalculatedFeeResult
 
 A fee result that was already computed elsewhere and just needs to be included in the total. This is a pass-through -- no further calculation needed.
+
+### CalculatedCostOperationWithRefundOwners
+
+A `CalculatedCostOperation` whose sectioned storage removal comes with the typed `RefundOwner` recorded for every carrier key when the removed bytes were split. It is pushed by the batch apply generations that split removed bytes with typed storage flags (`push_drive_operation_result_with_refund_owners`). `operation_cost()` rejects it on purpose: a fee decoder that predates typed owners reaches `operation_cost()` through its catch-all arm and therefore fails closed instead of pricing a refund whose owner it cannot route. `combine_cost_operations` sums its cost like any other. See [Refunds](../fees/overview.md#refunds) for how the owners are recorded.
 
 ## BaseOp: Arithmetic Operation Costs
 
@@ -320,7 +328,7 @@ These provide a cleaner API than constructing `QualifiedGroveDbOp` directly, and
 - Let operations accumulate in the `drive_operations` vector throughout the call chain.
 
 **Do not:**
-- Call `operation_cost()` on a `GroveOperation` -- it will return an error. Grove operations must be executed first; only `CalculatedCostOperation` carries a usable cost.
+- Call `operation_cost()` on a `GroveOperation` -- it will return an error. Grove operations must be executed first; only `CalculatedCostOperation` carries a usable cost. `CalculatedCostOperationWithRefundOwners` also returns an error there, by design: its owners must be read by a decoder that routes typed owners.
 - Forget that storage fees and processing fees are calculated differently. Storage fees are proportional to bytes. Processing fees are a complex function of seeks, loads, hashes, and byte movements.
 - Assume fee rates are constant. They are versioned through `FeeVersion` and can change between protocol versions.
 - Ignore `removed_bytes_from_system`. This tracks bytes removed that belong to the system rather than a specific identity, affecting the refund calculation.
