@@ -346,7 +346,33 @@ mod tests {
 
     #[tokio::test]
     async fn test_identity_create_validation_latest_protocol_version() {
-        let platform_version = PlatformVersion::latest();
+        run_test_identity_create_validation_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            1921020,
+            99913865980,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: fee before v14 added the `ContractGroups` root tree (key 68),
+    /// which lands under the `SpentAssetLockTransactions` (72) node of the root Merk. Every
+    /// asset lock outpoint write in v14 loads and rewrites that node with one more child
+    /// link, 1480 credits more; v13 has no such tree. Pinned so v13 chain history stays
+    /// bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_identity_create_validation_protocol_version_13() {
+        run_test_identity_create_validation_at_protocol_version(13, 1919540, 99913867460).await;
+    }
+
+    /// Helper for the paired fee tests above: the same scenario at the requested protocol
+    /// version, asserting the processing fee and the resulting identity balance.
+    async fn run_test_identity_create_validation_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+        expected_identity_balance: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -356,6 +382,7 @@ mod tests {
         };
 
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .with_config(platform_config)
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -440,7 +467,10 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1919540);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee
+        );
 
         platform
             .drive
@@ -455,7 +485,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99913867460);
+        assert_eq!(identity_balance, expected_identity_balance);
     }
 
     #[tokio::test]
@@ -859,7 +889,38 @@ mod tests {
 
     #[tokio::test]
     async fn test_identity_create_asset_lock_reuse_after_issue_latest_protocol_version() {
-        let platform_version = PlatformVersion::latest();
+        run_test_identity_create_asset_lock_reuse_after_issue_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            2196680,
+            99909260620,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: fee before v14 added the `ContractGroups` root tree (key 68),
+    /// which lands under the `SpentAssetLockTransactions` (72) node of the root Merk. Every
+    /// asset lock outpoint write in v14 loads and rewrites that node with one more child
+    /// link, 1480 credits more; v13 has no such tree. Pinned so v13 chain history stays
+    /// bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_identity_create_asset_lock_reuse_after_issue_protocol_version_13() {
+        run_test_identity_create_asset_lock_reuse_after_issue_at_protocol_version(
+            13,
+            2195200,
+            99909262100,
+        )
+        .await;
+    }
+
+    /// Helper for the paired fee tests above: the same scenario at the requested protocol
+    /// version, asserting the processing fee and the resulting identity balance.
+    async fn run_test_identity_create_asset_lock_reuse_after_issue_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+        expected_identity_balance: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -869,6 +930,7 @@ mod tests {
         };
 
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .with_config(platform_config)
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -1063,7 +1125,10 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2195200);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee
+        );
 
         platform
             .drive
@@ -1078,7 +1143,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99909262100); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, expected_identity_balance); // The identity balance is smaller than if there hadn't been any issue
     }
 
     #[tokio::test]
@@ -1799,7 +1864,38 @@ mod tests {
 
     #[tokio::test]
     async fn test_identity_create_asset_lock_replay_attack_latest_protocol_version() {
-        let platform_version = PlatformVersion::latest();
+        run_test_identity_create_asset_lock_replay_attack_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            2196680,
+            99909260620,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: fee before v14 added the `ContractGroups` root tree (key 68),
+    /// which lands under the `SpentAssetLockTransactions` (72) node of the root Merk. Every
+    /// asset lock outpoint write in v14 loads and rewrites that node with one more child
+    /// link, 1480 credits more; v13 has no such tree. Pinned so v13 chain history stays
+    /// bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_identity_create_asset_lock_replay_attack_protocol_version_13() {
+        run_test_identity_create_asset_lock_replay_attack_at_protocol_version(
+            13,
+            2195200,
+            99909262100,
+        )
+        .await;
+    }
+
+    /// Helper for the paired fee tests above: the same scenario at the requested protocol
+    /// version, asserting the processing fee and the resulting identity balance.
+    async fn run_test_identity_create_asset_lock_replay_attack_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+        expected_identity_balance: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -1809,6 +1905,7 @@ mod tests {
         };
 
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .with_config(platform_config)
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -2028,7 +2125,10 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2195200);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee
+        );
 
         platform
             .drive
@@ -2043,6 +2143,6 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99909262100); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, expected_identity_balance); // The identity balance is smaller than if there hadn't been any issue
     }
 }

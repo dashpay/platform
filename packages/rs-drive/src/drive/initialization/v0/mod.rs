@@ -316,7 +316,7 @@ mod tests {
                 &platform_version.drive,
             )
             .expect("expected to get root elements");
-        assert_eq!(elements.len(), 17);
+        assert_eq!(elements.len(), 18);
     }
 
     #[test]
@@ -1534,7 +1534,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 248);
+        assert_eq!(proof.len(), 284); // 248 before protocol version 14 added the ContractGroups root tree
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::GroupActions as u8]);
@@ -1556,6 +1556,27 @@ mod tests {
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 248);
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::ContractGroups as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 319); // ContractGroups root tree, added in protocol version 14
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::Misc as u8]);
