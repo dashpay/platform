@@ -99,9 +99,7 @@ impl DocumentHistoryDriveQueryExecutionResult {
         let entries = revisions
             .into_iter()
             .map(|(time_ms, document)| {
-                let revision = document
-                    .revision()
-                    .ok_or_else(|| corrupt("historical document has no revision"))?;
+                let revision = document.revision().unwrap_or(1);
                 Ok(DocumentHistoryEntry {
                     time_ms,
                     revision,
@@ -385,5 +383,31 @@ impl DocumentHistoryDriveQuery {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, DocumentHistoryDriveQueryExecutionResult), Error> {
         Drive::verify_document_history(self, proof, document_type, platform_version)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_use_sequence_one_for_a_legacy_immutable_document_without_a_revision() {
+        let document = Document::V0(Default::default());
+        assert_eq!(document.revision(), None);
+
+        let history = DocumentHistoryDriveQueryExecutionResult::from_legacy(BTreeMap::from([(
+            2000,
+            document.clone(),
+        )]))
+        .expect("an immutable legacy document has sequence one");
+
+        assert_eq!(
+            history.entries,
+            vec![DocumentHistoryEntry {
+                time_ms: 2000,
+                revision: 1,
+                document,
+            }]
+        );
     }
 }
