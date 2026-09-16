@@ -12,8 +12,7 @@ where
     C: CoreRPCLike,
 {
     /// Whether the next block has withdrawal work waiting for it: untied withdrawal
-    /// transactions in the queue that the next block dequeues and signs, or expired withdrawal
-    /// documents that the next block moves back to the queue for re-signing.
+    /// transactions in the queue that the next block dequeues and signs.
     ///
     /// Drives the `propose_next_block_immediately` hint in `ResponseFinalizeBlock`, so
     /// Tenderdash proposes the next height without waiting for transactions or the empty-block

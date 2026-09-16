@@ -1,7 +1,6 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::withdrawals::paths::get_withdrawal_transactions_queue_path_vec;
 use drive::grovedb::{PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
@@ -12,8 +11,8 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Looks at one element of the untied withdrawal transactions queue and at one EXPIRED
-    /// withdrawal document; either existing means the next block has withdrawal work.
+    /// Looks at one element of the untied withdrawal transactions queue; one existing means
+    /// the next block has a withdrawal transaction to sign.
     pub(super) fn has_pending_withdrawal_work_v0(
         &self,
         transaction: TransactionArg,
@@ -38,18 +37,7 @@ where
             &platform_version.drive,
         )?;
 
-        if !queued_transactions.is_empty() {
-            return Ok(true);
-        }
-
-        let expired_documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
-            WithdrawalStatus::EXPIRED.into(),
-            1,
-            transaction,
-            platform_version,
-        )?;
-
-        Ok(!expired_documents.is_empty())
+        Ok(!queued_transactions.is_empty())
     }
 }
 
@@ -203,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn expired_documents_are_pending_but_broadcasted_and_complete_ones_are_not() {
+    fn withdrawal_documents_alone_are_not_pending_work() {
         let platform_version = PlatformVersion::latest();
         let (platform, data_contract) = setup_platform(platform_version);
         let transaction = platform.drive.grove.start_transaction();
@@ -226,11 +214,8 @@ mod tests {
             platform_version,
         );
 
-        assert!(!platform
-            .has_pending_withdrawal_work(Some(&transaction), platform_version)
-            .expect("expected to check for pending withdrawal work"));
-
-        // An expired withdrawal is moved back to the queue and re-signed by the next block.
+        // Only the untied transaction queue counts: an expired document is re-queued by the
+        // periodic rebroadcast on its own schedule, so it does not ask for an early block.
         insert_withdrawal_document(
             &platform,
             &data_contract,
@@ -240,7 +225,7 @@ mod tests {
             platform_version,
         );
 
-        assert!(platform
+        assert!(!platform
             .has_pending_withdrawal_work(Some(&transaction), platform_version)
             .expect("expected to check for pending withdrawal work"));
     }

@@ -232,8 +232,7 @@ The finalize response also carries a proposer hint,
 `propose_next_block_immediately` (Tenderdash 1.8.0, ABCI 1.4.0). Drive sets it
 when the block leaves
 withdrawal work for the next block: untied withdrawal transactions waiting in
-the queue to be signed, or expired withdrawal documents waiting to be
-re-queued. Tenderdash then proposes round 0 of the next height without waiting
+the queue to be signed. Tenderdash then proposes round 0 of the next height without waiting
 for transactions or the empty-block interval, so a withdrawal is signed one
 block after it was pooled instead of one interval later. The hint is local to
 the node and never part of consensus: it is read from the same GroveDB

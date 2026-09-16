@@ -271,8 +271,8 @@ where
         crate::metrics::abci_last_finalized_round(round);
 
         // Withdrawal transactions pooled in this block (or left over from a backlog) wait for
-        // the next block to sign them, and expired withdrawals wait for it to re-queue them.
-        // Ask Tenderdash for that block right away instead of after the empty-block interval.
+        // the next block to sign them. Ask Tenderdash for that block right away instead of
+        // after the empty-block interval.
         let propose_next_block_immediately =
             self.has_pending_withdrawal_work(Some(transaction), platform_version)?;
 

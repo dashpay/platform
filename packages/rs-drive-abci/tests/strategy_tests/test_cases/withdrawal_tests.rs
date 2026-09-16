@@ -217,8 +217,8 @@ mod tests {
                 .unwrap();
             assert!(withdrawal_documents_pooled.is_empty());
 
-            // Nothing is queued and nothing expired, so the next block has no withdrawal work
-            // waiting and Tenderdash may wait for transactions again.
+            // Nothing is queued, so the next block has no withdrawal work waiting and
+            // Tenderdash may wait for transactions again.
             assert!(!outcome
                 .abci_app
                 .platform
@@ -469,8 +469,8 @@ mod tests {
                 last_block_pooled_withdrawals_amount
             );
 
-            // Nothing is queued and nothing expired, so the next block has no withdrawal work
-            // waiting and Tenderdash may wait for transactions again.
+            // Nothing is queued, so the next block has no withdrawal work waiting and
+            // Tenderdash may wait for transactions again.
             assert!(!outcome
                 .abci_app
                 .platform
