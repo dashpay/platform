@@ -8,6 +8,8 @@ const EVENTS = {
   ERROR: 'error',
 };
 
+const CLIENT_ALREADY_CLOSED_ERROR_MESSAGE = 'Client already closed - cannot .close()';
+
 /**
  * @typedef BlockHeadersReaderOptions
  * @property {number} [maxParallelStreams]
@@ -132,8 +134,9 @@ class BlockHeadersReader extends EventEmitter {
          * @param e
          */
         const rejectHeaders = async (e) => {
-          // Don't use cancelStream there because it's going to unsubscribe from events
-          stream.cancel();
+          // Cancel the transport only: the retry below needs the listeners, so
+          // this cannot go through cancelStream, which unsubscribes from events
+          this.cancelStreamTransport(stream);
           stream.retryOnError(e);
         };
 
@@ -294,9 +297,25 @@ class BlockHeadersReader extends EventEmitter {
   }
 
   // eslint-disable-next-line class-methods-use-this
+  /**
+   * Cancels the stream's transport, tolerating one the transport has already
+   * closed. Listeners are left in place for callers that keep using the stream.
+   * @param {ReconnectableStream} stream
+   */
+  // eslint-disable-next-line class-methods-use-this
+  cancelStreamTransport(stream) {
+    try {
+      stream.cancel();
+    } catch (e) {
+      if (e.message !== CLIENT_ALREADY_CLOSED_ERROR_MESSAGE) {
+        throw e;
+      }
+    }
+  }
+
   cancelStream(stream) {
     stream.removeAllListeners();
-    stream.cancel();
+    this.cancelStreamTransport(stream);
   }
 }
 

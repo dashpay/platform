@@ -476,12 +476,26 @@ describe('TokensFacade', () => {
   });
 
   describe('setPrice()', () => {
-    it('should set direct purchase price for tokens', async () => {
+    it('should set a flat direct purchase price for tokens', async () => {
       const options = {
         tokenId,
-        price: {
-          type: 'fixed',
-          value: BigInt(1000000), // 1M credits per token
+        price: BigInt(1000000), // 1M credits per token
+        identityKey,
+        signer,
+      };
+
+      const result = await client.tokens.setPrice(options);
+
+      expect(tokenSetPriceStub).to.be.calledOnceWithExactly(options);
+      expect(result.tokenId).to.equal(tokenId);
+    });
+
+    it('should forward a tiered direct purchase price schedule unchanged', async () => {
+      const options = {
+        tokenId,
+        priceTiers: {
+          '100': BigInt(1000),
+          '1000': BigInt(900),
         },
         identityKey,
         signer,

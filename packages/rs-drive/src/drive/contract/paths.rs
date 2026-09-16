@@ -165,3 +165,9 @@ pub fn contract_keeping_history_storage_time_reference_path(
         encoded_time,
     ]
 }
+
+/// The key under a contract's root subtree (`[64, id]`) that holds the contract's version
+/// number as a four-byte big-endian item, written beside the contract from protocol
+/// version 14. Keys `0` (the contract, or its history subtree) and `1` (the documents) are
+/// the other children of that subtree.
+pub const CONTRACT_VERSION_KEY: u8 = 2;

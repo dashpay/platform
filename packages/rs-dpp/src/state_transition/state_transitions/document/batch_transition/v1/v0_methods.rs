@@ -28,8 +28,12 @@ use std::slice::Iter;
 use crate::state_transition::batch_transition::BatchTransitionV1;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::{
-    BatchTransition, DocumentDeleteTransition,
+    BatchTransition, DocumentDeleteTransition, DocumentIndexOnlyDeleteTransition,
 };
+#[cfg(feature = "state-transition-signing")]
+use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
@@ -202,18 +206,38 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
     ) -> Result<StateTransition, ProtocolError> {
         let owner_id = document.owner_id();
         let resolved_options = options.unwrap_or_default();
-        let delete_transition = DocumentDeleteTransition::from_document(
-            document,
-            document_type,
-            token_payment_info,
-            identity_contract_nonce,
-            platform_version,
-            resolved_options.method_feature_version,
-            resolved_options.base_feature_version,
-        )?;
+        // Deleting an indexOnly document is a different OPERATION from
+        // deleting a stored one (delete-by-values vs delete-by-id), so the
+        // factory picks the transition kind from the doctype's storage
+        // mode — every construction path, SDKs included, produces the kind
+        // the ABCI structure gates require, with no per-client knowledge
+        // of the storage layout.
+        let delete_transition: DocumentTransition = if document_type.index_only() {
+            DocumentIndexOnlyDeleteTransition::from_document(
+                document,
+                document_type,
+                token_payment_info,
+                identity_contract_nonce,
+                platform_version,
+                resolved_options.method_feature_version,
+                resolved_options.base_feature_version,
+            )?
+            .into()
+        } else {
+            DocumentDeleteTransition::from_document(
+                document,
+                document_type,
+                token_payment_info,
+                identity_contract_nonce,
+                platform_version,
+                resolved_options.method_feature_version,
+                resolved_options.base_feature_version,
+            )?
+            .into()
+        };
         let documents_batch_transition: BatchTransition = BatchTransitionV1 {
             owner_id,
-            transitions: vec![BatchedTransition::Document(delete_transition.into())],
+            transitions: vec![BatchedTransition::Document(delete_transition)],
             user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),

@@ -10,7 +10,6 @@ use(dirtyChai);
 
 process.env.NODE_ENV = 'test';
 
-// eslint-disable-next-line import-x/prefer-default-export
 export const mochaHooks = {
   beforeEach() {
     if (!this.sinon) {

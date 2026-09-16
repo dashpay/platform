@@ -92,6 +92,8 @@ pub const DRIVE_VERSION_V5: DriveVersion = DriveVersion {
         platform_state: DrivePlatformStateMethodVersions {
             fetch_platform_state_bytes: 0,
             store_platform_state_bytes: 0,
+            fetch_platform_state_recent_bytes: 0,
+            store_platform_state_recent_bytes: 0,
         },
         fetch: DriveFetchMethodVersions { fetch_elements: 0 },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
@@ -120,6 +122,7 @@ pub const DRIVE_VERSION_V5: DriveVersion = DriveVersion {
         saved_block_transactions: DriveSavedBlockTransactionsMethodVersions {
             store_address_balances: 0,
             fetch_address_balances: 0,
+            prove_compacted_address_balance_changes: 0,
             compact_address_balances: 0,
             cleanup_expired_address_balances: 0,
             max_blocks_before_compaction: 64,

@@ -2,6 +2,7 @@ use versioned_feature_core::FeatureVersionBounds;
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPStateTransitionSerializationVersions {
@@ -22,6 +23,11 @@ pub struct DPPStateTransitionSerializationVersions {
     pub document_create_state_transition: DocumentFeatureVersionBounds,
     pub document_replace_state_transition: DocumentFeatureVersionBounds,
     pub document_delete_state_transition: DocumentFeatureVersionBounds,
+    /// The indexOnly delete-by-values kind. `None` below PV14 — the kind
+    /// does not exist on the wire there (same "didn't always exist" idiom
+    /// as `OptionalFeatureVersion`), and the batch basic-structure wire
+    /// gate rejects the variant wherever this is `None`.
+    pub document_index_only_delete_state_transition: Option<DocumentFeatureVersionBounds>,
     pub document_transfer_state_transition: DocumentFeatureVersionBounds,
     pub document_update_price_state_transition: DocumentFeatureVersionBounds,
     pub document_purchase_state_transition: DocumentFeatureVersionBounds,
@@ -34,6 +40,8 @@ pub struct DPPStateTransitionSerializationVersions {
     pub shield_from_asset_lock_state_transition: FeatureVersionBounds,
     pub shielded_withdrawal_state_transition: FeatureVersionBounds,
     pub identity_create_from_shielded_pool_state_transition: FeatureVersionBounds,
+    pub shield_from_identity_state_transition: FeatureVersionBounds,
+    pub identity_top_up_from_shielded_pool_state_transition: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -173,11 +173,11 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// secp256k1; 48 for BLS; etc.).
         public let pubkeyBytes: Data
         public let readOnly: Bool
-        /// Optional contract-bounds restriction. Required for
-        /// Encryption / Decryption keys (Drive scopes those keys
-        /// to a specific contract / document type so a key issued
-        /// for App A cannot decrypt App B's payloads). `nil` for
-        /// every other purpose.
+        /// Optional contract-bounds restriction. Bounds are valid
+        /// for any purpose only when present and only if consensus
+        /// allows that purpose / contract / document-type shape.
+        /// `nil` is valid for every purpose, including Encryption /
+        /// Decryption keys.
         public let contractBounds: ContractBounds?
 
         public init(
@@ -210,6 +210,70 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// specific document type. Maps to `kind == 2` on the
         /// FFI side.
         case singleContractDocumentType(id: Data, documentTypeName: String)
+    }
+
+    /// Inspectable fields of a parsed raw `IdentityUpdateTransition`.
+    /// The keys intentionally reuse `IdentityPubkey` so callers can
+    /// validate and hand them back to `updateIdentity(...)` unchanged.
+    public struct ParsedIdentityUpdateTransition: Sendable {
+        public let identityId: Identifier
+        public let addPublicKeys: [IdentityPubkey]
+        public let disablePublicKeyIds: [UInt32]
+
+        public init(
+            identityId: Identifier,
+            addPublicKeys: [IdentityPubkey],
+            disablePublicKeyIds: [UInt32]
+        ) {
+            self.identityId = identityId
+            self.addPublicKeys = addPublicKeys
+            self.disablePublicKeyIds = disablePublicKeyIds
+        }
+    }
+
+    /// Inspectable fields of a token direct purchase parsed out of a
+    /// raw `BatchTransition`. Carries everything `tokenPurchase(...)`
+    /// needs to rebuild the purchase after user approval, plus what
+    /// the user must see before approving.
+    public struct ParsedTokenPurchaseTransition: Sendable {
+        /// The identity whose credits pay for the purchase.
+        public let ownerId: Identifier
+        /// The data contract defining the token.
+        public let dataContractId: Identifier
+        /// The token being bought.
+        public let tokenId: Identifier
+        /// Position of the token within the contract.
+        public let tokenContractPosition: UInt16
+        /// How many tokens the dApp asks to buy.
+        public let tokenCount: UInt64
+        /// Credits the owner would agree to pay in total.
+        public let totalAgreedPrice: UInt64
+
+        public init(
+            ownerId: Identifier,
+            dataContractId: Identifier,
+            tokenId: Identifier,
+            tokenContractPosition: UInt16,
+            tokenCount: UInt64,
+            totalAgreedPrice: UInt64
+        ) {
+            self.ownerId = ownerId
+            self.dataContractId = dataContractId
+            self.tokenId = tokenId
+            self.tokenContractPosition = tokenContractPosition
+            self.tokenCount = tokenCount
+            self.totalAgreedPrice = totalAgreedPrice
+        }
+    }
+
+    /// One parsed `dash-st:` state transition, discriminated by case
+    /// so callers branch on the payload instead of on thrown errors.
+    public enum ParsedStateTransition: Sendable {
+        /// DashConnect key registration (`IdentityUpdateTransition`).
+        case identityUpdate(ParsedIdentityUpdateTransition)
+        /// dApp token purchase (a `BatchTransition` carrying exactly
+        /// one `TokenDirectPurchase`).
+        case tokenPurchase(ParsedTokenPurchaseTransition)
     }
 
     /// Result of a successful identity registration.
@@ -932,6 +996,10 @@ extension ManagedPlatformWallet {
         case operatorBLS = 10
         /// Ed25519 platform-node keys (`ProviderPlatformKeys`, tag 11).
         case platformNodeEdDSA = 11
+        /// secp256k1 masternode voting keys (`ProviderVotingKeys`, tag 8).
+        case votingECDSA = 8
+        /// secp256k1 masternode owner keys (`ProviderOwnerKeys`, tag 9).
+        case ownerECDSA = 9
     }
 
     /// One provider key derived at a single index, in the hex forms the
@@ -955,8 +1023,17 @@ extension ManagedPlatformWallet {
         public let nodeIdHex: String?
         /// Lowercase hex of the raw 32-byte private scalar, present only
         /// when the reveal requested it. BLS / Ed25519 keys have no WIF,
-        /// so this is the only private form.
+        /// so for those this is the only private form.
         public let privateKeyHex: String?
+        /// P2PKH address of the key. Non-nil only for the secp256k1
+        /// families (``ProviderKeyKind/votingECDSA`` /
+        /// ``ProviderKeyKind/ownerECDSA``), whose keys appear on-chain as
+        /// the ProRegTx voting / owner addresses.
+        public let address: String?
+        /// WIF encoding of the private key, on the same terms as
+        /// ``privateKeyHex``. Encoded on the Rust side so the network byte
+        /// and compression flag have one home.
+        public let privateKeyWIF: String?
 
         /// Public memberwise init so hosts can build display rows from the
         /// persisted platform-node core-address rows (typed
@@ -968,13 +1045,17 @@ extension ManagedPlatformWallet {
             publicKeyHex: String,
             legacyPublicKeyHex: String?,
             nodeIdHex: String?,
-            privateKeyHex: String?
+            privateKeyHex: String?,
+            address: String? = nil,
+            privateKeyWIF: String? = nil
         ) {
             self.index = index
             self.publicKeyHex = publicKeyHex
             self.legacyPublicKeyHex = legacyPublicKeyHex
             self.nodeIdHex = nodeIdHex
             self.privateKeyHex = privateKeyHex
+            self.address = address
+            self.privateKeyWIF = privateKeyWIF
         }
     }
 
@@ -1035,12 +1116,16 @@ extension ManagedPlatformWallet {
             let legacyPublicKeyHex = out.legacy_public_key_hex.map { String(cString: $0) }
             let nodeIdHex = out.node_id_hex.map { String(cString: $0) }
             let privateKeyHex = out.private_key_hex.map { String(cString: $0) }
+            let address = out.address.map { String(cString: $0) }
+            let privateKeyWIF = out.private_key_wif.map { String(cString: $0) }
             return ProviderDerivedKey(
                 index: out.index,
                 publicKeyHex: publicKeyHex,
                 legacyPublicKeyHex: legacyPublicKeyHex,
                 nodeIdHex: nodeIdHex,
-                privateKeyHex: privateKeyHex
+                privateKeyHex: privateKeyHex,
+                address: address,
+                privateKeyWIF: privateKeyWIF
             )
         }
     }
@@ -2008,6 +2093,22 @@ extension ManagedPlatformWallet {
 
     // MARK: - DashPay invitations (DIP-13)
 
+    /// Upper bound, in duffs, on the amount an invitation voucher may lock —
+    /// the Rust-enforced cap `createInvitation` rejects above. Read it rather
+    /// than restating it: Rust owns the value, and a client-side copy diverges
+    /// the moment the constant moves.
+    public static var maxInvitationDuffs: UInt64 {
+        platform_wallet_invitation_max_duffs()
+    }
+
+    /// Lower bound, in duffs, on the amount an invitation voucher may lock —
+    /// the Rust-enforced floor `createInvitation` rejects below (a smaller
+    /// voucher can fund neither a claim nor a reclaim). Read it rather than
+    /// restating it, for the same reason as the cap.
+    public static var minInvitationDuffs: UInt64 {
+        platform_wallet_invitation_min_duffs()
+    }
+
     /// Read-only preview of a `dashpay://invite` link, decoded via
     /// `parseInvitation(uri:)` without claiming it. Drives the claim sheet's
     /// pre-claim summary + the contact-bootstrap decision.
@@ -2197,6 +2298,41 @@ extension ManagedPlatformWallet {
                 )
             }
             return ManagedIdentity(handle: outManagedHandle)
+        }.value
+    }
+
+    /// The identity id this invitation WOULD create, without claiming it.
+    ///
+    /// Platform derives a created identity's id from the asset-lock outpoint,
+    /// so fetching an identity under the returned id answers "has this
+    /// invitation already been used?" before the invitee picks a username and
+    /// enters their PIN — the only other way to find out is the claim itself,
+    /// which reports it as a raw "asset lock … already completely used".
+    ///
+    /// Unlike ``parseInvitation(uri:)`` this hits the network: the funding
+    /// transaction is refetched to locate the credit output the voucher
+    /// controls. It claims nothing and mutates no wallet state.
+    ///
+    /// Throws on anything undetermined — wrong network, a funding tx that has
+    /// not propagated, transport failure. Callers must treat a throw as
+    /// "proceed", never as an answer either way.
+    public func invitationProspectiveIdentityId(uri: String) async throws -> Data {
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> Data in
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            let result = uri.withCString { uriPtr in
+                platform_wallet_invitation_prospective_identity_id(handle, uriPtr, &idTuple)
+            }
+            try result.check()
+            return withUnsafeBytes(of: idTuple) { Data($0) }
         }.value
     }
 
@@ -3120,6 +3256,210 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Parse a raw `IdentityUpdateTransition` from DPP bytes without
+    /// signing or broadcasting it. Accepts both standard tagged bytes
+    /// and Yappr's tagless `dash-st:` framing.
+    public func parseIdentityUpdateTransition(_ bytes: Data) throws -> ParsedIdentityUpdateTransition {
+        guard !bytes.isEmpty else {
+            throw PlatformWalletError.deserialization(
+                "IdentityUpdateTransition bytes are empty"
+            )
+        }
+
+        var out = ParsedIdentityUpdateFFI(
+            identity_id: (
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            ),
+            add_public_keys: nil,
+            add_public_keys_count: 0,
+            disable_public_key_ids: nil,
+            disable_public_key_ids_count: 0
+        )
+
+        let result = bytes.withUnsafeBytes { rawBuffer -> PlatformWalletFFIResult in
+            let byteBuffer = rawBuffer.bindMemory(to: UInt8.self)
+            return platform_wallet_parse_identity_update_transition(
+                byteBuffer.baseAddress,
+                UInt(byteBuffer.count),
+                &out
+            )
+        }
+        try result.check()
+        defer { platform_wallet_parse_identity_update_transition_free(&out) }
+
+        return try Self.makeParsedIdentityUpdateTransition(from: out)
+    }
+
+    /// Parse a raw DPP state transition handed to the wallet by a dApp
+    /// (DashConnect `dash-st:` link / QR) without signing or
+    /// broadcasting it, reporting which supported kind it found.
+    /// Accepts both standard tagged bytes and Yappr's tagless framing.
+    ///
+    /// Supported kinds: an `IdentityUpdateTransition` (DashConnect key
+    /// registration) and a `BatchTransition` carrying exactly one
+    /// `TokenDirectPurchase` (a dApp token purchase). Anything else —
+    /// including multi-transition or mixed batches, which a user
+    /// cannot meaningfully approve as one prompt — throws with a
+    /// message naming what was found.
+    ///
+    /// The wallet never signs bytes a web page handed it. After the
+    /// user approves the parsed intent, rebuild and sign the
+    /// operation through the normal path: `tokenPurchase(...)` for
+    /// `.tokenPurchase`, `updateIdentity(...)` for `.identityUpdate`.
+    public func parseStateTransition(_ bytes: Data) throws -> ParsedStateTransition {
+        guard !bytes.isEmpty else {
+            throw PlatformWalletError.deserialization(
+                "State transition bytes are empty"
+            )
+        }
+
+        // Imported C structs zero-initialize, which is exactly the
+        // FFI's documented default (`kind == 0`, no owned buffers).
+        var out = ParsedStateTransitionFFI()
+
+        let result = bytes.withUnsafeBytes { rawBuffer -> PlatformWalletFFIResult in
+            let byteBuffer = rawBuffer.bindMemory(to: UInt8.self)
+            return platform_wallet_parse_state_transition(
+                byteBuffer.baseAddress,
+                UInt(byteBuffer.count),
+                &out
+            )
+        }
+        try result.check()
+        defer { platform_wallet_parse_state_transition_free(&out) }
+
+        switch out.kind {
+        case 1: // PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE
+            return .identityUpdate(
+                try Self.makeParsedIdentityUpdateTransition(from: out.identity_update)
+            )
+        case 2: // PARSED_STATE_TRANSITION_KIND_TOKEN_DIRECT_PURCHASE
+            let purchase = out.token_direct_purchase
+            var ownerTuple = purchase.owner_id
+            var contractTuple = purchase.data_contract_id
+            var tokenTuple = purchase.token_id
+            return .tokenPurchase(
+                ParsedTokenPurchaseTransition(
+                    ownerId: Swift.withUnsafeBytes(of: &ownerTuple) { Data($0) },
+                    dataContractId: Swift.withUnsafeBytes(of: &contractTuple) { Data($0) },
+                    tokenId: Swift.withUnsafeBytes(of: &tokenTuple) { Data($0) },
+                    tokenContractPosition: purchase.token_contract_position,
+                    tokenCount: purchase.token_count,
+                    totalAgreedPrice: purchase.total_agreed_price
+                )
+            )
+        default:
+            throw PlatformWalletError.deserialization(
+                "Unknown parsed state-transition kind \(out.kind)"
+            )
+        }
+    }
+
+    private static func makeParsedIdentityUpdateTransition(
+        from ffi: ParsedIdentityUpdateFFI
+    ) throws -> ParsedIdentityUpdateTransition {
+        var identityTuple = ffi.identity_id
+        let identityId = Swift.withUnsafeBytes(of: &identityTuple) { Data($0) }
+
+        let addPublicKeys: [IdentityPubkey]
+        if let pointer = ffi.add_public_keys, ffi.add_public_keys_count > 0 {
+            let buffer = UnsafeBufferPointer(start: pointer, count: Int(ffi.add_public_keys_count))
+            addPublicKeys = try buffer.enumerated().map { index, entry in
+                try Self.makeParsedIdentityPubkey(from: entry, index: index)
+            }
+        } else {
+            addPublicKeys = []
+        }
+
+        let disablePublicKeyIds: [UInt32]
+        if let pointer = ffi.disable_public_key_ids, ffi.disable_public_key_ids_count > 0 {
+            disablePublicKeyIds = Array(
+                UnsafeBufferPointer(
+                    start: pointer,
+                    count: Int(ffi.disable_public_key_ids_count)
+                )
+            )
+        } else {
+            disablePublicKeyIds = []
+        }
+
+        return ParsedIdentityUpdateTransition(
+            identityId: identityId,
+            addPublicKeys: addPublicKeys,
+            disablePublicKeyIds: disablePublicKeyIds
+        )
+    }
+
+    private static func makeParsedIdentityPubkey(
+        from entry: ParsedIdentityUpdatePublicKeyFFI,
+        index: Int
+    ) throws -> IdentityPubkey {
+        guard let keyType = KeyType(rawValue: entry.key_type),
+              let purpose = KeyPurpose(rawValue: entry.purpose),
+              let securityLevel = SecurityLevel(rawValue: entry.security_level) else {
+            throw PlatformWalletError.deserialization(
+                "Unknown IdentityUpdateTransition public-key enum discriminant at index \(index)"
+            )
+        }
+
+        let pubkeyBytes: Data
+        if let dataPtr = entry.data_ptr {
+            pubkeyBytes = Data(bytes: dataPtr, count: Int(entry.data_len))
+        } else if entry.data_len == 0 {
+            pubkeyBytes = Data()
+        } else {
+            throw PlatformWalletError.deserialization(
+                "IdentityUpdateTransition public key \(index) had a null data pointer for \(entry.data_len) bytes"
+            )
+        }
+
+        let contractBounds = try parsedContractBounds(from: entry, index: index)
+
+        return IdentityPubkey(
+            keyId: entry.key_id,
+            keyType: keyType,
+            purpose: purpose,
+            securityLevel: securityLevel,
+            pubkeyBytes: pubkeyBytes,
+            readOnly: entry.read_only,
+            contractBounds: contractBounds
+        )
+    }
+
+    private static func parsedContractBounds(
+        from entry: ParsedIdentityUpdatePublicKeyFFI,
+        index: Int
+    ) throws -> ContractBounds? {
+        switch entry.contract_bounds_kind {
+        case 0:
+            return nil
+        case 1:
+            var idTuple = entry.contract_bounds_id
+            return .singleContract(
+                id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) }
+            )
+        case 2:
+            guard let documentTypePtr = entry.contract_bounds_document_type,
+                  let documentTypeName = String(validatingCString: documentTypePtr) else {
+                throw PlatformWalletError.deserialization(
+                    "IdentityUpdateTransition contract bounds at key \(index) are missing a valid UTF-8 document type"
+                )
+            }
+            var idTuple = entry.contract_bounds_id
+            return .singleContractDocumentType(
+                id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) },
+                documentTypeName: documentTypeName
+            )
+        default:
+            throw PlatformWalletError.deserialization(
+                "Unknown IdentityUpdateTransition contract-bounds kind \(entry.contract_bounds_kind) at key \(index)"
+            )
+        }
+    }
+
     /// Create + broadcast a new data contract owned by
     /// `ownerIdentityId`. Returns the 32-byte contract id once
     /// Platform confirms the transition.
@@ -3807,13 +4147,13 @@ extension ManagedPlatformWallet {
     /// `KeychainSigner`. Asset-lock proof is built Rust-side from
     /// `amountDuffs` (wallet must have spendable Core UTXOs).
     ///
-    /// `accountIndex` selects which BIP44 *standard* account (by
-    /// BIP44 account index) supplies the funding UTXOs. Only BIP44
-    /// standard accounts are supported today; the caller is
-    /// responsible for filtering its account picker accordingly —
-    /// CoinJoin / BIP32 funding for new-identity registration is not
-    /// yet wired through `create_funded_asset_lock_proof` on the Rust
-    /// side.
+    /// `accountIndex` addresses the *standard* families: the asset
+    /// lock POOLS the BIP44 and BIP32 accounts at that index together
+    /// with every DashPay contact-receiving account (change returns
+    /// to BIP44). The index does NOT restrict which DashPay receiving
+    /// accounts contribute, so the caller must not present it as an
+    /// account-scoped funding or privacy choice. CoinJoin funding
+    /// remains drain-only and is not reachable here.
     ///
     /// Caller MUST pre-derive `identityPubkeys` (typically via
     /// `dash_sdk_derive_identity_keys_from_mnemonic`) AND pre-persist
@@ -4035,9 +4375,12 @@ extension ManagedPlatformWallet {
     /// Simpler than registration: an `IdentityTopUp` creates no identity
     /// keys, so there is no per-identity-key `KeychainSigner` and no pubkey
     /// array — the transition is signed entirely by the asset lock's
-    /// Core-side key via a `MnemonicResolver`. `accountIndex` selects which
-    /// BIP44 *standard* account supplies the funding UTXOs (same constraint
-    /// as registration).
+    /// Core-side key via a `MnemonicResolver`. `accountIndex` addresses the
+    /// *standard* families: the asset lock POOLS the BIP44 and BIP32
+    /// accounts at that index together with every DashPay contact-receiving
+    /// account (change returns to BIP44), and does NOT restrict which
+    /// DashPay receiving accounts contribute — the same contract as
+    /// registration.
     ///
     /// `amountDuffs` must meet the Rust-side minimum top-up asset-lock
     /// balance; a smaller amount is rejected before any lock is broadcast
@@ -4191,5 +4534,128 @@ extension ManagedPlatformWallet {
             try result.check()
             return newBalance
         }.value
+    }
+}
+
+// MARK: - Deferred (BIP70/BIP270) signed payments
+
+extension ManagedPlatformWallet {
+
+    /// Build and sign a Core payment to `recipients` WITHOUT broadcasting,
+    /// reserving the funding UTXOs and returning a `SignedCoreTransaction`
+    /// whose `reservationToken` later drives `broadcastSigned` (merchant server
+    /// acked) or `releaseReservation` (abandoned / server nacked).
+    ///
+    /// The BIP70/BIP270 counterpart to the immediate build-and-send path: those
+    /// protocols sign, POST the raw bytes to a merchant server, and broadcast
+    /// only on ack, which a single build-sign-broadcast call cannot express.
+    /// The whole build is one atomic native operation — select + reserve + sign
+    /// + register under the wallet-manager lock — so once this returns the
+    /// reservation holds the inputs and the token operates on them later.
+    ///
+    /// The returned object OWNS the token: `close()` (or its `deinit` backstop)
+    /// releases it, so a payment that is neither broadcast nor released is
+    /// never orphaned. Consuming the token via `broadcastSigned` /
+    /// `releaseReservation` makes that release a native no-op.
+    ///
+    /// Process-death note: the reservation is in-memory. An app crash between
+    /// this call and `broadcastSigned` drops it on restart and the UTXOs become
+    /// spendable again.
+    ///
+    /// Funding defaults to `.allSpendable`: BIP44 + BIP32 + every DashPay
+    /// contact-receiving account, change returning to BIP44. Pass an explicit
+    /// `accountType` to restrict the payment to one family.
+    ///
+    /// Kotlin parity: `ManagedPlatformWallet.buildSignedPayment`
+    /// (`ManagedPlatformWallet.kt`).
+    public func buildSignedPayment(
+        recipients: [(address: String, amountDuffs: UInt64)],
+        network: Network,
+        accountType: CoreTransactionBuilder.AccountType = .allSpendable,
+        accountIndex: UInt32 = 0
+    ) throws -> SignedCoreTransaction {
+        guard !recipients.isEmpty else {
+            throw PlatformWalletError.invalidParameter("recipients must not be empty")
+        }
+        guard recipients.allSatisfy({ $0.amountDuffs > 0 }) else {
+            throw PlatformWalletError.invalidParameter("every recipient amount must be positive")
+        }
+
+        let builder = try CoreTransactionBuilder(network: network)
+        for recipient in recipients {
+            try builder.addOutput(address: recipient.address, amountDuffs: recipient.amountDuffs)
+        }
+        return try builder.finalizeSignedPayment(
+            wallet: self,
+            accountType: accountType,
+            accountIndex: accountIndex
+        )
+    }
+
+    /// Broadcast the deferred payment behind `token` (from
+    /// `buildSignedPayment`) and return its txid — the "merchant server acked"
+    /// arm. Consumes the token: rather than double-broadcasting, an unusable
+    /// token throws one of the three sibling errors —
+    /// `.staleReservationToken` (aged out), `.reservationTokenConsumed`
+    /// (unknown / already consumed), `.reservationWalletMismatch` (a different
+    /// wallet generation) — or `.notFound` when the wallet was removed. None is
+    /// retryable in place; rebuild the payment.
+    ///
+    /// Callers holding a `SignedCoreTransaction` should prefer the object
+    /// overload: with the bare token, the source object must stay alive until
+    /// this call returns, or its `deinit` backstop can release the reservation
+    /// mid-broadcast.
+    ///
+    /// Kotlin parity: `ManagedPlatformWallet.broadcastSigned(token)`
+    /// (`ManagedPlatformWallet.kt`).
+    public func broadcastSigned(token: UInt64) throws -> String {
+        try coreWallet().broadcastSignedPayment(token: token)
+    }
+
+    /// Broadcast `payment` and return its txid — the object-owning form of
+    /// `broadcastSigned`. Prefer it over passing the bare
+    /// `SignedCoreTransaction.reservationToken`: the token's lifetime is
+    /// coupled to the object's, so a caller that extracts the `UInt64` and
+    /// drops the object races the `deinit` backstop and can find the
+    /// reservation released mid-broadcast. This overload keeps the object alive
+    /// across the whole native call and disarms the backstop once the token is
+    /// consumed.
+    ///
+    /// On a throw the payment stays armed, and its backstop later runs the
+    /// (idempotent, harmless) release.
+    ///
+    /// Kotlin parity: `ManagedPlatformWallet.broadcastSigned(payment)`
+    /// (`ManagedPlatformWallet.kt`).
+    public func broadcastSigned(_ payment: SignedCoreTransaction) throws -> String {
+        try withExtendedLifetime(payment) {
+            let txid = try broadcastSigned(token: payment.reservationToken)
+            payment.close()
+            return txid
+        }
+    }
+
+    /// Release the funding reservation behind `token` (from
+    /// `buildSignedPayment`) — the "payment abandoned / merchant server nacked"
+    /// arm — returning the reserved UTXOs to spendable. Idempotent: releasing
+    /// an unknown / already-broadcast / already-released token is a silent
+    /// no-op, so it is always safe to call defensively.
+    ///
+    /// Kotlin parity: `ManagedPlatformWallet.releaseReservation(token)`
+    /// (`ManagedPlatformWallet.kt`).
+    public func releaseReservation(token: UInt64) throws {
+        try core_wallet_signed_payment_release(token).check()
+    }
+
+    /// Release `payment`'s funding reservation — the object-owning form of
+    /// `releaseReservation`; see `broadcastSigned(_:)` for why it is preferred
+    /// over the bare-token form.
+    ///
+    /// Kotlin parity: `ManagedPlatformWallet.releaseReservation(payment)`
+    /// (`ManagedPlatformWallet.kt`).
+    public func releaseReservation(_ payment: SignedCoreTransaction) throws {
+        try withExtendedLifetime(payment) {
+            try releaseReservation(token: payment.reservationToken)
+            payment.close()
+        }
     }
 }

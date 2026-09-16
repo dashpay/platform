@@ -7,18 +7,21 @@ use std::collections::BTreeMap;
 
 use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::GroveOp;
 use grovedb::batch::KeyInfoPath;
 use grovedb::element::reference_path::ReferencePathType;
+use grovedb::element::IndexAxis;
 use grovedb::element::MaxReferenceHop;
 use grovedb::{batch::QualifiedGroveDbOp, Element, ElementFlags, TreeType};
 use grovedb_costs::OperationCost;
-use itertools::Itertools;
 
 use crate::error::drive::DriveError;
+use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::get_overflow_error;
 use crate::fees::op::LowLevelDriveOperation::{
-    CalculatedCostOperation, FunctionOperation, GroveOperation, PreCalculatedFeeResult,
+    CalculatedCostOperation, CalculatedEphemeralCostOperation, EphemeralGroveOperation,
+    FunctionOperation, GroveOperation, PreCalculatedFeeResult,
 };
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::storage_flags::StorageFlags;
@@ -196,17 +199,63 @@ impl FunctionOp {
 }
 
 /// Drive operation
+// GroveOperation dominates every op vec on the write path; boxing it would
+// trade one inline copy for a per-op heap allocation in consensus-critical
+// batching, so the size disparity against the small cost variants is accepted.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Eq, PartialEq)]
 pub enum LowLevelDriveOperation {
     /// Grove operation
     GroveOperation(QualifiedGroveDbOp),
+    /// A grove operation targeting a TTL'd `timeRange` index subtree.
+    /// Applied in its own batch and consumed at the EPHEMERAL price:
+    /// added bytes bill to processing at the fee table's
+    /// `ttl_ephemeral_disk_usage_credit_per_byte` instead of to storage
+    /// (the bytes provably live at most `ttl` plus a bounded drainage
+    /// lag), and removals produce no refunds — TTL elements carry no
+    /// storage flags. Produced only by the document index walkers for
+    /// sub-levels whose transform declares a `ttl`; unreachable before
+    /// protocol v14, where the grammar does not parse.
+    EphemeralGroveOperation(QualifiedGroveDbOp),
     /// A drive operation
     FunctionOperation(FunctionOp),
     /// Calculated cost operation
     CalculatedCostOperation(OperationCost),
+    /// The applied cost of an ephemeral (TTL'd-subtree) batch — same
+    /// pricing rule as [`Self::EphemeralGroveOperation`], carrying the
+    /// cost the batch application (or its estimation) actually returned.
+    CalculatedEphemeralCostOperation(OperationCost),
     /// Pre Calculated Fee Result
     PreCalculatedFeeResult(FeeResult),
 }
+
+/// Shared rejection message for the three `Element` wrappers
+/// (`NonCounted` / `NotSummed` / `NotCountedOrSummed`) when asked to wrap an
+/// indexed tree.
+///
+/// grovedb's wrapper constructors reject indexed inners outright, and for a
+/// structural reason rather than an oversight: the wrapper suppresses the
+/// wrapped subtree's contribution to its parent's aggregate, but an indexed
+/// primary's parent element is exactly where that aggregate — and the
+/// secondary root keys derived from it — is committed. A wrapped indexed tree
+/// would have nowhere to hang its secondaries.
+///
+/// The shape that would reach this — a ranked index whose terminal
+/// property-name tree sits inside a value tree that itself aggregates, i.e. a
+/// compound ranked index `[a, b]` on a doctype that ALSO declares an
+/// aggregating index terminating at `[a]` — is rejected at contract-parse
+/// time (`validate_no_ranked_prefix_overlap` in rs-dpp), so this is the
+/// fail-closed backstop behind that check. Failing closed here is deliberate
+/// — the alternative is silently writing a non-indexed tree and having
+/// ranked queries return nothing.
+const INDEXED_INNER_UNWRAPPABLE: &str =
+    "an indexed tree cannot be wrapped in NonCounted / NotSummed / NotCountedOrSummed: the \
+     wrapper suppresses the subtree's contribution to its parent's aggregate, but an indexed \
+     primary commits its aggregate (and the derived secondary root keys) through that very \
+     parent element. A ranked index's terminal property-name tree therefore cannot live inside \
+     an aggregating value tree — i.e. a ranked compound index [a, b] cannot coexist with a \
+     countable/summable index terminating at [a]; contracts declaring that pair are rejected \
+     at parse time.";
 
 impl LowLevelDriveOperation {
     /// Returns a list of the costs of the Drive operations.
@@ -226,6 +275,46 @@ impl LowLevelDriveOperation {
                     processing_fee: op.cost(fee_version),
                     ..Default::default()
                 }),
+                CalculatedEphemeralCostOperation(cost) => {
+                    // TTL'd-subtree bytes: the added bytes bill to
+                    // PROCESSING at the ephemeral rate instead of to
+                    // storage — they provably live at most `ttl` plus a
+                    // bounded drainage lag, so the perpetual-retention
+                    // storage price does not apply. No refunds by
+                    // construction: TTL elements carry no storage flags,
+                    // so their removal can only ever be basic.
+                    let ephemeral_bytes_fee = (cost.storage_cost.added_bytes as u64)
+                        .checked_mul(
+                            fee_version
+                                .storage
+                                .ttl_ephemeral_disk_usage_credit_per_byte,
+                        )
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "overflow pricing ephemeral bytes",
+                        )))?;
+                    let processing_fee = cost
+                        .ephemeral_cost(fee_version)?
+                        .checked_add(ephemeral_bytes_fee)
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "overflow adding ephemeral bytes fee",
+                        )))?;
+                    let removed_bytes_from_system = match cost.storage_cost.removed_bytes {
+                        NoStorageRemoval => 0,
+                        BasicStorageRemoval(amount) => amount,
+                        SectionedStorageRemoval(_) => {
+                            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "TTL'd subtrees carry no storage flags, so an ephemeral \
+                                 batch cannot produce sectioned (refundable) removal",
+                            )))
+                        }
+                    };
+                    Ok(FeeResult {
+                        storage_fee: 0,
+                        processing_fee,
+                        fee_refunds: FeeRefunds::default(),
+                        removed_bytes_from_system,
+                    })
+                }
                 _ => {
                     let cost = operation.operation_cost()?;
                     // There is no need for a checked multiply here because added bytes are u64 and
@@ -282,10 +371,12 @@ impl LowLevelDriveOperation {
     /// Returns the cost of this operation
     pub fn operation_cost(self) -> Result<OperationCost, Error> {
         match self {
-            GroveOperation(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "grove operations must be executed, not directly transformed to costs",
-            ))),
-            CalculatedCostOperation(c) => Ok(c),
+            GroveOperation(_) | EphemeralGroveOperation(_) => {
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "grove operations must be executed, not directly transformed to costs",
+                )))
+            }
+            CalculatedCostOperation(c) | CalculatedEphemeralCostOperation(c) => Ok(c),
             PreCalculatedFeeResult(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "pre calculated fees should not be requested by operation costs",
             ))),
@@ -313,7 +404,9 @@ impl LowLevelDriveOperation {
         let operations = insert_operations
             .iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) => Some(grovedb_op.clone()),
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                    Some(grovedb_op.clone())
+                }
                 _ => None,
             })
             .collect();
@@ -327,27 +420,96 @@ impl LowLevelDriveOperation {
         let operations = insert_operations
             .into_iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) => Some(grovedb_op),
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                    Some(grovedb_op)
+                }
                 _ => None,
             })
             .collect();
         GroveDbOpBatch::from_operations(operations)
     }
 
-    /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
+    /// Filters the ordinary groveDB ops from a list of operations into a
+    /// `GroveDbOpBatch`, returning everything else — ephemeral (TTL'd
+    /// subtree) grove operations included — as leftovers, so no caller can
+    /// lose them or bill them at the ordinary storage price by accident.
+    /// The apply path splits three ways instead
+    /// (`grovedb_operations_batch_consume_split_ephemeral`).
     pub fn grovedb_operations_batch_consume_with_leftovers(
         insert_operations: Vec<LowLevelDriveOperation>,
     ) -> (GroveDbOpBatch, Vec<LowLevelDriveOperation>) {
-        let (grove_operations, other_operations): (Vec<_>, Vec<_>) =
-            insert_operations.into_iter().partition_map(|op| match op {
-                GroveOperation(grovedb_op) => itertools::Either::Left(grovedb_op),
-                _ => itertools::Either::Right(op),
-            });
-
+        let mut grove_operations = vec![];
+        let mut other_operations = vec![];
+        for op in insert_operations {
+            match op {
+                GroveOperation(grovedb_op) => grove_operations.push(grovedb_op),
+                other => other_operations.push(other),
+            }
+        }
         (
             GroveDbOpBatch::from_operations(grove_operations),
             other_operations,
         )
+    }
+
+    /// Splits operations three ways: the ordinary grove batch, the
+    /// ephemeral (TTL'd-subtree) grove batch — applied separately so its
+    /// cost can be consumed at the ephemeral price — and every
+    /// non-grove leftover.
+    pub fn grovedb_operations_batch_consume_split_ephemeral(
+        insert_operations: Vec<LowLevelDriveOperation>,
+    ) -> (GroveDbOpBatch, GroveDbOpBatch, Vec<LowLevelDriveOperation>) {
+        let mut grove_operations = vec![];
+        let mut ephemeral_operations = vec![];
+        let mut other_operations = vec![];
+        for op in insert_operations {
+            match op {
+                GroveOperation(grovedb_op) => grove_operations.push(grovedb_op),
+                EphemeralGroveOperation(grovedb_op) => ephemeral_operations.push(grovedb_op),
+                other => other_operations.push(other),
+            }
+        }
+        (
+            GroveDbOpBatch::from_operations(grove_operations),
+            GroveDbOpBatch::from_operations(ephemeral_operations),
+            other_operations,
+        )
+    }
+
+    /// Re-tag an operation as targeting a TTL'd (ephemeral) subtree, so
+    /// its bytes are consumed at the ephemeral price. Grove operations
+    /// move to their ephemeral batch; already-calculated costs keep their
+    /// numbers under the ephemeral consumption rule; fee results pass
+    /// through untouched (nothing byte-priced remains in them).
+    pub fn retag_ephemeral(self) -> LowLevelDriveOperation {
+        match self {
+            GroveOperation(mut grovedb_op) => {
+                // TTL'd (ephemeral) subtrees must hold flagless elements:
+                // their bytes are never refundable, and flags on any element
+                // under them would turn its later removal sectioned
+                // (refundable) — the consume path treats that as corruption.
+                // Stripping here, at the single choke point every ephemeral
+                // op passes through, lets the walkers keep building elements
+                // exactly as they do for standing levels.
+                match &mut grovedb_op.op {
+                    GroveOp::InsertWithKnownToNotAlreadyExist { element }
+                    | GroveOp::InsertIfNotExists { element, .. }
+                    | GroveOp::InsertOrReplace { element }
+                    | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element }
+                    | GroveOp::Replace { element }
+                    | GroveOp::ReplaceDontCheckForBackwardsReferences { element }
+                    | GroveOp::Patch { element, .. }
+                    | GroveOp::PatchDontCheckForBackwardsReferences { element, .. } => {
+                        element.set_flags(None)
+                    }
+                    GroveOp::RefreshReference { flags, .. } => *flags = None,
+                    _ => {}
+                }
+                EphemeralGroveOperation(grovedb_op)
+            }
+            CalculatedCostOperation(cost) => CalculatedEphemeralCostOperation(cost),
+            other => other,
+        }
     }
 
     /// Filters the groveDB ops from a list of operations and collects them in a `Vec<QualifiedGroveDbOp>`.
@@ -357,7 +519,9 @@ impl LowLevelDriveOperation {
         insert_operations
             .into_iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) => Some(grovedb_op),
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                    Some(grovedb_op)
+                }
                 _ => None,
             })
             .collect()
@@ -499,6 +663,13 @@ impl LowLevelDriveOperation {
             TreeType::ProvableCountTree => {
                 Element::empty_provable_count_tree_with_flags(element_flags)
             }
+            TreeType::ProvableSumIndexedTree
+            | TreeType::ProvableCountIndexedTree
+            | TreeType::ProvableCountProvableSumIndexedTree => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    INDEXED_INNER_UNWRAPPABLE,
+                )));
+            }
             _ => {
                 return Err(Error::Drive(DriveError::NotSupported(
                     "NonCounted-wrapping is only supported for NormalTree, CountTree, and \
@@ -550,6 +721,13 @@ impl LowLevelDriveOperation {
             }
             TreeType::ProvableCountProvableSumTree => {
                 Element::empty_provable_count_provable_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableSumIndexedTree
+            | TreeType::ProvableCountIndexedTree
+            | TreeType::ProvableCountProvableSumIndexedTree => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    INDEXED_INNER_UNWRAPPABLE,
+                )));
             }
             _ => {
                 return Err(Error::Drive(DriveError::NotSupported(
@@ -609,7 +787,14 @@ impl LowLevelDriveOperation {
             // Count-only parents — wrap so the inner contributes 0 to
             // the parent's count. The inner can be plain or itself
             // count-bearing; the helper validates accepted variants.
-            TreeType::CountTree | TreeType::ProvableCountTree => {
+            //
+            // `ProvableCountIndexedTree` is included because an indexed
+            // primary aggregates exactly like the tree it mirrors: the
+            // wrapper choice depends on which axes the parent commits, and
+            // PCIT commits the same single count axis as `ProvableCountTree`.
+            TreeType::CountTree
+            | TreeType::ProvableCountTree
+            | TreeType::ProvableCountIndexedTree => {
                 Self::for_known_path_key_empty_non_counted_tree(
                     path,
                     key,
@@ -620,19 +805,21 @@ impl LowLevelDriveOperation {
             // Sum-only parents — wrap so the inner contributes 0 to
             // the parent's sum. Inner must be sum-bearing (see
             // `for_known_path_key_empty_not_summed_tree`'s accepted set).
-            TreeType::SumTree | TreeType::BigSumTree | TreeType::ProvableSumTree => {
-                Self::for_known_path_key_empty_not_summed_tree(
-                    path,
-                    key,
-                    inner_tree_type,
-                    storage_flags,
-                )
-            }
+            TreeType::SumTree
+            | TreeType::BigSumTree
+            | TreeType::ProvableSumTree
+            | TreeType::ProvableSumIndexedTree => Self::for_known_path_key_empty_not_summed_tree(
+                path,
+                key,
+                inner_tree_type,
+                storage_flags,
+            ),
             // Combined count+sum parents — wrap so both axes contribute
             // 0. Inner must be sum-bearing.
             TreeType::CountSumTree
             | TreeType::ProvableCountSumTree
-            | TreeType::ProvableCountProvableSumTree => {
+            | TreeType::ProvableCountProvableSumTree
+            | TreeType::ProvableCountProvableSumIndexedTree => {
                 Self::for_known_path_key_empty_not_counted_or_summed_tree(
                     path,
                     key,
@@ -673,6 +860,13 @@ impl LowLevelDriveOperation {
             TreeType::ProvableCountProvableSumTree => {
                 Element::empty_provable_count_provable_sum_tree_with_flags(element_flags)
             }
+            TreeType::ProvableSumIndexedTree
+            | TreeType::ProvableCountIndexedTree
+            | TreeType::ProvableCountProvableSumIndexedTree => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    INDEXED_INNER_UNWRAPPABLE,
+                )));
+            }
             _ => {
                 return Err(Error::Drive(DriveError::NotSupported(
                     "NotCountedOrSummed-wrapping is only supported for the six sum-bearing \
@@ -686,6 +880,215 @@ impl LowLevelDriveOperation {
                  given the match above).",
             ))
         })?;
+        Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
+            path, key, tree,
+        ))
+    }
+
+    /// Sets `GroveOperation` for inserting an empty continuation tree under an
+    /// aggregating parent so it contributes **zero to every axis the parent
+    /// aggregates** — the v2 index walkers' replacement for
+    /// [`Self::wrap_in_non_aggregated_for_parent_tree_type`].
+    ///
+    /// The v0 dispatcher above covers only the diagonal of the parent×inner
+    /// matrix (count parent + count-ish inner, sum parent + sum-bearing
+    /// inner, count+sum parent + sum-bearing inner) and errors on everything
+    /// else, which made shared-prefix aggregate contracts (e.g. a summable
+    /// `[a]` next to a plain compound `[a, b]`) reject every document
+    /// insert. This dispatcher completes the matrix using only combinations
+    /// grovedb accepts:
+    /// - `CountTree` parent → `Element::NonCounted(inner)` for any inner
+    ///   tree variant (a `NonCounted` child contributes 0 to the count; the
+    ///   parent has no sum axis).
+    /// - `CountSumTree` parent → sum-bearing inner:
+    ///   `Element::NotCountedOrSummed(inner)`; non-sum inner:
+    ///   `Element::NonCounted(inner)` (count suppressed by the wrapper, sum
+    ///   contribution of a non-sum inner is 0 by definition —
+    ///   `sum_value_or_default()` returns 0 for it).
+    /// - `SumTree` / `BigSumTree` / `ProvableSumTree` parent → sum-bearing
+    ///   inner: `Element::NotSummed(inner)`; non-sum inner: **no wrapper at
+    ///   all** — a non-sum child already contributes 0 to a sum-only
+    ///   parent, and grovedb has no `NotSummed(non-sum)` form.
+    /// - Provable count-bearing parents (`ProvableCountTree` /
+    ///   `ProvableCountSumTree` / `ProvableCountProvableSumTree`) →
+    ///   `NotSupported`. These commit their count into every node hash and
+    ///   reject count-suppressed children at grovedb's insert guards
+    ///   (`TreeType::accepts_non_counted_children` /
+    ///   `accepts_not_counted_or_summed_children`), so callers must demote
+    ///   the parent first — see
+    ///   `crate::drive::document::index_level_tree_types`.
+    /// - Non-aggregating parents → `NotSupported`; use
+    ///   [`crate::fees::op::LowLevelDriveOperationTreeTypeConverter::empty_tree_operation_for_known_path_key`]
+    ///   directly.
+    ///
+    /// Only reachable from the v2 index walkers (platform-version gated);
+    /// the v0 dispatcher stays byte-identical for the frozen v0/v1 walkers.
+    pub fn for_known_path_key_empty_tree_contributing_zero_to_parent(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        aggregating_parent_tree_type: TreeType,
+        inner_tree_type: TreeType,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Result<Self, Error> {
+        // An indexed inner is rejected under every aggregating parent,
+        // including the sum-only ones whose non-sum fallback below is
+        // unwrapped: a ranked index's terminal property-name tree must
+        // not live inside an aggregating value tree at all (see
+        // `INDEXED_INNER_UNWRAPPABLE`), and letting the unwrapped
+        // fallback quietly accept one would create the exact shape
+        // rs-dpp's single-property ranked rule and the ranked query
+        // picker both refuse to serve.
+        if matches!(
+            inner_tree_type,
+            TreeType::ProvableSumIndexedTree
+                | TreeType::ProvableCountIndexedTree
+                | TreeType::ProvableCountProvableSumIndexedTree
+        ) {
+            return Err(Error::Drive(DriveError::NotSupported(
+                INDEXED_INNER_UNWRAPPABLE,
+            )));
+        }
+        let inner_is_sum_bearing = matches!(
+            inner_tree_type,
+            TreeType::SumTree
+                | TreeType::BigSumTree
+                | TreeType::ProvableSumTree
+                | TreeType::CountSumTree
+                | TreeType::ProvableCountSumTree
+                | TreeType::ProvableCountProvableSumTree
+        );
+        match aggregating_parent_tree_type {
+            TreeType::CountTree => Self::for_known_path_key_empty_non_counted_any_tree(
+                path,
+                key,
+                inner_tree_type,
+                storage_flags,
+            ),
+            TreeType::CountSumTree => {
+                if inner_is_sum_bearing {
+                    Self::for_known_path_key_empty_not_counted_or_summed_tree(
+                        path,
+                        key,
+                        inner_tree_type,
+                        storage_flags,
+                    )
+                } else {
+                    Self::for_known_path_key_empty_non_counted_any_tree(
+                        path,
+                        key,
+                        inner_tree_type,
+                        storage_flags,
+                    )
+                }
+            }
+            TreeType::SumTree | TreeType::BigSumTree | TreeType::ProvableSumTree => {
+                if inner_is_sum_bearing {
+                    Self::for_known_path_key_empty_not_summed_tree(
+                        path,
+                        key,
+                        inner_tree_type,
+                        storage_flags,
+                    )
+                } else {
+                    inner_tree_type.empty_tree_operation_for_known_path_key(
+                        path,
+                        key,
+                        storage_flags,
+                    )
+                }
+            }
+            // Indexed parents are structurally impossible here: the
+            // ranked upgrade applies to *property-name* trees, and this
+            // dispatcher is only ever called with a **value** tree as the
+            // parent. Rejected explicitly rather than through the
+            // non-aggregating catch-all so a future change that starts
+            // hanging continuations under an indexed tree reports the real
+            // reason (the indexed primary's secondaries are keyed by its
+            // children's aggregates, which a zero-contributing child would
+            // silently fall out of).
+            TreeType::ProvableCountIndexedTree
+            | TreeType::ProvableSumIndexedTree
+            | TreeType::ProvableCountProvableSumIndexedTree => {
+                Err(Error::Drive(DriveError::NotSupported(
+                    "indexed trees are property-name trees, never value trees, so they cannot \
+                     host zero-contributing continuation children — see \
+                     crate::drive::document::ranked_index_tree_type.",
+                )))
+            }
+            TreeType::ProvableCountTree
+            | TreeType::ProvableCountSumTree
+            | TreeType::ProvableCountProvableSumTree => {
+                Err(Error::Drive(DriveError::NotSupported(
+                    "provable count-bearing parents cannot host zero-contributing children — \
+                 grovedb commits their count into every node hash and rejects NonCounted / \
+                 NotCountedOrSummed children; the index walker must demote such value trees \
+                 to CountSumTree before hanging continuations under them (see \
+                 index_level_tree_types_with_continuation_demotion).",
+                )))
+            }
+            _ => Err(Error::Drive(DriveError::NotSupported(
+                "for_known_path_key_empty_tree_contributing_zero_to_parent called with a \
+                 non-aggregating parent tree type — caller should use the unwrapped \
+                 `empty_tree_operation_for_known_path_key` path instead.",
+            ))),
+        }
+    }
+
+    /// Sets `GroveOperation` for inserting an empty tree of any of the nine
+    /// standard merk tree variants wrapped in `Element::NonCounted`.
+    /// Extends [`Self::for_known_path_key_empty_non_counted_tree`]'s
+    /// accepted set (`NormalTree` / `CountTree` / `ProvableCountTree`) with
+    /// the six sum-bearing variants: `Element::new_non_counted` accepts any
+    /// non-wrapper inner, and under the only parents the v2 walkers use it
+    /// for (`CountTree`, `CountSumTree` — both without per-node count
+    /// commitments) the wrapper suppresses the count contribution while a
+    /// sum-bearing inner's sum still propagates on the parent's sum axis if
+    /// it has one — which is exactly the v0-diagonal behavior for
+    /// count-only parents, and unreachable for `CountSumTree` parents (the
+    /// zero-contribution dispatcher routes their sum-bearing inners through
+    /// `NotCountedOrSummed` instead).
+    ///
+    /// Kept separate from the frozen v0 helper so pre-v14 consensus
+    /// behavior stays byte-identical.
+    pub fn for_known_path_key_empty_non_counted_any_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        tree_type: TreeType,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Result<Self, Error> {
+        let element_flags = storage_flags.map(|s| s.to_element_flags());
+        let inner = match tree_type {
+            TreeType::NormalTree => Element::empty_tree_with_flags(element_flags),
+            TreeType::SumTree => Element::empty_sum_tree_with_flags(element_flags),
+            TreeType::BigSumTree => Element::empty_big_sum_tree_with_flags(element_flags),
+            TreeType::CountTree => Element::empty_count_tree_with_flags(element_flags),
+            TreeType::CountSumTree => Element::empty_count_sum_tree_with_flags(element_flags),
+            TreeType::ProvableCountTree => {
+                Element::empty_provable_count_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableCountSumTree => {
+                Element::empty_provable_count_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableSumTree => Element::empty_provable_sum_tree_with_flags(element_flags),
+            TreeType::ProvableCountProvableSumTree => {
+                Element::empty_provable_count_provable_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableSumIndexedTree
+            | TreeType::ProvableCountIndexedTree
+            | TreeType::ProvableCountProvableSumIndexedTree => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    INDEXED_INNER_UNWRAPPABLE,
+                )));
+            }
+            _ => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "NonCounted-wrapping is only supported for the nine standard merk tree \
+                     variants; special trees (commitment / MMR / bulk-append / dense) are \
+                     never index continuation trees.",
+                )));
+            }
+        };
+        let tree = Element::new_non_counted(inner)?;
         Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
             path, key, tree,
         ))
@@ -922,13 +1325,198 @@ impl LowLevelDriveOperation {
         LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
     }
 
+    /// Sets `GroveOperation` for inserting an empty **provable
+    /// count-indexed** tree (PCIT, grovedb PR 657) at the given path and
+    /// key. The primary Merk is a byte-compatible mirror of
+    /// `ProvableCountTree`, so every existing `AggregateCountOnRange` read
+    /// keeps working against it; what the indexed variant adds is one
+    /// ordered secondary Merk keyed by `(count_be ‖ child_key)`, which is
+    /// what makes "top / bottom K groups by document count" O(log n + k)
+    /// with a proof.
+    ///
+    /// Used at contract registration (and by the index walkers when a deeper
+    /// level is materialized lazily) for an index that declares
+    /// `rankedCountable: true` while its range layout is count-only. An index
+    /// that also declares `rangeSummable` lays out as PCPS underneath and
+    /// therefore takes the multi-axis
+    /// [`Self::for_known_path_key_empty_provable_count_provable_sum_indexed_tree`]
+    /// path instead, even when Count is its only ranking axis.
+    pub fn for_known_path_key_empty_provable_count_indexed_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => Element::empty_provable_count_indexed_tree_with_flags(
+                storage_flags.to_some_element_flags(),
+            ),
+            None => Element::empty_provable_count_indexed_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
+    /// Sum-axis counterpart of
+    /// [`Self::for_known_path_key_empty_provable_count_indexed_tree`]: an
+    /// empty **provable sum-indexed** tree (PSIT) whose primary mirrors
+    /// `ProvableSumTree` and whose single secondary is keyed by
+    /// `(sum_sortable_be ‖ child_key)`.
+    pub fn for_known_path_key_empty_provable_sum_indexed_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => Element::empty_provable_sum_indexed_tree_with_flags(
+                storage_flags.to_some_element_flags(),
+            ),
+            None => Element::empty_provable_sum_indexed_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty **provable count +
+    /// provable sum indexed** tree (PCPSIT, grovedb PR 657) at the given path
+    /// and key, carrying `ranked_axes` — the canonical
+    /// `(axis_tag, secondary_root_key)` TLV, sorted ascending by tag with no
+    /// duplicates and 1..=3 entries. Every secondary starts empty, so each
+    /// root key is `None`.
+    ///
+    /// Unlike the two single-axis helpers this one returns a `Result`: the
+    /// axes list is caller-supplied and grovedb validates it
+    /// (`Element::validate_pcpsit_axes`), because an out-of-order, duplicated
+    /// or empty TLV would still be hashed into the parent via `axes_digest`
+    /// and produce a tree whose secondaries nothing can address.
+    pub fn for_known_path_key_empty_provable_count_provable_sum_indexed_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        ranked_axes: Vec<(u8, Option<Vec<u8>>)>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Result<Self, Error> {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::empty_provable_count_provable_sum_indexed_tree_with_flags(
+                    ranked_axes,
+                    storage_flags.to_some_element_flags(),
+                )?
+            }
+            None => Element::empty_provable_count_provable_sum_indexed_tree(ranked_axes)?,
+        };
+
+        Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
+            path, key, tree,
+        ))
+    }
+
+    /// Dispatcher over the three indexed-tree constructors, keyed on the
+    /// resolved `tree_type` and the ranking axes that produced it (see
+    /// [`crate::drive::document::ranked_index_tree_type`]).
+    ///
+    /// `ranked_axes` must be non-empty and canonical; the single-axis
+    /// variants additionally require that the axis matches the variant, since
+    /// their element shape hard-codes which aggregate the one secondary is
+    /// keyed by. Any other combination is an upstream resolution bug and is
+    /// rejected rather than silently narrowed.
+    pub fn for_known_path_key_empty_indexed_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        tree_type: TreeType,
+        ranked_axes: &[IndexAxis],
+        storage_flags: Option<&StorageFlags>,
+    ) -> Result<Self, Error> {
+        match (tree_type, ranked_axes) {
+            (TreeType::ProvableCountIndexedTree, [IndexAxis::Count]) => {
+                Ok(Self::for_known_path_key_empty_provable_count_indexed_tree(
+                    path,
+                    key,
+                    storage_flags,
+                ))
+            }
+            (TreeType::ProvableSumIndexedTree, [IndexAxis::Sum]) => Ok(
+                Self::for_known_path_key_empty_provable_sum_indexed_tree(path, key, storage_flags),
+            ),
+            (TreeType::ProvableCountProvableSumIndexedTree, axes) if !axes.is_empty() => {
+                Self::for_known_path_key_empty_provable_count_provable_sum_indexed_tree(
+                    path,
+                    key,
+                    axes.iter().map(|axis| (axis.tag(), None)).collect(),
+                    storage_flags,
+                )
+            }
+            _ => Err(Error::Drive(DriveError::NotSupported(
+                "for_known_path_key_empty_indexed_tree called with a tree type / ranked-axis \
+                 pair that does not describe an indexed tree — the single-axis PCIT / PSIT \
+                 variants accept exactly their own axis and PCPSIT needs a non-empty axis list.",
+            ))),
+        }
+    }
+
+    /// Cost-estimation analog of
+    /// [`Self::for_known_path_key_empty_provable_count_indexed_tree`].
+    pub fn for_estimated_path_key_empty_provable_count_indexed_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => Element::empty_provable_count_indexed_tree_with_flags(
+                storage_flags.to_some_element_flags(),
+            ),
+            None => Element::empty_provable_count_indexed_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
+    }
+
+    /// Cost-estimation analog of
+    /// [`Self::for_known_path_key_empty_provable_sum_indexed_tree`].
+    pub fn for_estimated_path_key_empty_provable_sum_indexed_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => Element::empty_provable_sum_indexed_tree_with_flags(
+                storage_flags.to_some_element_flags(),
+            ),
+            None => Element::empty_provable_sum_indexed_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
+    }
+
+    /// Cost-estimation analog of
+    /// [`Self::for_known_path_key_empty_provable_count_provable_sum_indexed_tree`].
+    pub fn for_estimated_path_key_empty_provable_count_provable_sum_indexed_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        ranked_axes: Vec<(u8, Option<Vec<u8>>)>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Result<Self, Error> {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::empty_provable_count_provable_sum_indexed_tree_with_flags(
+                    ranked_axes,
+                    storage_flags.to_some_element_flags(),
+                )?
+            }
+            None => Element::empty_provable_count_provable_sum_indexed_tree(ranked_axes)?,
+        };
+
+        Ok(LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree))
+    }
+
     /// Sets `GroveOperation` for inserting an element at the given path and key
     pub fn insert_for_known_path_key_element(
         path: Vec<Vec<u8>>,
         key: Vec<u8>,
         element: Element,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(path, key, element))
+        GroveOperation(
+            QualifiedGroveDbOp::insert_or_replace_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for replacement of an element at the given path and key
@@ -937,7 +1525,10 @@ impl LowLevelDriveOperation {
         key: Vec<u8>,
         element: Element,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::replace_op(path, key, element))
+        GroveOperation(
+            QualifiedGroveDbOp::replace_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for patching of an element at the given path and key
@@ -948,12 +1539,10 @@ impl LowLevelDriveOperation {
         element: Element,
         change_in_bytes: i32,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::patch_op(
-            path,
-            key,
-            element,
-            change_in_bytes,
-        ))
+        GroveOperation(
+            QualifiedGroveDbOp::patch_op(path, key, element, change_in_bytes)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for inserting an element at an unknown estimated path and key
@@ -962,7 +1551,10 @@ impl LowLevelDriveOperation {
         key: KeyInfo,
         element: Element,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::insert_estimated_op(path, key, element))
+        GroveOperation(
+            QualifiedGroveDbOp::insert_estimated_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for replacement of an element at an unknown estimated path and key
@@ -971,7 +1563,10 @@ impl LowLevelDriveOperation {
         key: KeyInfo,
         element: Element,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::replace_estimated_op(path, key, element))
+        GroveOperation(
+            QualifiedGroveDbOp::replace_estimated_op(path, key, element)
+                .dont_check_for_backwards_references(),
+        )
     }
 
     /// Sets `GroveOperation` for refresh of a reference at the given path and key
@@ -1084,6 +1679,46 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             }
             TreeType::DenseAppendOnlyFixedSizeTree(chunk_power) => {
                 Element::empty_dense_tree_with_flags(*chunk_power, element_flags)
+            }
+            // Single-axis indexed trees (grovedb PR 657) carry no axis list
+            // on the element — the one secondary Merk is implied by the
+            // variant — so `TreeType` alone fully describes them and the
+            // generic converter can build them.
+            TreeType::ProvableSumIndexedTree => {
+                Element::empty_provable_sum_indexed_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableCountIndexedTree => {
+                Element::empty_provable_count_indexed_tree_with_flags(element_flags)
+            }
+            // The multi-axis variant is the exception: its axes TLV lives
+            // only on the `Element`, `TreeType` does not carry it, and an
+            // empty TLV is rejected by grovedb's `validate_pcpsit_axes`. The
+            // conversion is lossy by construction, not merely unimplemented,
+            // so callers must route through
+            // [`LowLevelDriveOperation::for_known_path_key_empty_indexed_tree`]
+            // (or the dedicated
+            // `batch_insert_empty_provable_count_provable_sum_indexed_tree`
+            // helper) which take the axes explicitly. Erroring here keeps a
+            // caller that forgot from silently emitting an axis-less indexed
+            // tree whose secondaries nothing maintains.
+            TreeType::ProvableCountProvableSumIndexedTree => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "empty_tree_operation_for_known_path_key cannot create a \
+                     ProvableCountProvableSumIndexedTree — the ranked axis set is not carried \
+                     by TreeType; use for_known_path_key_empty_indexed_tree (or \
+                     batch_insert_empty_provable_count_provable_sum_indexed_tree) instead.",
+                )))
+            }
+            // A private document store's entry size lives only on the
+            // `Element` (it does not affect Merk node layout), so `TreeType`
+            // cannot describe the element to insert. Drive has no private
+            // document store surface yet; when it does, creation must go
+            // through a dedicated helper that takes the entry size.
+            TreeType::PrivateDocumentStore(_) => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "empty_tree_operation_for_known_path_key cannot create a \
+                     PrivateDocumentStore — the entry size is not carried by TreeType",
+                )))
             }
         };
 
@@ -1688,6 +2323,25 @@ mod tests {
     }
 
     #[test]
+    fn grovedb_operations_batch_consume_with_leftovers_keeps_ephemeral_ops() {
+        let ops = vec![
+            make_grove_op(10),
+            make_grove_op(20).retag_ephemeral(),
+            CalculatedCostOperation(OperationCost::default()),
+        ];
+        let (batch, leftovers) =
+            LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(ops);
+        assert_eq!(batch.len(), 1, "only the ordinary grove op joins the batch");
+        assert_eq!(leftovers.len(), 2);
+        assert!(
+            leftovers
+                .iter()
+                .any(|op| matches!(op, EphemeralGroveOperation(_))),
+            "an ephemeral grove op must survive as a leftover, never be dropped"
+        );
+    }
+
+    #[test]
     fn grovedb_operations_batch_consume_with_leftovers_empty() {
         let (batch, leftovers) =
             LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(vec![]);
@@ -1946,7 +2600,8 @@ mod tests {
 
         match op {
             LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
-                GroveOp::InsertOrReplace { element } => assert!(
+                GroveOp::InsertOrReplace { element }
+                | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => assert!(
                     matches!(element, Element::ProvableSumTree(..)),
                     "expected ProvableSumTree element, got: {:?}",
                     element
@@ -1954,6 +2609,189 @@ mod tests {
                 other => panic!("expected GroveOp::InsertOrReplace, got: {:?}", other),
             },
             other => panic!("expected GroveOperation, got: {:?}", other),
+        }
+    }
+
+    /// Table-driven pin of the v14 zero-contribution dispatcher: every
+    /// accepted parent × inner cell must produce exactly the specified
+    /// wrapper (or an unwrapped tree), and every rejected parent must
+    /// error for every inner. This decides consensus-relevant element
+    /// shapes for v14 continuation inserts, so a regression here (or a
+    /// demotion-helper change routing a provable parent in) must fail
+    /// loudly.
+    #[test]
+    fn zero_contribution_dispatcher_full_matrix() {
+        use grovedb::batch::GroveOp;
+
+        const ALL_INNERS: [TreeType; 9] = [
+            TreeType::NormalTree,
+            TreeType::SumTree,
+            TreeType::BigSumTree,
+            TreeType::CountTree,
+            TreeType::CountSumTree,
+            TreeType::ProvableCountTree,
+            TreeType::ProvableCountSumTree,
+            TreeType::ProvableSumTree,
+            TreeType::ProvableCountProvableSumTree,
+        ];
+
+        fn is_sum_bearing(tree_type: TreeType) -> bool {
+            matches!(
+                tree_type,
+                TreeType::SumTree
+                    | TreeType::BigSumTree
+                    | TreeType::CountSumTree
+                    | TreeType::ProvableCountSumTree
+                    | TreeType::ProvableSumTree
+                    | TreeType::ProvableCountProvableSumTree
+            )
+        }
+
+        fn element_tree_type(element: &Element) -> TreeType {
+            match element {
+                Element::Tree(..) => TreeType::NormalTree,
+                Element::SumTree(..) => TreeType::SumTree,
+                Element::BigSumTree(..) => TreeType::BigSumTree,
+                Element::CountTree(..) => TreeType::CountTree,
+                Element::CountSumTree(..) => TreeType::CountSumTree,
+                Element::ProvableCountTree(..) => TreeType::ProvableCountTree,
+                Element::ProvableCountSumTree(..) => TreeType::ProvableCountSumTree,
+                Element::ProvableSumTree(..) => TreeType::ProvableSumTree,
+                Element::ProvableCountProvableSumTree(..) => TreeType::ProvableCountProvableSumTree,
+                other => panic!("unexpected inner element: {other:?}"),
+            }
+        }
+
+        #[derive(Debug, PartialEq)]
+        enum Expected {
+            NonCounted,
+            NotSummed,
+            NotCountedOrSummed,
+            Unwrapped,
+        }
+
+        let dispatch = |parent: TreeType, inner: TreeType| {
+            LowLevelDriveOperation::for_known_path_key_empty_tree_contributing_zero_to_parent(
+                vec![b"root".to_vec()],
+                b"key".to_vec(),
+                parent,
+                inner,
+                None,
+            )
+        };
+
+        let assert_cell = |parent: TreeType, inner: TreeType, expected: Expected| {
+            let op = dispatch(parent, inner).unwrap_or_else(|error| {
+                panic!("parent {parent:?} inner {inner:?} must be accepted: {error}")
+            });
+            let element = match op {
+                LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
+                    GroveOp::InsertOrReplace { element }
+                    | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element } => {
+                        element
+                    }
+                    other => panic!("expected InsertOrReplace, got {other:?}"),
+                },
+                other => panic!("expected GroveOperation, got {other:?}"),
+            };
+            let (wrapper, produced_inner) = match &element {
+                Element::NonCounted(inner_element) => {
+                    (Expected::NonCounted, inner_element.as_ref())
+                }
+                Element::NotSummed(inner_element) => (Expected::NotSummed, inner_element.as_ref()),
+                Element::NotCountedOrSummed(inner_element) => {
+                    (Expected::NotCountedOrSummed, inner_element.as_ref())
+                }
+                plain => (Expected::Unwrapped, plain),
+            };
+            assert_eq!(
+                wrapper, expected,
+                "parent {parent:?} inner {inner:?}: wrong wrapper"
+            );
+            assert_eq!(
+                element_tree_type(produced_inner),
+                inner,
+                "parent {parent:?} inner {inner:?}: wrong inner tree type"
+            );
+        };
+
+        // Count-only parents wrap every inner NonCounted.
+        for inner in ALL_INNERS {
+            assert_cell(TreeType::CountTree, inner, Expected::NonCounted);
+        }
+        // Count-sum parents: sum-bearing inners get NotCountedOrSummed,
+        // non-sum inners get NonCounted.
+        for inner in ALL_INNERS {
+            let expected = if is_sum_bearing(inner) {
+                Expected::NotCountedOrSummed
+            } else {
+                Expected::NonCounted
+            };
+            assert_cell(TreeType::CountSumTree, inner, expected);
+        }
+        // Sum-only parents: sum-bearing inners get NotSummed, non-sum
+        // inners are inserted unwrapped (they contribute 0 naturally).
+        for parent in [
+            TreeType::SumTree,
+            TreeType::BigSumTree,
+            TreeType::ProvableSumTree,
+        ] {
+            for inner in ALL_INNERS {
+                let expected = if is_sum_bearing(inner) {
+                    Expected::NotSummed
+                } else {
+                    Expected::Unwrapped
+                };
+                assert_cell(parent, inner, expected);
+            }
+        }
+        // Provable count-bearing parents can't host zero-contributing
+        // children (the walkers demote them first); non-aggregating
+        // parents should use the plain path. Both must error for every
+        // inner.
+        for parent in [
+            TreeType::NormalTree,
+            TreeType::ProvableCountTree,
+            TreeType::ProvableCountSumTree,
+            TreeType::ProvableCountProvableSumTree,
+        ] {
+            for inner in ALL_INNERS {
+                assert!(
+                    dispatch(parent, inner).is_err(),
+                    "parent {parent:?} inner {inner:?} must be rejected"
+                );
+            }
+        }
+
+        // Ranked (indexed) trees are property-name trees, never value
+        // trees, and can never be a continuation inside an aggregating
+        // value tree — rejected in both roles, for every counterpart,
+        // including the sum-only parents whose non-sum inners are
+        // otherwise inserted unwrapped.
+        const INDEXED: [TreeType; 3] = [
+            TreeType::ProvableCountIndexedTree,
+            TreeType::ProvableSumIndexedTree,
+            TreeType::ProvableCountProvableSumIndexedTree,
+        ];
+        for indexed in INDEXED {
+            for inner in ALL_INNERS {
+                assert!(
+                    dispatch(indexed, inner).is_err(),
+                    "indexed parent {indexed:?} inner {inner:?} must be rejected"
+                );
+            }
+            for parent in [
+                TreeType::CountTree,
+                TreeType::CountSumTree,
+                TreeType::SumTree,
+                TreeType::BigSumTree,
+                TreeType::ProvableSumTree,
+            ] {
+                assert!(
+                    dispatch(parent, indexed).is_err(),
+                    "parent {parent:?} indexed inner {indexed:?} must be rejected"
+                );
+            }
         }
     }
 

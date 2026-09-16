@@ -13,6 +13,7 @@ pub mod document_types {
             pub const PREORDER_SALT: &str = "preorderSalt";
             pub const ALLOW_SUBDOMAINS: &str = "subdomainRules.allowSubdomains";
             pub const RECORDS: &str = "records";
+            pub const IDENTITY: &str = "identity";
             pub const DASH_UNIQUE_IDENTITY_ID: &str = "dashUniqueIdentityId";
             pub const DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
         }

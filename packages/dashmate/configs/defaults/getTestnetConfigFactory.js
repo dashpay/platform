@@ -203,7 +203,7 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
     };
 
     return new Config('testnet', lodashMerge({}, getBaseConfig()
-      .getOptions(), options));
+      .getStoredOptions(), options));
   }
 
   return getTestnetConfig;

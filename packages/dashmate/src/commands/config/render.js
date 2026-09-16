@@ -3,6 +3,10 @@ import { OUTPUT_FORMATS } from '../../constants.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 
 export default class ConfigRenderCommand extends ConfigBaseCommand {
+  // Rendering replaces the service configuration files, so serialize it with
+  // commands that save and render config.json.
+  static mutatesConfig = true;
+
   static description = `Render config's service configs
 
 Force dashmate to render all config's service configs

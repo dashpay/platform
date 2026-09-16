@@ -43,6 +43,16 @@ pub trait ContextProvider: Send + Sync {
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError>;
 
+    /// Register a data contract into the provider's cache so that a
+    /// subsequent proof verification (e.g. the returned-proof check after a
+    /// document or token state-transition broadcast) can resolve it without
+    /// a network fetch.
+    ///
+    /// Providers that maintain a writable known-contracts cache (e.g. the
+    /// mobile `TrustedHttpContextProvider`) override this; the default is a
+    /// no-op for providers that fetch on demand or don't cache.
+    fn register_data_contract(&self, _contract: Arc<DataContract>) {}
+
     /// Fetches the token configuration for a specified token ID.
     /// This method is used by [FromProof](crate::FromProof) implementations to fetch token configurations
     /// referenced in proofs.
@@ -99,6 +109,10 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
         self.as_ref().get_data_contract(id, platform_version)
     }
 
+    fn register_data_contract(&self, contract: Arc<DataContract>) {
+        self.as_ref().register_data_contract(contract)
+    }
+
     fn get_token_configuration(
         &self,
         token_id: &Identifier,
@@ -132,6 +146,11 @@ where
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
         lock.get_data_contract(id, platform_version)
+    }
+
+    fn register_data_contract(&self, contract: Arc<DataContract>) {
+        let lock = self.lock().expect("lock poisoned");
+        lock.register_data_contract(contract)
     }
 
     fn get_token_configuration(

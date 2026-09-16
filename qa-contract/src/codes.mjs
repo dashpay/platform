@@ -10,6 +10,7 @@
 
 export const APPS = [
   { code: 0, name: 'SwiftExampleApp', platform: 'iOS', description: 'Dash Platform iOS example wallet (Core SPV + Platform).' },
+  { code: 1, name: 'KotlinExampleApp', platform: 'Android', description: 'Dash Platform Android example wallet (Core SPV + Platform).' },
 ];
 
 export const TIERS = [

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Excludes WalletStorage's encrypted-secrets DataStore
+  (org.dashfoundation.wallet.secrets, backing mnemonic + identity-private-key
+  ciphertext) from Android's legacy Auto Backup (API <31 — see
+  dash_sdk_data_extraction_rules.xml for the API 31+ mechanism; this SDK's
+  minSdk is 29, so both are needed to cover the full range). Values in
+  this DataStore are worthless without the Keystore keys that encrypted
+  them, and Keystore keys are device-bound — never restored by any
+  backup path — so a restored copy can never be decrypted with the new
+  device's key material. Worse, a restored identity-key blob can pass
+  KeystoreManager.isKeysBlobDecryptable's structural check (right
+  ciphertext shape) despite being undecryptable, which skips the
+  automatic re-derive path that would otherwise repair it.
+
+  This SDK cannot set android:allowBackup itself (that's the consuming
+  app's call, and a library manifest can't safely override it) — an app
+  embedding this SDK should reference both files, or fold the same
+  exclusion into its own rules if it already has one:
+
+    <application
+        android:fullBackupContent="@xml/dash_sdk_backup_rules"
+        android:dataExtractionRules="@xml/dash_sdk_data_extraction_rules">
+
+  (KotlinExampleApp instead sets android:allowBackup="false", which
+  disables backup entirely and makes these files redundant for it
+  specifically — they're for OTHER consumers of the SDK.)
+-->
+<full-backup-content>
+    <exclude domain="file" path="datastore/org.dashfoundation.wallet.secrets.preferences_pb" />
+</full-backup-content>

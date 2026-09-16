@@ -65,10 +65,22 @@ impl Drive {
                 ),
                 genesis_time_ms: parking_lot::RwLock::new(genesis_time_ms),
                 protocol_versions_counter: parking_lot::RwLock::new(ProtocolVersionsCache::new()),
-                system_data_contracts: SystemDataContracts::load_genesis_system_contracts()?,
+                system_data_contracts: SystemDataContracts::new(),
             },
             checkpoints,
         };
+
+        // A reopened Drive must present the same protocol version votes as a node that never
+        // restarted. Readers such as the epoch upgrade tally treat the cache as the persisted
+        // counters, so mirror them as soon as the store holds committed state; a protocol
+        // version is only persisted from genesis on, and before that there is nothing to load.
+        if let Some(platform_version) = maybe_platform_version {
+            drive
+                .cache
+                .protocol_versions_counter
+                .write()
+                .load_if_needed(&drive, None, &platform_version.drive)?;
+        }
 
         Ok((drive, maybe_platform_version))
     }

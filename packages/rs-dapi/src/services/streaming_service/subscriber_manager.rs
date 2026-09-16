@@ -126,6 +126,31 @@ pub enum StreamingEvent {
     CoreMasternodeListDiff { data: Vec<u8> },
 }
 
+impl StreamingEvent {
+    pub(super) fn retained_bytes(&self) -> usize {
+        match self {
+            StreamingEvent::CoreRawTransaction { data }
+            | StreamingEvent::CoreRawBlock { data }
+            | StreamingEvent::CoreChainLock { data }
+            | StreamingEvent::CoreMasternodeListDiff { data } => data.len(),
+            StreamingEvent::CoreInstantLock {
+                tx_bytes,
+                lock_bytes,
+            } => tx_bytes
+                .as_ref()
+                .map_or(0, Vec::len)
+                .saturating_add(lock_bytes.len()),
+            StreamingEvent::CoreNewBlockHash { hash } => hash.len(),
+            StreamingEvent::PlatformTx { event } => event
+                .tx
+                .as_ref()
+                .map_or(0, Vec::len)
+                .saturating_add(event.hash.len()),
+            StreamingEvent::PlatformBlock { .. } => 0,
+        }
+    }
+}
+
 impl Debug for StreamingEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -214,6 +239,15 @@ mod tests {
 
         manager.remove_subscription(handle.id()).await;
         assert_eq!(manager.subscription_count().await, 0);
+    }
+
+    #[test]
+    fn retained_bytes_counts_all_owned_instant_lock_payloads() {
+        let event = StreamingEvent::CoreInstantLock {
+            tx_bytes: Some(vec![0; 17]),
+            lock_bytes: vec![0; 23],
+        };
+        assert_eq!(event.retained_bytes(), 40);
     }
 
     #[tokio::test]

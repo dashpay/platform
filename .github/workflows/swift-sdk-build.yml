@@ -6,6 +6,18 @@ on:
 jobs:
   swift-sdk-build:
     name: Swift SDK build + tests (warnings as errors)
+    # Keep fork PRs off the persistent self-hosted runner.
+    # thepastaclaw-owned forks are trusted, matching tests-rs-wallet.yml and
+    # tests-rs-workspace.yml. This guard is defense in depth: for pull_request
+    # events GitHub evaluates this YAML from the PR merge commit, so the
+    # authoritative boundary is the repository Actions setting requiring
+    # approval before outside-collaborator workflow runs. The guard covers
+    # approved runs and accidental regressions, enforced by
+    # .github/scripts/check-swift-self-hosted-runner.py.
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
     runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 90
 
@@ -87,5 +99,9 @@ jobs:
           rm -rf packages/swift-sdk/SwiftExampleApp/.build || true
 
       - name: Build and test Swift SDK
+        env:
+          # The self-hosted runner persists Cargo's target cache between jobs.
+          # Keep only one Apple architecture's intermediates at a time.
+          PRUNE_CARGO_TARGETS: "1"
         run: |
           bash packages/swift-sdk/run_tests.sh

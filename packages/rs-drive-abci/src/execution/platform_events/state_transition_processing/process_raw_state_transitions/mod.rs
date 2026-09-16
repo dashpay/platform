@@ -1,5 +1,8 @@
 mod v0;
 
+#[cfg(test)]
+pub(crate) use v0::test_fault_injection;
+
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::metrics::HistogramTiming;

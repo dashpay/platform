@@ -19,7 +19,7 @@ use dpp::dashcore::hashes::Hash;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::string_encoding::{decode, Encoding};
 use dpp::platform_value::Value;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
@@ -140,7 +140,7 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
         } = block_info;
         let time = Timestamp {
             seconds: (time_ms / 1000) as i64,
-            nanos: ((time_ms % 1000) * 1000) as i32,
+            nanos: ((time_ms % 1000) * 1_000_000) as i32,
         };
         // PREPARE (also processes internally)
 
@@ -209,7 +209,7 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
                 let serialized_error = data_map.get_bytes("serializedError").unwrap();
 
                 // Deserialize the consensus error
-                let error = ConsensusError::deserialize_from_bytes(&serialized_error)
+                let error = ConsensusError::deserialize_from_bytes_untrusted(&serialized_error)
                     .expect("expected to deserialize consensus error");
 
                 Err(Error::Abci(AbciError::InvalidStateTransition(error)))
@@ -287,7 +287,7 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             height: height as i64,
             time: Some(Timestamp {
                 seconds: (time_ms / 1000) as i64,
-                nanos: ((time_ms % 1000) * 1000) as i32,
+                nanos: ((time_ms % 1000) * 1_000_000) as i32,
             }),
             next_validators_hash: next_validators_hash.to_vec(),
             round: round as i32,

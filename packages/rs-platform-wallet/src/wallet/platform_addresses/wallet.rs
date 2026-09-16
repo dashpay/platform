@@ -1,6 +1,6 @@
 //! Platform address wallet for DIP-17 platform payment addresses.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use dpp::address_funds::PlatformAddress;
@@ -19,6 +19,21 @@ use crate::wallet::persister::WalletPersister;
 use super::provider::PlatformPaymentAddressProvider;
 
 use dash_sdk::query_types::AddressInfos;
+
+/// Merge transient derived addresses with persisted, hydrated balance keys.
+///
+/// A `BTreeSet` deduplicates addresses present in both sources and gives every
+/// payment-address operation the same deterministic post-relaunch candidate
+/// set.
+pub(crate) fn merge_platform_payment_candidate_addresses(
+    derived_addresses: impl IntoIterator<Item = PlatformP2PKHAddress>,
+    hydrated_addresses: impl IntoIterator<Item = PlatformP2PKHAddress>,
+) -> BTreeSet<PlatformP2PKHAddress> {
+    derived_addresses
+        .into_iter()
+        .chain(hydrated_addresses)
+        .collect()
+}
 
 /// Platform address wallet providing DIP-17 platform payment address functionality.
 #[derive(Clone)]
@@ -64,6 +79,60 @@ impl PlatformAddressWallet {
             asset_locks,
             persister,
         }
+    }
+
+    /// Enumerate the candidate address SET for `account_index`: the union of
+    /// the account's transient derived pool (`addresses.addresses`) and the
+    /// hydrated `address_balances` map.
+    ///
+    /// The union is what lets input selection survive a fresh relaunch — the
+    /// derived pool is empty until a platform sync repopulates it, while
+    /// `address_balances` is hydrated synchronously on wallet load from the
+    /// persisted `platform_addresses` rows (the same source Platform Balance
+    /// reads). Enumerating only the pool made selection find no candidates and
+    /// fail right after launch even though the balances were on disk and
+    /// on-chain.
+    ///
+    /// Balances are NOT read here — every caller re-reads the authoritative
+    /// on-chain balance via `AddressInfo::fetch_many`, keeping the submit gate
+    /// and the spend path in lockstep and immune to a stale/zero cache. The
+    /// wallet-manager read lock is released before returning so a concurrent
+    /// sync/reconcile is never blocked behind a caller's proof round-trip.
+    pub(crate) async fn candidate_address_set(
+        &self,
+        account_index: u32,
+    ) -> Result<BTreeSet<PlatformAddress>, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "Wallet {:?} not found in wallet manager",
+                hex::encode(self.wallet_id)
+            ))
+        })?;
+
+        let account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index(account_index)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressSync(format!(
+                    "No platform payment account at index {}",
+                    account_index
+                ))
+            })?;
+
+        Ok(merge_platform_payment_candidate_addresses(
+            account
+                .addresses
+                .addresses
+                .values()
+                .filter_map(|addr_info| {
+                    PlatformP2PKHAddress::from_address(&addr_info.address).ok()
+                }),
+            account.address_balances.keys().copied(),
+        )
+        .into_iter()
+        .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
+        .collect())
     }
 
     /// Build (or rebuild) the unified address provider covering every
@@ -473,8 +542,7 @@ impl PlatformAddressWallet {
     ///
     /// Equivalent to [`initialize`]: the unified provider is rebuilt
     /// from the current account set in the wallet manager. The name
-    /// is kept for API continuity with call sites that used to add
-    /// per-account providers.
+    /// is kept for API continuity with per-account-provider call sites.
     pub async fn add_provider(&self, _account_index: u32) -> Result<(), PlatformWalletError> {
         self.initialize().await;
         Ok(())
@@ -702,7 +770,29 @@ impl std::fmt::Debug for PlatformAddressWallet {
 
 #[cfg(test)]
 mod tests {
-    use super::PlatformAddressWallet;
+    use super::{merge_platform_payment_candidate_addresses, PlatformAddressWallet};
+    use key_wallet::PlatformP2PKHAddress;
+
+    #[test]
+    fn candidate_union_keeps_hydrated_balance_only_address_and_deduplicates_overlap() {
+        let derived_only = PlatformP2PKHAddress::new([1; 20]);
+        let present_in_both = PlatformP2PKHAddress::new([2; 20]);
+        let hydrated_balance_only = PlatformP2PKHAddress::new([3; 20]);
+
+        let merged = merge_platform_payment_candidate_addresses(
+            [derived_only, present_in_both],
+            [present_in_both, hydrated_balance_only],
+        );
+
+        assert_eq!(
+            merged,
+            std::collections::BTreeSet::from([
+                derived_only,
+                present_in_both,
+                hydrated_balance_only,
+            ])
+        );
+    }
 
     /// Build a `PlatformAddressWallet` on a mock SDK for getter tests that
     /// touch no I/O. Mirrors `transfer::tests::build_short_circuit_wallet`,

@@ -9,7 +9,7 @@ import requestApi from './requestApi.js';
  * @return {Promise<Certificate>}
  */
 export default async function cancelCertificate(apiKey, id) {
-  const url = `https://api.zerossl.com/certificates/${id}/cancel?access_key=${apiKey}`;
+  const url = `https://api.zerossl.com/certificates/${id}/cancel`;
 
   const requestOptions = {
     method: 'POST',
@@ -18,5 +18,5 @@ export default async function cancelCertificate(apiKey, id) {
     },
   };
 
-  return requestApi(url, requestOptions);
+  return requestApi(apiKey, url, requestOptions);
 }

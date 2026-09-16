@@ -1,5 +1,6 @@
 import Foundation
 import DashSDKFFI
+import os.log
 
 // MARK: - Data Extensions
 extension Data {
@@ -449,7 +450,16 @@ public final class SDK: @unchecked Sendable {
 
   deinit {
     if let handle = handle {
+      // Timed + thread-stamped: `dash_sdk_destroy` tears down the tokio
+      // runtime synchronously, and the last reference is often released on
+      // the MainActor (host stop / error unwind). This line is the data for
+      // deciding whether destruction ever needs an explicit off-main hop.
+      let started = CFAbsoluteTimeGetCurrent()
+      let offMain = !Thread.isMainThread
       dash_sdk_destroy(handle)
+      let ms = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
+      Logger(subsystem: "dashpay.SwiftDashSDK", category: "SDKLifecycle")
+        .info("dash_sdk_destroy finished in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public)")
     }
   }
 

@@ -11,6 +11,8 @@ mod full;
 
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::rpc::core::DefaultCoreRPC;
+#[cfg(test)]
+pub(crate) use check_tx::error_into_status;
 pub use check_tx::CheckTxAbciApplication;
 pub use consensus::ConsensusAbciApplication;
 use dpp::version::PlatformVersion;

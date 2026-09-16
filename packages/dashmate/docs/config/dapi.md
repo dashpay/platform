@@ -8,7 +8,7 @@ Dashmate runs the Rust implementation of DAPI (`rs-dapi`) to expose gRPC, gRPC-W
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `platform.dapi.rsDapi.docker.image` | Docker image for rs-dapi | `dashpay/rs-dapi:${version}` | `dashpay/rs-dapi:latest` |
+| `platform.dapi.rsDapi.docker.image` | Docker image for rs-dapi | _unset_ (see below) | `dashpay/rs-dapi:latest` |
 | `platform.dapi.rsDapi.docker.build.enabled` | Enable custom build | `false` | `true` |
 | `platform.dapi.rsDapi.docker.build.context` | Build context directory | `path.join(PACKAGE_ROOT_DIR, '..', '..')` (Dash Platform repo root) | `"/path/to/context"` |
 | `platform.dapi.rsDapi.docker.build.dockerFile` | Path to Dockerfile | `path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile')` | `"/path/to/Dockerfile"` |
@@ -41,4 +41,8 @@ Dashmate offsets the default metrics port per preset (mainnet 9091, testnet 1909
 |--------|-------------|---------|---------|
 | `platform.dapi.rsDapi.waitForStResultTimeout` | Timeout for state transition results (ms) | `120000` | `240000` |
 
-This timeout controls how long rs-dapi waits for Drive to report the outcome of a state transition before returning a timeout error to the client.
+### Image versions
+
+`platform.dapi.rsDapi.docker.image` is unset by default, which means "use the rs-dapi image published for this
+dashmate version", so upgrading dashmate moves it automatically. Setting it pins it
+permanently. See [Options with dynamic defaults](./index.md#options-with-dynamic-defaults).

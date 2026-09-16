@@ -887,6 +887,7 @@ mod document_operation_tests {
         use dpp::document::Document;
 
         let doc = Document::V0(dpp::document::DocumentV0 {
+            contract_version: None,
             id: dpp::prelude::Identifier::new([1u8; 32]),
             owner_id: dpp::prelude::Identifier::new([2u8; 32]),
             properties: Default::default(),
@@ -920,6 +921,7 @@ mod document_operation_tests {
         use dpp::document::Document;
 
         let doc = Document::V0(dpp::document::DocumentV0 {
+            contract_version: None,
             id: dpp::prelude::Identifier::new([1u8; 32]),
             owner_id: dpp::prelude::Identifier::new([2u8; 32]),
             properties: Default::default(),
@@ -966,7 +968,8 @@ mod grovedb_op_batch_tests {
     fn push_increases_len() {
         let mut batch = GroveDbOpBatch::new();
         let op =
-            QualifiedGroveDbOp::insert_or_replace_op(vec![vec![1]], vec![2], Element::empty_tree());
+            QualifiedGroveDbOp::insert_or_replace_op(vec![vec![1]], vec![2], Element::empty_tree())
+                .dont_check_for_backwards_references();
         batch.push(op);
         assert_eq!(batch.len(), 1);
         assert!(!batch.is_empty());
@@ -975,8 +978,10 @@ mod grovedb_op_batch_tests {
     #[test]
     fn from_operations() {
         let ops = vec![
-            QualifiedGroveDbOp::insert_or_replace_op(vec![vec![1]], vec![2], Element::empty_tree()),
-            QualifiedGroveDbOp::insert_or_replace_op(vec![vec![3]], vec![4], Element::empty_tree()),
+            QualifiedGroveDbOp::insert_or_replace_op(vec![vec![1]], vec![2], Element::empty_tree())
+                .dont_check_for_backwards_references(),
+            QualifiedGroveDbOp::insert_or_replace_op(vec![vec![3]], vec![4], Element::empty_tree())
+                .dont_check_for_backwards_references(),
         ];
         let batch = GroveDbOpBatch::from_operations(ops);
         assert_eq!(batch.len(), 2);
@@ -1000,8 +1005,10 @@ mod grovedb_op_batch_tests {
     fn extend_adds_operations() {
         let mut batch = GroveDbOpBatch::new();
         let ops = vec![
-            QualifiedGroveDbOp::insert_or_replace_op(vec![vec![1]], vec![2], Element::empty_tree()),
-            QualifiedGroveDbOp::insert_or_replace_op(vec![vec![3]], vec![4], Element::empty_tree()),
+            QualifiedGroveDbOp::insert_or_replace_op(vec![vec![1]], vec![2], Element::empty_tree())
+                .dont_check_for_backwards_references(),
+            QualifiedGroveDbOp::insert_or_replace_op(vec![vec![3]], vec![4], Element::empty_tree())
+                .dont_check_for_backwards_references(),
         ];
         batch.extend(ops);
         assert_eq!(batch.len(), 2);

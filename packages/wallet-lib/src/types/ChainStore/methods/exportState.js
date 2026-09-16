@@ -20,7 +20,7 @@ function exportState() {
     fees: {},
   };
 
-  const reorgSafeHeight = chainHeight - STORAGE.REORG_SAFE_BLOCKS_COUNT;
+  const reorgSafeHeight = Math.max(-1, chainHeight - STORAGE.REORG_SAFE_BLOCKS_COUNT);
   const lastSyncedHeaderHeightToExport = Math.min(reorgSafeHeight, lastSyncedHeaderHeight);
   const lastSyncedBlockHeightToExport = Math.min(reorgSafeHeight, lastSyncedBlockHeight);
 

@@ -59,14 +59,14 @@ async fn handle_jsonrpc_request(
     Json(json_rpc): Json<JsonRpcRequest>,
 ) -> Response {
     let id = json_rpc.id.clone();
-    let requested_method = json_rpc.method.clone();
+    let requested_method_label = json_rpc_method_label(&json_rpc.method);
 
     let call = match state.translator.translate_request(json_rpc).await {
         Ok(req) => req,
         Err(e) => {
             let error_response = state.translator.error_response(e, id.clone());
             return respond_with_method(
-                crate::metrics::MethodLabel::from_owned(requested_method),
+                requested_method_label,
                 Json(serde_json::to_value(error_response).unwrap_or_default()),
             );
         }
@@ -185,18 +185,14 @@ async fn handle_jsonrpc_request(
                         .translator
                         .ok_response(serde_json::json!(hash.to_string()), id.clone());
                     respond_with_method(
-                        crate::metrics::MethodLabel::from_owned(
-                            "CoreClient::get_block_hash".to_string(),
-                        ),
+                        crate::metrics::MethodLabel::from_type_name("CoreClient::get_block_hash"),
                         Json(serde_json::to_value(ok).unwrap_or_default()),
                     )
                 }
                 Err(e) => {
                     let error_response = state.translator.error_response(e, id.clone());
                     respond_with_method(
-                        crate::metrics::MethodLabel::from_owned(
-                            "CoreClient::get_block_hash".to_string(),
-                        ),
+                        crate::metrics::MethodLabel::from_type_name("CoreClient::get_block_hash"),
                         Json(serde_json::to_value(error_response).unwrap_or_default()),
                     )
                 }
@@ -205,8 +201,38 @@ async fn handle_jsonrpc_request(
     }
 }
 
+fn json_rpc_method_label(method: &str) -> crate::metrics::MethodLabel {
+    let label = match method {
+        "getStatus" => "getStatus",
+        "getBestBlockHash" => "getBestBlockHash",
+        "getBlockHash" => "getBlockHash",
+        "sendRawTransaction" => "sendRawTransaction",
+        _ => "jsonrpc_unknown",
+    };
+
+    crate::metrics::MethodLabel::from_type_name(label)
+}
+
 fn respond_with_method(method: crate::metrics::MethodLabel, body: Json<Value>) -> Response {
     let mut response = body.into_response();
     crate::metrics::attach_method_label(response.extensions_mut(), method);
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_rpc_method_labels_are_allowlisted() {
+        assert_eq!(json_rpc_method_label("getStatus").as_str(), "getStatus");
+        assert_eq!(
+            json_rpc_method_label("unsupported_0001").as_str(),
+            "jsonrpc_unknown"
+        );
+        assert_eq!(
+            json_rpc_method_label("unsupported_0002").as_str(),
+            "jsonrpc_unknown"
+        );
+    }
 }

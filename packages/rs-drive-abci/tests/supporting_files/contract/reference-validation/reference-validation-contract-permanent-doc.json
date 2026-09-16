@@ -1,0 +1,114 @@
+{
+  "$formatVersion": "1",
+  "id": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "note": {
+      "type": "object",
+      "canBeDeleted": false,
+      "properties": {
+        "content": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "indices": [],
+      "additionalProperties": false
+    },
+    "deletableNote": {
+      "type": "object",
+      "canBeDeleted": true,
+      "properties": {
+        "content": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "indices": [],
+      "additionalProperties": false
+    },
+    "message": {
+      "type": "object",
+      "documentsMutable": true,
+      "properties": {
+        "noteId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "note"
+          }
+        },
+        "deletableNoteId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1,
+          "refersTo": {
+            "type": "permanentDocument",
+            "contractId": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
+            "documentType": "deletableNote"
+          }
+        },
+        "unknownTypeNoteId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 2,
+          "refersTo": {
+            "type": "permanentDocument",
+            "contractId": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
+            "documentType": "ghost"
+          }
+        },
+        "foreignNoteId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 3,
+          "refersTo": {
+            "type": "permanentDocument",
+            "contractId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+            "documentType": "note"
+          }
+        },
+        "crossContractNoteId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 4,
+          "refersTo": {
+            "type": "permanentDocument",
+            "contractId": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+            "documentType": "note"
+          }
+        },
+        "note": {
+          "type": "string",
+          "position": 5,
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "indices": [],
+      "additionalProperties": false
+    }
+  }
+}

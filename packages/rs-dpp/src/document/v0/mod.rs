@@ -98,6 +98,20 @@ pub struct DocumentV0 {
     /// The creator id.
     #[cfg_attr(feature = "serde-conversion", serde(rename = "$creatorId", default))]
     pub creator_id: Option<Identifier>,
+    /// The data contract version this document's bytes conform to — assigned
+    /// by Drive when document content is (re-)supplied (create/replace) and
+    /// preserved across server-side rewrites (transfer/purchase). Selects the
+    /// per-property byte layout when the document type carries `requiredSince`
+    /// annotations. `None` for documents serialized before format 3.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(
+            rename = "$contractVersion",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )
+    )]
+    pub contract_version: Option<u32>,
 }
 
 impl DocumentGetRawForContractV0 for DocumentV0 {
@@ -197,6 +211,7 @@ mod tests {
 
     fn minimal_doc() -> DocumentV0 {
         DocumentV0 {
+            contract_version: None,
             id: Identifier::new([1u8; 32]),
             owner_id: Identifier::new([2u8; 32]),
             properties: BTreeMap::new(),

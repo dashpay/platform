@@ -83,6 +83,18 @@ impl DocumentTypeV0Getters for DocumentTypeV2 {
         self.documents_keep_history
     }
 
+    fn documents_keep_transfer_history(&self) -> bool {
+        self.documents_keep_transfer_history
+    }
+
+    fn documents_keep_purchase_history(&self) -> bool {
+        self.documents_keep_purchase_history
+    }
+
+    fn documents_keep_pricing_history(&self) -> bool {
+        self.documents_keep_pricing_history
+    }
+
     fn documents_mutable(&self) -> bool {
         self.documents_mutable
     }
@@ -213,6 +225,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
 
     fn range_summable(&self) -> bool {
         self.range_summable
+    }
+
+    fn index_only(&self) -> bool {
+        self.index_only
     }
 }
 

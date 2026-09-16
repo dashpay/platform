@@ -42,6 +42,18 @@ connection to Platform.
 
 You can see examples of mocking in [mock_fetch.rs](tests/fetch/mock_fetch.rs) and  [mock_fetch_many.rs](tests/fetch/mock_fetch_many.rs).
 
+## Transport-free consumption
+
+The query-building, wire-encoding, and proof-verification layers of this SDK
+live in the [`dash-platform-queries`](../dash-platform-queries) crate, which
+this crate depends on and re-exports at the historical paths. Embedders that
+bring their own transport and trust context (Dash Core's platform GUI, block
+explorers) can depend on `dash-platform-queries` + `drive-proof-verifier`
+directly and get typed, proof-verified results without `rs-dapi-client` or
+tonic's native channel/TLS stack in their dependency tree. Shared generated
+types and context-provider utilities remain dependencies. See that crate's
+README for details.
+
 ## Examples
 
 You can find quick start example in `examples/` folder. Examples must be configured by setting constants.

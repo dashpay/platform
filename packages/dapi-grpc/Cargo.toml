@@ -26,12 +26,30 @@ tenderdash-proto = []
 # Client support.
 client = ["platform"]
 
+# Networked tonic client: `connect()` on generated clients, TLS roots.
+# Deliberately NOT in the default set: cargo features are not target-scoped,
+# so a default-on transport would force tonic's transport stack onto wasm32
+# consumers riding defaults, where it does not build. Without this feature
+# the crate provides message types and transport-generic client stubs only.
+# Tonic's codegen graph still includes tokio-stream and a minimal Tokio
+# slice, but its hyper/rustls transport stack is not enabled. Native
+# networked consumers enable this explicitly (rs-dapi-client does so through
+# its non-wasm dependency); the wasm codegen path never emits `connect()`.
+transport = [
+  "tonic/channel",
+  "tonic/transport",
+  "tonic/tls-native-roots",
+  "tonic/tls-webpki-roots",
+  "tonic/tls-ring",
+]
+
 # Build tonic server code. Includes all client features and adds server-specific dependencies.
 server = [
   "platform",
   "tenderdash-proto/server",
   "client",
   "drive",
+  "transport",
   "tonic/router",
 ]
 
@@ -55,14 +73,7 @@ tonic = { version = "0.14.2", features = ["codegen"], default-features = false }
 getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tonic = { version = "0.14.2", features = [
-  "codegen",
-  "channel",
-  "transport",
-  "tls-native-roots",
-  "tls-webpki-roots",
-  "tls-ring",
-], default-features = false }
+tonic = { version = "0.14.2", features = ["codegen"], default-features = false }
 
 [build-dependencies]
 tonic-prost-build = { version = "0.14.2" }

@@ -35,7 +35,7 @@ use dash_sdk::platform::shielded::{
 use futures::StreamExt;
 use grovedb_commitment_tree::{ExtractedNoteCommitment, Note as OrchardNote, PaymentAddress};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use super::keys::AccountViewingKeys;
 use super::store::{ShieldedStore, SubwalletId};
@@ -96,9 +96,16 @@ pub struct ShieldedSyncSummary {
 }
 
 impl ShieldedSyncSummary {
-    /// Sum of unspent balances across accounts.
-    pub fn balance_total(&self) -> u64 {
-        self.balances.values().copied().sum()
+    /// Sum of unspent balances across accounts, rejecting an unrepresentable
+    /// wallet total even when every individual account balance fits in `u64`.
+    pub fn balance_total(&self) -> Result<u64, PlatformWalletError> {
+        self.balances.values().try_fold(0u64, |total, balance| {
+            total.checked_add(*balance).ok_or_else(|| {
+                PlatformWalletError::ShieldedStoreError(
+                    "wallet-wide shielded balance exceeds u64".to_string(),
+                )
+            })
+        })
     }
 
     /// Sum of newly-spent counts across accounts.
@@ -369,9 +376,14 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // — drives the watermark advance and the host-visible scan volume,
     // exactly as `result.total_notes_scanned` did in the one-shot path.
     let mut total_notes_scanned: u64 = 0;
-    // Mirrors the one-shot rewind rule: track the last non-empty
-    // batch's `(start_index, is_partial)` so we can warn on a
-    // rewind-to-zero just like before.
+    // Track the last non-empty batch's `(start_index, is_partial)` —
+    // diagnostic only. The one-shot path used this to rewind its resume
+    // point to the mutable buffer chunk's start; the streaming path's
+    // watermark is `aligned_start + total_notes_scanned` (the partial
+    // chunk is re-fetched via the chunk-boundary realignment at the
+    // next pass's start instead), so this value never feeds the
+    // watermark — it is surfaced in the completion log for parity with
+    // the SDK's `next_start_index` semantics.
     let mut last_nonempty: Option<(u64, bool)> = None;
 
     // Scan-based spend detection (replaces the dedicated
@@ -511,9 +523,16 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         }
     }
 
-    // Preserve the one-shot `next_start_index` warning: if the resume
-    // point would rewind to 0 after scanning notes, the next sync
-    // rescans from the beginning.
+    // Diagnostic mirror of the SDK's one-shot `next_start_index`
+    // (rewinds to the last partial chunk's start). NOT the watermark:
+    // the streaming path persists `aligned_start + total_notes_scanned`
+    // below, and re-covers the partial buffer chunk through the
+    // chunk-boundary realignment at the next pass's start. The old
+    // "next_start_index is 0 — next sync will rescan from the
+    // beginning" warning keyed off this value was therefore wrong for
+    // any single-partial-batch cold scan (a from-scratch rescan always
+    // tripped it while the watermark advanced correctly), and sent a
+    // real field investigation chasing the wrong mechanism — dropped.
     let next_start_index = match last_nonempty {
         Some((s, true)) => s,
         _ => aligned_start + total_notes_scanned,
@@ -527,13 +546,6 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         next_start_index,
         "SDK stream consumed"
     );
-    if next_start_index == 0 && total_notes_scanned > 0 {
-        warn!(
-            "Shielded sync: next_start_index is 0 after scanning {} notes — \
-             next sync will rescan from the beginning",
-            total_notes_scanned,
-        );
-    }
 
     if appended > 0 {
         // Checkpoint at the tree's true post-append leaf count. The
@@ -786,10 +798,10 @@ pub(crate) async fn balances_across<S: ShieldedStore>(
     let store = store.read().await;
     let mut out: BTreeMap<SubwalletId, u64> = BTreeMap::new();
     for (id, _) in subwallets {
-        let notes = store
-            .get_unspent_notes(*id)
+        let balance = store
+            .spendable_balance(*id)
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        out.insert(*id, notes.iter().map(|n| n.value).sum());
+        out.insert(*id, balance);
     }
     Ok(out)
 }
@@ -841,11 +853,47 @@ fn serialize_note(note: &grovedb_commitment_tree::Note) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::apply_scanned_nullifier_spends;
+    use super::{apply_scanned_nullifier_spends, balances_across, ShieldedSyncSummary};
     use crate::changeset::ShieldedChangeSet;
+    use crate::error::PlatformWalletError;
+    use crate::wallet::shielded::keys::OrchardKeySet;
     use crate::wallet::shielded::store::{
         InMemoryShieldedStore, ShieldedNote, ShieldedStore, SubwalletId,
     };
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    #[test]
+    fn should_check_wallet_wide_balance_overflow() {
+        let mut summary = ShieldedSyncSummary::default();
+        assert_eq!(summary.balance_total().unwrap(), 0);
+        summary.balances = BTreeMap::from([(0, u64::MAX - 1), (1, 1)]);
+        assert_eq!(summary.balance_total().unwrap(), u64::MAX);
+        summary.balances.insert(2, 1);
+        assert!(matches!(summary.balance_total(),
+            Err(PlatformWalletError::ShieldedStoreError(message))
+                if message.contains("wallet-wide shielded balance exceeds u64")));
+    }
+
+    #[tokio::test]
+    async fn should_propagate_account_balance_overflow_from_sync_read() {
+        let mut store = InMemoryShieldedStore::new();
+        let mut note = received_note([1; 32], 0);
+        note.value = u64::MAX;
+        store.save_note(sub(0), &note).unwrap();
+        note.nullifier = [2; 32];
+        note.position = 1;
+        note.value = 1;
+        store.save_note(sub(0), &note).unwrap();
+        let store = Arc::new(RwLock::new(store));
+        let keys = OrchardKeySet::from_seed(&[0x42; 64], dashcore::Network::Testnet, 0)
+            .unwrap()
+            .viewing_keys();
+        assert!(matches!(balances_across(&store, &[(sub(0), keys)]).await,
+            Err(PlatformWalletError::ShieldedStoreError(message))
+                if message.contains("exceeds u64")));
+    }
 
     fn sub(account: u32) -> SubwalletId {
         SubwalletId::new([0xCC; 32], account)

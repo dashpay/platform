@@ -160,6 +160,10 @@ impl DocumentV0Getters for DocumentV0 {
     fn creator_id(&self) -> Option<Identifier> {
         self.creator_id
     }
+
+    fn contract_version(&self) -> Option<u32> {
+        self.contract_version
+    }
 }
 
 impl DocumentV0Setters for DocumentV0 {
@@ -289,5 +293,12 @@ impl DocumentV0Setters for DocumentV0 {
     ///   `None` indicates the creator ID is not available.
     fn set_creator_id(&mut self, creator_id: Option<Identifier>) {
         self.creator_id = creator_id;
+    }
+
+    /// Sets the contract-version stamp: the data contract version this
+    /// document's bytes conform to. Assigned by Drive when document content
+    /// is (re-)supplied; `None` for pre-stamp documents.
+    fn set_contract_version(&mut self, contract_version: Option<u32>) {
+        self.contract_version = contract_version;
     }
 }

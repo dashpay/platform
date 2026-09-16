@@ -54,6 +54,7 @@ mod tests {
                 disable_instant_lock_signature_verification: true,
                 disable_contested_documents_is_allowed_validation: false,
                 disable_checkpoints: true,
+                ..Default::default()
             },
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
@@ -100,7 +101,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 
@@ -393,7 +395,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 
@@ -669,7 +672,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 
@@ -1027,7 +1031,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 
@@ -1396,7 +1401,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 
@@ -1798,7 +1804,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 
@@ -2140,9 +2147,12 @@ mod tests {
 
         // A vote costs 10_000_000
         // We did 5 votes in this epoch,
-        // We had 39_810_000_000 left over, which is only the cost of 19 votes
-        // So we basically have 39_810_000_000 + 50_000_000
-        assert_eq!(processing_fees, 39_860_000_000);
+        // From protocol version 14 each contested document contributes 0.1 DASH
+        // (10_000_000_000) to the vote resolution fund instead of 0.2 DASH, so the two
+        // contenders funded 20_000_000_000, of which 19 votes cost 190_000_000 and
+        // 19_810_000_000 was left over when the vote finished.
+        // So we basically have 19_810_000_000 + 50_000_000
+        assert_eq!(processing_fees, 19_860_000_000);
     }
 
     #[stack_size(STACK_SIZE)]
@@ -2209,7 +2219,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 

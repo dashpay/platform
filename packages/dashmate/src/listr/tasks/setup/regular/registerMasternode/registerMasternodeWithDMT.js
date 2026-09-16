@@ -1,6 +1,7 @@
 import BlsSignatures from '@dashevo/bls';
 import validateBLSPrivateKeyFactory from '../../../../prompts/validators/validateBLSPrivateKeyFactory.js';
 import createPlatformNodeKeyInput from '../../../../prompts/createPlatformNodeKeyInput.js';
+import { DOCS_LINKS } from '../../../../../docsLinks.js';
 
 /**
  *
@@ -35,7 +36,7 @@ export default function registerMasternodeWithDMTFactory(createIpAndPortsForm) {
         type: 'confirm',
         header: `  Complete initial DMT setup and return here to continue:
 
-    See https://docs.dash.org/dmt-setup for instructions on using Dash Masternode Tool
+    See ${DOCS_LINKS.DMT_SETUP} for instructions on using Dash Masternode Tool
     to store your collateral and register your masternode.\n`,
         message: 'Press any key to continue dashmate setup process...',
         default: ' ',

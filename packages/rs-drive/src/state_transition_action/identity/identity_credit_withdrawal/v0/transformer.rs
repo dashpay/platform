@@ -52,6 +52,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
         });
 
         let withdrawal_document = DocumentV0 {
+            contract_version: None,
             id: document_id,
             owner_id: identity_credit_withdrawal.identity_id,
             properties: document_data.into_btree_string_map().unwrap(),
@@ -176,6 +177,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
         });
 
         let withdrawal_document = DocumentV0 {
+            contract_version: None,
             id: document_id,
             owner_id: identity_credit_withdrawal.identity_id,
             properties: document_data.into_btree_string_map()?,

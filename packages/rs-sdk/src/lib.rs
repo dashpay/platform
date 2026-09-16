@@ -90,6 +90,7 @@ pub use error::Error;
 pub use sdk::{RequestSettings, Sdk, SdkBuilder};
 
 pub use dapi_grpc;
+pub use dash_platform_queries;
 pub use dpp;
 #[cfg(feature = "core_spv")]
 pub use dpp::dash_spv;

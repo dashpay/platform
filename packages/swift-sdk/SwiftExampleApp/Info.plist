@@ -38,7 +38,7 @@
 	     one-time bearer voucher key, and iOS does NOT grant a custom URL scheme
 	     exclusive ownership — a co-installed app registering "dashpay" could
 	     intercept the link and steal the voucher (blast radius capped by the
-	     Rust-side MAX_INVITATION_DUFFS = 0.05 DASH). The safer transport is the
+	     Rust-side MAX_INVITATION_DUFFS = 0.26 DASH). The safer transport is the
 	     HTTPS universal link (invitations.dashpay.io/applink, already parsed by
 	     the codec), which requires an AASA-verified domain. Adopting it is tracked
 	     for the infra team in dashpay/platform#4096; until then this example app

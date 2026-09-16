@@ -51,6 +51,8 @@ impl Mockable for EvoNode {
         serde_json::ser::to_vec(self).ok()
     }
 }
+impl crate::platform::query::WireQuery for EvoNode {}
+
 impl TransportRequest for EvoNode {
     type Client = PlatformGrpcClient;
     type Response = proto::GetStatusResponse;

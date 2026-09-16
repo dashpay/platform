@@ -92,6 +92,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -170,7 +171,7 @@ mod nft_tests {
     async fn test_document_set_price() {
         run_document_set_price_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            2485600,
+            2486340, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -275,6 +276,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -285,6 +287,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -406,9 +409,9 @@ mod nft_tests {
     async fn test_document_set_price_and_purchase() {
         run_document_set_price_and_purchase_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            126440160,
-            2485600,
-            4092360,
+            126440900, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            2486340, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            4093100, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -552,6 +555,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -562,6 +566,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -826,10 +831,10 @@ mod nft_tests {
     async fn test_document_set_price_and_purchase_different_epoch_documents_mutable() {
         run_document_set_price_and_purchase_different_epoch_documents_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            141238960,
-            2729120,
-            2733160,
-            4357440,
+            141239700, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            2729860, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            2733900, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            4358180, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -993,6 +998,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1003,6 +1009,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1405,9 +1412,9 @@ mod nft_tests {
     async fn test_document_set_price_and_purchase_different_epoch() {
         run_document_set_price_and_purchase_different_epoch_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            126440160,
-            2485600,
-            4092360,
+            126440900, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            2486340, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            4093100, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -1553,6 +1560,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1563,6 +1571,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2459,6 +2468,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2469,6 +2479,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2603,7 +2614,7 @@ mod nft_tests {
     ) {
         run_document_set_price_and_purchase_with_enough_credits_to_buy_but_not_enough_to_pay_for_processing_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            2485600,
+            2486340, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -2713,6 +2724,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2723,6 +2735,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3091,6 +3104,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3256,6 +3270,7 @@ mod nft_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3266,6 +3281,7 @@ mod nft_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3792,6 +3808,7 @@ mod nft_tests {
             buyer_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -4006,6 +4023,7 @@ mod nft_tests {
             creator_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -4024,6 +4042,7 @@ mod nft_tests {
             creator_id_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -4625,6 +4644,7 @@ mod nft_tests {
             buyer1_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -4642,6 +4662,7 @@ mod nft_tests {
             buyer2_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 

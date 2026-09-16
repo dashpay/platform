@@ -97,9 +97,8 @@ final class TokenDirectPurchasePricingTests: XCTestCase {
         XCTAssertEqual(pricing.minimumPurchaseAmount, 5)
     }
 
-    func test_freeTier_isNotPurchasable() {
-        // A resolved cost of 0 is rejected — the purchase FFI needs a positive cost.
-        XCTAssertNil(parse(single("0"))!.cost(forAmount: 10))
+    func test_freeTier_producesZeroExpectedCost() {
+        XCTAssertEqual(parse(single("0"))!.cost(forAmount: 10), 0)
     }
 
     func test_zeroAmount_isNotPurchasable() {
@@ -107,10 +106,26 @@ final class TokenDirectPurchasePricingTests: XCTestCase {
         XCTAssertNil(pricing.cost(forAmount: 0))
     }
 
-    func test_totalOverflow_isNotPurchasable() {
+    func test_singlePriceOverflow_saturatesLikeDrive() {
         // price 2^62, amount 4 => 2^64, overflows UInt64.
         let pricing = parse(single("\(UInt64(1) << 62)"))!
+        XCTAssertEqual(pricing.cost(forAmount: 4), UInt64.max)
+    }
+
+    func test_setPricesOverflow_isNotPurchasableLikeDrive() {
+        let pricing = parse(setPrices([(1, UInt64(1) << 62)]))!
         XCTAssertNil(pricing.cost(forAmount: 4))
+    }
+
+    func test_amountAboveProtocolU48Maximum_isNotPurchasable() {
+        let pricing = parse(single("1"))!
+        XCTAssertEqual(pricing.cost(forAmount: 281_474_976_710_655), 281_474_976_710_655)
+        XCTAssertNil(pricing.cost(forAmount: 281_474_976_710_656))
+    }
+
+    func test_costMayUseHighHalfOfUInt64() {
+        let pricing = parse(single("\(UInt64(1) << 62)"))!
+        XCTAssertEqual(pricing.cost(forAmount: 2), UInt64(1) << 63)
     }
 
     func test_singlePrice_minimumIsOne() {

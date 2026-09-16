@@ -2,6 +2,7 @@ const BlockHeadersProvider = require('@dashevo/dapi-client/lib/BlockHeadersProvi
 const Worker = require('../../Worker');
 const logger = require('../../../logger');
 const EVENTS = require('../../../EVENTS');
+const deriveBlockHeadersResumeContext = require('../../../types/ChainStore/deriveBlockHeadersResumeContext');
 
 const PROGRESS_UPDATE_INTERVAL = 1000;
 
@@ -207,46 +208,32 @@ class BlockHeadersSyncWorker extends Worker {
   }
 
   /**
-   * Determines starting point considering options
-   * and last save checkpoint
-   * @returns {number|number}
+   * Determines the starting point from persisted authenticated headers.
+   * @returns {number}
    */
   getStartBlockHeight() {
     const chainStore = this.storage.getDefaultChainStore();
-    const bestBlockHeight = chainStore.state.chainHeight;
-
-    let height;
+    const resumeContext = deriveBlockHeadersResumeContext(chainStore.state);
 
     const {
-      skipSynchronizationBeforeHeight,
       skipSynchronization,
+      skipSynchronizationBeforeHeight,
     } = (this.storage.application.syncOptions || {});
 
-    if (skipSynchronization) {
-      this.logger.debug(`[BlockHeadersSyncWorker] Wallet created from a new mnemonic. Sync only last ${this.maxHeadersToKeep} blocks.`);
-      const syncFrom = bestBlockHeight - this.maxHeadersToKeep;
-      return syncFrom < 1 ? 1 : syncFrom;
+    // Headers are validated as a chain from an authenticated root, so a
+    // mid-chain start cannot be verified and these options cannot be honoured
+    // here. They still apply to transaction synchronization, so say so rather
+    // than let a caller assume header sync was skipped too.
+    if (skipSynchronization || skipSynchronizationBeforeHeight) {
+      this.logger.warn('[BlockHeadersSyncWorker] Header synchronization starts from the last authenticated header and ignores '
+        + `${skipSynchronization ? 'skipSynchronization' : 'skipSynchronizationBeforeHeight'}; transaction synchronization still honours it`);
     }
 
-    const { lastSyncedHeaderHeight } = chainStore.state;
-
-    if (typeof lastSyncedHeaderHeight !== 'number') {
-      throw new Error(`Invalid last synced header height ${lastSyncedHeaderHeight}`);
+    if (resumeContext.startBlockHeight > 1) {
+      this.logger.debug(`[BlockHeadersSyncWorker] Last resumable header height is ${resumeContext.startBlockHeight}`);
     }
 
-    const skipBefore = parseInt(skipSynchronizationBeforeHeight, 10);
-
-    if (skipBefore > lastSyncedHeaderHeight) {
-      this.logger.debug(`[BlockHeadersSyncWorker] UNSAFE option skipSynchronizationBeforeHeight is set to ${skipBefore}`);
-      height = skipBefore;
-    } else if (lastSyncedHeaderHeight > -1) {
-      this.logger.debug(`[BlockHeadersSyncWorker] Last synced header height is ${lastSyncedHeaderHeight}`);
-      height = lastSyncedHeaderHeight;
-    } else {
-      height = 1;
-    }
-
-    return height;
+    return resumeContext.startBlockHeight;
   }
 
   /**

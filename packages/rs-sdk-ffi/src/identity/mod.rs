@@ -54,6 +54,9 @@ pub use transfer_to_addresses::{
 pub use withdraw::dash_sdk_identity_withdraw;
 
 // Re-export query functions
+pub use queries::contract_nonce::dash_sdk_identity_fetch_contract_nonce;
+pub use queries::identities_contract_keys::dash_sdk_identities_fetch_contract_keys;
+pub use queries::nonce::dash_sdk_identity_fetch_nonce;
 pub use queries::{
     dash_sdk_identities_fetch_balances, dash_sdk_identity_fetch, dash_sdk_identity_fetch_balance,
     dash_sdk_identity_fetch_balance_and_revision,

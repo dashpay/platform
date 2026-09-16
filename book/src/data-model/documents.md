@@ -37,6 +37,7 @@ pub struct DocumentV0 {
     pub updated_at_core_block_height: Option<CoreBlockHeight>,
     pub transferred_at_core_block_height: Option<CoreBlockHeight>,
     pub creator_id: Option<Identifier>,
+    pub contract_version: Option<u32>,
 }
 ```
 
@@ -53,6 +54,8 @@ Let us walk through the key fields:
 - **Timestamps**: Six pairs of timestamp fields covering three events (creation, update, transfer) across three time references (milliseconds, block height, core block height). Whether these are populated depends on the document type schema -- if the schema requires `$createdAt`, the platform fills it in when the document is created.
 
 - **`creator_id`**: The original creator of the document. This differs from `owner_id` when a document has been transferred to a new owner.
+
+- **`contract_version`**: The data contract version this document's bytes conform to — the *contract version stamp* (protocol v14+, document serialization format 3). Drive assigns it whenever document content is supplied (create and replace) and preserves it through transfers and purchases. `None` means the document was serialized before format 3, which predates every `requiredSince` annotation. The stamp resolves per-property byte layouts when a document type gains required properties through contract updates — see the [Document Serialization](../serialization/document-serialization.md) chapter.
 
 ## Document ID Generation
 
@@ -99,6 +102,7 @@ pub trait DocumentV0Getters {
     fn created_at_block_height(&self) -> Option<u64>;
     fn updated_at_block_height(&self) -> Option<u64>;
     fn creator_id(&self) -> Option<Identifier>;
+    fn contract_version(&self) -> Option<u32>;
     // ... and more
 }
 ```

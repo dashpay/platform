@@ -32,7 +32,21 @@ async function getAccount(accountOpts = defaultOpts) {
   const baseOpts = { index: accountIndex };
 
   const opts = Object.assign(baseOpts, accountOpts);
-  return acc[0] || this.createAccount(opts);
+  if (acc[0]) {
+    return acc[0];
+  }
+
+  if (!this.accountCreationPromises) {
+    this.accountCreationPromises = new Map();
+  }
+
+  if (!this.accountCreationPromises.has(accountIndex)) {
+    const accountCreationPromise = Promise.resolve(this.createAccount(opts))
+      .finally(() => this.accountCreationPromises.delete(accountIndex));
+    this.accountCreationPromises.set(accountIndex, accountCreationPromise);
+  }
+
+  return this.accountCreationPromises.get(accountIndex);
 }
 
 module.exports = getAccount;

@@ -7,7 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo};
-use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 use grovedb::batch::KeyInfoPath;
 
@@ -38,9 +38,15 @@ impl Drive {
         >,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        // A full `PlatformVersion` (was `&DriveVersion`): the indexOnly
+        // terminal branch reads the member key off the document via
+        // `Document::get_raw_for_document_type`, which is
+        // platform-versioned. Pure signature widening — the drive-version
+        // dispatch below is unchanged.
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .document
             .insert
@@ -57,7 +63,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_reference_for_index_level_for_contract_operations".to_string(),

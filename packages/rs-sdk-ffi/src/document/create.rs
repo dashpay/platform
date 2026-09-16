@@ -341,6 +341,7 @@ pub unsafe extern "C" fn dash_sdk_document_make_handle(
 
     // Create the document
     let document = Document::V0(DocumentV0 {
+        contract_version: None,
         id: document_id,
         owner_id,
         properties,

@@ -12,6 +12,68 @@ use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 
 impl IdentityManager {
+    /// Look up an identity only when it is signing-capable and belongs to
+    /// `wallet_id`. Observed identities deliberately do not match.
+    pub fn wallet_identity(
+        &self,
+        wallet_id: &WalletId,
+        identity_id: &Identifier,
+    ) -> Option<&ManagedIdentity> {
+        let IdentityLocation::InWallet {
+            wallet_id: located_wallet,
+            registration_index,
+        } = self.location_index().get(identity_id).copied()?
+        else {
+            return None;
+        };
+        if located_wallet != *wallet_id {
+            return None;
+        }
+        self.wallet_identities
+            .get(wallet_id)?
+            .get(&registration_index)
+    }
+
+    /// Mutable counterpart to [`Self::wallet_identity`].
+    pub fn wallet_identity_mut(
+        &mut self,
+        wallet_id: &WalletId,
+        identity_id: &Identifier,
+    ) -> Option<&mut ManagedIdentity> {
+        let IdentityLocation::InWallet {
+            wallet_id: located_wallet,
+            registration_index,
+        } = self.location_index().get(identity_id).copied()?
+        else {
+            return None;
+        };
+        if located_wallet != *wallet_id {
+            return None;
+        }
+        self.wallet_identities
+            .get_mut(wallet_id)?
+            .get_mut(&registration_index)
+    }
+
+    /// Iterate only identities owned by `wallet_id`. Unlike
+    /// [`Self::managed_identities`], this never includes observed contacts.
+    pub fn wallet_managed_identities(
+        &self,
+        wallet_id: &WalletId,
+    ) -> impl Iterator<Item = &ManagedIdentity> {
+        self.wallet_identities
+            .get(wallet_id)
+            .into_iter()
+            .flat_map(|identities| identities.values())
+    }
+
+    /// Snapshot the identifiers owned by `wallet_id`.
+    pub fn wallet_identity_ids(&self, wallet_id: &WalletId) -> Vec<Identifier> {
+        self.wallet_managed_identities(wallet_id)
+            .map(|managed| managed.identity.id())
+            .collect()
+    }
+
     /// Look up a managed identity by id across both buckets.
     ///
     /// O(log n): hits the side-index for the bucket discriminant +
@@ -149,5 +211,55 @@ impl IdentityManager {
         self.wallet_identities
             .get(wallet_id)
             .and_then(|m| m.keys().last().copied())
+    }
+
+    /// Verdict of the last gap-limit identity scan for `wallet_id`, if one is
+    /// known.
+    pub fn identity_scan_state(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Option<&crate::changeset::IdentityScanStateEntry> {
+        self.identity_scan_states.get(wallet_id)
+    }
+
+    /// Whether a scan is known to have left indices unanswered.
+    ///
+    /// The question the warm-launch shortcut asks, phrased so that only
+    /// positive evidence of an incomplete scan can force a rescan. Deliberately
+    /// **not** `!is_complete()`: an absent verdict means nobody recorded one —
+    /// a host that does not persist it, or a wallet whose identities predate
+    /// this bookkeeping — and treating "unknown" as "incomplete" would make
+    /// every launch on such a host pay for a full scan plus its Keychain round
+    /// trip, which is the cost the warm-launch shortcut exists to avoid.
+    pub fn identity_scan_is_incomplete(&self, wallet_id: &WalletId) -> bool {
+        self.identity_scan_states
+            .get(wallet_id)
+            .is_some_and(|state| !state.complete)
+    }
+
+    /// Record the verdict of a gap-limit scan for `wallet_id`, folded over
+    /// whatever verdict is already on record, and return what was stored.
+    ///
+    /// Folding rather than replacing is what stops a scan from clearing a gap
+    /// it never probed — see
+    /// [`IdentityScanStateEntry::superseding`](crate::changeset::IdentityScanStateEntry::superseding).
+    /// It happens here, on the one path every writer takes, rather than in
+    /// each of them.
+    ///
+    /// In-memory only — the caller emits the matching changeset entry, because
+    /// only it holds the persister, and it emits the returned value so what is
+    /// persisted is what is in memory.
+    pub fn record_identity_scan(
+        &mut self,
+        wallet_id: WalletId,
+        state: crate::changeset::IdentityScanStateEntry,
+    ) -> crate::changeset::IdentityScanStateEntry {
+        let recorded = match self.identity_scan_states.get(&wallet_id) {
+            Some(previous) => state.superseding(previous),
+            None => state,
+        };
+        self.identity_scan_states
+            .insert(wallet_id, recorded.clone());
+        recorded
     }
 }

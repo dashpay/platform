@@ -144,6 +144,9 @@ struct StorageExplorerView: View {
             modelRow("Masternodes", icon: "server.rack", type: PersistentMasternode.self) {
                 MasternodeStorageListView(network: network)
             }
+            modelRow("Tracked Masternodes", icon: "eye", type: PersistentTrackedMasternode.self) {
+                TrackedMasternodeStorageListView(network: network)
+            }
             modelRow("Manager Metadata", icon: "gearshape.2", type: PersistentWalletManagerMetadata.self) {
                 WalletManagerMetadataStorageListView(network: network)
             }
@@ -340,6 +343,11 @@ struct StorageExplorerView: View {
         }
         filteredCount(PersistentMasternode.self) {
             walletsOnNetwork.contains($0.walletId)
+        }
+        // Tracked masternodes belong to no wallet — they carry their own
+        // network column.
+        filteredCount(PersistentTrackedMasternode.self) {
+            $0.networkRaw == raw
         }
 
         // Core / Platform addresses partition the same family of

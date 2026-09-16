@@ -91,6 +91,21 @@ then
   LATEST_TAG=$(yarn node $DIR/find_latest_tag.js $NEW_PACKAGE_VERSION)
 fi
 
+# Surface the changelog base tag for a human to verify: a wrong base makes
+# conventional-changelog regenerate and duplicate existing CHANGELOG.md sections.
+# Any WARNING printed above (from find_latest_tag) lists tags that would be duplicated.
+echo ""
+echo "----------------------------------------------------------------"
+echo "Changelog base tag : $LATEST_TAG"
+echo "New version        : $NEW_PACKAGE_VERSION"
+echo "Verify the base tag is the immediately-preceding release."
+echo "If it is wrong, abort and re-run with:"
+echo "  yarn release -v=$NEW_PACKAGE_VERSION -c=<correct-tag>"
+echo "----------------------------------------------------------------"
+if [ -t 0 ]; then
+  read -r -p "Press Enter to generate the changelog and open the release PR, or Ctrl-C to abort... "
+fi
+
 # generate changelog
 yarn node $DIR/generate_changelog.js $LATEST_TAG
 
@@ -121,6 +136,16 @@ gh pr create --base $CURRENT_BRANCH \
              --title "chore(release): update changelog and bump version to $NEW_PACKAGE_VERSION" \
              --body-file $DIR/pr_description.md \
              --milestone $MILESTONE
+
+echo ""
+echo "----------------------------------------------------------------"
+echo "Before publishing the GitHub release for $NEW_PACKAGE_VERSION:"
+echo "If this release adds a NEW publishable @dashevo/* package, configure its"
+echo "npm trusted publisher first (npmjs.com -> the package -> Access ->"
+echo "Trusted Publisher: GitHub Actions, dashpay/platform, workflow release.yml)."
+echo "OIDC cannot publish a package that has no trusted publisher, so the publish"
+echo "job fails on it otherwise -- a one-off manual publish does NOT fix this."
+echo "----------------------------------------------------------------"
 
 # switch back to base branch
 git checkout -

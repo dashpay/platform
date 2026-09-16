@@ -15,6 +15,7 @@ import { Core as _Core } from './Core';
 import { Platform as _Platform } from './Platform';
 
 import { StateTransitionBroadcastError } from '../errors/StateTransitionBroadcastError';
+import { PlatformProofVerificationUnavailableError } from '../errors/PlatformProofVerificationUnavailableError';
 
 export namespace SDK {
   export const DAPIClient = _DAPIClient;
@@ -44,6 +45,7 @@ export namespace SDK {
 
   export const Errors = {
     StateTransitionBroadcastError,
+    PlatformProofVerificationUnavailableError,
   };
 }
 export { SDK as default };

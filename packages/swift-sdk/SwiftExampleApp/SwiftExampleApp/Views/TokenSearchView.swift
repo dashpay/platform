@@ -200,14 +200,7 @@ struct TokenSearchRow: View {
     }
 
     private func formatTokenAmount(_ amount: String, decimals: Int) -> String {
-        guard let value = Double(amount) else { return amount }
-        let divisor = pow(10.0, Double(decimals))
-        let actualAmount = value / divisor
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = decimals
-        formatter.minimumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: actualAmount)) ?? amount
+        PersistentToken.formatSupply(amount, decimals: decimals)
     }
 }
 

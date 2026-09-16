@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -10,6 +11,7 @@ use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use dpp::ProtocolError;
 pub use v0::*;
+pub use v1::*;
 
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use dpp::version::PlatformVersion;
@@ -172,7 +174,25 @@ impl DocumentFromReplaceTransitionAction for Document {
     ) -> Result<Self, ProtocolError> {
         match document_replace_transition_action {
             DocumentReplaceTransitionAction::V0(v0) => {
-                Self::try_from_replace_transition_action_v0(v0, owner_id, platform_version)
+                match platform_version
+                    .drive
+                    .methods
+                    .state_transitions
+                    .document_from_action
+                    .document_from_replace_transition_action
+                {
+                    0 => {
+                        Self::try_from_replace_transition_action_v0(v0, owner_id, platform_version)
+                    }
+                    1 => {
+                        Self::try_from_replace_transition_action_v1(v0, owner_id, platform_version)
+                    }
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "Document::try_from_replace_transition_action".to_string(),
+                        known_versions: vec![0, 1],
+                        received: version,
+                    }),
+                }
             }
         }
     }
@@ -184,7 +204,29 @@ impl DocumentFromReplaceTransitionAction for Document {
     ) -> Result<Self, ProtocolError> {
         match document_replace_transition_action {
             DocumentReplaceTransitionAction::V0(v0) => {
-                Self::try_from_owned_replace_transition_action_v0(v0, owner_id, platform_version)
+                match platform_version
+                    .drive
+                    .methods
+                    .state_transitions
+                    .document_from_action
+                    .document_from_replace_transition_action
+                {
+                    0 => Self::try_from_owned_replace_transition_action_v0(
+                        v0,
+                        owner_id,
+                        platform_version,
+                    ),
+                    1 => Self::try_from_owned_replace_transition_action_v1(
+                        v0,
+                        owner_id,
+                        platform_version,
+                    ),
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "Document::try_from_owned_replace_transition_action".to_string(),
+                        known_versions: vec![0, 1],
+                        received: version,
+                    }),
+                }
             }
         }
     }

@@ -111,22 +111,39 @@ extension PersistentToken {
     }
 
     public var formattedBaseSupply: String {
-        guard let supplyValue = Double(baseSupply) else { return baseSupply }
+        Self.formatSupply(baseSupply, decimals: decimals)
+    }
 
-        if decimals == 0 {
-            return String(Int(supplyValue))
+    /// Exact formatter for protocol integer strings. It never passes through
+    /// `Double`/`Int`, so `UInt64.max` and decimals-zero supplies are safe.
+    public static func formatSupply(_ raw: String, decimals: Int) -> String {
+        guard !raw.isEmpty, raw.allSatisfy({ $0.isASCII && $0.isNumber }) else {
+            return raw
         }
+        let normalized = String(raw.drop(while: { $0 == "0" }))
+        let digits = normalized.isEmpty ? "0" : normalized
+        let scale = max(0, decimals)
+        let integer: String
+        var fraction = ""
+        if scale == 0 {
+            integer = digits
+        } else if digits.count <= scale {
+            integer = "0"
+            fraction = String(repeating: "0", count: scale - digits.count) + digits
+        } else {
+            let split = digits.index(digits.endIndex, offsetBy: -scale)
+            integer = String(digits[..<split])
+            fraction = String(digits[split...])
+        }
+        while fraction.last == "0" { fraction.removeLast() }
 
-        let divisor = pow(10.0, Double(decimals))
-        let actualSupply = supplyValue / divisor
-
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = decimals
-        formatter.minimumFractionDigits = 0
-        formatter.groupingSeparator = ","
-
-        return formatter.string(from: NSNumber(value: actualSupply)) ?? baseSupply
+        var grouped = ""
+        for (offset, character) in integer.reversed().enumerated() {
+            if offset > 0 && offset.isMultiple(of: 3) { grouped.append(",") }
+            grouped.append(character)
+        }
+        grouped = String(grouped.reversed())
+        return fraction.isEmpty ? grouped : "\(grouped).\(fraction)"
     }
 
     public var contractIdBase58: String {
@@ -186,18 +203,47 @@ extension PersistentToken {
 
     public var totalSupply: String {
         guard let balances = balances, !balances.isEmpty else { return baseSupply }
-        let total = balances.reduce(0) { $0 + $1.balance }
-        return String(total)
+        return Self.sumUnsignedBalances(balances.map(\.unsignedBalance))
     }
 
     public var totalFrozenBalance: String {
         guard let balances = balances else { return "0" }
-        let frozen = balances.filter { $0.frozen }.reduce(0) { $0 + $1.balance }
-        return String(frozen)
+        return Self.sumUnsignedBalances(
+            balances.lazy.filter(\.frozen).map(\.unsignedBalance)
+        )
     }
 
     public var activeHolders: Int {
-        balances?.filter { $0.balance > 0 }.count ?? 0
+        balances?.filter { $0.unsignedBalance > 0 }.count ?? 0
+    }
+
+    /// Sums protocol amounts without narrowing either individual balances or
+    /// the aggregate to a signed/fixed-width integer. Several valid UInt64
+    /// balances can exceed UInt64.max when combined.
+    private static func sumUnsignedBalances<S: Sequence>(_ values: S) -> String
+    where S.Element == UInt64 {
+        var digits: [UInt8] = [0] // little-endian decimal digits
+
+        for value in values {
+            var carry = 0
+            let addend = String(value).utf8.reversed().map { Int($0 - 48) }
+            let width = max(digits.count, addend.count)
+            if digits.count < width {
+                digits.append(contentsOf: repeatElement(0, count: width - digits.count))
+            }
+
+            for index in 0..<width {
+                let sum = Int(digits[index]) + (index < addend.count ? addend[index] : 0) + carry
+                digits[index] = UInt8(sum % 10)
+                carry = sum / 10
+            }
+            while carry > 0 {
+                digits.append(UInt8(carry % 10))
+                carry /= 10
+            }
+        }
+
+        return String(digits.reversed().map { Character(String($0)) })
     }
 
     public var hasMaxSupply: Bool {

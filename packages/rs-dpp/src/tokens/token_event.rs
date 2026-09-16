@@ -14,8 +14,10 @@ use crate::prelude::{
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
@@ -58,7 +60,17 @@ pub type FrozenIdentifier = Identifier;
 /// involved identities, and amounts. It is **externally versioned** and marked as `unversioned` in platform serialization,
 /// meaning each variant is self-contained without requiring version dispatching logic.
 #[derive(
-    Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
+    Debug,
+    PartialEq,
+    PartialOrd,
+    Clone,
+    Eq,
+    Encode,
+    Decode,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    PlatformSerialize,
+    DecodeUntrusted,
 )]
 // Custom `Serialize` / `Deserialize` below — `TokenEvent` is a flat enum
 // with all-tuple variants. Internal tagging requires struct variants or
@@ -860,6 +872,7 @@ impl TokenEvent {
         };
 
         let document: Document = DocumentV0 {
+            contract_version: None,
             id: document_id,
             owner_id,
             properties,

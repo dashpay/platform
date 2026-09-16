@@ -1,0 +1,1675 @@
+use super::*;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use crate::data_contract::document_type::random_document::CreateRandomDocument;
+use crate::tests::json_document::json_document_to_contract;
+use integer_encoding::VarInt;
+use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
+
+// ----------------------------------------------------------------
+// Helper: load the dashpay contract and return the contract plus a
+// DocumentTypeRef for the given document type name.
+// ----------------------------------------------------------------
+fn dashpay_contract_and_type(
+    platform_version: &PlatformVersion,
+) -> (crate::prelude::DataContract, String) {
+    let contract = json_document_to_contract(
+        "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        false,
+        platform_version,
+    )
+    .expect("expected to load dashpay contract");
+    (contract, "contactRequest".to_string())
+}
+
+fn family_contract(platform_version: &PlatformVersion) -> crate::prelude::DataContract {
+    json_document_to_contract(
+        "../rs-drive/tests/supporting_files/contract/family/family-contract.json",
+        false,
+        platform_version,
+    )
+    .expect("expected to load family contract")
+}
+
+fn withdrawals_contract(platform_version: &PlatformVersion) -> crate::prelude::DataContract {
+    json_document_to_contract(
+        "../rs-drive/tests/supporting_files/contract/withdrawals/withdrawals-contract.json",
+        false,
+        platform_version,
+    )
+    .expect("expected to load withdrawals contract")
+}
+
+// ================================================================
+//  Round-trip: serialize then deserialize, expect equality
+// ================================================================
+
+#[test]
+fn round_trip_serialize_v0_dashpay_contact_request() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let document = document_type
+        .random_document(Some(42), platform_version)
+        .expect("expected random document");
+
+    let crate::document::Document::V0(doc_v0) = &document;
+
+    let serialized = doc_v0
+        .serialize(document_type, &contract, platform_version)
+        .expect("serialize should succeed");
+
+    let deserialized = DocumentV0::from_bytes(&serialized, document_type, platform_version)
+        .expect("from_bytes should succeed");
+
+    assert_eq!(*doc_v0, deserialized);
+}
+
+#[test]
+fn round_trip_serialize_v0_family_person() {
+    let platform_version = PlatformVersion::first();
+    let contract = family_contract(platform_version);
+    let document_type = contract
+        .document_type_for_name("person")
+        .expect("expected person document type");
+
+    for seed in 0..20u64 {
+        let document = document_type
+            .random_document(Some(seed), platform_version)
+            .expect("expected random document");
+        let crate::document::Document::V0(doc_v0) = &document;
+        let serialized = doc_v0
+            .serialize(document_type, &contract, platform_version)
+            .expect("serialize should succeed");
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type, platform_version)
+            .expect("from_bytes should succeed");
+        assert_eq!(*doc_v0, deserialized, "round-trip failed for seed {seed}");
+    }
+}
+
+#[test]
+fn round_trip_serialize_v1_family_person() {
+    // Platform version that defaults to serialization v1
+    let platform_version = PlatformVersion::get(9).unwrap_or_else(|_| PlatformVersion::latest());
+
+    // We need a non-V0 contract for v1 serialization. Use the latest platform version
+    // to load the contract and create a document type.
+    let contract = json_document_to_contract(
+        "../rs-drive/tests/supporting_files/contract/family/family-contract.json",
+        false,
+        platform_version,
+    )
+    .expect("expected to load family contract");
+
+    let document_type = contract
+        .document_type_for_name("person")
+        .expect("expected person document type");
+
+    // Only test if we can actually produce v1 serialization
+    // (contract must not be V0 and config must not be V0 for v1)
+    if matches!(&contract, DataContract::V0(_)) {
+        // V0 contracts always force serialize_v0, so we test that path instead
+        let document = document_type
+            .random_document(Some(99), platform_version)
+            .expect("expected random document");
+        let crate::document::Document::V0(doc_v0) = &document;
+        let serialized = doc_v0
+            .serialize(document_type, &contract, platform_version)
+            .expect("serialize should succeed");
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type, platform_version)
+            .expect("from_bytes should succeed");
+        assert_eq!(*doc_v0, deserialized);
+    } else {
+        let document = document_type
+            .random_document(Some(99), platform_version)
+            .expect("expected random document");
+        let crate::document::Document::V0(doc_v0) = &document;
+        let serialized = doc_v0
+            .serialize(document_type, &contract, platform_version)
+            .expect("serialize should succeed");
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type, platform_version)
+            .expect("from_bytes should succeed");
+        assert_eq!(*doc_v0, deserialized);
+    }
+}
+
+#[test]
+fn round_trip_serialize_v2_latest_platform() {
+    let platform_version = PlatformVersion::latest();
+    let contract = json_document_to_contract(
+        "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        false,
+        platform_version,
+    )
+    .expect("expected to load dashpay contract");
+
+    let document_type = contract
+        .document_type_for_name("contactRequest")
+        .expect("expected contactRequest document type");
+
+    let document = document_type
+        .random_document(Some(7), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(doc_v0) = &document;
+    let serialized = doc_v0
+        .serialize(document_type, &contract, platform_version)
+        .expect("serialize should succeed");
+    let deserialized = DocumentV0::from_bytes(&serialized, document_type, platform_version)
+        .expect("from_bytes should succeed");
+    assert_eq!(*doc_v0, deserialized);
+}
+
+#[test]
+fn round_trip_withdrawals_document() {
+    let platform_version = PlatformVersion::latest();
+    let contract = withdrawals_contract(platform_version);
+    let document_type = contract
+        .document_type_for_name("withdrawal")
+        .expect("expected withdrawal document type");
+
+    let document = document_type
+        .random_document(Some(55), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(doc_v0) = &document;
+    let serialized = doc_v0
+        .serialize(document_type, &contract, platform_version)
+        .expect("serialize should succeed");
+    let deserialized = DocumentV0::from_bytes(&serialized, document_type, platform_version)
+        .expect("from_bytes should succeed");
+    assert_eq!(*doc_v0, deserialized);
+}
+
+// ================================================================
+//  serialize_specific_version tests
+// ================================================================
+
+#[test]
+fn serialize_specific_version_v0_produces_version_0_prefix() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let document = document_type
+        .random_document(Some(1), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(doc_v0) = &document;
+
+    let serialized = doc_v0
+        .serialize_specific_version(document_type, &contract, 0)
+        .expect("serialize_specific_version v0 should succeed");
+
+    // The first bytes should be varint-encoded 0
+    let (version, _) = u64::decode_var(&serialized).expect("expected varint");
+    assert_eq!(version, 0, "serialization version prefix should be 0");
+}
+
+#[test]
+fn serialize_specific_version_rejects_v1_for_v0_contract() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+
+    // V0 contracts should reject non-0 feature versions
+    if matches!(&contract, DataContract::V0(_)) {
+        let document_type = contract
+            .document_type_for_name(&type_name)
+            .expect("expected document type");
+
+        let document = document_type
+            .random_document(Some(1), platform_version)
+            .expect("expected random document");
+        let crate::document::Document::V0(doc_v0) = &document;
+
+        let result = doc_v0.serialize_specific_version(document_type, &contract, 1);
+        assert!(
+            result.is_err(),
+            "V0 contract should reject serialize_specific_version with feature_version != 0"
+        );
+    }
+}
+
+#[test]
+fn serialize_specific_version_unknown_version_returns_error() {
+    let platform_version = PlatformVersion::latest();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let document = document_type
+        .random_document(Some(1), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(doc_v0) = &document;
+
+    let result = doc_v0.serialize_specific_version(document_type, &contract, 255);
+    assert!(
+        result.is_err(),
+        "unknown feature version should produce an error"
+    );
+    // V0 contracts reject any non-0 version with NotSupported before reaching the
+    // version dispatch. Non-V0 contracts would reach the version dispatch and return
+    // UnknownVersionMismatch.
+    match result.unwrap_err() {
+        ProtocolError::UnknownVersionMismatch { received, .. } => {
+            assert_eq!(received, 255);
+        }
+        ProtocolError::NotSupported(_) => {
+            // V0 contract path: rejects non-0 feature version before dispatching
+        }
+        other => panic!(
+            "expected UnknownVersionMismatch or NotSupported, got {:?}",
+            other
+        ),
+    }
+}
+
+// ================================================================
+//  from_bytes deserialization error cases
+// ================================================================
+
+#[test]
+fn from_bytes_v0_rejects_too_small_buffer() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    // Buffer with varint(0) prefix then only 10 bytes (too small for id+owner_id = 64 bytes)
+    let mut small_buf = 0u64.encode_var_vec();
+    small_buf.extend_from_slice(&[0u8; 10]);
+
+    let result = DocumentV0::from_bytes(&small_buf, document_type, platform_version);
+    assert!(
+        result.is_err(),
+        "buffer shorter than 64 bytes after version prefix should fail"
+    );
+}
+
+#[test]
+fn from_bytes_empty_buffer_fails() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let result = DocumentV0::from_bytes(&[], document_type, platform_version);
+    assert!(result.is_err(), "empty buffer should fail deserialization");
+}
+
+#[test]
+fn from_bytes_unknown_serialization_version_fails() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    // Encode a version that is not 0, 1, or 2
+    let mut buf = 200u64.encode_var_vec();
+    buf.extend_from_slice(&[0u8; 100]); // padding
+
+    let result = DocumentV0::from_bytes(&buf, document_type, platform_version);
+    assert!(result.is_err(), "unknown version should be rejected");
+    match result.unwrap_err() {
+        ProtocolError::UnknownVersionMismatch { received, .. } => {
+            assert_eq!(received, 200);
+        }
+        other => panic!("expected UnknownVersionMismatch, got {:?}", other),
+    }
+}
+
+#[test]
+fn from_bytes_truncated_after_ids_fails() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    // Valid version prefix, valid 64-byte id+owner_id, then no more data
+    // This should fail when trying to read revision or timestamp flags
+    let mut buf = 0u64.encode_var_vec();
+    buf.extend_from_slice(&[0xAA; 64]); // id (32) + owner_id (32)
+
+    let result = DocumentV0::from_bytes(&buf, document_type, platform_version);
+    assert!(
+        result.is_err(),
+        "truncated buffer after ids should fail deserialization"
+    );
+}
+
+// ================================================================
+//  Serialization format: verify version prefix encoding
+// ================================================================
+
+#[test]
+fn serialization_starts_with_correct_version_varint() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let document = document_type
+        .random_document(Some(100), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(doc_v0) = &document;
+
+    // serialize_v0 should prefix with varint 0
+    let bytes = doc_v0
+        .serialize_v0(document_type)
+        .expect("serialize_v0 should succeed");
+    let (ver, _) = u64::decode_var(&bytes).expect("varint decode");
+    assert_eq!(ver, 0);
+
+    // serialize_v1 should prefix with varint 1
+    let bytes = doc_v0
+        .serialize_v1(document_type)
+        .expect("serialize_v1 should succeed");
+    let (ver, _) = u64::decode_var(&bytes).expect("varint decode");
+    assert_eq!(ver, 1);
+
+    // serialize_v2 should prefix with varint 2
+    let bytes = doc_v0
+        .serialize_v2(document_type)
+        .expect("serialize_v2 should succeed");
+    let (ver, _) = u64::decode_var(&bytes).expect("varint decode");
+    assert_eq!(ver, 2);
+}
+
+#[test]
+fn serialized_id_and_owner_id_are_embedded_after_version() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let document = document_type
+        .random_document(Some(42), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(doc_v0) = &document;
+
+    let bytes = doc_v0
+        .serialize_v0(document_type)
+        .expect("serialize should succeed");
+
+    // Version 0 is a single-byte varint
+    let (_, varint_len) = u64::decode_var(&bytes).expect("varint decode");
+    let after_version = &bytes[varint_len..];
+
+    // Next 32 bytes = id
+    assert_eq!(
+        &after_version[..32],
+        doc_v0.id.as_slice(),
+        "id should be at offset after version"
+    );
+    // Following 32 bytes = owner_id
+    assert_eq!(
+        &after_version[32..64],
+        doc_v0.owner_id.as_slice(),
+        "owner_id should follow id"
+    );
+}
+
+// ================================================================
+//  Determinism: same document serializes to the same bytes
+// ================================================================
+
+#[test]
+fn serialization_is_deterministic() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let document = document_type
+        .random_document(Some(99), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(doc_v0) = &document;
+
+    let bytes1 = doc_v0
+        .serialize(document_type, &contract, platform_version)
+        .expect("first serialize");
+    let bytes2 = doc_v0
+        .serialize(document_type, &contract, platform_version)
+        .expect("second serialize");
+    assert_eq!(bytes1, bytes2, "serialization must be deterministic");
+}
+
+// ================================================================
+//  Multiple random documents round-trip (fuzz-like)
+// ================================================================
+
+#[test]
+fn round_trip_many_random_documents() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    for seed in 0..50u64 {
+        let document = document_type
+            .random_document(Some(seed), platform_version)
+            .expect("expected random document");
+        let crate::document::Document::V0(doc_v0) = &document;
+        let serialized = doc_v0
+            .serialize(document_type, &contract, platform_version)
+            .expect("serialize should succeed");
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type, platform_version)
+            .expect("from_bytes should succeed");
+        assert_eq!(*doc_v0, deserialized, "round-trip mismatch for seed {seed}");
+    }
+}
+
+// ================================================================
+//  from_bytes_in_consensus
+// ================================================================
+
+#[cfg(feature = "validation")]
+#[test]
+fn from_bytes_in_consensus_valid_data_returns_valid_result() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let document = document_type
+        .random_document(Some(77), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(doc_v0) = &document;
+    let serialized = doc_v0
+        .serialize(document_type, &contract, platform_version)
+        .expect("serialize should succeed");
+
+    let result = DocumentV0::from_bytes_in_consensus(&serialized, document_type, platform_version)
+        .expect("from_bytes_in_consensus should not return ProtocolError");
+
+    assert!(result.is_valid(), "consensus result should be valid");
+    let deserialized = result.into_data().expect("should have data");
+    assert_eq!(*doc_v0, deserialized);
+}
+
+#[cfg(feature = "validation")]
+#[test]
+fn from_bytes_in_consensus_invalid_data_returns_consensus_error() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    // Version 0, then truncated data
+    let mut buf = 0u64.encode_var_vec();
+    buf.extend_from_slice(&[0u8; 10]);
+
+    let result = DocumentV0::from_bytes_in_consensus(&buf, document_type, platform_version)
+        .expect("should not return ProtocolError for consensus-level decode");
+
+    assert!(
+        !result.is_valid(),
+        "consensus result should contain errors for malformed data"
+    );
+}
+
+#[cfg(feature = "validation")]
+#[test]
+fn from_bytes_in_consensus_unknown_version_returns_protocol_error() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let mut buf = 200u64.encode_var_vec();
+    buf.extend_from_slice(&[0u8; 100]);
+
+    let result = DocumentV0::from_bytes_in_consensus(&buf, document_type, platform_version);
+    assert!(
+        result.is_err(),
+        "unknown version should produce a ProtocolError, not a consensus error"
+    );
+}
+
+// ================================================================
+//  Missing-required-field errors in serialize_v0 / v1 / v2.
+//  The withdrawal contract requires both $createdAt and $updatedAt,
+//  so a DocumentV0 lacking those should fail serialization.
+// ================================================================
+
+fn doc_with_ids() -> DocumentV0 {
+    DocumentV0 {
+        contract_version: None,
+        id: Identifier::new([1u8; 32]),
+        owner_id: Identifier::new([2u8; 32]),
+        properties: BTreeMap::new(),
+        revision: Some(1),
+        created_at: None,
+        updated_at: None,
+        transferred_at: None,
+        created_at_block_height: None,
+        updated_at_block_height: None,
+        transferred_at_block_height: None,
+        created_at_core_block_height: None,
+        updated_at_core_block_height: None,
+        transferred_at_core_block_height: None,
+        creator_id: None,
+    }
+}
+
+#[test]
+fn serialize_v0_missing_created_at_errors_when_required() {
+    let platform_version = PlatformVersion::latest();
+    let contract = withdrawals_contract(platform_version);
+    let document_type = contract
+        .document_type_for_name("withdrawal")
+        .expect("withdrawal document type");
+
+    // Build a document missing $createdAt. Don't include any user-defined
+    // required properties either — we want to trigger the $createdAt path
+    // before the user-property path.
+    let doc = doc_with_ids();
+
+    let err = doc
+        .serialize_v0(document_type)
+        .expect_err("serialize_v0 should fail for missing $createdAt");
+    match err {
+        ProtocolError::DataContractError(DataContractError::MissingRequiredKey(msg)) => {
+            assert!(
+                msg.contains("created at"),
+                "expected missing-created-at message, got: {msg}"
+            );
+        }
+        other => panic!(
+            "expected MissingRequiredKey for created_at, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
+fn serialize_v0_missing_updated_at_errors_when_required() {
+    let platform_version = PlatformVersion::latest();
+    let contract = withdrawals_contract(platform_version);
+    let document_type = contract
+        .document_type_for_name("withdrawal")
+        .expect("withdrawal document type");
+
+    // Supply $createdAt but not $updatedAt — both are required.
+    let mut doc = doc_with_ids();
+    doc.created_at = Some(1_700_000_000_000);
+
+    let err = doc
+        .serialize_v0(document_type)
+        .expect_err("serialize_v0 should fail for missing $updatedAt");
+    match err {
+        ProtocolError::DataContractError(DataContractError::MissingRequiredKey(msg)) => {
+            assert!(
+                msg.contains("updated at"),
+                "expected missing-updated-at message, got: {msg}"
+            );
+        }
+        other => panic!(
+            "expected MissingRequiredKey for updated_at, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
+fn serialize_v1_missing_created_at_errors_when_required() {
+    let platform_version = PlatformVersion::latest();
+    let contract = withdrawals_contract(platform_version);
+    let document_type = contract
+        .document_type_for_name("withdrawal")
+        .expect("withdrawal document type");
+
+    let doc = doc_with_ids();
+    let err = doc
+        .serialize_v1(document_type)
+        .expect_err("serialize_v1 should fail for missing $createdAt");
+    assert!(matches!(
+        err,
+        ProtocolError::DataContractError(DataContractError::MissingRequiredKey(_))
+    ));
+}
+
+#[test]
+fn serialize_v2_missing_created_at_errors_when_required() {
+    let platform_version = PlatformVersion::latest();
+    let contract = withdrawals_contract(platform_version);
+    let document_type = contract
+        .document_type_for_name("withdrawal")
+        .expect("withdrawal document type");
+
+    let doc = doc_with_ids();
+    let err = doc
+        .serialize_v2(document_type)
+        .expect_err("serialize_v2 should fail for missing $createdAt");
+    assert!(matches!(
+        err,
+        ProtocolError::DataContractError(DataContractError::MissingRequiredKey(_))
+    ));
+}
+
+#[test]
+fn serialize_v0_missing_required_user_property_errors() {
+    // Family `person` requires `firstName`, `lastName`, `age`.
+    let platform_version = PlatformVersion::first();
+    let contract = family_contract(platform_version);
+    let document_type = contract
+        .document_type_for_name("person")
+        .expect("person document type");
+
+    // Document with only ids, no user-defined required properties set.
+    let doc = doc_with_ids();
+
+    let err = doc
+        .serialize_v0(document_type)
+        .expect_err("serialize_v0 should fail for missing required property");
+    match err {
+        ProtocolError::DataContractError(DataContractError::MissingRequiredKey(msg)) => {
+            // The error message includes the field name for user-defined required fields.
+            let any_expected = msg.contains("firstName")
+                || msg.contains("lastName")
+                || msg.contains("age")
+                || msg.contains("required field");
+            assert!(any_expected, "unexpected error message: {msg}");
+        }
+        other => panic!("expected MissingRequiredKey, got {:?}", other),
+    }
+}
+
+// ================================================================
+//  from_bytes: V1 prefix dispatches to from_bytes_v1 directly
+// ================================================================
+
+#[test]
+fn from_bytes_v1_prefix_dispatches_to_v1_path() {
+    let platform_version = PlatformVersion::latest();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let document = document_type
+        .random_document(Some(123), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(doc_v0) = &document;
+
+    // Bypass the V0-contract gate by calling serialize_v1 directly: the
+    // resulting varint-1 prefix must round-trip through from_bytes.
+    let bytes = doc_v0.serialize_v1(document_type).expect("serialize_v1");
+    let (ver, _) = u64::decode_var(&bytes).expect("varint");
+    assert_eq!(ver, 1);
+    let recovered = DocumentV0::from_bytes(&bytes, document_type, platform_version)
+        .expect("from_bytes should dispatch to v1");
+    assert_eq!(*doc_v0, recovered);
+}
+
+// ================================================================
+//  from_bytes: V2 prefix round-trip for documents with a creator_id
+//  (contactRequest is transferable, so v2 records the creator flag).
+// ================================================================
+
+#[test]
+fn from_bytes_v2_non_transferable_type_does_not_persist_creator_id() {
+    // frozen: V0 consensus behavior — contactRequest is non-transferable
+    // with TradeMode::None, so v2 intentionally skips the creator_id byte
+    // in both serialize_v2 and from_bytes_v2. Assigning a creator_id on
+    // the source document is therefore NOT round-tripped.
+    let platform_version = PlatformVersion::latest();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let document = document_type
+        .random_document(Some(321), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(mut doc_v0) = document;
+    // Even setting a creator_id here has no on-wire effect for this type.
+    doc_v0.creator_id = Some(Identifier::new([0xAB; 32]));
+
+    let bytes = doc_v0.serialize_v2(document_type).expect("serialize_v2");
+    let (ver, _) = u64::decode_var(&bytes).expect("varint");
+    assert_eq!(ver, 2);
+
+    let recovered = DocumentV0::from_bytes(&bytes, document_type, platform_version)
+        .expect("from_bytes should dispatch to v2");
+    assert_eq!(doc_v0.id, recovered.id);
+    assert_eq!(doc_v0.owner_id, recovered.owner_id);
+    assert_eq!(
+        recovered.creator_id, None,
+        "creator_id is not encoded for non-transferable / TradeMode::None types"
+    );
+}
+
+#[test]
+fn from_bytes_v2_prefix_round_trip_with_none_creator_id() {
+    let platform_version = PlatformVersion::latest();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let document = document_type
+        .random_document(Some(999), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(mut doc_v0) = document;
+    // creator_id is None — exercise the else-branch of v2's creator check.
+    doc_v0.creator_id = None;
+
+    let bytes = doc_v0.serialize_v2(document_type).expect("serialize_v2");
+    let recovered =
+        DocumentV0::from_bytes(&bytes, document_type, platform_version).expect("from_bytes v2");
+    assert_eq!(recovered.creator_id, None);
+}
+
+// ================================================================
+//  from_bytes_v1 / v2 directly — too-small buffers should error
+//  before we read any id / owner id bytes.
+// ================================================================
+
+#[test]
+fn from_bytes_v1_direct_too_small_buffer_errors() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let result = DocumentV0::from_bytes_v1(&[0u8; 10], document_type, platform_version);
+    assert!(
+        result.is_err(),
+        "from_bytes_v1 should fail for buffer < 64 bytes"
+    );
+}
+
+#[test]
+fn from_bytes_v2_direct_too_small_buffer_errors() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let result = DocumentV0::from_bytes_v2(&[0u8; 10], document_type, platform_version);
+    assert!(
+        result.is_err(),
+        "from_bytes_v2 should fail for buffer < 64 bytes"
+    );
+}
+
+#[test]
+fn from_bytes_v0_direct_too_small_buffer_errors() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let result = DocumentV0::from_bytes_v0(&[0u8; 10], document_type, platform_version);
+    assert!(
+        result.is_err(),
+        "from_bytes_v0 should fail for buffer < 64 bytes"
+    );
+}
+
+// ================================================================
+//  from_bytes: V1 prefix with truncated post-id data errors
+// ================================================================
+
+#[test]
+fn from_bytes_v1_truncated_post_ids_errors() {
+    let platform_version = PlatformVersion::latest();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    // V1 varint + 64 bytes (id + owner_id) — nothing after that, so the
+    // revision / timestamp_flags read must fail.
+    let mut buf = 1u64.encode_var_vec();
+    buf.extend_from_slice(&[0xCD; 64]);
+
+    let result = DocumentV0::from_bytes(&buf, document_type, platform_version);
+    assert!(
+        result.is_err(),
+        "v1 with truncated post-ids should fail deserialization"
+    );
+}
+
+#[test]
+fn from_bytes_v2_truncated_post_ids_errors() {
+    let platform_version = PlatformVersion::latest();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let mut buf = 2u64.encode_var_vec();
+    buf.extend_from_slice(&[0xCD; 64]);
+
+    let result = DocumentV0::from_bytes(&buf, document_type, platform_version);
+    assert!(
+        result.is_err(),
+        "v2 with truncated post-ids should fail deserialization"
+    );
+}
+
+// ================================================================
+//  serialize_specific_version: V0 contract + feature_version 0
+//  should succeed (the V0-gated NotSupported branch is NOT hit).
+// ================================================================
+
+#[test]
+fn serialize_specific_version_v0_contract_feature_version_0_succeeds() {
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let document = document_type
+        .random_document(Some(5), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(doc_v0) = &document;
+
+    // feature_version 0 is explicitly allowed for V0 contracts.
+    let bytes = doc_v0
+        .serialize_specific_version(document_type, &contract, 0)
+        .expect("serialize_specific_version v0 should succeed on a V0 contract");
+    let (ver, _) = u64::decode_var(&bytes).expect("varint decode");
+    assert_eq!(ver, 0);
+}
+
+// ================================================================
+//  serialize_specific_version: feature_version 2 with a non-V0
+//  contract (latest platform version) should succeed.
+// ================================================================
+
+#[test]
+fn serialize_specific_version_rejects_v2_for_v0_contract() {
+    // V0 contracts always force serialize_v0, so feature_version 2 is
+    // rejected with NotSupported before reaching the version dispatch.
+    // Use `PlatformVersion::first()` so the fixture is guaranteed to load
+    // as a V0 contract — without this, the test could pass vacuously if
+    // the dashpay contract began deserializing as a non-V0 variant.
+    let platform_version = PlatformVersion::first();
+    let (contract, type_name) = dashpay_contract_and_type(platform_version);
+    let document_type = contract
+        .document_type_for_name(&type_name)
+        .expect("expected document type");
+
+    let document = document_type
+        .random_document(Some(17), platform_version)
+        .expect("expected random document");
+    let crate::document::Document::V0(doc_v0) = &document;
+
+    // Precondition: the fixture must actually be a V0 contract, otherwise
+    // the NotSupported branch we intend to exercise would never be hit.
+    assert!(
+        matches!(&contract, DataContract::V0(_)),
+        "fixture must be a V0 contract to exercise the V0-gated NotSupported branch"
+    );
+
+    let err = doc_v0
+        .serialize_specific_version(document_type, &contract, 2)
+        .expect_err("V0 contract should reject v2");
+    match err {
+        ProtocolError::NotSupported(_) => {}
+        other => panic!("expected NotSupported, got {:?}", other),
+    }
+}
+
+// ================================================================
+//  from_bytes V0-then-V1 fallback: a valid V1 buffer with a V0
+//  varint prefix should still round-trip via the fallback path.
+//  Construct bytes by serializing v1 and then overwriting the
+//  varint prefix to 0.
+// ================================================================
+
+#[test]
+fn from_bytes_v0_falls_back_to_v1_on_decoding_error() {
+    // Use a contract whose properties are all integers so v0 (I64) and v1
+    // (actual type) produce different encoded lengths / types. family's
+    // `person` has one integer field `age`, suitable for fallback testing.
+    let platform_version = PlatformVersion::latest();
+    let contract = family_contract(platform_version);
+    let document_type = contract
+        .document_type_for_name("person")
+        .expect("person document type");
+
+    // Random document serialized in v1 format (integers kept as native).
+    let document = document_type
+        .random_document(Some(55), platform_version)
+        .expect("random document");
+    let crate::document::Document::V0(doc_v0) = document;
+
+    // Serialize in v1 explicitly.
+    let mut v1_bytes = doc_v0
+        .serialize_v1(document_type)
+        .expect("serialize_v1 should succeed");
+    // Overwrite the varint-1 prefix with varint-0.
+    v1_bytes[0] = 0;
+
+    // from_bytes dispatches to v0, which fails on the mismatched layout,
+    // then retries via v1 — the fallback must recover the original document.
+    let recovered = DocumentV0::from_bytes(&v1_bytes, document_type, platform_version)
+        .expect("v0-prefixed v1 payload must fall back to v1 deserialization");
+    assert_eq!(recovered, doc_v0);
+}
+
+// ================================================================
+//  Known-bytes deserialization (golden test)
+// ================================================================
+
+#[test]
+fn deserialize_known_withdrawal_bytes() {
+    let platform_version = PlatformVersion::latest();
+    let contract = withdrawals_contract(platform_version);
+
+    let document_type = contract
+        .document_type_for_name("withdrawal")
+        .expect("expected withdrawal document type");
+
+    // This is a real serialized withdrawal document (from existing test)
+    let serialized = hex::decode(
+        "010053626cafc76f47062f936c5938190f5f30aac997b8fc22e81c1d9a7f903bd9\
+         fa8696d3f39c518784e53be79ee199e70387f9a7408254de920c1f3779de285601\
+         00030000019782b96d140000019782b96d14000000000002540be40000000001\
+         001976a9149e3292d2612122d81613fdb893dd36a04df3355588ac00",
+    )
+    .expect("expected valid hex");
+
+    let deserialized = DocumentV0::from_bytes(&serialized, document_type, platform_version)
+        .expect("expected deserialization to succeed");
+
+    // Verify known fields
+    assert_eq!(
+        hex::encode(deserialized.id.as_slice()),
+        "0053626cafc76f47062f936c5938190f5f30aac997b8fc22e81c1d9a7f903bd9"
+    );
+    assert_eq!(
+        hex::encode(deserialized.owner_id.as_slice()),
+        "fa8696d3f39c518784e53be79ee199e70387f9a7408254de920c1f3779de2856"
+    );
+    assert_eq!(deserialized.revision, Some(1));
+    assert_eq!(deserialized.created_at, Some(1750244879636));
+    assert_eq!(deserialized.updated_at, Some(1750244879636));
+}
+
+// ================================================================
+//  Format 3: the contract-version stamp and requiredSince layouts
+// ================================================================
+
+/// A document type exercising every schema-reachable property type in
+/// both required and optional positions. Not represented because no
+/// document schema can produce them (`try_from_value_map` dispatches on
+/// `"type"` only): `Date` (no `"date"` arm; only array item types and
+/// system fields use it via `try_from_name`) and u128/i128 (integer
+/// bound inference is i64-limited).
+fn kitchen_sink_document_type() -> crate::data_contract::document_type::DocumentType {
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::document_type::DocumentType;
+    use platform_value::platform_value;
+    use std::collections::BTreeMap;
+
+    let platform_version = PlatformVersion::latest();
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "u8v":  {"type": "integer", "position": 0, "minimum": 0, "maximum": 255},
+            "u16v": {"type": "integer", "position": 1, "minimum": 0, "maximum": 65535},
+            "u32v": {"type": "integer", "position": 2, "minimum": 0, "maximum": 4294967295_u64},
+            "i8v":  {"type": "integer", "position": 3, "minimum": -128, "maximum": 127},
+            "i16v": {"type": "integer", "position": 4, "minimum": -32768, "maximum": 32767},
+            "i32v": {"type": "integer", "position": 5, "minimum": -2147483648_i64, "maximum": 2147483647_i64},
+            "i64v": {"type": "integer", "position": 6},
+            "f64v": {"type": "number", "position": 7},
+            "strv": {"type": "string", "position": 8, "maxLength": 60_u32},
+            "bytv": {"type": "array", "position": 9, "byteArray": true, "minItems": 0, "maxItems": 32},
+            "idv":  {"type": "array", "position": 10, "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier"},
+            "boolv": {"type": "boolean", "position": 11},
+            "u8o":  {"type": "integer", "position": 12, "minimum": 0, "maximum": 255},
+            "u16o": {"type": "integer", "position": 13, "minimum": 0, "maximum": 65535},
+            "u32o": {"type": "integer", "position": 14, "minimum": 0, "maximum": 4294967295_u64},
+            "i8o":  {"type": "integer", "position": 15, "minimum": -128, "maximum": 127},
+            "i16o": {"type": "integer", "position": 16, "minimum": -32768, "maximum": 32767},
+            "i32o": {"type": "integer", "position": 17, "minimum": -2147483648_i64, "maximum": 2147483647_i64},
+            "i64o": {"type": "integer", "position": 18},
+            "f64o": {"type": "number", "position": 19},
+            "stro": {"type": "string", "position": 20, "maxLength": 60_u32},
+            "byto": {"type": "array", "position": 21, "byteArray": true, "minItems": 0, "maxItems": 32},
+            "ido":  {"type": "array", "position": 22, "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier"},
+            "boolo": {"type": "boolean", "position": 23},
+        },
+        "required": ["u8v", "u16v", "u32v", "i8v", "i16v", "i32v", "i64v", "f64v", "strv", "bytv", "idv", "boolv"],
+        "additionalProperties": false,
+    });
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("should create a default config");
+    DocumentType::try_from_schema(
+        platform_value::Identifier::new([2; 32]),
+        1,
+        config.version(),
+        "sink",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        false,
+        &mut Vec::new(),
+        platform_version,
+    )
+    .expect("failed to create kitchen-sink document type")
+}
+
+fn kitchen_sink_required_properties() -> BTreeMap<String, Value> {
+    let mut properties = BTreeMap::new();
+    properties.insert("u8v".to_string(), Value::U8(200));
+    properties.insert("u16v".to_string(), Value::U16(60000));
+    properties.insert("u32v".to_string(), Value::U32(4000000000));
+    properties.insert("i8v".to_string(), Value::I8(-100));
+    properties.insert("i16v".to_string(), Value::I16(-30000));
+    properties.insert("i32v".to_string(), Value::I32(-2000000000));
+    properties.insert("i64v".to_string(), Value::I64(-9000000000000000000));
+    properties.insert("f64v".to_string(), Value::Float(1.5));
+    properties.insert("strv".to_string(), Value::Text("hello".to_string()));
+    properties.insert("bytv".to_string(), Value::Bytes(vec![1, 2, 3]));
+    properties.insert("idv".to_string(), Value::Identifier([7; 32]));
+    properties.insert("boolv".to_string(), Value::Bool(true));
+    properties
+}
+
+#[test]
+fn serialize_v3_round_trips_every_property_type() {
+    let platform_version = PlatformVersion::latest();
+    let document_type = kitchen_sink_document_type();
+
+    // Every optional present alongside every required
+    let mut properties = kitchen_sink_required_properties();
+    properties.insert("u8o".to_string(), Value::U8(1));
+    properties.insert("u16o".to_string(), Value::U16(2));
+    properties.insert("u32o".to_string(), Value::U32(3));
+    properties.insert("i8o".to_string(), Value::I8(-1));
+    properties.insert("i16o".to_string(), Value::I16(-2));
+    properties.insert("i32o".to_string(), Value::I32(-3));
+    properties.insert("i64o".to_string(), Value::I64(-4));
+    properties.insert("f64o".to_string(), Value::Float(-2.75));
+    properties.insert("stro".to_string(), Value::Text(String::new()));
+    properties.insert("byto".to_string(), Value::Bytes(Vec::new()));
+    properties.insert("ido".to_string(), Value::Identifier([9; 32]));
+    properties.insert("boolo".to_string(), Value::Bool(false));
+
+    let document = stamped_document(None, properties, document_type.as_ref());
+    let serialized = document
+        .serialize_v3(document_type.as_ref())
+        .expect("expected to serialize all property types");
+    let deserialized =
+        DocumentV0::from_bytes(&serialized, document_type.as_ref(), platform_version)
+            .expect("expected to deserialize all property types");
+    assert_eq!(document, deserialized);
+
+    // Determinism: same document, same bytes
+    let serialized_again = document
+        .serialize_v3(document_type.as_ref())
+        .expect("expected to serialize again");
+    assert_eq!(serialized, serialized_again);
+
+    // Every optional absent (the flag-0 arm of each type), stamped
+    let document = stamped_document(
+        Some(1),
+        kitchen_sink_required_properties(),
+        document_type.as_ref(),
+    );
+    let serialized = document
+        .serialize_v3(document_type.as_ref())
+        .expect("expected to serialize with absent optionals");
+    let deserialized =
+        DocumentV0::from_bytes(&serialized, document_type.as_ref(), platform_version)
+            .expect("expected to deserialize with absent optionals");
+    assert_eq!(document, deserialized);
+}
+
+#[test]
+fn serialize_v3_missing_plain_required_property_errors() {
+    let document_type = kitchen_sink_document_type();
+    let mut properties = kitchen_sink_required_properties();
+    properties.remove("u16v");
+
+    let document = stamped_document(None, properties, document_type.as_ref());
+    assert!(
+        document.serialize_v3(document_type.as_ref()).is_err(),
+        "serializing without a required property must error"
+    );
+}
+
+#[test]
+fn from_bytes_v3_never_panics_on_truncated_input() {
+    let platform_version = PlatformVersion::latest();
+    let document_type = kitchen_sink_document_type();
+
+    let mut properties = kitchen_sink_required_properties();
+    properties.insert("stro".to_string(), Value::Text("tail".to_string()));
+    let document = stamped_document(Some(1), properties, document_type.as_ref());
+    let serialized = document
+        .serialize_v3(document_type.as_ref())
+        .expect("expected to serialize");
+
+    // Every strict prefix must produce a Result, never a panic. (Some
+    // prefixes legitimately succeed: format 3 tolerates EOF at property
+    // boundaries so appended properties stay readable by old data.)
+    for length in 0..serialized.len() {
+        let _ = DocumentV0::from_bytes(
+            &serialized[..length],
+            document_type.as_ref(),
+            platform_version,
+        );
+    }
+}
+
+/// A document type with:
+///   - `a`: required at every version
+///   - `b`: required since contract version 2
+///   - `c`: plain optional
+fn required_since_document_type() -> crate::data_contract::document_type::DocumentType {
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::document_type::DocumentType;
+    use platform_value::platform_value;
+    use std::collections::BTreeMap;
+
+    let platform_version = PlatformVersion::latest();
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+            "b": {"type": "string", "position": 1, "maxLength": 60_u32, "requiredSince": 2},
+            "c": {"type": "string", "position": 2, "maxLength": 60_u32},
+        },
+        "required": ["a", "b"],
+        "additionalProperties": false,
+    });
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("should create a default config");
+    DocumentType::try_from_schema(
+        platform_value::Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "test",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        false,
+        &mut Vec::new(),
+        platform_version,
+    )
+    .expect("failed to create document type")
+}
+
+fn stamped_document(
+    contract_version: Option<u32>,
+    properties: BTreeMap<String, Value>,
+    document_type: DocumentTypeRef,
+) -> DocumentV0 {
+    DocumentV0 {
+        contract_version,
+        id: Identifier::new([3; 32]),
+        owner_id: Identifier::new([4; 32]),
+        properties,
+        revision: document_type.initial_revision(),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn serialize_v3_round_trips_document_stamped_at_required_since() {
+    let platform_version = PlatformVersion::latest();
+    let document_type = required_since_document_type();
+    let document_type_ref = document_type.as_ref();
+
+    let mut properties = BTreeMap::new();
+    properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+    properties.insert("b".to_string(), Value::Text("beta".to_string()));
+
+    let document = stamped_document(Some(2), properties, document_type_ref);
+
+    let serialized = document
+        .serialize_v3(document_type_ref)
+        .expect("stamped document with the required-since field should serialize");
+
+    let (version, _) = u64::decode_var(&serialized).expect("expected varint");
+    assert_eq!(version, 3, "serialization version prefix should be 3");
+
+    let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+        .expect("expected deserialization to succeed");
+
+    assert_eq!(deserialized.contract_version, Some(2));
+    assert_eq!(deserialized, document);
+}
+
+#[test]
+fn serialize_v3_grandfathered_document_may_omit_required_since_field() {
+    let platform_version = PlatformVersion::latest();
+    let document_type = required_since_document_type();
+    let document_type_ref = document_type.as_ref();
+
+    let mut properties = BTreeMap::new();
+    properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+
+    // Stamped at version 1, before `b` became required at version 2
+    let document = stamped_document(Some(1), properties, document_type_ref);
+
+    let serialized = document
+        .serialize_v3(document_type_ref)
+        .expect("grandfathered document without the required-since field should serialize");
+
+    let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+        .expect("expected deserialization to succeed");
+
+    assert_eq!(deserialized.contract_version, Some(1));
+    assert!(!deserialized.properties.contains_key("b"));
+    assert_eq!(deserialized, document);
+}
+
+#[test]
+fn serialize_v3_unstamped_document_treats_required_since_fields_as_optional() {
+    let platform_version = PlatformVersion::latest();
+    let document_type = required_since_document_type();
+    let document_type_ref = document_type.as_ref();
+
+    let mut properties = BTreeMap::new();
+    properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+
+    // No stamp: a pre-format-3 document being re-serialized (e.g. on
+    // transfer). Every requiredSince annotation postdates its bytes.
+    let document = stamped_document(None, properties, document_type_ref);
+
+    let serialized = document
+        .serialize_v3(document_type_ref)
+        .expect("unstamped document without the required-since field should serialize");
+
+    let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+        .expect("expected deserialization to succeed");
+
+    assert_eq!(deserialized.contract_version, None);
+    assert_eq!(deserialized, document);
+}
+
+#[test]
+fn serialize_v3_stamped_at_required_since_missing_field_errors() {
+    let document_type = required_since_document_type();
+    let document_type_ref = document_type.as_ref();
+
+    let mut properties = BTreeMap::new();
+    properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+
+    // Stamped at version 2, where `b` is required — but `b` is absent
+    let document = stamped_document(Some(2), properties, document_type_ref);
+
+    let result = document.serialize_v3(document_type_ref);
+    assert!(
+        matches!(
+            result,
+            Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(_)
+            ))
+        ),
+        "a document stamped at requiredSince must contain the field, got {result:?}"
+    );
+}
+
+#[test]
+fn format_2_bytes_stay_readable_under_a_required_since_schema() {
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::document_type::DocumentType;
+    use platform_value::platform_value;
+
+    let platform_version = PlatformVersion::latest();
+
+    // The schema as it was at contract version 1, before `b` (required
+    // since version 2) and `c` (optional) were appended
+    let old_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+        },
+        "required": ["a"],
+        "additionalProperties": false,
+    });
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("should create a default config");
+    let old_document_type = DocumentType::try_from_schema(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "test",
+        old_schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        false,
+        &mut Vec::new(),
+        platform_version,
+    )
+    .expect("failed to create old document type");
+
+    let mut properties = BTreeMap::new();
+    properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+
+    // A pre-stamp document serialized in format 2 under the old schema
+    // (as every document written before protocol v14 was, at the
+    // latest): its buffer ends before `b` and `c`, which must read back
+    // as absent under the updated schema, not as errors
+    let document = stamped_document(None, properties, old_document_type.as_ref());
+
+    let serialized = document
+        .serialize_v2(old_document_type.as_ref())
+        .expect("format 2 serialization should succeed");
+
+    let (version, _) = u64::decode_var(&serialized).expect("expected varint");
+    assert_eq!(version, 2);
+
+    let new_document_type = required_since_document_type();
+    let deserialized =
+        DocumentV0::from_bytes(&serialized, new_document_type.as_ref(), platform_version)
+            .expect("format 2 bytes must stay readable under a requiredSince schema");
+
+    assert_eq!(deserialized.contract_version, None);
+    assert!(!deserialized.properties.contains_key("b"));
+    assert!(!deserialized.properties.contains_key("c"));
+    assert_eq!(deserialized, document);
+}
+
+#[test]
+fn stale_document_type_rejects_document_stamped_under_newer_contract() {
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::document_type::DocumentType;
+    use platform_value::platform_value;
+
+    let platform_version = PlatformVersion::latest();
+
+    // The reader's stale view: the schema as of contract version 1,
+    // before `b` and `c` were appended
+    let stale_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+        },
+        "required": ["a"],
+        "additionalProperties": false,
+    });
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("should create a default config");
+    let stale_document_type = DocumentType::try_from_schema(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "test",
+        stale_schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        false,
+        &mut Vec::new(),
+        platform_version,
+    )
+    .expect("failed to create stale document type");
+
+    // A document written under contract version 2, where `b` exists and
+    // is required
+    let current_document_type = required_since_document_type();
+    let mut properties = BTreeMap::new();
+    properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+    properties.insert("b".to_string(), Value::Text("beta".to_string()));
+    let document = stamped_document(Some(2), properties, current_document_type.as_ref());
+
+    let serialized = document
+        .serialize_v3(current_document_type.as_ref())
+        .expect("expected serialization");
+
+    // A stale reader must hard-error on the trailing bytes instead of
+    // silently dropping the field it does not know about
+    let result =
+        DocumentV0::from_bytes(&serialized, stale_document_type.as_ref(), platform_version);
+    assert!(
+        matches!(
+            &result,
+            Err(ProtocolError::DataContractError(
+                DataContractError::CorruptedSerialization(message)
+            )) if message.contains("trailing bytes")
+        ),
+        "a stale document type must reject a newer-stamped document, got {result:?}"
+    );
+}
+
+/// A document type whose `requiredSince` annotations sit on properties of
+/// every distinct byte layout — variable and fixed byte arrays, an
+/// identifier, integers, a float, a bool, and a nested object — at two
+/// different annotation versions, so a stamp can fall before, between,
+/// and after them:
+///   - `a`: string, required at every version
+///   - `bytv2`, `fixv2`, `objv2`: required since contract version 2
+///   - `idv3`, `intv3`, `fltv3`, `boolv3`: required since contract version 3
+fn multi_type_required_since_document_type() -> crate::data_contract::document_type::DocumentType {
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::document_type::DocumentType;
+    use platform_value::platform_value;
+    use std::collections::BTreeMap;
+
+    let platform_version = PlatformVersion::latest();
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "a":      {"type": "string", "position": 0, "maxLength": 60_u32},
+            "bytv2":  {"type": "array", "position": 1, "byteArray": true, "minItems": 0, "maxItems": 32, "requiredSince": 2},
+            "fixv2":  {"type": "array", "position": 2, "byteArray": true, "minItems": 8, "maxItems": 8, "requiredSince": 2},
+            "objv2":  {
+                "type": "object",
+                "position": 3,
+                "properties": {
+                    "inner": {"type": "string", "position": 0, "maxLength": 10_u32},
+                },
+                "required": ["inner"],
+                "additionalProperties": false,
+                "requiredSince": 2,
+            },
+            "idv3":   {"type": "array", "position": 4, "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier", "requiredSince": 3},
+            "intv3":  {"type": "integer", "position": 5, "requiredSince": 3},
+            "fltv3":  {"type": "number", "position": 6, "requiredSince": 3},
+            "boolv3": {"type": "boolean", "position": 7, "requiredSince": 3},
+        },
+        "required": ["a", "bytv2", "fixv2", "objv2", "idv3", "intv3", "fltv3", "boolv3"],
+        "additionalProperties": false,
+    });
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("should create a default config");
+    DocumentType::try_from_schema(
+        platform_value::Identifier::new([5; 32]),
+        3,
+        config.version(),
+        "multi",
+        schema,
+        None,
+        &BTreeMap::new(),
+        &config,
+        false,
+        &mut Vec::new(),
+        platform_version,
+    )
+    .expect("failed to create multi-type document type")
+}
+
+fn multi_type_properties_since_v2() -> BTreeMap<String, Value> {
+    let mut properties = BTreeMap::new();
+    properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+    properties.insert("bytv2".to_string(), Value::Bytes(vec![1, 2, 3]));
+    properties.insert("fixv2".to_string(), Value::Bytes(vec![9; 8]));
+    properties.insert(
+        "objv2".to_string(),
+        Value::Map(vec![(
+            Value::Text("inner".to_string()),
+            Value::Text("in".to_string()),
+        )]),
+    );
+    properties
+}
+
+fn multi_type_properties_since_v3() -> BTreeMap<String, Value> {
+    let mut properties = multi_type_properties_since_v2();
+    properties.insert("idv3".to_string(), Value::Identifier([7; 32]));
+    properties.insert("intv3".to_string(), Value::I64(-42));
+    properties.insert("fltv3".to_string(), Value::Float(1.5));
+    properties.insert("boolv3".to_string(), Value::Bool(true));
+    properties
+}
+
+#[test]
+fn serialize_v3_round_trips_annotated_non_string_types_at_every_stamp() {
+    let platform_version = PlatformVersion::latest();
+    let document_type = multi_type_required_since_document_type();
+    let document_type_ref = document_type.as_ref();
+
+    let mut base = BTreeMap::new();
+    base.insert("a".to_string(), Value::Text("alpha".to_string()));
+
+    // Unstamped and stamped-at-1: every annotation postdates the bytes,
+    // so all annotated properties may be absent
+    for stamp in [None, Some(1)] {
+        let document = stamped_document(stamp, base.clone(), document_type_ref);
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("document predating every annotation should serialize");
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected deserialization to succeed");
+        assert_eq!(deserialized, document, "stamp {stamp:?}");
+    }
+
+    // Stamped between the two annotation versions: the version-2 group is
+    // required (raw layout), the version-3 group still optional and absent
+    let document = stamped_document(Some(2), multi_type_properties_since_v2(), document_type_ref);
+    let serialized = document
+        .serialize_v3(document_type_ref)
+        .expect("document stamped between annotations should serialize");
+    let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+        .expect("expected deserialization to succeed");
+    assert_eq!(deserialized, document);
+
+    // Same stamp with the version-3 group present: still optional, so it
+    // rides the presence-flagged layout and must round-trip
+    let document = stamped_document(Some(2), multi_type_properties_since_v3(), document_type_ref);
+    let serialized = document
+        .serialize_v3(document_type_ref)
+        .expect("optional-but-present annotated fields should serialize");
+    let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+        .expect("expected deserialization to succeed");
+    assert_eq!(deserialized, document);
+
+    // Stamped at the newest annotation: everything required, raw layouts
+    let document = stamped_document(Some(3), multi_type_properties_since_v3(), document_type_ref);
+    let serialized = document
+        .serialize_v3(document_type_ref)
+        .expect("document stamped at the newest annotation should serialize");
+    let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+        .expect("expected deserialization to succeed");
+    assert_eq!(deserialized, document);
+
+    // A stamp at the newest annotation with one of its fields missing
+    // errors for non-string types just like for strings
+    let mut missing = multi_type_properties_since_v3();
+    missing.remove("idv3");
+    let document = stamped_document(Some(3), missing, document_type_ref);
+    assert!(
+        matches!(
+            document.serialize_v3(document_type_ref),
+            Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(_)
+            ))
+        ),
+        "a stamped-at-annotation document missing an annotated identifier must error"
+    );
+}
+
+#[test]
+fn serialize_v3_layouts_diverge_between_stamps_across_property_types() {
+    let platform_version = PlatformVersion::latest();
+    let document_type = multi_type_required_since_document_type();
+    let document_type_ref = document_type.as_ref();
+
+    // Identical content, different stamps: at stamp 2 the version-3 group
+    // is presence-flagged, at stamp 3 it serializes raw — the bytes must
+    // differ beyond the stamp varint itself, and each layout must decode
+    // only under its own stamp
+    let at_2 = stamped_document(Some(2), multi_type_properties_since_v3(), document_type_ref)
+        .serialize_v3(document_type_ref)
+        .expect("stamp-2 document should serialize");
+    let at_3 = stamped_document(Some(3), multi_type_properties_since_v3(), document_type_ref)
+        .serialize_v3(document_type_ref)
+        .expect("stamp-3 document should serialize");
+
+    // Four version-3 properties drop one presence byte each when the
+    // stamp makes them required; the stamp varint is one byte in both
+    assert_eq!(
+        at_2.len(),
+        at_3.len() + 4,
+        "the presence-flagged layout must carry one extra byte per annotated property"
+    );
+
+    let from_2 = DocumentV0::from_bytes(&at_2, document_type_ref, platform_version)
+        .expect("stamp-2 bytes should decode");
+    let from_3 = DocumentV0::from_bytes(&at_3, document_type_ref, platform_version)
+        .expect("stamp-3 bytes should decode");
+    assert_eq!(from_2.properties, from_3.properties);
+    assert_eq!(from_2.contract_version, Some(2));
+    assert_eq!(from_3.contract_version, Some(3));
+}
+
+#[test]
+fn stamp_survives_the_wire_for_documents_stamped_past_required_since() {
+    let platform_version = PlatformVersion::latest();
+    let document_type = required_since_document_type();
+    let document_type_ref = document_type.as_ref();
+
+    // The same content stamped before and at the requiredSince boundary
+    // must produce different byte layouts (flagged vs raw), and each must
+    // round-trip through the layout its own stamp selects
+    let mut properties = BTreeMap::new();
+    properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+    properties.insert("b".to_string(), Value::Text("beta".to_string()));
+
+    let stamped_before = stamped_document(Some(1), properties.clone(), document_type_ref);
+    let stamped_at = stamped_document(Some(2), properties, document_type_ref);
+
+    let serialized_before = stamped_before
+        .serialize_v3(document_type_ref)
+        .expect("expected serialization");
+    let serialized_at = stamped_at
+        .serialize_v3(document_type_ref)
+        .expect("expected serialization");
+
+    // The flagged layout carries one extra presence byte for `b`, and the
+    // two stamps differ in the prefix varint
+    assert_ne!(serialized_before, serialized_at);
+
+    let before_back =
+        DocumentV0::from_bytes(&serialized_before, document_type_ref, platform_version)
+            .expect("expected deserialization");
+    let at_back = DocumentV0::from_bytes(&serialized_at, document_type_ref, platform_version)
+        .expect("expected deserialization");
+
+    assert_eq!(before_back, stamped_before);
+    assert_eq!(at_back, stamped_at);
+}

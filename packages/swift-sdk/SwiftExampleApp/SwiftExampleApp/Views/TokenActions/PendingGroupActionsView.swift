@@ -269,8 +269,11 @@ enum TokenGroupRuleResolver {
     private static func groupCapableRules(_ token: PersistentToken) -> [ChangeControlRules] {
         // The rules below mirror the actions Waves 1-5 ship with
         // `GroupActionMode.propose` — only those can have pending
-        // group proposals worth listing here.
+        // group proposals worth listing here. Max-supply discovery is
+        // included as a temporary host-side compatibility fix until the
+        // shared S3a authorization/proposal decision replaces this list.
         return [
+            token.maxSupplyChangeRules,
             token.manualMintingRules,
             token.manualBurningRules,
             token.freezeRules,

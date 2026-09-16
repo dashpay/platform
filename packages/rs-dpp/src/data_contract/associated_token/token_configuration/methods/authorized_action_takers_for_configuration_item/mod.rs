@@ -5,6 +5,18 @@ use crate::data_contract::change_control_rules::authorized_action_takers::Author
 mod v0;
 
 impl TokenConfiguration {
+    /// Returns the current authority that controls a configuration item.
+    pub fn controlling_action_takers_for_configuration_item(
+        &self,
+        change_item: &TokenConfigurationChangeItem,
+    ) -> AuthorizedActionTakers {
+        match self {
+            TokenConfiguration::V0(v0) => {
+                v0.controlling_action_takers_for_configuration_item(change_item)
+            }
+        }
+    }
+
     /// Returns the authorized action takers for a specific `TokenConfigurationChangeItem`.
     ///
     /// # Parameters

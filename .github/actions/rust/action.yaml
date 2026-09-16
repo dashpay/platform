@@ -123,7 +123,7 @@ runs:
       shell: bash
       if: runner.os == 'Linux'
       run: |
-        sudo apt update -qq
+        sudo apt update
         # snappy is required by rust rocksdb
         sudo apt install -qq --yes clang llvm libsnappy-dev
         sudo update-alternatives --set cc /usr/bin/clang

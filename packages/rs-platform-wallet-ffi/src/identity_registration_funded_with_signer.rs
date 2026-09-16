@@ -31,14 +31,25 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 use rs_sdk_ffi::MnemonicResolverCoreSigner;
 use rs_sdk_ffi::MnemonicResolverHandle;
 
+fn existing_asset_lock_funding(
+    out_point: dashcore::OutPoint,
+    consume_invitation_voucher: bool,
+) -> AssetLockFunding {
+    AssetLockFunding::FromExistingAssetLock {
+        out_point,
+        consume_invitation_voucher,
+    }
+}
+
 /// Register a new asset-lock-funded identity using an external signer.
 ///
-/// `account_index` selects which BIP44 *standard* account (by BIP44
-/// account index) the asset-lock funding UTXOs are drawn from. Only
-/// BIP44 standard accounts are supported today; the Swift UI is
-/// expected to filter the funding picker accordingly (CoinJoin / BIP32
-/// funding for new-identity registration is not yet wired through
-/// `create_funded_asset_lock_proof`).
+/// `account_index` addresses the *standard* families: the asset-lock
+/// funding POOLS the BIP44 and BIP32 accounts at that index together
+/// with every DashPay receiving account (change returns to BIP44).
+/// The index does not restrict which DashPay receiving accounts
+/// contribute, so the UI must not present it as an account-scoped
+/// funding or privacy choice. CoinJoin funding remains drain-only and
+/// is not reachable here.
 ///
 /// # Safety
 /// - `signer_handle` must be a valid, non-destroyed `*mut SignerHandle`
@@ -229,10 +240,7 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
             };
             identity_wallet
                 .register_identity_with_funding(
-                    AssetLockFunding::FromExistingAssetLock {
-                        out_point: resume_outpoint,
-                        consume_invitation_voucher,
-                    },
+                    existing_asset_lock_funding(resume_outpoint, consume_invitation_voucher),
                     identity_index,
                     keys_map,
                     identity_signer,
@@ -326,10 +334,7 @@ pub unsafe extern "C" fn platform_wallet_topup_identity_with_existing_asset_lock
             identity_wallet
                 .top_up_identity_with_funding(
                     &identity_id,
-                    AssetLockFunding::FromExistingAssetLock {
-                        out_point: reclaim_outpoint,
-                        consume_invitation_voucher,
-                    },
+                    existing_asset_lock_funding(reclaim_outpoint, consume_invitation_voucher),
                     &asset_lock_signer,
                     None,
                 )
@@ -427,5 +432,17 @@ mod topup_existing_lock_guard_tests {
             )
         };
         assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn topup_reclaim_forwards_explicit_invitation_authority() {
+        let out_point = dashcore::OutPoint::null();
+        assert!(matches!(
+            existing_asset_lock_funding(out_point, true),
+            AssetLockFunding::FromExistingAssetLock {
+                out_point: actual,
+                consume_invitation_voucher: true,
+            } if actual == out_point
+        ));
     }
 }

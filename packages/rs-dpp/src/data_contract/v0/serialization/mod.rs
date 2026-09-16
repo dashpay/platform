@@ -1,3 +1,5 @@
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_required_fields_error;
+use crate::data_contract::document_type::validate_required_since_within_contract_version;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -101,6 +103,9 @@ impl DataContractV0 {
             platform_version,
         )?;
 
+        validate_required_since_within_contract_version(&document_types, version)
+            .map_err(consensus_or_protocol_required_fields_error)?;
+
         let data_contract = DataContractV0 {
             id,
             version,
@@ -144,6 +149,9 @@ impl DataContractV0 {
             platform_version,
         )?;
 
+        validate_required_since_within_contract_version(&document_types, version)
+            .map_err(consensus_or_protocol_required_fields_error)?;
+
         let data_contract = DataContractV0 {
             id,
             version,
@@ -164,7 +172,7 @@ mod tests {
     use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::Identity;
     use crate::serialization::{
-        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
         PlatformSerializableWithPlatformVersion,
     };
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -184,7 +192,7 @@ mod tests {
             .serialize_to_bytes_with_platform_version(LATEST_PLATFORM_VERSION)
             .expect("expected to serialize");
         let recovered_contract =
-            DataContract::versioned_deserialize(&bytes, false, platform_version)
+            DataContract::versioned_deserialize_untrusted(&bytes, false, platform_version)
                 .expect("expected to deserialize state transition");
         assert_eq!(contract, recovered_contract);
     }

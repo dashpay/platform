@@ -13,6 +13,8 @@ tracing = "0.1.41"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.40", features = ["rt", "rt-multi-thread", "time", "net"] }
+tokio-util = { version = "0.7.12" }
+futures = { version = "0.3.30" }
 
 [dev-dependencies]
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "sync"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "sync", "time"] }

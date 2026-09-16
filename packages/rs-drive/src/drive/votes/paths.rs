@@ -15,6 +15,7 @@ use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_
 };
 use crate::drive::votes::ResourceVoteChoiceToKeyTrait;
 use crate::drive::RootTree;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::util::common::encode::encode_u64;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -164,9 +165,16 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
             self.document_type_name.as_str(),
         );
         let document_type = self.document_type()?;
+        let index = self.index()?;
+        if index.properties.len() != self.index_values.len() {
+            return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
+                "contested index expects {} values, received {}",
+                index.properties.len(),
+                self.index_values.len()
+            ))));
+        }
         root.append(
-            &mut self
-                .index()?
+            &mut index
                 .properties
                 .iter()
                 .zip(self.index_values.iter())
@@ -250,9 +258,16 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBor
             self.document_type_name.as_str(),
         );
         let document_type = self.document_type()?;
+        let index = self.index()?;
+        if index.properties.len() != self.index_values.len() {
+            return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
+                "contested index expects {} values, received {}",
+                index.properties.len(),
+                self.index_values.len()
+            ))));
+        }
         root.append(
-            &mut self
-                .index()?
+            &mut index
                 .properties
                 .iter()
                 .zip(self.index_values.iter())
@@ -534,8 +549,34 @@ pub fn vote_contested_resource_identity_votes_tree_path_for_identity_vec(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+    use crate::util::object_size_info::DataContractOwnedResolvedInfo;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+    use platform_version::version::PlatformVersion;
 
     const VOTES_BYTE: u8 = RootTree::Votes as u8;
+
+    #[test]
+    fn contenders_path_rejects_missing_index_values() {
+        let platform_version = PlatformVersion::latest();
+        let contract = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let vote_poll = ContestedDocumentResourceVotePollWithContractInfo {
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![],
+        };
+
+        let error = vote_poll
+            .contenders_path(platform_version)
+            .expect_err("partial contested paths must be rejected");
+
+        assert!(matches!(
+            error,
+            Error::Query(QuerySyntaxError::InvalidParameter(_))
+        ));
+    }
 
     // ---------------------------------------------------------------
     // vote_root_path / vote_root_path_vec

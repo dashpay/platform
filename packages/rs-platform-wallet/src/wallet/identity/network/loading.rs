@@ -253,6 +253,15 @@ impl IdentityWallet {
             }
 
             if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
+                // Fold the freshly fetched on-chain state into an
+                // already-known identity too — the add above only runs for
+                // new ones, and without this a re-load kept serving the
+                // stale key set (keys added from another device never
+                // appeared, and contact requests referencing them failed
+                // key-index validation). Same replace `refresh_identity`
+                // does; the `set_status` below persists the full snapshot
+                // changeset, so the updated keys reach the store.
+                managed.identity = identity.clone();
                 managed.set_status(IdentityStatus::Active, &self.persister);
                 managed.wallet_id = Some(wallet_id);
                 // Breadcrumbs for every re-derivable key (was MASTER-only). A
@@ -518,7 +527,7 @@ mod tests {
     };
     use super::{derive_load_probe_hash, ResolvedLoadKeyHashSource};
     use key_wallet::bip32::ExtendedPrivKey;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
@@ -536,8 +545,7 @@ mod tests {
     /// never touches — it walks the master xpriv, not the per-account
     /// collection, so no accounts are needed.
     fn mnemonic_wallet(network: Network) -> Wallet {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
-            .expect("valid English test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid English test mnemonic");
         Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::None)
             .expect("from_mnemonic should build a Mnemonic wallet")
     }
@@ -545,8 +553,7 @@ mod tests {
     /// The BIP-32 master node for [`TEST_MNEMONIC`] on `network` — the
     /// same node `derive_extended_private_key` reconstructs internally.
     fn master_for(network: Network) -> ExtendedPrivKey {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
-            .expect("valid English test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid English test mnemonic");
         let seed = mnemonic.to_seed("");
         ExtendedPrivKey::new_master(network, &seed).expect("master xpriv from test seed")
     }

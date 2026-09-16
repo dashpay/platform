@@ -29,6 +29,20 @@ impl DriveDocumentQuery<'_> {
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<Vec<u8>>), Error> {
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() {
+                return Err(Error::Query(
+                    crate::error::query::QuerySyntaxError::Unsupported(
+                        "indexOnly documents have no stored serialization to keep; verify \
+                         with verify_proof, which synthesizes the documents from their \
+                         proved index positions"
+                            .to_string(),
+                    ),
+                ));
+            }
+        }
+
         let path_query = if let Some(start_at) = &self.start_at {
             let (_, start_document) =
                 self.verify_start_at_document_in_proof(proof, true, *start_at, platform_version)?;
@@ -51,6 +65,7 @@ impl DriveDocumentQuery<'_> {
             .filter_map(|(_path, _key, element)| element)
             .map(|element| element.into_item_bytes().map_err(Error::from))
             .collect::<Result<Vec<Vec<u8>>, Error>>()?;
+        let (documents, _skipped) = self.strip_cursor_from_page(documents, platform_version)?;
         Ok((root_hash, documents))
     }
 }

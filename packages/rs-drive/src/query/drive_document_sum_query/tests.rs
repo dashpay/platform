@@ -42,6 +42,14 @@ fn summable_index(name: &str, props: &[&str], summable: Option<&str>) -> Index {
         range_countable: false,
         summable: summable.map(String::from),
         range_summable: false,
+        ranked_countable: false,
+        ranked_countable_at: vec![],
+        ranked_summable: false,
+        ranked_averageable: false,
+        time_range: None,
+        terminal: None,
+        preallocated: false,
+        skip_if_absent: false,
     }
 }
 
@@ -58,6 +66,14 @@ fn range_summable_index(name: &str, props: &[&str], summable: &str) -> Index {
         range_countable: false,
         summable: Some(summable.to_string()),
         range_summable: true,
+        ranked_countable: false,
+        ranked_countable_at: vec![],
+        ranked_summable: false,
+        ranked_averageable: false,
+        time_range: None,
+        terminal: None,
+        preallocated: false,
+        skip_if_absent: false,
     }
 }
 
@@ -98,7 +114,8 @@ fn summable_picker_matches_single_prop_exactly() {
         &["recipient"],
         Some("amount"),
     )]);
-    let found = find_summable_index_for_where_clauses(&indexes, &[wc_equal("recipient")], "amount");
+    let found =
+        find_summable_index_for_where_clauses(&indexes, &[wc_equal("recipient")], "amount", &[]);
     assert_eq!(found.map(|i| i.name.as_str()), Some("byRecipient"));
 }
 
@@ -107,7 +124,7 @@ fn summable_picker_rejects_partial_coverage() {
     // Two-prop index with only one of the props matched by where clauses.
     let indexes = make_index_map(vec![summable_index("byAB", &["a", "b"], Some("amount"))]);
     assert!(
-        find_summable_index_for_where_clauses(&indexes, &[wc_equal("a")], "amount").is_none(),
+        find_summable_index_for_where_clauses(&indexes, &[wc_equal("a")], "amount", &[]).is_none(),
         "partial coverage must miss the strict picker"
     );
 }
@@ -121,7 +138,8 @@ fn summable_picker_rejects_property_mismatch() {
         Some("amount"),
     )]);
     assert!(
-        find_summable_index_for_where_clauses(&indexes, &[wc_equal("recipient")], "fee").is_none()
+        find_summable_index_for_where_clauses(&indexes, &[wc_equal("recipient")], "fee", &[])
+            .is_none()
     );
 }
 
@@ -129,10 +147,13 @@ fn summable_picker_rejects_property_mismatch() {
 fn summable_picker_rejects_non_summable_index() {
     // No `summable` declaration → never picked, even if properties match.
     let indexes = make_index_map(vec![summable_index("byRecipient", &["recipient"], None)]);
-    assert!(
-        find_summable_index_for_where_clauses(&indexes, &[wc_equal("recipient")], "amount")
-            .is_none()
-    );
+    assert!(find_summable_index_for_where_clauses(
+        &indexes,
+        &[wc_equal("recipient")],
+        "amount",
+        &[]
+    )
+    .is_none());
 }
 
 #[test]
@@ -143,7 +164,8 @@ fn summable_picker_rejects_range_operator() {
         Some("amount"),
     )]);
     assert!(
-        find_summable_index_for_where_clauses(&indexes, &[wc_gt("sentAt", 0)], "amount").is_none(),
+        find_summable_index_for_where_clauses(&indexes, &[wc_gt("sentAt", 0)], "amount", &[])
+            .is_none(),
         "any range operator disqualifies the point-lookup picker"
     );
 }
@@ -155,7 +177,8 @@ fn summable_picker_accepts_in_clause() {
         &["recipient"],
         Some("amount"),
     )]);
-    let found = find_summable_index_for_where_clauses(&indexes, &[wc_in("recipient")], "amount");
+    let found =
+        find_summable_index_for_where_clauses(&indexes, &[wc_in("recipient")], "amount", &[]);
     assert_eq!(found.map(|i| i.name.as_str()), Some("byRecipient"));
 }
 
@@ -171,7 +194,7 @@ fn range_summable_picker_matches_terminator_range() {
         "amount",
     )]);
     let found =
-        find_range_summable_index_for_where_clauses(&indexes, &[wc_gt("sentAt", 0)], "amount");
+        find_range_summable_index_for_where_clauses(&indexes, &[wc_gt("sentAt", 0)], "amount", &[]);
     assert_eq!(found.map(|i| i.name.as_str()), Some("bySentAt"));
 }
 
@@ -185,7 +208,8 @@ fn range_summable_picker_matches_prefix_equal_plus_terminator_range() {
         "amount",
     )]);
     let where_clauses = vec![wc_equal("recipient"), wc_gt("sentAt", 0)];
-    let found = find_range_summable_index_for_where_clauses(&indexes, &where_clauses, "amount");
+    let found =
+        find_range_summable_index_for_where_clauses(&indexes, &where_clauses, "amount", &[]);
     assert_eq!(found.map(|i| i.name.as_str()), Some("byRecipientTime"));
 }
 
@@ -197,10 +221,13 @@ fn range_summable_picker_rejects_property_mismatch() {
         &["sentAt"],
         "amount",
     )]);
-    assert!(
-        find_range_summable_index_for_where_clauses(&indexes, &[wc_gt("sentAt", 0)], "fee")
-            .is_none()
-    );
+    assert!(find_range_summable_index_for_where_clauses(
+        &indexes,
+        &[wc_gt("sentAt", 0)],
+        "fee",
+        &[]
+    )
+    .is_none());
 }
 
 #[test]
@@ -210,10 +237,13 @@ fn range_summable_picker_rejects_non_range_summable() {
     let mut idx = range_summable_index("bySentAt", &["sentAt"], "amount");
     idx.range_summable = false;
     let indexes = make_index_map(vec![idx]);
-    assert!(
-        find_range_summable_index_for_where_clauses(&indexes, &[wc_gt("sentAt", 0)], "amount")
-            .is_none()
-    );
+    assert!(find_range_summable_index_for_where_clauses(
+        &indexes,
+        &[wc_gt("sentAt", 0)],
+        "amount",
+        &[]
+    )
+    .is_none());
 }
 
 #[test]
@@ -227,7 +257,8 @@ fn range_summable_picker_rejects_range_not_on_terminator() {
     )]);
     let where_clauses = vec![wc_gt("recipient", 0)];
     assert!(
-        find_range_summable_index_for_where_clauses(&indexes, &where_clauses, "amount").is_none()
+        find_range_summable_index_for_where_clauses(&indexes, &where_clauses, "amount", &[])
+            .is_none()
     );
 }
 
@@ -328,6 +359,7 @@ mod limit_policy_regression {
         properties.insert("color".to_string(), Value::Text(color.to_string()));
         properties.insert("amount".to_string(), Value::U64(amount));
         let document: Document = DocumentV0 {
+            contract_version: None,
             id: Identifier::from([(i + 1) as u8; 32]),
             owner_id: Identifier::from([0u8; 32]),
             properties,
@@ -445,6 +477,7 @@ mod limit_policy_regression {
             limit: None,
             prove: true,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -465,6 +498,7 @@ mod limit_policy_regression {
             document_type.indexes(),
             std::slice::from_ref(&color_gt_blue),
             "amount",
+            &[],
         )
         .expect("byColor rangeSummable index covers `color > blue`");
         let sum_query = DriveDocumentSumQuery {
@@ -541,6 +575,7 @@ mod limit_policy_regression {
             limit: Some(over_max),
             prove: true,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
 
         let err = drive
@@ -556,5 +591,78 @@ mod limit_policy_regression {
             msg.contains("exceeds max_query_limit"),
             "error must name the rejected limit; got: {msg}"
         );
+    }
+
+    #[test]
+    fn range_distinct_sum_no_proof_applies_default_explicit_and_max_limits() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        // Five colors so the range predicate below matches FOUR distinct
+        // values — one more than `max_query_limit` — otherwise the clamp
+        // case would pass even against an unbounded walk.
+        for (i, (color, amount)) in [
+            ("blue", 2u64),
+            ("green", 3),
+            ("red", 5),
+            ("white", 11),
+            ("yellow", 7),
+        ]
+        .iter()
+        .enumerate()
+        {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig {
+            default_query_limit: 2,
+            max_query_limit: 3,
+            ..Default::default()
+        };
+        let make_request = |limit| DocumentSumRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("blue".to_string()),
+            }],
+            order_clauses: Vec::new(),
+            mode: SumMode::GroupByRange,
+            limit,
+            prove: false,
+            drive_config: &drive_config,
+            resolved_time_ranges: vec![],
+        };
+
+        for (requested, expected) in [(None, 2), (Some(1), 1), (Some(10_000), 3)] {
+            let response = drive
+                .execute_document_sum_request(make_request(requested), None, platform_version)
+                .expect("bounded no-proof distinct SUM should succeed");
+            let entries = match response {
+                DocumentSumResponse::Entries(entries) => entries,
+                other => panic!("expected Entries response, got {other:?}"),
+            };
+            assert_eq!(
+                entries.len(),
+                expected,
+                "unexpected entry count for requested limit {requested:?}"
+            );
+        }
     }
 }

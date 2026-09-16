@@ -29,8 +29,12 @@
 //! `PlatformVersion` (via `get_version_or_current_or_latest`), coupling the
 //! output to process-global state. This is by design — `DataContract` is a
 //! versioned enum routed through `DataContractInSerializationFormat`, and the
-//! format depends on the current platform. The stateless alternative is the
-//! bincode storage path (`serialize_to_bytes_with_platform_version`).
+//! format depends on the current platform. The stateless alternatives are the
+//! bincode storage path (`serialize_to_bytes_with_platform_version`) and, for
+//! `platform_value` output, `DataContractValueConversionMethodsV0::to_value`,
+//! which threads an explicit `PlatformVersion` (prefer it wherever one is in
+//! hand — the global here can be mutated concurrently, e.g. by parallel tests
+//! building platforms at older protocol versions).
 //!
 //! The `data_contract_serde_pins_critical_4` test module below pins this
 //! behavior (validate-by-default + explicit `false` opt-out) so future

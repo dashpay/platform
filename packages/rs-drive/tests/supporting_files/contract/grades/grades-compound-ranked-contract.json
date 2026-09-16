@@ -1,0 +1,156 @@
+{
+  "$formatVersion": "0",
+  "id": "AgradesC5w7Y9R4nDqJk2vHpL3uM6tF1xE8cA2bN7zXq",
+  "ownerId": "7m6mTfWqkrCnvLLPK3eqxQM2x2RDpYV6dsAyhVKsAEAQ",
+  "version": 1,
+  "documentSchemas": {
+    "grade": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "indices": [
+        {
+          "name": "byIdentityAndClass",
+          "properties": [
+            {
+              "identityId": "asc"
+            },
+            {
+              "class": "asc"
+            }
+          ],
+          "averageable": "grade",
+          "rangeAverageable": true,
+          "rankedAverageable": true
+        }
+      ],
+      "properties": {
+        "identityId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0,
+          "contentMediaType": "application/x.dash.dpp.identifier"
+        },
+        "class": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 1
+        },
+        "grade": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "position": 2
+        }
+      },
+      "required": [
+        "identityId",
+        "class",
+        "grade"
+      ],
+      "additionalProperties": false
+    },
+    "taggedGrade": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "indices": [
+        {
+          "name": "byTagAndClass",
+          "properties": [
+            {
+              "tag": "asc"
+            },
+            {
+              "class": "asc"
+            }
+          ],
+          "averageable": "grade",
+          "rangeAverageable": true,
+          "rankedAverageable": true
+        }
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 0
+        },
+        "class": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 1
+        },
+        "grade": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "position": 2
+        }
+      },
+      "required": [
+        "class",
+        "grade"
+      ],
+      "additionalProperties": false
+    },
+    "dualGrade": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "indices": [
+        {
+          "name": "byIdentityTagAndClass",
+          "properties": [
+            {
+              "identityId": "asc"
+            },
+            {
+              "tag": "asc"
+            },
+            {
+              "class": "asc"
+            }
+          ],
+          "averageable": "grade",
+          "rangeAverageable": true,
+          "rankedAverageable": true
+        }
+      ],
+      "properties": {
+        "identityId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0,
+          "contentMediaType": "application/x.dash.dpp.identifier"
+        },
+        "tag": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 1
+        },
+        "class": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 2
+        },
+        "grade": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "position": 3
+        }
+      },
+      "required": [
+        "identityId",
+        "class",
+        "grade"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

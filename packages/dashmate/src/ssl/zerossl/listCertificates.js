@@ -19,7 +19,7 @@ export default async function listCertificates(
   page = 1,
   search = undefined,
 ) {
-  let url = `https://api.zerossl.com/certificates?access_key=${apiKey}&limit=1000&page=${page}`;
+  let url = `https://api.zerossl.com/certificates?limit=1000&page=${page}`;
 
   if (statuses.length > 0) {
     url += `&statuses=${statuses.join(',')}`;
@@ -34,7 +34,7 @@ export default async function listCertificates(
     headers: {},
   };
 
-  const data = await requestApi(url, requestOptions);
+  const data = await requestApi(apiKey, url, requestOptions);
 
   return data.results.map((certificateData) => new Certificate(certificateData));
 }

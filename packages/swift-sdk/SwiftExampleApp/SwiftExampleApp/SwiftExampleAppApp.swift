@@ -155,9 +155,7 @@ struct SwiftExampleAppApp: App {
                     appUIState.pendingInviteURL = url.absoluteString
                 }
                 .task {
-                    SDKLogger.log("🚀 SwiftExampleApp: Starting initialization...", minimumLevel: .medium)
                     await bootstrap()
-                    SDKLogger.log("🚀 SwiftExampleApp: Initialization complete", minimumLevel: .medium)
                 }
                 // Rebind wallet-scoped services whenever the set of
                 // managed wallets changes — wallet creation, restore
@@ -206,18 +204,31 @@ struct SwiftExampleAppApp: App {
     @MainActor
     private func activateManager(for network: Network) {
         guard let sdk = platformState.sdk else {
-            SDKLogger.error(
-                "Cannot activate wallet manager for \(network.displayName): "
-                    + "no SDK available (still bootstrapping?)"
+            SDKLogger.event(
+                "manager_activation_skipped",
+                category: .lifecycle,
+                severity: .warning,
+                fields: [
+                    "network": .publicText(network.displayName),
+                    "reason": .publicText("sdk_unavailable"),
+                ]
             )
             return
         }
         do {
             try walletManagerStore.activate(network: network, sdk: sdk)
+            SDKLogger.event(
+                "manager_activated",
+                category: .lifecycle,
+                fields: ["network": .publicText(network.displayName)]
+            )
         } catch {
-            SDKLogger.error(
-                "Failed to activate wallet manager for "
-                    + "\(network.displayName): \(error.localizedDescription)"
+            SDKLogger.event(
+                "manager_activation_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["network": .publicText(network.displayName)],
+                error: error
             )
         }
     }
@@ -239,19 +250,22 @@ struct SwiftExampleAppApp: App {
     private func rebindWalletScopedServices() {
         let wallet = walletManager.firstWallet
         guard let wallet else {
-            do {
-                try walletManager.stopPlatformAddressSync()
-                try walletManager.stopShieldedSync()
-                try walletManager.stopDashPaySync()
-            } catch {
+            stopWalletSyncCoordinatorsBestEffort(
+                stopPlatformAddress: walletManager.stopPlatformAddressSync,
+                stopShielded: walletManager.stopShieldedSync,
+                stopDashPay: walletManager.stopDashPaySync,
+                stopDpns: walletManager.stopDpnsSync
+            ) { coordinator, error in
                 SDKLogger.error(
-                    "Failed to stop sync coordinators: \(error.localizedDescription)"
+                    "Failed to stop \(coordinator) sync coordinator: "
+                        + error.localizedDescription
                 )
             }
             platformBalanceSyncService.reset()
             shieldedService.reset()
             return
         }
+
         do {
             let platformAddressWallet = try wallet.platformAddressWallet()
             platformBalanceSyncService.configure(
@@ -260,73 +274,77 @@ struct SwiftExampleAppApp: App {
                 persistenceHandler: walletManager.persistence,
                 walletId: wallet.walletId
             )
-            if try !walletManager.isPlatformAddressSyncRunning() {
-                try walletManager.startPlatformAddressSync()
-            }
-            SDKLogger.log(
-                "🔗 BLAST sync running; balance-sync UI bound to wallet \(wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… on \(platformState.currentNetwork.displayName) (of \(walletManager.wallets.count) loaded)",
-                minimumLevel: .medium
+        } catch {
+            SDKLogger.error(
+                "Failed to bind platform balance service: \(error.localizedDescription)"
             )
+        }
 
-            // Bind the shielded service against the same wallet.
-            // The bind is best-effort — failures (no mnemonic in
-            // keychain, biometric prompt declined, etc.) leave the
-            // service in a "not bound" state and the user can
-            // retry from the Sync Status surface.
-            shieldedService.bind(
+        // Bind the shielded service against the same wallet. The bind is
+        // best-effort — failures (no mnemonic in keychain, biometric prompt
+        // declined, etc.) leave the service in a "not bound" state and the
+        // user can retry from the Sync Status surface.
+        shieldedService.bind(
+            walletManager: walletManager,
+            walletId: wallet.walletId,
+            network: platformState.currentNetwork,
+            resolver: shieldedResolver
+        )
+
+        // Engine-bind every OTHER loaded wallet into the shared
+        // network-scoped shielded coordinator. `firstWallet` above already
+        // drives the UI mirror AND its own engine registration via `bind(...)`;
+        // this loop registers the remaining wallets so a single shielded sync
+        // pass trial-decrypts against every wallet's viewing keys. Each bind is
+        // best-effort + independent, and this runs before coordinator starts.
+        engineBindOtherWallets(
+            allWalletIds: walletManager.wallets.keys,
+            mirrorWalletId: wallet.walletId
+        ) { otherWalletId in
+            shieldedService.bindEngine(
                 walletManager: walletManager,
-                walletId: wallet.walletId,
+                walletId: otherWalletId,
                 network: platformState.currentNetwork,
                 resolver: shieldedResolver
             )
+        }
 
-            // Engine-bind every OTHER loaded wallet into the shared
-            // network-scoped shielded coordinator. `firstWallet` above
-            // already drives the UI mirror AND its own engine
-            // registration via `bind(...)`; this loop registers the
-            // remaining wallets so a single shielded sync pass
-            // trial-decrypts against the union of every wallet's viewing
-            // keys (SH-14/15/16 cross-wallet flows). Each bind is
-            // best-effort + independent — one wallet's missing mnemonic
-            // must not block the others. Reading each mnemonic is a
-            // device-unlock-only keychain read (no biometric prompt), so
-            // eager binding at startup is safe. The iteration seam is a
-            // pure free function (`engineBindOtherWallets`) so its
-            // "visit every non-mirror wallet" contract can be
-            // unit-tested without a configured manager.
-            //
-            // Runs BEFORE the shielded/DashPay start calls below:
-            // engine-binding must not depend on those fallible calls — a
-            // throw there (e.g. `startShieldedSync` failing) must not
-            // leave the non-mirror wallets unbound for the rest of the
-            // session.
-            engineBindOtherWallets(
-                allWalletIds: walletManager.wallets.keys,
-                mirrorWalletId: wallet.walletId
-            ) { otherWalletId in
-                shieldedService.bindEngine(
-                    walletManager: walletManager,
-                    walletId: otherWalletId,
-                    network: platformState.currentNetwork,
-                    resolver: shieldedResolver
+        // Each coordinator has its own error boundary. In particular, an
+        // address, shielded, or DashPay failure must not suppress the DPNS
+        // launch-time check/start pair.
+        ensureWalletSyncCoordinatorsRunningBestEffort(
+            ensurePlatformAddress: {
+                if try !walletManager.isPlatformAddressSyncRunning() {
+                    try walletManager.startPlatformAddressSync()
+                }
+                SDKLogger.log(
+                    "🔗 BLAST sync running; balance-sync UI bound to wallet \(wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… on \(platformState.currentNetwork.displayName) (of \(walletManager.wallets.count) loaded)",
+                    minimumLevel: .medium
                 )
+            },
+            ensureShielded: {
+                if try !walletManager.isShieldedSyncRunning() {
+                    try walletManager.startShieldedSync()
+                }
+            },
+            ensureDashPay: {
+                // DashPay contact-request + profile sweep. Idempotent:
+                // starting while already running is a no-op.
+                if try !walletManager.isDashPaySyncRunning() {
+                    try walletManager.startDashPaySync()
+                }
+            },
+            ensureDpns: {
+                // DPNS sale state is session-scoped in the native wallet, so
+                // every launch with a loaded wallet needs this check/start.
+                if try !walletManager.isDpnsSyncRunning() {
+                    try walletManager.startDpnsSync()
+                }
             }
-
-            if try !walletManager.isShieldedSyncRunning() {
-                try walletManager.startShieldedSync()
-            }
-
-            // DashPay contact-request + profile sweep (background
-            // loop). Wallet-driven — every registered wallet is swept
-            // each pass — so manager scope is the right place to start
-            // it, same as the address / shielded loops above.
-            // Idempotent: starting while running is a no-op.
-            if try !walletManager.isDashPaySyncRunning() {
-                try walletManager.startDashPaySync()
-            }
-        } catch {
+        ) { coordinator, error in
             SDKLogger.error(
-                "Failed to bind wallet-scoped services: \(error.localizedDescription)"
+                "Failed to inspect or start \(coordinator) sync coordinator: "
+                    + error.localizedDescription
             )
         }
     }
@@ -406,6 +424,11 @@ struct SwiftExampleAppApp: App {
     private func bootstrap() async {
         do {
             LoggingPreferences.configure()
+            SDKLogger.event(
+                "app_initialization_started",
+                category: .lifecycle,
+                fields: ["network": .publicText(platformState.currentNetwork.displayName)]
+            )
 
             // Kick off Halo 2 proving-key build on a background
             // thread so the first shielded send doesn't pay the
@@ -470,8 +493,23 @@ struct SwiftExampleAppApp: App {
             // bumps last wins and the other bails (never a double-start).
             isInitialized = true
             await autoStartCoreSpvIfNeeded()
+            SDKLogger.event(
+                "app_initialization_completed",
+                category: .lifecycle,
+                fields: [
+                    "network": .publicText(platformState.currentNetwork.displayName),
+                    "wallet_count": .integer(Int64(walletManager.wallets.count)),
+                ]
+            )
         } catch {
             bootstrapError = error
+            SDKLogger.event(
+                "app_initialization_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["network": .publicText(platformState.currentNetwork.displayName)],
+                error: error
+            )
         }
     }
 

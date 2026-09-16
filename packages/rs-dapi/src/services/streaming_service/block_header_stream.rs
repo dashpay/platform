@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
 use dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock;
@@ -10,26 +10,78 @@ use dashcore_rpc::dashcore::consensus::encode::{
     deserialize as deserialize_consensus, serialize as serialize_consensus,
 };
 use dashcore_rpc::dashcore::hashes::Hash;
-use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
+use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, mpsc, watch};
+use tokio::task::JoinSet;
+use tokio::time::{Duration, sleep};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
 
 use crate::DapiError;
 use crate::services::streaming_service::{
-    FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle,
+    FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle, validate_core_block_hash,
 };
+use crate::sync::WorkerTaskHandle;
 
 const BLOCK_HEADER_STREAM_BUFFER: usize = 512;
+const MAX_HEADER_PENDING_EVENTS: usize = 256;
+const MAX_HEADER_PENDING_BYTES: usize = 8 * 1024 * 1024;
+const HEADER_GATE_MAX_TIMEOUT: Duration = Duration::from_secs(180);
+/// Bounded FIFO window of recently replayed header hashes used to deduplicate
+/// the replay→live handoff. Live events can only overlap the tail of the
+/// replay, so the window does not need to cover the whole replayed range.
+const MAX_DELIVERED_HEADER_HASHES: usize = 10_000 + MAX_HEADER_PENDING_EVENTS;
 
 type BlockHeaderResponseResult = Result<BlockHeadersWithChainLocksResponse, Status>;
 type BlockHeaderResponseSender = mpsc::Sender<BlockHeaderResponseResult>;
 type BlockHeaderResponseStream = ReceiverStream<BlockHeaderResponseResult>;
 type BlockHeaderResponse = Response<BlockHeaderResponseStream>;
-type DeliveredHashSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
+type DeliveredHashSet = Arc<AsyncMutex<BoundedDeliveredHashes>>;
 type DeliveryGateSender = watch::Sender<bool>;
 type DeliveryGateReceiver = watch::Receiver<bool>;
 
 const MAX_HEADERS_PER_BATCH: usize = 500;
+
+/// Per-stream resources handed to the historical header worker.
+struct HeaderHistoryWorkerContext {
+    delivered_hashes: Option<DeliveredHashSet>,
+    gate: Option<DeliveryGateSender>,
+    stream_permit: Option<OwnedSemaphorePermit>,
+}
+
+struct BoundedDeliveredHashes {
+    hashes: HashSet<Vec<u8>>,
+    order: VecDeque<Vec<u8>>,
+    capacity: usize,
+}
+
+impl BoundedDeliveredHashes {
+    fn new(capacity: usize) -> Self {
+        Self {
+            hashes: HashSet::new(),
+            order: VecDeque::new(),
+            capacity,
+        }
+    }
+
+    /// Records a hash while retaining the most recent overlap window.
+    /// Returns false when the hash has already been delivered.
+    fn mark_delivered(&mut self, hash: Vec<u8>) -> bool {
+        if self.hashes.contains(&hash) {
+            return false;
+        }
+
+        if self.hashes.len() >= self.capacity
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.hashes.remove(&oldest);
+        }
+
+        self.hashes.insert(hash.clone());
+        self.order.push_back(hash);
+        true
+    }
+}
+
 impl StreamingServiceImpl {
     pub async fn subscribe_to_block_headers_with_chain_locks_impl(
         &self,
@@ -51,11 +103,10 @@ impl StreamingServiceImpl {
                 }
                 FromBlock::FromBlockHeight(height)
             }
-            Some(FromBlock::FromBlockHash(ref hash)) if hash.is_empty() => {
-                debug!("block_headers=empty_from_block_hash");
-                return Err(Status::invalid_argument("fromBlockHash cannot be empty"));
+            Some(FromBlock::FromBlockHash(hash)) => {
+                validate_core_block_hash(&hash)?;
+                FromBlock::FromBlockHash(hash)
             }
-            Some(from_block) => from_block,
             None => {
                 debug!("block_headers=missing_from_block");
                 return Err(Status::invalid_argument("from_block is required"));
@@ -64,10 +115,20 @@ impl StreamingServiceImpl {
 
         trace!(count, "block_headers=request_parsed");
 
+        let stream_permit = self
+            .block_header_stream_permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Status::resource_exhausted("too many active block-header streams"))?;
+
+        self.resolve_header_history_range(&from_block, (count > 0).then_some(count as usize))
+            .await?;
+
         let response = if count > 0 {
-            self.handle_historical_mode(from_block, count).await?
+            self.handle_historical_mode(from_block, count, stream_permit)
+                .await?
         } else {
-            self.handle_combined_mode(from_block).await?
+            self.handle_combined_mode(from_block, stream_permit).await?
         };
 
         Ok(response)
@@ -77,13 +138,24 @@ impl StreamingServiceImpl {
         &self,
         from_block: FromBlock,
         count: u32,
+        stream_permit: OwnedSemaphorePermit,
     ) -> Result<BlockHeaderResponse, Status> {
         let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
 
         self.send_initial_chainlock(tx.clone()).await?;
 
-        self.spawn_fetch_historical_headers(from_block, Some(count as usize), None, tx, None, None)
-            .await?;
+        self.spawn_fetch_historical_headers(
+            from_block,
+            Some(count as usize),
+            HeaderHistoryWorkerContext {
+                delivered_hashes: None,
+                gate: None,
+                stream_permit: Some(stream_permit),
+            },
+            tx,
+            None,
+        )
+        .await?;
 
         let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
         debug!("block_headers=historical_stream_ready");
@@ -93,28 +165,54 @@ impl StreamingServiceImpl {
     async fn handle_combined_mode(
         &self,
         from_block: FromBlock,
+        stream_permit: OwnedSemaphorePermit,
     ) -> Result<BlockHeaderResponse, Status> {
         let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
-        let delivered_hashes: DeliveredHashSet = Arc::new(AsyncMutex::new(HashSet::new()));
+        let delivered_hashes: DeliveredHashSet = Arc::new(AsyncMutex::new(
+            BoundedDeliveredHashes::new(MAX_DELIVERED_HEADER_HASHES),
+        ));
         let (delivery_gate_tx, delivery_gate_rx) = watch::channel(false);
 
-        let subscriber_id = self
+        let (subscriber_id, live_worker) = self
             .start_live_stream(
                 tx.clone(),
                 delivered_hashes.clone(),
                 delivery_gate_rx.clone(),
             )
             .await;
-        self.send_initial_chainlock(tx.clone()).await?;
-        self.spawn_fetch_historical_headers(
-            from_block,
-            None,
-            Some(delivered_hashes),
+        if let Err(status) = self.send_initial_chainlock(tx.clone()).await {
+            live_worker.abort().await;
+            return Err(status);
+        }
+
+        let mut local_workers = JoinSet::new();
+        if let Err(status) = self
+            .spawn_fetch_historical_headers(
+                from_block,
+                None,
+                HeaderHistoryWorkerContext {
+                    delivered_hashes: Some(delivered_hashes),
+                    gate: Some(delivery_gate_tx),
+                    stream_permit: None,
+                },
+                tx.clone(),
+                Some(&mut local_workers),
+            )
+            .await
+        {
+            live_worker.abort().await;
+            return Err(status);
+        }
+
+        let sub_id = subscriber_id.clone();
+        self.workers.spawn(Self::block_header_stream_coordinator(
+            stream_permit,
+            local_workers,
+            live_worker,
             tx,
-            Some(delivery_gate_tx),
-            Some(subscriber_id.clone()),
-        )
-        .await?;
+            sub_id,
+        ));
+
         let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
         debug!(
             subscriber_id = subscriber_id.as_str(),
@@ -123,52 +221,99 @@ impl StreamingServiceImpl {
         Ok(Response::new(stream))
     }
 
+    /// Coordinator for combined mode: owns the stream admission permit for the
+    /// whole life of the stream. The permit must outlive the historical worker
+    /// as well as the live worker: releasing it as soon as the live worker
+    /// exits would let repeated connect/disconnect cycles recycle all stream
+    /// permits while replay tasks are still running against Core.
+    async fn block_header_stream_coordinator(
+        stream_permit: OwnedSemaphorePermit,
+        mut local_workers: JoinSet<Result<(), DapiError>>,
+        live_worker: WorkerTaskHandle,
+        tx: BlockHeaderResponseSender,
+        sub_id: String,
+    ) -> Result<(), DapiError> {
+        let _stream_permit = stream_permit;
+
+        loop {
+            tokio::select! {
+                biased;
+                _ = tx.closed() => {
+                    debug!(subscriber_id=&sub_id, "block_headers=stream_closed_cancelling_workers");
+                    local_workers.shutdown().await;
+                    live_worker.abort().await;
+                    return Ok(());
+                }
+                result = local_workers.join_next() => {
+                    match result {
+                        None => break, // historical replay completed
+                        Some(Ok(Ok(()))) => { /* task completed successfully */ }
+                        Some(Ok(Err(e))) => {
+                            // The historical worker already delivered its
+                            // terminal error to the stream; just clean up.
+                            debug!(error = %e, subscriber_id=&sub_id, "block_headers=worker_task_failed");
+                            local_workers.shutdown().await;
+                            live_worker.abort().await;
+                            return Err(e);
+                        }
+                        Some(Err(e)) => {
+                            debug!(error = %e, subscriber_id=&sub_id, "block_headers=worker_task_join_failed");
+                            local_workers.shutdown().await;
+                            live_worker.abort().await;
+                            return Err(DapiError::TaskJoin(e));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Replay is done; keep holding the permit until the client goes
+        // away, then stop the live worker.
+        tx.closed().await;
+        live_worker.abort().await;
+
+        Ok(())
+    }
+
     async fn spawn_fetch_historical_headers(
         &self,
         from_block: FromBlock,
         limit: Option<usize>,
-        delivered_hashes: Option<DeliveredHashSet>,
+        context: HeaderHistoryWorkerContext,
         tx: BlockHeaderResponseSender,
-        gate: Option<DeliveryGateSender>,
-        subscriber_id: Option<String>,
+        workers: Option<&mut JoinSet<Result<(), DapiError>>>, // defaults to self.workers if None
     ) -> Result<(), Status> {
         let service = self.clone();
 
-        self.workers.spawn(async move {
+        let worker = async move {
+            let _stream_permit = context.stream_permit;
             let result = service
-                .fetch_historical_blocks(
-                    from_block,
-                    limit,
-                    delivered_hashes,
-                    tx.clone(),
-                )
+                .fetch_historical_blocks(from_block, limit, context.delivered_hashes, tx.clone())
                 .await;
 
-            if let Some(gate) = gate {
+            if let Some(gate) = context.gate {
                 let _ = gate.send(true);
             }
             // watch receivers wake via the send above; no separate notification needed.
 
             match result {
                 Ok(()) => {
-                    if let Some(ref id) = subscriber_id {
-                        debug!(subscriber_id = id.as_str(), "block_headers=historical_fetch_completed");
-                    } else {
-                        debug!("block_headers=historical_fetch_completed");
-                    }
+                    debug!("block_headers=historical_fetch_completed");
                     Ok(())
                 }
                 Err(status) => {
-                    if let Some(ref id) = subscriber_id {
-                        debug!(subscriber_id = id.as_str(), error = %status, "block_headers=historical_fetch_failed");
-                    } else {
-                        debug!(error = %status, "block_headers=historical_fetch_failed");
-                    }
+                    debug!(error = %status, "block_headers=historical_fetch_failed");
                     let _ = tx.send(Err(status.clone())).await;
                     Err(DapiError::from(status))
                 }
             }
-        });
+        };
+
+        if let Some(workers) = workers {
+            workers.spawn(worker);
+        } else {
+            self.workers.spawn(worker);
+        }
 
         Ok(())
     }
@@ -178,7 +323,7 @@ impl StreamingServiceImpl {
         tx: BlockHeaderResponseSender,
         delivered_hashes: DeliveredHashSet,
         delivery_gate: DeliveryGateReceiver,
-    ) -> String {
+    ) -> (String, WorkerTaskHandle) {
         let filter = FilterType::CoreAllBlocks;
         let block_handle = self.subscriber_manager.add_subscription(filter).await;
         let subscriber_id = block_handle.id().to_string();
@@ -196,7 +341,7 @@ impl StreamingServiceImpl {
             "block_headers=chainlock_subscription_created"
         );
 
-        self.workers.spawn(async move {
+        let worker = self.workers.spawn(async move {
             Self::block_header_worker(
                 block_handle,
                 chainlock_handle,
@@ -208,7 +353,7 @@ impl StreamingServiceImpl {
             Ok::<(), DapiError>(())
         });
 
-        subscriber_id
+        (subscriber_id, worker)
     }
 
     async fn send_initial_chainlock(&self, tx: BlockHeaderResponseSender) -> Result<(), Status> {
@@ -246,10 +391,26 @@ impl StreamingServiceImpl {
     ) {
         let subscriber_id = block_handle.id().to_string();
         let mut pending: Vec<StreamingEvent> = Vec::new();
+        let mut pending_bytes = 0usize;
         let mut gated = !*delivery_gate.borrow();
+        let gate_deadline = sleep(HEADER_GATE_MAX_TIMEOUT);
+        tokio::pin!(gate_deadline);
 
         loop {
             tokio::select! {
+                biased;
+                _ = tx.closed() => break,
+                _ = &mut gate_deadline, if gated => {
+                    // Await the send so a full queue cannot silently discard
+                    // the terminal status (mirrors terminate_transaction_stream).
+                    // Delivering the error ends the gRPC stream, which drops the
+                    // receiver and stops the historical fetcher at its next
+                    // per-batch `is_closed` check.
+                    let _ = tx.send(Err(Status::resource_exhausted(
+                        "block-header history handoff exceeded its time budget",
+                    ))).await;
+                    break;
+                }
                 gate_change = delivery_gate.changed(), if gated => {
                     if gate_change.is_err() {
                         break;
@@ -259,11 +420,27 @@ impl StreamingServiceImpl {
                         && !Self::flush_pending(&subscriber_id, &tx, &delivered_hashes, &mut pending).await {
                             break;
                         }
+                    if !gated {
+                        pending_bytes = 0;
+                    }
                 }
                 message = block_handle.recv() => {
                     match message {
                         Some(event) => {
                             if gated {
+                                let event_bytes = event.retained_bytes();
+                                let next_bytes = pending_bytes.saturating_add(event_bytes);
+                                if pending.len() >= MAX_HEADER_PENDING_EVENTS
+                                    || next_bytes > MAX_HEADER_PENDING_BYTES
+                                {
+                                    // Awaited for the same reason as the gate-deadline
+                                    // branch: the queue is full exactly when this fires.
+                                    let _ = tx.send(Err(Status::resource_exhausted(
+                                        "live events exceeded the history handoff budget",
+                                    ))).await;
+                                    break;
+                                }
+                                pending_bytes = next_bytes;
                                 pending.push(event);
                                 continue;
                             }
@@ -278,6 +455,19 @@ impl StreamingServiceImpl {
                     match message {
                         Some(event) => {
                             if gated {
+                                let event_bytes = event.retained_bytes();
+                                let next_bytes = pending_bytes.saturating_add(event_bytes);
+                                if pending.len() >= MAX_HEADER_PENDING_EVENTS
+                                    || next_bytes > MAX_HEADER_PENDING_BYTES
+                                {
+                                    // Awaited for the same reason as the gate-deadline
+                                    // branch: the queue is full exactly when this fires.
+                                    let _ = tx.send(Err(Status::resource_exhausted(
+                                        "live events exceeded the history handoff budget",
+                                    ))).await;
+                                    break;
+                                }
+                                pending_bytes = next_bytes;
                                 pending.push(event);
                                 continue;
                             }
@@ -341,15 +531,13 @@ impl StreamingServiceImpl {
                 {
                     // scope for the lock
                     let mut hashes = delivered_hashes.lock().await;
-                    if hashes.remove(&hash_bytes[..]) {
+                    if !hashes.mark_delivered(hash_bytes.to_vec()) {
                         trace!(
                             subscriber_id,
                             block_hash = %block_hash_hex,
                             "block_headers=skip_duplicate_block"
                         );
                         allow_forward = false;
-                    } else {
-                        hashes.insert(hash_bytes.into());
                     }
                 }
 
@@ -441,90 +629,30 @@ impl StreamingServiceImpl {
         delivered_hashes: Option<DeliveredHashSet>,
         tx: BlockHeaderResponseSender,
     ) -> Result<(), Status> {
-        use std::str::FromStr;
-
-        let best_height = self
-            .core_client
-            .get_block_count()
-            .await
-            .map_err(Status::from)? as usize;
-
-        let (start_height, available, desired) = match from_block {
-            FromBlock::FromBlockHash(hash) => {
-                let hash_hex = hex::encode(&hash);
-                let block_hash = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
-                    .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
-                let header = self
-                    .core_client
-                    .get_block_header_info(&block_hash)
-                    .await
-                    .map_err(Status::from)?;
-                let start = header.height as usize;
-                let available = best_height
-                    .checked_sub(start)
-                    .and_then(|diff| diff.checked_add(1))
-                    .unwrap_or(0);
-                let desired = limit.unwrap_or(available);
-                debug!(start, desired, "block_headers=historical_from_hash_request");
-                (start, available, desired)
-            }
-            FromBlock::FromBlockHeight(height) => {
-                let start = height as usize;
-                if start == 0 {
-                    return Err(Status::invalid_argument(
-                        "Minimum value for `fromBlockHeight` is 1",
-                    ));
-                }
-                let available = best_height
-                    .checked_sub(start)
-                    .and_then(|diff| diff.checked_add(1))
-                    .unwrap_or(0);
-                let desired = limit.unwrap_or(available);
-                debug!(
-                    start,
-                    desired, "block_headers=historical_from_height_request"
-                );
-                (start, available, desired)
-            }
-        };
-
-        if available == 0 {
-            // historical mode but no available headers
-            if limit.is_some() {
-                debug!(start_height, best_height, "block_headers=start_beyond_tip");
-                return Err(Status::not_found(format!(
-                    "Block {} not found",
-                    start_height
-                )));
-            }
-            // Combined mode: no historical data yet; proceed with live stream.
-            return Ok(());
-        }
+        let (start_height, desired) = self
+            .resolve_header_history_range(&from_block, limit)
+            .await?;
 
         if desired == 0 {
             return Ok(());
-        }
-
-        if desired > available {
-            debug!(
-                start_height,
-                requested = desired,
-                max_available = available,
-                "block_headers=count_exceeds_tip"
-            );
-            return Err(Status::invalid_argument("count exceeds chain tip"));
         }
 
         let mut remaining = desired;
         let mut current_height = start_height;
 
         while remaining > 0 {
+            if tx.is_closed() {
+                return Ok(());
+            }
             let batch_size = remaining.min(MAX_HEADERS_PER_BATCH);
 
             let mut response_headers = Vec::with_capacity(batch_size);
             let mut hashes_to_store: Vec<Vec<u8>> = Vec::with_capacity(batch_size);
 
             for offset in 0..batch_size {
+                if tx.is_closed() {
+                    return Ok(());
+                }
                 let height = (current_height + offset) as u32;
                 let hash = self
                     .core_client
@@ -563,7 +691,7 @@ impl StreamingServiceImpl {
                         block_hash = %hex::encode(&hash),
                         "block_headers=delivered_hash_recorded"
                     );
-                    hashes.insert(hash);
+                    hashes.mark_delivered(hash);
                 }
             }
 
@@ -592,5 +720,167 @@ impl StreamingServiceImpl {
         }
 
         Ok(())
+    }
+
+    async fn resolve_header_history_range(
+        &self,
+        from_block: &FromBlock,
+        limit: Option<usize>,
+    ) -> Result<(usize, usize), Status> {
+        use std::str::FromStr;
+
+        let best_height = self
+            .core_client
+            .get_block_count()
+            .await
+            .map_err(Status::from)? as usize;
+
+        let (start_height, available, desired) = match from_block {
+            FromBlock::FromBlockHash(hash) => {
+                let hash_hex = hex::encode(hash);
+                let block_hash = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
+                    .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
+                let header = self
+                    .core_client
+                    .get_block_header_info(&block_hash)
+                    .await
+                    .map_err(Status::from)?;
+                let start = header.height as usize;
+                let available = best_height
+                    .checked_sub(start)
+                    .and_then(|diff| diff.checked_add(1))
+                    .unwrap_or(0);
+                let desired = limit.unwrap_or(available);
+                debug!(start, desired, "block_headers=historical_from_hash_request");
+                (start, available, desired)
+            }
+            FromBlock::FromBlockHeight(height) => {
+                let start = *height as usize;
+                if start == 0 {
+                    return Err(Status::invalid_argument(
+                        "Minimum value for `fromBlockHeight` is 1",
+                    ));
+                }
+                let available = best_height
+                    .checked_sub(start)
+                    .and_then(|diff| diff.checked_add(1))
+                    .unwrap_or(0);
+                let desired = limit.unwrap_or(available);
+                debug!(
+                    start,
+                    desired, "block_headers=historical_from_height_request"
+                );
+                (start, available, desired)
+            }
+        };
+
+        if available == 0 {
+            // historical mode but no available headers
+            if limit.is_some() {
+                debug!(start_height, best_height, "block_headers=start_beyond_tip");
+                return Err(Status::not_found(format!(
+                    "Block {} not found",
+                    start_height
+                )));
+            }
+            // Combined mode: no historical data yet; proceed with live stream.
+            return Ok((start_height, 0));
+        }
+
+        if desired > available {
+            debug!(
+                start_height,
+                requested = desired,
+                max_available = available,
+                "block_headers=count_exceeds_tip"
+            );
+            return Err(Status::invalid_argument("count exceeds chain tip"));
+        }
+
+        Ok((start_height, desired))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BoundedDeliveredHashes;
+
+    #[test]
+    fn should_retain_recent_hashes_and_check_duplicates_before_eviction() {
+        let mut delivered = BoundedDeliveredHashes::new(2);
+        let first = vec![1; 32];
+        let second = vec![2; 32];
+        let third = vec![3; 32];
+
+        assert!(delivered.mark_delivered(first.clone()));
+        assert!(delivered.mark_delivered(second.clone()));
+        assert!(!delivered.mark_delivered(first.clone()));
+        assert!(delivered.mark_delivered(third.clone()));
+        assert!(!delivered.mark_delivered(second));
+        assert!(delivered.mark_delivered(first));
+    }
+
+    #[tokio::test]
+    async fn should_hold_stream_permit_until_replay_worker_stops() {
+        use super::*;
+        use crate::sync::Workers;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use tokio::sync::Semaphore;
+        use tokio::time::timeout;
+
+        struct DropFlag(Arc<AtomicBool>);
+        impl Drop for DropFlag {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+
+        let semaphore = Arc::new(Semaphore::new(1));
+        let permit = semaphore
+            .clone()
+            .try_acquire_owned()
+            .expect("initial permit");
+        let (tx, rx) = mpsc::channel(8);
+
+        let workers = Workers::new();
+        let live_worker = workers.spawn(async {
+            std::future::pending::<()>().await;
+            Ok::<(), DapiError>(())
+        });
+
+        // Historical worker that never finishes on its own; the flag flips
+        // only once the task is actually torn down.
+        let replay_stopped = Arc::new(AtomicBool::new(false));
+        let mut local_workers = JoinSet::new();
+        let guard = DropFlag(replay_stopped.clone());
+        local_workers.spawn(async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+            Ok::<(), DapiError>(())
+        });
+
+        let coordinator = tokio::spawn(StreamingServiceImpl::block_header_stream_coordinator(
+            permit,
+            local_workers,
+            live_worker,
+            tx,
+            "subscriber".to_string(),
+        ));
+
+        // While the client is connected and replay is running, the permit is held.
+        tokio::task::yield_now().await;
+        assert!(semaphore.clone().try_acquire_owned().is_err());
+
+        // Client disconnects while the historical worker is still running.
+        drop(rx);
+        timeout(Duration::from_secs(5), coordinator)
+            .await
+            .expect("coordinator should finish after disconnect")
+            .expect("coordinator task should not panic")
+            .expect("coordinator should exit cleanly");
+
+        // The permit is only released after the historical worker is gone.
+        assert!(replay_stopped.load(Ordering::SeqCst));
+        assert!(semaphore.try_acquire_owned().is_ok());
     }
 }

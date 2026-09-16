@@ -35,6 +35,24 @@ describe('DocumentsFacade', () => {
   let getDocumentsSumWithProofInfoStub: SinonStub;
   let getDocumentsAverageStub: SinonStub;
   let getDocumentsAverageWithProofInfoStub: SinonStub;
+  let getDocumentsRankedStub: SinonStub;
+  let getDocumentsRankedWithProofInfoStub: SinonStub;
+  let getDocumentsHavingStub: SinonStub;
+  let getDocumentsHavingWithProofInfoStub: SinonStub;
+
+  const emptyRankedResult = {
+    startingRank: BigInt(0),
+    entries: [],
+    aggregate: 'avg',
+    groupBy: 'restaurantId',
+    valueScale: BigInt(1),
+  };
+  const emptyHavingResult = {
+    entries: [],
+    aggregate: 'count',
+    groupBy: 'hashtag',
+    valueScale: BigInt(1),
+  };
 
   beforeEach(async function setup() {
     await init();
@@ -94,6 +112,20 @@ describe('DocumentsFacade', () => {
     getDocumentsAverageStub = this.sinon.stub(wasmSdk, 'getDocumentsAverage').resolves(new Map());
     getDocumentsAverageWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDocumentsAverageWithProofInfo').resolves({
       data: new Map(),
+      proof: {},
+      metadata: {},
+    });
+
+    // Stub ranked / having-range query methods
+    getDocumentsRankedStub = this.sinon.stub(wasmSdk, 'getDocumentsRanked').resolves(emptyRankedResult);
+    getDocumentsRankedWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDocumentsRankedWithProofInfo').resolves({
+      data: emptyRankedResult,
+      proof: {},
+      metadata: {},
+    });
+    getDocumentsHavingStub = this.sinon.stub(wasmSdk, 'getDocumentsHaving').resolves(emptyHavingResult);
+    getDocumentsHavingWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDocumentsHavingWithProofInfo').resolves({
+      data: emptyHavingResult,
       proof: {},
       metadata: {},
     });
@@ -384,6 +416,120 @@ describe('DocumentsFacade', () => {
       await client.documents.averageWithProof(query, averageProperty);
 
       expect(getDocumentsAverageWithProofInfoStub).to.be.calledOnceWithExactly(query, averageProperty);
+    });
+  });
+
+  describe('ranked()', () => {
+    it('should rank groups by an aggregate', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'review',
+        groupBy: 'restaurantId',
+        aggregate: { type: 'avg', property: 'grade' },
+        limit: 3,
+      };
+
+      await client.documents.ranked(query);
+
+      expect(getDocumentsRankedStub).to.be.calledOnceWithExactly(query);
+    });
+
+    it('should pass through the offset that selects a single rank', async () => {
+      // "The 5th best": skip the four above it, take one.
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'review',
+        groupBy: 'restaurantId',
+        aggregate: { type: 'avg', property: 'grade' },
+        limit: 1,
+        offset: 4,
+      };
+
+      await client.documents.ranked(query);
+
+      expect(getDocumentsRankedStub).to.be.calledOnceWithExactly(query);
+    });
+
+    it('should pass through the equality pins of a compound ranked index', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'grade',
+        groupBy: 'class',
+        aggregate: { type: 'count' },
+        where: [['country', '==', 'DE']],
+        direction: 'asc',
+        limit: 10,
+      };
+
+      await client.documents.ranked(query);
+
+      expect(getDocumentsRankedStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('rankedWithProof()', () => {
+    it('should rank groups with proof metadata', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'review',
+        groupBy: 'restaurantId',
+        aggregate: { type: 'count' },
+        limit: 5,
+      };
+
+      await client.documents.rankedWithProof(query);
+
+      expect(getDocumentsRankedWithProofInfoStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('having()', () => {
+    it('should bound groups by their aggregate', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'post',
+        groupBy: 'hashtag',
+        aggregate: { type: 'count' },
+        having: { operator: '>', value: 100 },
+        direction: 'desc',
+        limit: 100,
+      };
+
+      await client.documents.having(query);
+
+      expect(getDocumentsHavingStub).to.be.calledOnceWithExactly(query);
+    });
+
+    it('should pass through a two-operand between bound', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'tip',
+        groupBy: 'recipientId',
+        aggregate: { type: 'sum', property: 'amount' },
+        having: { operator: 'between', value: [1000, 5000] },
+        limit: 25,
+      };
+
+      await client.documents.having(query);
+
+      expect(getDocumentsHavingStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('havingWithProof()', () => {
+    it('should bound groups with proof metadata', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'post',
+        groupBy: 'hashtag',
+        aggregate: { type: 'count' },
+        having: { operator: '>=', value: BigInt(1) },
+        limit: 10,
+      };
+
+      await client.documents.havingWithProof(query);
+
+      expect(getDocumentsHavingWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
   });
 });

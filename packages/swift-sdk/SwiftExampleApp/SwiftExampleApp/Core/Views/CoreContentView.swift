@@ -752,15 +752,11 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                         .controlSize(.mini)
-                        // Gated on `isSyncing` to close the
-                        // double-tap window where the user could
-                        // hit Clear *while* a sync is in flight.
-                        // `clearLocalState` calls
-                        // `stopShieldedSync()` first, but stop is
-                        // best-effort and the persister callback
-                        // can still drain rows into SwiftData
-                        // between our delete and the loop
-                        // actually quiescing.
+                        // Gated on `isSyncing` to avoid starting a
+                        // redundant Clear while a pass is active.
+                        // `clearLocalState` asks Rust to quiesce and
+                        // reset first, then wipes SwiftData only if
+                        // that reset succeeds.
                         .disabled(shieldedService.isSyncing)
                     }
                 }

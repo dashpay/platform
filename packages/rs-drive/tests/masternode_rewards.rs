@@ -37,6 +37,7 @@ mod reward_share {
             ),
             &data_contract,
             None,
+            platform_version,
         )
         .expect("failed to create query");
 
@@ -74,6 +75,7 @@ mod reward_share {
             ),
             &data_contract,
             None,
+            platform_version,
         )
         .expect("failed to create query");
 

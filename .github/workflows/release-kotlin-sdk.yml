@@ -1,0 +1,439 @@
+name: Release Kotlin SDK
+
+# Part of the platform release: called from release.yml with the platform
+# release tag (vX.Y.Z[-pre.N]). Builds the release AAR, attaches it to the
+# platform GitHub release, and publishes org.dashj:dash-sdk-android under the
+# same version to Maven Central. The Maven version comes from the tag and ONLY
+# from the tag (vX.Y.Z[-pre.N] -> X.Y.Z[-pre.N]), so the GitHub-release AAR
+# and the Maven Central artifact are always the same commit under the same
+# version as the rest of the platform release.
+#
+# The workflow_dispatch trigger is a re-run/emergency path only: it re-releases
+# the SDK for an EXISTING platform release without rebuilding the Docker
+# images and npm packages that release.yml's own dispatch would. Dispatch it
+# AT THE TAG REF (gh workflow run release-kotlin-sdk.yml --ref vX.Y.Z -f
+# tag=vX.Y.Z): the maven-central environment's tag policy matches the run's
+# ref, not the checked-out commit, so a branch-ref dispatch cannot reach the
+# publishing secrets.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Platform release tag (vX.Y.Z[-pre.N])'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Existing platform release tag to (re-)release the Kotlin SDK for.
+          Plain tag name only (vX.Y.Z[-pre.N]) — ref forms like refs/tags/...
+          are rejected so the per-tag concurrency locks and asset guards all
+          key on one canonical spelling.
+        required: true
+        type: string
+
+jobs:
+  build-and-release:
+    name: Build release AAR (arm64-v8a + x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: write # attach the AAR to the platform release
+    # Serialize same-tag runs (e.g. an emergency dispatch racing the
+    # release-triggered run) so the asset-exists guard cannot be bypassed by
+    # two concurrent builds. Never cancel a release build in progress.
+    concurrency:
+      group: release-kotlin-sdk-build-${{ inputs.tag }}
+      cancel-in-progress: false
+    # Consumed by the maven-central-deploy job below.
+    outputs:
+      version: ${{ steps.release-ref.outputs.version }}
+      tag_name: ${{ steps.release-ref.outputs.tag_name }}
+      # The exact commit this job built. The deploy job pins its checkout to
+      # this SHA (not the tag ref), so a tag force-moved between the jobs
+      # cannot make Maven Central publish source that differs from the native
+      # libs built here.
+      sha: ${{ steps.resolve-sha.outputs.sha }}
+
+    steps:
+      # A workflow_dispatch `tag` input is free-form and actions/checkout would
+      # happily resolve it to a BRANCH (or any ref). Normalize and validate it
+      # here — reject anything that is not an existing platform release tag
+      # with a published GitHub release — then hand checkout an explicit
+      # refs/tags/<tag> ref so it can never bind to a branch. The
+      # workflow_call path gets its tag from release.yml
+      # (github.event.release.tag_name), for which these checks are no-ops.
+      # The release-exists check also guarantees the attach step below can
+      # never CREATE a release (softprops creates one when none exists).
+      - name: Resolve and validate release tag
+        id: release-ref
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Plain tag names only — no refs/tags/ (or any slashed) form. The
+          # job-level concurrency groups key on the raw inputs.tag (GHA
+          # expressions cannot normalize strings), so accepting aliases for
+          # the same tag would mint separate locks and let two runs race the
+          # asset-exists guards.
+          TAG="$INPUT_TAG"
+          case "$TAG" in
+            */*)
+              echo "::error::'$INPUT_TAG' is not a plain tag name — pass the bare platform tag (vX.Y.Z[-pre.N]); ref spellings like refs/tags/... are rejected."
+              exit 1
+              ;;
+          esac
+          # bash [[ =~ ]] matches the WHOLE string (unlike line-oriented
+          # grep), so a multiline dispatch input can never pass validation and
+          # inject extra GITHUB_OUTPUT lines.
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "::error::Tag '$TAG' is not a platform release tag (expected vX.Y.Z[-pre.N])."
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          case "$VERSION" in
+            *-SNAPSHOT)
+              echo "::error::Tag '$TAG' derives the -SNAPSHOT version '$VERSION'; snapshots must never be released from tags."
+              exit 1
+              ;;
+          esac
+          # The tags ref namespace is checked explicitly, so a branch that
+          # happens to share the input's name can never satisfy this guard.
+          if ! gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::No existing tag 'refs/tags/${TAG}' in ${REPO}."
+            exit 1
+          fi
+          if ! gh api "repos/${REPO}/releases/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::No published GitHub release for tag '${TAG}' — the SDK release attaches to the platform release and never creates one."
+            exit 1
+          fi
+          {
+            echo "checkout_ref=refs/tags/${TAG}"
+            echo "tag_name=${TAG}"
+            echo "version=${VERSION}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing Kotlin SDK ${VERSION} for platform release ${TAG}"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Always an explicit refs/tags/<tag> (validated above) — never the
+          # raw dispatch input — so the released AAR is built from the tag's
+          # commit and a manual run can never build from a branch.
+          ref: ${{ steps.release-ref.outputs.checkout_ref }}
+
+      - name: Resolve built commit SHA
+        id: resolve-sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc
+          df -h /
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            platforms;android-35
+            build-tools;35.0.0
+            ndk;28.1.13356709
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: kotlin-sdk-release-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            kotlin-sdk-release-cargo-
+            kotlin-sdk-cargo-
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Install protoc v32.0 (repo-standard; apt's 3.21 breaks tenderdash-proto)
+        run: |
+          curl -fsSL -o /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip
+          sudo unzip -o /tmp/protoc.zip -d /usr/local 'bin/protoc' 'include/*'
+          protoc --version
+
+      - name: Build native library (both ABIs, release profile)
+        working-directory: packages/kotlin-sdk
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.1.13356709
+        run: ./build_android.sh --abi all --profile release --verify
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release AAR
+        working-directory: packages/kotlin-sdk
+        run: ./gradlew :sdk:assembleRelease --stacktrace
+
+      # Defenses against a force-moved tag splitting the GitHub-release AAR
+      # from the (immutable) Maven Central artifact of the same version:
+      #   1. Hard-fail if the tag no longer resolves to the exact commit this
+      #      run built.
+      #   2. The AAR is attached together with a <asset>.commit.txt recording
+      #      the commit it was built from. When both already exist, this run
+      #      may proceed to the Maven deploy ONLY if that recorded commit
+      #      equals the commit this run built — otherwise the existing GitHub
+      #      AAR and the Maven artifact this run would publish came from
+      #      different commits, and the run hard-fails instead of letting the
+      #      two channels drift. An attached AAR is never overwritten; a
+      #      deliberate re-release must delete both assets first.
+      - name: Verify tag still resolves to the built commit
+        id: tag-guard
+        env:
+          TAG: ${{ steps.release-ref.outputs.tag_name }}
+          AAR_ASSET: dash-sdk-android-${{ steps.release-ref.outputs.version }}.aar
+          COMMIT_ASSET: dash-sdk-android-${{ steps.release-ref.outputs.version }}.commit.txt
+          BUILT_SHA: ${{ steps.resolve-sha.outputs.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Resolve the tag's current commit, dereferencing an annotated tag
+          # to the commit it points at.
+          OBJ_TYPE=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.type')
+          OBJ_SHA=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.sha')
+          if [ "$OBJ_TYPE" = "tag" ]; then
+            OBJ_SHA=$(gh api "repos/${REPO}/git/tags/${OBJ_SHA}" --jq '.object.sha')
+          fi
+          if [ "$OBJ_SHA" != "$BUILT_SHA" ]; then
+            echo "::error::Tag ${TAG} now points at ${OBJ_SHA} but this run built ${BUILT_SHA} — the tag was force-moved. Refusing to attach/deploy."
+            exit 1
+          fi
+          ASSETS=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.assets[].name')
+          HAVE_AAR=$(echo "$ASSETS" | grep -Fxc "$AAR_ASSET" || true)
+          HAVE_COMMIT=$(echo "$ASSETS" | grep -Fxc "$COMMIT_ASSET" || true)
+          if [ "$HAVE_AAR" = "1" ] && [ "$HAVE_COMMIT" = "1" ]; then
+            RECORDED_SHA=$(gh release download "$TAG" --repo "$REPO" --pattern "$COMMIT_ASSET" --output - | tr -d '[:space:]')
+            if [ "$RECORDED_SHA" != "$BUILT_SHA" ]; then
+              echo "::error::Release ${TAG} carries ${AAR_ASSET} built from ${RECORDED_SHA}, but this run built ${BUILT_SHA} — deploying would publish a different commit to Maven Central than the attached AAR. Delete both assets deliberately to re-release."
+              exit 1
+            fi
+            echo "asset_exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release ${TAG} already has ${AAR_ASSET} built from this same commit — leaving it untouched; the Maven deploy may proceed."
+          elif [ "$HAVE_AAR" = "1" ] || [ "$HAVE_COMMIT" = "1" ]; then
+            echo "::error::Release ${TAG} has only one of ${AAR_ASSET} / ${COMMIT_ASSET} — an earlier attach was interrupted, so the existing asset's provenance cannot be verified. Delete the surviving asset and re-run."
+            exit 1
+          else
+            echo "asset_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare versioned assets (AAR + build provenance)
+        env:
+          VERSION: ${{ steps.release-ref.outputs.version }}
+          BUILT_SHA: ${{ steps.resolve-sha.outputs.sha }}
+        run: |
+          cd packages/kotlin-sdk/sdk/build/outputs/aar
+          cp sdk-release.aar "dash-sdk-android-${VERSION}.aar"
+          printf '%s\n' "$BUILT_SHA" > "dash-sdk-android-${VERSION}.commit.txt"
+
+      # Attach to the PLATFORM release: only tag_name + files. Passing name/
+      # body/prerelease/generate_release_notes here would overwrite the
+      # platform release's own notes, title or prerelease flag.
+      # overwrite_files: false makes a same-name upload race fail loudly
+      # instead of silently replacing an asset the guard above vouched for.
+      - name: Attach AAR to the platform release
+        if: steps.tag-guard.outputs.asset_exists != 'true'
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ steps.release-ref.outputs.tag_name }}
+          overwrite_files: false
+          files: |
+            packages/kotlin-sdk/sdk/build/outputs/aar/dash-sdk-android-${{ steps.release-ref.outputs.version }}.aar
+            packages/kotlin-sdk/sdk/build/outputs/aar/dash-sdk-android-${{ steps.release-ref.outputs.version }}.commit.txt
+
+      # Hand the freshly built native libraries to the deploy job so it
+      # re-stages the SAME .so (same commit, same tag) without repeating the
+      # multi-hour cargo/NDK build.
+      - name: Upload native libraries for the deploy job
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlin-sdk-jnilibs
+          path: packages/kotlin-sdk/sdk/src/main/jniLibs
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Maven Central deploy. Declares `environment: maven-central`, so the five
+  # JRELEASER_* secrets — which exist ONLY as environment secrets there, never
+  # repository- or organization-scoped — resolve solely in this job; the
+  # unprotected build job above can never read them. The environment's `v*`
+  # tag policy additionally refuses runs whose ref is not a platform release
+  # tag (e.g. a branch dispatch). The deploy is irrevocable: Maven Central
+  # versions cannot be replaced or deleted.
+  # ---------------------------------------------------------------------------
+  maven-central-deploy:
+    name: Deploy to Maven Central (version from tag)
+    needs: build-and-release
+    # Runs only when the RUN's ref is exactly the target tag — not merely
+    # some tag: binding the ref to inputs.tag stops a dispatch started at tag
+    # A from publishing input tag B under the environment authorization A's
+    # ref earned, and keeps the v* tag policy meaningful. A branch-ref
+    # dispatch (the only way to re-attach assets for a tag that predates
+    # these workflow files, since a dispatch loads the workflow from the
+    # selected ref) skips this job cleanly instead of failing at the
+    # environment policy; Maven for such tags goes through the manual
+    # runbook in packages/kotlin-sdk/PUBLISHING.md.
+    if: ${{ github.ref == format('refs/tags/{0}', inputs.tag) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    environment: maven-central
+    concurrency:
+      group: release-kotlin-sdk-deploy-${{ inputs.tag }}
+      cancel-in-progress: false
+
+    steps:
+      # All five secrets the staging + jreleaser steps consume: Central Portal
+      # user/token, and the GPG secret key, public key and passphrase (gradle
+      # signing needs key+passphrase; jreleaser's Active.ALWAYS signing needs
+      # all three GPG values). All-or-nothing: a repo with no secrets
+      # configured yet skips the publish with a notice, while a partial
+      # configuration fails loudly instead of half-publishing.
+      - name: Check Maven Central publishing secrets
+        id: secrets-gate
+        env:
+          PORTAL_USER: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME }}
+          PORTAL_TOKEN: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD }}
+          GPG_SECRET_KEY: ${{ secrets.JRELEASER_GPG_SECRET_KEY }}
+          GPG_PUBLIC_KEY: ${{ secrets.JRELEASER_GPG_PUBLIC_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.JRELEASER_GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$PORTAL_USER" ] && [ -z "$PORTAL_TOKEN" ] && [ -z "$GPG_SECRET_KEY" ] && [ -z "$GPG_PUBLIC_KEY" ] && [ -z "$GPG_PASSPHRASE" ]; then
+            echo "::notice::Maven Central secrets are not configured on the maven-central environment — Maven Central deploy skipped. See packages/kotlin-sdk/PUBLISHING.md."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$PORTAL_USER" ] || [ -z "$PORTAL_TOKEN" ] || [ -z "$GPG_SECRET_KEY" ] || [ -z "$GPG_PUBLIC_KEY" ] || [ -z "$GPG_PASSPHRASE" ]; then
+            echo "::error::Maven Central secrets are only partially configured — need ALL of JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME, JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD, JRELEASER_GPG_SECRET_KEY, JRELEASER_GPG_PUBLIC_KEY and JRELEASER_GPG_PASSPHRASE. Refusing to guess."
+            exit 1
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Maven Central versions are immutable — a re-run for a version that is
+      # already published (e.g. an emergency re-dispatch after a successful
+      # release) must skip the deploy instead of failing on the duplicate.
+      # Checking the public repo (not the GitHub asset) keeps the intended
+      # recovery flow working: secrets configured after a release → re-dispatch
+      # → deploy proceeds even though the AAR asset already exists.
+      - name: Check whether this version is already on Maven Central
+        id: maven-check
+        if: steps.secrets-gate.outputs.proceed == 'true'
+        env:
+          SDK_VERSION: ${{ needs.build-and-release.outputs.version }}
+        run: |
+          URL="https://repo1.maven.org/maven2/org/dashj/dash-sdk-android/${SDK_VERSION}/dash-sdk-android-${SDK_VERSION}.pom"
+          # Only an authoritative 404 may proceed to the deploy: treating an
+          # inconclusive lookup (DNS/TLS failure, timeout, rate limit, 5xx) as
+          # "not published" would let the run attempt an immutable version
+          # that may already exist.
+          STATUS=$(curl --silent --head --location --output /dev/null \
+            --write-out '%{http_code}' --connect-timeout 10 --max-time 30 "$URL") || {
+            echo "::error::Could not determine whether org.dashj:dash-sdk-android:${SDK_VERSION} exists on Maven Central (curl failed). Refusing to deploy blindly — re-run when repo1.maven.org is reachable."
+            exit 1
+          }
+          if [ "$STATUS" = "200" ]; then
+            echo "::notice::org.dashj:dash-sdk-android:${SDK_VERSION} is already on Maven Central — deploy skipped (Central versions are immutable)."
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+          elif [ "$STATUS" = "404" ]; then
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Maven Central lookup for ${SDK_VERSION} returned HTTP ${STATUS} — inconclusive. Refusing to deploy blindly; re-run once the lookup answers 200 or 404."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
+        uses: actions/checkout@v4
+        with:
+          # Pin to the exact SHA the build job resolved, NOT the tag ref: a
+          # tag is mutable, and checking out the SHA guarantees the staged
+          # Maven source is the same commit that produced the attached AAR +
+          # the native libs downloaded below.
+          ref: ${{ needs.build-and-release.outputs.sha }}
+
+      - name: Set up JDK 17
+        if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
+        uses: android-actions/setup-android@v3
+        with:
+          # No Rust/cargo here — the native libraries are downloaded below.
+          # The NDK is still needed because AGP strips the packaged .so at
+          # assemble time (ndkVersion is pinned in sdk/build.gradle.kts).
+          packages: >-
+            platforms;android-35
+            build-tools;35.0.0
+            ndk;28.1.13356709
+
+      - name: Restore native libraries from the build job
+        if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: kotlin-sdk-jnilibs
+          path: packages/kotlin-sdk/sdk/src/main/jniLibs
+
+      - name: Setup Gradle
+        if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
+        uses: gradle/actions/setup-gradle@v4
+
+      # Stages the signed release AAR + sources/javadoc jars into
+      # sdk/build/staging-deploy. Task dependencies enforce the publish
+      # guards: cleanStagingDeploy wipes the staging dir first and
+      # verifyJniLibsForRemotePublish hard-fails if the source tree lacks
+      # libdash_sdk_jni.so for any required ABI.
+      - name: Stage signed Maven artifacts (version from tag)
+        if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
+        working-directory: packages/kotlin-sdk
+        env:
+          SDK_VERSION: ${{ needs.build-and-release.outputs.version }}
+          # Same ASCII-armored GPG key/passphrase jreleaser uses below; Gradle
+          # signing reads them as the in-memory signingKey/signingPassword
+          # project properties.
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.JRELEASER_GPG_SECRET_KEY }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.JRELEASER_GPG_PASSPHRASE }}
+        run: >-
+          ./gradlew :sdk:publishReleasePublicationToStagingRepository
+          -PsdkVersion="$SDK_VERSION" --stacktrace
+
+      # Uploads the staged artifacts to Maven Central. Task dependencies run
+      # verifyJniLibsForRemotePublish and verifyStagedAarForRemotePublish
+      # first, so a stale or nativeless staged AAR can never be deployed.
+      - name: Deploy to Maven Central (jreleaserDeploy, version from tag)
+        if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
+        working-directory: packages/kotlin-sdk
+        env:
+          SDK_VERSION: ${{ needs.build-and-release.outputs.version }}
+          JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME }}
+          JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD }}
+          JRELEASER_GPG_PUBLIC_KEY: ${{ secrets.JRELEASER_GPG_PUBLIC_KEY }}
+          JRELEASER_GPG_SECRET_KEY: ${{ secrets.JRELEASER_GPG_SECRET_KEY }}
+          JRELEASER_GPG_PASSPHRASE: ${{ secrets.JRELEASER_GPG_PASSPHRASE }}
+        run: >-
+          ./gradlew :sdk:jreleaserDeploy
+          -PsdkVersion="$SDK_VERSION" --stacktrace

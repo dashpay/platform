@@ -58,10 +58,11 @@ impl Drive {
 mod tests {
     use crate::drive::identity::key::fetch::IdentityKeysRequest;
     use crate::drive::identity::key::fetch::KeyRequestType;
+    use crate::drive::Drive;
     use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::Identity;
+    use dpp::identity::{Identity, KeyID};
     use dpp::version::PlatformVersion;
 
     #[test]
@@ -127,6 +128,73 @@ mod tests {
             .expect("expected to generate proof for specific keys");
 
         assert!(!proof.is_empty(), "proof should be non-empty");
+    }
+
+    #[test]
+    fn should_prove_duplicate_key_ids_identically_to_the_distinct_list() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::latest();
+
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(44444), platform_version)
+            .expect("expected a random identity");
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let identity_id = identity.id().to_buffer();
+        let distinct_proof = drive
+            .prove_identity_keys(
+                IdentityKeysRequest::new_specific_keys_query_without_limit(
+                    &identity_id,
+                    vec![0, 1],
+                ),
+                None,
+                platform_version,
+            )
+            .expect("expected to generate proof for distinct keys");
+
+        let duplicated: Vec<KeyID> = [1, 0].into_iter().cycle().take(1_000).collect();
+        let duplicated_proof = drive
+            .prove_identity_keys(
+                IdentityKeysRequest::new_specific_keys_query_without_limit(
+                    &identity_id,
+                    duplicated.clone(),
+                ),
+                None,
+                platform_version,
+            )
+            .expect("expected to generate proof for duplicated keys");
+
+        assert_eq!(duplicated_proof, distinct_proof);
+
+        let (_, partial_identity) = Drive::verify_identity_keys_by_identity_id(
+            &duplicated_proof,
+            IdentityKeysRequest::new_specific_keys_query_without_limit(&identity_id, duplicated),
+            false,
+            false,
+            false,
+            platform_version,
+        )
+        .expect("expected the proof to verify");
+        let proved_ids: Vec<KeyID> = partial_identity
+            .expect("expected a partial identity")
+            .loaded_public_keys
+            .keys()
+            .copied()
+            .collect();
+        assert_eq!(proved_ids, vec![0, 1]);
     }
 
     #[test]

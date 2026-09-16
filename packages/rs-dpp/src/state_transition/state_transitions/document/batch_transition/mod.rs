@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 use std::convert::TryInto;
 
@@ -14,11 +14,12 @@ use crate::{identity::SecurityLevel, state_transition::StateTransitionFieldTypes
 pub use self::batched_transition::{
     document_base_transition, document_create_transition,
     document_create_transition::DocumentCreateTransition, document_delete_transition,
-    document_delete_transition::DocumentDeleteTransition, document_replace_transition,
-    document_replace_transition::DocumentReplaceTransition, token_base_transition,
-    token_burn_transition, token_burn_transition::TokenBurnTransition, token_claim_transition,
-    token_claim_transition::TokenClaimTransition, token_config_update_transition,
-    token_config_update_transition::TokenConfigUpdateTransition,
+    document_delete_transition::DocumentDeleteTransition, document_index_only_delete_transition,
+    document_index_only_delete_transition::DocumentIndexOnlyDeleteTransition,
+    document_replace_transition, document_replace_transition::DocumentReplaceTransition,
+    token_base_transition, token_burn_transition, token_burn_transition::TokenBurnTransition,
+    token_claim_transition, token_claim_transition::TokenClaimTransition,
+    token_config_update_transition, token_config_update_transition::TokenConfigUpdateTransition,
     token_destroy_frozen_funds_transition,
     token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransition,
     token_direct_purchase_transition,
@@ -32,7 +33,9 @@ pub use self::batched_transition::{
     token_unfreeze_transition, token_unfreeze_transition::TokenUnfreezeTransition,
 };
 
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_versioning::PlatformVersioned;
 
 pub mod accessors;
@@ -65,11 +68,13 @@ pub use v1::*;
     PartialEq,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
     From,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

@@ -148,6 +148,13 @@ where
             })
         })
         .or_else(|error| {
+            if matches!(
+                error,
+                Error::Execution(ExecutionError::CheckTxProofVerificationBusy)
+            ) {
+                return Err(error);
+            }
+
             let handler_error = HandlerError::Internal(error.to_string());
 
             if tracing::enabled!(tracing::Level::ERROR) {
@@ -179,8 +186,19 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abci::app::error_into_status;
+    use crate::execution::validation::state_transition::test_helpers::{
+        create_dummy_serialized_action, insert_anchor_into_state, set_pool_total_balance,
+        setup_platform,
+    };
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+    use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
+    use dpp::state_transition::StateTransition;
+    use dpp::version::PlatformVersion;
+    use tenderdash_abci::proto::tonic;
 
     /// Exercises the early-return path in `check_tx` where `r#type.try_into()?`
     /// propagates a `BadRequest` error before the validation result pipeline is
@@ -284,5 +302,43 @@ mod tests {
             .expect("empty tx should not propagate an Err");
 
         assert_ne!(response.code, 0);
+    }
+
+    #[test]
+    fn occupied_proof_capacity_reaches_resource_exhausted_status() {
+        let platform_version = PlatformVersion::latest();
+        let platform = setup_platform();
+        set_pool_total_balance(&platform, 1_000_000_000);
+        let anchor = [42; 32];
+        insert_anchor_into_state(&platform, &anchor);
+
+        let fee = dpp::shielded::compute_minimum_shielded_fee(1, platform_version)
+            .expect("minimum shielded fee");
+        let transition = StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
+            ShieldedTransferTransitionV0 {
+                actions: vec![create_dummy_serialized_action()],
+                value_balance: fee,
+                anchor,
+                proof: vec![0; 100],
+                binding_signature: [0; 64],
+            },
+        ));
+        let tx = transition
+            .serialize_to_bytes()
+            .expect("serialize transition");
+
+        let _held_permit = platform
+            .check_tx_proof_verifier
+            .try_acquire(usize::MAX)
+            .expect("occupy proof capacity");
+        let error = check_tx(
+            &platform.platform,
+            &MockCoreRPCLike::new(),
+            proto::RequestCheckTx { tx, r#type: 0 },
+        )
+        .expect_err("handler must propagate retryable proof backpressure");
+        let status = error_into_status(error);
+
+        assert_eq!(status.code(), tonic::Code::ResourceExhausted);
     }
 }

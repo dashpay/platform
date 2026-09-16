@@ -157,5 +157,8 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
                 },
             },
             calculate_current_withdrawal_limit: 0,
+            record_total_credits_history: None,
+            fetch_total_credits_in_platform_a_day_ago: None,
+            record_credit_inflows: None,
         },
     };

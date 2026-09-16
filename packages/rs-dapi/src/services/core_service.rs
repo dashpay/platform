@@ -14,12 +14,42 @@ use dapi_grpc::core::v0::{
     TransactionsWithProofsRequest, TransactionsWithProofsResponse, core_server::Core,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
+use dashcore_rpc::dashcore::Transaction;
 use dashcore_rpc::dashcore::consensus::encode::deserialize as deserialize_tx;
 use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::policy::MAX_STANDARD_TX_WEIGHT;
 use std::any::type_name_of_val;
 use std::sync::Arc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, info, trace, warn};
+
+const MAX_BROADCAST_WIRE_BYTES: usize = MAX_STANDARD_TX_WEIGHT as usize;
+
+fn decode_broadcast_transaction(raw: &[u8]) -> Result<Transaction, Status> {
+    if raw.is_empty() {
+        return Err(Status::invalid_argument("transaction is not specified"));
+    }
+
+    if raw.len() > MAX_BROADCAST_WIRE_BYTES {
+        return Err(Status::resource_exhausted(format!(
+            "transaction is {} bytes; maximum is {} bytes",
+            raw.len(),
+            MAX_BROADCAST_WIRE_BYTES,
+        )));
+    }
+
+    let transaction: Transaction = deserialize_tx(raw)
+        .map_err(|err| Status::invalid_argument(format!("invalid transaction: {err}")))?;
+
+    let weight = transaction.weight().to_wu();
+    if weight > u64::from(MAX_STANDARD_TX_WEIGHT) {
+        return Err(Status::invalid_argument(format!(
+            "transaction weight {weight} exceeds maximum {MAX_STANDARD_TX_WEIGHT}",
+        )));
+    }
+
+    Ok(transaction)
+}
 
 /// Core service implementation that handles blockchain and streaming operations.
 ///
@@ -247,18 +277,7 @@ impl Core for CoreServiceImpl {
         let _bypass_limits = req.bypass_limits;
 
         let result: Result<Response<BroadcastTransactionResponse>, Status> = async {
-            if req.transaction.is_empty() {
-                return Err(Status::invalid_argument("transaction is not specified"));
-            }
-
-            if let Err(err) =
-                deserialize_tx::<dashcore_rpc::dashcore::Transaction>(&req.transaction)
-            {
-                return Err(Status::invalid_argument(format!(
-                    "invalid transaction: {}",
-                    err
-                )));
-            }
+            decode_broadcast_transaction(&req.transaction)?;
 
             // NOTE: dashcore-rpc Client does not expose options for allowhighfees/bypasslimits.
             // We broadcast as-is. Future: add support if library exposes those options.
@@ -598,5 +617,50 @@ impl Core for CoreServiceImpl {
         }
 
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashcore_rpc::dashcore::{
+        OutPoint, ScriptBuf, TxIn, TxOut, Witness, consensus::encode::serialize,
+    };
+
+    fn transaction_with_script_sig(script_sig_bytes: usize) -> Transaction {
+        Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::null(),
+                script_sig: ScriptBuf::from_bytes(vec![0; script_sig_bytes]),
+                sequence: u32::MAX,
+                witness: Witness::default(),
+            }],
+            output: vec![TxOut {
+                value: 1,
+                script_pubkey: ScriptBuf::new(),
+            }],
+            special_transaction_payload: None,
+        }
+    }
+
+    #[test]
+    fn broadcast_transaction_rejects_wire_bytes_before_parsing() {
+        let error = decode_broadcast_transaction(&vec![0; MAX_BROADCAST_WIRE_BYTES + 1])
+            .expect_err("oversized transaction must be rejected");
+        assert_eq!(error.code(), dapi_grpc::tonic::Code::ResourceExhausted);
+    }
+
+    #[test]
+    fn broadcast_transaction_enforces_standard_weight() {
+        let standard = serialize(&transaction_with_script_sig(99_000));
+        assert!(decode_broadcast_transaction(&standard).is_ok());
+
+        let overweight = serialize(&transaction_with_script_sig(100_000));
+        assert!(overweight.len() < MAX_BROADCAST_WIRE_BYTES);
+        let error = decode_broadcast_transaction(&overweight)
+            .expect_err("overweight transaction must be rejected");
+        assert_eq!(error.code(), dapi_grpc::tonic::Code::InvalidArgument);
     }
 }

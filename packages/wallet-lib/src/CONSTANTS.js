@@ -101,7 +101,7 @@ const CONSTANTS = {
     UNKNOWN: 'unknown',
   },
   STORAGE: {
-    version: 3,
+    version: 4,
     autosaveIntervalTime: 10 * 1000,
     REORG_SAFE_BLOCKS_COUNT: 6,
   },

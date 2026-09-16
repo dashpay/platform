@@ -12,6 +12,7 @@ use crate::execution::validation::state_transition::state_transitions::shielded_
 };
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
@@ -45,6 +46,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        check_tx_proof_verifier: Option<&CheckTxProofVerifier>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -58,6 +60,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        check_tx_proof_verifier: Option<&CheckTxProofVerifier>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -282,6 +285,17 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         let mut drive_operations = vec![];
         let current_total_balance =
             read_pool_total_balance(platform.drive, tx, &mut drive_operations, platform_version)?;
+
+        // CheckTx admits the expensive proof only after the asset lock, its
+        // signature, funding, fee cap, and current pool state have all passed.
+        // Proposal and block processing pass `None` and retain the existing
+        // penalty action when proof verification fails.
+        let _check_tx_permit = match check_tx_proof_verifier {
+            Some(verifier) => Some(verifier.try_acquire(num_actions).ok_or(Error::Execution(
+                ExecutionError::CheckTxProofVerificationBusy,
+            ))?),
+            None => None,
+        };
 
         // Step 9: Verify Orchard ZK proof via reconstruct_and_verify_bundle()
         // Use EMPTY extra_sighash_data -- no transparent binding needed since

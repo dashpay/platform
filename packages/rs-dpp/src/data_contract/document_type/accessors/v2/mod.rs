@@ -24,6 +24,12 @@ pub trait DocumentTypeV2Getters {
     /// true, the primary-key sum tree is a `ProvableSumTree` (per-node
     /// aggregated sums). Implies [`Self::documents_summable`] is `Some`.
     fn range_summable(&self) -> bool;
+
+    /// Returns whether this document type is **indexOnly**: documents are
+    /// never written to primary storage — the index entries are the rows,
+    /// each terminating in an `Item` keyed by the index's `terminal`
+    /// property. Only what is in the indexes exists and is recoverable.
+    fn index_only(&self) -> bool;
 }
 
 /// Trait providing setters for DocumentTypeV2-specific fields.

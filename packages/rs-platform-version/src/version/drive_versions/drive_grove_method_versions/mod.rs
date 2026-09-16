@@ -79,6 +79,21 @@ pub struct DriveGroveBatchMethodVersions {
     /// `AggregateCountOnRange` / `AggregateSumOnRange` (and the
     /// combined variant once grovedb PR 670 ships) over a single tree.
     pub batch_insert_empty_provable_count_provable_sum_tree: FeatureVersion,
+    /// Provable count-indexed tree (grovedb PR 657). The count-only
+    /// ranked variant: a `ProvableCountTree`-shaped primary Merk plus a
+    /// single count-ordered secondary Merk, letting an index answer
+    /// "top k groups by count" in O(log n + k) with a proof.
+    pub batch_insert_empty_provable_count_indexed_tree: FeatureVersion,
+    /// Provable sum-indexed tree (grovedb PR 657). Sum-only ranked
+    /// counterpart of
+    /// [`Self::batch_insert_empty_provable_count_indexed_tree`].
+    pub batch_insert_empty_provable_sum_indexed_tree: FeatureVersion,
+    /// Provable count + provable sum indexed tree (grovedb PR 657).
+    /// Carries a TLV list of 1..=3 ranked axes (count / sum / avg), one
+    /// secondary Merk each, so a single tree can be ranked on any
+    /// declared axis. Used whenever more than one axis is requested, or
+    /// when the ranked axis is `avg` (which needs both count and sum).
+    pub batch_insert_empty_provable_count_provable_sum_indexed_tree: FeatureVersion,
     pub batch_move: FeatureVersion,
     pub batch_insert_item_with_sum_item_if_not_exists: FeatureVersion,
 }

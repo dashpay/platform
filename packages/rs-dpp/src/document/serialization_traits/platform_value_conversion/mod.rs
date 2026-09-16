@@ -159,6 +159,7 @@ mod tests {
         let owner_id = Identifier::new([2u8; 32]);
 
         let doc_v0 = DocumentV0 {
+            contract_version: None,
             id,
             owner_id,
             properties: std::collections::BTreeMap::new(),

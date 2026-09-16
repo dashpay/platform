@@ -25,6 +25,7 @@ mod tests {
     use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::v1::PROTOCOL_VERSION_1;
+    use platform_version::version::v13::PROTOCOL_VERSION_13;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
@@ -168,6 +169,94 @@ mod tests {
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None, &mut None)
+                .await;
+
+        let balance = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_identity_balance(
+                outcome.identities.first().unwrap().id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balances")
+            .expect("expected to have an identity to get balance from");
+
+        assert_eq!(balance, 99864009940)
+    }
+
+    #[tokio::test]
+    async fn run_chain_one_identity_in_solitude_protocol_version_13() {
+        // Pins the fee shape at protocol version 13. The grove v4 cleanup
+        // gates active from v14 derive their inspection from data the merk
+        // apply already loads, so they are cost-neutral: this balance is
+        // identical to the latest-version test's, and the pair proves the
+        // v13 -> v14 boundary changes nothing about this run's fees.
+        // This is different because in the root tree we added GroupActions
+        //                                                                                DataContract_Documents 64
+        //                                 /                                                                                                       \
+        //                       Identities 32                                                                                                 Balances 96
+        //             /                            \                                                                        /                                                       \
+        //   Token_Balances 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
+        //       /      \                           /                     \                                         /                           \                            /                          \
+        //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  Masternode Lists 56 (reserved)     SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
+
+        // This will cause the costs of insertion of a spent asset lock transition, since group actions now exist we will see a slight difference in processing costs
+        // This is because WithdrawalTransactions will have a right element in the tree.
+
+        let platform_version =
+            PlatformVersion::get(PROTOCOL_VERSION_13).expect("expected to get platform version 13");
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                ..Default::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .with_initial_protocol_version(PROTOCOL_VERSION_13)
             .build_with_mock_rpc();
 
         let outcome =

@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::drive::Drive;
 use crate::util::object_size_info::DocumentAndContractInfo;
@@ -30,6 +31,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
@@ -37,6 +39,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -64,9 +67,20 @@ impl Drive {
                 batch_operations,
                 platform_version,
             ),
+            // v2 (platform v14+): tree types via the shared
+            // continuation-demotion helper, mirroring the v2 insert walker.
+            2 => self.remove_indices_for_top_index_level_for_contract_operations_v2(
+                document_and_contract_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                block_time_ms,
+                transaction,
+                batch_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_indices_for_top_index_level_for_contract_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

@@ -5,11 +5,12 @@ use crate::utils::error::{
 };
 use crate::utils::getters::VecU8ToUint8Array;
 use crate::utils::platform_version::get_platform_version_with_validation;
+use crate::utils::proof::supported_grovedb_proof;
 use crate::utils::serialization::document_to_js_value;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use indexmap::IndexMap;
 use js_sys::{Array, Object, Reflect, Uint8Array};
@@ -71,8 +72,9 @@ pub fn verify_document_proof(
         ));
     };
 
-    let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
-        .map_err(|e| format_result_error(ErrorCategory::DeserializationError, e))?;
+    let contract =
+        DataContract::versioned_deserialize_untrusted(&contract_bytes, true, platform_version)
+            .map_err(|e| format_result_error(ErrorCategory::DeserializationError, e))?;
 
     // Get document type
     let document_type = contract
@@ -108,10 +110,21 @@ pub fn verify_document_proof(
         start_at: start_at_bytes,
         start_at_included,
         block_time_ms,
+        // KNOWN LIMITATION: this surface has no input for time-range
+        // (IN_TIME_RANGE) resolution provenance, so proofs the server
+        // produced for a time-range query cannot be verified here — with
+        // empty provenance every bucketed index is inadmissible and
+        // verification fails closed. Use the SDK's FromProof path (which
+        // resolves from the signed metadata time) for those proofs.
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
     };
 
     let (root_hash, documents) = query
-        .verify_proof(&proof_vec, platform_version)
+        .verify_proof(
+            supported_grovedb_proof(&proof_vec, platform_version)?,
+            platform_version,
+        )
         .map_err(|e| format_result_error(ErrorCategory::VerificationError, e))?;
 
     // Convert documents to JS array
@@ -156,10 +169,30 @@ fn parse_internal_clauses(where_clauses: &JsValue) -> Result<InternalClauses, Js
         }
     }
 
-    // Parse in_clause
+    // Parse in_clause (single clause key, kept for backward compatibility)
     if let Ok(clause) = Reflect::get(&obj, &JsValue::from_str("in_clause")) {
         if !clause.is_null() && !clause.is_undefined() {
-            internal_clauses.in_clause = Some(parse_where_clause(&clause)?);
+            internal_clauses
+                .in_clauses
+                .push(parse_where_clause(&clause)?);
+        }
+    }
+
+    // Parse in_clauses (array form; protocol version 14+ accepts several)
+    if let Ok(clauses) = Reflect::get(&obj, &JsValue::from_str("in_clauses")) {
+        if !clauses.is_null() && !clauses.is_undefined() {
+            if !Array::is_array(&clauses) {
+                return Err(format_error(
+                    ErrorCategory::InvalidInput,
+                    "in_clauses must be an array",
+                ));
+            }
+            let clauses_array = Array::from(&clauses);
+            for i in 0..clauses_array.length() {
+                internal_clauses
+                    .in_clauses
+                    .push(parse_where_clause(&clauses_array.get(i))?);
+            }
         }
     }
 

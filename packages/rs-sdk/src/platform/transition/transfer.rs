@@ -62,8 +62,9 @@ impl TransferToIdentity for Identity {
         .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-        let (sender, receiver): (PartialIdentity, PartialIdentity) =
-            state_transition.broadcast_and_wait(sdk, settings).await?;
+        let (sender, receiver): (PartialIdentity, PartialIdentity) = state_transition
+            .broadcast_and_wait_for_affected_state(sdk, settings)
+            .await?;
 
         let sender_balance = sender.balance.ok_or_else(|| {
             Error::Generic("expected an identity balance after transfer (sender)".to_string())

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::addresses_with_balance::AddressesWithBalance;
-    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
+    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy, GENESIS_TIME_MS};
     use crate::strategy::{
         ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
         UpgradingInfo,
@@ -13,16 +13,23 @@ mod tests {
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::Network::Regtest;
     use dpp::dashcore::{BlockHash, ChainLock};
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contracts::SystemDataContract;
     use dpp::version::PlatformVersion;
+    use dpp::version::ProtocolVersion;
     use drive::config::DriveConfig;
     use drive::query::proposer_block_count_query::ProposerQueryType;
+    use drive_abci::abci::app::FullAbciApplication;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
     };
     use drive_abci::logging::LogLevel;
+    use drive_abci::platform_types::platform::Platform;
     use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
-    use drive_abci::test::helpers::setup::TestPlatformBuilder;
+    use drive_abci::rpc::core::MockCoreRPCLike;
+    use drive_abci::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
     use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
     use platform_version::version::INITIAL_PROTOCOL_VERSION;
@@ -548,6 +555,664 @@ mod tests {
             assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
             assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
         }
+    }
+
+    #[stack_size(4 * 1024 * 1024)]
+    #[test]
+    async fn run_chain_v12_to_v13_locks_in_before_activation() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 50,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: Some(UpgradingInfo {
+                current_protocol_version: 12,
+                proposed_protocol_versions_with_weight: vec![(13, 1)],
+                upgrade_three_quarters_life: 0.0,
+            }),
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig {
+                quorum_size: 30,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                epoch_time_length_s: 60,
+                ..Default::default()
+            },
+            block_spacing_ms: 1_000,
+            testing_configs: PlatformTestConfig {
+                store_platform_state: true,
+                ..PlatformTestConfig::default_minimal_verifications()
+            },
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .with_initial_protocol_version(12)
+            .build_with_mock_rpc();
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            ..
+        } = run_chain_for_strategy(
+            &mut platform,
+            60,
+            strategy.clone(),
+            config.clone(),
+            13,
+            &mut None,
+            &mut None,
+        )
+        .await;
+
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 0);
+        assert_eq!(state.current_protocol_version_in_consensus(), 12);
+        assert_eq!(state.next_epoch_protocol_version(), 12);
+        let block_start = state
+            .last_committed_block_info()
+            .as_ref()
+            .expect("expected committed block info")
+            .basic_info()
+            .height
+            + 1;
+        drop(state);
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            ..
+        } = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 1,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
+            },
+            strategy.clone(),
+            config.clone(),
+            StrategyRandomness::SeedEntropy(7),
+        )
+        .await;
+
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 1);
+        assert_eq!(state.current_protocol_version_in_consensus(), 12);
+        assert_eq!(state.next_epoch_protocol_version(), 13);
+        let block_start = state
+            .last_committed_block_info()
+            .as_ref()
+            .expect("expected committed block info")
+            .basic_info()
+            .height
+            + 1;
+        drop(state);
+
+        let platform_version_12 = PlatformVersion::get(12).expect("platform version 12");
+        let persisted_dpns_v12 = abci_app
+            .platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::DPNS.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_12,
+            )
+            .value
+            .expect("fetch persisted DPNS before activation")
+            .expect("DPNS must be persisted before activation");
+        let persisted_domain_v12 = persisted_dpns_v12
+            .contract
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(!persisted_domain_v12.documents_keep_transfer_history());
+        assert!(!persisted_domain_v12.documents_keep_purchase_history());
+        assert!(!persisted_domain_v12.documents_keep_pricing_history());
+        assert!(abci_app
+            .platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::DocumentHistory.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_12,
+            )
+            .value
+            .expect("query persisted Document History before activation")
+            .is_none());
+
+        drop(abci_app);
+        let TempPlatform {
+            platform: mut platform_before_activation_restart,
+            tempdir,
+        } = platform;
+        let core_rpc = std::mem::take(&mut platform_before_activation_restart.core_rpc);
+        drop(platform_before_activation_restart);
+        platform = TempPlatform::open_with_tempdir(tempdir, config.clone());
+        platform.platform.core_rpc = core_rpc;
+        let state = platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 1);
+        assert_eq!(state.current_protocol_version_in_consensus(), 12);
+        assert_eq!(state.next_epoch_protocol_version(), 13);
+        drop(state);
+        let abci_app = FullAbciApplication::new(&platform.platform);
+
+        let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 60,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
+            },
+            strategy,
+            config.clone(),
+            StrategyRandomness::SeedEntropy(18),
+        )
+        .await;
+
+        let state = abci_app.platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 2);
+        assert_eq!(state.current_protocol_version_in_consensus(), 13);
+        assert_eq!(state.next_epoch_protocol_version(), 13);
+        drop(state);
+        let platform_version_13 = PlatformVersion::get(13).expect("platform version 13");
+        let persisted_dpns_v13 = abci_app
+            .platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::DPNS.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_13,
+            )
+            .value
+            .expect("fetch persisted DPNS after activation")
+            .expect("DPNS must remain persisted after activation");
+        let persisted_domain_v13 = persisted_dpns_v13
+            .contract
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(persisted_domain_v13.documents_keep_transfer_history());
+        assert!(persisted_domain_v13.documents_keep_purchase_history());
+        assert!(persisted_domain_v13.documents_keep_pricing_history());
+        assert!(abci_app
+            .platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::DocumentHistory.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_13,
+            )
+            .value
+            .expect("fetch persisted Document History after activation")
+            .is_some());
+        let dpns_v13 = abci_app
+            .platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(SystemDataContract::DPNS.id(), platform_version_13)
+            .expect("expected the DPNS lookup to succeed")
+            .expect("the public activation path must cache DPNS v2");
+        let domain = dpns_v13
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(domain.documents_keep_transfer_history());
+        assert!(domain.documents_keep_purchase_history());
+        assert!(domain.documents_keep_pricing_history());
+        assert!(abci_app
+            .platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(
+                SystemDataContract::DocumentHistory.id(),
+                platform_version_13
+            )
+            .expect("expected the document history lookup to succeed")
+            .is_some());
+        drop(abci_app);
+
+        let TempPlatform {
+            platform: platform_before_restart,
+            tempdir,
+        } = platform;
+        drop(platform_before_restart);
+
+        let reopened_platform = TempPlatform::open_with_tempdir(tempdir, config);
+        let state = reopened_platform.state.load();
+        assert_eq!(state.last_committed_block_epoch().index, 2);
+        assert_eq!(state.current_protocol_version_in_consensus(), 13);
+        assert_eq!(state.next_epoch_protocol_version(), 13);
+        drop(state);
+        let reopened_persisted_dpns_v13 = reopened_platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::DPNS.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_13,
+            )
+            .value
+            .expect("fetch persisted DPNS after restart")
+            .expect("DPNS must remain persisted after restart");
+        let reopened_persisted_domain_v13 = reopened_persisted_dpns_v13
+            .contract
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(reopened_persisted_domain_v13.documents_keep_transfer_history());
+        assert!(reopened_persisted_domain_v13.documents_keep_purchase_history());
+        assert!(reopened_persisted_domain_v13.documents_keep_pricing_history());
+        assert!(reopened_platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::DocumentHistory.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version_13,
+            )
+            .value
+            .expect("fetch persisted Document History after restart")
+            .is_some());
+        let reopened_dpns_v13 = reopened_platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(SystemDataContract::DPNS.id(), platform_version_13)
+            .expect("expected the DPNS lookup to succeed")
+            .expect("restart must reconstruct DPNS v2");
+        let reopened_domain = reopened_dpns_v13
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(reopened_domain.documents_keep_transfer_history());
+        assert!(reopened_domain.documents_keep_purchase_history());
+        assert!(reopened_domain.documents_keep_pricing_history());
+        let reopened_dpns_v12 = reopened_platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(SystemDataContract::DPNS.id(), platform_version_12)
+            .expect("expected the DPNS lookup to succeed")
+            .expect("restart must materialize explicitly requested DPNS v1");
+        let reopened_domain_v12 = reopened_dpns_v12
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(!reopened_domain_v12.documents_keep_transfer_history());
+        assert!(!reopened_domain_v12.documents_keep_purchase_history());
+        assert!(!reopened_domain_v12.documents_keep_pricing_history());
+        assert!(reopened_platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(
+                SystemDataContract::DocumentHistory.id(),
+                platform_version_13
+            )
+            .expect("expected the document history lookup to succeed")
+            .is_some());
+    }
+
+    /// What a node has committed about the protocol upgrade, captured to compare a node that
+    /// never restarted with one whose Drive was closed and reopened.
+    #[derive(Debug, PartialEq)]
+    struct CommittedUpgradeState {
+        height: u64,
+        epoch_index: u16,
+        current_protocol_version: ProtocolVersion,
+        next_epoch_protocol_version: ProtocolVersion,
+        app_hash: Option<[u8; 32]>,
+    }
+
+    fn committed_upgrade_state(platform: &Platform<MockCoreRPCLike>) -> CommittedUpgradeState {
+        let state = platform.state.load();
+        CommittedUpgradeState {
+            height: state.last_committed_block_height(),
+            epoch_index: state.last_committed_block_epoch().index,
+            current_protocol_version: state.current_protocol_version_in_consensus(),
+            next_epoch_protocol_version: state.next_epoch_protocol_version(),
+            app_hash: state.last_committed_block_app_hash(),
+        }
+    }
+
+    /// Asserts that the votes persisted in Drive for `protocol_version` reach the count the
+    /// epoch tally requires, so the next epoch boundary must lock that version in.
+    fn assert_persisted_votes_reach_upgrade_threshold(
+        platform: &Platform<MockCoreRPCLike>,
+        protocol_version: ProtocolVersion,
+    ) {
+        let state = platform.state.load();
+        let platform_version = state
+            .current_platform_version()
+            .expect("expected the current platform version");
+        let required_votes = 1 + state.hpmn_active_list_len() as u64
+            * platform_version
+                .drive_abci
+                .methods
+                .protocol_upgrade
+                .protocol_version_upgrade_percentage_needed
+            / 100;
+        let persisted_votes = platform
+            .drive
+            .fetch_versions_with_counter(None, &platform_version.drive)
+            .expect("expected to fetch the persisted protocol version votes");
+        let votes = persisted_votes
+            .get(&protocol_version)
+            .copied()
+            .unwrap_or_default();
+        assert!(
+            votes >= required_votes,
+            "expected at least {required_votes} persisted votes for protocol version {protocol_version}, found {votes}"
+        );
+    }
+
+    /// Parameters that continue the chain of `outcome` for `block_count` more blocks with the
+    /// same proposers, quorums and upgrade schedule.
+    fn continuation_parameters(
+        outcome: &ChainExecutionOutcome,
+        block_count: u64,
+    ) -> ChainExecutionParameters {
+        let block_start = outcome
+            .abci_app
+            .platform
+            .state
+            .load()
+            .last_committed_block_height()
+            + 1;
+        ChainExecutionParameters {
+            block_start,
+            core_height_start: 1,
+            block_count,
+            proposers: outcome.proposers.clone(),
+            validator_quorums: outcome.validator_quorums.clone(),
+            current_validator_quorum_hash: outcome.current_validator_quorum_hash,
+            current_proposer_versions: Some(outcome.current_proposer_versions.clone()),
+            current_identity_nonce_counter: outcome.identity_nonce_counter.clone(),
+            current_identity_contract_nonce_counter: outcome
+                .identity_contract_nonce_counter
+                .clone(),
+            current_votes: BTreeMap::default(),
+            start_time_ms: GENESIS_TIME_MS,
+            current_time_ms: outcome.end_time_ms,
+            instant_lock_quorums: outcome.instant_lock_quorums.clone(),
+            current_identities: Vec::new(),
+            current_addresses_with_balance: AddressesWithBalance::default(),
+        }
+    }
+
+    /// A node whose first block after a restart is an epoch boundary must tally the same
+    /// persisted upgrade votes as the peers that never restarted.
+    ///
+    /// The epoch tally reads the protocol version counter cache directly, and it runs before
+    /// the block records its first vote, which is what loaded the cache from Drive. A reopened
+    /// Drive therefore tallied an empty cache: it kept `next = current` while the warm peers
+    /// locked in the new version. The epoch tree records the next version, so the app hashes
+    /// diverged on the lock-in block itself, and one epoch later the warm peers activated the
+    /// new version while the reopened node did not.
+    #[stack_size(4 * 1024 * 1024)]
+    #[test]
+    async fn run_chain_reopened_drive_at_epoch_boundary_locks_in_the_same_version_as_a_warm_node() {
+        const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 13;
+        const NEXT_PROTOCOL_VERSION: ProtocolVersion = 14;
+        const BLOCKS_PER_EPOCH: u64 = 60;
+        const CHAIN_SEED: u64 = 13;
+        const LOCK_IN_SEED: u64 = 7;
+        const ACTIVATION_SEED: u64 = 18;
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 50,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: Some(UpgradingInfo {
+                current_protocol_version: CURRENT_PROTOCOL_VERSION,
+                proposed_protocol_versions_with_weight: vec![(NEXT_PROTOCOL_VERSION, 1)],
+                upgrade_three_quarters_life: 0.0,
+            }),
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig {
+                quorum_size: 30,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                epoch_time_length_s: BLOCKS_PER_EPOCH,
+                ..Default::default()
+            },
+            block_spacing_ms: 1_000,
+            testing_configs: PlatformTestConfig {
+                store_platform_state: true,
+                ..PlatformTestConfig::default_minimal_verifications()
+            },
+            ..Default::default()
+        };
+
+        // The warm node runs the whole timeline without restarting: epoch 0 collects the votes,
+        // the first block of epoch 1 locks the next version in and the first block of epoch 2
+        // activates it.
+        let (warm_before_lock_in, warm_at_lock_in, warm_at_activation) = {
+            let mut warm_platform = TestPlatformBuilder::new()
+                .with_config(config.clone())
+                .with_initial_protocol_version(CURRENT_PROTOCOL_VERSION)
+                .build_with_mock_rpc();
+            let warm_epoch_zero = run_chain_for_strategy(
+                &mut warm_platform,
+                BLOCKS_PER_EPOCH,
+                strategy.clone(),
+                config.clone(),
+                CHAIN_SEED,
+                &mut None,
+                &mut None,
+            )
+            .await;
+            let warm_before_lock_in = committed_upgrade_state(warm_epoch_zero.abci_app.platform);
+            assert_eq!(warm_before_lock_in.epoch_index, 0);
+            assert_eq!(
+                warm_before_lock_in.current_protocol_version,
+                CURRENT_PROTOCOL_VERSION
+            );
+            assert_eq!(
+                warm_before_lock_in.next_epoch_protocol_version,
+                CURRENT_PROTOCOL_VERSION
+            );
+            assert_persisted_votes_reach_upgrade_threshold(
+                warm_epoch_zero.abci_app.platform,
+                NEXT_PROTOCOL_VERSION,
+            );
+
+            let lock_in_parameters = continuation_parameters(&warm_epoch_zero, 1);
+            let ChainExecutionOutcome { abci_app, .. } = warm_epoch_zero;
+            let warm_lock_in = continue_chain_for_strategy(
+                abci_app,
+                lock_in_parameters,
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(LOCK_IN_SEED),
+            )
+            .await;
+            let warm_at_lock_in = committed_upgrade_state(warm_lock_in.abci_app.platform);
+            assert_eq!(warm_at_lock_in.epoch_index, 1);
+            assert_eq!(
+                warm_at_lock_in.current_protocol_version,
+                CURRENT_PROTOCOL_VERSION
+            );
+            assert_eq!(
+                warm_at_lock_in.next_epoch_protocol_version,
+                NEXT_PROTOCOL_VERSION
+            );
+
+            let activation_parameters = continuation_parameters(&warm_lock_in, BLOCKS_PER_EPOCH);
+            let ChainExecutionOutcome { abci_app, .. } = warm_lock_in;
+            let warm_activation = continue_chain_for_strategy(
+                abci_app,
+                activation_parameters,
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(ACTIVATION_SEED),
+            )
+            .await;
+            let warm_at_activation = committed_upgrade_state(warm_activation.abci_app.platform);
+            assert_eq!(warm_at_activation.epoch_index, 2);
+            assert_eq!(
+                warm_at_activation.current_protocol_version,
+                NEXT_PROTOCOL_VERSION
+            );
+            assert_eq!(
+                warm_at_activation.next_epoch_protocol_version,
+                NEXT_PROTOCOL_VERSION
+            );
+            (warm_before_lock_in, warm_at_lock_in, warm_at_activation)
+        };
+
+        // The restarted node follows the identical chain to the end of epoch 0. Its Drive is
+        // then closed and reopened, so the epoch boundary is the first block it processes after
+        // the restart.
+        let mut restarted_platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .with_initial_protocol_version(CURRENT_PROTOCOL_VERSION)
+            .build_with_mock_rpc();
+        let restarted_epoch_zero = run_chain_for_strategy(
+            &mut restarted_platform,
+            BLOCKS_PER_EPOCH,
+            strategy.clone(),
+            config.clone(),
+            CHAIN_SEED,
+            &mut None,
+            &mut None,
+        )
+        .await;
+        assert_eq!(
+            committed_upgrade_state(restarted_epoch_zero.abci_app.platform),
+            warm_before_lock_in,
+            "both nodes must have committed the same state before the restart"
+        );
+        let lock_in_parameters = continuation_parameters(&restarted_epoch_zero, 1);
+        drop(restarted_epoch_zero);
+
+        let TempPlatform {
+            platform: mut platform_before_restart,
+            tempdir,
+        } = restarted_platform;
+        let core_rpc = std::mem::take(&mut platform_before_restart.core_rpc);
+        drop(platform_before_restart);
+        let mut restarted_platform = TempPlatform::open_with_tempdir(tempdir, config.clone());
+        restarted_platform.platform.core_rpc = core_rpc;
+        assert_eq!(
+            committed_upgrade_state(&restarted_platform.platform),
+            warm_before_lock_in,
+            "reopening must restore the committed state"
+        );
+
+        let restarted_lock_in = continue_chain_for_strategy(
+            FullAbciApplication::new(&restarted_platform.platform),
+            lock_in_parameters,
+            strategy.clone(),
+            config.clone(),
+            StrategyRandomness::SeedEntropy(LOCK_IN_SEED),
+        )
+        .await;
+        assert_eq!(
+            committed_upgrade_state(restarted_lock_in.abci_app.platform),
+            warm_at_lock_in,
+            "the reopened node must lock in the same next protocol version and app hash as the warm node"
+        );
+
+        let activation_parameters = continuation_parameters(&restarted_lock_in, BLOCKS_PER_EPOCH);
+        let ChainExecutionOutcome { abci_app, .. } = restarted_lock_in;
+        let restarted_activation = continue_chain_for_strategy(
+            abci_app,
+            activation_parameters,
+            strategy,
+            config,
+            StrategyRandomness::SeedEntropy(ACTIVATION_SEED),
+        )
+        .await;
+        assert_eq!(
+            committed_upgrade_state(restarted_activation.abci_app.platform),
+            warm_at_activation,
+            "the reopened node must activate the same protocol version with the same app hash as the warm node"
+        );
     }
 
     #[stack_size(4 * 1024 * 1024)]

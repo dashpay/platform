@@ -26,7 +26,18 @@ extension AssetLockResumeRow {
     /// Platform layer. Consumed (4) was already used to fund an
     /// identity and cannot be reused; the persisted row survives
     /// only for historical lookup.
-    var canFundIdentity: Bool { statusRaw == 2 || statusRaw == 3 }
+    ///
+    /// RecoveredFromChain (5) also qualifies: the restore scan and the
+    /// chainlock-promotion path attach a real `ChainAssetLockProof`
+    /// before writing that status, so the lock is exactly as fundable
+    /// as a ChainLocked (3) one. What is unknown for a `5` is whether
+    /// Platform already consumed it — and Platform, not the client, is
+    /// the arbiter of that: it rejects an already-spent outpoint with a
+    /// typed error. A user-driven Resume is the surface allowed to ask.
+    /// (Do not feed `5` into an automatic retry sweep — blind retries
+    /// of historical locks are the failure mode the status exists to
+    /// prevent.)
+    var canFundIdentity: Bool { statusRaw == 2 || statusRaw == 3 || statusRaw == 5 }
 
     /// `true` when the lock should be surfaced on the Resumable
     /// Registrations section at all. Lower bar than `canFundIdentity`
@@ -35,22 +46,31 @@ extension AssetLockResumeRow {
     /// in-flight crash-recovery situation has visible continuity
     /// through the IS-lock arrival.
     ///
-    /// Upper bound at `3` (ChainLocked) is load-bearing: status `4`
-    /// (Consumed) is the terminal state for a lock that already
-    /// funded an identity, and the underlying `resume_asset_lock`
-    /// rejects Consumed entries with "already Consumed — nothing
-    /// to resume". Without the upper bound, the "Delete identity
-    /// locally" action — which removes `PersistentIdentity` but
-    /// leaves the `PersistentAssetLock` alive — frees the
-    /// `(walletId, identityIndex)` slot in the anti-join and the
-    /// Consumed row would re-surface as a perpetual-spinner row
-    /// that can't be advanced.
-    var isVisibleAsResumable: Bool { statusRaw >= 1 && statusRaw <= 3 }
+    /// Excluding `4` (Consumed) is load-bearing: it is the terminal
+    /// state for a lock that already funded an identity, and the
+    /// underlying `resume_asset_lock` rejects Consumed entries with
+    /// "already Consumed — nothing to resume". Without that exclusion,
+    /// the "Delete identity locally" action — which removes
+    /// `PersistentIdentity` but leaves the `PersistentAssetLock` alive
+    /// — frees the `(walletId, identityIndex)` slot in the anti-join
+    /// and the Consumed row would re-surface as a perpetual-spinner
+    /// row that can't be advanced.
+    ///
+    /// `5` (RecoveredFromChain) IS included. It sits above the terminal
+    /// `4` numerically but is not terminal: it is what the restore scan
+    /// and the chainlock-promotion path write for a lock with proven
+    /// Core finality and unknown Platform-side consumption. Treating
+    /// this as a contiguous `1...3` range silently hid every such row,
+    /// which is the whole visible symptom — a chain-locked top-up the
+    /// user funded appears nowhere and reads as lost funds.
+    var isVisibleAsResumable: Bool {
+        (statusRaw >= 1 && statusRaw <= 3) || statusRaw == 5
+    }
 }
 
 /// Human-readable label for `PersistentAssetLock.statusRaw`. Kept
 /// here (rather than as a `case` block re-implemented in every
-/// view) so the 0/1/2/3 → label mapping has one home. Mirrors the
+/// view) so the 0...5 → label mapping has one home. Mirrors the
 /// Rust-side `AssetLockStatus` enum.
 extension PersistentAssetLock {
     var statusLabel: String {
@@ -60,6 +80,9 @@ extension PersistentAssetLock {
         case 2: return "InstantSendLocked"
         case 3: return "ChainLocked"
         case 4: return "Consumed"
+        // Core finality proven, Platform-side consumption unknown.
+        // Rendered as "Unknown(5)" before this case existed.
+        case 5: return "RecoveredFromChain"
         default: return "Unknown(\(statusRaw))"
         }
     }

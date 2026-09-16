@@ -1,11 +1,15 @@
 #[cfg(test)]
 #[allow(clippy::module_inception)]
 mod tests {
+    use crate::error::execution::ExecutionError;
+    use crate::error::Error;
+    use crate::execution::check_tx::CheckTxLevel;
     use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
         create_dummy_serialized_action, get_proving_key, process_transition,
         serialize_authorized_bundle_with_flags, setup_platform,
     };
+    use crate::platform_types::platform::PlatformRef;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use assert_matches::assert_matches;
     use dpp::consensus::basic::BasicError;
@@ -53,6 +57,48 @@ mod tests {
         );
 
         (asset_lock_proof, pk.to_vec())
+    }
+
+    /// Creates an instant asset lock proof whose instant lock authenticates one transaction while a
+    /// completely unrelated asset lock transaction is attached to the proof.
+    ///
+    /// This is the shape an attacker would submit: the quorum signature is genuine, but it commits
+    /// to the txid of a transaction that is not the one supplying the credited output. Returns the
+    /// proof together with the one-time private key of the *attached* transaction, which is the key
+    /// the transition signature has to be made with for the attack to get past signature checks.
+    fn create_instant_asset_lock_proof_with_mismatched_transaction(
+        rng: &mut StdRng,
+    ) -> (
+        dpp::identity::state_transition::asset_lock_proof::AssetLockProof,
+        Vec<u8>,
+    ) {
+        use dpp::identity::state_transition::asset_lock_proof::{
+            AssetLockProof, InstantAssetLockProof,
+        };
+
+        let (locked_proof, _locked_pk) = create_asset_lock_proof_with_key(rng);
+        let (attached_proof, attached_pk) = create_asset_lock_proof_with_key(rng);
+
+        let (AssetLockProof::Instant(locked), AssetLockProof::Instant(attached)) =
+            (locked_proof, attached_proof)
+        else {
+            panic!("the fixture should produce instant asset lock proofs");
+        };
+
+        assert_ne!(
+            locked.instant_lock().txid,
+            attached.transaction().txid(),
+            "the two fixture transactions must differ for this to be a mismatch"
+        );
+
+        (
+            AssetLockProof::Instant(InstantAssetLockProof::new(
+                locked.instant_lock().clone(),
+                attached.transaction().clone(),
+                attached.output_index(),
+            )),
+            attached_pk,
+        )
     }
 
     /// Like [`create_asset_lock_proof_with_key`], but funds the asset lock with a caller-chosen
@@ -351,6 +397,64 @@ mod tests {
                 )]
             );
         }
+
+        /// A genuine instant lock paired with an unrelated asset lock transaction must not shield
+        /// anything: the quorum only signs the lock's own txid, so without the transaction binding
+        /// check the attached transaction's output would be minted into the pool out of thin air.
+        #[test]
+        fn test_instant_lock_for_a_different_transaction_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let mut rng = StdRng::seed_from_u64(9911);
+            let (asset_lock_proof, attached_pk) =
+                create_instant_asset_lock_proof_with_mismatched_transaction(&mut rng);
+
+            // Signed with the one-time key of the attached transaction, which is the key the
+            // credited output actually pays to.
+            let transition = create_signed_shield_from_asset_lock_transition(
+                asset_lock_proof,
+                &attached_pk,
+                vec![create_dummy_serialized_action()],
+                5000,
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
+            );
+
+            let raw_transition = transition
+                .serialize_to_bytes()
+                .expect("transition should serialize");
+
+            // The mempool must reject it on first-time check as well.
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            let check_tx_result = platform
+                .check_tx(
+                    &raw_transition,
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("expected to check tx");
+            assert!(!check_tx_result.is_valid());
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::IdentityAssetLockProofLockedTransactionMismatchError(_)
+                    )
+                )]
+            );
+        }
     }
 
     // ==========================================
@@ -395,6 +499,53 @@ mod tests {
                     error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
                     ..
                 }]
+            );
+        }
+
+        #[test]
+        fn check_tx_rejects_when_proof_verification_capacity_is_exhausted() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let transition = create_signed_shield_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                vec![create_dummy_serialized_action()],
+                5000,
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
+            );
+            let raw_transition = transition
+                .serialize_to_bytes()
+                .expect("transition should serialize");
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            let _occupied_capacity = platform
+                .check_tx_proof_verifier
+                .try_acquire(usize::MAX)
+                .expect("test should occupy all proof-verification capacity");
+
+            let result = platform.check_tx(
+                &raw_transition,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            );
+
+            assert_matches!(
+                result,
+                Err(Error::Execution(
+                    ExecutionError::CheckTxProofVerificationBusy
+                ))
             );
         }
     }
@@ -908,6 +1059,7 @@ mod tests {
                 &|_| Ok(None),
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .expect("expected to verify shield_from_asset_lock proof");
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
@@ -1327,6 +1479,7 @@ mod tests {
                 &|_| Ok(None),
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .expect("expected to verify shield_from_asset_lock proof");
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");

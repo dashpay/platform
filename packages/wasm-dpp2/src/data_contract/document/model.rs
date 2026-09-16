@@ -235,6 +235,7 @@ impl DocumentWasm {
         )?;
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: doc_id,
             owner_id,
             properties,
@@ -288,7 +289,12 @@ impl DocumentWasm {
                 .map(|(k, v)| (Value::Text(k.clone()), v.clone()))
                 .collect(),
         );
-        let js_value = serialization::platform_value_to_object(&properties_value)?;
+        // Identifier-typed properties surface as base58 strings — the
+        // form where-clauses accept back, so a proven join value can be
+        // used as a pagination cursor directly. Other binary properties
+        // stay Uint8Array.
+        let js_value =
+            serialization::platform_value_to_object_with_base58_identifiers(&properties_value)?;
         Ok(js_value.into())
     }
 

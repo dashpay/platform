@@ -1,8 +1,10 @@
-use versioned_feature_core::{FeatureVersion, FeatureVersionBounds};
+use versioned_feature_core::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
 pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
+pub mod v6;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPContractVersions {
@@ -76,6 +78,15 @@ pub struct DocumentTypeSchemaVersions {
     pub should_add_creator_id: FeatureVersion,
     pub enrich_with_base_schema: FeatureVersion,
     pub find_identifier_and_binary_paths: FeatureVersion,
+    /// Folds the `refersTo` reference keyword into the parsed property type.
+    /// `None` on versions that predate the keyword: they ignore it entirely,
+    /// exactly as they parsed before it existed.
+    pub apply_property_reference: OptionalFeatureVersion,
+    /// Parses the `requiredSince` property keyword (the contract version from
+    /// which a property is required). `None` on versions that predate the
+    /// keyword: they ignore it entirely, exactly as they parsed before it
+    /// existed.
+    pub apply_required_since: OptionalFeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub max_depth: u16,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,

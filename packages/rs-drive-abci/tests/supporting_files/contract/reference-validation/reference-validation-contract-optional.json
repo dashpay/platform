@@ -1,0 +1,35 @@
+{
+  "$formatVersion": "1",
+  "id": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "message": {
+      "type": "object",
+      "documentsMutable": true,
+      "properties": {
+        "optionalUserId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "identity"
+          }
+        },
+        "note": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "note"
+      ],
+      "indices": [],
+      "additionalProperties": false
+    }
+  }
+}

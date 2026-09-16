@@ -7,14 +7,15 @@ mod sighash;
 
 pub use memo::{ShieldedMemo, MEMO_PAYLOAD_SIZE, MEMO_SIZE};
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 // Re-exported so the public path stays `dpp::shielded::compute_minimum_shielded_fee` (the
 // module and the function share a name but live in different namespaces).
 pub use compute_minimum_shielded_fee::{
-    compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
+    compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
+    compute_shielded_identity_create_fee, compute_shielded_identity_top_up_fee,
     compute_shielded_unshield_fee, compute_shielded_verification_fee,
     compute_shielded_withdrawal_fee,
 };
@@ -24,38 +25,12 @@ pub use compute_minimum_shielded_fee::{
 // re-exported (callers use the wrappers; byte-layout tests use the `_v0` impls).
 pub use sighash::{
     compute_platform_sighash, identity_create_from_shielded_extra_sighash_data,
-    identity_create_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
+    identity_create_from_shielded_extra_sighash_data_v0,
+    identity_top_up_from_shielded_extra_sighash_data,
+    identity_top_up_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
     shielded_withdrawal_extra_sighash_data_v0, unshield_extra_sighash_data,
     unshield_extra_sighash_data_v0,
 };
-
-/// Permanent storage bytes per shielded action: 344 bytes total.
-///
-/// - 312 bytes in the BulkAppendTree: 32 (`cmx`, the note commitment) + 32
-///   (`rho`) + 32 (`cv_net`, the value commitment, stored unencrypted for OVK
-///   recovery) + 216 (the encrypted note ciphertext).
-/// - 32 bytes in the nullifier tree.
-///
-/// The 216-byte encrypted note is Orchard's `TransmittedNoteCiphertext`, laid
-/// out as `epk(32) || enc_ciphertext(104) || out_ciphertext(80)`:
-///
-/// - `epk` (32): the note's ephemeral public key, published in the clear. The
-///   recipient combines it with their incoming viewing key (Diffie–Hellman) to
-///   derive the AEAD key.
-/// - `enc_ciphertext` (104): the note encrypted to the recipient (opened with
-///   the incoming viewing key) — ChaCha20-Poly1305 over the note plaintext. It
-///   holds the compact note (52 = version 1 + diversifier `d` 11 + value 8 +
-///   `rseed` 32), the memo (36), and the AEAD tag (16); the 52-byte compact
-///   prefix is what wallets trial-decrypt during sync to detect their own notes.
-/// - `out_ciphertext` (80): the note encrypted to the sender for wallet
-///   recovery (opened with the outgoing viewing key): out plaintext
-///   (64 = `pk_d` 32 + `esk` 32) + AEAD tag (16).
-///
-/// This is the standard Orchard layout except the memo is 36 bytes (`DashMemo`)
-/// instead of Zcash's 512 — the dashpay `orchard` fork makes the memo size a
-/// type parameter (`MemoSize`) — which is why each note is 216 bytes
-/// (`ENCRYPTED_NOTE_SIZE`) rather than Zcash Orchard's ~692.
-pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 344;
 
 /// Calibrated effective storage-byte cost of the Core withdrawal document a
 /// `ShieldedWithdrawal` creates.
@@ -104,6 +79,49 @@ pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 /// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
 pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
 
+/// Flat component (in effective bytes at the per-byte storage rate) for the identity-side write an
+/// `IdentityTopUpFromShieldedPool` performs on top of its per-action nullifier and note writes:
+/// the single `AddToIdentityBalance` operation, charged as part of the pool-paid flat fee (built
+/// like `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES`).
+///
+/// What the write does: the identity must already exist, so it adds no storage. It rewrites the
+/// balance element and every Merk node on the path to the root (replaced bytes, charged at the
+/// per-byte processing rate), loads the path, seeks, and rehashes the nodes. Measured at protocol
+/// version 14: 320 replaced bytes, 886 loaded bytes, 12 seeks and 14 hash calls for 175,320
+/// credits of processing. Like every other flat shielded component, that variable tree work is
+/// folded into one flat effective-byte figure priced at the full storage rate so it tracks the
+/// rate as it evolves, rather than modelled per replaced byte: 175,320 credits is 6.4 effective
+/// bytes at 27,400 credits/byte, and 8 leaves headroom for the path growing by about a node
+/// (roughly 0.7 effective bytes) each time the identity count doubles. The pool-total update is
+/// not priced separately, exactly as for the other pool-paid transitions. See
+/// [`compute_minimum_shielded_fee::compute_shielded_identity_top_up_fee`].
+pub const SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES: u64 = 8;
+
+/// Flat component (in effective bytes at the per-byte storage rate) for the identity-side writes a
+/// `ShieldFromIdentity` performs on top of its per-action note inserts: the `UpdateIdentityNonce`
+/// and `RemoveFromIdentityBalance` operations.
+///
+/// The transition's real fee is metered and only known at execution, so its stateless admission
+/// floor needs a conservative stand-in for the metered part: [`compute_minimum_shielded_fee`]
+/// (compute plus the per-action note allowance, which covers the note inserts with headroom)
+/// plus this component. Admission below `amount + floor` is refused BEFORE the Orchard proof is
+/// verified, so a short identity never occupies a proof-verification slot.
+///
+/// What the two writes do: the identity already exists, so neither adds storage. Each rewrites
+/// its element and every Merk node on the path to the root (replaced bytes, charged at the
+/// per-byte processing rate), loads the path, seeks, and rehashes the nodes. Measured at protocol
+/// version 14: the nonce update replaces 563 bytes and the balance debit 320 bytes (883 in
+/// total) for 466,760 credits of processing applied one at a time, 424,400 when batched together
+/// (shared path work). Like every other flat shielded component (`shielded_storage_bytes_per_action`,
+/// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES`), that variable tree work is folded into ONE flat
+/// effective-byte figure priced at the full storage rate so it tracks the rate as it evolves,
+/// rather than modelled per replaced byte: 466,760 credits is 17.0 effective bytes at 27,400
+/// credits/byte, and 20 leaves headroom for the path growing by about a node (roughly 0.7
+/// effective bytes) each time the identity count doubles. The pool-total update is not priced
+/// separately, exactly as for the other pool-paid transitions. See
+/// [`compute_minimum_shielded_fee::compute_shielded_identity_balance_write_fee`].
+pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 20;
+
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///
 /// Groups the fields that every shielded transition carries identically:
@@ -144,7 +162,7 @@ pub struct OrchardBundleParams {
 /// Keeps the wire shape (Uint8Array in binary, base64 string in JSON) without
 /// per-field annotations.
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
-#[derive(Debug, Clone, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

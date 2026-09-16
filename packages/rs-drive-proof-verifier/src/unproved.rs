@@ -1,3 +1,6 @@
+use crate::types::data_contracts_latest_versions::{
+    DataContractLatestVersion, DataContractsLatestVersions,
+};
 use crate::types::evonode_status::EvoNodeStatus;
 use crate::types::CurrentQuorumsInfo;
 use crate::Error;
@@ -10,8 +13,20 @@ use dpp::core_types::validator_set::v0::ValidatorSetV0;
 use dpp::core_types::validator_set::ValidatorSet;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Network, ProTxHash, PubkeyHash, QuorumHash};
+use dpp::data_contract::DataContract;
+use dpp::identifier::Identifier;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
+
+fn parse_hash_32(field: &str, bytes: &[u8]) -> Result<[u8; 32], Error> {
+    bytes.try_into().map_err(|_| Error::ProtocolError {
+        error: format!(
+            "Invalid {field} length: expected 32 bytes, received {}",
+            bytes.len()
+        ),
+    })
+}
 
 /// Trait for parsing unproved responses from the Platform.
 ///
@@ -181,34 +196,15 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                 let quorum_hashes = v0
                     .quorum_hashes
                     .into_iter()
-                    .map(|q_hash| {
-                        let mut q_hash_array = [0u8; 32];
-                        if q_hash.len() != 32 {
-                            return Err(Error::ProtocolError {
-                                error: "Invalid quorum_hash length".to_string(),
-                            });
-                        }
-                        q_hash_array.copy_from_slice(&q_hash);
-                        Ok(q_hash_array)
-                    })
+                    .map(|q_hash| parse_hash_32("quorum_hash", &q_hash))
                     .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
                 // Extract current quorum hash
-                let mut current_quorum_hash = [0u8; 32];
-                if v0.current_quorum_hash.len() != 32 {
-                    return Err(Error::ProtocolError {
-                        error: "Invalid current_quorum_hash length".to_string(),
-                    });
-                }
-                current_quorum_hash.copy_from_slice(&v0.current_quorum_hash);
+                let current_quorum_hash =
+                    parse_hash_32("current_quorum_hash", &v0.current_quorum_hash)?;
 
-                let mut last_block_proposer = [0u8; 32];
-                if v0.last_block_proposer.len() != 32 {
-                    return Err(Error::ProtocolError {
-                        error: "Invalid last_block_proposer length".to_string(),
-                    });
-                }
-                last_block_proposer.copy_from_slice(&v0.last_block_proposer);
+                let last_block_proposer =
+                    parse_hash_32("last_block_proposer", &v0.last_block_proposer)?;
 
                 // Extract validator sets
                 let validator_sets =
@@ -216,8 +212,8 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                         .into_iter()
                         .map(|vs| {
                             // Parse the ValidatorSetV0
-                            let mut quorum_hash = [0u8; 32];
-                            quorum_hash.copy_from_slice(&vs.quorum_hash);
+                            let quorum_hash =
+                                parse_hash_32("validator_set.quorum_hash", &vs.quorum_hash)?;
 
                             // Parse ValidatorV0 members
                             let members = vs
@@ -552,6 +548,31 @@ mod tests {
     }
 
     #[test]
+    fn test_current_quorums_info_rejects_malformed_nested_quorum_hashes() {
+        for invalid_length in [0, 1, 31, 33, 1024] {
+            let mut response = build_valid_quorums_info_response();
+            if let Some(get_current_quorums_info_response::Version::V0(ref mut v0)) =
+                response.version
+            {
+                v0.validator_sets[0].quorum_hash = vec![0u8; invalid_length];
+            }
+
+            let result = CurrentQuorumsInfo::maybe_from_unproved_with_metadata(
+                platform::GetCurrentQuorumsInfoRequest { version: None },
+                response,
+                Network::Testnet,
+                PlatformVersion::latest(),
+            );
+
+            let error = result.expect_err("malformed nested quorum hash must return an error");
+            assert!(
+                matches!(error, Error::ProtocolError { ref error } if error.contains("validator_set.quorum_hash")),
+                "unexpected error for length {invalid_length}: {error:?}"
+            );
+        }
+    }
+
+    #[test]
     fn test_current_quorums_info_none_metadata() {
         let mut response = build_valid_quorums_info_response();
 
@@ -627,5 +648,188 @@ mod tests {
         assert_eq!(status.time.local, 1700000000);
         assert_eq!(status.time.block, Some(1699999900));
         assert_eq!(status.time.epoch, Some(42));
+    }
+}
+
+impl FromUnproved<platform::GetDataContractsLatestVersionsRequest> for DataContractsLatestVersions {
+    type Request = platform::GetDataContractsLatestVersionsRequest;
+    type Response = platform::GetDataContractsLatestVersionsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_data_contracts_latest_versions_response::get_data_contracts_latest_versions_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_data_contracts_latest_versions_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let versions = match v0.result {
+            Some(V0Result::DataContractsLatestVersions(versions)) => versions
+                .entries
+                .into_iter()
+                .map(|entry| {
+                    let id = Identifier::from_bytes(&entry.identifier).map_err(|e| {
+                        Error::ProtocolError {
+                            error: e.to_string(),
+                        }
+                    })?;
+                    let latest_version = entry
+                        .version
+                        .map(|version| {
+                            let data_contract = entry
+                                .data_contract
+                                .map(|bytes| {
+                                    DataContract::versioned_deserialize_untrusted(
+                                        &bytes,
+                                        false,
+                                        platform_version,
+                                    )
+                                })
+                                .transpose()
+                                .map_err(|e| Error::ProtocolError {
+                                    error: e.to_string(),
+                                })?;
+                            Ok::<_, Error>(DataContractLatestVersion {
+                                version,
+                                data_contract,
+                            })
+                        })
+                        .transpose()?;
+                    Ok((id, latest_version))
+                })
+                .collect::<Result<DataContractsLatestVersions, Error>>()
+                .map(Some)?,
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved data contract versions, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((versions, metadata))
+    }
+}
+
+#[cfg(test)]
+mod data_contracts_latest_versions_tests {
+    use super::*;
+    use dapi_grpc::platform::v0::get_data_contracts_latest_versions_response::{
+        get_data_contracts_latest_versions_response_v0::Result as V0Result,
+        DataContractLatestVersionEntry, DataContractsLatestVersions as ProtoLatestVersions,
+        GetDataContractsLatestVersionsResponseV0, Version,
+    };
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::serialization::PlatformSerializableWithPlatformVersion;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+
+    fn response(result: Option<V0Result>) -> platform::GetDataContractsLatestVersionsResponse {
+        platform::GetDataContractsLatestVersionsResponse {
+            version: Some(Version::V0(GetDataContractsLatestVersionsResponseV0 {
+                result,
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        }
+    }
+
+    fn parse(
+        response: platform::GetDataContractsLatestVersionsResponse,
+    ) -> Result<Option<DataContractsLatestVersions>, Error> {
+        <DataContractsLatestVersions as FromUnproved<
+            platform::GetDataContractsLatestVersionsRequest,
+        >>::maybe_from_unproved(
+            platform::GetDataContractsLatestVersionsRequest::default(),
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+    }
+
+    #[test]
+    fn version_only_entries_carry_no_contract_and_missing_ids_map_to_none() {
+        let versions = parse(response(Some(V0Result::DataContractsLatestVersions(
+            ProtoLatestVersions {
+                entries: vec![
+                    DataContractLatestVersionEntry {
+                        identifier: vec![1; 32],
+                        version: Some(7),
+                        data_contract: None,
+                    },
+                    DataContractLatestVersionEntry {
+                        identifier: vec![2; 32],
+                        version: None,
+                        data_contract: None,
+                    },
+                ],
+            },
+        ))))
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(versions.0.len(), 2);
+        assert_eq!(versions.version_of(&Identifier::new([1; 32])), Some(7));
+        assert!(versions.0[&Identifier::new([1; 32])]
+            .as_ref()
+            .expect("found")
+            .data_contract
+            .is_none());
+        assert_eq!(versions.0[&Identifier::new([2; 32])], None);
+        assert_eq!(versions.version_of(&Identifier::new([3; 32])), None);
+    }
+
+    #[test]
+    fn included_contract_is_deserialized() {
+        let platform_version = PlatformVersion::latest();
+        let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let bytes = contract
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialize");
+
+        let versions = parse(response(Some(V0Result::DataContractsLatestVersions(
+            ProtoLatestVersions {
+                entries: vec![DataContractLatestVersionEntry {
+                    identifier: contract.id().to_vec(),
+                    version: Some(contract.version()),
+                    data_contract: Some(bytes),
+                }],
+            },
+        ))))
+        .expect("parse")
+        .expect("present");
+
+        let entry = versions.0[&contract.id()].clone().expect("found");
+        assert_eq!(entry.version, contract.version());
+        assert_eq!(entry.data_contract, Some(contract));
+    }
+
+    #[test]
+    fn a_proof_where_values_were_expected_is_rejected() {
+        let err = parse(response(Some(V0Result::Proof(platform::Proof::default())))).unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn missing_metadata_is_rejected() {
+        let response = platform::GetDataContractsLatestVersionsResponse {
+            version: Some(Version::V0(GetDataContractsLatestVersionsResponseV0 {
+                result: None,
+                metadata: None,
+            })),
+        };
+        let err = parse(response).unwrap_err();
+        assert!(matches!(err, Error::EmptyResponseMetadata), "got: {err:?}");
     }
 }

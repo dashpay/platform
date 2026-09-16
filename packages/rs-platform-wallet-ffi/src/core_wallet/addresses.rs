@@ -5,7 +5,6 @@ use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
-use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -65,7 +64,12 @@ pub unsafe extern "C" fn core_wallet_set_gap_limit(
     account_index: u32,
     gap_limit: u32,
 ) -> PlatformWalletFFIResult {
-    let source: AccountTypePreference = account_type.into();
+    let Some(source) = account_type.single_preference() else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "AllSpendable pools multiple accounts; set gap limits per account".to_string(),
+        );
+    };
 
     let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
         runtime().block_on(wallet.set_gap_limit(source, account_index, gap_limit))

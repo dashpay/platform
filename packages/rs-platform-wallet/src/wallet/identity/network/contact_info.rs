@@ -114,6 +114,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     operator: WhereOperator::Equal,
                     value: platform_value!(identity_id),
                 }],
+                time_range_clauses: vec![],
+                sub_queries: vec![],
                 group_by: vec![],
                 having: vec![],
                 // Load-bearing, not cosmetic: drive answers a bare
@@ -126,6 +128,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     ascending: true,
                 }],
                 limit: CONTACT_INFO_PAGE,
+                offset: None,
                 start: start.clone(),
             };
 
@@ -378,23 +381,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             op: PendingContactCryptoOp::ContactInfoDecrypt,
             enqueued_at_ms,
         };
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-                return;
-            };
-            let Some(managed) = info.identity_manager.managed_identity_mut(owner_id) else {
-                tracing::warn!(
-                    owner = %owner_id,
-                    "contactInfo-decrypt enqueue for a non-resident identity; dropping"
-                );
-                return;
-            };
-            upsert_pending_contact_crypto(
-                managed.dashpay_pending_contact_crypto_mut(),
-                entry.clone(),
+        // Serialize the queue write with identity removal under the same guard.
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(owner_id) else {
+            tracing::warn!(
+                owner = %owner_id,
+                "contactInfo-decrypt enqueue for a non-resident identity; dropping"
             );
-        }
+            return;
+        };
+        upsert_pending_contact_crypto(managed.dashpay_pending_contact_crypto_mut(), entry.clone());
         let changeset = PlatformWalletChangeSet {
             pending_contact_crypto_added: vec![entry],
             ..Default::default()
@@ -725,6 +724,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         properties.insert("privateData".to_string(), Value::Bytes(private_data));
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: doc_id.unwrap_or_else(|| Identifier::from([0u8; 32])),
             owner_id: *identity_id,
             properties,
@@ -772,5 +772,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             "Published contactInfo document"
         );
         Ok(ContactInfoPublishOutcome::Published)
+    }
+}
+
+#[cfg(test)]
+mod pending_enqueue_tests {
+    #[tokio::test]
+    async fn should_serialize_contact_info_enqueue_with_identity_removal() {
+        let (iw, owner, backend) = super::super::pending_crypto_tests::fixture().await;
+        iw.dashpay().enqueue_contact_info_decrypt(&owner).await;
+        assert_eq!(backend.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
+        super::super::pending_crypto_tests::remove_owner(&iw, &owner).await;
+        iw.dashpay().enqueue_contact_info_decrypt(&owner).await;
+        assert_eq!(backend.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }

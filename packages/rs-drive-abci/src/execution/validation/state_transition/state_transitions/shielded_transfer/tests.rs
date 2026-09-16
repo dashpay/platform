@@ -439,7 +439,7 @@ mod tests {
     //   min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
     //
     // The exact per-action / per-bundle constants live in `dpp` and evolve across protocol versions
-    // (e.g. `SHIELDED_STORAGE_BYTES_PER_ACTION` changed when `cv_net` was added). Rather than
+    // (e.g. the storage allowance changed when `cv_net` was added). Rather than
     // hardcode the resulting numbers (which silently go stale when a constant changes), these tests
     // source the threshold from the canonical `dpp::shielded::compute_minimum_shielded_fee` via the
     // module-level `minimum_fee(num_actions)` helper, so the fixture fee always matches the consensus
@@ -1209,6 +1209,7 @@ mod tests {
                 &|_| Ok(None),
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .expect("expected to verify shielded transfer proof");
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");

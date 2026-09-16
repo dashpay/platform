@@ -36,6 +36,7 @@ impl DriveDocumentQuery<'_> {
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<Document>), Error> {
+        self.ensure_no_sub_queries("verify_proof")?;
         match platform_version.drive.methods.verify.document.verify_proof {
             0 => self.verify_proof_v0(proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
@@ -77,6 +78,8 @@ mod tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let result = query.verify_proof(&[], &platform_version);

@@ -21,15 +21,14 @@ struct CreateInvitationSheet: View {
 
     /// 1 DASH = 100,000,000 duffs.
     private static let duffsPerDash: UInt64 = 100_000_000
-    /// Rust-enforced cap (`MAX_INVITATION_DUFFS`, 0.05 DASH). Mirrored here so the
-    /// UI rejects an over-cap amount before the FFI does.
-    private static let maxInvitationDuffs: UInt64 = 5_000_000
-    /// Rust-enforced floor (`MIN_INVITATION_DUFFS`, 0.003 DASH). A smaller voucher
-    /// can't fund identity registration (which needs ~0.00228 DASH) plus the
-    /// asset-lock overhead, so it could be neither claimed nor reclaimed. Rust is
-    /// the source of truth and rejects a sub-min amount at create; this mirror
-    /// just rejects it in the UI first.
-    private static let minInvitationDuffs: UInt64 = 300_000
+    /// Rust-enforced cap, read from the SDK — the UI rejects an over-cap amount
+    /// before the FFI does, using Rust's own value rather than a copy of it.
+    private static var maxInvitationDuffs: UInt64 { ManagedPlatformWallet.maxInvitationDuffs }
+    /// Rust-enforced floor, read from the SDK. A smaller voucher can't fund
+    /// identity registration plus the asset-lock overhead, so it could be neither
+    /// claimed nor reclaimed. Rust is the source of truth and rejects a sub-min
+    /// amount at create; the UI just rejects it first.
+    private static var minInvitationDuffs: UInt64 { ManagedPlatformWallet.minInvitationDuffs }
     /// BIP44 standard account that supplies the asset-lock's funding UTXOs. The
     /// example app funds identity operations from account 0; the `IdentityInvitation`
     /// funding type derives the voucher credit key internally (not this account).
@@ -72,6 +71,25 @@ struct CreateInvitationSheet: View {
         return UInt64(duffs)
     }
 
+    /// The Rust-enforced bounds rendered as bare DASH decimals for the help
+    /// copy, so the user-facing numbers track the constants instead of a
+    /// hand-written mirror of them.
+    private static var minDashText: String { formatDash(minInvitationDuffs) }
+    private static var maxDashText: String { formatDash(maxInvitationDuffs) }
+
+    /// duffs → a bare DASH decimal string, trailing zeros stripped ("0.26", not
+    /// "0.26000000").
+    private static func formatDash(_ duffs: UInt64) -> String {
+        let dash = Double(duffs) / Double(duffsPerDash)
+        let fmt = NumberFormatter()
+        fmt.numberStyle = .decimal
+        fmt.minimumFractionDigits = 0
+        fmt.maximumFractionDigits = 8
+        fmt.usesGroupingSeparator = false
+        fmt.decimalSeparator = "."
+        return fmt.string(from: NSNumber(value: dash)) ?? String(format: "%g", dash)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -109,7 +127,7 @@ struct CreateInvitationSheet: View {
                 Text("DASH")
                     .foregroundColor(.secondary)
             }
-            Text("Funds a one-time voucher your friend uses to register their identity and a username. Between 0.003 and 0.05 DASH.")
+            Text("Funds a one-time voucher your friend uses to register their identity and a username. Between \(Self.minDashText) and \(Self.maxDashText) DASH.")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -147,7 +165,7 @@ struct CreateInvitationSheet: View {
             .accessibilityIdentifier("dashpay.invite.create.submit")
         } footer: {
             if amountDuffs == nil {
-                Text("Minimum 0.003 DASH — a smaller voucher can't fund identity registration. Maximum 0.05 DASH.")
+                Text("Minimum \(Self.minDashText) DASH — a smaller voucher can't fund identity registration. Maximum \(Self.maxDashText) DASH.")
                     .foregroundColor(.orange)
             }
         }

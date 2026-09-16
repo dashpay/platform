@@ -1,18 +1,10 @@
 //! Safe integer conversions for the SQLite `INTEGER` column boundary.
 //!
-//! SQLite's `INTEGER` affinity is `i64`. Rust's wallet types (credits
-//! balances, durations cast to milliseconds, monotonic-max heights,
-//! token balances) are `u64`. Naively `as i64` casting wraps values
-//! ≥ `i64::MAX` to negative numbers and silently sign-extends them
-//! back to large `u64` on read.
-//!
-//! Every cross-boundary cast in the writer / reader paths runs through
-//! one of these helpers and produces a typed
+//! SQLite's `INTEGER` affinity is `i64`, but wallet types are `u64`; a
+//! naive `as i64` wraps values ≥ `i64::MAX` to negatives and sign-extends
+//! them back on read. Every durable boundary cast routes through one of
+//! these helpers, which return a typed
 //! [`WalletStorageError::IntegerOverflow`] on out-of-range input.
-//! `clippy::cast_possible_wrap` and `cast_sign_loss` warnings stay
-//! allowed crate-wide because many in-crate casts are bounded (e.g.
-//! `u8` tags, `u32` indices ≤ `i32::MAX`); the contract is that
-//! *durable boundary casts* go through this module.
 
 use crate::sqlite::error::WalletStorageError;
 
@@ -23,6 +15,8 @@ pub enum SafeCastTarget {
     I64,
     #[error("u64")]
     U64,
+    #[error("u32")]
+    U32,
 }
 
 /// Cast `value: u64` to `i64`, surfacing
@@ -40,23 +34,61 @@ pub fn u64_to_i64(field: &'static str, value: u64) -> Result<i64, WalletStorageE
 }
 
 /// Cast `value: i64` to `u64`, surfacing
-/// [`WalletStorageError::IntegerOverflow`] when the database stored
-/// a negative value (possible if a previous build wrote a wrapped
-/// value before this helper existed).
+/// [`WalletStorageError::IntegerOverflow`] when the database stored a
+/// negative value.
 pub fn i64_to_u64(field: &'static str, value: i64) -> Result<u64, WalletStorageError> {
     u64::try_from(value).map_err(|_| WalletStorageError::IntegerOverflow {
         field,
-        // For negative inputs the wrapped representation is what we
-        // surface — the operator looks at the original bits, not the
-        // post-cast u64 garbage.
+        // Surface the original bit pattern, not post-cast garbage.
         value: value as u64,
         target: SafeCastTarget::U64,
+    })
+}
+
+/// Cast a stored `i64` column to `u32`, surfacing
+/// [`WalletStorageError::IntegerOverflow`] when the value is negative or
+/// exceeds `u32::MAX`. The single boundary helper for the readers that
+/// map `INTEGER` columns (heights, account/address indices, nonces) back
+/// to their `u32` Rust types.
+///
+/// `field` is a compile-time identifier (e.g.
+/// `"core_sync_state.synced_height"`) naming the column so the resulting
+/// error is actionable.
+pub fn i64_to_u32(field: &'static str, value: i64) -> Result<u32, WalletStorageError> {
+    u32::try_from(value).map_err(|_| WalletStorageError::IntegerOverflow {
+        field,
+        value: value as u64,
+        target: SafeCastTarget::U32,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn i64_to_u32_happy_path() {
+        assert_eq!(i64_to_u32("x", 0).unwrap(), 0);
+        assert_eq!(i64_to_u32("x", u32::MAX as i64).unwrap(), u32::MAX);
+    }
+
+    #[test]
+    fn i64_to_u32_overflow_high_and_negative() {
+        assert!(matches!(
+            i64_to_u32("h", i64::from(u32::MAX) + 1).unwrap_err(),
+            WalletStorageError::IntegerOverflow {
+                target: SafeCastTarget::U32,
+                ..
+            }
+        ));
+        assert!(matches!(
+            i64_to_u32("h", -1).unwrap_err(),
+            WalletStorageError::IntegerOverflow {
+                target: SafeCastTarget::U32,
+                ..
+            }
+        ));
+    }
 
     #[test]
     fn u64_to_i64_happy_path() {

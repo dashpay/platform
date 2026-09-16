@@ -14,6 +14,38 @@ public final class PersistentIndex {
     public var nullSearchable: Bool
     public var contested: Bool
 
+    // Count / sum axes (meta-schema v3, protocol version 14). Every
+    // keyword is persisted VERBATIM as authored in the contract JSON —
+    // `countable` keeps its boolean-or-string spelling ("true" /
+    // "countable" / "countableAllowingOffset"), and the `averageable` /
+    // `rangeAverageable` sugar is stored as-is rather than desugared.
+    // Interpreting the spellings (DPP's normalization rules) is protocol
+    // logic and stays out of the SDK; display layers map them for
+    // presentation.
+    public var countable: String?
+    public var rangeCountable: Bool = false
+    public var summable: String?
+    public var rangeSummable: Bool = false
+    public var averageable: String?
+    public var rangeAverageable: Bool = false
+
+    // Ranking axes (each adds one ordered secondary tree)
+    public var rankedCountable: Bool = false
+    public var rankedSummable: Bool = false
+    public var rankedAverageable: Bool = false
+
+    // indexOnly member key (the property whose value keys each entry).
+    // Persisted only when declared; an omitted terminal on an indexOnly
+    // type means $ownerId per DPP, a default display layers apply.
+    public var terminal: String?
+
+    // Preallocation: creating the refersTo-referenced document also
+    // creates this index's trees, and deleting the last entry keeps them
+    public var preallocated: Bool = false
+
+    // Time-range bucketing transform ({on, range, step, phase}), if any
+    public var timeRangeJSON: Data?
+
     // Properties in the index with sorting
     public var propertiesJSON: Data
 
@@ -59,6 +91,13 @@ extension PersistentIndex {
 
     public var contestedDetails: [String: Any]? {
         guard let data = contestedDetailsJSON else { return nil }
+        return try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
+    }
+
+    /// The timeRange transform ({on, range, step, phase}) if the index
+    /// buckets its first property into time ranges
+    public var timeRange: [String: Any]? {
+        guard let data = timeRangeJSON else { return nil }
         return try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
     }
 }

@@ -10,7 +10,7 @@
 //! `platform-wallet` crate"; the Swift side only renders the form,
 //! marshals the values, and persists the confirmed document.
 //!
-//! Mirrors the post-#3541 identity-flow shape:
+//! Mirrors the identity-flow shape:
 //!   - The library function takes a `Signer<IdentityPublicKey>`
 //!     reference so the FFI's external `KeychainSigner` trampoline can
 //!     route signing back to Swift / Keychain without crossing seed
@@ -54,7 +54,7 @@ use dash_sdk::platform::documents::transitions::{
     DocumentTransferTransitionBuilder,
 };
 use dash_sdk::platform::transition::put_document::PutDocument;
-use dash_sdk::platform::{DocumentQuery, Fetch};
+use dash_sdk::platform::{ContextProvider, DocumentQuery, Fetch};
 
 use crate::error::PlatformWalletError;
 
@@ -116,7 +116,7 @@ where
 /// flow correct for *any* document type — e.g. DPNS `preorder` requires
 /// `HIGH`, so both `CRITICAL` and `HIGH` keys qualify, but `MEDIUM` does
 /// not.
-fn allowed_signing_security_levels(requirement: SecurityLevel) -> Vec<SecurityLevel> {
+pub(super) fn allowed_signing_security_levels(requirement: SecurityLevel) -> Vec<SecurityLevel> {
     if requirement == SecurityLevel::MASTER {
         return vec![SecurityLevel::MASTER];
     }
@@ -130,6 +130,19 @@ fn allowed_signing_security_levels(requirement: SecurityLevel) -> Vec<SecurityLe
 }
 
 impl IdentityWallet {
+    /// Register a freshly-fetched data contract into the SDK's shared
+    /// context provider so the returned-proof verification after a document
+    /// state-transition broadcast can resolve it. Without this, the mobile
+    /// `TrustedHttpContextProvider` — which never fetches contracts itself —
+    /// returns `None` for the contract and proof verification fails with
+    /// "unknown contract ... in document verification", even though the
+    /// write landed on-chain.
+    pub(super) fn register_contract_for_proof_verification(&self, contract: &DataContract) {
+        if let Some(provider) = self.sdk.context_provider() {
+            provider.register_data_contract(Arc::new(contract.clone()));
+        }
+    }
+
     /// Create a new revision-1 document on `contract_id`'s
     /// `document_type_name` owned by `owner_identity_id`, and broadcast
     /// it to Platform.
@@ -191,6 +204,9 @@ impl IdentityWallet {
                     "Data contract {contract_id} not found on Platform; cannot create document"
                 ))
             })?;
+
+        // Make the contract resolvable for the post-broadcast proof check.
+        self.register_contract_for_proof_verification(&data_contract);
 
         // Owned `DocumentType` — `put_to_platform_and_wait_for_response`
         // takes the document type by value.
@@ -292,9 +308,14 @@ impl IdentityWallet {
             )
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to put document to platform: {e}"
-                ))
+                // Preserve a structured key-unavailable signer failure so the
+                // FFI boundary can still restore code 31; only genuine
+                // operation failures get stringified into `InvalidIdentityData`.
+                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to put document to platform: {e}"
+                    ))
+                })
             })?;
 
         Ok(confirmed)
@@ -308,7 +329,7 @@ impl IdentityWallet {
     /// transfer / set-price / purchase) — each needs the contract as an
     /// `Arc<DataContract>` for both the single-document fetch query and
     /// the transition builder.
-    async fn fetch_contract_arc_for_document_op(
+    pub(super) async fn fetch_contract_arc_for_document_op(
         &self,
         contract_id: &Identifier,
         document_type_name: &str,
@@ -334,6 +355,9 @@ impl IdentityWallet {
                     "Document type {document_type_name:?} not found on contract {contract_id}: {e}"
                 ))
             })?;
+        // Make the contract resolvable for the post-broadcast proof check
+        // (covers replace/delete/transfer/set-price/purchase).
+        self.register_contract_for_proof_verification(&data_contract);
         Ok(Arc::new(data_contract))
     }
 
@@ -511,7 +535,14 @@ impl IdentityWallet {
             .document_replace(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!("Failed to replace document: {e}"))
+                // Preserve a structured key-unavailable signer failure so the
+                // FFI boundary can still restore code 31; only genuine
+                // operation failures get stringified into `InvalidIdentityData`.
+                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to replace document: {e}"
+                    ))
+                })
             })?;
         Ok(confirmed)
     }
@@ -556,7 +587,14 @@ impl IdentityWallet {
             .document_delete(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!("Failed to delete document: {e}"))
+                // Preserve a structured key-unavailable signer failure so the
+                // FFI boundary can still restore code 31; only genuine
+                // operation failures get stringified into `InvalidIdentityData`.
+                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to delete document: {e}"
+                    ))
+                })
             })?;
         Ok(deleted_id)
     }
@@ -611,9 +649,15 @@ impl IdentityWallet {
             .document_transfer(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to transfer document: {e}"
-                ))
+                // Typed trade rejections (not-for-sale / price-changed /
+                // insufficient credits) and the structured key-unavailable
+                // signer failure survive; only genuine operation failures
+                // get stringified into `InvalidIdentityData`.
+                crate::error::promote_document_trade_error_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to transfer document: {e}"
+                    ))
+                })
             })?;
         Ok(confirmed)
     }
@@ -668,9 +712,14 @@ impl IdentityWallet {
             .document_set_price(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to set document price: {e}"
-                ))
+                // Typed trade rejections and the structured key-unavailable
+                // signer failure survive; only genuine operation failures
+                // get stringified into `InvalidIdentityData`.
+                crate::error::promote_document_trade_error_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to set document price: {e}"
+                    ))
+                })
             })?;
         Ok(confirmed)
     }
@@ -730,9 +779,17 @@ impl IdentityWallet {
             .document_purchase(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to purchase document: {e}"
-                ))
+                // Typed trade rejections — crucially the price-changed race
+                // (40109), where the consensus equality check is the backstop
+                // behind the wallet's pre-flight — and the structured
+                // key-unavailable signer failure survive; only genuine
+                // operation failures get stringified into
+                // `InvalidIdentityData`.
+                crate::error::promote_document_trade_error_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to purchase document: {e}"
+                    ))
+                })
             })?;
         Ok(confirmed)
     }

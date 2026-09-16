@@ -18,6 +18,10 @@ public final class PersistentDocumentType {
     public var documentsCanBeDeleted: Bool
     public var documentsTransferable: Bool
 
+    // indexOnly storage mode (meta-schema v3, protocol version 14): no
+    // stored rows — the index entries ARE the documents
+    public var indexOnly: Bool = false
+
     // Required fields
     public var requiredFieldsJSON: Data?
 

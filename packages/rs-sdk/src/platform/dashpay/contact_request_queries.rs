@@ -105,6 +105,8 @@ impl Sdk {
                 data_contract: dashpay_contract.clone(),
                 document_type_name: "contactRequest".to_string(),
                 where_clauses: where_clauses.clone(),
+                time_range_clauses: vec![],
+                sub_queries: vec![],
                 group_by: vec![],
                 having: vec![],
                 // Load-bearing: a bare secondary-index equality with no
@@ -118,6 +120,7 @@ impl Sdk {
                     ascending: true,
                 }],
                 limit: CONTACT_REQUEST_PAGE_SIZE,
+                offset: None,
                 start: start.clone(),
             };
 

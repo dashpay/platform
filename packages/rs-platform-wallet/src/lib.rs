@@ -13,14 +13,16 @@
 #![allow(clippy::doc_overindented_list_items)]
 
 pub mod address_paths;
+pub(crate) mod broadcast_outcome;
 pub mod broadcaster;
 pub mod changeset;
 pub mod error;
 pub mod events;
 pub mod manager;
+pub mod masternode;
 pub mod spv;
-#[cfg(test)]
-pub(crate) mod test_support;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_support;
 mod util;
 pub mod wallet;
 
@@ -56,11 +58,20 @@ pub use spv::SpvRuntime;
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::asset_lock::AssetLockFunding;
-pub use wallet::core::CoreWallet;
 pub use wallet::core::WalletBalance;
+pub use wallet::core::{
+    CoreWallet, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
+};
+pub use wallet::signed_payment_registry::{
+    RegisterWrongGeneration, ReservationToken, SignedPaymentError, SignedPaymentRegistry,
+};
 // DashPay types + crypto helpers re-exported through the identity
 // domain (they live under `identity::types::dashpay::*` and
 // `identity::crypto::*` internally).
+pub use masternode::{
+    aggregate_masternodes, ListMembership, MasternodeKeyRole, MasternodeRecord, MasternodeSource,
+    MasternodeStatus, TrackedMasternode, TrackedMasternodeSnapshot, WalletMasternodes,
+};
 pub use wallet::core_address_key::CoreAddressPrivateKey;
 pub use wallet::identity::network::{
     derive_identity_auth_keypair, AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened,
@@ -75,8 +86,15 @@ pub use wallet::identity::{
     IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData, ProfileUpdate,
     RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
 };
+pub use wallet::masternode_withdrawal::{
+    MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,
+};
 pub use wallet::platform_wallet::PlatformWalletInfo;
+#[cfg(feature = "shielded")]
+pub use wallet::platform_wallet::ShieldedShieldPreflight;
 pub use wallet::provider_key_at_index::{ProviderDerivedKey, ProviderKeyKind};
+#[cfg(feature = "shielded")]
+pub use wallet::shielded::operations::shield_fee_reserve_credits;
 pub use wallet::PlatformAddressTag;
 pub use wallet::PlatformWallet;
 
@@ -88,6 +106,7 @@ pub use changeset::{
     IdentityManagerStartState, PlatformAddressBalanceEntry, PlatformAddressChangeSet,
     PlatformAddressSyncStartState, PlatformWalletChangeSet, TokenBalanceChangeSet,
 };
+pub use changeset::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 
 pub use key_wallet_manager;
 

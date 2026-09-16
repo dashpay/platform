@@ -17,11 +17,12 @@ use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v1::DRIVE_ABCI_METHOD_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
-    DriveAbciDocumentQueryHelperVersions, DriveAbciQueryAddressFundsVersions,
-    DriveAbciQueryDataContractVersions, DriveAbciQueryGroupVersions,
-    DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions,
-    DriveAbciQueryShieldedVersions, DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions,
-    DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+    DriveAbciDataContractQueryHelperVersions, DriveAbciDocumentQueryHelperVersions,
+    DriveAbciQueryAddressFundsVersions, DriveAbciQueryDataContractVersions,
+    DriveAbciQueryGroupVersions, DriveAbciQueryIdentityVersions,
+    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQueryShieldedVersions,
+    DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions,
+    DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
 };
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v1::DRIVE_ABCI_VALIDATION_VERSIONS_V1;
@@ -128,6 +129,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             platform_state: DrivePlatformStateMethodVersions {
                 fetch_platform_state_bytes: 0,
                 store_platform_state_bytes: 0,
+                fetch_platform_state_recent_bytes: 0,
+                store_platform_state_recent_bytes: 0,
             },
             fetch: DriveFetchMethodVersions { fetch_elements: 0 },
             prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
@@ -153,7 +156,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 read_total_balance: 0,
                 notes_count: 0,
             },
-            saved_block_transactions: DriveSavedBlockTransactionsMethodVersions { store_address_balances: 0, fetch_address_balances: 0, compact_address_balances: 0, cleanup_expired_address_balances: 0, max_blocks_before_compaction: 64, max_addresses_before_compaction: 2048 },
+            saved_block_transactions: DriveSavedBlockTransactionsMethodVersions { store_address_balances: 0, fetch_address_balances: 0, prove_compacted_address_balance_changes: 0, compact_address_balances: 0, cleanup_expired_address_balances: 0, max_blocks_before_compaction: 64, max_addresses_before_compaction: 2048 },
         },
         grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
         grove_version: GROVE_V1,
@@ -179,6 +182,9 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             },
             document_query_helpers: DriveAbciDocumentQueryHelperVersions {
                 compute_aggregate_mode_and_check_limit: 0,
+            },
+            data_contract_query_helpers: DriveAbciDataContractQueryHelperVersions {
+                latest_versions_read: 0,
             },
             prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions {
                 balance: FeatureVersionBounds {
@@ -315,6 +321,16 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 data_contracts: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                data_contracts_by_range: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                data_contracts_latest_versions: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
@@ -500,15 +516,26 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     system_limits: SystemLimits {
         estimated_contract_max_serialized_size: 16384,
         max_field_value_size: 5000,
+        max_document_value_depth: None,
         max_state_transition_size: 20000, // Is different in this test version, not sure if this was a mistake
+        // Load-bearing for state correctness, not just for throughput — see
+        // SystemLimits::max_transitions_in_documents_batch. Raising it here
+        // arms the defect inside drive-abci's own protocol-upgrade suite.
         max_transitions_in_documents_batch: 1,
         withdrawal_transactions_per_block_limit: 4,
         retry_signing_expired_withdrawal_documents_per_block_limit: 1,
         max_withdrawal_amount: 50_000_000_000_000,
+        daily_withdrawal_limit_percent: None,
+        max_daily_withdrawal_amount: None,
         min_withdrawal_amount: 190_000,
+        core_dust_relay_fee_per_kb: None,
         max_contract_group_size: 256,
         max_token_redemption_cycles: 128,
         max_shielded_transition_actions: 16,
+        max_time_range_overlap_factor: None,
+        max_time_range_ttl_seconds: None,
+        min_time_range_ttl_drop_operations_per_write: None,
+        minimum_grovedb_proof_envelope_version: 0,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,

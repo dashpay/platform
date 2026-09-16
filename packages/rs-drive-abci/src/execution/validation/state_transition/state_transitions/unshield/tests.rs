@@ -957,6 +957,7 @@ mod tests {
                 &|_| Ok(None),
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .expect("expected to verify unshield proof");
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
@@ -1225,7 +1226,8 @@ mod tests {
                 &padded_proof,
                 &|_| Ok(None),
                 platform_version,
-            );
+            )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()));
             assert!(
                 production_result.is_err(),
                 "production unshield verifier must reject a padded proof, got {:?}",

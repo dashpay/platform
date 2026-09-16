@@ -1446,6 +1446,28 @@ struct TransitionDetailView: View {
     return result
   }
 
+  /// Resolve the selected persisted token and apply its protocol decimal
+  /// scale. This keeps the generic transition forms aligned with the
+  /// dedicated token screens and avoids Double rounding / hard-coded 8s.
+  private func parseTransitionTokenAmount(
+    _ text: String,
+    selection: String
+  ) throws -> UInt64 {
+    let components = selection.split(separator: ":")
+    guard components.count == 2,
+          let position = Int(components[1]),
+          let token = dataContracts
+            .compactMap(\.tokens)
+            .flatMap({ $0 })
+            .first(where: {
+              $0.contractIdBase58 == String(components[0]) && $0.position == position
+            }),
+          let amount = parseTokenAmount(text, decimals: token.decimals) else {
+      throw SDKError.invalidParameter("Invalid token amount or token metadata")
+    }
+    return amount
+  }
+
   private func executeTokenMint(sdk: SDK) async throws -> Any {
     guard !selectedIdentityId.isEmpty,
           let identity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
@@ -1471,22 +1493,7 @@ struct TransitionDetailView: View {
     // The issuedToIdentityId is optional - if not provided, tokens go to the contract owner
     let recipientIdString = formInputs["issuedToIdentityId"]?.isEmpty == false ? formInputs["issuedToIdentityId"] : nil
 
-    // Parse amount based on whether it contains a decimal
-    let amount: UInt64
-    if amountString.contains(".") {
-      // Handle decimal input (e.g., "1.5" tokens)
-      guard let doubleValue = Double(amountString) else {
-        throw SDKError.invalidParameter("Invalid amount format")
-      }
-      // Convert to smallest unit (assuming 8 decimal places like Dash)
-      amount = UInt64(doubleValue * 100_000_000)
-    } else {
-      // Handle integer input
-      guard let intValue = UInt64(amountString) else {
-        throw SDKError.invalidParameter("Invalid amount format")
-      }
-      amount = intValue
-    }
+    let amount = try parseTransitionTokenAmount(amountString, selection: tokenSelection)
 
     // Find the minting key - for tokens, we need a critical security level key
     // Use the DPPIdentity for minting
@@ -1566,22 +1573,7 @@ struct TransitionDetailView: View {
       throw SDKError.invalidParameter("Amount is required")
     }
 
-    // Parse amount based on whether it contains a decimal
-    let amount: UInt64
-    if amountString.contains(".") {
-      // Handle decimal input (e.g., "1.5" tokens)
-      guard let doubleValue = Double(amountString) else {
-        throw SDKError.invalidParameter("Invalid amount format")
-      }
-      // Convert to smallest unit (assuming 8 decimal places like Dash)
-      amount = UInt64(doubleValue * 100_000_000)
-    } else {
-      // Handle integer input
-      guard let intValue = UInt64(amountString) else {
-        throw SDKError.invalidParameter("Invalid amount format")
-      }
-      amount = intValue
-    }
+    let amount = try parseTransitionTokenAmount(amountString, selection: tokenSelection)
 
     // Use the DPPIdentity for burning
     let dppIdentity = DPPIdentity(
@@ -1857,22 +1849,7 @@ struct TransitionDetailView: View {
       throw SDKError.invalidParameter("Amount is required")
     }
 
-    // Parse amount based on whether it contains a decimal
-    let amount: UInt64
-    if amountString.contains(".") {
-      // Handle decimal input (e.g., "1.5" tokens)
-      guard let doubleValue = Double(amountString) else {
-        throw SDKError.invalidParameter("Invalid amount format")
-      }
-      // Convert to smallest unit (assuming 8 decimal places like Dash)
-      amount = UInt64(doubleValue * 100_000_000)
-    } else {
-      // Handle integer input
-      guard let intValue = UInt64(amountString) else {
-        throw SDKError.invalidParameter("Invalid amount format")
-      }
-      amount = intValue
-    }
+    let amount = try parseTransitionTokenAmount(amountString, selection: tokenSelection)
 
     // Use the DPPIdentity for transfer
     let dppIdentity = DPPIdentity(

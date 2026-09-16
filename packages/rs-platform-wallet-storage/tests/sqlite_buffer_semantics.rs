@@ -243,6 +243,138 @@ fn tc001_get_core_tx_record_roundtrip() {
     assert!(persister.get_core_tx_record(w, &unknown).unwrap().is_none());
 }
 
+/// `get_dpns_name_state` round-trips a stored marketplace row and is
+/// scoped to all three of wallet / identity / normalized label.
+///
+/// This read is the DPNS marketplace departure path's durable fallback.
+/// The Rust-side working set (`PlatformWalletInfo::dpns_name_states`) is
+/// session-scoped and starts empty on every process start, so a name that
+/// departs during the first sync pass after a restart can only recover the
+/// `document_id` its removal delta needs from this table — otherwise the
+/// row persisted here is orphaned for good.
+///
+/// The scoping assertions are the load-bearing ones: `sold` /
+/// `transferred` rows are retained after a name leaves an identity, so a
+/// lookup that dropped the identity (or wallet) predicate could hand back
+/// a different document and remove the wrong row.
+#[test]
+fn dpns_name_state_lookup_round_trips_and_is_scoped() {
+    use dpp::prelude::Identifier;
+    use platform_wallet::changeset::{
+        DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry,
+    };
+    use platform_wallet::wallet::platform_wallet::WalletId;
+    use platform_wallet_storage::SqlitePersister;
+
+    fn entry(
+        document_id: u8,
+        identity: Identifier,
+        label: &str,
+        normalized_label: &str,
+        status: DpnsNameSaleStatus,
+    ) -> DpnsNameStateEntry {
+        DpnsNameStateEntry {
+            document_id: Identifier::from([document_id; 32]),
+            wallet_identity_id: identity,
+            label: label.to_string(),
+            normalized_label: normalized_label.to_string(),
+            normalized_parent_domain_name: "dash".to_string(),
+            price: Some(5_000_000_000),
+            status,
+            created_at_ms: Some(1_700_000_000_000),
+            updated_at_ms: None,
+            transferred_at_ms: None,
+            last_synced_at_ms: 1_800_000_000_000,
+        }
+    }
+
+    fn store_rows(persister: &SqlitePersister, wallet: WalletId, rows: Vec<DpnsNameStateEntry>) {
+        let mut names = DpnsNameStateChangeSet::default();
+        for row in rows {
+            names.names.insert(row.document_id, row);
+        }
+        let mut cs = PlatformWalletChangeSet::default();
+        cs.dpns_name_states = Some(names);
+        persister.store(wallet, cs).expect("store dpns rows");
+    }
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let wallet = wid(0xD1);
+    let other_wallet = wid(0xD2);
+    ensure_wallet_meta(&persister, &wallet);
+    ensure_wallet_meta(&persister, &other_wallet);
+
+    let identity = Identifier::from([0xA1; 32]);
+    let other_identity = Identifier::from([0xA2; 32]);
+
+    // "Alice" normalizes to "a11ce"; "Bob" to "b0b".
+    let target = entry(0x01, identity, "Alice", "a11ce", DpnsNameSaleStatus::Owned);
+    let same_label_other_identity = entry(
+        0x02,
+        other_identity,
+        "Alice",
+        "a11ce",
+        DpnsNameSaleStatus::Sold { to: identity },
+    );
+    let other_label = entry(0x03, identity, "Bob", "b0b", DpnsNameSaleStatus::Owned);
+    let cross_wallet = entry(0x04, identity, "Alice", "a11ce", DpnsNameSaleStatus::Owned);
+
+    store_rows(
+        &persister,
+        wallet,
+        vec![
+            target.clone(),
+            same_label_other_identity.clone(),
+            other_label.clone(),
+        ],
+    );
+    store_rows(&persister, other_wallet, vec![cross_wallet.clone()]);
+
+    // Full-row round-trip, every column reconstructed.
+    assert_eq!(
+        persister
+            .get_dpns_name_state(wallet, &identity, "a11ce")
+            .expect("lookup"),
+        Some(target),
+    );
+
+    // Same label, different identity in the SAME wallet → that identity's
+    // own (retained `Sold`) row, complete with its counterparty payload.
+    assert_eq!(
+        persister
+            .get_dpns_name_state(wallet, &other_identity, "a11ce")
+            .expect("lookup"),
+        Some(same_label_other_identity),
+    );
+
+    // Same identity + label, different wallet → that wallet's row only.
+    assert_eq!(
+        persister
+            .get_dpns_name_state(other_wallet, &identity, "a11ce")
+            .expect("lookup")
+            .map(|row| row.document_id),
+        Some(cross_wallet.document_id),
+    );
+
+    // The predicate is the NORMALIZED label — the display label misses.
+    assert!(persister
+        .get_dpns_name_state(wallet, &identity, "Alice")
+        .expect("lookup")
+        .is_none());
+
+    // A label this identity never held misses.
+    assert!(persister
+        .get_dpns_name_state(wallet, &identity, "car01")
+        .expect("lookup")
+        .is_none());
+
+    // A wallet with no rows at all misses rather than erroring.
+    assert!(persister
+        .get_dpns_name_state(wid(0xD3), &identity, "a11ce")
+        .expect("lookup")
+        .is_none());
+}
+
 /// two wallets coexist without key collisions.
 #[test]
 fn tc015_two_wallets_in_one_db() {

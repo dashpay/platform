@@ -130,6 +130,52 @@ pub enum StateTransitionProofResult {
     VerifiedIdentityWithShieldedNullifiers(Identity, Vec<(Vec<u8>, bool)>),
 }
 
+/// A verified state-transition proof result, tagged with the guarantee the
+/// proof establishes.
+///
+/// Some transition families (balance top-ups, credit transfers and
+/// withdrawals, address funds movements, shields, no-history token
+/// operations) produce proofs whose values cannot be bound to the execution
+/// of one specific transition: the proof only authenticates the affected
+/// keys' state at the committed block. The tag makes that distinction part
+/// of the type so a snapshot cannot be mistaken for execution evidence.
+#[derive(Debug, PartialEq, strum::Display)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+pub enum StateTransitionProofOutcome {
+    /// The proof binds the execution of this specific state transition:
+    /// the verified values could only exist if the transition was applied.
+    ExecutionProved(StateTransitionProofResult),
+    /// The proof authenticates a snapshot of the state the transition
+    /// affects — keys derived from the transition, values as of the proof's
+    /// block — but cannot bind them to the execution of this transition.
+    /// Treat as a height-pinned snapshot, not as evidence of execution.
+    AffectedState(StateTransitionProofResult),
+}
+
+impl StateTransitionProofOutcome {
+    /// The verified result, regardless of the guarantee tag.
+    pub fn result(&self) -> &StateTransitionProofResult {
+        match self {
+            Self::ExecutionProved(result) | Self::AffectedState(result) => result,
+        }
+    }
+
+    /// Consume the outcome, discarding the guarantee tag.
+    pub fn into_result(self) -> StateTransitionProofResult {
+        match self {
+            Self::ExecutionProved(result) | Self::AffectedState(result) => result,
+        }
+    }
+
+    /// Whether the proof established that this specific transition executed.
+    pub fn is_execution_proved(&self) -> bool {
+        matches!(self, Self::ExecutionProved(_))
+    }
+}
+
 /// Serde `with` module for `BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>`.
 ///
 /// `AddressNonce` is `u32` (JS-safe); `Credits` is `u64` and must serialize as a

@@ -86,35 +86,62 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
     }
 
     /// Start a funding for the slot, or reuse an existing controller
-    /// if one is already in flight on the same recipient. Returns a
-    /// `StartFundingResult` so the caller can distinguish a fresh
-    /// start from a wallet-level conflict (see the type doc for
-    /// rationale).
+    /// if the SAME operation is already in flight on the same
+    /// recipient. Returns a `StartFundingResult` so the caller can
+    /// distinguish a fresh start from a wallet-level conflict (see
+    /// the type doc for rationale).
     ///
     /// Single-flighting works on two levels:
-    /// 1. **Per-recipient** (slot key match): a second tap on the
-    ///    same recipient during the FFI window re-presents the
-    ///    existing controller, never races a duplicate FFI call.
-    /// 2. **Per-wallet** (new in this revision): if any controller
-    ///    on the same wallet is `.inFlight` for a *different*
-    ///    recipient, reject with
+    /// 1. **Per-operation** (slot key + `operationId` match): a
+    ///    second tap on the same operation during the FFI window
+    ///    re-presents the existing controller, never races a
+    ///    duplicate FFI call. The operation id (the resumed lock's
+    ///    outpoint, or a unique per-submission fresh-shield id) is
+    ///    required because resumable locks normally default to the
+    ///    same wallet-owned shielded recipient — two different locks
+    ///    share one slot key, and reusing the first lock's controller
+    ///    would silently drop the second lock's resume body. A
+    ///    DIFFERENT operation is `.blockedByOtherWalletFunding` while
+    ///    the slot is in flight, and replaces the retained controller
+    ///    once it has completed. Fresh shields mint a NEW id per
+    ///    submission for the same reason: a fixed marker would match
+    ///    the retained completed controller and suppress the next
+    ///    fresh shield's body.
+    /// 2. **Per-wallet**: if any controller on the same wallet is
+    ///    `.inFlight` for a *different* recipient, reject with
     ///    `.blockedByOtherWalletFunding`. Mirrors the Rust-side
     ///    `shield_guard` mutex on `PlatformWallet` that
     ///    serializes shield-class operations.
     func startFunding(
         walletId: Data,
         recipientRaw43: Data,
+        operationId: String,
         body: @escaping () async throws -> Void
     ) -> StartFundingResult {
         let key = SlotKey(walletId: walletId, recipientRaw43: recipientRaw43)
         if let existing = controllers[key] {
             switch existing.phase {
-            case .inFlight, .completed:
-                // Active or just-completed — don't re-enter.
-                // Returning the existing controller lets the caller
-                // bind to its progress / terminal state without
-                // disrupting it.
-                return .started(existing)
+            case .inFlight:
+                if existing.operationId == operationId {
+                    // Re-tap of the same operation — bind to its progress.
+                    return .started(existing)
+                }
+                // A different operation while one is running on this
+                // wallet: same serialization verdict as a different
+                // recipient — the caller gets the blocker, not a
+                // controller that will never run its body.
+                return .blockedByOtherWalletFunding(existing)
+            case .completed:
+                if existing.operationId == operationId {
+                    // Re-tap after success — re-present the terminal
+                    // state without re-entering.
+                    return .started(existing)
+                }
+                // Completed slot + different operation: a fresh start,
+                // not a re-tap. Fall through past the per-wallet check
+                // below and REPLACE the retained controller (its sweep
+                // is identity-guarded, so the old retention timer can't
+                // evict the replacement).
             case .idle, .failed:
                 // Legitimate restart paths. We've already checked
                 // the same-recipient slot here; before letting the
@@ -128,7 +155,7 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
                 ) {
                     return .blockedByOtherWalletFunding(blocker)
                 }
-                existing.submit(body: body)
+                existing.submit(operationId: operationId, body: body)
                 // Spawn a fresh retention sweep. The original sweep
                 // exited the moment the first attempt hit `.failed`
                 // (see `scheduleRetentionSweep`'s `.failed: return`
@@ -157,7 +184,7 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
             recipientRaw43: recipientRaw43
         )
         controllers[key] = controller
-        controller.submit(body: body)
+        controller.submit(operationId: operationId, body: body)
         scheduleRetentionSweep(key: key, controller: controller)
         return .started(controller)
     }
@@ -203,6 +230,15 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
             guard let controller = controller else { return }
             var completedAt: Date?
             while !Task.isCancelled {
+                // The slot may have been handed to a REPLACEMENT
+                // controller (a different operation started during this
+                // controller's completed-retention window). This sweep
+                // then owns nothing: exit without touching the slot,
+                // leaving the replacement's own sweep in charge.
+                let ownsSlot = await MainActor.run {
+                    self?.controllers[key] === controller
+                }
+                guard ownsSlot == true else { return }
                 let phase = await MainActor.run { controller.phase }
                 switch phase {
                 case .completed:

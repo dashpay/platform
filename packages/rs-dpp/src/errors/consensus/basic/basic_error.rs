@@ -1,21 +1,23 @@
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
-    DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
-    DataContractUniqueIndicesChangedError, DecimalsOverLimitError, DuplicateIndexError,
-    DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupHasTooFewMembersError,
-    GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
-    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
-    GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError,
-    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
-    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
-    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    DataContractInvalidIndexDefinitionUpdateError, DataContractInvalidRequiredFieldsUpdateError,
+    DataContractTokenConfigurationUpdateError, DataContractUniqueIndicesChangedError,
+    DecimalsOverLimitError, DuplicateIndexError, DuplicateIndexNameError,
+    GroupExceedsMaxMembersError, GroupHasTooFewMembersError, GroupMemberHasPowerOfZeroError,
+    GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+    GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError,
+    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
+    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidKeywordCharacterError,
     InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError,
@@ -101,6 +103,7 @@ use crate::consensus::basic::token::{
     ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
     DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError,
     InvalidTokenConfigUpdateNoChangeError, InvalidTokenDistributionBlockIntervalTooShortError,
+    InvalidTokenDistributionEpochIntervalTooShortError,
     InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
     InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenIdError,
     InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError,
@@ -117,7 +120,16 @@ use crate::data_contract::errors::DataContractError;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(
-    Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, PartialEq, Clone,
+    Error,
+    Debug,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    Encode,
+    Decode,
+    PartialEq,
+    Clone,
+    DecodeUntrusted,
 )]
 pub enum BasicError {
     /*
@@ -594,6 +606,11 @@ pub enum BasicError {
     InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(
         InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
     ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionEpochIntervalTooShortError(
+        InvalidTokenDistributionEpochIntervalTooShortError,
+    ),
     #[error(transparent)]
     RedundantDocumentPaidForByTokenWithContractId(RedundantDocumentPaidForByTokenWithContractId),
 
@@ -696,6 +713,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     TokenPricingScheduleEmptyError(TokenPricingScheduleEmptyError),
+
+    #[error(transparent)]
+    DataContractInvalidRequiredFieldsUpdateError(DataContractInvalidRequiredFieldsUpdateError),
 }
 
 impl From<BasicError> for ConsensusError {

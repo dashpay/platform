@@ -115,7 +115,7 @@ impl IdentityCreateFromShieldedPool for Sdk {
             bundle,
         )?;
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, settings)
+            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(self, settings)
             .await?;
         Ok(proof_result)
     }

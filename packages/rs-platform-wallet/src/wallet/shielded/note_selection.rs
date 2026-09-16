@@ -9,7 +9,8 @@ use crate::error::PlatformWalletError;
 use dpp::fee::Credits;
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
-    compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
+    compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
+    compute_shielded_withdrawal_fee,
 };
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -46,6 +47,9 @@ pub enum ShieldedFeeKind {
         /// Number of public keys in the new identity (the fee scales per key).
         num_keys: usize,
     },
+    /// `compute_shielded_identity_top_up_fee`: IdentityTopUpFromShieldedPool (base plus the flat
+    /// identity-balance write cost, the Unshield model with an identity as the output).
+    IdentityTopUp,
 }
 
 impl ShieldedFeeKind {
@@ -65,6 +69,9 @@ impl ShieldedFeeKind {
             }
             ShieldedFeeKind::IdentityCreate { num_keys } => {
                 compute_shielded_identity_create_fee(num_actions, num_keys, platform_version)
+            }
+            ShieldedFeeKind::IdentityTopUp => {
+                compute_shielded_identity_top_up_fee(num_actions, platform_version)
             }
         }
     }
@@ -116,7 +123,7 @@ pub fn select_notes(
 
     // Sort by value descending (largest first)
     let mut sorted = unspent_only;
-    sorted.sort_by(|a, b| b.value.cmp(&a.value));
+    sorted.sort_by_key(|note| std::cmp::Reverse(note.value));
 
     let mut selected = Vec::new();
     let mut accumulated = 0u64;
@@ -301,7 +308,7 @@ mod tests {
     fn test_select_for_denomination_accepts_member() {
         // A member denomination with enough value selects successfully.
         let platform_version = PlatformVersion::latest();
-        let denomination = 10_000_000_000u64; // 0.1 DASH — a member of the v12 set.
+        let denomination = 10_000_000_000u64; // 0.1 DASH — a member of both the v12 and v13 sets.
         let notes = vec![test_note(denomination + 1, 0)];
         let (selected, total, _fee) =
             select_notes_for_denomination(&notes, denomination, 2, 1, platform_version)

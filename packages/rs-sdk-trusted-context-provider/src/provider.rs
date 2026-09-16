@@ -17,6 +17,7 @@ use dpp::data_contract::TokenConfiguration;
     feature = "wallet-utils-contract",
     feature = "token-history-contract",
     feature = "keywords-contract",
+    feature = "document-history-contract",
     feature = "all-system-contracts"
 ))]
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -27,14 +28,19 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::error::Error as StdError;
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(target_os = "ios", target_os = "android"))
+))]
 use std::net::ToSocketAddrs;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
-#[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 use tracing::{debug, info};
 use url::Url;
+
+#[cfg(target_arch = "wasm32")]
+const WASM_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A trusted HTTP-based context provider that fetches quorum information
 /// from trusted HTTP endpoints instead of requiring Core RPC access.
@@ -86,8 +92,29 @@ struct MasternodeDiscoveryResponse {
 }
 
 impl TrustedHttpContextProvider {
+    /// Build a GET request for a trusted endpoint.
+    ///
+    /// Every request to `base_url` goes through here. On wasm32 the client
+    /// carries no timeout, because `ClientBuilder::timeout` is unavailable
+    /// there, so each request sets its own; a slow or hung endpoint would
+    /// otherwise block the caller forever. Cached responses are bypassed so a
+    /// rotated quorum or a changed masternode list is actually observed.
+    fn http_request(&self, url: &str) -> reqwest::RequestBuilder {
+        let request = self.client.get(url);
+
+        #[cfg(target_arch = "wasm32")]
+        let request = request
+            .timeout(WASM_HTTP_REQUEST_TIMEOUT)
+            .fetch_cache_no_store();
+
+        request
+    }
+
     /// Verify that a URL's domain resolves
-    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        not(any(target_os = "ios", target_os = "android"))
+    ))]
     fn verify_domain_resolves(url: &str) -> Result<(), TrustedContextProviderError> {
         let parsed_url = Url::parse(url).map_err(|e| {
             TrustedContextProviderError::NetworkError(format!("Invalid URL: {}", e))
@@ -159,7 +186,10 @@ impl TrustedHttpContextProvider {
         }
 
         // Verify the domain resolves before proceeding (skip on WASM and iOS)
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
+        #[cfg(all(
+            not(target_arch = "wasm32"),
+            not(any(target_os = "ios", target_os = "android"))
+        ))]
         Self::verify_domain_resolves(&base_url)?;
 
         #[cfg(target_arch = "wasm32")]
@@ -174,7 +204,19 @@ impl TrustedHttpContextProvider {
                 .build()?
         };
 
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
+        #[cfg(all(not(target_arch = "wasm32"), target_os = "android"))]
+        let client = {
+            // Android: no blocking DNS pre-check, platform-labelled UA
+            Client::builder()
+                .timeout(Duration::from_secs(30))
+                .user_agent("DashSDK-Android/1.0")
+                .build()?
+        };
+
+        #[cfg(all(
+            not(target_arch = "wasm32"),
+            not(any(target_os = "ios", target_os = "android"))
+        ))]
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .user_agent("DashSDK/1.0")
@@ -262,13 +304,15 @@ impl TrustedHttpContextProvider {
         }
     }
 
-    /// Update the quorum caches by fetching current and previous quorums
+    /// Update the quorum caches by fetching current and previous quorums.
+    ///
+    /// The two requests are issued concurrently: each is a full round trip to
+    /// the quorum service and neither depends on the other, so awaiting them
+    /// back to back only added a round trip to every SDK boot. The first
+    /// failure wins and the other request is dropped.
     pub async fn update_quorum_caches(&self) -> Result<(), TrustedContextProviderError> {
-        // Fetch current quorums
-        let current = self.fetch_current_quorums().await?;
-
-        // Fetch previous quorums
-        let previous = self.fetch_previous_quorums().await?;
+        let (current, previous) =
+            futures::try_join!(self.fetch_current_quorums(), self.fetch_previous_quorums())?;
 
         // The caches are already updated by the fetch methods
         debug!(
@@ -278,6 +322,36 @@ impl TrustedHttpContextProvider {
         );
 
         Ok(())
+    }
+
+    /// Refresh current and previous quorum caches independently.
+    ///
+    /// Both endpoints are requested concurrently and both are awaited, so a
+    /// failure from one does not prevent usable data from the other from
+    /// reaching the caches.
+    pub async fn refresh_quorum_caches(&self) -> Result<(), TrustedContextProviderError> {
+        let (current, previous) =
+            futures::join!(self.fetch_current_quorums(), self.fetch_previous_quorums());
+        let current_error = current.err();
+        let previous_error = previous.err();
+
+        match (current_error, previous_error) {
+            (None, None) => Ok(()),
+            (Some(error), None) => Err(TrustedContextProviderError::NetworkError(format!(
+                "Failed to refresh current quorums: {}",
+                error
+            ))),
+            (None, Some(error)) => Err(TrustedContextProviderError::NetworkError(format!(
+                "Failed to refresh previous quorums: {}",
+                error
+            ))),
+            (Some(current_error), Some(previous_error)) => {
+                Err(TrustedContextProviderError::NetworkError(format!(
+                    "Failed to refresh current quorums: {}; failed to refresh previous quorums: {}",
+                    current_error, previous_error
+                )))
+            }
+        }
     }
 
     /// Get the total number of quorums in both caches
@@ -307,7 +381,7 @@ impl TrustedHttpContextProvider {
             url
         );
 
-        let response = self.client.get(&url).send().await?;
+        let response = self.http_request(&url).send().await?;
         if !response.status().is_success() {
             return Err(TrustedContextProviderError::NetworkError(format!(
                 "HTTP {} from {}",
@@ -370,7 +444,7 @@ impl TrustedHttpContextProvider {
         let url = format!("{}/quorums", self.base_url);
         debug!("Fetching current quorums from: {}", url);
 
-        let response = match self.client.get(&url).send().await {
+        let response = match self.http_request(&url).send().await {
             Ok(resp) => resp,
             Err(e) => {
                 tracing::error!(error = ?e, url = %url, "HTTP request failed");
@@ -407,6 +481,11 @@ impl TrustedHttpContextProvider {
 
         debug!("Parsing JSON response for current quorums");
         let quorums: QuorumsResponse = response.json().await?;
+        if !quorums.success {
+            return Err(TrustedContextProviderError::NetworkError(
+                "Current quorum response indicated failure".to_string(),
+            ));
+        }
         debug!("Successfully parsed {} quorums", quorums.data.len());
 
         // Update cache
@@ -443,7 +522,7 @@ impl TrustedHttpContextProvider {
         let url = format!("{}/previous", self.base_url);
         debug!("Fetching previous quorums from: {}", url);
 
-        let response = self.client.get(&url).send().await?;
+        let response = self.http_request(&url).send().await?;
         debug!("Received response with status: {}", response.status());
 
         if !response.status().is_success() {
@@ -456,6 +535,11 @@ impl TrustedHttpContextProvider {
 
         debug!("Parsing JSON response for previous quorums");
         let quorums: PreviousQuorumsResponse = response.json().await?;
+        if !quorums.success {
+            return Err(TrustedContextProviderError::NetworkError(
+                "Previous quorum response indicated failure".to_string(),
+            ));
+        }
         debug!(
             "Successfully parsed {} previous quorums",
             quorums.data.quorums.len()
@@ -627,13 +711,51 @@ impl ContextProvider for TrustedHttpContextProvider {
             )));
         }
 
+        // This network refetch blocks the caller (proof verification) and
+        // re-runs on every retry of the outer request, so record how long
+        // it takes. `Instant` is unavailable on wasm32; those builds log
+        // `elapsed_ms=None` rather than a fabricated duration.
+        #[cfg(not(target_arch = "wasm32"))]
+        let started = std::time::Instant::now();
+        #[cfg(not(target_arch = "wasm32"))]
+        let elapsed_ms = move || Some(started.elapsed().as_millis() as u64);
+        #[cfg(target_arch = "wasm32")]
+        let elapsed_ms = || None::<u64>;
+
+        tracing::debug!(
+            quorum_type,
+            quorum_hash = %hex::encode(quorum_hash),
+            "quorum cache miss; blocking refetch of quorum lists"
+        );
+
         let this = self.clone();
         let quorum =
-            dash_async::block_on(async move { this.find_quorum(quorum_type, quorum_hash).await })?
+            dash_async::block_on(async move { this.find_quorum(quorum_type, quorum_hash).await })
                 .map_err(|e| {
-                    debug!("Error finding quorum: {}", e);
+                    tracing::warn!(
+                        quorum_type,
+                        quorum_hash = %hex::encode(quorum_hash),
+                        elapsed_ms = ?elapsed_ms(),
+                        "quorum refetch failed to execute: {}", e
+                    );
+                    e
+                })?
+                .map_err(|e| {
+                    tracing::warn!(
+                        quorum_type,
+                        quorum_hash = %hex::encode(quorum_hash),
+                        elapsed_ms = ?elapsed_ms(),
+                        "quorum refetch failed: {}", e
+                    );
                     ContextProviderError::Generic(format!("Failed to find quorum: {}", e))
                 })?;
+
+        tracing::debug!(
+            quorum_type,
+            quorum_hash = %hex::encode(quorum_hash),
+            elapsed_ms = ?elapsed_ms(),
+            "quorum refetch succeeded"
+        );
 
         Self::parse_quorum_public_key(&quorum.key)
     }
@@ -658,6 +780,7 @@ impl ContextProvider for TrustedHttpContextProvider {
             feature = "wallet-utils-contract",
             feature = "token-history-contract",
             feature = "keywords-contract",
+            feature = "document-history-contract",
             feature = "all-system-contracts"
         ))]
         {
@@ -745,6 +868,24 @@ impl ContextProvider for TrustedHttpContextProvider {
                     ))
                 });
             }
+
+            #[cfg(any(
+                feature = "document-history-contract",
+                feature = "all-system-contracts"
+            ))]
+            if *id == SystemDataContract::DocumentHistory.id() {
+                return load_system_data_contract(
+                    SystemDataContract::DocumentHistory,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load DocumentHistory contract: {}",
+                        e
+                    ))
+                });
+            }
         }
 
         // If not found in known contracts or system contracts, delegate to fallback provider if available
@@ -754,6 +895,12 @@ impl ContextProvider for TrustedHttpContextProvider {
             // No fallback provider, return None
             Ok(None)
         }
+    }
+
+    fn register_data_contract(&self, contract: Arc<DataContract>) {
+        let id = contract.id();
+        let mut known = self.known_contracts.lock().unwrap();
+        known.insert(id, contract);
     }
 
     fn get_token_configuration(
@@ -789,6 +936,427 @@ impl ContextProvider for TrustedHttpContextProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    fn accept_before(listener: &TcpListener, deadline: Instant) -> TcpStream {
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => return stream,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && Instant::now() < deadline =>
+                {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("accept quorum request: {}", error),
+            }
+        }
+    }
+
+    fn current_response(hash: u8, key: u8) -> String {
+        serde_json::json!({
+            "success": true,
+            "data": [{
+                "quorum_hash": hex::encode([hash; 32]),
+                "key": hex::encode([key; 48]),
+                "height": 1,
+                "valid_members_count": 3
+            }]
+        })
+        .to_string()
+    }
+
+    fn empty_current_response() -> String {
+        serde_json::json!({
+            "success": true,
+            "data": []
+        })
+        .to_string()
+    }
+
+    fn previous_response(hash: u8, key: u8) -> String {
+        serde_json::json!({
+            "success": true,
+            "data": {
+                "height": 1,
+                "quorums": [{
+                    "quorum_hash": hex::encode([hash; 32]),
+                    "key": hex::encode([key; 48]),
+                    "height": 1,
+                    "valid_members_count": 3
+                }]
+            }
+        })
+        .to_string()
+    }
+
+    fn empty_previous_response() -> String {
+        serde_json::json!({
+            "success": true,
+            "data": {
+                "height": 1,
+                "quorums": []
+            }
+        })
+        .to_string()
+    }
+
+    /// Serve one response per entry, matched by request path rather than by
+    /// arrival order: the current and previous quorum fetches run
+    /// concurrently, so the order in which their connections land is not
+    /// fixed. A request for a path with no pending entry fails the server
+    /// thread, and `join()` on the returned handle surfaces that.
+    fn spawn_http_responses(
+        responses: Vec<(&str, u16, String)>,
+    ) -> (String, thread::JoinHandle<()>) {
+        spawn_http_server(responses, false)
+    }
+
+    /// Like `spawn_http_responses`, but accepts every expected connection
+    /// before answering any of them. A client that issues the requests one
+    /// after another never opens the second connection while the first is
+    /// unanswered, so the accept deadline fires and the server thread panics,
+    /// which drops the held connection and fails the client. Passing proves
+    /// the requests were in flight at the same time.
+    fn spawn_concurrent_http_responses(
+        responses: Vec<(&str, u16, String)>,
+    ) -> (String, thread::JoinHandle<()>) {
+        spawn_http_server(responses, true)
+    }
+
+    fn spawn_http_server(
+        responses: Vec<(&str, u16, String)>,
+        accept_all_before_responding: bool,
+    ) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock quorum endpoint");
+        listener
+            .set_nonblocking(true)
+            .expect("make mock endpoint bounded");
+        let address = listener.local_addr().expect("read mock endpoint address");
+        let mut pending = responses
+            .into_iter()
+            .map(|(path, status, body)| (path.to_string(), status, body))
+            .collect::<Vec<_>>();
+
+        let handle = thread::spawn(move || {
+            let mut held = Vec::new();
+            while !pending.is_empty() {
+                let mut stream = accept_before(&listener, Instant::now() + Duration::from_secs(5));
+                let path = read_request_path(&stream);
+                let index = pending
+                    .iter()
+                    .position(|(expected_path, _, _)| *expected_path == path)
+                    .unwrap_or_else(|| panic!("unexpected quorum request path {path}"));
+                let (_, status, body) = pending.remove(index);
+                if accept_all_before_responding {
+                    held.push((stream, status, body));
+                } else {
+                    write_response(&mut stream, status, &body);
+                }
+            }
+            for (mut stream, status, body) in held {
+                write_response(&mut stream, status, &body);
+            }
+        });
+
+        (format!("http://{}", address), handle)
+    }
+
+    /// Read the request line and headers, returning the requested path.
+    fn read_request_path(stream: &TcpStream) -> String {
+        let mut reader = BufReader::new(stream.try_clone().expect("clone quorum request stream"));
+        let mut request_line = String::new();
+        reader
+            .read_line(&mut request_line)
+            .expect("read quorum request line");
+        let path = request_line
+            .split_whitespace()
+            .nth(1)
+            .expect("quorum request line must carry a path")
+            .to_string();
+
+        loop {
+            let mut header = String::new();
+            reader
+                .read_line(&mut header)
+                .expect("read quorum request header");
+            if header == "\r\n" || header.is_empty() {
+                break;
+            }
+        }
+
+        path
+    }
+
+    fn write_response(stream: &mut TcpStream, status: u16, body: &str) {
+        let reason = if status == 200 {
+            "OK"
+        } else {
+            "Internal Server Error"
+        };
+        write!(
+            stream,
+            "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            status,
+            reason,
+            body.len(),
+            body
+        )
+        .expect("write quorum response");
+        stream.flush().expect("flush quorum response");
+    }
+
+    fn provider_for(base_url: String) -> TrustedHttpContextProvider {
+        TrustedHttpContextProvider::new_with_url(
+            Network::Regtest,
+            base_url,
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .expect("construct mock trusted context provider")
+        .with_refetch_if_not_found(false)
+    }
+
+    #[tokio::test]
+    async fn refresh_quorum_caches_makes_rotated_keys_available() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, previous_response(0x12, 0x42)),
+        ]);
+        let provider = provider_for(base_url);
+
+        assert!(matches!(
+            provider
+                .get_quorum_public_key(1, [0x11; 32], 1)
+                .expect_err("rotated quorum must be absent before refresh"),
+            ContextProviderError::InvalidQuorum(_)
+        ));
+        provider
+            .refresh_quorum_caches()
+            .await
+            .expect("both quorum endpoints must refresh");
+        assert_eq!(
+            provider
+                .get_quorum_public_key(1, [0x11; 32], 1)
+                .expect("current quorum must be cached"),
+            [0x41; 48]
+        );
+        assert_eq!(
+            provider
+                .get_quorum_public_key(1, [0x12; 32], 1)
+                .expect("previous quorum must be cached"),
+            [0x42; 48]
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn update_quorum_caches_fetches_current_and_previous_concurrently() {
+        let (base_url, server) = spawn_concurrent_http_responses(vec![
+            ("/quorums", 200, current_response(0x51, 0x61)),
+            ("/previous", 200, previous_response(0x52, 0x62)),
+        ]);
+        let provider = provider_for(base_url);
+
+        provider
+            .update_quorum_caches()
+            .await
+            .expect("both quorum endpoints must be fetched");
+
+        assert_eq!(
+            provider
+                .get_quorum_public_key(1, [0x51; 32], 1)
+                .expect("current quorum must be cached"),
+            [0x61; 48]
+        );
+        assert_eq!(
+            provider
+                .get_quorum_public_key(1, [0x52; 32], 1)
+                .expect("previous quorum must be cached"),
+            [0x62; 48]
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn refresh_quorum_caches_fetches_current_and_previous_concurrently() {
+        let (base_url, server) = spawn_concurrent_http_responses(vec![
+            ("/quorums", 200, current_response(0x53, 0x63)),
+            ("/previous", 200, previous_response(0x54, 0x64)),
+        ]);
+        let provider = provider_for(base_url);
+
+        provider
+            .refresh_quorum_caches()
+            .await
+            .expect("both quorum endpoints must refresh");
+
+        assert_eq!(provider.get_cached_quorum_count(), 2);
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn refresh_quorum_caches_attempts_both_endpoints_after_partial_failure() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 500, "{}".to_string()),
+            ("/previous", 200, previous_response(0x22, 0x42)),
+        ]);
+        let provider = provider_for(base_url);
+
+        assert!(provider.refresh_quorum_caches().await.is_err());
+        assert_eq!(
+            provider
+                .get_quorum_public_key(1, [0x22; 32], 1)
+                .expect("previous quorum must be cached"),
+            [0x42; 48]
+        );
+        server.join().expect("mock quorum server must finish");
+
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x33, 0x43)),
+            ("/previous", 500, "{}".to_string()),
+        ]);
+        let provider = provider_for(base_url);
+
+        assert!(provider.refresh_quorum_caches().await.is_err());
+        assert_eq!(
+            provider
+                .get_quorum_public_key(1, [0x33; 32], 1)
+                .expect("current quorum must be cached"),
+            [0x43; 48]
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn refresh_quorum_caches_preserves_cached_keys_when_both_endpoints_fail() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 500, "{}".to_string()),
+            ("/previous", 500, "{}".to_string()),
+        ]);
+        let provider = provider_for(base_url);
+        provider.current_quorums_cache.lock().unwrap().put(
+            [0x44; 32],
+            QuorumData {
+                quorum_hash: hex::encode([0x44; 32]),
+                key: hex::encode([0x54; 48]),
+                height: 1,
+                valid_members_count: 3,
+            },
+        );
+
+        assert!(provider.refresh_quorum_caches().await.is_err());
+        assert_eq!(
+            provider
+                .get_quorum_public_key(1, [0x44; 32], 1)
+                .expect("known cached quorum must remain usable"),
+            [0x54; 48]
+        );
+        assert!(matches!(
+            provider
+                .get_quorum_public_key(1, [0x45; 32], 1)
+                .expect_err("unknown quorum must remain rejected"),
+            ContextProviderError::InvalidQuorum(_)
+        ));
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn unsuccessful_quorum_response_does_not_populate_cache() {
+        let failed_current = serde_json::json!({
+            "success": false,
+            "data": [{
+                "quorum_hash": hex::encode([0x55; 32]),
+                "key": hex::encode([0x65; 48]),
+                "height": 1,
+                "valid_members_count": 3
+            }]
+        })
+        .to_string();
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, failed_current),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        assert!(provider.refresh_quorum_caches().await.is_err());
+        assert!(matches!(
+            provider
+                .get_quorum_public_key(1, [0x55; 32], 1)
+                .expect_err("unsuccessful response must not populate cache"),
+            ContextProviderError::InvalidQuorum(_)
+        ));
+        server.join().expect("mock quorum server must finish");
+
+        let failed_previous = serde_json::json!({
+            "success": false,
+            "data": {
+                "height": 1,
+                "quorums": [{
+                    "quorum_hash": hex::encode([0x56; 32]),
+                    "key": hex::encode([0x76; 48]),
+                    "height": 1,
+                    "valid_members_count": 3
+                }]
+            }
+        })
+        .to_string();
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, empty_current_response()),
+            ("/previous", 200, failed_previous),
+        ]);
+        let provider = provider_for(base_url);
+        provider.previous_quorums_cache.lock().unwrap().put(
+            [0x56; 32],
+            QuorumData {
+                quorum_hash: hex::encode([0x56; 32]),
+                key: hex::encode([0x66; 48]),
+                height: 1,
+                valid_members_count: 3,
+            },
+        );
+
+        assert!(provider.refresh_quorum_caches().await.is_err());
+        assert_eq!(
+            provider
+                .get_quorum_public_key(1, [0x56; 32], 1)
+                .expect("unsuccessful response must not overwrite cached quorum"),
+            [0x66; 48]
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn successful_empty_refresh_preserves_cached_keys() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, empty_current_response()),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+        provider.current_quorums_cache.lock().unwrap().put(
+            [0x57; 32],
+            QuorumData {
+                quorum_hash: hex::encode([0x57; 32]),
+                key: hex::encode([0x67; 48]),
+                height: 1,
+                valid_members_count: 3,
+            },
+        );
+
+        provider
+            .refresh_quorum_caches()
+            .await
+            .expect("successful empty responses are valid refreshes");
+        assert_eq!(
+            provider
+                .get_quorum_public_key(1, [0x57; 32], 1)
+                .expect("empty refresh must not clear cached quorum"),
+            [0x67; 48]
+        );
+        server.join().expect("mock quorum server must finish");
+    }
 
     #[test]
     fn test_get_quorum_base_url() {

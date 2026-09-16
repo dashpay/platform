@@ -22,11 +22,10 @@ import Foundation
 ///    the smallest threshold is under the minimum sale amount (not
 ///    purchasable); an empty schedule means the token isn't for direct sale.
 ///
-/// Prices are `u64` credits on-chain, so multiplication goes through
-/// `multipliedReportingOverflow`; a product that overflows `UInt64` resolves
-/// to `nil` (Buy stays disabled) rather than wrapping. A resolved cost of `0`
-/// (a free tier) is likewise `nil`: the purchase FFI/flow requires a positive
-/// `expectedTotalCost`.
+/// Prices are `u64` credits on-chain. Drive saturates an overflowing
+/// `singlePrice` multiplication to `UInt64.max`, while `setPrices` uses checked
+/// multiplication and rejects overflow. A zero price is valid. Token amounts
+/// are additionally bounded by DPP's u48 distribution parameter.
 enum TokenDirectPurchasePricing: Equatable {
 
     /// One flat per-token price for any amount.
@@ -46,30 +45,23 @@ enum TokenDirectPurchasePricing: Equatable {
 
     /// The required total cost in credits to buy `amount` raw token units, or
     /// `nil` when the amount isn't purchasable at this schedule (below the
-    /// minimum sale amount, a free tier, or a total that overflows the
-    /// `UInt64` credits the purchase FFI accepts).
+    /// minimum sale amount, an amount outside DPP's u48 domain, or a tiered
+    /// total that overflows `UInt64`.
     ///
     /// This mirrors Drive's `token_direct_purchase_transition_action` v0
     /// transformer: `required_price = perTokenPrice × token_count`, where for
     /// a tiered schedule the per-token price is the highest tier threshold
     /// `≤ amount`.
     ///
-    /// One deliberate divergence: Drive's single-price branch uses
-    /// `saturating_mul`, so an overflowing product passes its price check at
-    /// `u64::MAX` — but Drive then debits that `u64::MAX`, which exceeds any
-    /// possible credit balance, so the transition is guaranteed to fail at
-    /// balance deduction (after charging a processing fee). Broadcasting a
-    /// known-doomed purchase is worse than disabling Buy, so this helper
-    /// treats overflow as not-purchasable in both branches (as the Kotlin
-    /// counterpart does — its `Long`-based FFI can't even represent
-    /// `u64::MAX`).
     func cost(forAmount amount: UInt64) -> UInt64? {
-        guard amount > 0 else { return nil }
+        guard amount > 0, amount <= Self.maximumTokenAmount else { return nil }
 
         let perToken: UInt64
+        let saturatesOnOverflow: Bool
         switch self {
         case let .singlePrice(price):
             perToken = price
+            saturatesOnOverflow = true
         case let .setPrices(tiers):
             // Highest tier threshold `≤ amount` — the Rust
             // `set_prices.range(..=token_count).next_back()` lookup. An amount
@@ -80,15 +72,18 @@ enum TokenDirectPurchasePricing: Equatable {
                 .price
             else { return nil }
             perToken = tierPrice
+            saturatesOnOverflow = false
         }
 
         let (total, overflow) = perToken.multipliedReportingOverflow(by: amount)
-        guard !overflow else { return nil }
-        // A resolved total of 0 (a free tier) is not submittable: the purchase
-        // FFI/flow requires a positive expected total cost.
-        guard total > 0 else { return nil }
+        if overflow {
+            return saturatesOnOverflow ? UInt64.max : nil
+        }
         return total
     }
+
+    /// DPP `MAX_DISTRIBUTION_PARAM` (`2^48 - 1`).
+    private static let maximumTokenAmount: UInt64 = (1 << 48) - 1
 
     /// The smallest raw amount that can be purchased — `1` for a single price,
     /// the lowest tier threshold for a tiered schedule. Used for the "minimum

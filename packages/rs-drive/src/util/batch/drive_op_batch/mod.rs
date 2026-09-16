@@ -17,6 +17,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::Credits;
 
 pub use address_funds::AddressFundsOperationType;
 pub use contract::DataContractOperationType;
@@ -210,6 +211,57 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
     }
 }
 
+impl DriveOperation<'_> {
+    /// Convert a member of a batch whose document TTL cleanup is complete.
+    pub(crate) fn into_low_level_drive_operations_after_ttl_drain(
+        self,
+        drive: &Drive,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        match self {
+            Self::DocumentOperation(operation) => operation
+                .into_low_level_drive_operations_after_ttl_drain(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                ),
+            operation => operation.into_low_level_drive_operations(
+                drive,
+                estimated_costs_only_with_layer_info,
+                block_info,
+                transaction,
+                platform_version,
+            ),
+        }
+    }
+}
+
+impl Drive {
+    /// Prepare every document before conversion starts. Repeated grids may
+    /// spend several per-write budgets, all against the same pre-batch state.
+    pub(crate) fn prepare_drive_operations_time_range_ttl(
+        &self,
+        operations: &[DriveOperation],
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        for operation in operations {
+            if let DriveOperation::DocumentOperation(document) = operation {
+                document.prepare_time_range_ttl(self, block_info, transaction, platform_version)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 impl DriveOperationFinalizationTasks for DriveOperation<'_> {
     fn finalization_tasks(
         &self,
@@ -242,6 +294,22 @@ impl DriveOperation<'_> {
             DriveOperation::FinalizeOperation(task) => Ok(Some(vec![task.clone()])),
             _ => Ok(None),
         }
+    }
+
+    /// Sums the credits the batch mints into Platform (its `AddToSystemCredits` operations,
+    /// saturating). This is the gross inflow of the batch — the net rule of the daily
+    /// withdrawal limit records it per block, and netting against removals here instead would
+    /// let a same-block deposit and withdrawal hide the inflow.
+    pub fn credit_mints(operations: &[DriveOperation]) -> Credits {
+        operations
+            .iter()
+            .filter_map(|operation| match operation {
+                DriveOperation::SystemOperation(SystemOperationType::AddToSystemCredits {
+                    amount,
+                }) => Some(*amount),
+                _ => None,
+            })
+            .fold(0u64, |total, amount| total.saturating_add(amount))
     }
 }
 

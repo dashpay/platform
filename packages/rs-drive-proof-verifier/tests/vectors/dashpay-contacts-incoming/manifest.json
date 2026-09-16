@@ -1,0 +1,35 @@
+{
+  "description": "Dashpay incoming contact requests query proof (toUserId); grovedb layer verifies, placeholder document payload must fail decoding cleanly.",
+  "source": {
+    "platform_repo_tag": "v4.0.0",
+    "grovedb_repo_tag": "v5.0.0",
+    "generated_protocol_version": 12
+  },
+  "request": {
+    "type": "documents_dashpay_contacts",
+    "identity_id": "7777777777777777777777777777777777777777777777777777777777777777",
+    "to_identity": true,
+    "limit": 100
+  },
+  "block": {
+    "height": 123456,
+    "core_chain_locked_height": 2000000,
+    "epoch": 0,
+    "time_ms": 1700000000000,
+    "protocol_version": 12,
+    "chain_id": "dash-testnet-51"
+  },
+  "proof_meta": {
+    "round": 0,
+    "quorum_type": 106,
+    "quorum_hash_hex": "01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3da",
+    "block_id_hash_hex": "090c0f1215181b1e2124272a2d303336393c3f4245484b4e5154575a5d606366"
+  },
+  "expected": {
+    "kind": "documents_placeholder",
+    "serialized_documents": [
+      "70726f7665642d636f6e746163742d646f63756d656e74"
+    ]
+  },
+  "expected_root_hash_hex": "dad905d8fddd7a31089ed57521ff006ec5946b5648d48056bce493357675ab72"
+}

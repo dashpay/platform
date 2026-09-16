@@ -27,8 +27,8 @@ impl<C> Platform<C> {
                     "overflow for required block count",
                 )))?;
 
-        // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
-        // were on the future version
+        // At an epoch change, find desired versions whose validator count
+        // exceeds the effective upgrade percentage.
         let protocol_versions_counter = self.drive.cache.protocol_versions_counter.read();
 
         let mut versions_passing_threshold =

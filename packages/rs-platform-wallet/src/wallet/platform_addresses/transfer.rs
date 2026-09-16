@@ -5,12 +5,13 @@ use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
-use key_wallet::PlatformP2PKHAddress;
 
 use crate::error::promote_address_nonce_error_or_sdk;
 use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
+use dash_sdk::platform::FetchMany;
+use dash_sdk::query_types::AddressInfo;
 
 pub use super::InputSelection;
 use super::{checked_sum_credits, saturating_sum_credits};
@@ -393,8 +394,8 @@ impl PlatformAddressWallet {
         };
 
         // Lower fee_strategy AFTER augmentation so indexes resolve against
-        // the FINAL outputs map. Lowering before would reintroduce the
-        // misrouting bug this wrapper exists to prevent.
+        // the FINAL outputs map. Lowering before would cause the
+        // misrouting this wrapper exists to prevent.
         let indexed_fee_strategy = fee_strategy.to_indexed(&inputs_for_resolve, &final_outputs)?;
 
         // Replicate the Auto path's ReduceOutput fee-headroom guard so callers
@@ -468,44 +469,41 @@ impl PlatformAddressWallet {
     ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
         let total_output: Credits = saturating_sum_credits(outputs.values().copied());
 
-        // TODO(QA-007): pre-existing read-snapshot vs broadcast race; new
-        // headroom math leans harder on snapshot. Hold guard across
-        // snapshot+broadcast+update, or re-validate headroom right before
-        // broadcast.
-        let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-            PlatformWalletError::WalletNotFound(format!(
-                "Wallet {:?} not found in wallet manager",
-                hex::encode(self.wallet_id)
-            ))
-        })?;
-
-        let account = info
-            .core_wallet
-            .platform_payment_managed_account_at_index(account_index)
-            .ok_or_else(|| {
-                PlatformWalletError::AddressSync(format!(
-                    "No platform payment account at index {}",
-                    account_index
-                ))
-            })?;
-
         let min_input_amount = platform_version
             .dpp
             .state_transitions
             .address_funds
             .min_input_amount;
 
-        let address_balances: Vec<(PlatformAddress, Credits)> = account
-            .addresses
-            .addresses
-            .values()
-            .filter_map(|addr_info| {
-                let p2pkh = PlatformP2PKHAddress::from_address(&addr_info.address).ok()?;
-                let balance = account.address_credit_balance(&p2pkh);
-                Some((PlatformAddress::P2pkh(p2pkh.to_bytes()), balance))
-            })
-            .collect();
+        // Candidate SET only — every candidate's BALANCE is read fresh from the
+        // chain below, NOT from the account cache. Sizing auto-selection from
+        // the cache was a past transfer bug: a freshly-loaded wallet whose
+        // in-memory account was never hydrated with per-address credit balances
+        // reports 0 for every address, so auto-selection found no candidates and
+        // failed with "available 0 credits" — even though the same addresses
+        // were on-chain funded (and withdrew fine, because `plan_withdrawal`
+        // already sources balances from the chain). Reading the authoritative
+        // on-chain balance here — the SAME `AddressInfo::fetch_many` proof query
+        // the transfer spend path re-fetches and hard-checks — keeps the submit
+        // gate and the spend path in lockstep and immune to a stale/zero cache.
+        let candidate_addresses = self.candidate_address_set(account_index).await?;
+
+        // Read the authoritative on-chain balance for each candidate. An
+        // address the proof reports as absent / missing (`None`) has no on-chain
+        // balance and maps to 0, which the dust filter then drops. Skip the
+        // fetch entirely for an account with no derived addresses so an empty
+        // query never hits the network — the empty balances fall through to the
+        // same generic insufficient-balance error as before.
+        let address_balances: Vec<(PlatformAddress, Credits)> = if candidate_addresses.is_empty() {
+            Vec::new()
+        } else {
+            let on_chain: dash_sdk::query_types::AddressInfos =
+                AddressInfo::fetch_many(self.sdk.as_ref(), candidate_addresses).await?;
+            on_chain
+                .into_iter()
+                .map(|(address, info)| (address, info.map(|i| i.balance).unwrap_or(0)))
+                .collect()
+        };
         let candidates = build_auto_select_candidates(
             address_balances.iter().copied(),
             outputs,
@@ -614,7 +612,7 @@ where
         .into_iter()
         .filter(|(addr, balance)| *balance >= min_input_amount && !outputs.contains_key(addr))
         .collect();
-    candidates.sort_by(|a, b| b.1.cmp(&a.1));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.1));
     candidates
 }
 
@@ -730,7 +728,7 @@ fn select_inputs_deduct_from_input(
     // we pick the smallest covering prefix. Production callers pre-sort via
     // `build_auto_select_candidates`; this keeps direct test / future callers
     // from silently picking a worse prefix.
-    candidates.sort_by(|a, b| b.1.cmp(&a.1));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.1));
     if !matches!(
         fee_strategy,
         [AddressFundsFeeStrategyStep::DeductFromInput(0)]
@@ -948,7 +946,7 @@ fn select_inputs_reduce_output(
     // balance-descending order so the smallest balance lands last. Production
     // callers already pre-sort via `build_auto_select_candidates`, but direct
     // test / future callers would otherwise silently misbehave.
-    candidates.sort_by(|a, b| b.1.cmp(&a.1));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.1));
     if !matches!(fee_strategy, [AddressFundsFeeStrategyStep::ReduceOutput(0)]) {
         return Err(PlatformWalletError::AddressOperation(
             "select_inputs_reduce_output only supports fee_strategy = \
@@ -1034,7 +1032,7 @@ fn select_inputs_reduce_output(
             .iter()
             .filter(|(addr, _)| *addr != last_addr)
             .collect();
-        donor_candidates.sort_by(|a, b| b.1.cmp(&a.1));
+        donor_candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.1));
         let donor_addr = donor_candidates
             .into_iter()
             .find(|(_, balance)| *balance >= donor_threshold)

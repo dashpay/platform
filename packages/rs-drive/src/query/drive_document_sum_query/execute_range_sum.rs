@@ -12,8 +12,9 @@
 //!   regular range proof against the `ProvableSumTree`, returning
 //!   per-key `KVSum` ops bound to the merk root.
 
-use super::{DriveDocumentSumQuery, RangeSumOptions, SumEntry};
+use super::{DriveDocumentSumQuery, RangeSumOptions, RangeSumWalkMode, SumEntry};
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{WhereClause, WhereOperator};
@@ -50,7 +51,7 @@ impl DriveDocumentSumQuery<'_> {
             .iter()
             .any(|wc| wc.operator == WhereOperator::In);
 
-        if !options.return_distinct_sums_in_range {
+        if matches!(options.walk_mode, RangeSumWalkMode::Aggregate) {
             if has_in_on_prefix {
                 // Enforce exactly one `In` clause. Without this, a request
                 // with multiple In filters would silently use only the
@@ -148,13 +149,16 @@ impl DriveDocumentSumQuery<'_> {
             }]);
         }
 
-        // Distinct mode. Mirror count's analog; currently relies on
-        // `distinct_sum_path_query` which is stubbed (pending port).
-        // Defer to the same builder so the error surfaces cleanly when
-        // distinct mode is requested before the builder body lands.
-        let (path_query_limit, left_to_right) = (None::<u16>, options.left_to_right);
-        let path_query =
-            self.distinct_sum_path_query(path_query_limit, left_to_right, platform_version)?;
+        let RangeSumWalkMode::Distinct(distinct_limit) = options.walk_mode else {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "aggregate range sums must return before the distinct storage walk",
+            )));
+        };
+        let path_query = self.distinct_sum_path_query(
+            Some(distinct_limit),
+            options.left_to_right,
+            platform_version,
+        )?;
         let base_path_len = path_query.path.len();
 
         let mut drive_operations = vec![];

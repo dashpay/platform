@@ -1,12 +1,16 @@
-use crate::serialization::PlatformDeserializable;
+use crate::serialization::PlatformDeserializableUntrusted;
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 
 impl StateTransition {
-    pub fn deserialize_many(raw_state_transitions: &[Vec<u8>]) -> Result<Vec<Self>, ProtocolError> {
+    pub fn deserialize_many_untrusted(
+        raw_state_transitions: &[Vec<u8>],
+    ) -> Result<Vec<Self>, ProtocolError> {
         raw_state_transitions
             .iter()
-            .map(|raw_state_transition| Self::deserialize_from_bytes(raw_state_transition))
+            .map(|raw_state_transition| {
+                Self::deserialize_from_bytes_untrusted(raw_state_transition)
+            })
             .collect()
     }
 }
@@ -17,6 +21,7 @@ mod tests {
     use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
     use platform_value::string_encoding::Encoding;
+    use platform_value::{Identifier, Value};
     use crate::bls::native_bls::NativeBlsModule;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::identity::state_transition::AssetLockProved;
@@ -27,15 +32,24 @@ mod tests {
     use crate::prelude::AssetLockProof;
     use crate::serialization::PlatformMessageSignable;
     use crate::serialization::Signable;
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
     use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use crate::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
+    use crate::state_transition::batch_transition::batched_transition::document_create_transition::{
+        DocumentCreateTransition, DocumentCreateTransitionV0,
+    };
+    use crate::state_transition::batch_transition::batched_transition::document_transition::{
+        DocumentTransition, DocumentTransitionV0Methods,
+    };
     use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+    use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
     use crate::state_transition::batch_transition::{
         BatchTransition, BatchTransitionV1,
     };
+    use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
     use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
     use crate::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -71,7 +85,7 @@ mod tests {
         let raw_transaction = STANDARD
             .decode(RAW_TRANSACTION_BASE64)
             .expect("base64 transaction should decode");
-        let state_transition = StateTransition::deserialize_from_bytes(&raw_transaction)
+        let state_transition = StateTransition::deserialize_from_bytes_untrusted(&raw_transaction)
             .expect("State transition deserializes correctly");
 
         assert_eq!(
@@ -127,7 +141,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -150,7 +164,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -217,7 +231,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -284,7 +298,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -310,7 +324,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -333,7 +347,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -361,7 +375,7 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
@@ -407,14 +421,135 @@ mod tests {
         let bytes = state_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
-        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+        let recovered_state_transition = StateTransition::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
 
+    /// Stack size for tests that build `Value`s nested to the decoder depth ceiling.
+    ///
+    /// Only decoding is iterative: the derived `Encode`, `PartialEq` and drop glue recurse once
+    /// per nesting level, and in debug builds those frames cost roughly 7 KiB per level, so a
+    /// value ~256 levels deep exhausts libtest's default 2 MiB per-test thread. nextest runs each
+    /// test on the 8 MiB main thread, which is why CI does not see the overflow.
+    const DEEP_VALUE_TEST_STACK_SIZE: usize = 16 * 1024 * 1024;
+
+    fn on_deep_value_stack(test: impl FnOnce() + Send + 'static) {
+        std::thread::Builder::new()
+            .stack_size(DEEP_VALUE_TEST_STACK_SIZE)
+            .spawn(test)
+            .expect("the deep value test thread should spawn")
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+    }
+
+    #[test]
+    fn document_batch_rejects_excessive_value_depth_during_decode() {
+        on_deep_value_stack(|| {
+            let nested = (0..300).fold(Value::Null, |value, _| Value::Array(vec![value]));
+            let document_transition = DocumentTransition::Create(DocumentCreateTransition::V0(
+                DocumentCreateTransitionV0 {
+                    base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                        id: Identifier::default(),
+                        identity_contract_nonce: 1,
+                        document_type_name: "test".to_string(),
+                        data_contract_id: Identifier::default(),
+                    }),
+                    entropy: [0; 32],
+                    data: BTreeMap::from([("nested".to_string(), nested)]),
+                    prefunded_voting_balance: None,
+                },
+            ));
+            assert_eq!(
+                document_transition.first_data_depth_exceeding(256),
+                Some(257)
+            );
+
+            let state_transition = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+                transitions: vec![BatchedTransition::Document(document_transition)],
+                ..Default::default()
+            }));
+            let bytes = state_transition
+                .serialize_to_bytes()
+                .expect("the state transition should encode below the byte limit");
+            assert!(
+                bytes.len() as u64
+                    <= PlatformVersion::latest()
+                        .system_limits
+                        .max_state_transition_size
+            );
+
+            // The intentionally invalid transition is no longer needed after encoding. Avoid walking
+            // its recursive data during drop so this regression test only exercises decoder behavior.
+            std::mem::forget(state_transition);
+
+            let error = StateTransition::deserialize_from_bytes_untrusted_in_version(
+                &bytes,
+                PlatformVersion::latest(),
+            )
+            .expect_err("excessive nesting must be rejected during decode");
+            assert!(error
+                .to_string()
+                .contains("value nesting depth 257 exceeds maximum 256"));
+        });
+    }
+
+    #[test]
+    fn document_batch_value_depth_limits_align_between_decode_and_validation() {
+        on_deep_value_stack(|| {
+            // Every decodable document value must also satisfy the consensus depth rule, so depth
+            // violations always fail the same way: as an undecodable transition. A value at the
+            // decoder ceiling must therefore round-trip and pass the validation-side depth check.
+            let max_depth = PlatformVersion::latest()
+                .system_limits
+                .max_document_value_depth
+                .expect("latest protocol should enforce document value depth")
+                as usize;
+            let nested = (1..max_depth).fold(Value::Array(vec![Value::Null]), |value, _| {
+                Value::Array(vec![value])
+            });
+            let document_transition = DocumentTransition::Create(DocumentCreateTransition::V0(
+                DocumentCreateTransitionV0 {
+                    base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                        id: Identifier::default(),
+                        identity_contract_nonce: 1,
+                        document_type_name: "test".to_string(),
+                        data_contract_id: Identifier::default(),
+                    }),
+                    entropy: [0; 32],
+                    data: BTreeMap::from([("nested".to_string(), nested)]),
+                    prefunded_voting_balance: None,
+                },
+            ));
+            assert_eq!(
+                document_transition.first_data_depth_exceeding(max_depth),
+                None
+            );
+            assert_eq!(
+                document_transition.first_data_depth_exceeding(max_depth - 1),
+                Some(max_depth)
+            );
+
+            let state_transition = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+                transitions: vec![BatchedTransition::Document(document_transition)],
+                ..Default::default()
+            }));
+            let bytes = state_transition
+                .serialize_to_bytes()
+                .expect("the state transition should encode below the byte limit");
+
+            let recovered = StateTransition::deserialize_from_bytes_untrusted_in_version(
+                &bytes,
+                PlatformVersion::latest(),
+            )
+            .expect("a value at the decoder ceiling must decode");
+            assert_eq!(state_transition, recovered);
+        });
+    }
+
     #[test]
     fn deserialize_empty_bytes_should_fail() {
-        let result = StateTransition::deserialize_from_bytes(&[]);
+        let result = StateTransition::deserialize_from_bytes_untrusted(&[]);
         assert!(
             result.is_err(),
             "deserialization of empty bytes should fail"
@@ -423,7 +558,7 @@ mod tests {
 
     #[test]
     fn deserialize_single_byte_should_fail() {
-        let result = StateTransition::deserialize_from_bytes(&[0xFF]);
+        let result = StateTransition::deserialize_from_bytes_untrusted(&[0xFF]);
         assert!(
             result.is_err(),
             "deserialization of a single 0xFF byte should fail"
@@ -455,21 +590,21 @@ mod tests {
         // Truncate to half
         let half = &bytes[..bytes.len() / 2];
         assert!(
-            StateTransition::deserialize_from_bytes(half).is_err(),
+            StateTransition::deserialize_from_bytes_untrusted(half).is_err(),
             "deserialization of truncated-to-half bytes should fail"
         );
 
         // Truncate by removing last byte
         let minus_one = &bytes[..bytes.len() - 1];
         assert!(
-            StateTransition::deserialize_from_bytes(minus_one).is_err(),
+            StateTransition::deserialize_from_bytes_untrusted(minus_one).is_err(),
             "deserialization of bytes missing last byte should fail"
         );
 
         // Keep only first byte
         let first_only = &bytes[..1];
         assert!(
-            StateTransition::deserialize_from_bytes(first_only).is_err(),
+            StateTransition::deserialize_from_bytes_untrusted(first_only).is_err(),
             "deserialization of only the first byte should fail"
         );
     }
@@ -501,7 +636,7 @@ mod tests {
         bytes[mid] ^= 0xFF;
 
         // Should either fail or return a different value - must not panic
-        let result = StateTransition::deserialize_from_bytes(&bytes);
+        let result = StateTransition::deserialize_from_bytes_untrusted(&bytes);
         if let Ok(recovered) = result {
             assert_ne!(
                 state_transition, recovered,
@@ -544,7 +679,7 @@ mod tests {
         // Craft a small payload (~80 bytes) with a Vec<u8> field claiming 8 GB.
         // Without the limit fix this would attempt `vec![0u8; 8_000_000_000]` and abort.
         let payload = craft_oversized_vec_payload(8_000_000_000);
-        let result = StateTransition::deserialize_from_bytes(&payload);
+        let result = StateTransition::deserialize_from_bytes_untrusted(&payload);
         // Must return an error, not OOM-abort the process
         assert!(
             result.is_err(),
@@ -560,7 +695,7 @@ mod tests {
         // or UnexpectedEnd depending on the exact code path). Either way, the
         // deserialization must fail safely without OOM.
         let payload = craft_oversized_vec_payload(200_000);
-        let result = StateTransition::deserialize_from_bytes(&payload);
+        let result = StateTransition::deserialize_from_bytes_untrusted(&payload);
         assert!(
             result.is_err(),
             "Vec length exceeding byte budget must be rejected"
@@ -573,23 +708,23 @@ mod tests {
         // should NOT reject it for byte budget reasons (it will still fail
         // because the data doesn't actually contain 200,000 bytes).
         let payload = craft_oversized_vec_payload(200_000);
-        let result = StateTransition::deserialize_from_bytes_no_limit(&payload);
+        let result = StateTransition::deserialize_from_bytes_untrusted_no_limit(&payload);
         assert!(result.is_err());
         // any other error is fine — the data is garbage
         if let ProtocolError::MaxEncodedBytesReachedError { .. } = result.unwrap_err() {
-            panic!("deserialize_from_bytes_no_limit should NOT enforce byte budget");
+            panic!("deserialize_from_bytes_untrusted_no_limit should NOT enforce byte budget");
         }
     }
 
     #[test]
     fn deserialize_many_empty_list() {
-        let result = StateTransition::deserialize_many(&[]);
+        let result = StateTransition::deserialize_many_untrusted(&[]);
         assert_eq!(result.unwrap(), vec![]);
     }
 
     #[test]
     fn deserialize_many_with_invalid_entry() {
-        let result = StateTransition::deserialize_many(&[vec![0xFF]]);
+        let result = StateTransition::deserialize_many_untrusted(&[vec![0xFF]]);
         assert!(
             result.is_err(),
             "deserialize_many with invalid entry should fail"
@@ -628,7 +763,8 @@ mod tests {
             st3.serialize_to_bytes().unwrap(),
         ];
 
-        let recovered = StateTransition::deserialize_many(&raw).expect("should deserialize all");
+        let recovered =
+            StateTransition::deserialize_many_untrusted(&raw).expect("should deserialize all");
         assert_eq!(recovered.len(), 3);
         assert_eq!(recovered[0], st1);
         assert_eq!(recovered[1], st2);

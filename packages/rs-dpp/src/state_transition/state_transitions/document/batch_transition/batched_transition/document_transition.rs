@@ -3,10 +3,11 @@ use std::collections::BTreeMap;
 use derive_more::{Display, From};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
-use bincode::{Encode, Decode};
+use bincode::{Encode, Decode, DecodeUntrusted};
 use crate::prelude::{IdentityNonce, Revision};
 use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenUnfreezeTransition, TokenDirectPurchaseTransition, TokenSetPriceForDirectPurchaseTransition};
-use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
+use crate::state_transition::batch_transition::batched_transition::{DocumentIndexOnlyDeleteTransition, DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
+use crate::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
@@ -17,7 +18,7 @@ use crate::state_transition::batch_transition::document_create_transition::v0::v
 use crate::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 
-#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
+#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -26,7 +27,8 @@ use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionRes
     // because the flattened `DocumentBaseTransition` already exposes
     // `document_type_name` as `$type` in JSON (the long-standing DPP
     // document-type field). The variant names (`create`, `replace`,
-    // `delete`, `transfer`, `updatePrice`, `purchase`) read naturally as
+    // `delete`, `transfer`, `updatePrice`, `purchase`,
+    // `indexOnlyDelete`) read naturally as
     // actions, matching the existing `PROPERTY_ACTION = "$action"`
     // constant on the parent batch transition.
     serde(tag = "$action", rename_all = "camelCase")
@@ -49,6 +51,12 @@ pub enum DocumentTransition {
 
     #[display("PurchaseDocumentTransition({})", "_0")]
     Purchase(DocumentPurchaseTransition),
+
+    /// The indexOnly delete-by-values kind — appended at the end so every
+    /// existing variant keeps its bincode discriminant. Only exists at
+    /// PV14+ (see the wire gate in `validate_base_structure_v0`).
+    #[display("IndexOnlyDeleteDocumentTransition({})", "_0")]
+    IndexOnlyDelete(DocumentIndexOnlyDeleteTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -66,7 +74,8 @@ impl crate::serialization::ValueConvertible for DocumentTransition {}
 pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::batched_transition::{
-        document_create_transition, document_delete_transition, document_purchase_transition,
+        document_create_transition, document_delete_transition,
+        document_index_only_delete_transition, document_purchase_transition,
         document_replace_transition, document_transfer_transition,
         document_update_price_transition,
     };
@@ -162,6 +171,16 @@ pub(crate) mod json_convertible_tests {
                 document_purchase_transition::json_convertible_tests::fixture(),
             ),
             "purchase",
+        );
+    }
+
+    #[test]
+    fn umbrella_index_only_delete() {
+        assert_umbrella_round_trip(
+            DocumentTransition::IndexOnlyDelete(
+                document_index_only_delete_transition::json_convertible_tests::fixture(),
+            ),
+            "indexOnlyDelete",
         );
     }
 }
@@ -269,6 +288,13 @@ pub trait DocumentTransitionV0Methods {
     fn data_contract_id(&self) -> Identifier;
     /// get the data of the transition if exits
     fn data(&self) -> Option<&BTreeMap<String, Value>>;
+    /// Returns the first document-data container depth greater than `max_depth`.
+    ///
+    /// Each property value receives the full depth budget; the enclosing data map is a plain
+    /// `BTreeMap`, not a decoded [`Value`] container, so it is not counted — matching the wire
+    /// decoder's per-value ceiling. The traversal borrows transition data so invalid nesting can
+    /// be rejected before action construction clones recursive values.
+    fn first_data_depth_exceeding(&self, max_depth: usize) -> Option<usize>;
     /// get the revision of transition if exits
     fn revision(&self) -> Option<Revision>;
 
@@ -298,6 +324,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Transfer(t) => t.base(),
             DocumentTransition::UpdatePrice(t) => t.base(),
             DocumentTransition::Purchase(t) => t.base(),
+            DocumentTransition::IndexOnlyDelete(t) => t.base(),
         }
     }
 
@@ -309,6 +336,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Transfer(_) => None,
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
+            DocumentTransition::IndexOnlyDelete(t) => t.data().get(path),
         }
     }
 
@@ -328,6 +356,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Transfer(_) => None,
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
+            DocumentTransition::IndexOnlyDelete(_) => None,
         }
     }
 
@@ -343,7 +372,14 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Transfer(_) => None,
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
+            DocumentTransition::IndexOnlyDelete(t) => Some(t.data()),
         }
+    }
+
+    fn first_data_depth_exceeding(&self, max_depth: usize) -> Option<usize> {
+        self.data()?
+            .values()
+            .find_map(|value| value.first_depth_exceeding(max_depth))
     }
 
     fn revision(&self) -> Option<Revision> {
@@ -354,6 +390,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Transfer(t) => Some(t.revision()),
             DocumentTransition::UpdatePrice(t) => Some(t.revision()),
             DocumentTransition::Purchase(t) => Some(t.revision()),
+            DocumentTransition::IndexOnlyDelete(_) => None,
         }
     }
 
@@ -365,6 +402,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Transfer(t) => t.base().identity_contract_nonce(),
             DocumentTransition::UpdatePrice(t) => t.base().identity_contract_nonce(),
             DocumentTransition::Purchase(t) => t.base().identity_contract_nonce(),
+            DocumentTransition::IndexOnlyDelete(t) => t.base().identity_contract_nonce(),
         }
     }
 
@@ -385,6 +423,9 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Transfer(_) => {}
             DocumentTransition::UpdatePrice(_) => {}
             DocumentTransition::Purchase(_) => {}
+            DocumentTransition::IndexOnlyDelete(t) => {
+                t.data_mut().insert(property_name, value);
+            }
         }
     }
 
@@ -400,6 +441,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Transfer(t) => t.base_mut(),
             DocumentTransition::UpdatePrice(t) => t.base_mut(),
             DocumentTransition::Purchase(t) => t.base_mut(),
+            DocumentTransition::IndexOnlyDelete(t) => t.base_mut(),
         }
     }
 
@@ -411,6 +453,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Transfer(_) => None,
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
+            DocumentTransition::IndexOnlyDelete(t) => Some(t.data_mut()),
         }
     }
 
@@ -422,6 +465,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Transfer(ref mut t) => t.set_revision(revision),
             DocumentTransition::UpdatePrice(ref mut t) => t.set_revision(revision),
             DocumentTransition::Purchase(ref mut t) => t.set_revision(revision),
+            DocumentTransition::IndexOnlyDelete(_) => {}
         }
     }
 
@@ -433,6 +477,9 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Transfer(t) => t.base_mut().set_identity_contract_nonce(nonce),
             DocumentTransition::UpdatePrice(t) => t.base_mut().set_identity_contract_nonce(nonce),
             DocumentTransition::Purchase(t) => t.base_mut().set_identity_contract_nonce(nonce),
+            DocumentTransition::IndexOnlyDelete(t) => {
+                t.base_mut().set_identity_contract_nonce(nonce)
+            }
         }
     }
 }
@@ -557,6 +604,25 @@ mod tests {
     fn get_dynamic_property_returns_none_for_update_price() {
         let transition = make_update_price_transition();
         assert!(transition.get_dynamic_property("anything").is_none());
+    }
+
+    #[test]
+    fn data_depth_check_borrows_create_and_replace_properties() {
+        let data = BTreeMap::from([(
+            "nested".to_string(),
+            Value::Array(vec![Value::Array(vec![Value::Null])]),
+        )]);
+        let create = make_create_transition(data.clone());
+        let replace = make_replace_transition(data);
+
+        // The enclosing data map is not counted; the two arrays reach depth 2.
+        assert_eq!(create.first_data_depth_exceeding(1), Some(2));
+        assert_eq!(replace.first_data_depth_exceeding(2), None);
+    }
+
+    #[test]
+    fn data_depth_check_ignores_transitions_without_document_data() {
+        assert_eq!(make_delete_transition().first_data_depth_exceeding(0), None);
     }
 
     #[test]

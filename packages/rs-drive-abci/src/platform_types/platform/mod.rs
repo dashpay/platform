@@ -1,3 +1,4 @@
+mod checkpoint_attempt;
 #[cfg(any(feature = "mocks", test))]
 mod mock;
 
@@ -8,10 +9,11 @@ use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
 use std::fmt::{Debug, Formatter};
 
+use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use arc_swap::ArcSwap;
 use dpp::prelude::BlockHeight;
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -37,10 +39,21 @@ pub struct Platform<C> {
     pub checkpoint_platform_states: ArcSwap<BTreeMap<BlockHeight, Arc<PlatformState>>>,
     /// block height guard
     pub committed_block_height_guard: AtomicU64,
+    /// Block time of the last GroveDB checkpoint attempt, successful or not; 0 before
+    /// the first attempt.
+    ///
+    /// Every node checkpoints at the first block after a checkpoint interval boundary,
+    /// so a failed attempt is skipped for the rest of its interval instead of being
+    /// retried at a later block, which would give this node a checkpoint height the
+    /// rest of the network does not have. `should_checkpoint` reads it, every attempt
+    /// records it, and it is persisted beside the checkpoints so a restart keeps it.
+    pub last_checkpoint_attempt_block_time_ms: AtomicU64,
     /// Configuration
     pub config: PlatformConfig,
     /// Core RPC Client
     pub core_rpc: C,
+    /// CheckTx-only proof-verification admission control
+    pub(crate) check_tx_proof_verifier: CheckTxProofVerifier,
 }
 
 // @append_only
@@ -144,12 +157,21 @@ impl<C> Platform<C> {
         let (drive, current_platform_version) =
             Drive::open(&config.db_path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
-        if let Some(initial_protocol_version) = initial_protocol_version {
-            if initial_protocol_version > 1 {
-                drive
-                    .cache
-                    .system_data_contracts
-                    .reload_system_contracts(PlatformVersion::get(initial_protocol_version)?)?;
+        // Finish any TTL bucket-drop reclamation a crash interrupted
+        // (grovedb#848 / PR #849): committed redo records survive restarts,
+        // and draining them is idempotent and outside consensus. A no-op
+        // when no records exist; a failure leaves the records for the
+        // per-block flush to retry.
+        if let Some(platform_version) = current_platform_version {
+            if let Err(error) = drive
+                .grove
+                .flush_pending_prefix_drops(&platform_version.drive.grove_version)
+            {
+                tracing::warn!(
+                    ?error,
+                    "failed to flush pending prefix drops at startup; records persist and \
+                     will be retried after the next block"
+                );
             }
         }
 
@@ -161,17 +183,11 @@ impl<C> Platform<C> {
                     "execution state should be stored as well as protocol version".to_string(),
                 )));
             };
-            if platform_version.protocol_version > 1 {
-                drive
-                    .cache
-                    .system_data_contracts
-                    .reload_system_contracts(platform_version)?;
-            }
 
             // Load checkpoint platform states from disk
             let mut checkpoint_platform_states = BTreeMap::new();
             let checkpoints = drive.checkpoints.load();
-            for (&block_height, _checkpoint_info) in checkpoints.iter() {
+            for &block_height in checkpoints.keys() {
                 let checkpoint_state_path = config
                     .db_path
                     .join("checkpoints")
@@ -181,7 +197,7 @@ impl<C> Platform<C> {
                 if checkpoint_state_path.exists() {
                     match std::fs::read(&checkpoint_state_path) {
                         Ok(state_bytes) => {
-                            match PlatformState::versioned_deserialize(
+                            match PlatformState::versioned_deserialize_trusted(
                                 &state_bytes,
                                 platform_version,
                             ) {
@@ -245,13 +261,18 @@ impl<C> Platform<C> {
 
         PlatformVersion::set_current(platform_version);
 
+        let last_checkpoint_attempt =
+            checkpoint_attempt::load_last_checkpoint_attempt(&config.db_path);
+
         let platform: Platform<C> = Platform {
             drive,
             checkpoint_platform_states: ArcSwap::from_pointee(checkpoint_platform_states),
             state: ArcSwap::new(Arc::new(platform_state)),
             committed_block_height_guard: AtomicU64::from(height),
+            last_checkpoint_attempt_block_time_ms: AtomicU64::new(last_checkpoint_attempt),
             config,
             core_rpc,
+            check_tx_proof_verifier: CheckTxProofVerifier::default(),
         };
 
         Ok(platform)
@@ -278,13 +299,18 @@ impl<C> Platform<C> {
 
         PlatformVersion::set_current(PlatformVersion::get(current_protocol_version_in_consensus)?);
 
+        let last_checkpoint_attempt =
+            checkpoint_attempt::load_last_checkpoint_attempt(&config.db_path);
+
         Ok(Platform {
             drive,
             checkpoint_platform_states: ArcSwap::from_pointee(BTreeMap::new()),
             state: ArcSwap::new(Arc::new(platform_state)),
             committed_block_height_guard: AtomicU64::from(height),
+            last_checkpoint_attempt_block_time_ms: AtomicU64::new(last_checkpoint_attempt),
             config,
             core_rpc,
+            check_tx_proof_verifier: CheckTxProofVerifier::default(),
         })
     }
 }

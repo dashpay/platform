@@ -156,19 +156,29 @@ fn get_path_elements(
 /// `NonCounted` and `NotSummed` are transparent wrappers around another
 /// element; we render them as `non_counted(<inner>)` / `not_summed(<inner>)`
 /// so that the wrapped element's value is still visible to the caller.
+/// Backward-reference metadata does not change the rendered payload; the
+/// `type` field identifies the variants that support it.
 fn format_element_data(element: &Element) -> String {
     match element {
-        Element::Item(data, _) => hex::encode(data),
+        Element::Item(data, _) | Element::ItemWithBackwardsReferences(data, _, _) => {
+            hex::encode(data)
+        }
         Element::Reference(reference, _, _) => format!("{:?}", reference),
+        Element::BidirectionalReference(reference, _) => {
+            format!("{:?}", reference.forward_reference_path)
+        }
         Element::Tree(_, _) => "tree".to_string(),
         Element::SumTree(_, _, _) => "sum_tree".to_string(),
-        Element::SumItem(value, _) => format!("sum_item:{}", value),
+        Element::SumItem(value, _) | Element::SumItemWithBackwardsReferences(value, _, _) => {
+            format!("sum_item:{}", value)
+        }
         Element::BigSumTree(_, value, _) => format!("big_sum_tree:{}", value),
         Element::CountTree(_, count, _) => format!("count_tree:{}", count),
         Element::CountSumTree(_, count, sum, _) => {
             format!("count_sum_tree:{}:{}", count, sum)
         }
-        Element::ItemWithSumItem(data, sum, _) => {
+        Element::ItemWithSumItem(data, sum, _)
+        | Element::ItemWithSumItemWithBackwardsReferences(data, sum, _, _) => {
             format!("item_with_sum_item:{}:{}", hex::encode(data), sum)
         }
         Element::ReferenceWithSumItem(reference, _, sum, _) => {
@@ -182,12 +192,29 @@ fn format_element_data(element: &Element) -> String {
             format!("provable_count_provable_sum_tree:{}:{}", count, sum)
         }
         Element::ProvableSumTree(_, sum, _) => format!("provable_sum_tree:{}", sum),
+        // Indexed trees render their aggregate exactly like the
+        // non-indexed Provable* tree they mirror. The secondary root
+        // key(s) and, for the PCPS variant, the ranked-axis TLV are
+        // index-maintenance detail rather than element data, so they
+        // stay out of this rendering the same way the primary root key
+        // does for every other tree variant above.
+        Element::ProvableSumIndexedTree(_, _, sum, _) => {
+            format!("provable_sum_indexed_tree:{}", sum)
+        }
+        Element::ProvableCountIndexedTree(_, _, count, _) => {
+            format!("provable_count_indexed_tree:{}", count)
+        }
+        Element::ProvableCountProvableSumIndexedTree(_, count, sum, _, _) => {
+            format!("provable_count_provable_sum_indexed_tree:{}:{}", count, sum)
+        }
         Element::CommitmentTree(_, _, _) => "commitment_tree".to_string(),
         Element::MmrTree(_, _) => "mmr_tree".to_string(),
         Element::BulkAppendTree(_, _, _) => "bulk_append_tree".to_string(),
         Element::DenseAppendOnlyFixedSizeTree(_, _, _) => {
             "dense_append_only_fixed_size_tree".to_string()
         }
+
+        Element::PrivateDocumentStore(_, _, _, _) => "private_document_store".to_string(),
         Element::NonCounted(inner) => format!("non_counted({})", format_element_data(inner)),
         Element::NotSummed(inner) => format!("not_summed({})", format_element_data(inner)),
         Element::NotCountedOrSummed(inner) => {
@@ -201,6 +228,16 @@ fn format_element_type(element: &Element) -> String {
     match element {
         Element::Item(_, _) => "item".to_string(),
         Element::Reference(_, _, _) => "reference".to_string(),
+        Element::BidirectionalReference(_, _) => "bidirectional_reference".to_string(),
+        Element::ItemWithBackwardsReferences(_, _, _) => {
+            "item_with_backwards_references".to_string()
+        }
+        Element::SumItemWithBackwardsReferences(_, _, _) => {
+            "sum_item_with_backwards_references".to_string()
+        }
+        Element::ItemWithSumItemWithBackwardsReferences(_, _, _, _) => {
+            "item_with_sum_item_with_backwards_references".to_string()
+        }
         Element::Tree(_, _) => "tree".to_string(),
         Element::SumTree(_, _, _) => "sum_tree".to_string(),
         Element::SumItem(_, _) => "sum_item".to_string(),
@@ -215,12 +252,19 @@ fn format_element_type(element: &Element) -> String {
             "provable_count_provable_sum_tree".to_string()
         }
         Element::ProvableSumTree(_, _, _) => "provable_sum_tree".to_string(),
+        Element::ProvableSumIndexedTree(_, _, _, _) => "provable_sum_indexed_tree".to_string(),
+        Element::ProvableCountIndexedTree(_, _, _, _) => "provable_count_indexed_tree".to_string(),
+        Element::ProvableCountProvableSumIndexedTree(_, _, _, _, _) => {
+            "provable_count_provable_sum_indexed_tree".to_string()
+        }
         Element::CommitmentTree(_, _, _) => "commitment_tree".to_string(),
         Element::MmrTree(_, _) => "mmr_tree".to_string(),
         Element::BulkAppendTree(_, _, _) => "bulk_append_tree".to_string(),
         Element::DenseAppendOnlyFixedSizeTree(_, _, _) => {
             "dense_append_only_fixed_size_tree".to_string()
         }
+
+        Element::PrivateDocumentStore(_, _, _, _) => "private_document_store".to_string(),
         Element::NonCounted(inner) => format!("non_counted({})", format_element_type(inner)),
         Element::NotSummed(inner) => format!("not_summed({})", format_element_type(inner)),
         Element::NotCountedOrSummed(inner) => {
@@ -233,6 +277,49 @@ fn format_element_type(element: &Element) -> String {
 mod tests {
     use super::*;
     use crate::test_utils::test_utils::create_mock_sdk_handle;
+    use dash_sdk::drive::grovedb::element::reference_path::ReferencePathType;
+
+    #[test]
+    fn should_preserve_payload_rendering_for_backward_reference_variants() {
+        let path = ReferencePathType::SiblingReference(b"target".to_vec());
+        let cases = [
+            (
+                Element::new_bidirectional_reference_with_options(
+                    path.clone(),
+                    Some(4),
+                    true,
+                    None,
+                ),
+                Element::Reference(path, Some(4), None),
+                "bidirectional_reference",
+            ),
+            (
+                Element::ItemWithBackwardsReferences(vec![0, 255], Default::default(), None),
+                Element::Item(vec![0, 255], None),
+                "item_with_backwards_references",
+            ),
+            (
+                Element::SumItemWithBackwardsReferences(-42, Default::default(), None),
+                Element::SumItem(-42, None),
+                "sum_item_with_backwards_references",
+            ),
+            (
+                Element::ItemWithSumItemWithBackwardsReferences(
+                    vec![0, 255],
+                    -42,
+                    Default::default(),
+                    None,
+                ),
+                Element::ItemWithSumItem(vec![0, 255], -42, None),
+                "item_with_sum_item_with_backwards_references",
+            ),
+        ];
+
+        for (element, base, expected_type) in cases {
+            assert_eq!(format_element_data(&element), format_element_data(&base));
+            assert_eq!(format_element_type(&element), expected_type);
+        }
+    }
 
     #[test]
     fn test_get_path_elements_null_handle() {

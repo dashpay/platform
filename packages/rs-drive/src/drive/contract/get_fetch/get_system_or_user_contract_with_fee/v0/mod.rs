@@ -21,7 +21,7 @@ impl Drive {
         if let Some(system_contract) = self
             .cache
             .system_data_contracts
-            .find_by_id(Identifier::new(contract_id))
+            .find_by_id(Identifier::new(contract_id), platform_version)?
         {
             return Ok(ContractFetchOutcome::System(system_contract));
         }

@@ -139,4 +139,8 @@ pub enum ExecutionError {
     /// General IO Error
     #[error("io error: {0}")]
     IOError(#[from] std::io::Error),
+
+    /// CheckTx proof-verification capacity is currently unavailable.
+    #[error("check tx proof verification capacity is temporarily unavailable")]
+    CheckTxProofVerificationBusy,
 }

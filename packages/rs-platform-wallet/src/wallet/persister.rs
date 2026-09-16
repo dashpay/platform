@@ -10,9 +10,41 @@ use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::changeset::{
-    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, DpnsNameStateEntry, PersistenceCapabilities, PersistenceError,
+    PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use crate::wallet::platform_wallet::WalletId;
+use dpp::prelude::Identifier;
+
+/// Transient tx-record misses collapsed during one wait or sweep, reported as
+/// a single line when it ends.
+///
+/// Owned by the caller and dropped at its exit, so every path out — success,
+/// timeout, early return — reports exactly once, and a backend that is merely
+/// busy cannot flood the log from inside an unbounded poll loop.
+#[derive(Debug, Default)]
+pub(crate) struct TransientMissTally {
+    misses: usize,
+}
+
+impl TransientMissTally {
+    #[cfg(test)]
+    pub(crate) fn misses(&self) -> usize {
+        self.misses
+    }
+}
+
+impl Drop for TransientMissTally {
+    fn drop(&mut self) {
+        if self.misses > 0 {
+            tracing::debug!(
+                transient_misses = self.misses,
+                "Core tx-record reads hit transient backend failures during this pass; \
+                 each was read as a miss and will be retried"
+            );
+        }
+    }
+}
 
 /// Per-wallet persistence handle.
 ///
@@ -38,9 +70,13 @@ impl WalletPersister {
         self.inner.flush(self.wallet_id)
     }
 
-    /// See [`PlatformWalletPersistence::persists_durably`].
-    pub(crate) fn persists_durably(&self) -> bool {
-        self.inner.persists_durably()
+    pub(crate) fn store_commits_inline(&self) -> bool {
+        self.inner.store_commits_inline()
+    }
+
+    /// Feature-specific persistence contracts exposed by the backend.
+    pub(crate) fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        self.inner.persistence_capabilities()
     }
 
     pub(crate) fn load(&self) -> Result<ClientStartState, PersistenceError> {
@@ -56,6 +92,66 @@ impl WalletPersister {
         txid: &Txid,
     ) -> Result<Option<TransactionRecord>, PersistenceError> {
         self.inner.get_core_tx_record(self.wallet_id, txid)
+    }
+
+    /// [`Self::get_core_tx_record`] with the shared transient-as-miss policy.
+    ///
+    /// A busy store is indistinguishable in outcome from "the row is not
+    /// readable right now", and every caller here already retries a miss on its
+    /// next pass, so a transient failure collapses to `Ok(None)`. A permanent
+    /// one stays an `Err`: it will not fix itself, so swallowing it would
+    /// repeat the same doomed work forever with no signal. Use
+    /// [`Self::get_core_tx_record`] directly to tell the two apart.
+    ///
+    /// Every caller is a poll loop or a per-txid sweep, so the collapse is
+    /// counted into `tally` and reported once when that wait or sweep ends,
+    /// rather than logged per call.
+    pub(crate) fn get_core_tx_record_or_transient_miss(
+        &self,
+        txid: &Txid,
+        tally: &mut TransientMissTally,
+    ) -> Result<Option<TransactionRecord>, PersistenceError> {
+        match self.get_core_tx_record(txid) {
+            Err(e) if e.is_transient() => {
+                tally.misses += 1;
+                tracing::trace!(
+                    %txid,
+                    error = %e,
+                    "Core tx-record read hit a transient backend failure; reading as a miss"
+                );
+                Ok(None)
+            }
+            other => other,
+        }
+    }
+
+    /// Enumerate the persisted Core transaction ids scoped to this
+    /// wallet, tagged with the host's wallet-funded verdict. Used by
+    /// DashPay sent-payment reconstruction to fetch the full records
+    /// via [`Self::get_core_tx_record`]. `None` means the backend does
+    /// not support wallet-scoped enumeration (never "empty table").
+    pub(crate) fn list_wallet_core_txids(
+        &self,
+    ) -> Result<Option<Vec<crate::changeset::traits::ListedCoreTxid>>, PersistenceError> {
+        self.inner.list_wallet_core_txids(self.wallet_id)
+    }
+
+    /// Look up the persisted DPNS marketplace row for
+    /// `(wallet_identity_id, normalized_label)` within this wallet.
+    ///
+    /// The durable fallback the DPNS marketplace sync pass uses to
+    /// recover a departed name's `document_id` once a process restart
+    /// has left the session-scoped in-memory map empty — see
+    /// [`PlatformWalletPersistence::get_dpns_name_state`] for the full
+    /// contract. `Ok(None)` means the backend does not index DPNS rows
+    /// by label (or holds no such row); it is not an error.
+    pub(crate) fn get_dpns_name_state(
+        &self,
+        wallet_identity_id: &Identifier,
+        normalized_label: &str,
+    ) -> Result<Option<DpnsNameStateEntry>, PersistenceError> {
+        self.inner
+            .get_dpns_name_state(self.wallet_id, wallet_identity_id, normalized_label)
     }
 }
 

@@ -8,7 +8,7 @@ use std::ops::RangeInclusive;
 use platform_value::{BinaryData, Identifier};
 pub use state_transition_types::*;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
@@ -16,7 +16,9 @@ use bincode::{Decode, Encode};
 use dashcore::signer;
 #[cfg(feature = "state-transition-validation")]
 use dashcore::signer::double_sha;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
 #[cfg(any(
@@ -73,7 +75,7 @@ use crate::identity::Purpose;
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AddressNonce, AssetLockProof, UserFeeIncrease};
-use crate::serialization::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializableUntrusted, Signable};
 use crate::state_transition::address_credit_withdrawal_transition::{
     AddressCreditWithdrawalTransition, AddressCreditWithdrawalTransitionSignable,
 };
@@ -125,6 +127,9 @@ use crate::state_transition::identity_credit_transfer_transition::{
 use crate::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionSignable,
 };
+use crate::state_transition::identity_top_up_from_shielded_pool_transition::{
+    IdentityTopUpFromShieldedPoolTransition, IdentityTopUpFromShieldedPoolTransitionSignable,
+};
 use crate::state_transition::identity_topup_from_addresses_transition::{
     IdentityTopUpFromAddressesTransition, IdentityTopUpFromAddressesTransitionSignable,
 };
@@ -138,6 +143,9 @@ use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitio
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
 use crate::state_transition::shield_from_asset_lock_transition::{
     ShieldFromAssetLockTransition, ShieldFromAssetLockTransitionSignable,
+};
+use crate::state_transition::shield_from_identity_transition::{
+    ShieldFromIdentityTransition, ShieldFromIdentityTransitionSignable,
 };
 use crate::state_transition::shield_transition::{ShieldTransition, ShieldTransitionSignable};
 use crate::state_transition::shielded_transfer_transition::{
@@ -178,9 +186,11 @@ macro_rules! call_method {
             StateTransition::Shield(st) => st.$method($args),
             StateTransition::ShieldedTransfer(st) => st.$method($args),
             StateTransition::Unshield(st) => st.$method($args),
+            StateTransition::IdentityTopUpFromShieldedPool(st) => st.$method($args),
             StateTransition::ShieldFromAssetLock(st) => st.$method($args),
             StateTransition::ShieldedWithdrawal(st) => st.$method($args),
             StateTransition::IdentityCreateFromShieldedPool(st) => st.$method($args),
+            StateTransition::ShieldFromIdentity(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -203,9 +213,11 @@ macro_rules! call_method {
             StateTransition::Shield(st) => st.$method(),
             StateTransition::ShieldedTransfer(st) => st.$method(),
             StateTransition::Unshield(st) => st.$method(),
+            StateTransition::IdentityTopUpFromShieldedPool(st) => st.$method(),
             StateTransition::ShieldFromAssetLock(st) => st.$method(),
             StateTransition::ShieldedWithdrawal(st) => st.$method(),
             StateTransition::IdentityCreateFromShieldedPool(st) => st.$method(),
+            StateTransition::ShieldFromIdentity(st) => st.$method(),
         }
     };
 }
@@ -231,9 +243,11 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::Shield(_) => None,
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
+            StateTransition::IdentityTopUpFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
+            StateTransition::ShieldFromIdentity(st) => Some(st.$method($args)),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -256,9 +270,11 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::Shield(_) => None,
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
+            StateTransition::IdentityTopUpFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
+            StateTransition::ShieldFromIdentity(st) => Some(st.$method()),
         }
     };
 }
@@ -284,9 +300,11 @@ macro_rules! call_method_identity_signed {
             StateTransition::Shield(_) => {}
             StateTransition::ShieldedTransfer(_) => {}
             StateTransition::Unshield(_) => {}
+            StateTransition::IdentityTopUpFromShieldedPool(_) => {}
             StateTransition::ShieldFromAssetLock(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
+            StateTransition::ShieldFromIdentity(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -309,9 +327,11 @@ macro_rules! call_method_identity_signed {
             StateTransition::Shield(_) => {}
             StateTransition::ShieldedTransfer(_) => {}
             StateTransition::Unshield(_) => {}
+            StateTransition::IdentityTopUpFromShieldedPool(_) => {}
             StateTransition::ShieldFromAssetLock(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
+            StateTransition::ShieldFromIdentity(st) => st.$method(),
         }
     };
 }
@@ -358,6 +378,9 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::Unshield(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "unshield transition can not be called for identity signing".to_string(),
             )),
+            StateTransition::IdentityTopUpFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "identity top up from shielded pool transition can not be called for identity signing".to_string(),
+            )),
             StateTransition::ShieldFromAssetLock(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "shield from asset lock transition can not be called for identity signing".to_string(),
             )),
@@ -367,6 +390,7 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityCreateFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create from shielded pool transition can not be called for identity signing".to_string(),
             )),
+            StateTransition::ShieldFromIdentity(st) => st.$method($( $arg ),*),
         }
     };
     ($state_transition:expr, $method:ident) => {
@@ -409,6 +433,9 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::Unshield(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "unshield transition can not be called for identity signing".to_string(),
             )),
+            StateTransition::IdentityTopUpFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "identity top up from shielded pool transition can not be called for identity signing".to_string(),
+            )),
             StateTransition::ShieldFromAssetLock(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "shield from asset lock transition can not be called for identity signing".to_string(),
             )),
@@ -418,6 +445,7 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityCreateFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create from shielded pool transition can not be called for identity signing".to_string(),
             )),
+            StateTransition::ShieldFromIdentity(st) => st.$method(),
         }
     };
 }
@@ -428,10 +456,12 @@ macro_rules! call_errorable_method_identity_signed {
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSignable,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 // `tag = "$type"` matches the system-field convention: every serde-injected
 // discriminator key in this crate carries a `$` prefix so it never collides
@@ -481,6 +511,8 @@ pub enum StateTransition {
     ShieldFromAssetLock(ShieldFromAssetLockTransition),
     ShieldedWithdrawal(ShieldedWithdrawalTransition),
     IdentityCreateFromShieldedPool(IdentityCreateFromShieldedPoolTransition),
+    ShieldFromIdentity(ShieldFromIdentityTransition),
+    IdentityTopUpFromShieldedPool(IdentityTopUpFromShieldedPoolTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -769,6 +801,24 @@ mod json_convertible_tests {
             "identityCreateFromShieldedPool",
         );
     }
+
+    #[test]
+    fn umbrella_identity_top_up_from_shielded_pool() {
+        let inner = crate::state_transition::identity_top_up_from_shielded_pool_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityTopUpFromShieldedPool(inner),
+            "identityTopUpFromShieldedPool",
+        );
+    }
+
+    #[test]
+    fn umbrella_shield_from_identity() {
+        let inner = crate::state_transition::shield_from_identity_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::ShieldFromIdentity(inner),
+            "shieldFromIdentity",
+        );
+    }
 }
 
 impl OptionallyAssetLockProved for StateTransition {
@@ -793,11 +843,18 @@ pub struct StateTransitionSigningOptions {
 
 impl StateTransition {
     #[allow(unused_variables)]
-    pub fn deserialize_from_bytes_in_version(
+    pub fn deserialize_from_bytes_untrusted_in_version(
         bytes: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let state_transition = StateTransition::deserialize_from_bytes(bytes)?;
+        let max_value_depth = platform_version
+            .system_limits
+            .max_document_value_depth
+            .map(usize::from);
+        let state_transition =
+            platform_value::with_value_decode_depth_limit(max_value_depth, || {
+                StateTransition::deserialize_from_bytes_untrusted(bytes)
+            })?;
         #[cfg(all(feature = "state-transitions", feature = "validation"))]
         {
             let active_version_range = state_transition.active_version_range();
@@ -858,6 +915,8 @@ impl StateTransition {
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)
             | StateTransition::IdentityCreateFromShieldedPool(_) => 12..=LATEST_VERSION,
+            StateTransition::ShieldFromIdentity(_)
+            | StateTransition::IdentityTopUpFromShieldedPool(_) => 14..=LATEST_VERSION,
         }
     }
 
@@ -872,6 +931,7 @@ impl StateTransition {
                 | StateTransition::ShieldFromAssetLock(_)
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_)
+                | StateTransition::IdentityTopUpFromShieldedPool(_)
         )
     }
 
@@ -927,6 +987,9 @@ impl StateTransition {
                         BatchedTransitionRef::Document(DocumentTransition::Purchase(_)) => {
                             "Purchase"
                         }
+                        BatchedTransitionRef::Document(DocumentTransition::IndexOnlyDelete(_)) => {
+                            "IndexOnlyDelete"
+                        }
                         BatchedTransitionRef::Token(TokenTransition::Transfer(_)) => {
                             "TokenTransfer"
                         }
@@ -974,9 +1037,11 @@ impl StateTransition {
             Self::Shield(_) => "Shield".to_string(),
             Self::ShieldedTransfer(_) => "ShieldedTransfer".to_string(),
             Self::Unshield(_) => "Unshield".to_string(),
+            Self::IdentityTopUpFromShieldedPool(_) => "IdentityTopUpFromShieldedPool".to_string(),
             Self::ShieldFromAssetLock(_) => "ShieldFromAssetLock".to_string(),
             Self::ShieldedWithdrawal(_) => "ShieldedWithdrawal".to_string(),
             Self::IdentityCreateFromShieldedPool(_) => "IdentityCreateFromShieldedPool".to_string(),
+            Self::ShieldFromIdentity(_) => "ShieldFromIdentity".to_string(),
         }
     }
 
@@ -1001,9 +1066,11 @@ impl StateTransition {
             StateTransition::Shield(_) => None,
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
+            StateTransition::IdentityTopUpFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(st) => Some(st.signature()),
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
+            StateTransition::ShieldFromIdentity(st) => Some(st.signature()),
         }
     }
 
@@ -1017,6 +1084,7 @@ impl StateTransition {
             StateTransition::Shield(st) => st.inputs().len() as u16,
             StateTransition::ShieldedTransfer(_) => 0,
             StateTransition::Unshield(_) => 0,
+            StateTransition::IdentityTopUpFromShieldedPool(_) => 0,
             StateTransition::ShieldFromAssetLock(_) => 0,
             StateTransition::ShieldedWithdrawal(_) => 0,
             StateTransition::IdentityCreateFromShieldedPool(_) => 0,
@@ -1047,8 +1115,10 @@ impl StateTransition {
             StateTransition::MasternodeVote(_) => 0,
             StateTransition::ShieldedTransfer(_) => 0,
             StateTransition::Unshield(_) => 0,
+            StateTransition::IdentityTopUpFromShieldedPool(_) => 0,
             StateTransition::ShieldedWithdrawal(_) => 0,
             StateTransition::IdentityCreateFromShieldedPool(_) => 0,
+            StateTransition::ShieldFromIdentity(st) => st.user_fee_increase(),
         }
     }
 
@@ -1114,9 +1184,11 @@ impl StateTransition {
             StateTransition::Shield(_) => None,
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
+            StateTransition::IdentityTopUpFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
+            StateTransition::ShieldFromIdentity(st) => Some(st.owner_id()),
         }
     }
 
@@ -1141,9 +1213,11 @@ impl StateTransition {
             StateTransition::Shield(st) => Some(st.inputs()),
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
+            StateTransition::IdentityTopUpFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
+            StateTransition::ShieldFromIdentity(_) => None,
         }
     }
 
@@ -1207,7 +1281,12 @@ impl StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldedWithdrawal(_)
-            | StateTransition::IdentityCreateFromShieldedPool(_) => false,
+            | StateTransition::IdentityCreateFromShieldedPool(_)
+            | StateTransition::IdentityTopUpFromShieldedPool(_) => false,
+            StateTransition::ShieldFromIdentity(st) => {
+                st.set_signature(signature);
+                true
+            }
             StateTransition::AddressFundingFromAssetLock(st) => {
                 st.set_signature(signature);
                 true
@@ -1259,8 +1338,10 @@ impl StateTransition {
             StateTransition::MasternodeVote(_) => {}
             StateTransition::ShieldedTransfer(_) => {}
             StateTransition::Unshield(_) => {}
+            StateTransition::IdentityTopUpFromShieldedPool(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
+            StateTransition::ShieldFromIdentity(st) => st.set_user_fee_increase(user_fee_increase),
         }
     }
 
@@ -1424,6 +1505,11 @@ impl StateTransition {
                     "unshield transition can not be called for identity signing".to_string(),
                 ))
             }
+            StateTransition::IdentityTopUpFromShieldedPool(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "identity top up from shielded pool transition can not be called for identity signing".to_string(),
+                ))
+            }
             StateTransition::ShieldFromAssetLock(_) => {
                 return Err(ProtocolError::CorruptedCodeExecution(
                     "shield from asset lock transition can not be called for identity signing"
@@ -1441,6 +1527,10 @@ impl StateTransition {
                     "identity create from shielded pool transition can not be called for identity signing"
                         .to_string(),
                 ))
+            }
+            StateTransition::ShieldFromIdentity(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
             }
         }
         let data = self.signable_bytes()?;
@@ -1942,6 +2032,9 @@ impl StateTransitionStructureValidation for StateTransition {
             StateTransition::Unshield(transition) => {
                 transition.validate_structure(platform_version)
             }
+            StateTransition::IdentityTopUpFromShieldedPool(transition) => {
+                transition.validate_structure(platform_version)
+            }
             StateTransition::ShieldFromAssetLock(transition) => {
                 transition.validate_structure(platform_version)
             }
@@ -1949,6 +2042,9 @@ impl StateTransitionStructureValidation for StateTransition {
                 transition.validate_structure(platform_version)
             }
             StateTransition::IdentityCreateFromShieldedPool(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::ShieldFromIdentity(transition) => {
                 transition.validate_structure(platform_version)
             }
         }
@@ -2293,12 +2389,12 @@ mod tests {
 
     #[test]
     fn test_state_transition_platform_serialize_roundtrip() {
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
         let original = sample_transfer_st();
         let bytes =
             PlatformSerializable::serialize_to_bytes(&original).expect("serialize should succeed");
-        let restored =
-            StateTransition::deserialize_from_bytes(&bytes).expect("deserialize should succeed");
+        let restored = StateTransition::deserialize_from_bytes_untrusted(&bytes)
+            .expect("deserialize should succeed");
         assert_eq!(original, restored);
     }
 
@@ -2308,9 +2404,11 @@ mod tests {
         let original = sample_transfer_st();
         let bytes =
             PlatformSerializable::serialize_to_bytes(&original).expect("serialize succeeds");
-        let restored =
-            StateTransition::deserialize_from_bytes_in_version(&bytes, PlatformVersion::latest())
-                .expect("deserialize_from_bytes_in_version should succeed");
+        let restored = StateTransition::deserialize_from_bytes_untrusted_in_version(
+            &bytes,
+            PlatformVersion::latest(),
+        )
+        .expect("deserialize_from_bytes_in_version should succeed");
         assert_eq!(original, restored);
     }
 
@@ -3123,34 +3221,34 @@ mod tests {
     // --- serialize round-trip for variants beyond credit transfer. ---
     #[test]
     fn test_serialize_roundtrip_identity_update() {
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
         let original = sample_identity_update_st();
         let bytes =
             PlatformSerializable::serialize_to_bytes(&original).expect("serialize should succeed");
-        let restored =
-            StateTransition::deserialize_from_bytes(&bytes).expect("deserialize should succeed");
+        let restored = StateTransition::deserialize_from_bytes_untrusted(&bytes)
+            .expect("deserialize should succeed");
         assert_eq!(original, restored);
     }
 
     #[test]
     fn test_serialize_roundtrip_data_contract_update() {
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
         let original = sample_data_contract_update_st();
         let bytes =
             PlatformSerializable::serialize_to_bytes(&original).expect("serialize should succeed");
-        let restored =
-            StateTransition::deserialize_from_bytes(&bytes).expect("deserialize should succeed");
+        let restored = StateTransition::deserialize_from_bytes_untrusted(&bytes)
+            .expect("deserialize should succeed");
         assert_eq!(original, restored);
     }
 
     #[test]
     fn test_serialize_roundtrip_batch_empty() {
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
         let original = sample_batch_st_empty();
         let bytes =
             PlatformSerializable::serialize_to_bytes(&original).expect("serialize should succeed");
-        let restored =
-            StateTransition::deserialize_from_bytes(&bytes).expect("deserialize should succeed");
+        let restored = StateTransition::deserialize_from_bytes_untrusted(&bytes)
+            .expect("deserialize should succeed");
         assert_eq!(original, restored);
     }
 
@@ -3180,7 +3278,7 @@ mod tests {
             low_version.protocol_version
         );
 
-        let err = StateTransition::deserialize_from_bytes_in_version(&bytes, low_version)
+        let err = StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, low_version)
             .expect_err("expected StateTransitionIsNotActiveError for sub-12 protocol");
         match err {
             ProtocolError::StateTransitionError(
@@ -3307,10 +3405,11 @@ mod tests {
 
     #[test]
     fn test_withdrawal_v1_serialize_roundtrip_via_state_transition() {
-        use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
         let original = sample_withdrawal_v1_st();
         let bytes = PlatformSerializable::serialize_to_bytes(&original).expect("serialize ok");
-        let restored = StateTransition::deserialize_from_bytes(&bytes).expect("deserialize ok");
+        let restored =
+            StateTransition::deserialize_from_bytes_untrusted(&bytes).expect("deserialize ok");
         assert_eq!(original, restored);
         // The restored variant must still be V1, not V0 — exercises the
         // feature-version dispatch in deserialize.

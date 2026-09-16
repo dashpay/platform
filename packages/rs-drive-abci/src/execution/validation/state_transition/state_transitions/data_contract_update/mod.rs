@@ -721,6 +721,313 @@ mod tests {
         ));
     }
 
+    /// The data contract cache must hand block execution the definition its transaction holds,
+    /// never a committed copy a concurrent reader put back, and must not keep the definition
+    /// of an update the proposer rolled back.
+    mod contract_cache_coherence {
+        use super::*;
+        use crate::execution::platform_events::state_transition_processing::test_fault_injection::FAIL_NEXT_SUCCESSFUL_EXECUTION;
+        use drive::grovedb::Transaction;
+
+        /// A platform with a funded identity that owns a committed contract at version 1, and
+        /// signed updates of that contract to versions 2 and 3.
+        struct Scenario {
+            platform: TempPlatform<MockCoreRPCLike>,
+            contract_id: Identifier,
+            update_to_v2: Vec<u8>,
+            update_to_v3: Vec<u8>,
+        }
+
+        async fn setup_scenario() -> Scenario {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase.json";
+            let mut contract = json_document_to_contract(card_game_path, true, platform_version)
+                .expect("expected to get data contract");
+            contract.set_owner_id(identity.id());
+            contract.set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            let partial_identity = identity.into_partial_identity_info();
+
+            let mut contract_v2 = contract.clone();
+            contract_v2.set_version(2);
+            let update_to_v2 = DataContractUpdateTransition::new_from_data_contract(
+                contract_v2,
+                &partial_identity,
+                key.id(),
+                1,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create the update to version 2")
+            .serialize_to_bytes()
+            .expect("expected to serialize the update to version 2");
+
+            let mut contract_v3 = contract.clone();
+            contract_v3.set_version(3);
+            let update_to_v3 = DataContractUpdateTransition::new_from_data_contract(
+                contract_v3,
+                &partial_identity,
+                key.id(),
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create the update to version 3")
+            .serialize_to_bytes()
+            .expect("expected to serialize the update to version 3");
+
+            Scenario {
+                platform,
+                contract_id: contract.id(),
+                update_to_v2,
+                update_to_v3,
+            }
+        }
+
+        fn execute(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transaction: &Transaction,
+            raw_state_transitions: &[Vec<u8>],
+            proposing: bool,
+        ) -> Vec<StateTransitionExecutionResult> {
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            platform
+                .platform
+                .process_raw_state_transitions(
+                    raw_state_transitions,
+                    &platform_state,
+                    &BlockInfo::default(),
+                    transaction,
+                    platform_version,
+                    proposing,
+                    None,
+                )
+                .expect("expected to process state transitions")
+                .into_execution_results()
+        }
+
+        fn contract_version_in(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            contract_id: Identifier,
+            transaction: Option<&Transaction>,
+        ) -> u32 {
+            let platform_version = PlatformVersion::latest();
+            platform
+                .drive
+                .get_contract_with_fetch_info(
+                    contract_id.to_buffer(),
+                    false,
+                    transaction,
+                    platform_version,
+                )
+                .expect("expected to resolve the contract")
+                .expect("expected the contract to be present")
+                .contract
+                .version()
+        }
+
+        fn root_hash(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transaction: &Transaction,
+        ) -> [u8; 32] {
+            let platform_version = PlatformVersion::latest();
+            platform
+                .drive
+                .grove
+                .root_hash(Some(transaction), &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("expected the root hash")
+        }
+
+        /// Two validators execute a block that carries two sequential updates of the same
+        /// contract. On one of them a committed-state read of the contract lands between the
+        /// two updates, which is what a public `getDocuments` request does on a validator; the
+        /// other is quiet. Before the fix the raced validator resolved the second update's
+        /// "current" contract to the committed version 1 the query had put back into the
+        /// global cache, rejected the update as a version mismatch, and computed a different
+        /// app hash from the quiet one.
+        #[tokio::test]
+        async fn raced_and_quiet_validators_must_execute_two_sequential_updates_identically() {
+            let raced = setup_scenario().await;
+            let quiet = setup_scenario().await;
+            let platform_version = PlatformVersion::latest();
+
+            let raced_transaction = raced.platform.drive.grove.start_transaction();
+            let quiet_transaction = quiet.platform.drive.grove.start_transaction();
+
+            // The quiet validator: both updates back to back.
+            let quiet_results = execute(
+                &quiet.platform,
+                &quiet_transaction,
+                &[quiet.update_to_v2.clone(), quiet.update_to_v3.clone()],
+                false,
+            );
+            assert!(
+                matches!(
+                    quiet_results.as_slice(),
+                    [
+                        StateTransitionExecutionResult::SuccessfulExecution { .. },
+                        StateTransitionExecutionResult::SuccessfulExecution { .. }
+                    ]
+                ),
+                "precondition: both updates are valid in sequence, got {quiet_results:?}"
+            );
+
+            // The raced validator: the first update, then the query, then the second update.
+            let first = execute(
+                &raced.platform,
+                &raced_transaction,
+                &[raced.update_to_v2.clone()],
+                false,
+            );
+            assert!(
+                matches!(
+                    first.as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                ),
+                "precondition: the first update is valid, got {first:?}"
+            );
+
+            let queried = raced
+                .platform
+                .drive
+                .get_contract_with_fetch_info(
+                    raced.contract_id.to_buffer(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected the query to succeed")
+                .expect("expected the committed contract");
+            assert_eq!(
+                queried.contract.version(),
+                1,
+                "precondition: the query reads committed state, which still holds version 1"
+            );
+
+            let second = execute(
+                &raced.platform,
+                &raced_transaction,
+                &[raced.update_to_v3.clone()],
+                false,
+            );
+            assert!(
+                matches!(
+                    second.as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                ),
+                "the raced validator must accept the second update like the quiet one, got {second:?}"
+            );
+
+            assert_eq!(
+                contract_version_in(&raced.platform, raced.contract_id, Some(&raced_transaction)),
+                3
+            );
+            assert_eq!(
+                root_hash(&raced.platform, &raced_transaction),
+                root_hash(&quiet.platform, &quiet_transaction),
+                "both validators must compute the same app hash for the block"
+            );
+        }
+
+        /// The proposer strips a transition whose result is an internal error and rolls its
+        /// writes back. A contract update that got as far as applying had its definition
+        /// re-seeded into the block cache; the rollback must take that phantom definition with
+        /// it, or the rest of the proposal validates against a contract the block does not
+        /// contain.
+        #[tokio::test]
+        async fn a_rolled_back_contract_update_must_not_leave_its_definition_in_the_block_cache() {
+            let scenario = setup_scenario().await;
+            let transaction = scenario.platform.drive.grove.start_transaction();
+
+            FAIL_NEXT_SUCCESSFUL_EXECUTION.with(|flag| flag.set(true));
+            let results = execute(
+                &scenario.platform,
+                &transaction,
+                &[scenario.update_to_v2.clone()],
+                true,
+            );
+            assert!(
+                matches!(
+                    results.as_slice(),
+                    [StateTransitionExecutionResult::InternalError(_)]
+                ),
+                "precondition: the injected fault must strip the update, got {results:?}"
+            );
+
+            assert_eq!(
+                contract_version_in(&scenario.platform, scenario.contract_id, Some(&transaction)),
+                1,
+                "the rollback must undo the update in what the block reads"
+            );
+            if let Some(cached) = scenario
+                .platform
+                .drive
+                .cache
+                .data_contracts
+                .get(scenario.contract_id.to_buffer(), true)
+            {
+                assert_eq!(
+                    cached.contract.version(),
+                    1,
+                    "no phantom definition may remain in the block cache after the rollback"
+                );
+            }
+
+            // The same update must then apply cleanly onto the rolled-back state, exactly as
+            // it would have had the failed attempt never run.
+            let results = execute(
+                &scenario.platform,
+                &transaction,
+                &[scenario.update_to_v2.clone()],
+                true,
+            );
+            assert!(
+                matches!(
+                    results.as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                ),
+                "the update must apply onto the rolled-back state, got {results:?}"
+            );
+            assert_eq!(
+                contract_version_in(&scenario.platform, scenario.contract_id, Some(&transaction)),
+                2
+            );
+        }
+    }
+
     mod group_tests {
         use super::*;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::UnpaidConsensusError;
@@ -1371,6 +1678,7 @@ mod tests {
                 &|_| Ok(None),
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .unwrap_or_else(|e| {
                 panic!(
                     "expect to verify state transition proof {}, error is {}",
@@ -2426,7 +2734,7 @@ mod tests {
             )
             .expect("load base contract");
 
-            let mut val = dpp::platform_value::to_value(&base).expect("to_value");
+            let mut val = base.to_value(platform_version).expect("to_value");
 
             val["keywords"] = Value::Array(
                 keywords
@@ -2516,7 +2824,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            let mut val = dpp::platform_value::to_value(&fetched.contract).unwrap();
+            let mut val = fetched.contract.to_value(platform_version).unwrap();
 
             val["keywords"] = Value::Array(
                 new_keywords
@@ -2599,6 +2907,8 @@ mod tests {
                 start_at: None,
                 start_at_included: false,
                 block_time_ms: None,
+                resolved_time_ranges: vec![],
+                sub_queries: vec![],
             };
             query.internal_clauses.equal_clauses.insert(
                 "contractId".to_string(),
@@ -2818,7 +3128,7 @@ mod tests {
             )
             .expect("load base contract");
 
-            let mut val = dpp::platform_value::to_value(&base).expect("to_value");
+            let mut val = base.to_value(platform_version).expect("to_value");
 
             val["description"] = Value::Text(description.to_string());
 
@@ -2903,7 +3213,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            let mut val = dpp::platform_value::to_value(&fetched.contract).unwrap();
+            let mut val = fetched.contract.to_value(platform_version).unwrap();
 
             val["description"] = Value::Text(new_description.to_string());
 
@@ -2981,6 +3291,8 @@ mod tests {
                 start_at: None,
                 start_at_included: false,
                 block_time_ms: None,
+                resolved_time_ranges: vec![],
+                sub_queries: vec![],
             };
             query.internal_clauses.equal_clauses.insert(
                 "contractId".to_string(),
@@ -3134,6 +3446,150 @@ mod tests {
             assert_eq!(docs_after, "newA".to_string());
             // old docs gone
             assert!(!docs_after.contains(&"old1".to_string()));
+        }
+    }
+
+    mod permanent_document_reference_declarations {
+        use super::*;
+        use dpp::consensus::state::state_error::StateError;
+        use drive::util::test_helpers::setup_contract;
+
+        const V1_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-valid.json";
+        const FOREIGN_CONTRACT_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-foreign.json";
+
+        /// Applies the valid permanent-document reference fixture (and its
+        /// foreign counterpart) to the state, then processes an update built
+        /// from the given fixture at version 2 and returns the execution
+        /// result.
+        async fn run_contract_update(updated_fixture_path: &str) -> StateTransitionExecutionResult {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            setup_contract(
+                &platform.drive,
+                FOREIGN_CONTRACT_PATH,
+                None,
+                None,
+                None::<fn(&mut DataContract)>,
+                None,
+                None,
+            );
+
+            let mut contract = json_document_to_contract(V1_PATH, true, platform_version)
+                .expect("expected to get data contract");
+
+            contract.set_owner_id(identity.id());
+            contract.set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            let mut updated_contract =
+                json_document_to_contract(updated_fixture_path, true, platform_version)
+                    .expect("expected to get updated data contract");
+
+            updated_contract.set_owner_id(identity.id());
+            updated_contract
+                .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+            updated_contract.set_version(2);
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract update transition");
+
+            let data_contract_update_serialized_transition = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_update_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            processing_result
+                .execution_results()
+                .first()
+                .expect("expected one execution result")
+                .clone()
+        }
+
+        #[tokio::test]
+        async fn should_update_contract_adding_valid_permanent_document_reference() {
+            let result = run_contract_update(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-update-good.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_update_adding_invalid_permanent_document_reference() {
+            // The updated version adds a property referencing a document type
+            // the contract does not define
+            let result = run_contract_update(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-update-bad.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(_)
+                    ),
+                    ..
+                }
+            );
         }
     }
 }

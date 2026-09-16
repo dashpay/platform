@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_identity_balance_is_full_denomination() {
-        let denomination = 30_000_000_000u64;
+        let denomination = 25_000_000_000u64;
         let action = make_action(denomination, 500_000_000, 50_000_000_000);
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();

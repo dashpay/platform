@@ -32,7 +32,17 @@ impl Waitable for DataContract {
         state_transition: StateTransition,
         settings: Option<PutSettings>,
     ) -> Result<DataContract, Error> {
-        state_transition.wait_for_response(sdk, settings).await
+        match &state_transition {
+            // A contract update proof authenticates the current contract
+            // body — a height-pinned snapshot — and cannot bind this
+            // update's execution, so the snapshot wait is required.
+            StateTransition::DataContractUpdate(_) => {
+                state_transition
+                    .wait_for_affected_state(sdk, settings)
+                    .await
+            }
+            _ => state_transition.wait_for_response(sdk, settings).await,
+        }
     }
 }
 

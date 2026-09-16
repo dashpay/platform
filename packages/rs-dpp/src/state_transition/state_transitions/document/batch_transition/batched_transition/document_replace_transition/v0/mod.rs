@@ -2,7 +2,7 @@ mod from_document;
 pub mod v0_methods;
 
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision, TimestampMillis};
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
 
 use platform_value::{Identifier, Value};
@@ -25,7 +25,7 @@ mod property_names {
     pub const REVISION: &str = "$revision";
 }
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, DecodeUntrusted)]
 // Auto-injects `json_safe_u64` on `revision: Revision` (= u64).
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 // `Deserialize` is implemented manually below — see comments. Same
@@ -234,6 +234,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
             .document_structure_version
         {
             0 => Ok(DocumentV0 {
+                contract_version: None,
                 id,
                 owner_id,
                 properties: data.clone(),
@@ -315,6 +316,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
             .document_structure_version
         {
             0 => Ok(DocumentV0 {
+                contract_version: None,
                 id,
                 owner_id,
                 properties: data,

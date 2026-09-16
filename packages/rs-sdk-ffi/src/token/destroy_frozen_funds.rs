@@ -135,9 +135,9 @@ pub unsafe extern "C" fn dash_sdk_token_destroy_frozen_funds(
                 )
             };
 
-            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 
-            DataContract::versioned_deserialize(
+            DataContract::versioned_deserialize_untrusted(
                 contract_slice,
                 false, // skip validation since it's already validated
                 wrapper.sdk.version(),
@@ -242,6 +242,7 @@ mod tests {
             completion_ctx,
             signature.as_ptr(),
             signature.len(),
+            0,
             std::ptr::null(),
         );
     }

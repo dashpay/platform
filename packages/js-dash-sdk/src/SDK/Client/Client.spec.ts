@@ -50,6 +50,10 @@ describe('Dash - Client', function suite() {
       // latest-built fixture. Pin the client to the latest protocol version so
       // the round-trip stays version-consistent with the fixtures.
       driveProtocolVersion: getLatestProtocolVersion(),
+      platformProofVerifier: {
+        verifyStateTransitionResult: this.sinon.stub().resolves(),
+        verifyDataContractHistory: this.sinon.stub().resolves([]),
+      },
       wallet: {
         HDPrivateKey: testHDKey,
       },
@@ -339,6 +343,7 @@ describe('Dash - Client', function suite() {
     it('should broadcast documents', async () => {
       const proofResponse = {
         proof: { },
+        metadata: { },
       };
 
       dapiClientMock.platform.waitForStateTransitionResult.resolves(proofResponse);
@@ -390,6 +395,7 @@ describe('Dash - Client', function suite() {
     it('should broadcast data contract', async () => {
       dapiClientMock.platform.waitForStateTransitionResult.resolves({
         proof: { },
+        metadata: { },
       });
 
       await client.platform.contracts.publish(dataContractFixture, identityFixture);

@@ -526,27 +526,6 @@ unsafe-vote-timeout-override = "{{= it.platform.drive.tenderdash.consensus.unsaf
 unsafe-vote-timeout-delta-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.vote.delta }}"
 {{?}}
 
-# This field provides an unsafe override of the Commit timeout consensus parameter.
-# This field configures how long the consensus engine will wait after receiving
-# +2/3 precommits before beginning the next height.
-# If this field is set to a value greater than 0, it will take effect.
-{{? it.platform.drive.tenderdash.consensus.unsafeOverride.commit.timeout === null }}
-# unsafe-commit-timeout-override = 0s
-{{??}}
-unsafe-commit-timeout-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.commit.timeout }}"
-{{?}}
-
-# This field provides an unsafe override of the BypassCommitTimeout consensus parameter.
-# This field configures if the consensus engine will wait for the full Commit timeout
-# before proceeding to the next height.
-# If this field is set to true, the consensus engine will proceed to the next height
-# as soon as the node has gathered votes from all of the validators on the network.
-{{? it.platform.drive.tenderdash.consensus.unsafeOverride.commit.bypass === null }}
-# unsafe-bypass-commit-timeout-override =
-{{??}}
-unsafe-bypass-commit-timeout-override = {{? it.platform.drive.tenderdash.consensus.unsafeOverride.commit.bypass }}true{{??}}false{{?}}
-{{?}}
-
 
 #######################################################
 ###   Transaction Indexer Configuration Options     ###

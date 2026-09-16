@@ -1,14 +1,20 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::{
+    PlatformDeserializableUntrusted,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
+};
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use js_sys::{Array, Uint8Array};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
+
+use super::bind_vote_poll_context;
 
 #[wasm_bindgen]
 pub struct VerifyVotePollVotesProofResult {
@@ -36,6 +42,7 @@ pub fn verify_vote_poll_votes_proof(
     document_type_name: &str,
     index_name: &str,
     contestant_id: &Uint8Array,
+    expected_vote_poll_id: &Uint8Array,
     contested_document_resource_vote_poll_bytes: &Uint8Array,
     start_at: Option<Uint8Array>,
     limit: Option<u16>,
@@ -49,18 +56,29 @@ pub fn verify_vote_poll_votes_proof(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
-        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
+    let contract =
+        DataContract::versioned_deserialize_untrusted(&contract_bytes, true, platform_version)
+            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
     let contract_arc = Arc::new(contract);
 
     // Parse the contestant ID
     let contestant_id_identifier = Identifier::from_bytes(&contestant_id.to_vec())
         .map_err(|e| JsValue::from_str(&format!("Invalid contestant ID: {:?}", e)))?;
 
-    // Parse the contested document resource vote poll identifier
-    let contested_vote_poll_id =
-        Identifier::from_bytes(&contested_document_resource_vote_poll_bytes.to_vec())
-            .map_err(|e| JsValue::from_str(&format!("Invalid vote poll identifier: {:?}", e)))?;
+    let vote_poll = ContestedDocumentResourceVotePoll::deserialize_from_bytes_untrusted(
+        &contested_document_resource_vote_poll_bytes.to_vec(),
+    )
+    .map_err(|e| JsValue::from_str(&format!("Invalid vote poll: {:?}", e)))?;
+    let expected_vote_poll_id = Identifier::from_bytes(&expected_vote_poll_id.to_vec())
+        .map_err(|e| JsValue::from_str(&format!("Invalid vote poll identifier: {:?}", e)))?;
+    let vote_poll = bind_vote_poll_context(
+        vote_poll,
+        expected_vote_poll_id,
+        contract_arc.id(),
+        document_type_name,
+        index_name,
+    )
+    .map_err(|error| JsValue::from_str(&error))?;
 
     // Parse start_at if provided
     let start_at_identifier = start_at
@@ -72,13 +90,7 @@ pub fn verify_vote_poll_votes_proof(
 
     // Create the query
     let query = ContestedDocumentVotePollVotesDriveQuery {
-        vote_poll: ContestedDocumentResourceVotePoll {
-            contract_id: contract_arc.id(),
-            document_type_name: document_type_name.to_string(),
-            index_name: index_name.to_string(),
-            // Use the provided vote-poll ID as the index value
-            index_values: vec![contested_vote_poll_id.into()],
-        },
+        vote_poll,
         contestant_id: contestant_id_identifier,
         offset: None,
         limit,
@@ -96,7 +108,10 @@ pub fn verify_vote_poll_votes_proof(
         .map_err(|e| JsValue::from_str(&format!("Failed to resolve query: {:?}", e)))?;
 
     let (root_hash, votes_vec) = resolved_query
-        .verify_vote_poll_votes_proof(&proof_vec, platform_version)
+        .verify_vote_poll_votes_proof(
+            supported_grovedb_proof(&proof_vec, platform_version)?,
+            platform_version,
+        )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert identifiers to JS array

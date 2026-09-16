@@ -8,7 +8,7 @@
 //! / tokens / DashPay / identity key derivation / identity
 //! registration belongs in the `platform-wallet` crate."
 //!
-//! Mirrors the post-#3541 identity-flow shape:
+//! Mirrors the identity-flow shape:
 //!   - Library function takes a `Signer<IdentityPublicKey>` reference
 //!     so the FFI's external `KeychainSigner` trampoline can route
 //!     signing back to Swift / Keychain without crossing seed bytes.

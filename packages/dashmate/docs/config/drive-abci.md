@@ -6,8 +6,14 @@ Drive ABCI contains the application logic for Dash Platform. Its configuration i
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `platform.drive.abci.docker.image` | Docker image for Drive ABCI | `dashpay/drive:${version}` | `dashpay/drive:latest` |
+| `platform.drive.abci.docker.image` | Docker image for Drive ABCI | _unset_ (see below) | `dashpay/drive:latest` |
 | `platform.drive.abci.docker.build` | Build settings for Drive ABCI | Object | See below |
+
+### Image versions
+
+`platform.drive.abci.docker.image` is unset by default, which means "use the Drive ABCI image published for this
+dashmate version", so upgrading dashmate moves it automatically. Setting it pins it
+permanently. See [Options with dynamic defaults](./index.md#options-with-dynamic-defaults).
 
 The `docker.build` object allows for custom build settings:
 ```json

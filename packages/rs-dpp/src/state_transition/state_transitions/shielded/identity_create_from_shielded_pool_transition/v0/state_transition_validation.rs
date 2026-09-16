@@ -208,8 +208,32 @@ mod tests {
     }
 
     #[test]
-    fn should_accept_each_member_denomination() {
-        let platform_version = PlatformVersion::latest();
+    fn should_accept_each_member_denomination_v13() {
+        // Pinned to PV13 so the test keeps proving the v13 set (0.03 / 0.1 /
+        // 0.25 / 0.5 / 1 DASH) even after later protocol versions revise it.
+        let platform_version = PlatformVersion::get(13).expect("PV13 must exist");
+        for denomination in [
+            3_000_000_000u64,
+            10_000_000_000,
+            25_000_000_000,
+            50_000_000_000,
+            100_000_000_000,
+        ] {
+            let mut t = valid_transition();
+            t.denomination = denomination;
+            assert!(
+                t.validate_structure(platform_version).is_valid(),
+                "denomination {denomination} should be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_each_member_denomination_v12() {
+        // The PV12 replay contract: the original set (0.1 / 0.3 / 0.5 /
+        // 1 DASH) — including the 0.3 DASH retired at v13 — must stay
+        // accepted under PV12.
+        let platform_version = PlatformVersion::get(12).expect("PV12 must exist");
         for denomination in [
             10_000_000_000u64,
             30_000_000_000,
@@ -220,7 +244,41 @@ mod tests {
             t.denomination = denomination;
             assert!(
                 t.validate_structure(platform_version).is_valid(),
-                "denomination {denomination} should be accepted"
+                "denomination {denomination} should be accepted under PV12"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_retired_denomination() {
+        // 0.3 DASH was a member of the v12 set but is retired as of v13
+        // (pinned so the test stays meaningful under later versions).
+        let platform_version = PlatformVersion::get(13).expect("PV13 must exist");
+        let mut t = valid_transition();
+        t.denomination = 30_000_000_000;
+        let result = t.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::ShieldedInvalidDenominationError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_reject_added_denominations_pre_v13() {
+        // 0.03 and 0.25 DASH only join the set at v13 — PV12 must reject
+        // them (the on-chain set is versioned, not additive).
+        let platform_version = PlatformVersion::get(12).expect("PV12 must exist");
+        for denomination in [3_000_000_000u64, 25_000_000_000] {
+            let mut t = valid_transition();
+            t.denomination = denomination;
+            let result = t.validate_structure(platform_version);
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::ShieldedInvalidDenominationError(_)
+                )]
             );
         }
     }

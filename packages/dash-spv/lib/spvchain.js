@@ -202,14 +202,51 @@ const SpvChain = class {
       const chunkPrevHash = utils.getCorrectedHash(chunk[0].prevHash);
 
       if (tipHash === chunkPrevHash) {
-        this.appendHeadersToLongestChain(chunk);
-        chunk.forEach((header) => {
-          this.orphansHashes.delete(header.hash);
-        });
-        this.orphanChunks.splice(i, 1);
-        i -= 1;
+        try {
+          this.validateConnectedHeaders(chunk, this.getValidationHistory(), true);
+          this.appendHeadersToLongestChain(chunk);
+          chunk.forEach((header) => {
+            this.orphansHashes.delete(header.hash);
+          });
+          this.orphanChunks.splice(i, 1);
+          i -= 1;
+        } catch (e) {
+          chunk.forEach((header) => {
+            this.orphansHashes.delete(header.hash);
+          });
+          this.orphanChunks.splice(i, 1);
+          throw e;
+        }
       }
     }
+  }
+
+  /** @private */
+  getValidationHistory() {
+    return this.prunedHeaders.concat(this.getLongestChain()).slice(-24);
+  }
+
+  /** @private */
+  validateConnectedHeaders(headers, initialHistory, allowKnownOrphans = false) {
+    const history = initialHistory.slice();
+
+    headers.forEach((header) => {
+      const previousHeader = history[history.length - 1];
+      if (!previousHeader || !SpvChain.isParentChild(header, previousHeader)) {
+        throw new SPVError(`SPV: Header ${header.hash} is not connected to verified history`);
+      }
+
+      const isKnown = this.heightByHash.has(header.hash)
+        || (!allowKnownOrphans && this.orphansHashes.has(header.hash));
+      if (isKnown || !Consensus.isValidBlockHeader(header, history, this.network)) {
+        throw new SPVError(`SPV: Header ${header.hash} is invalid`);
+      }
+
+      history.push(header);
+      if (history.length > 24) {
+        history.shift();
+      }
+    });
   }
 
   /** @private */
@@ -230,7 +267,6 @@ const SpvChain = class {
     return !!validBlockHeader && !duplicate;
   }
 
-  /* eslint-disable no-param-reassign */
   /**
    * verifies the parent child connection
    * between two adjacent dashcore.BlockHeader objects
@@ -331,10 +367,9 @@ const SpvChain = class {
 
       isOrphan = !SpvChain.isParentChild(firstHeader, tip);
     } else if (batchHeadHeight === this.pendingStartBlockHeight) {
-      // Header at pendingStartBlockHeight is found, initialize chain
-      this.startBlockHeight = this.pendingStartBlockHeight;
-      this.pendingStartBlockHeight = null;
-      isOrphan = false;
+      throw new SPVError(
+        'SPV chain cannot initialize from an unauthenticated remote checkpoint',
+      );
     } else if (batchHeadHeight > this.pendingStartBlockHeight) {
       // Orphan chunk has arrived
       isOrphan = true;
@@ -342,38 +377,25 @@ const SpvChain = class {
       throw new SPVError(`Batch at invalid height arrived: ${batchHeadHeight}, expected > ${this.pendingStartBlockHeight}`);
     }
 
-    const allValid = normalizedHeaders.reduce((acc, header, index, array) => {
-      const previousHeaders = normalizedHeaders.slice(0, index);
-      if (index !== 0) {
-        if (!SpvChain.isParentChild(header, array[index - 1])) {
-          throw new SPVError(`SPV: Header ${header.hash} is not a child of ${array[index - 1].hash}`);
+    if (isOrphan) {
+      normalizedHeaders.forEach((header, index) => {
+        if (index > 0 && !SpvChain.isParentChild(header, normalizedHeaders[index - 1])) {
+          throw new SPVError(
+            `SPV: Header ${header.hash} is not a child of ${normalizedHeaders[index - 1].hash}`,
+          );
         }
-
-        if (!this.isValid(header, previousHeaders)) {
+        if (this.isDuplicate(header.hash)
+          || !Consensus.isValidBlockHeaderWithoutContext(header, this.network)) {
           throw new SPVError(`SPV: Header ${header.hash} is invalid`);
         }
-        return acc && true;
-      }
-      if (isOrphan) {
-        if (!this.isValid(header, previousHeaders)) {
-          throw new SPVError('Some headers are invalid');
-        }
-        return acc && true;
-      }
-      if (!this.isValid(header, this.getLongestChain())) {
-        throw new SPVError('Some headers are invalid');
-      }
-      return acc && true;
-    }, true);
-    if (!allValid) {
-      throw new SPVError('Some headers are invalid');
-    }
-    if (isOrphan) {
+      });
+
       normalizedHeaders.forEach((header) => {
         this.orphansHashes.add(header.hash);
       });
       this.orphanChunks.push(normalizedHeaders);
     } else {
+      this.validateConnectedHeaders(normalizedHeaders, this.getValidationHistory());
       this.appendHeadersToLongestChain(normalizedHeaders);
     }
     if (this.orphanChunks.length > 0) {

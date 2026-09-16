@@ -261,92 +261,97 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Invariant: the flat `compute_shielded_unshield_fee` must cover the *actual* GroveDB write
-    /// cost of an Unshield's operations, AND strictly exceed the metered storage so the pool-paid
-    /// booking split never undercharges.
+    /// Invariant: the flat `compute_shielded_unshield_fee` covers the **amortized**
+    /// real GroveDB write cost of an Unshield, and stays above the amortized
+    /// real storage so the pool-paid booking split never starves the
+    /// proposer — the same amortized reading as the ShieldedTransfer test
+    /// (see there, and `fee_floor_support`, for why a flat pool-paid fee is
+    /// held to the epoch average rather than the per-append worst case).
     ///
-    /// Unshield is pool-paid: `execute_event/v0` carves the flat fee from the shielded pool and
-    /// splits it as `storage_fee = min(real_metered_storage, flat_fee); processing_fee = flat_fee -
-    /// storage_fee`. The `min()` only binds (zeroing the proposer's processing reward and
-    /// undercharging storage) if real metered storage EXCEEDS the flat fee. Unshield also writes the
-    /// net to the output platform address (`AddBalanceToAddress`), so its fee
-    /// (`compute_shielded_unshield_fee`) prices that write as a flat storage component on top of the
-    /// base shielded fee — which is exactly why the `fee > storage` margin below holds with room to
-    /// spare. This test meters the real cost in estimation mode (`apply = false`, production-sized
-    /// 216-byte notes) and asserts both `fee >= total cost` and `fee > storage` — the latter being
-    /// exactly the condition that keeps the `min()` a no-op. Mirrors the ShieldedTransfer metering
-    /// test.
+    /// An Unshield is a transfer's note/nullifier writes plus the
+    /// `AddBalanceToAddress` output write, so its amortized cost is the
+    /// transfer epoch average plus the measured per-transition delta between
+    /// an ordinary unshield and an ordinary transfer.
     #[test]
     fn test_minimum_shielded_fee_covers_actual_grovedb_write_cost() {
+        use super::super::fee_floor_support::{note, transfer_action, transfer_epoch};
         use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
         use dpp::block::block_info::BlockInfo;
         use dpp::shielded::compute_shielded_unshield_fee;
 
-        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
-        let epoch = Epoch::new(0).unwrap();
+        let epoch_info = Epoch::new(0).unwrap();
+        let epoch = transfer_epoch();
 
-        // Production-sized change note: 216-byte encrypted note, distinct nullifier/cmx per action.
-        let realistic_note = |i: u8| ShieldedActionNote {
-            nullifier: [i.wrapping_add(1); 32],
-            cmx: [i.wrapping_add(101); 32],
-            cv_net: [i.wrapping_add(201); 32],
-            encrypted_note: vec![0x77; 216],
-        };
-
-        for num_actions in [1usize, 8, 16] {
-            let fee_amount = compute_shielded_unshield_fee(num_actions, platform_version)
-                .expect("fee computation should not overflow");
-            let notes: Vec<_> = (0..num_actions as u8).map(realistic_note).collect();
-            // `amount` (unshielding_amount) must cover the fee with a positive net to the output
-            // address (so the AddBalanceToAddress write is exercised, the heaviest extra op).
-            let amount = fee_amount + 1_000_000;
-            let action = UnshieldTransitionAction::V0(UnshieldTransitionActionV0 {
-                output_address: PlatformAddress::P2pkh([0xBB; 20]),
-                amount,
-                notes,
-                anchor: [0xAA; 32],
-                fee_amount,
-                current_total_balance: amount + 1_000_000,
-                chargeable_failure: false,
-            });
-
-            let ops = action
-                .into_high_level_drive_operations(&epoch, platform_version)
-                .expect("operations");
-
-            // apply = false → estimation mode: no DB mutation, returns the real cost.
-            let fee_result = drive
+        // The per-transition delta of an Unshield over a ShieldedTransfer at
+        // an ordinary (non-compacting) position: the output address write.
+        let measure = |ops: Vec<crate::util::batch::DriveOperation>| {
+            let drive = setup_drive_with_initial_state_structure(None);
+            drive
                 .apply_drive_operations(
                     ops,
-                    false,
+                    true,
                     &BlockInfo::default(),
                     None,
                     platform_version,
                     None,
                 )
-                .expect("estimate write cost");
-            let actual_cost = fee_result.total_base_fee();
+                .expect("apply")
+        };
+        let fee_one = compute_shielded_unshield_fee(1, platform_version).expect("fee");
+        let amount = fee_one + 1_000_000;
+        let unshield_one = measure(
+            UnshieldTransitionAction::V0(UnshieldTransitionActionV0 {
+                output_address: PlatformAddress::P2pkh([0xBB; 20]),
+                amount,
+                notes: vec![note(7)],
+                anchor: [0xAA; 32],
+                fee_amount: fee_one,
+                current_total_balance: amount + 1_000_000,
+                chargeable_failure: false,
+            })
+            .into_high_level_drive_operations(&epoch_info, platform_version)
+            .expect("operations"),
+        );
+        let transfer_one = measure(
+            transfer_action(7, fee_one)
+                .into_high_level_drive_operations(&epoch_info, platform_version)
+                .expect("operations"),
+        );
+        let delta_total = unshield_one
+            .total_base_fee()
+            .saturating_sub(transfer_one.total_base_fee());
+        let delta_storage = unshield_one
+            .storage_fee
+            .saturating_sub(transfer_one.storage_fee);
 
+        for num_actions in [1u64, 8, 16] {
+            let fee_amount = compute_shielded_unshield_fee(num_actions as usize, platform_version)
+                .expect("fee computation should not overflow");
             assert!(
-                fee_amount >= actual_cost,
-                "compute_shielded_unshield_fee({num_actions}) = {fee_amount} must cover the actual \
-                 Unshield GroveDB write cost {actual_cost} (storage {} + processing {})",
-                fee_result.storage_fee,
-                fee_result.processing_fee
+                fee_amount >= num_actions * epoch.avg_total + delta_total,
+                "compute_shielded_unshield_fee({num_actions}) = {fee_amount} must cover the \
+                 amortized real Unshield write cost {} x {} + {} (output write)",
+                num_actions,
+                epoch.avg_total,
+                delta_total
             );
-
-            // The booking-split invariant: flat fee must strictly exceed real metered storage so
-            // `storage_fee = min(real_storage, flat_fee)` never binds (proposer processing reward
-            // never zeroed, storage never undercharged). See `execute_event/v0`.
             assert!(
-                fee_amount > fee_result.storage_fee,
-                "compute_shielded_unshield_fee({num_actions}) = {fee_amount} must strictly exceed the \
-                 real metered Unshield storage {} so the booking split's min(real_storage, flat_fee) \
-                 never binds",
-                fee_result.storage_fee
+                fee_amount > num_actions * epoch.avg_storage + delta_storage,
+                "flat fee {fee_amount} must exceed the amortized real storage {} x {} + {} so \
+                 the pool-paid booking split never starves the proposer",
+                num_actions,
+                epoch.avg_storage,
+                delta_storage
             );
         }
+        assert!(
+            epoch.boundary_storage + delta_storage < fee_one,
+            "even the compacting append's real storage ({} + {}) must stay below the flat fee \
+             ({fee_one}), or `min(actual_storage, flat)` would zero the proposer's share",
+            epoch.boundary_storage,
+            delta_storage
+        );
     }
 
     #[test]

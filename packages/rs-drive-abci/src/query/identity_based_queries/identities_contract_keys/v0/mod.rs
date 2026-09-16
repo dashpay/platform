@@ -155,7 +155,7 @@ mod tests {
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
-    use dpp::serialization::PlatformDeserializable;
+    use dpp::serialization::PlatformDeserializableUntrusted;
     use drive::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
@@ -240,7 +240,12 @@ mod tests {
             setup_platform(Some((1, 1)), Network::Testnet, None);
         let max = platform_version.drive_abci.query.max_returned_elements as usize;
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let request = GetIdentitiesContractKeysRequestV0 {
             identities_ids: (0..=max).map(|i| vec![i as u8; 32]).collect(),
@@ -268,7 +273,12 @@ mod tests {
             setup_platform(Some((1, 1)), Network::Testnet, None);
         let max = platform_version.drive_abci.query.max_returned_elements as usize;
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let request = GetIdentitiesContractKeysRequestV0 {
             identities_ids: (0..max).map(|i| vec![i as u8; 32]).collect(),
@@ -298,7 +308,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let request = GetIdentitiesContractKeysRequestV0 {
             identities_ids: vec![vec![1; 32]],
@@ -329,7 +344,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let identity_ids = vec![vec![1; 32]];
 
@@ -559,7 +579,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let mut rng = StdRng::seed_from_u64(10);
 
@@ -604,7 +629,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let mut rng = StdRng::seed_from_u64(10);
 
@@ -668,7 +698,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         // Create alice and bob identities with encryption and decryption keys
         let (alice, bob) = {
@@ -796,9 +831,11 @@ mod tests {
                     .filter(|key| key.purpose == purpose as i32)
                     .fold(vec![], |mut acc, keys| {
                         let keys = keys.keys_bytes.iter().map(|key_bytes| {
-                            IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice())
-                                .unwrap()
-                                .id()
+                            IdentityPublicKey::deserialize_from_bytes_untrusted(
+                                key_bytes.as_slice(),
+                            )
+                            .unwrap()
+                            .id()
                         });
                         acc.extend(keys);
                         acc
@@ -827,7 +864,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let mut rng = StdRng::seed_from_u64(10);
 
@@ -923,7 +965,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let mut rng = StdRng::seed_from_u64(10);
 
@@ -1091,9 +1138,11 @@ mod tests {
                     .filter(|key| key.purpose == purpose as i32)
                     .fold(vec![], |mut acc, keys| {
                         let keys = keys.keys_bytes.iter().map(|key_bytes| {
-                            IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice())
-                                .unwrap()
-                                .id()
+                            IdentityPublicKey::deserialize_from_bytes_untrusted(
+                                key_bytes.as_slice(),
+                            )
+                            .unwrap()
+                            .id()
                         });
                         acc.extend(keys);
                         acc
@@ -1124,7 +1173,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let mut rng = StdRng::seed_from_u64(10);
 

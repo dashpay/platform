@@ -20,7 +20,7 @@ import subprocess
 import sys
 
 WALLET_CRATES = {"platform-wallet", "platform-wallet-ffi", "platform-wallet-storage"}
-EXPECTED_DEPENDENTS = {"rs-unified-sdk-ffi"}
+EXPECTED_DEPENDENTS = {"rs-unified-sdk-ffi", "rs-unified-sdk-jni"}
 
 
 def main() -> int:
