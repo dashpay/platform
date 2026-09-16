@@ -35,7 +35,9 @@ export interface EvoSDKOptions extends ConnectionOptions {
   // Custom masternode addresses to seed the SDK with. `network` still
   // controls which Network enum the underlying builder uses (and, for
   // trusted mode, which quorums endpoint is prefetched); the addresses
-  // here replace the network's built-in defaults at seed time.
+  // here replace the network's built-in defaults at seed time. In trusted
+  // mode they also take precedence over the addresses the quorum service
+  // advertises, so `connect()` skips that discovery request when they are set.
   // Example: ['https://127.0.0.1:1443', 'https://192.168.1.100:1443']
   addresses?: string[];
   // Short name of the devnet (e.g. 'paloma'). Required when network === 'devnet'
@@ -132,26 +134,29 @@ export class EvoSDK {
 
     const { network, trusted, version, proofs, settings, logs, addresses, devnetName, quorumUrl } = this.options;
 
-    // Prefetch trusted context only when trusted mode is requested
+    // Prefetch trusted context only when trusted mode is requested. Explicit
+    // addresses win over discovered ones in `withTrustedContext`, so the
+    // masternode discovery request is skipped when they are given.
+    const discoverAddresses = !(addresses && addresses.length > 0);
     let context: wasm.WasmTrustedContext | undefined;
     if (trusted) {
       if (network === 'mainnet') {
         context = quorumUrl
-          ? await wasm.WasmTrustedContext.prefetchMainnetWithUrl(quorumUrl)
-          : await wasm.WasmTrustedContext.prefetchMainnet();
+          ? await wasm.WasmTrustedContext.prefetchMainnetWithUrl(quorumUrl, discoverAddresses)
+          : await wasm.WasmTrustedContext.prefetchMainnet(discoverAddresses);
       } else if (network === 'testnet') {
         context = quorumUrl
-          ? await wasm.WasmTrustedContext.prefetchTestnetWithUrl(quorumUrl)
-          : await wasm.WasmTrustedContext.prefetchTestnet();
+          ? await wasm.WasmTrustedContext.prefetchTestnetWithUrl(quorumUrl, discoverAddresses)
+          : await wasm.WasmTrustedContext.prefetchTestnet(discoverAddresses);
       } else if (network === 'local') {
         context = quorumUrl
-          ? await wasm.WasmTrustedContext.prefetchLocalWithUrl(quorumUrl)
-          : await wasm.WasmTrustedContext.prefetchLocal();
+          ? await wasm.WasmTrustedContext.prefetchLocalWithUrl(quorumUrl, discoverAddresses)
+          : await wasm.WasmTrustedContext.prefetchLocal(discoverAddresses);
       } else if (network === 'devnet') {
         if (quorumUrl) {
-          context = await wasm.WasmTrustedContext.prefetchDevnetWithUrl(quorumUrl);
+          context = await wasm.WasmTrustedContext.prefetchDevnetWithUrl(quorumUrl, discoverAddresses);
         } else if (devnetName) {
-          context = await wasm.WasmTrustedContext.prefetchDevnet(devnetName);
+          context = await wasm.WasmTrustedContext.prefetchDevnet(devnetName, discoverAddresses);
         } else {
           throw new Error("EvoSDK: trusted devnet requires devnetName or quorumUrl");
         }

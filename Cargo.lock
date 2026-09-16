@@ -6480,6 +6480,7 @@ dependencies = [
  "dash-async",
  "dash-context-provider",
  "dpp",
+ "futures",
  "hex",
  "lru",
  "reqwest 0.12.28",
