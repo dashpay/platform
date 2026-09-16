@@ -172,6 +172,7 @@ mod tests {
             0
         );
         assert!(totals.ok().expect("expected a verdict"));
+        drive.assert_token_rollups_consistent(None, platform_version);
     }
 
     #[test]

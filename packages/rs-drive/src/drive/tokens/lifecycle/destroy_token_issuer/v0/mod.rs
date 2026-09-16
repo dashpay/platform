@@ -288,6 +288,7 @@ mod tests {
             )
             .expect("expected to destroy the issuer");
 
+        drive.assert_token_rollups_consistent(None, platform_version);
         let after = drive
             .calculate_total_tokens_balance(None, platform_version)
             .expect("expected totals");

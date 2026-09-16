@@ -22,6 +22,8 @@ mod fetch_token_lifecycles;
 #[cfg(feature = "server")]
 mod insert_token_contract_lifecycles_structure;
 mod queries;
+#[cfg(all(feature = "server", any(test, feature = "fixtures-and-mocks")))]
+mod test_helpers;
 
 #[cfg(feature = "server")]
 use crate::drive::tokens::paths::{

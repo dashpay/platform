@@ -3011,6 +3011,9 @@ mod tests {
         assert_eq!(totals_17.total_tokens_in_platform, 102_577);
         assert_eq!(totals_17.total_destroyed_supply, 0);
         assert!(totals_17.ok().expect("expected a verdict"));
+        platform
+            .drive
+            .assert_token_rollups_consistent(Some(&transaction), platform_version_17);
 
         let totals_16 = platform
             .drive
@@ -3163,6 +3166,9 @@ mod tests {
             .calculate_total_tokens_balance(None, platform_version_17)
             .expect("expected totals");
         assert!(totals.ok().expect("expected a verdict"));
+        platform
+            .drive
+            .assert_token_rollups_consistent(None, platform_version_17);
     }
 
     /// The dispatcher reaches the token lifecycle transition when crossing 17 and skips it
