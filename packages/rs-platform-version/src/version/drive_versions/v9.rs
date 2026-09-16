@@ -8,7 +8,7 @@ use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE
 use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_state_transition_method_versions::v4::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_structure_version::v1::DRIVE_STRUCTURE_V1;
-use crate::version::drive_versions::drive_token_method_versions::v2::DRIVE_TOKEN_METHOD_VERSIONS_V2;
+use crate::version::drive_versions::drive_token_method_versions::v1::DRIVE_TOKEN_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_verify_method_versions::v2::DRIVE_VERIFY_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_vote_method_versions::v2::DRIVE_VOTE_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::{
@@ -48,7 +48,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
     structure: DRIVE_STRUCTURE_V1,
     methods: DriveMethodVersions {
         initialization: DriveInitializationMethodVersions {
-            create_initial_state_structure: 4, // changed in v9: adds the token shielded pools BigSumTree under the Tokens root (v8 added the credit shielded pool trees)
+            create_initial_state_structure: 3, // changed in v8: adds shielded pool trees (commitment tree, nullifiers, anchors)
         },
         credit_pools: CREDIT_POOL_METHOD_VERSIONS_V1,
         protocol_upgrade: DriveProtocolUpgradeVersions {
@@ -89,7 +89,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
         },
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V2, // changed in v8: compacted address-balance proof envelope (verify v1)
         identity: DRIVE_IDENTITY_METHOD_VERSIONS_V2, // changed in v9: v1 withdrawal-by-transaction-index query builder (structural, identical lowering)
-        token: DRIVE_TOKEN_METHOD_VERSIONS_V2, // changed in v9: token shielded pools (pool creation + shield / unshield / shielded transfer ops, conservation v1)
+        token: DRIVE_TOKEN_METHOD_VERSIONS_V1,
         platform_system: DrivePlatformSystemMethodVersions {
             estimation_costs: DriveSystemEstimationCostsMethodVersions {
                 for_total_system_credits_update: 0,

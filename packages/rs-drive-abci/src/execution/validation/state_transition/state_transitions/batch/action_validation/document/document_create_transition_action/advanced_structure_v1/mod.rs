@@ -252,6 +252,7 @@ mod tests {
                 data_contract: contract_fetch_info,
                 token_cost: None,
                 gas_fees_paid_by: GasFeesPaidBy::default(),
+                shielded_token_payment: None,
             }),
             block_info: BlockInfo::default(),
             data,

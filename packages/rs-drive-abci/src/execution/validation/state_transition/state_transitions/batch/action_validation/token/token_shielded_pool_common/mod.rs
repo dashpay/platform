@@ -42,7 +42,7 @@ use drive::state_transition_action::batch::batched_transition::token_transition:
 use std::collections::HashSet;
 
 /// The token's configuration must opt into a shielded pool.
-pub(super) fn validate_token_shielded_pool_enabled(
+pub(crate) fn validate_token_shielded_pool_enabled(
     base: &TokenBaseTransitionAction,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     if !base.token_configuration()?.has_shielded_pool() {
@@ -55,7 +55,7 @@ pub(super) fn validate_token_shielded_pool_enabled(
 
 /// A paused token allows no shielded operation either: shielding, unshielding and pool
 /// transfers all move the token.
-pub(super) fn validate_token_not_paused(
+pub(crate) fn validate_token_not_paused(
     platform: &PlatformStateRef,
     token_id: Identifier,
     block_info: &BlockInfo,
@@ -89,7 +89,7 @@ pub(super) fn validate_token_not_paused(
 /// A frozen identity token account can neither shield out of nor (unless the token allows
 /// transfers to frozen balances) receive an unshield into its balance.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn validate_identity_token_account_not_frozen(
+pub(crate) fn validate_identity_token_account_not_frozen(
     platform: &PlatformStateRef,
     token_id: Identifier,
     identity_id: Identifier,
@@ -129,7 +129,7 @@ pub(super) fn validate_identity_token_account_not_frozen(
 
 /// Meters the GroveDB reads collected in `drive_operations` into the execution context so
 /// the batch owner pays for them, as every other identity-paid read does.
-pub(super) fn charge_drive_operations(
+pub(crate) fn charge_drive_operations(
     drive: &Drive,
     block_info: &BlockInfo,
     execution_context: &mut StateTransitionExecutionContext,
@@ -152,7 +152,7 @@ pub(super) fn charge_drive_operations(
 }
 
 /// The bundle's anchor must be one of the token pool's recorded anchors (O(1) lookup).
-pub(super) fn validate_token_pool_anchor_exists(
+pub(crate) fn validate_token_pool_anchor_exists(
     drive: &Drive,
     token_id: &[u8; 32],
     anchor: &[u8; 32],
@@ -176,7 +176,7 @@ pub(super) fn validate_token_pool_anchor_exists(
 }
 
 /// No nullifier may repeat within the bundle or already be spent in the token pool.
-pub(super) fn validate_token_pool_nullifiers(
+pub(crate) fn validate_token_pool_nullifiers(
     drive: &Drive,
     token_id: &[u8; 32],
     nullifiers: &[[u8; 32]],
@@ -212,7 +212,7 @@ pub(super) fn validate_token_pool_nullifiers(
 
 /// The anonymity-set floor for outflows with an observable destination
 /// (`minimum_token_pool_notes_for_outgoing`, 0 at introduction).
-pub(super) fn validate_minimum_token_pool_notes(
+pub(crate) fn validate_minimum_token_pool_notes(
     drive: &Drive,
     token_id: &[u8; 32],
     transaction: TransactionArg,
@@ -252,7 +252,7 @@ pub(super) fn validate_minimum_token_pool_notes(
 /// skipped here: `check_tx` verifies it afterwards under the nonce-aware admission limiter,
 /// once the fee estimate has shown the identity can pay for it.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn verify_token_pool_bundle(
+pub(crate) fn verify_token_pool_bundle(
     validation_mode: ValidationMode,
     actions: &[SerializedAction],
     flags: u8,

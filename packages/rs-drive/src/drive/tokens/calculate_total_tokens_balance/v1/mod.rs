@@ -9,7 +9,7 @@ use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
-    /// Version 1 (protocol version 14): the token shielded pools BigSumTree joins the identity
+    /// Version 1 (protocol version 15): the token shielded pools BigSumTree joins the identity
     /// balances on the balance side, so `identity balances + shielded pool balances` must equal
     /// the total supplies. Shielding moves tokens between the two terms without touching supply.
     #[inline(always)]

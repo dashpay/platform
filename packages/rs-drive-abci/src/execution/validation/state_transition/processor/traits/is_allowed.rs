@@ -5,9 +5,12 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use dpp::state_transition::StateTransition;
+use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
 use dpp::version::feature_initial_protocol_versions::{
     ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION,
     IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
@@ -64,7 +67,8 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
     ) -> Result<ConsensusValidationResult<()>, Error> {
         match self {
             StateTransition::Batch(st) => {
-                // Token shielded pools (and the three batch transitions that use them) are a
+                // Token shielded pools (the batch transitions that use them and a document token
+                // cost paid from one) are a
                 // protocol-version feature, not a table-versioned validator, so the gate is
                 // applied to the batch as a whole before its own `is_allowed` runs.
                 if platform_version.protocol_version < TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
@@ -93,6 +97,15 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                                 BatchedTransitionRef::Token(
                                     TokenTransition::DirectPurchaseToPool(_),
                                 ) => Some("TokenDirectPurchaseToPool"),
+                                BatchedTransitionRef::Document(document_transition)
+                                    if document_transition
+                                        .base()
+                                        .token_payment_info_ref()
+                                        .as_ref()
+                                        .is_some_and(|info| info.shielded_payment().is_some()) =>
+                                {
+                                    Some("DocumentShieldedTokenPayment")
+                                }
                                 _ => None,
                             })
                     {

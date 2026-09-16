@@ -10,8 +10,8 @@ impl Drive {
     /// BigSumTree) if it does not exist yet.
     ///
     /// CONSENSUS-CRITICAL: both the genesis path (`Drive::create_initial_state_structure_v4`)
-    /// and the in-place upgrade path (`Platform::transition_to_version_14`) call this one helper
-    /// so a chain born at protocol version 14 and a chain upgraded to it build a byte-identical
+    /// and the in-place upgrade path (`Platform::transition_to_version_15`) call this one helper
+    /// so a chain born at protocol version 15 and a chain upgraded to it build a byte-identical
     /// `[Tokens]` subtree. The tree stays empty until a token with a shielded pool is registered.
     pub fn insert_token_shielded_pools_root_tree(
         &self,

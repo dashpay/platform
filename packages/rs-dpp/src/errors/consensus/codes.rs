@@ -388,6 +388,8 @@ impl ErrorWithCode for StateError {
             Self::TokenAmountUnderMinimumSaleAmount(_) => 40720,
             Self::TokenNotForDirectSale(_) => 40721,
             Self::TokenShieldedPoolNotEnabledError(_) => 40722,
+            Self::TokenShieldedPaymentAmountMismatchError(_) => 40723,
+            Self::TokenShieldedPaymentNotRequiredError(_) => 40724,
 
             // Group errors: 40800-40899
             Self::IdentityNotMemberOfGroupError(_) => 40800,

@@ -130,6 +130,7 @@ fn test_document_base_v0() -> DocumentBaseTransitionActionV0 {
         data_contract: test_dpns_contract_info(),
         token_cost: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
+        shielded_token_payment: None,
     }
 }
 
@@ -2930,6 +2931,7 @@ fn stamp_test_create_action(protocol_version: u32) -> DocumentCreateTransitionAc
         data_contract: stamp_test_contract_info(protocol_version),
         token_cost: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
+        shielded_token_payment: None,
     });
     DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0 {
         base,
@@ -2949,6 +2951,7 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         data_contract: stamp_test_contract_info(protocol_version),
         token_cost: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
+        shielded_token_payment: None,
     });
     DocumentReplaceTransitionAction::V0(DocumentReplaceTransitionActionV0 {
         base,

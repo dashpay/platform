@@ -43,7 +43,11 @@ use dpp::consensus::state::document::document_incorrect_purchase_price_error::Do
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::document::property_names::PRICE;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
+use dpp::shielded::compute_shielded_verification_fee;
+use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
+use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::{Revision, UserFeeIncrease};
 use dpp::validation::SimpleConsensusValidationResult;
@@ -824,6 +828,27 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error> {
+        // A token cost paid out of the token's shielded pool carries an Orchard bundle whose
+        // Halo 2 verification and per-action work GroveDB cannot meter: charged here, before
+        // anything can fail, so CheckTx admission and block execution price it identically and
+        // a rejected document still pays for the proof it made the validators check.
+        if let Some(payment) = transition
+            .base()
+            .token_payment_info_ref()
+            .as_ref()
+            .and_then(|token_payment_info| token_payment_info.shielded_payment())
+        {
+            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+                FeeResult {
+                    processing_fee: compute_shielded_verification_fee(
+                        payment.actions.len(),
+                        platform_version,
+                    )?,
+                    ..Default::default()
+                },
+            ));
+        }
+
         if let Some(max_depth) = platform_version.system_limits.max_document_value_depth {
             if let Some(actual_depth) = transition.first_data_depth_exceeding(max_depth as usize) {
                 return Self::failed_per_transition_action(

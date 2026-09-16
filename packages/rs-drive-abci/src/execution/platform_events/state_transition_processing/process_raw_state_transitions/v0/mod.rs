@@ -6,11 +6,16 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::Credits;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
     TokenTransition, TokenTransitionV0Methods,
 };
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use dpp::state_transition::StateTransition;
+use dpp::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
+use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
 
 use crate::execution::types::state_transition_container::v0::{
     DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
@@ -392,8 +397,8 @@ fn error_to_internal_error_execution_result(
     StateTransitionExecutionResult::InternalError(error_with_st.error.to_string())
 }
 
-/// The token shielded pools a state transition writes to: the token ids of every
-/// `TokenShield`, `TokenUnshield` and `TokenShieldedTransfer` in a batch.
+/// The token shielded pools a state transition writes to: the token ids of every token pool
+/// transition in a batch and of every document whose token cost is paid from a pool.
 fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 32]> {
     match state_transition {
         StateTransition::Batch(batch) => batch
@@ -408,6 +413,13 @@ fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 
                     | TokenTransition::ClaimToPool(_)
                     | TokenTransition::DirectPurchaseToPool(_)),
                 ) => Some(token_transition.token_id().to_buffer()),
+                BatchedTransitionRef::Document(document_transition) => {
+                    let base = document_transition.base();
+                    base.token_payment_info_ref()
+                        .as_ref()
+                        .filter(|info| info.shielded_payment().is_some())
+                        .map(|info| info.token_id(base.data_contract_id()).to_buffer())
+                }
                 _ => None,
             })
             .collect(),

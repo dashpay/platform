@@ -864,7 +864,7 @@ mod token_shielded_pool_tests {
     }
 
     #[tokio::test]
-    async fn test_token_shield_rejected_before_protocol_version_14() {
+    async fn test_token_shield_rejected_before_protocol_version_15() {
         let platform_version =
             PlatformVersion::get(TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
                 .expect("previous protocol version");
@@ -982,7 +982,7 @@ mod token_shielded_pool_tests {
     }
 
     #[tokio::test]
-    async fn test_contract_create_with_shielded_pool_token_rejected_before_protocol_version_14() {
+    async fn test_contract_create_with_shielded_pool_token_rejected_before_protocol_version_15() {
         let platform_version =
             PlatformVersion::get(TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
                 .expect("previous protocol version");
@@ -1725,5 +1725,501 @@ mod token_pool_mint_burn_claim_purchase_tests {
             }]
         );
         assert_eq!(pool_balance(&platform, token_id), 3);
+    }
+}
+
+/// Documents whose token cost is paid out of the token's shielded pool (`TokenPaymentInfo::V1`).
+///
+/// The card game contract charges 10 of its token 0 to create a `card`, burned or paid to the
+/// contract owner depending on the fixture. The buyer shields the tokens first, then pays the
+/// cost with a spend bundle bound to the token, the buyer, the contract and the document id.
+mod document_shielded_token_payment_tests {
+    use super::token_shielded_pool_tests::{
+        assert_tokens_conserved, build_shield_bundle, build_spend_bundle, dummy_bundle,
+        identity_token_balance, insert_token_pool_anchor, nullifier_is_spent,
+        platform_with_latest_version, pool_balance, process, spendable_note,
+    };
+    use super::*;
+    use crate::execution::validation::state_transition::state_transitions::tests::add_tokens_to_identity;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::accessors::v1::DataContractV1Setters;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+    use dpp::data_contract::document_type::DocumentTypeRef;
+    use dpp::data_contract::DataContract;
+    use dpp::document::{Document, DocumentV0Getters};
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::{Identity, IdentityPublicKey};
+    use dpp::shielded::{document_token_payment_extra_sighash_data_v0, OrchardBundleParams};
+    use dpp::tokens::calculate_token_id;
+    use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use dpp::tokens::token_payment_info::v1::{TokenPaymentInfoV1, TokenShieldedPayment};
+    use dpp::tokens::token_payment_info::TokenPaymentInfo;
+    use dpp::version::feature_initial_protocol_versions::TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
+    use drive::util::test_helpers::setup_contract;
+    use platform_version::version::PlatformVersion;
+    use simple_signer::signer::SimpleSigner;
+
+    const CARD_COST: u64 = 10;
+    const SHIELDED: u64 = 15;
+
+    /// The card game contract with an in-game currency: creating a `card` costs `CARD_COST` of
+    /// token 0, burned (`burn`) or paid to the contract owner. `pool` gives token 0 a shielded pool.
+    fn card_game_contract(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        owner_id: Identifier,
+        burn: bool,
+        pool: bool,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, Identifier) {
+        let data_contract_id = DataContract::generate_data_contract_id_v0(owner_id, 1);
+        let path = if burn {
+            "tests/supporting_files/contract/crypto-card-game/crypto-card-game-in-game-currency-burn-tokens.json"
+        } else {
+            "tests/supporting_files/contract/crypto-card-game/crypto-card-game-in-game-currency.json"
+        };
+        let contract = setup_contract(
+            &platform.drive,
+            path,
+            Some(data_contract_id.to_buffer()),
+            Some(owner_id.to_buffer()),
+            Some(|data_contract: &mut DataContract| {
+                data_contract.set_created_at_epoch(Some(0));
+                data_contract.set_created_at(Some(0));
+                data_contract.set_created_at_block_height(Some(0));
+                if pool {
+                    let configuration = data_contract
+                        .tokens_mut()
+                        .and_then(|tokens| tokens.get_mut(&0))
+                        .expect("token 0");
+                    configuration.set_has_shielded_pool(true);
+                }
+            }),
+            None,
+            Some(platform_version),
+        );
+        (
+            contract,
+            calculate_token_id(data_contract_id.as_bytes(), 0).into(),
+        )
+    }
+
+    fn random_card(
+        rng: &mut StdRng,
+        card_document_type: DocumentTypeRef,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> (Document, Bytes32) {
+        let entropy = Bytes32::random_with_rng(rng);
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                rng,
+                owner_id,
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+        (document, entropy)
+    }
+
+    fn shielded_payment(bundle: OrchardBundleParams, amount: u64) -> TokenShieldedPayment {
+        TokenShieldedPayment {
+            amount,
+            actions: bundle.actions,
+            anchor: bundle.anchor,
+            proof: bundle.proof,
+            binding_signature: bundle.binding_signature,
+        }
+    }
+
+    fn payment_info(shielded_payment: TokenShieldedPayment) -> TokenPaymentInfo {
+        TokenPaymentInfo::V1(TokenPaymentInfoV1 {
+            payment_token_contract_id: None,
+            token_contract_position: 0,
+            minimum_token_cost: None,
+            maximum_token_cost: Some(CARD_COST),
+            gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+            shielded_payment,
+        })
+    }
+
+    fn total_supply(platform: &TempPlatform<MockCoreRPCLike>, token_id: Identifier) -> u64 {
+        platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, PlatformVersion::latest())
+            .expect("total supply")
+            .expect("supply exists")
+    }
+
+    /// Funds the buyer with `SHIELDED` tokens and shields all of them (identity contract nonce 1).
+    async fn fund_and_shield(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        contract: &DataContract,
+        token_id: Identifier,
+        buyer: &Identity,
+        key: &IdentityPublicKey,
+        signer: &SimpleSigner,
+        seed: u64,
+        platform_version: &PlatformVersion,
+    ) {
+        add_tokens_to_identity(platform, token_id, buyer.id(), SHIELDED);
+        let shield = BatchTransition::new_token_shield_transition(
+            token_id,
+            buyer.id(),
+            contract.id(),
+            0,
+            SHIELDED,
+            build_shield_bundle(SHIELDED, seed),
+            key,
+            1,
+            0,
+            signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+        let result = process(platform, &shield);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert_eq!(pool_balance(platform, token_id), SHIELDED);
+    }
+
+    #[tokio::test]
+    async fn test_document_creation_paid_from_the_shielded_pool_with_a_burn() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9301);
+
+        let (contract_owner, _, _) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.5));
+        let (contract, token_id) =
+            card_game_contract(&platform, contract_owner.id(), true, true, platform_version);
+        fund_and_shield(
+            &mut platform,
+            &contract,
+            token_id,
+            &buyer,
+            &key,
+            &signer,
+            41,
+            platform_version,
+        )
+        .await;
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("card document type");
+        let (document, entropy) =
+            random_card(&mut rng, card_document_type, buyer.id(), platform_version);
+
+        // A 15 note the wallet holds pays the 10 cost; 5 return to the pool as change.
+        let (note, anchor, merkle_path) = spendable_note(SHIELDED, 4);
+        insert_token_pool_anchor(&platform, token_id, &anchor);
+        let extra = document_token_payment_extra_sighash_data_v0(
+            &token_id.to_buffer(),
+            &buyer.id().to_buffer(),
+            &contract.id().to_buffer(),
+            &document.id().to_buffer(),
+            CARD_COST,
+        );
+        let (bundle, value_balance) =
+            build_spend_bundle(note, merkle_path, anchor, CARD_COST, &extra, 42);
+        assert_eq!(value_balance, CARD_COST as i64);
+        let payment = shielded_payment(bundle, CARD_COST);
+
+        let transition = BatchTransition::new_document_creation_transition_from_document(
+            document,
+            card_document_type,
+            entropy.0,
+            &key,
+            2,
+            0,
+            Some(payment_info(payment.clone())),
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("document create transition");
+
+        let result = process(&platform, &transition);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        // The cost left the pool and the supply; the buyer's balance was never touched.
+        assert_eq!(pool_balance(&platform, token_id), SHIELDED - CARD_COST);
+        assert_eq!(total_supply(&platform, token_id), SHIELDED - CARD_COST);
+        assert_eq!(
+            identity_token_balance(&platform, token_id, buyer.id()).unwrap_or_default(),
+            0
+        );
+        assert_eq!(
+            identity_token_balance(&platform, token_id, contract_owner.id()),
+            None
+        );
+        assert!(nullifier_is_spent(
+            &platform,
+            token_id,
+            &payment.actions[0].nullifier
+        ));
+        assert_tokens_conserved(&platform);
+
+        // The spent notes cannot pay for another document.
+        let (replay_document, replay_entropy) =
+            random_card(&mut rng, card_document_type, buyer.id(), platform_version);
+        let replay = BatchTransition::new_document_creation_transition_from_document(
+            replay_document,
+            card_document_type,
+            replay_entropy.0,
+            &key,
+            3,
+            0,
+            Some(payment_info(payment)),
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("document create transition");
+        let result = process(&platform, &replay);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::NullifierAlreadySpentError(_)),
+                ..
+            }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), SHIELDED - CARD_COST);
+        assert_tokens_conserved(&platform);
+    }
+
+    #[tokio::test]
+    async fn test_document_creation_paid_from_the_shielded_pool_to_the_contract_owner() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9302);
+
+        let (contract_owner, _, _) = setup_identity(&mut platform, 959, dash_to_credits!(0.1));
+        let (buyer, signer, key) = setup_identity(&mut platform, 235, dash_to_credits!(0.5));
+        let (contract, token_id) = card_game_contract(
+            &platform,
+            contract_owner.id(),
+            false,
+            true,
+            platform_version,
+        );
+        fund_and_shield(
+            &mut platform,
+            &contract,
+            token_id,
+            &buyer,
+            &key,
+            &signer,
+            43,
+            platform_version,
+        )
+        .await;
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("card document type");
+        let (document, entropy) =
+            random_card(&mut rng, card_document_type, buyer.id(), platform_version);
+
+        let (note, anchor, merkle_path) = spendable_note(SHIELDED, 5);
+        insert_token_pool_anchor(&platform, token_id, &anchor);
+        let extra = document_token_payment_extra_sighash_data_v0(
+            &token_id.to_buffer(),
+            &buyer.id().to_buffer(),
+            &contract.id().to_buffer(),
+            &document.id().to_buffer(),
+            CARD_COST,
+        );
+        let (bundle, _) = build_spend_bundle(note, merkle_path, anchor, CARD_COST, &extra, 44);
+
+        let transition = BatchTransition::new_document_creation_transition_from_document(
+            document,
+            card_document_type,
+            entropy.0,
+            &key,
+            2,
+            0,
+            Some(payment_info(shielded_payment(bundle, CARD_COST))),
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("document create transition");
+
+        let result = process(&platform, &transition);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        // The cost moved from the pool into the contract owner's balance; the supply is unchanged.
+        assert_eq!(pool_balance(&platform, token_id), SHIELDED - CARD_COST);
+        assert_eq!(total_supply(&platform, token_id), SHIELDED);
+        assert_eq!(
+            identity_token_balance(&platform, token_id, contract_owner.id()),
+            Some(CARD_COST)
+        );
+        assert_tokens_conserved(&platform);
+    }
+
+    #[tokio::test]
+    async fn test_document_creation_shielded_payment_must_match_the_token_cost() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9303);
+
+        let (contract_owner, _, _) = setup_identity(&mut platform, 960, dash_to_credits!(0.1));
+        let (buyer, signer, key) = setup_identity(&mut platform, 236, dash_to_credits!(0.5));
+        let (contract, token_id) =
+            card_game_contract(&platform, contract_owner.id(), true, true, platform_version);
+        fund_and_shield(
+            &mut platform,
+            &contract,
+            token_id,
+            &buyer,
+            &key,
+            &signer,
+            45,
+            platform_version,
+        )
+        .await;
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("card document type");
+        let (document, entropy) =
+            random_card(&mut rng, card_document_type, buyer.id(), platform_version);
+
+        // A bundle proving 9 where the card costs 10.
+        let underpaid = CARD_COST - 1;
+        let (note, anchor, merkle_path) = spendable_note(SHIELDED, 6);
+        insert_token_pool_anchor(&platform, token_id, &anchor);
+        let extra = document_token_payment_extra_sighash_data_v0(
+            &token_id.to_buffer(),
+            &buyer.id().to_buffer(),
+            &contract.id().to_buffer(),
+            &document.id().to_buffer(),
+            underpaid,
+        );
+        let (bundle, _) = build_spend_bundle(note, merkle_path, anchor, underpaid, &extra, 46);
+        let payment = shielded_payment(bundle, underpaid);
+
+        let transition = BatchTransition::new_document_creation_transition_from_document(
+            document,
+            card_document_type,
+            entropy.0,
+            &key,
+            2,
+            0,
+            Some(payment_info(payment.clone())),
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("document create transition");
+
+        let result = process(&platform, &transition);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::TokenShieldedPaymentAmountMismatchError(_)
+                ),
+                ..
+            }]
+        );
+        // Nothing left the pool and the notes are still unspent.
+        assert_eq!(pool_balance(&platform, token_id), SHIELDED);
+        assert_eq!(total_supply(&platform, token_id), SHIELDED);
+        assert!(!nullifier_is_spent(
+            &platform,
+            token_id,
+            &payment.actions[0].nullifier
+        ));
+        assert_tokens_conserved(&platform);
+    }
+
+    #[tokio::test]
+    async fn test_document_shielded_payment_rejected_before_protocol_version_15() {
+        let platform_version =
+            PlatformVersion::get(TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
+                .expect("previous protocol version");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(platform_version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let mut rng = StdRng::seed_from_u64(9304);
+
+        let (contract_owner, _, _) = setup_identity(&mut platform, 961, dash_to_credits!(0.1));
+        let (buyer, signer, key) = setup_identity(&mut platform, 237, dash_to_credits!(0.5));
+        // No pool: a pooled token cannot exist before the pools root does.
+        let (contract, _token_id) = card_game_contract(
+            &platform,
+            contract_owner.id(),
+            true,
+            false,
+            platform_version,
+        );
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("card document type");
+        let (document, entropy) =
+            random_card(&mut rng, card_document_type, buyer.id(), platform_version);
+
+        let transition = BatchTransition::new_document_creation_transition_from_document(
+            document,
+            card_document_type,
+            entropy.0,
+            &key,
+            1,
+            0,
+            Some(payment_info(shielded_payment(dummy_bundle(), CARD_COST))),
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("document create transition");
+
+        let platform_state = platform.state.load();
+        let serialized = transition.serialize_to_bytes().expect("serialize");
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("process state transition");
+
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(_))
+            )]
+        );
     }
 }

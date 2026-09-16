@@ -3,7 +3,7 @@ use crate::version::drive_versions::drive_token_method_versions::{
     DriveTokenProveMethodVersions, DriveTokenUpdateMethodVersions,
 };
 
-// Introduced in protocol version 14 with token shielded pools: `calculate_total_tokens_balance`
+// Introduced in protocol version 15 with token shielded pools: `calculate_total_tokens_balance`
 // moves to 1 so the per-token pool balances (a BigSumTree sibling of the identity balances
 // under the Tokens root) count on the balance side of the token conservation check. The
 // pool creation and shield / unshield / shielded-transfer slots are all 0 at introduction.

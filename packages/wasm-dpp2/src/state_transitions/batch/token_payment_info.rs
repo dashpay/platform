@@ -4,6 +4,7 @@ use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
+use crate::state_transitions::batch::token_shielded_payment::TokenShieldedPaymentWasm;
 use crate::utils::try_from_options_optional;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::TokenContractPosition;
@@ -11,6 +12,8 @@ use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use dpp::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
+use dpp::tokens::token_payment_info::v1::TokenPaymentInfoV1;
+use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -32,6 +35,11 @@ export interface TokenPaymentInfoOptions {
     minimumTokenCost?: bigint;
     maximumTokenCost?: bigint;
     gasFeesPaidBy?: GasFeesPaidByLike;
+    /**
+     * Pay the token cost out of the token's shielded pool with this spend bundle instead of
+     * the document owner's token balance (format version 1, protocol version 15+).
+     */
+    shieldedPayment?: TokenShieldedPayment;
 }
 
 /**
@@ -44,6 +52,7 @@ export interface TokenPaymentInfoObject {
     minimumTokenCost: bigint | null;
     maximumTokenCost: bigint | null;
     gasFeesPaidBy: string;
+    shieldedPayment?: TokenShieldedPaymentObject;
 }
 
 /**
@@ -56,6 +65,7 @@ export interface TokenPaymentInfoJSON {
     minimumTokenCost: number | string | null;
     maximumTokenCost: number | string | null;
     gasFeesPaidBy: string;
+    shieldedPayment?: TokenShieldedPaymentJSON;
 }
 "#;
 
@@ -101,19 +111,25 @@ impl TokenPaymentInfoWasm {
                 .map(Into::into)
                 .unwrap_or_default();
 
+        let shielded_payment: Option<TokenShieldedPaymentWasm> =
+            try_from_options_optional(&options, "shieldedPayment")?;
+
         // Deserialize primitive fields via serde last (consumes options)
         let opts: TokenPaymentInfoOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
-        Ok(TokenPaymentInfoWasm(TokenPaymentInfo::V0(
-            TokenPaymentInfoV0 {
-                payment_token_contract_id: payment_token_contract_id.map(Into::into),
-                token_contract_position: opts.token_contract_position,
-                minimum_token_cost: opts.minimum_token_cost,
-                maximum_token_cost: opts.maximum_token_cost,
-                gas_fees_paid_by,
-            },
-        )))
+        let v0 = TokenPaymentInfoV0 {
+            payment_token_contract_id: payment_token_contract_id.map(Into::into),
+            token_contract_position: opts.token_contract_position,
+            minimum_token_cost: opts.minimum_token_cost,
+            maximum_token_cost: opts.maximum_token_cost,
+            gas_fees_paid_by,
+        };
+
+        Ok(TokenPaymentInfoWasm(match shielded_payment {
+            None => TokenPaymentInfo::V0(v0),
+            Some(payment) => TokenPaymentInfo::V1(TokenPaymentInfoV1::from_v0(v0, payment.into())),
+        }))
     }
 
     #[wasm_bindgen(getter = "paymentTokenContractId")]
@@ -139,6 +155,20 @@ impl TokenPaymentInfoWasm {
     #[wasm_bindgen(getter = "gasFeesPaidBy")]
     pub fn gas_fees_paid_by(&self) -> String {
         GasFeesPaidByWasm::from(self.0.gas_fees_paid_by()).into()
+    }
+
+    /// The spend bundle paying the token cost from the token's shielded pool, when the
+    /// payment is shielded (format version 1).
+    #[wasm_bindgen(getter = "shieldedPayment")]
+    pub fn shielded_payment(&self) -> Option<TokenShieldedPaymentWasm> {
+        self.0.shielded_payment().cloned().map(Into::into)
+    }
+
+    /// Sets (format version 1) or clears (format version 0) the shielded payment.
+    #[wasm_bindgen(setter = "shieldedPayment")]
+    pub fn set_shielded_payment(&mut self, shielded_payment: Option<TokenShieldedPaymentWasm>) {
+        self.0
+            .set_shielded_payment(shielded_payment.map(Into::into));
     }
 
     #[wasm_bindgen(setter = "paymentTokenContractId")]

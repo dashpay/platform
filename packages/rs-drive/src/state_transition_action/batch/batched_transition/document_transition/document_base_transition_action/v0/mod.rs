@@ -8,6 +8,7 @@ use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
+use dpp::tokens::token_payment_info::v1::TokenShieldedPayment;
 use dpp::ProtocolError;
 use std::sync::Arc;
 
@@ -26,6 +27,9 @@ pub struct DocumentBaseTransitionActionV0 {
     pub token_cost: Option<(Identifier, DocumentActionTokenEffect, TokenAmount)>,
     /// Who pays the gas fees
     pub gas_fees_paid_by: GasFeesPaidBy,
+    /// The spend bundle paying `token_cost` out of the token's shielded pool instead of the
+    /// owner's token balance (`TokenPaymentInfo::V1`). Only set when there is a token cost.
+    pub shielded_token_payment: Option<TokenShieldedPayment>,
 }
 
 /// document base transition action accessors v0
@@ -55,4 +59,7 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
 
     /// Token cost
     fn token_cost(&self) -> Option<(Identifier, DocumentActionTokenEffect, TokenAmount)>;
+
+    /// The shielded payment of the token cost, when the cost is paid out of the token's pool
+    fn shielded_token_payment(&self) -> Option<&TokenShieldedPayment>;
 }

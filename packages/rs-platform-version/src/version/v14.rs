@@ -30,7 +30,7 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts seven consensus changes:
+/// v14 hosts six consensus changes:
 ///
 /// 1. **Contract-level ranked aggregates**: an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
@@ -145,23 +145,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    is determinism, not correct rounding: on a boundary tuple the host
 ///    libm (glibc, macOS) can still be 1 ulp away, so anything predicting
 ///    rewards with host math may differ from consensus by one unit.
-/// 7. **Token shielded pools**: a token configuration in format version 1
-///    (`TokenConfiguration::V1`, admitted by `CONTRACT_VERSIONS_V6`'s
-///    `token_configuration_format` bounds) can set `hasShieldedPool`, which
-///    gives the token its own Orchard pool under
-///    `[Tokens, TOKEN_SHIELDED_POOLS_KEY, token_id]` laid out like the credit
-///    pool. Three batch token transitions (`TokenShield`, `TokenUnshield`,
-///    `TokenShieldedTransfer`, `DRIVE_ABCI_VALIDATION_V10` /
-///    `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4`) move tokens between an
-///    identity balance and the pool or inside it; the identity signs and pays
-///    the fee in credits, the token id and owner id (and recipient and amount
-///    for an unshield) are bound into the Orchard sighash, and the pool
-///    balances are a term of the token conservation check
-///    (`calculate_total_tokens_balance` v1 in `DRIVE_TOKEN_METHOD_VERSIONS_V2`).
-///    `record_token_shielded_pool_anchors` records and prunes the anchors of
-///    the pools a block touched. The pools root tree is inserted by the
-///    upgrade transition and by `create_initial_state_structure` v4; the six
-///    shielded queries accept an optional `token_id` to target a token pool.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type

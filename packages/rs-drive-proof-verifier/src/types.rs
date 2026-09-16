@@ -933,7 +933,7 @@ pub struct ShieldedEncryptedNotesQuery {
 )]
 pub struct ShieldedNullifiersQuery(pub Vec<[u8; 32]>);
 
-/// Targets one token's shielded pool (protocol version 14+) for the parameterless shielded
+/// Targets one token's shielded pool (protocol version 15+) for the parameterless shielded
 /// queries: pool state, notes count, anchors and most recent anchor.
 #[derive(Debug, Clone)]
 #[cfg_attr(

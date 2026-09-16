@@ -15,6 +15,8 @@ use drive::state_transition_action::system::bump_identity_data_contract_nonce_ac
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_shielded_token_payment::validate_document_shielded_token_payment;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_index_only_delete_transition_action::DocumentIndexOnlyDeleteTransitionActionValidation;
@@ -97,7 +99,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
 
         // Next we need to validate the structure of all actions (this means with the data contract)
         for transition in state_transition_action.transitions_take() {
-            let transition_validation_result = match &transition {
+            let mut transition_validation_result = match &transition {
                 BatchedTransitionAction::DocumentAction(document_action) => match document_action {
                     DocumentTransitionAction::CreateAction(create_action) => create_action
                         .validate_state(
@@ -350,6 +352,26 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                     )));
                 }
             };
+
+            // A document whose token cost is paid out of the token's shielded pool: the pool
+            // side and the bundle are validated once the document action itself is valid.
+            if transition_validation_result.is_valid() {
+                if let BatchedTransitionAction::DocumentAction(document_action) = &transition {
+                    if let Some(payment) = document_action.base().shielded_token_payment() {
+                        transition_validation_result = validate_document_shielded_token_payment(
+                            document_action.base(),
+                            payment,
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            validation_mode,
+                            transaction,
+                            platform_version,
+                        )?;
+                    }
+                }
+            }
 
             if !transition_validation_result.is_valid() {
                 // If a state transition isn't valid we still need to bump the identity data contract nonce

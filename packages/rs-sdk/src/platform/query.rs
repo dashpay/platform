@@ -1430,7 +1430,7 @@ impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
     }
 }
 
-// --- Token Shielded Pool Queries (protocol version 14+) ---
+// --- Token Shielded Pool Queries (protocol version 15+) ---
 
 impl Query<GetShieldedPoolStateRequest> for TokenShieldedPoolQuery {
     fn query(

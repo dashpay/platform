@@ -8,6 +8,6 @@ pub const SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
 /// protocol version 14.
 pub const IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
 /// Token shielded pools (per-token Orchard pools behind `TokenConfigurationV1::has_shielded_pool`,
-/// with the `TokenShield`, `TokenUnshield` and `TokenShieldedTransfer` batch transitions) activate
-/// with protocol version 14.
-pub const TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
+/// with the batch token transitions that shield, unshield, transfer, mint, burn, claim and
+/// purchase into or out of them) activate with protocol version 15.
+pub const TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;

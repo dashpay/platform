@@ -31,6 +31,11 @@ use dpp::state_transition::batch_transition::token_burn_from_pool_transition::v0
 use dpp::state_transition::batch_transition::token_claim_to_pool_transition::v0::v0_methods::TokenClaimToPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_direct_purchase_to_pool_transition::v0::v0_methods::TokenDirectPurchaseToPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::BatchTransition;
+use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+use dpp::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
+use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::{StateTransition, StateTransitionOwned};
 use dpp::util::hash::hash_single;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -195,6 +200,13 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                     BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(t)) => {
                         t.actions().len()
                     }
+                    BatchedTransitionRef::Document(document_transition) => document_transition
+                        .base()
+                        .token_payment_info_ref()
+                        .as_ref()
+                        .and_then(|info| info.shielded_payment())
+                        .map(|payment| payment.actions.len())
+                        .unwrap_or(0),
                     _ => 0,
                 })
                 .sum(),
@@ -228,6 +240,22 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                             contract_id: token_transition.data_contract_id().to_buffer(),
                             nonce: token_transition.identity_contract_nonce(),
                         }),
+                        BatchedTransitionRef::Document(document_transition)
+                            if document_transition
+                                .base()
+                                .token_payment_info_ref()
+                                .as_ref()
+                                .is_some_and(|info| info.shielded_payment().is_some()) =>
+                        {
+                            Some(ShieldedProofAdmissionKey::IdentityContract {
+                                identity_id: owner_id,
+                                contract_id: document_transition
+                                    .base()
+                                    .data_contract_id()
+                                    .to_buffer(),
+                                nonce: document_transition.base().identity_contract_nonce(),
+                            })
+                        }
                         _ => None,
                     })
             }
@@ -860,6 +888,37 @@ fn validate_batch_token_shielded_proofs(
                     t.proof(),
                     t.binding_signature(),
                     &[],
+                )
+            }
+            // A document whose token cost is paid from the token's shielded pool: the payment
+            // states the amount its bundle proves, and state validation rejects the document
+            // when that is not the document type's cost, so the bundle can be checked here.
+            BatchedTransitionRef::Document(document_transition) => {
+                let base = document_transition.base();
+                let Some(token_payment_info) = base.token_payment_info_ref() else {
+                    continue;
+                };
+                let Some(payment) = token_payment_info.shielded_payment() else {
+                    continue;
+                };
+                let extra_sighash_data = dpp::shielded::document_token_payment_extra_sighash_data(
+                    &token_payment_info
+                        .token_id(base.data_contract_id())
+                        .to_buffer(),
+                    &owner_id,
+                    &base.data_contract_id().to_buffer(),
+                    &base.id().to_buffer(),
+                    payment.amount,
+                    platform_version,
+                )?;
+                reconstruct_and_verify_bundle(
+                    &payment.actions,
+                    FLAGS_SPENDS_AND_OUTPUTS,
+                    payment.amount as i64,
+                    &payment.anchor,
+                    &payment.proof,
+                    &payment.binding_signature,
+                    &extra_sighash_data,
                 )
             }
             _ => continue,

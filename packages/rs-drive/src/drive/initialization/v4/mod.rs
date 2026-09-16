@@ -83,9 +83,9 @@ impl Drive {
         // network at the v11→v12 boundary.
         self.insert_shielded_pool_structure(transaction, platform_version)?;
 
-        // Token shielded pools root (v4, protocol version 14): an empty BigSumTree under the
+        // Token shielded pools root (v4, protocol version 15): an empty BigSumTree under the
         // Tokens tree. Inserted after the batch so `[Tokens]` already exists, through the
-        // helper the in-place upgrade (`Platform::transition_to_version_14`) also calls.
+        // helper the in-place upgrade (`Platform::transition_to_version_15`) also calls.
         self.insert_token_shielded_pools_root_tree(transaction, platform_version)?;
 
         Ok(())

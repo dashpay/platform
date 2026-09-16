@@ -360,6 +360,7 @@ mod tests {
             data_contract: fetch_info,
             token_cost: None,
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+            shielded_token_payment: None,
         });
         let action = BumpIdentityDataContractNonceAction::from_document_base_transition_action(
             base_action,
@@ -381,6 +382,7 @@ mod tests {
             data_contract: fetch_info,
             token_cost: None,
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+            shielded_token_payment: None,
         });
         let action =
             BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
