@@ -187,7 +187,7 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   `CoreChangeSet` cannot carry it. Each restored unspent UTXO is routed
 ///   to the funds account whose identity matches its entry; a UTXO absent
 ///   from the map (its script matched no pool row) falls back to the first
-///   funds account and re-warms on the next sync.
+///   funds account, which must establish address ownership before installation.
 /// - `additional_spent_outpoints`: durable spend evidence, including sweep
 ///   placeholders without an owning account or a complete transaction record.
 /// - `used_pool_addresses`: addresses the persisted pool snapshot marked
@@ -239,28 +239,15 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   [`LoadPolicy::Recovery`](crate::LoadPolicy), when the blob failed to
 ///   decode and was tolerated as [`LoadSite::ChainLockBlob`].
 ///
-/// # Deferred to the first post-load `sync` (safe re-warm)
+/// # Address ownership and coin metadata
 ///
-/// - **Deep-index address visibility**: each chain's pool scan stops
-///   after [`MAX_REHYDRATION_DERIVATION_INDEX`] or after `gap_limit`
-///   consecutive non-matching indices past the deepest resolved index.
-///   The horizon only advances when an unspent UTXO anchors a match, so a
-///   UTXO address can be left unresolved in two distinct cases: (1) it is
-///   genuinely foreign (a different account's key routed here, or corrupt),
-///   and (2) it is a *legitimately-owned but deep-and-sparse* address —
-///   owned by this account, yet sitting past the first `gap_limit` window
-///   with no nearer unspent UTXO to walk the horizon out to it. Both cases
-///   are counted and logged via `tracing::warn!` and re-warm on the next
-///   full sync. The wallet *total* stays exact (every UTXO is summed
-///   regardless of pool visibility); only the per-address view is
-///   incomplete until that sync. This is the accepted behavior of the
-///   horizon-walk algorithm — see [`extend_pools_for_restored_addresses`].
-/// - **Per-UTXO `is_coinbase` / `is_trusted` flags**: not columns in
-///   `core_utxos`; conservatively defaulted (non-coinbase,
-///   confirmed-by-height) and refreshed on the next scan.
-///   Coinbase-maturity nuance re-warms on sync. `is_instantlocked` is NOT
-///   among them: it is rebuilt from `core_instant_locks` above, for every
-///   UTXO a replayed lock covers.
+/// Pool discovery is bounded by the gap limit and [`MAX_REHYDRATION_DERIVATION_INDEX`].
+/// A coin whose address remains unresolved is rejected, including a legitimate
+/// deep-and-sparse address outside the restored pools. Restore its derivation
+/// range before retrying; unverified coins cannot contribute to the balance.
+/// SQLite derives `is_coinbase` from the funding record when available.
+/// `is_trusted` is refreshed on sync; `is_instantlocked` is rebuilt from stored locks.
+///
 /// # Errors
 ///
 /// [`WalletStorageError::MissingAccount`] if there are persisted UTXOs to
@@ -330,8 +317,7 @@ fn restore_core_state(
     // the writer keyed the pool row on). Two miss cases share the first-account
     // best-effort fallback but differ in signal:
     //   (a) no side-channel entry — the UTXO's script matched no pool row; an
-    //       expected fallback (deep/sparse or non-funds address) that re-warms
-    //       on the next sync, no log.
+    //       fallback whose address must resolve in that account's pools.
     //   (b) a side-channel entry whose owner is not among this wallet's funds
     //       accounts — a pool row references an unregistered account (store
     //       drift). Counted and surfaced via `tracing::warn!` after the loop so
@@ -401,13 +387,14 @@ fn restore_core_state(
             per_account_addrs[target].push(addr.clone());
         }
 
-        // Degraded in BOTH policies, never fatal. An owner absent from the
+        // An owner absent from the
         // funds accounts is not necessarily corruption: provider accounts are
         // first-class in the schema yet sit on a non-secp256k1 curve, so they
         // are not `ManagedCoreFundsAccount` and a used provider-owned address
         // has no funds account to route to. Telling that apart needs an
         // upstream `key-wallet` enumerator over every account kind; until then,
-        // failing here would brick a masternode-operator wallet.
+        // used-address-only rows can remain unresolved. Unspent coins still
+        // require verified ownership before installation.
         if !orphaned_owners.is_empty() {
             ctx.note_degraded(
                 LoadSite::OrphanedUtxoOwner,
@@ -419,7 +406,7 @@ fn restore_core_state(
                 },
                 "restored UTXOs or used addresses were routed to the first funds account \
                  because their own owning accounts are not funds accounts of this wallet; \
-                 the per-account view re-warms on the next sync",
+                 unspent coins still require verified address ownership",
             );
         }
 
@@ -506,12 +493,9 @@ fn owning_account_of(
 }
 
 /// Upper bound on forward derivation while resolving a restored UTXO
-/// address to its derivation index. Addresses that don't resolve within
-/// this many indices (e.g. they belong to a different funds account whose
-/// UTXOs were routed here, or are corrupt) are left for the next full
-/// rescan to re-warm — generous enough to cover any realistic per-account
-/// derivation depth. The common (single funds account) path terminates at
-/// the true high-water mark well before this and never reaches the cap.
+/// address to its derivation index. Unspent coins that remain unresolved
+/// fail ownership validation; used-address-only entries can be rediscovered
+/// on a later sync.
 const MAX_REHYDRATION_DERIVATION_INDEX: u32 = 10_000;
 
 /// Soft threshold past which a single chain's discovery scan is treated as
@@ -546,8 +530,9 @@ const MAX_NORMAL_CHILD_INDEX: u32 = (1u32 << 31) - 1;
 /// is the hard ceiling. Addresses that don't resolve from this account's
 /// xpub — foreign keys, multi-account mismatch, or legitimately-owned but
 /// deep-and-sparse slots with no nearer resolved address to anchor the horizon —
-/// are counted and logged via `tracing::warn!`; they re-warm on the next
-/// full sync. Every resolved address the pools *do* hold (in-window or
+/// are counted and logged; unresolved unspent coins fail ownership validation.
+/// Used-address-only entries can be rediscovered on sync. Every resolved address
+/// the pools hold (in-window or
 /// deep-resolved) is marked used so a funded or previously-used address is
 /// never handed out as a fresh receive address.
 ///
@@ -557,8 +542,7 @@ const MAX_NORMAL_CHILD_INDEX: u32 = (1u32 << 31) - 1;
 /// (`Absent`) follows the same code path with a different relative derivation
 /// path. `AbsentHardened` pools cannot be derived from a public xpub at all —
 /// hardened child derivation needs the private key — so under watch-only
-/// rehydration their addresses never resolve and always defer to the next
-/// sync (shared code path, but the outcome is "unresolved").
+/// rehydration their addresses must already be present to restore their coins.
 ///
 /// # Errors
 ///
@@ -676,15 +660,8 @@ fn extend_pools_for_restored_addresses(
             }
         }
 
-        // Still-unresolved addresses are either foreign (a different account's
-        // key routed here, or corrupt) or legitimately-owned but deep-and-sparse
-        // (past the first gap window with no nearer unspent UTXO to anchor the
-        // horizon). Either way they re-warm on the next full sync; the wallet
-        // total is exact regardless.
-        // Degraded in BOTH policies, never fatal: the two explanations above
-        // are indistinguishable from the persisted rows alone, and no
-        // root-cause fix exists short of an unbounded scan. The wallet total
-        // is exact either way.
+        // Used-address-only entries can remain unresolved; unspent coins must
+        // still pass the ownership check when the snapshot is installed.
         if !unresolved.is_empty() {
             ctx.note_degraded(
                 LoadSite::UnresolvedUtxoAddress,
@@ -694,8 +671,8 @@ fn extend_pools_for_restored_addresses(
                     affected: unresolved.len(),
                     detail: None,
                 },
-                "restored addresses did not resolve against this account's xpub; they re-warm \
-                 on the next full sync and the balance total is exact",
+                "restored addresses did not resolve against this account's xpub; \
+                 any unspent coins at these addresses require restored ownership",
             );
         }
     }
@@ -1672,13 +1649,8 @@ mod tests {
         pool.address_at_index(index).unwrap()
     }
 
-    /// A UTXO whose address is not derivable from this account's
-    /// xpub (foreign key, multi-account mismatch) must not cause a panic or
-    /// hang. The total balance is exact (the UTXO is in the set regardless),
-    /// but the foreign address is absent from the pool so per-address
-    /// visibility is reduced. `tracing::warn!` fires for the unresolved count.
     #[test]
-    fn rehydration_unresolvable_address_is_deferred_not_panics() {
+    fn should_reject_foreign_utxo_without_mutating_wallet() {
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
@@ -1687,7 +1659,6 @@ mod tests {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
         use key_wallet::{Address, Utxo};
-        use std::collections::HashSet;
 
         let seed = [13u8; 64];
         let wallet = Wallet::from_seed_bytes(
@@ -1773,7 +1744,6 @@ mod tests {
 
         let normal_val = 100_000u64;
         let foreign_val = 200_000u64;
-        let expected_total = normal_val + foreign_val;
 
         let core = platform_wallet::changeset::CoreChangeSet {
             new_utxos: vec![
@@ -1785,8 +1755,9 @@ mod tests {
             ..Default::default()
         };
 
-        // Must not panic. tracing::warn! fires for the unresolved count.
-        apply_persisted_core_state(
+        let before =
+            bincode::serde::encode_to_vec(&wallet_info, bincode::config::standard()).unwrap();
+        let error = apply_persisted_core_state(
             &mut wallet_info,
             &manifest,
             &core,
@@ -1795,41 +1766,16 @@ mod tests {
             &Default::default(),
             &LoadCtx::strict(),
         )
-        .unwrap();
-
-        // Total balance is exact — foreign UTXO is in the set regardless.
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            WalletStorageError::CoreStateRestore(
+                key_wallet::wallet::managed_wallet_info::RestoreError::InvalidUtxo(_)
+            )
+        ));
         assert_eq!(
-            wallet_info.balance.total(),
-            expected_total,
-            "total must include foreign UTXO even though it is unresolved"
-        );
-
-        // Per-address visible: only the normal UTXO is in the pool.
-        let funds = wallet_info
-            .accounts
-            .all_funding_accounts()
-            .into_iter()
-            .next()
-            .unwrap();
-        let pool_addresses: HashSet<Address> = funds
-            .managed_account_type()
-            .address_pools()
-            .iter()
-            .flat_map(|p| p.addresses.values().map(|i| i.address.clone()))
-            .collect();
-        let visible: u64 = funds
-            .utxos
-            .values()
-            .filter(|u| pool_addresses.contains(&u.address))
-            .map(|u| u.value())
-            .sum();
-        assert_eq!(
-            visible, normal_val,
-            "only the non-foreign UTXO is pool-visible; foreign deferred to re-warm"
-        );
-        assert!(
-            visible < expected_total,
-            "foreign UTXO is deferred — per-address visible < total"
+            bincode::serde::encode_to_vec(&wallet_info, bincode::config::standard()).unwrap(),
+            before
         );
     }
 
@@ -2379,14 +2325,8 @@ mod tests {
         );
     }
 
-    /// Documented limitation (solution b): a legitimately-owned but
-    /// deep-and-sparse UTXO — external idx 45 with nothing unspent at idx
-    /// <= 30 — is left unresolved because the discovery horizon (gap_limit
-    /// past the deepest match) never advances far enough to reach it. The
-    /// wallet total stays exact; only the per-address view is incomplete
-    /// until the next sync (a `tracing::warn!` records the deferral).
     #[test]
-    fn rehydration_deep_sparse_utxo_left_unresolved_total_exact() {
+    fn should_reject_unresolved_sparse_utxo_until_pool_is_restored() {
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
@@ -2395,7 +2335,6 @@ mod tests {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
         use key_wallet::{Address, Utxo};
-        use std::collections::HashSet;
 
         let wallet = Wallet::from_seed_bytes(
             [21u8; 64],
@@ -2457,10 +2396,10 @@ mod tests {
             ..Default::default()
         };
 
-        // Strict, deliberately: an unresolved address cannot be told apart
-        // from a legitimately sparse wallet, so it degrades but never fails.
+        let before =
+            bincode::serde::encode_to_vec(&wallet_info, bincode::config::standard()).unwrap();
         let ctx = LoadCtx::strict();
-        apply_persisted_core_state(
+        let error = apply_persisted_core_state(
             &mut wallet_info,
             &manifest,
             &core,
@@ -2469,48 +2408,45 @@ mod tests {
             &Default::default(),
             &ctx,
         )
-        .expect("an unresolved address must never brick a strict load");
-        let degradation = ctx.degradation();
-        assert!(degradation.degraded);
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            WalletStorageError::CoreStateRestore(
+                key_wallet::wallet::managed_wallet_info::RestoreError::InvalidUtxo(_)
+            )
+        ));
         assert_eq!(
-            degradation.by_site.get(&LoadSite::UnresolvedUtxoAddress),
-            Some(&1),
-            "the deep-sparse address must be counted: {:?}",
-            degradation.by_site
+            bincode::serde::encode_to_vec(&wallet_info, bincode::config::standard()).unwrap(),
+            before
+        );
+        assert_eq!(
+            ctx.degradation()
+                .by_site
+                .get(&LoadSite::UnresolvedUtxoAddress),
+            Some(&1)
         );
 
-        // The wallet total is exact regardless (a sum over the UTXO set).
-        assert_eq!(wallet_info.balance.total(), value);
-
-        let funds = wallet_info
-            .accounts
-            .all_funding_accounts()
+        // Restoring the known derivation range establishes ownership before retrying.
+        let account = wallet_info.accounts.all_funding_accounts_mut().remove(0);
+        let pool = account
+            .managed_account_type_mut()
+            .address_pools_mut()
             .into_iter()
-            .next()
+            .find(|pool| pool.is_external())
             .unwrap();
-        let pools = funds.managed_account_type().address_pools();
-        let external = pools.iter().find(|p| p.is_external()).unwrap();
-        assert!(
-            !external.contains_address(&sparse_deep),
-            "deep-sparse idx 45 must be left unresolved (absent from the pool)"
-        );
-
-        // Per-address view: the deep-sparse UTXO is not pool-visible yet.
-        let pool_addresses: HashSet<Address> = pools
-            .iter()
-            .flat_map(|p| p.addresses.values().map(|i| i.address.clone()))
-            .collect();
-        let visible: u64 = funds
-            .utxos
-            .values()
-            .filter(|u| pool_addresses.contains(&u.address))
-            .map(|u| u.value())
-            .sum();
-        assert_eq!(
-            visible, 0,
-            "the deep-sparse UTXO is deferred — not pool-visible until next sync"
-        );
-        assert!(visible < value, "per-address visible < exact total");
+        pool.generate_addresses(46, &KeySource::Public(xpub), true)
+            .unwrap();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &Default::default(),
+            &Default::default(),
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+        assert_eq!(wallet_info.balance.total(), value);
     }
 
     /// Topology guard: a wallet with persisted UTXOs but NO funds-bearing

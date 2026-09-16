@@ -936,8 +936,10 @@ pub type LoadedCoreState = (
 ///
 /// # Deferred to the first post-load `sync` (safe re-warm)
 ///
-/// - **`is_coinbase` / `is_instantlocked` / `is_trusted` / `used` flags**: not
-///   carried by `core_utxos`; defaulted and refreshed on the next scan.
+/// - **`is_coinbase`**: derived from the funding record when present; without
+///   that record the coin keeps the schema's non-coinbase default.
+/// - **`is_instantlocked` / `is_trusted` / `used` flags**: not carried by
+///   `core_utxos`; restored separately or refreshed on the next scan.
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -991,6 +993,13 @@ pub fn load_state(
             }
         }
     }
+
+    let coinbase_txids: HashSet<_> = cs
+        .records
+        .iter()
+        .filter(|record| record.transaction.is_coin_base())
+        .map(|record| record.txid)
+        .collect();
 
     // Spend evidence needs only an outpoint, including placeholders with no script.
     {
@@ -1054,7 +1063,7 @@ pub fn load_state(
                 },
                 address,
                 height: height.unwrap_or(0),
-                is_coinbase: false,
+                is_coinbase: coinbase_txids.contains(&outpoint.txid),
                 is_confirmed: height.is_some(),
                 is_instantlocked: false,
                 is_locked: false,

@@ -43,6 +43,86 @@ fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
     .expect("reopen persister")
 }
 
+#[tokio::test]
+async fn should_restore_coinbase_maturity_from_funding_record() {
+    use dashcore::{BlockHash, ScriptBuf, Transaction, TxIn, Witness};
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let wallet_id = wid(0xD4);
+    ensure_wallet_meta(&persister, &wallet_id);
+    let (mut wallet, coin) = wallet_and_utxo([0xD4; 64], 5_000_000, 100, 0);
+    let mut live = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let mut restored = live.clone();
+    let transaction = Transaction {
+        version: 2,
+        lock_time: 0,
+        input: vec![TxIn {
+            previous_output: OutPoint::null(),
+            script_sig: ScriptBuf::new(),
+            sequence: u32::MAX,
+            witness: Witness::new(),
+        }],
+        output: vec![coin.txout],
+        special_transaction_payload: None,
+    };
+    live.update_last_processed_height(100);
+    let result = live
+        .check_core_transaction(
+            &transaction,
+            TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 0)),
+            &mut wallet,
+            true,
+            true,
+        )
+        .await;
+    let coins = live
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .flat_map(|account| account.utxos.values().cloned())
+        .collect();
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: result.new_records,
+                    new_utxos: coins,
+                    last_processed_height: Some(100),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let (core, owners, spent) = {
+        let conn = persister.lock_conn_for_test();
+        core_state::load_state(
+            &conn,
+            &wallet_id,
+            key_wallet::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap()
+    };
+    assert_eq!(core.new_utxos.len(), 1);
+    assert!(core.new_utxos[0].is_coinbase);
+    platform_wallet_storage::sqlite::rehydrate::apply_persisted_core_state(
+        &mut restored,
+        &manifest_for(&wallet),
+        &core,
+        &owners,
+        &Default::default(),
+        &spent,
+        &LoadCtx::strict(),
+    )
+    .unwrap();
+    assert_eq!(restored.balance.immature(), 5_000_000);
+    assert_eq!(restored.balance.confirmed(), 0);
+    assert_eq!(restored.balance, live.balance);
+}
+
 /// Build a wallet + a UTXO paying one of its BIP44 addresses, value
 /// `value`, confirmed at `height`.
 fn wallet_and_utxo(seed: [u8; 64], value: u64, height: u32, vout: u32) -> (Wallet, Utxo) {

@@ -326,7 +326,7 @@ fn seed_asset_lock_status_drift(
 }
 
 #[test]
-fn account_registration_drift_is_strictly_fatal_and_recovery_drops_only_that_row() {
+fn account_registration_drift_rejects_strict_load_and_isolates_unowned_coins_in_recovery() {
     let wallet = wid(0x3E);
     let outpoint = dashcore::OutPoint::new(Txid::from_byte_array([0x3E; 32]), 0);
     let seed = |persister: &SqlitePersister| {
@@ -376,19 +376,8 @@ fn account_registration_drift_is_strictly_fatal_and_recovery_drops_only_that_row
     let (recovery, _tmp, _path) = fresh_recovery_persister(seed);
     let state = recovery
         .load()
-        .expect("recovery drops only the drifted row");
-    let loaded = &state.wallets[&wallet];
-    assert!(loaded.wallet.accounts.standard_bip44_accounts.is_empty());
-    assert!(loaded
-        .wallet
-        .accounts
-        .standard_bip32_accounts
-        .contains_key(&0));
-    assert!(loaded.wallet.accounts.coinjoin_accounts.contains_key(&0));
-    let fallback = &loaded.wallet_info.accounts.standard_bip32_accounts[&0];
-    assert!(fallback.utxos.contains_key(&outpoint));
-    assert_eq!(fallback.balance.total(), 7_000);
-    assert_eq!(loaded.wallet_info.balance.total(), 7_000);
+        .expect("recovery isolates the wallet whose coin owner is missing");
+    assert!(!state.wallets.contains_key(&wallet));
     let degradation = recovery.last_load_degradation();
     assert_eq!(
         degradation.by_site.get(&LoadSite::AccountRegistrationDrift),
@@ -402,8 +391,12 @@ fn account_registration_drift_is_strictly_fatal_and_recovery_drops_only_that_row
         degradation.by_site.get(&LoadSite::UnresolvedUtxoAddress),
         Some(&1)
     );
-    assert_eq!(degradation.by_site.len(), 3);
-    assert_eq!(degradation.total, 4);
+    assert_eq!(
+        degradation.by_site.get(&LoadSite::WalletRehydration),
+        Some(&1)
+    );
+    assert_eq!(degradation.by_site.len(), 4);
+    assert_eq!(degradation.total, 5);
 }
 
 #[test]
