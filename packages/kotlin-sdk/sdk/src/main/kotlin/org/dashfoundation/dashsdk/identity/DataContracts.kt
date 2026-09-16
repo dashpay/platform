@@ -79,7 +79,10 @@ class DataContracts internal constructor(private val walletHandle: Long,
      * @param tokensSchemaJson optional `tokenSchemas` overlay.
      * @param groupsSchemaJson optional groups overlay.
      * @param keywordsJson optional keywords JSON array.
-     * @param description optional plain-text description.
+     * @param description optional plain-text description. `null` or empty
+     *   keeps the stored description; a non-empty string replaces it.
+     * @param clearDescription when `true` the stored description is removed;
+     *   [description] must then be `null` or empty.
      * @param configJson optional contract-config overlay.
      * @param signerHandle a native `SignerHandle`. Unlike the document ops
      *   there is no `signingKeyId` — the wallet selects the key internally.
@@ -93,11 +96,15 @@ class DataContracts internal constructor(private val walletHandle: Long,
         groupsSchemaJson: String? = null,
         keywordsJson: String? = null,
         description: String? = null,
+        clearDescription: Boolean = false,
         configJson: String? = null,
         signerHandle: Long,
     ): ByteArray = gate.op {
         require(ownerIdentityId.size == 32) { "ownerIdentityId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
+        require(!(clearDescription && !description.isNullOrBlank())) {
+            "clearDescription cannot be combined with a non-empty description"
+        }
         mapNativeErrors {
             IdentityNative.updateDataContract(
                 walletHandle = walletHandle,
@@ -108,6 +115,7 @@ class DataContracts internal constructor(private val walletHandle: Long,
                 groupsSchemaJson = groupsSchemaJson,
                 keywordsJson = keywordsJson,
                 description = description,
+                clearDescription = clearDescription,
                 configJson = configJson,
                 signerHandle = signerHandle,
             )

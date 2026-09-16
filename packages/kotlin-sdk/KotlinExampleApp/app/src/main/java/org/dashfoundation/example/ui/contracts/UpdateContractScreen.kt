@@ -2,6 +2,7 @@ package org.dashfoundation.example.ui.contracts
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -17,6 +18,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -28,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -94,6 +97,7 @@ fun UpdateContractScreen(
     var groupsJson by rememberSaveable { mutableStateOf("") }
     var keywords by rememberSaveable { mutableStateOf("") }
     var description by rememberSaveable { mutableStateOf("") }
+    var clearDescription by rememberSaveable { mutableStateOf(false) }
 
     var error by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
@@ -111,7 +115,9 @@ fun UpdateContractScreen(
     // Derived from the SAME normalized conversion the submit uses:
     // separator-only input (",", ", ,") must not enable a paid no-op update.
     val hasKeywords = keywordsAsJsonArray(keywords) != null
-    val hasDescription = description.trim().isNotEmpty()
+    // Clearing the stored description is itself a change; while the switch is
+    // on the description field is disabled and its text is not submitted.
+    val hasDescription = clearDescription || description.trim().isNotEmpty()
     val canSubmit = owner != null && manager != null && contractIdBytes != null &&
         (hasDocuments || hasTokens || hasGroups || hasKeywords || hasDescription) &&
         !isSubmitting
@@ -246,12 +252,27 @@ fun UpdateContractScreen(
                     onValueChange = { description = it },
                     label = { Text("Description") },
                     singleLine = true,
-                    enabled = !isSubmitting,
+                    enabled = !isSubmitting && !clearDescription,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
                         .testTag("updateContract.description"),
                 )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Clear description")
+                    Switch(
+                        checked = clearDescription,
+                        onCheckedChange = { clearDescription = it },
+                        enabled = !isSubmitting,
+                        modifier = Modifier.testTag("updateContract.clearDescription"),
+                    )
+                }
             }
 
             SubmitButton(
@@ -288,7 +309,8 @@ fun UpdateContractScreen(
                             tokensSchemaJson = tokensJson.trim().ifEmpty { null },
                             groupsSchemaJson = groupsJson.trim().ifEmpty { null },
                             keywordsJson = keywordsAsJsonArray(keywords),
-                            description = description.trim().ifEmpty { null },
+                            description = if (clearDescription) null else description.trim().ifEmpty { null },
+                            clearDescription = clearDescription,
                             signerHandle = mgr.signerHandle,
                         )
                         updatedContractIdHex = id.toHex()
