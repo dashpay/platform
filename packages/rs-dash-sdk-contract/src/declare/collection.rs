@@ -451,7 +451,8 @@ impl CollectionSpec {
 
     /// A copy with every order-insensitive member in canonical order: fields
     /// by position at every nesting level, token costs by action, reference
-    /// agreements by referring property.
+    /// agreements by referring property, enum values and required system
+    /// properties sorted.
     pub fn normalized(&self) -> CollectionSpec {
         let mut normalized = self.clone();
         normalize_fields(&mut normalized.fields);
@@ -468,6 +469,7 @@ fn normalize_fields(fields: &mut [FieldSpec]) {
             FieldType::Reference(ReferenceTarget::PermanentDocument { agreement, .. }) => {
                 agreement.sort();
             }
+            FieldType::Enum(values) => values.sort(),
             _ => {}
         }
     }
