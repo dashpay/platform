@@ -4,13 +4,11 @@ use super::{
     corrupt, invalid, DocumentHistoryEntry, DocumentHistoryFilter, DocumentHistoryLifecycle,
     DocumentHistoryState,
 };
-use crate::drive::document::paths::{
-    contract_document_type_path_vec, document_history_path, DOCUMENT_HISTORY_TREE_KEY,
-};
+use crate::drive::document::paths::{contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY};
 use crate::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::util::common::encode::encode_u64;
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
@@ -64,7 +62,8 @@ impl DocumentHistoryQueryV1 {
         }
     }
 
-    /// The leaf-only query required for authenticated count-offset pagination.
+    /// The path query of the page's entries in the layout the protocol
+    /// version stores.
     pub fn entries_query(&self, version: &PlatformVersion) -> Result<PathQuery, Error> {
         match version
             .drive
@@ -73,10 +72,19 @@ impl DocumentHistoryQueryV1 {
             .query
             .fetch_document_history_query
         {
-            1 => self.entries_query_v1(),
-            0 => Err(invalid(
-                "document history is served from protocol version 14",
-            )),
+            0 => {
+                let (start_at_ms, limit) = self.legacy_read()?;
+                Drive::fetch_document_history_query(
+                    self.contract_id,
+                    &self.document_type_name,
+                    self.document_id,
+                    start_at_ms,
+                    limit,
+                    None,
+                    version,
+                )
+            }
+            1 => Drive::fetch_document_history_query_v1(self),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "entries_query".to_string(),
                 known_versions: vec![0, 1],
@@ -85,38 +93,19 @@ impl DocumentHistoryQueryV1 {
         }
     }
 
-    pub(crate) fn entries_query_v1(&self) -> Result<PathQuery, Error> {
+    /// Maps the query onto the per-document subtree used before protocol
+    /// version 14, which is keyed by block time only: a time filter and a
+    /// page length. Revision and cursor filters need the history tree.
+    pub(crate) fn legacy_read(&self) -> Result<(u64, Option<u16>), Error> {
         self.validate()?;
-        let mut query = Query::new();
-        let mut limit = self.limit.unwrap_or(MAX_DOCUMENT_HISTORY_FETCH_LIMIT);
-        let offset = match self.filter {
-            DocumentHistoryFilter::StartAtTime(time) => {
-                query.insert_range_from(encode_u64(time)..);
-                None
-            }
-            DocumentHistoryFilter::StartAfter { time_ms, revision } => {
-                let mut key = encode_u64(time_ms);
-                key.extend(encode_u64(revision));
-                query.insert_range_after(key..);
-                None
-            }
-            DocumentHistoryFilter::StartAtRevision(revision)
-            | DocumentHistoryFilter::Revision(revision) => {
-                query.insert_all();
-                if matches!(self.filter, DocumentHistoryFilter::Revision(_)) {
-                    limit = 1;
-                }
-                (revision > 1).then_some((revision - 1) as u16)
-            }
-        };
-        Ok(PathQuery::new(
-            document_history_path(
-                &self.contract_id,
-                &self.document_type_name,
-                &self.document_id,
-            ),
-            SizedQuery::new(query, Some(limit), offset),
-        ))
+        match self.filter {
+            DocumentHistoryFilter::StartAtTime(time_ms) => Ok((time_ms, self.limit)),
+            DocumentHistoryFilter::StartAfter { .. }
+            | DocumentHistoryFilter::StartAtRevision(_)
+            | DocumentHistoryFilter::Revision(_) => Err(invalid(
+                "revision and cursor filters need the protocol version 14 history layout",
+            )),
+        }
     }
 
     /// Queries the pointer, lifecycle reservation, and raw history tree separately.
@@ -137,7 +126,7 @@ impl DocumentHistoryQueryV1 {
         Ok(merged)
     }
 
-    pub(super) fn lifecycle(
+    pub(crate) fn lifecycle(
         &self,
         metadata: Vec<grovedb::query_result_type::PathKeyOptionalElementTrio>,
         document_type: DocumentTypeRef,
@@ -217,7 +206,7 @@ impl DocumentHistoryQueryV1 {
         ))
     }
 
-    pub(super) fn decode_entries(
+    pub(crate) fn decode_entries(
         &self,
         entries: Vec<(Vec<u8>, Element)>,
         document_type: DocumentTypeRef,

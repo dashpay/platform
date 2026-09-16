@@ -1,7 +1,48 @@
 //! The two GroveDB proofs of a history page in one envelope.
 
 use super::{corrupt, invalid};
+use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::version::PlatformVersion;
+
+/// The proof of a history page in the layout the protocol version uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DocumentHistoryProof {
+    /// One GroveDB proof of the per-document history subtree used before
+    /// protocol version 14.
+    V0(Vec<u8>),
+    /// The two GroveDB proofs of the per-type history tree.
+    V1(DocumentHistoryProofV1),
+}
+
+impl DocumentHistoryProof {
+    /// The bytes carried as the proof on the wire.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::V0(proof) => proof.clone(),
+            Self::V1(proof) => proof.to_bytes(),
+        }
+    }
+
+    /// Decodes wire proof bytes in the layout the protocol version verifies.
+    pub fn from_bytes(bytes: &[u8], platform_version: &PlatformVersion) -> Result<Self, Error> {
+        match platform_version
+            .drive
+            .methods
+            .verify
+            .document
+            .verify_document_history
+        {
+            0 => Ok(Self::V0(bytes.to_vec())),
+            1 => DocumentHistoryProofV1::from_bytes(bytes).map(Self::V1),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "DocumentHistoryProof::from_bytes".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
+    }
+}
 
 /// The two GroveDB proofs a history page needs, carried as one proof on the
 /// wire.

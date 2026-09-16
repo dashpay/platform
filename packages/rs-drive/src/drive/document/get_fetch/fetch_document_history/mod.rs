@@ -1,30 +1,24 @@
 mod v0;
+mod v1;
 
-use crate::drive::document::history::invalid;
+use crate::drive::document::history::{DocumentHistoryQueryV1, DocumentHistoryV1};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
-use std::collections::BTreeMap;
 
 impl Drive {
-    /// Fetches the historical revisions of a document that keeps history.
-    #[allow(clippy::too_many_arguments)]
+    /// Fetches a page of a historical document's history in the layout the
+    /// protocol version stores.
     pub fn fetch_document_history(
         &self,
-        contract_id: [u8; 32],
-        document_type_name: &str,
+        query: &DocumentHistoryQueryV1,
         document_type: DocumentTypeRef,
-        document_id: [u8; 32],
         transaction: TransactionArg,
-        start_at_ms: u64,
-        limit: Option<u16>,
-        offset: Option<u16>,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<u64, Document>, Error> {
+    ) -> Result<DocumentHistoryV1, Error> {
         match platform_version
             .drive
             .methods
@@ -32,22 +26,24 @@ impl Drive {
             .query
             .fetch_document_history
         {
-            0 => self.fetch_document_history_v0(
-                contract_id,
-                document_type_name,
-                document_type,
-                document_id,
-                transaction,
-                start_at_ms,
-                limit,
-                offset,
-                platform_version,
-            ),
-            // The layout changed at protocol version 14: revisions live in the
-            // per-type history tree and are read through the history query.
-            1 => Err(invalid(
-                "the document history layout changed at protocol version 14; use the history query",
-            )),
+            0 => {
+                let (start_at_ms, limit) = query.legacy_read()?;
+                let revisions = self.fetch_document_history_v0(
+                    query.contract_id,
+                    &query.document_type_name,
+                    document_type,
+                    query.document_id,
+                    transaction,
+                    start_at_ms,
+                    limit,
+                    None,
+                    platform_version,
+                )?;
+                DocumentHistoryV1::from_legacy(revisions)
+            }
+            1 => {
+                self.fetch_document_history_v1(query, document_type, transaction, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_document_history".to_string(),
                 known_versions: vec![0, 1],
@@ -60,6 +56,7 @@ impl Drive {
 #[cfg(test)]
 mod legacy_tests {
     use super::*;
+    use crate::drive::document::history::{DocumentHistoryFilter, DocumentHistoryProof};
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -139,12 +136,29 @@ mod legacy_tests {
             .expect("put document");
     }
 
+    fn time_query(
+        contract: &dpp::prelude::DataContract,
+        document: &dpp::document::Document,
+        start_at_ms: u64,
+        limit: Option<u16>,
+    ) -> DocumentHistoryQueryV1 {
+        DocumentHistoryQueryV1 {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: DOCUMENT_TYPE_NAME.to_string(),
+            document_id: document.id().to_buffer(),
+            filter: DocumentHistoryFilter::StartAtTime(start_at_ms),
+            limit,
+        }
+    }
+
+    fn times(history: &DocumentHistoryV1) -> Vec<u64> {
+        history.entries.iter().map(|entry| entry.time_ms).collect()
+    }
+
     #[test]
     fn should_fetch_document_history_in_time_order_with_pagination() {
         let (drive, contract, mut document) = setup_history_document();
         let platform_version = PlatformVersion::get(13).expect("protocol 13");
-        let contract_id = contract.id().to_buffer();
-        let document_id = document.id().to_buffer();
         let document_type = contract
             .document_type_for_name(DOCUMENT_TYPE_NAME)
             .expect("profile document type");
@@ -157,59 +171,41 @@ mod legacy_tests {
 
         let history = drive
             .fetch_document_history(
-                contract_id,
-                DOCUMENT_TYPE_NAME,
+                &time_query(&contract, &document, 0, None),
                 document_type,
-                document_id,
-                None,
-                0,
-                None,
                 None,
                 platform_version,
             )
             .expect("fetch history");
-        assert_eq!(
-            history.keys().copied().collect::<Vec<_>>(),
-            vec![1000, 2000, 3000]
-        );
+        assert_eq!(times(&history), vec![1000, 2000, 3000]);
+        // The layout before protocol 14 keeps no lifecycle record.
+        assert_eq!(history.lifecycle, None);
 
         let page = drive
             .fetch_document_history(
-                contract_id,
-                DOCUMENT_TYPE_NAME,
+                &time_query(&contract, &document, 1000, Some(1)),
                 document_type,
-                document_id,
-                None,
-                1000,
-                Some(1),
                 None,
                 platform_version,
             )
             .expect("fetch page");
-        assert_eq!(page.keys().copied().collect::<Vec<_>>(), vec![2000]);
+        assert_eq!(times(&page), vec![2000]);
 
         let empty_page = drive
             .fetch_document_history(
-                contract_id,
-                DOCUMENT_TYPE_NAME,
+                &time_query(&contract, &document, 3000, Some(10)),
                 document_type,
-                document_id,
-                None,
-                3000,
-                Some(10),
                 None,
                 platform_version,
             )
             .expect("fetch empty page");
-        assert!(empty_page.is_empty());
+        assert!(empty_page.entries.is_empty());
     }
 
     #[test]
     fn should_prove_and_verify_document_history() {
         let (drive, contract, mut document) = setup_history_document();
         let platform_version = PlatformVersion::get(13).expect("protocol 13");
-        let contract_id = contract.id().to_buffer();
-        let document_id = document.id().to_buffer();
         let document_type = contract
             .document_type_for_name(DOCUMENT_TYPE_NAME)
             .expect("profile document type");
@@ -218,90 +214,52 @@ mod legacy_tests {
         document.set("displayName", "Alice 2".into());
         put_document(&drive, &contract, &document, 2000);
 
+        let query = time_query(&contract, &document, 0, Some(10));
         let proof = drive
-            .prove_document_history(
-                contract_id,
-                DOCUMENT_TYPE_NAME,
-                document_id,
-                None,
-                0,
-                Some(10),
-                None,
-                platform_version,
-            )
+            .prove_document_history(&query, document_type, None, platform_version)
             .expect("prove history");
-        let (_root_hash, history) = Drive::verify_document_history(
-            &proof,
-            contract_id,
-            DOCUMENT_TYPE_NAME,
-            document_type,
-            document_id,
-            0,
-            Some(10),
-            None,
-            platform_version,
-        )
-        .expect("verify history");
+        assert!(matches!(proof, DocumentHistoryProof::V0(_)));
+        let (_root_hash, history) =
+            Drive::verify_document_history(&query, &proof, document_type, platform_version)
+                .expect("verify history");
+        assert_eq!(times(&history), vec![1000, 2000]);
+        assert_eq!(history.lifecycle, None);
 
-        let history = history.expect("history exists");
-        assert_eq!(
-            history.keys().copied().collect::<Vec<_>>(),
-            vec![1000, 2000]
-        );
-
+        let query = time_query(&contract, &document, 2000, Some(10));
         let empty_page_proof = drive
-            .prove_document_history(
-                contract_id,
-                DOCUMENT_TYPE_NAME,
-                document_id,
-                None,
-                2000,
-                Some(10),
-                None,
-                platform_version,
-            )
+            .prove_document_history(&query, document_type, None, platform_version)
             .expect("prove empty page");
         let (_root_hash, empty_history) = Drive::verify_document_history(
+            &query,
             &empty_page_proof,
-            contract_id,
-            DOCUMENT_TYPE_NAME,
             document_type,
-            document_id,
-            2000,
-            Some(10),
-            None,
             platform_version,
         )
         .expect("verify empty history page");
-
-        assert!(empty_history.expect("empty history page exists").is_empty());
+        assert!(empty_history.entries.is_empty());
     }
 
-    /// The legacy reader is a protocol 12 and 13 fact: from protocol 14 the
-    /// revisions live in the per-type history tree and the legacy API refuses
-    /// the read instead of looking in the old place.
+    /// The layout before protocol 14 is keyed by block time only, so a
+    /// revision filter cannot be served from it.
     #[test]
-    fn should_refuse_the_legacy_read_from_protocol_14() {
+    fn should_refuse_revision_filters_before_protocol_14() {
         let (drive, contract, document) = setup_history_document();
         let document_type = contract
-            .document_type_for_name("profile")
+            .document_type_for_name(DOCUMENT_TYPE_NAME)
             .expect("profile document type");
+        let mut query = time_query(&contract, &document, 0, None);
+        query.filter = DocumentHistoryFilter::StartAtRevision(1);
         let error = drive
             .fetch_document_history(
-                contract.id().to_buffer(),
-                "profile",
+                &query,
                 document_type,
-                document.id().to_buffer(),
                 None,
-                0,
-                None,
-                None,
-                PlatformVersion::get(14).expect("protocol 14"),
+                PlatformVersion::get(13).expect("protocol 13"),
             )
-            .expect_err("the legacy history read is refused from protocol 14");
+            .expect_err("revision filters need the protocol 14 layout");
         assert!(error
             .to_string()
-            .contains("layout changed at protocol version 14"));
+            .contains("need the protocol version 14 history layout"));
     }
 }
 

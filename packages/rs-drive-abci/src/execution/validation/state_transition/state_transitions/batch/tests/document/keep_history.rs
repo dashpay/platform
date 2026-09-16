@@ -455,11 +455,18 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
                 "only the current revision contributes to the primary sum: {primary:?}"
             );
         }
-        let (history, proof) = platform
+        let history = platform
             .drive
-            .prove_document_history_v1(&query, document_type, None, version)
+            .fetch_document_history(&query, document_type, None, version)
             .unwrap();
-        assert_eq!(history.lifecycle.remaining_revisions, revision);
+        let proof = platform
+            .drive
+            .prove_document_history(&query, document_type, None, version)
+            .unwrap();
+        assert_eq!(
+            history.lifecycle.as_ref().unwrap().remaining_revisions,
+            revision
+        );
         assert_eq!(
             history
                 .entries
@@ -470,7 +477,7 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
         );
         assert!(history.entries.iter().all(|entry| entry.time_ms == 0));
         let (_, verified) =
-            drive::drive::Drive::verify_document_history_v1(&query, &proof, document_type, version)
+            drive::drive::Drive::verify_document_history(&query, &proof, document_type, version)
                 .unwrap();
         assert_eq!(verified, history);
         document = history.entries.last().unwrap().document.clone();

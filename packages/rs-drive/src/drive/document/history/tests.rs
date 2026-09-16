@@ -3,18 +3,61 @@ use crate::drive::document::paths::{
     contract_document_type_path_vec, document_history_path, DOCUMENT_HISTORY_TREE_KEY,
 };
 use crate::drive::Drive;
+use crate::error::Error;
 use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use crate::util::common::encode::encode_u64;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+use crate::verify::RootHash;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
 use dpp::document::DocumentV0Setters;
 use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 use dpp::version::PlatformVersion;
 use grovedb::{Element, PathQuery, Query, SizedQuery};
+
+/// Fetches and proves a page at a protocol version that stores the history
+/// tree, returning the two GroveDB proofs for tampering.
+fn prove(
+    drive: &Drive,
+    query: &DocumentHistoryQueryV1,
+    document_type: DocumentTypeRef,
+    version: &PlatformVersion,
+) -> (DocumentHistoryV1, DocumentHistoryProofV1) {
+    let page = drive
+        .fetch_document_history(query, document_type, None, version)
+        .unwrap();
+    let DocumentHistoryProof::V1(proof) = drive
+        .prove_document_history(query, document_type, None, version)
+        .unwrap()
+    else {
+        panic!("the history tree is proved with two GroveDB proofs");
+    };
+    (page, proof)
+}
+
+fn verify(
+    query: &DocumentHistoryQueryV1,
+    proof: &DocumentHistoryProofV1,
+    document_type: DocumentTypeRef,
+    version: &PlatformVersion,
+) -> Result<(RootHash, DocumentHistoryV1), Error> {
+    Drive::verify_document_history(
+        query,
+        &DocumentHistoryProof::V1(proof.clone()),
+        document_type,
+        version,
+    )
+}
+
+fn lifecycle(page: &DocumentHistoryV1) -> &DocumentHistoryLifecycle {
+    page.lifecycle
+        .as_ref()
+        .expect("pages of the history tree carry a lifecycle")
+}
 
 #[test]
 fn should_authenticate_history_pages_metadata_and_absence() {
@@ -67,21 +110,15 @@ fn should_authenticate_history_pages_metadata_and_absence() {
     };
     let mut seen = vec![];
     loop {
-        let (page, proof) = drive
-            .prove_document_history_v1(&query, document_type, None, version)
-            .unwrap();
-        let (_, verified) =
-            Drive::verify_document_history_v1(&query, &proof, document_type, version).unwrap();
+        let (page, proof) = prove(&drive, &query, document_type, version);
+        let (_, verified) = verify(&query, &proof, document_type, version).unwrap();
         assert_eq!(verified, page);
-        assert_eq!(verified.lifecycle.remaining_revisions, 22);
-        assert_eq!(verified.lifecycle.state, DocumentHistoryState::Active);
+        assert_eq!(lifecycle(&verified).remaining_revisions, 22);
+        assert_eq!(lifecycle(&verified).state, DocumentHistoryState::Active);
         seen.extend(page.entries.iter().map(|entry| entry.revision));
         let mut missing_proof = proof.clone();
         missing_proof.entries_proof = None;
-        assert!(
-            Drive::verify_document_history_v1(&query, &missing_proof, document_type, version)
-                .is_err()
-        );
+        assert!(verify(&query, &missing_proof, document_type, version).is_err());
         let Some(last) = page.entries.last() else {
             break;
         };
@@ -114,11 +151,8 @@ fn should_authenticate_history_pages_metadata_and_absence() {
         };
         query.filter = filter;
         query.limit = None;
-        let (page, proof) = drive
-            .prove_document_history_v1(&query, document_type, None, version)
-            .unwrap();
-        let (_, verified) =
-            Drive::verify_document_history_v1(&query, &proof, document_type, version).unwrap();
+        let (page, proof) = prove(&drive, &query, document_type, version);
+        let (_, verified) = verify(&query, &proof, document_type, version).unwrap();
         assert_eq!(verified, page);
         assert_eq!(
             page.entries
@@ -127,12 +161,10 @@ fn should_authenticate_history_pages_metadata_and_absence() {
                 .collect::<Vec<_>>(),
             expected
         );
-        assert_eq!(page.lifecycle.remaining_revisions, 22);
+        assert_eq!(lifecycle(&page).remaining_revisions, 22);
     }
     query.filter = DocumentHistoryFilter::StartAtTime(0);
-    let (_, old_proof) = drive
-        .prove_document_history_v1(&query, document_type, None, version)
-        .unwrap();
+    let (_, old_proof) = prove(&drive, &query, document_type, version);
     document.set_revision(Some(23));
     drive
         .add_document_for_contract(
@@ -152,12 +184,10 @@ fn should_authenticate_history_pages_metadata_and_absence() {
             None,
         )
         .unwrap();
-    let (_, mut mixed_proof) = drive
-        .prove_document_history_v1(&query, document_type, None, version)
-        .unwrap();
+    let (_, mut mixed_proof) = prove(&drive, &query, document_type, version);
     mixed_proof.metadata_proof = old_proof.metadata_proof;
     assert!(
-        Drive::verify_document_history_v1(&query, &mixed_proof, document_type, version).is_err(),
+        verify(&query, &mixed_proof, document_type, version).is_err(),
         "proofs from different states must not combine"
     );
     let bytes = document
@@ -174,15 +204,12 @@ fn should_authenticate_history_pages_metadata_and_absence() {
     }
     query.document_id = [255; 32];
     query.filter = DocumentHistoryFilter::Revision(2);
-    let (page, proof) = drive
-        .prove_document_history_v1(&query, document_type, None, version)
-        .unwrap();
+    let (page, proof) = prove(&drive, &query, document_type, version);
     assert!(proof.entries_proof.is_none());
-    let (_, verified) =
-        Drive::verify_document_history_v1(&query, &proof, document_type, version).unwrap();
+    let (_, verified) = verify(&query, &proof, document_type, version).unwrap();
     assert_eq!(page, verified);
-    assert_eq!(verified.lifecycle.state, DocumentHistoryState::Absent);
-    assert_eq!(verified.lifecycle.remaining_revisions, 0);
+    assert_eq!(lifecycle(&verified).state, DocumentHistoryState::Absent);
+    assert_eq!(lifecycle(&verified).remaining_revisions, 0);
     assert!(verified.entries.is_empty());
 
     let history_path = document_history_path(
@@ -203,19 +230,16 @@ fn should_authenticate_history_pages_metadata_and_absence() {
         .value
         .unwrap();
     query.filter = DocumentHistoryFilter::StartAtTime(0);
-    let (page, proof) = drive
-        .prove_document_history_v1(&query, document_type, None, version)
-        .unwrap();
+    let (page, proof) = prove(&drive, &query, document_type, version);
     assert!(
         proof.entries_proof.is_some(),
         "an empty but present tree still needs an entries proof"
     );
-    let (_, verified) =
-        Drive::verify_document_history_v1(&query, &proof, document_type, version).unwrap();
+    let (_, verified) = verify(&query, &proof, document_type, version).unwrap();
     assert_eq!(page, verified);
     let mut missing = proof;
     missing.entries_proof = None;
-    assert!(Drive::verify_document_history_v1(&query, &missing, document_type, version).is_err());
+    assert!(verify(&query, &missing, document_type, version).is_err());
 }
 
 #[test]
@@ -324,14 +348,11 @@ fn should_use_sequence_one_for_an_immutable_document_without_a_revision() {
         filter: DocumentHistoryFilter::Revision(1),
         limit: None,
     };
-    let (history, proof) = drive
-        .prove_document_history_v1(&query, document_type, None, version)
-        .unwrap();
+    let (history, proof) = prove(&drive, &query, document_type, version);
     assert_eq!(history.entries[0].revision, 1);
     assert_eq!(history.entries[0].document.revision(), None);
-    assert_eq!(history.lifecycle.remaining_revisions, 1);
-    let (_, verified) =
-        Drive::verify_document_history_v1(&query, &proof, document_type, version).unwrap();
+    assert_eq!(lifecycle(&history).remaining_revisions, 1);
+    let (_, verified) = verify(&query, &proof, document_type, version).unwrap();
     assert_eq!(verified, history);
 }
 
@@ -655,12 +676,9 @@ fn should_reject_metadata_proofs_that_omit_a_queried_branch() {
         filter: DocumentHistoryFilter::StartAtTime(0),
         limit: Some(10),
     };
-    let (page, honest) = drive
-        .prove_document_history_v1(&query, document_type, None, version)
-        .unwrap();
-    assert_eq!(page.lifecycle.state, DocumentHistoryState::Active);
-    let (_, verified) =
-        Drive::verify_document_history_v1(&query, &honest, document_type, version).unwrap();
+    let (page, honest) = prove(&drive, &query, document_type, version);
+    assert_eq!(lifecycle(&page).state, DocumentHistoryState::Active);
+    let (_, verified) = verify(&query, &honest, document_type, version).unwrap();
     assert_eq!(verified, page);
 
     // A node that answers only for the lifecycle record and the history tree,
@@ -690,7 +708,7 @@ fn should_reject_metadata_proofs_that_omit_a_queried_branch() {
             metadata_proof,
         };
         assert!(
-            Drive::verify_document_history_v1(&query, &forged, document_type, version).is_err(),
+            verify(&query, &forged, document_type, version).is_err(),
             "a metadata proof that omits branch {omitted} verified as an authenticated absence"
         );
     }

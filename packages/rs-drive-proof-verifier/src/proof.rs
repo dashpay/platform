@@ -1407,7 +1407,7 @@ fn verify_document_history_response_v0(
     provider: &dyn ContextProvider,
 ) -> Result<(Option<DocumentHistory>, ResponseMetadata, Proof), Error> {
     use drive::drive::document::history::{
-        DocumentHistoryFilter, DocumentHistoryProofV1, DocumentHistoryQueryV1,
+        DocumentHistoryFilter, DocumentHistoryProof, DocumentHistoryQueryV1,
     };
     use platform::get_document_history_request::get_document_history_request_v0::Filter;
     let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -1453,26 +1453,30 @@ fn verify_document_history_response_v0(
         .map_err(|error| Error::ProtocolError {
             error: error.to_string(),
         })?;
-    // One proof object on the wire carries both GroveDB proofs, so the
-    // envelope floor is checked on each nested proof rather than on the
-    // payload as a whole.
-    let proofs = DocumentHistoryProofV1::from_bytes(&proof.grovedb_proof)
+    // The proof arrives in the layout the protocol version stores: one GroveDB
+    // proof before protocol version 14, and from then on one proof object
+    // carrying two, so the envelope floor is checked on each nested proof.
+    let proofs = DocumentHistoryProof::from_bytes(&proof.grovedb_proof, platform_version)
         .map_drive_error(proof, metadata)?;
-    require_supported_grovedb_proof_bytes(&proofs.metadata_proof, platform_version)?;
-    if let Some(entries_proof) = &proofs.entries_proof {
-        require_supported_grovedb_proof_bytes(entries_proof, platform_version)?;
+    match &proofs {
+        DocumentHistoryProof::V0(grovedb_proof) => {
+            require_supported_grovedb_proof_bytes(grovedb_proof, platform_version)?;
+        }
+        DocumentHistoryProof::V1(proofs) => {
+            require_supported_grovedb_proof_bytes(&proofs.metadata_proof, platform_version)?;
+            if let Some(entries_proof) = &proofs.entries_proof {
+                require_supported_grovedb_proof_bytes(entries_proof, platform_version)?;
+            }
+        }
     }
-    proofs
-        .validate_envelopes()
-        .map_drive_error(proof, metadata)?;
     let (root, history) =
-        Drive::verify_document_history_v1(&query, &proofs, document_type, platform_version)
+        Drive::verify_document_history(&query, &proofs, document_type, platform_version)
             .map_drive_error(proof, metadata)?;
     verify_tenderdash_signature(proof, metadata, &root, provider)?;
     Ok((
         Some(DocumentHistory {
             entries: history.entries,
-            lifecycle: Some(history.lifecycle),
+            lifecycle: history.lifecycle,
         }),
         metadata.clone(),
         proof.clone(),

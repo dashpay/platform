@@ -344,7 +344,7 @@ fn history_api_proof_round_trip(gapped: bool) {
         };
         let expected = platform
             .drive
-            .fetch_document_history_v1(&query, document_type, None, version)
+            .fetch_document_history(&query, document_type, None, version)
             .unwrap();
         let request: GetDocumentHistoryRequest = request.into();
         let verify = |response: GetDocumentHistoryResponseV0| {
@@ -375,7 +375,7 @@ fn history_api_proof_round_trip(gapped: bool) {
         );
         let result = verify(response.clone()).unwrap().unwrap();
         assert_eq!(result.entries, expected.entries);
-        assert_eq!(result.lifecycle, Some(expected.lifecycle.clone()));
+        assert_eq!(result.lifecycle, expected.lifecycle.clone());
         // Without a proof the same query answers with the history itself.
         let mut plain_request = request_v0.clone();
         plain_request.prove = false;
@@ -402,13 +402,17 @@ fn history_api_proof_round_trip(gapped: bool) {
         let lifecycle = history
             .lifecycle
             .expect("the history carries its lifecycle");
+        let expected_lifecycle = expected
+            .lifecycle
+            .as_ref()
+            .expect("pages of the history tree carry a lifecycle");
         assert_eq!(
             lifecycle.remaining_revisions,
-            expected.lifecycle.remaining_revisions
+            expected_lifecycle.remaining_revisions
         );
         assert_eq!(
             lifecycle.state,
-            match expected.lifecycle.state {
+            match expected_lifecycle.state {
                 DocumentHistoryState::Active => State::Active,
                 DocumentHistoryState::Absent => State::Absent,
             } as i32

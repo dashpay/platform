@@ -1,22 +1,22 @@
-//! Verifying a proved history page (server and verify builds).
-
-use super::{corrupt, invalid, DocumentHistoryProofV1, DocumentHistoryQueryV1, DocumentHistoryV1};
+use crate::drive::document::history::{
+    corrupt, invalid, DocumentHistoryProofV1, DocumentHistoryQueryV1, DocumentHistoryV1,
+};
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::verify::RootHash;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 
-#[cfg(any(feature = "server", feature = "verify"))]
 impl Drive {
-    /// Verifies both proofs, their common root, and the revision positions.
-    pub(crate) fn verify_document_history_v1_impl(
+    /// Verifies both proofs of the per-type history tree, their common root,
+    /// and the revision positions.
+    pub(super) fn verify_document_history_v1(
         query: &DocumentHistoryQueryV1,
         proof: &DocumentHistoryProofV1,
         document_type: DocumentTypeRef,
         version: &PlatformVersion,
-    ) -> Result<([u8; 32], DocumentHistoryV1), Error> {
+    ) -> Result<(RootHash, DocumentHistoryV1), Error> {
         proof.validate_envelopes()?;
         if !document_type.documents_keep_history() {
             return Err(invalid("document type does not keep history"));
@@ -69,35 +69,12 @@ impl Drive {
                 ))
             }
         };
-        Ok((root, DocumentHistoryV1 { entries, lifecycle }))
-    }
-}
-
-#[cfg(any(feature = "server", feature = "verify"))]
-impl Drive {
-    /// Verifies a proved page of a historical document's history and lifecycle.
-    pub fn verify_document_history_v1(
-        query: &DocumentHistoryQueryV1,
-        proof: &DocumentHistoryProofV1,
-        document_type: DocumentTypeRef,
-        version: &PlatformVersion,
-    ) -> Result<([u8; 32], DocumentHistoryV1), Error> {
-        match version
-            .drive
-            .methods
-            .verify
-            .document
-            .verify_document_history
-        {
-            1 => Self::verify_document_history_v1_impl(query, proof, document_type, version),
-            0 => Err(invalid(
-                "document history is served from protocol version 14",
-            )),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "verify_document_history_v1".to_string(),
-                known_versions: vec![0, 1],
-                received: version,
-            })),
-        }
+        Ok((
+            root,
+            DocumentHistoryV1 {
+                entries,
+                lifecycle: Some(lifecycle),
+            },
+        ))
     }
 }

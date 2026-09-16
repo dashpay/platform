@@ -3157,7 +3157,9 @@ fn test_query_historical_protocol_13() {
 #[cfg(feature = "server")]
 #[test]
 fn test_query_historical_protocol_14_uses_composite_history() {
-    use drive::drive::document::history::{DocumentHistoryFilter, DocumentHistoryQueryV1};
+    use drive::drive::document::history::{
+        DocumentHistoryFilter, DocumentHistoryProof, DocumentHistoryQueryV1,
+    };
     use drive::drive::RootTree;
     use drive::grovedb::Element;
 
@@ -3235,10 +3237,14 @@ fn test_query_historical_protocol_14_uses_composite_history() {
             filter: DocumentHistoryFilter::StartAtTime(0),
             limit: None,
         };
-        let (page, proof) = drive
-            .prove_document_history_v1(&query, document_type, None, version)
+        let page = drive
+            .fetch_document_history(&query, document_type, None, version)
             .unwrap();
-        assert_eq!(page.lifecycle.remaining_revisions, 4);
+        let proof = drive
+            .prove_document_history(&query, document_type, None, version)
+            .unwrap();
+        assert!(matches!(proof, DocumentHistoryProof::V1(_)));
+        assert_eq!(page.lifecycle.as_ref().unwrap().remaining_revisions, 4);
         assert_eq!(
             page.entries
                 .iter()
@@ -3248,7 +3254,7 @@ fn test_query_historical_protocol_14_uses_composite_history() {
         );
         assert_eq!(page.entries.last().unwrap().document, current);
         let (proved_root, verified) =
-            Drive::verify_document_history_v1(&query, &proof, document_type, version).unwrap();
+            Drive::verify_document_history(&query, &proof, document_type, version).unwrap();
         assert_eq!(proved_root, root);
         assert_eq!(verified, page);
     }

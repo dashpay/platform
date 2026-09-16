@@ -1,6 +1,9 @@
 //! A page of retained revisions with the document's lifecycle.
 
-use dpp::document::Document;
+use super::corrupt;
+use crate::error::Error;
+use dpp::document::{Document, DocumentV0Getters};
+use std::collections::BTreeMap;
 
 /// Lifecycle states supported by live-pointer storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +39,32 @@ pub struct DocumentHistoryEntry {
 pub struct DocumentHistoryV1 {
     /// Ordered retained revisions in this page.
     pub entries: Vec<DocumentHistoryEntry>,
-    /// Metadata for the whole history, including empty pages.
-    pub lifecycle: DocumentHistoryLifecycle,
+    /// Metadata for the whole history, including empty pages. Absent when
+    /// the page was read from the layout that predates protocol version 14,
+    /// which keeps no lifecycle record.
+    pub lifecycle: Option<DocumentHistoryLifecycle>,
+}
+
+impl DocumentHistoryV1 {
+    /// Builds a page from revisions read from the per-document history
+    /// subtree used before protocol version 14, keyed by block time.
+    pub(crate) fn from_legacy(revisions: BTreeMap<u64, Document>) -> Result<Self, Error> {
+        let entries = revisions
+            .into_iter()
+            .map(|(time_ms, document)| {
+                let revision = document
+                    .revision()
+                    .ok_or_else(|| corrupt("historical document has no revision"))?;
+                Ok(DocumentHistoryEntry {
+                    time_ms,
+                    revision,
+                    document,
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(Self {
+            entries,
+            lifecycle: None,
+        })
+    }
 }

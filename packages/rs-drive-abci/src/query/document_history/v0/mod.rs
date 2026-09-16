@@ -83,7 +83,7 @@ impl<C> Platform<C> {
         // one) is the caller's mistake and answers as an invalid argument;
         // storage and corruption errors still propagate.
         let result = if request.prove {
-            let (_, proofs) = match self.drive.prove_document_history_v1(
+            let proof = match self.drive.prove_document_history(
                 &query,
                 document_type,
                 None,
@@ -97,13 +97,15 @@ impl<C> Platform<C> {
                 }
                 Err(error) => return Err(error.into()),
             };
-            // Both GroveDB proofs travel inside one proof object, signed once.
+            // The proof travels in the layout the protocol version stores,
+            // signed once; from protocol version 14 that is one proof object
+            // carrying both GroveDB proofs.
             let proof = self
-                .response_proof_v0(platform_state, proofs.to_bytes(), GroveDBToUse::Current)?
+                .response_proof_v0(platform_state, proof.to_bytes(), GroveDBToUse::Current)?
                 .1;
             ResponseResult::Proof(proof)
         } else {
-            let history = match self.drive.fetch_document_history_v1(
+            let history = match self.drive.fetch_document_history(
                 &query,
                 document_type,
                 None,
@@ -133,12 +135,12 @@ impl<C> Platform<C> {
                 .collect::<Result<Vec<_>, Error>>()?;
             ResponseResult::History(History {
                 entries,
-                lifecycle: Some(Lifecycle {
-                    state: match history.lifecycle.state {
+                lifecycle: history.lifecycle.map(|lifecycle| Lifecycle {
+                    state: match lifecycle.state {
                         DocumentHistoryState::Active => State::Active,
                         DocumentHistoryState::Absent => State::Absent,
                     } as i32,
-                    remaining_revisions: history.lifecycle.remaining_revisions,
+                    remaining_revisions: lifecycle.remaining_revisions,
                 }),
             })
         };

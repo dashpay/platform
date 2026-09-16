@@ -1,26 +1,24 @@
 mod v0;
+mod v1;
 
-use crate::drive::document::history::invalid;
+use crate::drive::document::history::{DocumentHistoryProof, DocumentHistoryQueryV1};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Proves the existence or absence of the specified document's history.
-    #[allow(clippy::too_many_arguments)]
+    /// Proves a page of a historical document's history in the layout the
+    /// protocol version stores.
     pub fn prove_document_history(
         &self,
-        contract_id: [u8; 32],
-        document_type_name: &str,
-        document_id: [u8; 32],
+        query: &DocumentHistoryQueryV1,
+        document_type: DocumentTypeRef,
         transaction: TransactionArg,
-        start_at_ms: u64,
-        limit: Option<u16>,
-        offset: Option<u16>,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<DocumentHistoryProof, Error> {
         match platform_version
             .drive
             .methods
@@ -28,21 +26,23 @@ impl Drive {
             .query
             .prove_document_history
         {
-            0 => self.prove_document_history_v0(
-                contract_id,
-                document_type_name,
-                document_id,
-                transaction,
-                start_at_ms,
-                limit,
-                offset,
-                platform_version,
-            ),
-            // The layout changed at protocol version 14: revisions live in the
-            // per-type history tree and are proved through the history query.
-            1 => Err(invalid(
-                "the document history layout changed at protocol version 14; use the history query",
-            )),
+            0 => {
+                let (start_at_ms, limit) = query.legacy_read()?;
+                self.prove_document_history_v0(
+                    query.contract_id,
+                    &query.document_type_name,
+                    query.document_id,
+                    transaction,
+                    start_at_ms,
+                    limit,
+                    None,
+                    platform_version,
+                )
+                .map(DocumentHistoryProof::V0)
+            }
+            1 => self
+                .prove_document_history_v1(query, document_type, transaction, platform_version)
+                .map(DocumentHistoryProof::V1),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_document_history".to_string(),
                 known_versions: vec![0, 1],
