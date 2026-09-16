@@ -390,12 +390,19 @@ fn validate_field_type(
             all,
             diagnostics,
         )),
+        FieldType::Enum(values) => {
+            // A closed set: the manifest stores it sorted so declaration order
+            // never leaks in. Repeated values stay for native validation to
+            // reject.
+            let mut values = values.clone();
+            values.sort();
+            FieldType::Enum(values)
+        }
         FieldType::Bool
         | FieldType::F64
         | FieldType::String { .. }
         | FieldType::Bytes { .. }
-        | FieldType::Identifier
-        | FieldType::Enum(_) => ty.clone(),
+        | FieldType::Identifier => ty.clone(),
     }
 }
 
@@ -771,8 +778,8 @@ pub(super) fn validate_typed_collections(
                     DiagnosticKind::DuplicateCollection,
                 ));
             }
-            check_value_type(&path, &spec.key, diagnostics);
-            check_value_type(&path, &spec.element, diagnostics);
+            check_value_type(&path.member("key"), &spec.key, diagnostics);
+            check_value_type(&path.member("element"), &spec.element, diagnostics);
             TypedCollectionManifest {
                 id: spec.id.clone(),
                 kind: spec.kind,
