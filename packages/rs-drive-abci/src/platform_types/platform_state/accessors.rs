@@ -408,6 +408,9 @@ impl PlatformStateV0Methods for PlatformState {
     /// Sets the next epoch protocol version.
     fn set_next_epoch_protocol_version(&mut self, version: ProtocolVersion) {
         self.next_epoch_protocol_version = version;
+        // Carried only by the full record: it moves once per epoch at most, so
+        // rewriting the record then is cheaper than writing it every block.
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the current validator set quorum hash.
@@ -452,6 +455,10 @@ impl PlatformStateV0Methods for PlatformState {
 
     /// Sets the platform initialization information.
     fn set_genesis_block_info(&mut self, info: Option<BlockInfo>) {
+        // Carried only by the full record, yet deliberately not dirtying: the
+        // block end clears it before every store, so a state that has been
+        // stored at all is on disk with `None`, and marking the clear dirty
+        // would rewrite the full record on every block.
         self.genesis_block_info = info;
     }
 
@@ -465,6 +472,7 @@ impl PlatformStateV0Methods for PlatformState {
     }
 
     fn next_epoch_protocol_version_mut(&mut self) -> &mut ProtocolVersion {
+        self.heavy_fields_dirty = true;
         &mut self.next_epoch_protocol_version
     }
 
@@ -678,6 +686,7 @@ mod tests {
         assert!(leaves_dirty(
             |s| s.set_current_protocol_version_in_consensus(1)
         ));
+        assert!(leaves_dirty(|s| s.set_next_epoch_protocol_version(1)));
         assert!(leaves_dirty(|s| s.set_validator_sets(IndexMap::new())));
         assert!(leaves_dirty(
             |s| s.set_chain_lock_validating_quorums(quorums.clone())
@@ -692,6 +701,9 @@ mod tests {
         // field through it without the state seeing the write.
         assert!(leaves_dirty(|s| {
             s.current_protocol_version_in_consensus_mut();
+        }));
+        assert!(leaves_dirty(|s| {
+            s.next_epoch_protocol_version_mut();
         }));
         assert!(leaves_dirty(|s| {
             s.validator_sets_mut();
@@ -714,11 +726,13 @@ mod tests {
     }
 
     /// The fields the small per-block record carries are written every block
-    /// regardless, so changing them must not force a full rewrite.
+    /// regardless, so changing them must not force a full rewrite. The genesis
+    /// block info is the one field in neither set: the block end clears it
+    /// before every store, so dirtying the clear would rewrite the full record
+    /// on every block.
     #[test]
     fn per_block_field_accessors_leave_the_state_clean() {
         assert!(!leaves_dirty(|s| s.set_last_committed_block_info(None)));
-        assert!(!leaves_dirty(|s| s.set_next_epoch_protocol_version(1)));
         assert!(!leaves_dirty(|s| {
             s.set_current_validator_set_quorum_hash(QuorumHash::all_zeros())
         }));
@@ -730,9 +744,6 @@ mod tests {
 
         assert!(!leaves_dirty(|s| {
             s.last_committed_block_info_mut();
-        }));
-        assert!(!leaves_dirty(|s| {
-            s.next_epoch_protocol_version_mut();
         }));
         assert!(!leaves_dirty(|s| {
             s.current_validator_set_quorum_hash_mut();

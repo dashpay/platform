@@ -1,21 +1,25 @@
-//! The part of the platform state that changes on every block.
+//! The part of the platform state that changes from block to block.
 //!
 //! The full saved state is over a megabyte on mainnet — masternode lists,
 //! validator sets and the chain-lock and instant-lock quorum sets — and those
 //! parts only change when Core's masternode list or quorums do. This record
-//! carries the rest, so a block that changed nothing heavy writes a couple of
-//! hundred bytes instead of rewriting the whole state.
+//! carries the block info, written every block, and the validator set quorum
+//! hashes, which rotate every few blocks, so a block that changed nothing
+//! heavy writes a couple of hundred bytes instead of rewriting the whole state.
+//!
+//! Everything else in the state changes rarely enough that a change just
+//! rewrites the full record: the protocol versions move once per epoch at
+//! most, and the genesis block info is cleared before the first store and
+//! never written as anything but `None`.
 
 use crate::error::Error;
 use crate::platform_types::platform_state::PlatformState;
 use bincode::{Decode, Encode};
-use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::QuorumHash;
 use dpp::platform_value::Bytes32;
-use dpp::util::deserializer::ProtocolVersion;
 use dpp::ProtocolError;
 
 /// Versioned per-block platform state record.
@@ -28,14 +32,8 @@ pub enum PlatformStateRecent {
 /// Version 0 of the per-block platform state record.
 #[derive(Clone, Debug, Encode, Decode)]
 pub struct PlatformStateRecentV0 {
-    /// Information about the genesis block
-    pub genesis_block_info: Option<BlockInfo>,
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
-    /// Current version
-    pub current_protocol_version_in_consensus: ProtocolVersion,
-    /// Upcoming protocol version
-    pub next_epoch_protocol_version: ProtocolVersion,
     /// Current quorum
     pub current_validator_set_quorum_hash: Bytes32,
     /// Next quorum
@@ -45,10 +43,7 @@ pub struct PlatformStateRecentV0 {
 impl From<&PlatformState> for PlatformStateRecent {
     fn from(state: &PlatformState) -> Self {
         PlatformStateRecent::V0(PlatformStateRecentV0 {
-            genesis_block_info: state.genesis_block_info,
             last_committed_block_info: state.last_committed_block_info.clone(),
-            current_protocol_version_in_consensus: state.current_protocol_version_in_consensus,
-            next_epoch_protocol_version: state.next_epoch_protocol_version,
             current_validator_set_quorum_hash: state
                 .current_validator_set_quorum_hash
                 .to_byte_array()
@@ -93,14 +88,11 @@ impl PlatformStateRecent {
 
     /// Overwrite the per-block fields of `state` with the ones in this record.
     ///
-    /// The heavy fields are left alone: they came from a full record written at
-    /// or before the height this record was written at, and are unchanged since.
+    /// Every other field is left alone: it came from a full record written at
+    /// or before the height this record was written at, and is unchanged since.
     pub fn apply_to(self, state: &mut PlatformState) {
         let PlatformStateRecent::V0(v0) = self;
-        state.genesis_block_info = v0.genesis_block_info;
         state.last_committed_block_info = v0.last_committed_block_info;
-        state.current_protocol_version_in_consensus = v0.current_protocol_version_in_consensus;
-        state.next_epoch_protocol_version = v0.next_epoch_protocol_version;
         state.current_validator_set_quorum_hash =
             QuorumHash::from_byte_array(v0.current_validator_set_quorum_hash.to_buffer());
         state.next_validator_set_quorum_hash = v0
