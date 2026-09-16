@@ -7,6 +7,7 @@ use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::Network;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 
 pub fn finalize_block<'a, A, C>(
@@ -18,6 +19,8 @@ where
     C: CoreRPCLike,
 {
     let _timer = crate::metrics::abci_request_duration("finalize_block");
+    #[cfg(debug_assertions)]
+    let mut phases = crate::perf::PhaseTimer::new("finalize_block");
 
     let transaction_guard = app.transaction().read().unwrap();
     let transaction =
@@ -45,12 +48,18 @@ where
 
     let block_height = request_finalize_block.height;
 
+    #[cfg(debug_assertions)]
+    phases.end_phase("setup");
+
     let block_finalization_outcome = app.platform().finalize_block_proposal(
         request_finalize_block,
         block_execution_context,
         transaction,
         platform_version,
     )?;
+
+    #[cfg(debug_assertions)]
+    phases.end_phase("finalize_block_proposal");
 
     drop(transaction_guard);
 
@@ -96,11 +105,24 @@ where
             "historical mainnet vote-cleanup commit conflict; proceeding as the \
              network did at the time (see platform#2309, tenderdash#966)"
         );
+
+        // The block's saved platform state was in the failed transaction, so
+        // what is on disk is behind the state cache this block published as
+        // saved. Mark all of it unsaved again: the next block then writes the
+        // full record and every entry rather than only its own changes on top
+        // of stale ones, which a restart would otherwise read back.
+        let platform = app.platform();
+        let mut state = platform.state.load().as_ref().clone();
+        state.mark_all_unsaved();
+        platform.state.store(Arc::new(state));
     } else {
         // A failed commit leaves caches ahead of durable state. Restart Drive so the
         // caches are restored from disk before retrying the block.
         result.expect("commit transaction");
     }
+
+    #[cfg(debug_assertions)]
+    phases.end_phase("commit_transaction");
 
     // The block is durable now, so the contracts it read and rewrote through its transaction
     // are committed state: promote them to the global cache. This must follow the commit.
@@ -112,6 +134,9 @@ where
         .cache
         .data_contracts
         .merge_and_clear_block_cache();
+
+    #[cfg(debug_assertions)]
+    phases.end_phase("promote_data_contract_cache");
 
     app.platform()
         .committed_block_height_guard
@@ -146,6 +171,9 @@ where
             );
         }
     }
+
+    #[cfg(debug_assertions)]
+    phases.end_phase("flush_pending_prefix_drops");
 
     // Create GroveDB checkpoint after the transaction is committed (so it captures
     // committed state). Checkpoints are restore points, auxiliary to the block: the
@@ -183,6 +211,17 @@ where
             }
         }
     }
+
+    #[cfg(debug_assertions)]
+    phases.end_phase_if(
+        block_finalization_outcome.checkpoint_needed,
+        "create_grovedb_checkpoint",
+    );
+    // Merge this handler's phases into the totals before the block is counted.
+    #[cfg(debug_assertions)]
+    drop(phases);
+    #[cfg(debug_assertions)]
+    crate::perf::end_block(block_height);
 
     Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
 }
@@ -363,6 +402,16 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
+        finalize_block_with_failing_commit_on(&platform, height, commit_error)
+    }
+
+    /// Like [`finalize_block_with_failing_commit`], on a platform the caller keeps
+    /// so it can inspect the state left behind.
+    fn finalize_block_with_failing_commit_on(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        height: u64,
+        commit_error: Error,
+    ) -> Result<proto::ResponseFinalizeBlock, Error> {
         let app = FailingCommitApplication {
             platform: &platform.platform,
             commit_error: RwLock::new(Some(commit_error)),
@@ -577,6 +626,32 @@ mod tests {
                 "historical conflict at {height}: {result:?}"
             );
         }
+    }
+
+    /// The block's saved platform state sat in the transaction that failed to
+    /// commit, so the published state cache is ahead of the full record on disk.
+    /// The handler must leave it dirty, or the next historical block writes only
+    /// the small record on top of a stale full one.
+    #[test]
+    fn finalize_block_leaves_the_state_dirty_after_a_tolerated_commit_conflict() {
+        let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
+            .with_config(mainnet_evo1_config())
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        finalize_block_with_failing_commit_on(&platform, 32326, busy_commit_error())
+            .expect("the incident's commit conflict is tolerated");
+
+        let state = platform.state.load();
+        assert!(
+            state.heavy_fields_dirty,
+            "a block whose commit failed must not leave the state cache clean"
+        );
+        assert!(
+            state.masternode_changes.rewrite_all && state.validator_set_changes.rewrite_all,
+            "its entries were in the failed transaction too"
+        );
     }
 
     #[test]

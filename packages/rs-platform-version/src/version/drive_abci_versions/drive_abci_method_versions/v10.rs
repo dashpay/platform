@@ -140,7 +140,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         prune_shielded_pool_anchors: Some(0),
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
-        fetch_platform_state: 0,
-        store_platform_state: 0,
+        fetch_platform_state: 1, // changed: reads structure 1 records together with their masternode and validator set entries
+        store_platform_state: 1, // changed: writes the base record every block and only the masternode and validator set entries that changed
     },
 };

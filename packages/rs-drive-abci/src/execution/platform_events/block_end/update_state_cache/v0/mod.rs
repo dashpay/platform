@@ -54,6 +54,10 @@ where
         // Persist block state
         self.store_platform_state(&block_platform_state, Some(transaction), platform_version)?;
 
+        // Whatever the store wrote is now what is on disk for this block, so the
+        // next block only has to write what it changes itself.
+        block_platform_state.mark_saved();
+
         let block_platform_state = Arc::new(block_platform_state);
 
         self.state.store(block_platform_state);
@@ -220,6 +224,181 @@ mod tests {
         assert!(
             platform.state.load().genesis_block_info().is_none(),
             "genesis_block_info must always be cleared"
+        );
+    }
+
+    /// While replaying history the full saved record is rewritten only when a
+    /// heavy field changed; the small record carries the block info in between.
+    /// A node restarted from disk must see the newest block info and the heavy
+    /// fields from the last full write. Once at the tip, a block that changes
+    /// nothing heavy still rewrites the full record, so a caught-up node always
+    /// has a complete record on disk that an older drive-abci can read.
+    ///
+    /// This is the structure 0 store, used up to protocol version 13; from 14 on
+    /// the record no longer carries the heavy fields and is written every block.
+    #[test]
+    fn v0_historical_block_with_clean_heavy_fields_reloads_from_the_small_record() {
+        use crate::config::{PlatformConfig, PlatformTestConfig};
+        use crate::platform_types::platform::Platform;
+        use crate::platform_types::platform_state::PlatformState;
+        use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+        use dpp::dashcore::{ProTxHash, Txid};
+        use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
+        use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
+
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+        assert_eq!(
+            platform_version
+                .drive_abci
+                .structs
+                .platform_state_for_saving_structure_default,
+            0,
+            "this test is about the structure 0 store"
+        );
+        let platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    store_platform_state: true,
+                    ..PlatformTestConfig::default_minimal_verifications()
+                },
+                ..Default::default()
+            })
+            .with_initial_protocol_version(platform_version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let loaded = platform.state.load();
+        let mut block_platform_state = loaded.as_ref().clone();
+        drop(loaded);
+
+        // A block from long ago, so the store treats it as replayed history.
+        let mut old_block = make_extended_block_info(7);
+        old_block.basic_info_mut().time_ms = 1_000_000;
+
+        // Block 7 changes a heavy field, so it is written in full.
+        let pro_tx_hash = ProTxHash::from_byte_array([0x77u8; 32]);
+        let masternode = MasternodeListItem {
+            node_type: MasternodeType::Regular,
+            pro_tx_hash,
+            collateral_hash: Txid::from_byte_array([0u8; 32]),
+            collateral_index: 0,
+            collateral_address: [0u8; 20],
+            operator_reward: 0.0,
+            state: DMNState {
+                service: "1.2.3.4:1234".parse().expect("socket address"),
+                registered_height: 0,
+                pose_revived_height: None,
+                pose_ban_height: None,
+                revocation_reason: 0,
+                owner_address: [0u8; 20],
+                voting_address: [0u8; 20],
+                payout_address: [0u8; 20],
+                pub_key_operator: vec![0u8; 48],
+                operator_payout_address: None,
+                platform_node_id: None,
+                platform_p2p_port: None,
+                platform_http_port: None,
+            },
+        };
+        block_platform_state
+            .full_masternode_list_mut()
+            .insert(pro_tx_hash, masternode);
+        assert!(block_platform_state.heavy_fields_dirty);
+
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .update_state_cache_v0(
+                old_block,
+                block_platform_state,
+                &transaction,
+                platform_version,
+            )
+            .expect("block 7 must be stored");
+
+        // Block 8 changes nothing heavy, so only the small record is written.
+        let loaded = platform.state.load();
+        let block_platform_state = loaded.as_ref().clone();
+        drop(loaded);
+        assert!(!block_platform_state.heavy_fields_dirty);
+
+        let mut old_block = make_extended_block_info(8);
+        old_block.basic_info_mut().time_ms = 1_000_001;
+        platform
+            .update_state_cache_v0(
+                old_block,
+                block_platform_state,
+                &transaction,
+                platform_version,
+            )
+            .expect("block 8 must be stored");
+
+        let reloaded = Platform::<crate::rpc::core::MockCoreRPCLike>::fetch_platform_state(
+            &platform.drive,
+            Some(&transaction),
+            platform_version,
+        )
+        .expect("fetch must succeed")
+        .expect("a state was stored");
+
+        assert_eq!(
+            reloaded.last_committed_block_height(),
+            8,
+            "block info comes from the small record written at block 8"
+        );
+        assert!(
+            reloaded.full_masternode_list().contains_key(&pro_tx_hash),
+            "heavy fields come from the full record written at block 7"
+        );
+
+        // The full record on disk must still be block 7's: that is what proves
+        // block 8 skipped it rather than rewriting it with the same contents.
+        let full_bytes = platform
+            .drive
+            .fetch_platform_state_bytes(Some(&transaction), platform_version)
+            .expect("fetch must succeed")
+            .expect("a full record was stored");
+        let full_record =
+            PlatformState::versioned_deserialize_trusted(&full_bytes, platform_version)
+                .expect("full record must deserialize");
+        assert_eq!(
+            full_record.last_committed_block_height(),
+            7,
+            "the full record is not rewritten for a historical block that changed nothing heavy"
+        );
+
+        // Block 9 changes nothing heavy either, but it is a current block: at the
+        // tip the full record is refreshed every block regardless.
+        let loaded = platform.state.load();
+        let block_platform_state = loaded.as_ref().clone();
+        drop(loaded);
+        assert!(!block_platform_state.heavy_fields_dirty);
+
+        let mut tip_block = make_extended_block_info(9);
+        tip_block.basic_info_mut().time_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time after the epoch")
+            .as_millis() as u64;
+        platform
+            .update_state_cache_v0(
+                tip_block,
+                block_platform_state,
+                &transaction,
+                platform_version,
+            )
+            .expect("block 9 must be stored");
+
+        let full_bytes = platform
+            .drive
+            .fetch_platform_state_bytes(Some(&transaction), platform_version)
+            .expect("fetch must succeed")
+            .expect("a full record was stored");
+        let full_record =
+            PlatformState::versioned_deserialize_trusted(&full_bytes, platform_version)
+                .expect("full record must deserialize");
+        assert_eq!(
+            full_record.last_committed_block_height(),
+            9,
+            "a clean block at the tip refreshes the full record"
         );
     }
 }
