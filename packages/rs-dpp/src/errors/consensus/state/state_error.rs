@@ -13,7 +13,7 @@ use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShie
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_group::{
     ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
-    IdentityNotContractGroupOwnerError,
+    IdentityNotContractGroupOwnerOrAdminError,
 };
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
@@ -420,7 +420,7 @@ pub enum StateError {
     ContractGroupNotFoundError(ContractGroupNotFoundError),
 
     #[error(transparent)]
-    IdentityNotContractGroupOwnerError(IdentityNotContractGroupOwnerError),
+    IdentityNotContractGroupOwnerOrAdminError(IdentityNotContractGroupOwnerOrAdminError),
 }
 
 impl From<StateError> for ConsensusError {

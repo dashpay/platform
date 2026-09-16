@@ -98,8 +98,8 @@ pub struct SystemLimits {
     /// declare. Contract groups exist from protocol version 14; earlier versions never reach
     /// the check.
     pub max_contract_group_memberships_per_contract: u16,
-    /// Maximum number of co-owners a multi-owner contract group may name.
-    pub max_contract_group_owners: u16,
+    /// Maximum number of admins a contract group may name besides its owner.
+    pub max_contract_group_admins: u16,
     /// Maximum length, in characters, of a contract group name.
     pub max_contract_group_name_length: u16,
     /// Maximum length, in characters, of a contract group description.

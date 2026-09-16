@@ -43,7 +43,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_core_fee_per_byte: None,
     max_group_member_count: 256,
     max_contract_group_memberships_per_contract: 16,
-    max_contract_group_owners: 16,
+    max_contract_group_admins: 16,
     max_contract_group_name_length: 64,
     max_contract_group_description_length: 256,
     max_token_redemption_cycles: 128,

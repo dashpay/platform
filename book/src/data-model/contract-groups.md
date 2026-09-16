@@ -10,7 +10,7 @@ A **contract group** is the answer. It is an identity-owned set of contracts, co
 
 Three facts define a contract group:
 
-1. **Identities own it.** Either one identity (`SingleOwner`) or a set of two to sixteen distinct identities (`MultiOwner`). Every owner acts alone: any one of them can add members. The owner set is not a multisig and has no threshold.
+1. **One identity owns it.** The owner is the identity that registered the group. It can stand alone (`SingleOwner`) or name up to sixteen admins (`OwnerAndAdmins`), identities other than itself that may add members alongside it. Admins act alone: there is no threshold and no vote.
 2. **Its members are parts of contracts.** A member is a whole contract, one document type of a contract, or one token of a contract. A contract can only enrol itself. Memberships are declared by the create transition of the contract that joins, never by a third party and never for someone else's contract.
 3. **It is append-only.** Memberships are recorded when the member contract is created. There is no update path and no leaving. Contracts are never deleted either. Together these two facts are what let the storage layout use plain references safely, as the storage section explains.
 
@@ -44,7 +44,10 @@ Everything a transition carries about contract groups lives in `packages/rs-dpp/
 /// Who owns a contract group, and so who may add members to it.
 pub enum ContractGroupOwner {
     SingleOwner(Identifier),
-    MultiOwner(BTreeSet<Identifier>),
+    OwnerAndAdmins {
+        owner: Identifier,
+        admins: BTreeSet<Identifier>,
+    },
 }
 
 /// What part of the contract being created joins a contract group.
@@ -68,7 +71,7 @@ pub struct ContractGroupRegistration {
 }
 ```
 
-`ContractGroupOwner` has the helpers validation and Drive need: `includes(&identity_id)`, `owner_count()` and `owner_ids()`. `MultiOwner` is a `BTreeSet`, so duplicate owners cannot be expressed and the encoding is canonical.
+`ContractGroupOwner` has the helpers validation needs: `owner_id()`, `admin_ids()`, `admin_count()` and `may_add_members(&identity_id)`, which is true for the owner and for every admin. The admins are a `BTreeSet`, so a duplicate admin cannot be expressed and the encoding is canonical.
 
 The stored type is the registration with a version envelope, because it is persisted and must remain decodable forever:
 
@@ -132,7 +135,7 @@ In JSON the transition looks like this (identifiers abbreviated):
 }
 ```
 
-The first membership joins the group this very transition registers, by its derived id. The other two join a group registered earlier by one of the signer's identities.
+The first membership joins the group this very transition registers, by its derived id. The other two join a group registered earlier, one the signer owns or administers. An owner with admins is written as `{ "ownerAndAdmins": { "owner": "…", "admins": ["…"] } }`.
 
 ### Version Bounds
 
@@ -170,8 +173,8 @@ Contract group checks slot into the existing [validation pipeline](../state-tran
 
 `contract_group_basic_structure_error` in `packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/data_contract_create/basic_structure/v2/mod.rs` runs after the existing contract checks and returns the first violation it finds, in this order:
 
-1. If the transition registers a group, the signer must be an owner. A `SingleOwner` must be the signer; a `MultiOwner` set must contain the signer.
-2. A `MultiOwner` set must hold between 2 and `max_contract_group_owners` (16) identities.
+1. If the transition registers a group, the signer must be its owner, whichever form the owner takes. Being named as an admin is not enough to register.
+2. `OwnerAndAdmins` must name between 1 and `max_contract_group_admins` (16) admins, and the owner may not be among them.
 3. `name`, when present, must be 1 to `max_contract_group_name_length` (64) characters. `description`, when present, 1 to `max_contract_group_description_length` (256). Lengths count characters, not bytes.
 4. The membership list must hold at most `max_contract_group_memberships_per_contract` (16) entries.
 5. For each membership: a `DocumentType` member must name a document type of the created contract, and a `Token` member must name a token position the contract defines.
@@ -185,7 +188,7 @@ It is a free function rather than a method on the transition because drive-abci 
 `validate_contract_groups_against_state` in `.../data_contract_create/state/v1/mod.rs` runs after the version 0 state checks (the contract must not already exist) and after the `refersTo` reference validation. It bills every lookup on the execution context and stops at the first failure:
 
 1. The group the transition registers must not exist yet.
-2. Every group a membership names must exist and must count the signer among its owners. The group registered by this same transition is skipped, since the signer owns it by construction, and each other group is fetched once however many memberships name it.
+2. Every group a membership names must exist and must have the signer as its owner or one of its admins. The group registered by this same transition is skipped, since the signer owns it by construction, and each other group is fetched once however many memberships name it.
 
 A failure here returns a `BumpIdentityNonceAction` carrying the errors: the identity pays for the lookups and its nonce advances, exactly as for any other paid validation failure.
 
@@ -197,13 +200,13 @@ A failure here returns a `BumpIdentityNonceAction` carrying the errors: the iden
 | 10361 | `DuplicateContractGroupMembershipError` | structure |
 | 10362 | `RedundantContractGroupMembershipError` | structure |
 | 10363 | `ContractGroupMemberNotInContractError` | structure |
-| 10364 | `InvalidContractGroupOwnersError` | structure |
+| 10364 | `InvalidContractGroupAdminsError` | structure |
 | 10365 | `ContractGroupRegistrantNotOwnerError` | structure |
 | 10366 | `InvalidContractGroupNameLengthError` | structure |
 | 10367 | `InvalidContractGroupDescriptionLengthError` | structure |
 | 41000 | `ContractGroupAlreadyExistsError` | state |
 | 41001 | `ContractGroupNotFoundError` | state |
-| 41002 | `IdentityNotContractGroupOwnerError` | state |
+| 41002 | `IdentityNotContractGroupOwnerOrAdminError` | state |
 
 The basic errors live in `packages/rs-dpp/src/errors/consensus/basic/contract_group/` and the state errors in `.../consensus/state/contract_group/`. Both sets were appended at the tail of their enums; `StateError` has a frozen-discriminant test that would catch an insertion in the middle. The basic codes follow the change-control group range as their own block, and the state codes open a new hundred, 41000 to 41099, rather than borrowing from the identity range. See [Error Codes](../error-handling/error-codes.md) for the code ranges.
 
@@ -314,7 +317,7 @@ The four limits:
 | Limit | Value |
 |-------|-------|
 | `max_contract_group_memberships_per_contract` | 16 |
-| `max_contract_group_owners` | 16 |
+| `max_contract_group_admins` | 16 |
 | `max_contract_group_name_length` | 64 characters |
 | `max_contract_group_description_length` | 256 characters |
 
@@ -341,7 +344,7 @@ Coverage sits at the three layers the feature touches (see [Unit Tests](../testi
 
 - **dpp** (`contract_group/mod.rs`): the id derivation differs from the contract id and depends on both inputs; both owner kinds resolve membership; the stored info round-trips through bincode with the untrusted decoder.
 - **drive** (`drive/contract_groups/tests.rs`): the root tree exists in the initial structure at protocol version 14 and not before; a group can be registered and proved present or absent; memberships land on both sides and prove; estimation and apply build the same operations; registering an existing group is refused.
-- **drive-abci** (`data_contract_create/contract_group_tests.rs`): end-to-end through `process_raw_state_transitions`, covering register-and-join in one transition, an owner adding a later contract by document type and token, joining a group the identity does not own as a paid failure, joining an unknown group, multi-owner groups accepting each owner and refusing outsiders, a registrant outside the owner set rejected before paying, and the full set of malformed registrations and memberships rejected in basic structure.
+- **drive-abci** (`data_contract_create/contract_group_tests.rs`): end-to-end through `process_raw_state_transitions`, covering register-and-join in one transition, an owner adding a later contract by document type and token, joining a group the identity does not own as a paid failure, joining an unknown group, a group with admins accepting the owner and each admin and refusing outsiders, a registrant who is not the owner (even when named as an admin) rejected before paying, and the full set of malformed registrations and memberships rejected in basic structure.
 
 ```bash
 cargo test -p dpp --all-features -- contract_group

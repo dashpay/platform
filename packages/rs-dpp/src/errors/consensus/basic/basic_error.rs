@@ -8,8 +8,8 @@ use thiserror::Error;
 use crate::consensus::basic::contract_group::{
     ContractGroupMemberNotInContractError, ContractGroupMembershipsOverLimitError,
     ContractGroupRegistrantNotOwnerError, DuplicateContractGroupMembershipError,
-    InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
-    InvalidContractGroupOwnersError, RedundantContractGroupMembershipError,
+    InvalidContractGroupAdminsError, InvalidContractGroupDescriptionLengthError,
+    InvalidContractGroupNameLengthError, RedundantContractGroupMembershipError,
 };
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
@@ -737,7 +737,7 @@ pub enum BasicError {
     ContractGroupMemberNotInContractError(ContractGroupMemberNotInContractError),
 
     #[error(transparent)]
-    InvalidContractGroupOwnersError(InvalidContractGroupOwnersError),
+    InvalidContractGroupAdminsError(InvalidContractGroupAdminsError),
 
     #[error(transparent)]
     ContractGroupRegistrantNotOwnerError(ContractGroupRegistrantNotOwnerError),

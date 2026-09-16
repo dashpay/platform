@@ -2,8 +2,8 @@ use crate::error::Error;
 use dpp::consensus::basic::contract_group::{
     ContractGroupMemberNotInContractError, ContractGroupMembershipsOverLimitError,
     ContractGroupRegistrantNotOwnerError, DuplicateContractGroupMembershipError,
-    InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
-    InvalidContractGroupOwnersError, RedundantContractGroupMembershipError,
+    InvalidContractGroupAdminsError, InvalidContractGroupDescriptionLengthError,
+    InvalidContractGroupNameLengthError, RedundantContractGroupMembershipError,
 };
 use dpp::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError;
 use dpp::consensus::ConsensusError;
@@ -127,20 +127,24 @@ fn contract_group_basic_structure_error(
                         return Some(ContractGroupRegistrantNotOwnerError::new(owner_id).into());
                     }
                 }
-                ContractGroupOwner::MultiOwner(owner_ids) => {
-                    if owner_ids.len() < 2
-                        || owner_ids.len() > limits.max_contract_group_owners as usize
+                ContractGroupOwner::OwnerAndAdmins {
+                    owner: group_owner_id,
+                    admins,
+                } => {
+                    if *group_owner_id != owner_id {
+                        return Some(ContractGroupRegistrantNotOwnerError::new(owner_id).into());
+                    }
+                    if admins.is_empty()
+                        || admins.len() > limits.max_contract_group_admins as usize
+                        || admins.contains(group_owner_id)
                     {
                         return Some(
-                            InvalidContractGroupOwnersError::new(
-                                owner_ids.len() as u32,
-                                limits.max_contract_group_owners,
+                            InvalidContractGroupAdminsError::new(
+                                admins.len() as u32,
+                                limits.max_contract_group_admins,
                             )
                             .into(),
                         );
-                    }
-                    if !owner_ids.contains(&owner_id) {
-                        return Some(ContractGroupRegistrantNotOwnerError::new(owner_id).into());
                     }
                 }
             }

@@ -37,8 +37,8 @@ use crate::version::system_limits::SystemLimits;
 ///   unauthenticated. Every live network has emitted V1 envelopes since v13.
 /// * Core withdrawal fee rates are capped at 6,765 duffs per byte.
 /// * Contract groups (protocol version 14): a data contract create transition may declare at
-///   most 16 contract group memberships, a multi-owner contract group may name at most 16
-///   owners, and a group's name and description are capped at 64 and 256 characters. The
+///   most 16 contract group memberships, a contract group may name at most 16 admins besides
+///   its owner, and a group's name and description are capped at 64 and 256 characters. The
 ///   `max_contract_group_size` limit was renamed `max_group_member_count` at the same time; it
 ///   bounds the members of a change-control `Group` inside a contract, not a contract group.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
@@ -61,7 +61,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_core_fee_per_byte: Some(6_765),
     max_group_member_count: 256,
     max_contract_group_memberships_per_contract: 16,
-    max_contract_group_owners: 16,
+    max_contract_group_admins: 16,
     max_contract_group_name_length: 64,
     max_contract_group_description_length: 256,
     max_token_redemption_cycles: 128,

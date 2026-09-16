@@ -139,7 +139,7 @@ impl ErrorWithCode for BasicError {
             Self::DuplicateContractGroupMembershipError(_) => 10361,
             Self::RedundantContractGroupMembershipError(_) => 10362,
             Self::ContractGroupMemberNotInContractError(_) => 10363,
-            Self::InvalidContractGroupOwnersError(_) => 10364,
+            Self::InvalidContractGroupAdminsError(_) => 10364,
             Self::ContractGroupRegistrantNotOwnerError(_) => 10365,
             Self::InvalidContractGroupNameLengthError(_) => 10366,
             Self::InvalidContractGroupDescriptionLengthError(_) => 10367,
@@ -416,7 +416,7 @@ impl ErrorWithCode for StateError {
             // Contract group errors: 41000-41099
             Self::ContractGroupAlreadyExistsError(_) => 41000,
             Self::ContractGroupNotFoundError(_) => 41001,
-            Self::IdentityNotContractGroupOwnerError(_) => 41002,
+            Self::IdentityNotContractGroupOwnerOrAdminError(_) => 41002,
         }
     }
 }

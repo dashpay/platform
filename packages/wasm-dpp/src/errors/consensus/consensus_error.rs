@@ -86,11 +86,11 @@ use dpp::consensus::basic::contract_group::{
     ContractGroupMemberNotInContractError, ContractGroupMembershipsOverLimitError,
     ContractGroupRegistrantNotOwnerError, DuplicateContractGroupMembershipError,
     InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
-    InvalidContractGroupOwnersError, RedundantContractGroupMembershipError,
+    InvalidContractGroupAdminsError, RedundantContractGroupMembershipError,
 };
 use dpp::consensus::state::contract_group::{
     ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
-    IdentityNotContractGroupOwnerError,
+    IdentityNotContractGroupOwnerOrAdminError,
 };
 use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
 use dpp::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
@@ -521,8 +521,8 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::ContractGroupNotFoundError(e) => {
             generic_consensus_error!(ContractGroupNotFoundError, e).into()
         }
-        StateError::IdentityNotContractGroupOwnerError(e) => {
-            generic_consensus_error!(IdentityNotContractGroupOwnerError, e).into()
+        StateError::IdentityNotContractGroupOwnerOrAdminError(e) => {
+            generic_consensus_error!(IdentityNotContractGroupOwnerOrAdminError, e).into()
         }
     }
 }
@@ -1052,8 +1052,8 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::ContractGroupMemberNotInContractError(e) => {
             generic_consensus_error!(ContractGroupMemberNotInContractError, e).into()
         }
-        BasicError::InvalidContractGroupOwnersError(e) => {
-            generic_consensus_error!(InvalidContractGroupOwnersError, e).into()
+        BasicError::InvalidContractGroupAdminsError(e) => {
+            generic_consensus_error!(InvalidContractGroupAdminsError, e).into()
         }
         BasicError::ContractGroupRegistrantNotOwnerError(e) => {
             generic_consensus_error!(ContractGroupRegistrantNotOwnerError, e).into()

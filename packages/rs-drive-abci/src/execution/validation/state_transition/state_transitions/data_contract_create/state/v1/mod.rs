@@ -1,6 +1,7 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::contract_group::{
-    ContractGroupAlreadyExistsError, ContractGroupNotFoundError, IdentityNotContractGroupOwnerError,
+    ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
+    IdentityNotContractGroupOwnerOrAdminError,
 };
 use dpp::consensus::ConsensusError;
 use dpp::prelude::ConsensusValidationResult;
@@ -90,7 +91,7 @@ impl DataContractCreateStateTransitionStateValidationV1 for DataContractCreateTr
         }
 
         // Contract groups: the registered group must be new, and every group joined must exist
-        // and count the creating identity among its owners. Each lookup is billed. The signer
+        // and have the creating identity as its owner or an admin. Each lookup is billed. The signer
         // is authenticated by now, so a failure bumps the identity nonce and is paid.
         let contract_group_errors = validate_contract_groups_against_state(
             self,
@@ -114,7 +115,7 @@ impl DataContractCreateStateTransitionStateValidationV1 for DataContractCreateTr
 }
 
 /// Checks the transition's contract groups against the state: a registered group must be new,
-/// and every group joined must exist and count the creating identity among its owners. Each
+/// and every group joined must exist and have the creating identity as its owner or an admin. Each
 /// lookup is billed on the execution context.
 fn validate_contract_groups_against_state<C: CoreRPCLike>(
     transition: &DataContractCreateTransition,
@@ -166,8 +167,8 @@ fn validate_contract_groups_against_state<C: CoreRPCLike>(
                         ContractGroupNotFoundError::new(contract_group_id).into()
                     ]);
                 }
-                Some(info) if !info.owner().includes(&owner_id) => {
-                    return Ok(vec![IdentityNotContractGroupOwnerError::new(
+                Some(info) if !info.owner().may_add_members(&owner_id) => {
+                    return Ok(vec![IdentityNotContractGroupOwnerOrAdminError::new(
                         owner_id,
                         contract_group_id,
                     )

@@ -42,11 +42,11 @@ pub fn generate_contract_group_id(
     Identifier::from(hash_double(bytes))
 }
 
-/// Who owns a contract group, and so who may add members to it.
+/// Who owns a contract group, and who may add members to it.
 ///
-/// A member is added by the identity that creates the member contract, so a join is allowed when
-/// that identity is an owner: the single owner, or one of the co-owners. Co-owners act alone; the
-/// set is not a multisig.
+/// Every group has exactly one owner: the identity that registered it. A member is added by the
+/// identity that creates the member contract, so a join is allowed when that identity is the
+/// owner or one of the group's admins. Admins act alone; there is no threshold.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -54,36 +54,46 @@ pub fn generate_contract_group_id(
     serde(rename_all = "camelCase")
 )]
 pub enum ContractGroupOwner {
-    /// One identity owns the group.
+    /// One identity owns the group and is the only one who may add members.
     SingleOwner(Identifier),
-    /// Several identities own the group; any one of them may add members. At least two
-    /// distinct identities, at most `SystemLimits::max_contract_group_owners`.
-    MultiOwner(BTreeSet<Identifier>),
+    /// One identity owns the group and a set of admins may add members alongside it. At least
+    /// one admin, at most `SystemLimits::max_contract_group_admins`, none of them the owner.
+    OwnerAndAdmins {
+        /// The owner: the identity that registered the group.
+        owner: Identifier,
+        /// The identities that may add members besides the owner.
+        admins: BTreeSet<Identifier>,
+    },
 }
 
 impl ContractGroupOwner {
-    /// Whether `identity_id` is an owner of the group.
-    pub fn includes(&self, identity_id: &Identifier) -> bool {
+    /// The identity that owns the group.
+    pub fn owner_id(&self) -> &Identifier {
         match self {
-            ContractGroupOwner::SingleOwner(owner_id) => owner_id == identity_id,
-            ContractGroupOwner::MultiOwner(owner_ids) => owner_ids.contains(identity_id),
+            ContractGroupOwner::SingleOwner(owner_id) => owner_id,
+            ContractGroupOwner::OwnerAndAdmins { owner, .. } => owner,
         }
     }
 
-    /// The number of owning identities.
-    pub fn owner_count(&self) -> usize {
+    /// The identities that may add members besides the owner. Empty for a single owner.
+    pub fn admin_ids(&self) -> Option<&BTreeSet<Identifier>> {
         match self {
-            ContractGroupOwner::SingleOwner(_) => 1,
-            ContractGroupOwner::MultiOwner(owner_ids) => owner_ids.len(),
+            ContractGroupOwner::SingleOwner(_) => None,
+            ContractGroupOwner::OwnerAndAdmins { admins, .. } => Some(admins),
         }
     }
 
-    /// The owning identities.
-    pub fn owner_ids(&self) -> BTreeSet<Identifier> {
-        match self {
-            ContractGroupOwner::SingleOwner(owner_id) => BTreeSet::from([*owner_id]),
-            ContractGroupOwner::MultiOwner(owner_ids) => owner_ids.clone(),
-        }
+    /// The number of admins.
+    pub fn admin_count(&self) -> usize {
+        self.admin_ids().map_or(0, BTreeSet::len)
+    }
+
+    /// Whether `identity_id` may add members to the group: the owner or an admin.
+    pub fn may_add_members(&self, identity_id: &Identifier) -> bool {
+        self.owner_id() == identity_id
+            || self
+                .admin_ids()
+                .is_some_and(|admins| admins.contains(identity_id))
     }
 }
 
@@ -91,8 +101,8 @@ impl fmt::Display for ContractGroupOwner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ContractGroupOwner::SingleOwner(owner_id) => write!(f, "single owner {}", owner_id),
-            ContractGroupOwner::MultiOwner(owner_ids) => {
-                write!(f, "{} owners", owner_ids.len())
+            ContractGroupOwner::OwnerAndAdmins { owner, admins } => {
+                write!(f, "owner {} with {} admins", owner, admins.len())
             }
         }
     }
@@ -153,7 +163,7 @@ pub struct ContractGroupMembership {
     serde(rename_all = "camelCase")
 )]
 pub struct ContractGroupRegistration {
-    /// The owner or owners of the group. The registering identity must be one of them.
+    /// The owner of the group, alone or with admins. The registering identity must be the owner.
     pub owner: ContractGroupOwner,
     /// An optional human readable name, bounded by `SystemLimits::max_contract_group_name_length`.
     pub name: Option<String>,
@@ -196,7 +206,7 @@ pub enum ContractGroupInfo {
     serde(rename_all = "camelCase")
 )]
 pub struct ContractGroupInfoV0 {
-    /// The owner or owners of the group.
+    /// The owner of the group, alone or with admins.
     pub owner: ContractGroupOwner,
     /// An optional human readable name.
     pub name: Option<String>,
@@ -205,7 +215,7 @@ pub struct ContractGroupInfoV0 {
 }
 
 impl ContractGroupInfo {
-    /// The owner or owners of the group.
+    /// The owner of the group, alone or with admins.
     pub fn owner(&self) -> &ContractGroupOwner {
         match self {
             ContractGroupInfo::V0(info) => &info.owner,
@@ -271,21 +281,26 @@ mod tests {
     }
 
     #[test]
-    fn should_resolve_owners_for_both_owner_kinds() {
+    fn should_resolve_who_may_add_members_for_both_owner_kinds() {
         let alice = Identifier::from([1u8; 32]);
         let bob = Identifier::from([2u8; 32]);
         let carol = Identifier::from([3u8; 32]);
 
         let single = ContractGroupOwner::SingleOwner(alice);
-        assert!(single.includes(&alice));
-        assert!(!single.includes(&bob));
-        assert_eq!(single.owner_count(), 1);
+        assert_eq!(single.owner_id(), &alice);
+        assert!(single.may_add_members(&alice));
+        assert!(!single.may_add_members(&bob));
+        assert_eq!(single.admin_count(), 0);
 
-        let multi = ContractGroupOwner::MultiOwner(BTreeSet::from([alice, bob]));
-        assert!(multi.includes(&alice));
-        assert!(multi.includes(&bob));
-        assert!(!multi.includes(&carol));
-        assert_eq!(multi.owner_count(), 2);
+        let with_admins = ContractGroupOwner::OwnerAndAdmins {
+            owner: alice,
+            admins: BTreeSet::from([bob]),
+        };
+        assert_eq!(with_admins.owner_id(), &alice);
+        assert!(with_admins.may_add_members(&alice));
+        assert!(with_admins.may_add_members(&bob));
+        assert!(!with_admins.may_add_members(&carol));
+        assert_eq!(with_admins.admin_count(), 1);
     }
 
     #[test]
@@ -293,11 +308,11 @@ mod tests {
         use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 
         let info: ContractGroupInfo = ContractGroupRegistration {
-            owner: ContractGroupOwner::MultiOwner(BTreeSet::from([
-                Identifier::from([1u8; 32]),
-                Identifier::from([2u8; 32]),
-            ])),
-            name: Some("dashpay".to_string()),
+            owner: ContractGroupOwner::OwnerAndAdmins {
+                owner: Identifier::from([1u8; 32]),
+                admins: BTreeSet::from([Identifier::from([2u8; 32])]),
+            },
+            name: Some("cardgame".to_string()),
             description: None,
         }
         .into();
@@ -307,8 +322,9 @@ mod tests {
             .expect("deserialize untrusted");
 
         assert_eq!(decoded, info);
-        assert_eq!(decoded.name(), Some("dashpay"));
+        assert_eq!(decoded.name(), Some("cardgame"));
         assert_eq!(decoded.description(), None);
-        assert_eq!(decoded.owner().owner_count(), 2);
+        assert_eq!(decoded.owner().owner_id(), &Identifier::from([1u8; 32]));
+        assert_eq!(decoded.owner().admin_count(), 1);
     }
 }

@@ -34,11 +34,15 @@ so a client knows both ids before broadcasting and the two can never collide.
 
 `owner` is one of:
 
-- `singleOwner(identityId)`: one identity owns the group.
-- `multiOwner([identityId, ...])`: two or more distinct identities own the group, at most
-  `maxContractGroupOwners` (16). Any owner acts alone; the set is not a multisig.
+- `singleOwner(identityId)`: one identity owns the group and is the only one who may add
+  members to it.
+- `ownerAndAdmins { owner: identityId, admins: [identityId, ...] }`: one identity owns the
+  group and the admins may add members alongside it. At least one admin, at most
+  `maxContractGroupAdmins` (16), none of them the owner. Admins act alone; there is no
+  threshold.
 
-The registering identity must be an owner. `name` is 1 to 64 characters and
+The registering identity must be the owner in both forms; being an admin is not enough to
+register a group. `name` is 1 to 64 characters and
 `description` 1 to 256 characters when present. A group may be registered empty.
 
 ## Joining a group
@@ -50,7 +54,7 @@ Each membership names a group and which part of the created contract joins:
 - `token(position)`: one token, which must exist in the contract at that position.
 
 A contract may only enrol itself. The group must exist, or be the one registered by
-the same transition, and the creating identity must be one of its owners. At most
+the same transition, and the creating identity must be its owner or one of its admins. At most
 `maxContractGroupMembershipsPerContract` (16) memberships per transition. A membership
 may not repeat, and a document type or token membership is rejected when the whole
 contract already joins the same group.
@@ -64,8 +68,8 @@ Memberships are recorded at creation only. There is no update path and no leavin
   Errors 10360 to 10367.
 - State (paid, identity nonce bumped): the registered group must not exist
   (`ContractGroupAlreadyExistsError`, 41000), every group joined must exist
-  (`ContractGroupNotFoundError`, 41001) and count the signer among its owners
-  (`IdentityNotContractGroupOwnerError`, 41002). Each group lookup is billed.
+  (`ContractGroupNotFoundError`, 41001) and have the signer as its owner or an admin
+  (`IdentityNotContractGroupOwnerOrAdminError`, 41002). Each group lookup is billed.
 
 Storage is paid at the standard rate: the info item and three empty subtrees for a
 registration, one empty item plus one reference per membership, plus the trees a new

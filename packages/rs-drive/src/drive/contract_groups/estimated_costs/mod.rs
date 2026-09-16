@@ -6,8 +6,8 @@ mod for_insert_contract_group_memberships;
 /// path segments, two of them 32 byte identifiers, plus the max hop and flags.
 pub(crate) const CONTRACT_GROUP_BACKWARDS_REFERENCE_SIZE: u32 = 128;
 
-/// The estimated serialized size of a stored `ContractGroupInfo`: a multi owner group at the
-/// owner cap with a name and a description at their caps stays under this.
+/// The estimated serialized size of a stored `ContractGroupInfo`: an owner with admins at the
+/// admin cap and a name and a description at their caps stays under this.
 pub(crate) const CONTRACT_GROUP_INFO_ESTIMATED_SIZE: u32 = 1024;
 
 /// The estimated key size of a document type name inside the contract group trees.

@@ -376,7 +376,7 @@ async fn should_reject_joining_a_group_the_identity_does_not_own_as_a_paid_failu
     assert_matches!(
         process(&platform, bytes, &transaction),
         StateTransitionExecutionResult::PaidConsensusError {
-            error: ConsensusError::StateError(StateError::IdentityNotContractGroupOwnerError(e)),
+            error: ConsensusError::StateError(StateError::IdentityNotContractGroupOwnerOrAdminError(e)),
             ..
         } if *e.identity_id() == bob.id() && *e.contract_group_id() == contract_group_id
     );
@@ -442,7 +442,7 @@ async fn should_reject_joining_an_unknown_group() {
 }
 
 #[tokio::test]
-async fn should_accept_multi_owner_groups_for_each_owner_and_refuse_outsiders() {
+async fn should_let_the_owner_and_each_admin_add_members_and_refuse_outsiders() {
     let platform_version = PlatformVersion::latest();
     let mut platform = TestPlatformBuilder::new()
         .build_with_mock_rpc()
@@ -462,9 +462,12 @@ async fn should_accept_multi_owner_groups_for_each_owner_and_refuse_outsiders() 
         fixture_contract(alice.id(), 1),
         1,
         Some(ContractGroupRegistration {
-            owner: ContractGroupOwner::MultiOwner(BTreeSet::from([alice.id(), bob.id()])),
+            owner: ContractGroupOwner::OwnerAndAdmins {
+                owner: alice.id(),
+                admins: BTreeSet::from([bob.id()]),
+            },
             name: None,
-            description: Some("shared by alice and bob".to_string()),
+            description: Some("owned by alice, administered by bob".to_string()),
         }),
         vec![],
     )
@@ -474,7 +477,7 @@ async fn should_accept_multi_owner_groups_for_each_owner_and_refuse_outsiders() 
         StateTransitionExecutionResult::SuccessfulExecution { .. }
     );
 
-    // Bob is a co-owner and joins alone.
+    // Bob is an admin and joins alone.
     let bob_contract_id = DataContract::generate_data_contract_id_v0(bob.id(), 1);
     let bytes = create_transition_bytes(
         &bob,
@@ -491,7 +494,7 @@ async fn should_accept_multi_owner_groups_for_each_owner_and_refuse_outsiders() 
         StateTransitionExecutionResult::SuccessfulExecution { .. }
     );
 
-    // Carol is not an owner.
+    // Carol is neither the owner nor an admin.
     let bytes = create_transition_bytes(
         &carol,
         &carol_signer,
@@ -505,7 +508,9 @@ async fn should_accept_multi_owner_groups_for_each_owner_and_refuse_outsiders() 
     assert_matches!(
         process(&platform, bytes, &transaction),
         StateTransitionExecutionResult::PaidConsensusError {
-            error: ConsensusError::StateError(StateError::IdentityNotContractGroupOwnerError(_)),
+            error: ConsensusError::StateError(
+                StateError::IdentityNotContractGroupOwnerOrAdminError(_)
+            ),
             ..
         }
     );
@@ -516,11 +521,14 @@ async fn should_accept_multi_owner_groups_for_each_owner_and_refuse_outsiders() 
         .expect("expected to fetch the group")
         .expect("expected the group");
     assert_eq!(group.members.contracts, BTreeSet::from([bob_contract_id]));
-    assert_eq!(group.info.description(), Some("shared by alice and bob"));
+    assert_eq!(
+        group.info.description(),
+        Some("owned by alice, administered by bob")
+    );
 }
 
 #[tokio::test]
-async fn should_reject_a_registrant_who_is_not_among_the_owners_before_paying() {
+async fn should_reject_a_registrant_who_is_not_the_owner_before_paying() {
     let mut platform = TestPlatformBuilder::new()
         .build_with_mock_rpc()
         .set_genesis_state();
@@ -530,9 +538,17 @@ async fn should_reject_a_registrant_who_is_not_among_the_owners_before_paying() 
     let transaction = platform.drive.grove.start_transaction();
     let nonce_before = identity_nonce(&platform, identity.id(), &transaction);
 
+    // Being an admin is not enough: the registrant must be the owner.
     for owner in [
         ContractGroupOwner::SingleOwner(stranger),
-        ContractGroupOwner::MultiOwner(BTreeSet::from([stranger, Identifier::from([8u8; 32])])),
+        ContractGroupOwner::OwnerAndAdmins {
+            owner: stranger,
+            admins: BTreeSet::from([identity.id()]),
+        },
+        ContractGroupOwner::OwnerAndAdmins {
+            owner: stranger,
+            admins: BTreeSet::from([Identifier::from([8u8; 32])]),
+        },
     ] {
         let bytes = create_transition_bytes(
             &identity,
@@ -578,24 +594,38 @@ async fn should_reject_malformed_registrations_and_memberships_in_basic_structur
     let registration_cases: Vec<(ContractGroupRegistration, fn(&BasicError) -> bool)> = vec![
         (
             ContractGroupRegistration {
-                owner: ContractGroupOwner::MultiOwner(BTreeSet::from([owner_id])),
+                owner: ContractGroupOwner::OwnerAndAdmins {
+                    owner: owner_id,
+                    admins: BTreeSet::new(),
+                },
                 name: None,
                 description: None,
             },
-            |e| matches!(e, BasicError::InvalidContractGroupOwnersError(_)),
+            |e| matches!(e, BasicError::InvalidContractGroupAdminsError(_)),
         ),
         (
             ContractGroupRegistration {
-                owner: ContractGroupOwner::MultiOwner(
-                    (0..=limits.max_contract_group_owners)
-                        .map(|i| Identifier::from([i as u8 + 1; 32]))
-                        .chain([owner_id])
-                        .collect(),
-                ),
+                owner: ContractGroupOwner::OwnerAndAdmins {
+                    owner: owner_id,
+                    admins: BTreeSet::from([owner_id]),
+                },
                 name: None,
                 description: None,
             },
-            |e| matches!(e, BasicError::InvalidContractGroupOwnersError(_)),
+            |e| matches!(e, BasicError::InvalidContractGroupAdminsError(_)),
+        ),
+        (
+            ContractGroupRegistration {
+                owner: ContractGroupOwner::OwnerAndAdmins {
+                    owner: owner_id,
+                    admins: (0..=limits.max_contract_group_admins)
+                        .map(|i| Identifier::from([i as u8 + 1; 32]))
+                        .collect(),
+                },
+                name: None,
+                description: None,
+            },
+            |e| matches!(e, BasicError::InvalidContractGroupAdminsError(_)),
         ),
         (
             ContractGroupRegistration {

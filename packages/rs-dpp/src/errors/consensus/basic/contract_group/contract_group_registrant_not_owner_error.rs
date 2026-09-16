@@ -22,7 +22,7 @@ use thiserror::Error;
     DecodeUntrusted,
 )]
 #[error(
-    "Identity {} registers a contract group it does not own",
+    "Identity {} registers a contract group it is not the owner of",
     registrant_id
 )]
 #[platform_serialize(unversioned)]

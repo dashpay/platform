@@ -22,12 +22,12 @@ use thiserror::Error;
     DecodeUntrusted,
 )]
 #[error(
-    "Identity {} is not an owner of contract group {}",
+    "Identity {} is neither the owner nor an admin of contract group {}",
     identity_id,
     contract_group_id
 )]
 #[platform_serialize(unversioned)]
-pub struct IdentityNotContractGroupOwnerError {
+pub struct IdentityNotContractGroupOwnerOrAdminError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
@@ -37,7 +37,7 @@ pub struct IdentityNotContractGroupOwnerError {
     contract_group_id: Identifier,
 }
 
-impl IdentityNotContractGroupOwnerError {
+impl IdentityNotContractGroupOwnerOrAdminError {
     pub fn new(identity_id: Identifier, contract_group_id: Identifier) -> Self {
         Self {
             identity_id,
@@ -54,8 +54,8 @@ impl IdentityNotContractGroupOwnerError {
     }
 }
 
-impl From<IdentityNotContractGroupOwnerError> for ConsensusError {
-    fn from(err: IdentityNotContractGroupOwnerError) -> Self {
-        Self::StateError(StateError::IdentityNotContractGroupOwnerError(err))
+impl From<IdentityNotContractGroupOwnerOrAdminError> for ConsensusError {
+    fn from(err: IdentityNotContractGroupOwnerOrAdminError) -> Self {
+        Self::StateError(StateError::IdentityNotContractGroupOwnerOrAdminError(err))
     }
 }
