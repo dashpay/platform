@@ -1,11 +1,20 @@
 use super::*;
+use crate::drive::document::paths::{
+    contract_document_type_path_vec, document_history_path, DOCUMENT_HISTORY_TREE_KEY,
+};
+use crate::drive::Drive;
 use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
+use crate::util::common::encode::encode_u64;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::document::DocumentV0Getters;
 use dpp::document::DocumentV0Setters;
 use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
+use dpp::version::PlatformVersion;
+use grovedb::{Element, PathQuery, Query, SizedQuery};
 
 #[test]
 fn should_authenticate_history_pages_metadata_and_absence() {
