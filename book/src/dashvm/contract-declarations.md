@@ -113,15 +113,15 @@ said is a `ConflictingDeclaration` naming both origins.
 The grammar is data: `dash_sdk_contract::grammar::ATTRIBUTES` lists every
 attribute, its options and the value each option accepts. The proc macros
 parse against that table, `grammar::check_keys` reports grammar diagnostics
-from it, and a test pins this chapter's table against it, so the three cannot
-drift. An option not in the table is `UnknownOption`; a value outside a closed
+from it, and an integration test reads this chapter and checks the table
+below against it, so the three cannot drift. An option not in the table is `UnknownOption`; a value outside a closed
 set is `InvalidOptionValue`; a repeated option is `DuplicateOption`; a
 missing required option is `MissingOption`. Nothing is ignored.
 
 | Attribute | On | Options |
 |---|---|---|
-| `persistent` | struct | `collection` (required), `schema` (integer, default 1), `write` (`any` / `owner` / `contract`), `mutable`, `deletable`, `keep_history`, `keep_transfer_history`, `keep_purchase_history`, `keep_pricing_history`, `transferable`, `trade` (`none` / `direct_purchase`), `security_level` (`critical` / `high` / `medium`), `encryption_key` and `decryption_key` (`unique` / `multiple` / `multiple_reference_to_latest`), `count`, `range_count`, `sum = "<property>"`, `range_sum`, `average = "<property>"`, `range_average`, `index_only`, `store` (`public` / `private`) |
-| `singleton` | struct | `collection` (required), `schema`, `write`, `security_level`, `encryption_key`, `decryption_key`, `store` |
+| `persistent` | struct | `collection` (required), `schema` (integer, default 1), `write` (`any` / `owner` / `contract`), `mutable`, `deletable`, `keep_history`, `keep_transfer_history`, `keep_purchase_history`, `keep_pricing_history`, `transferable`, `trade` (`none` / `direct_purchase`), `security_level` (`critical` / `high` / `medium`), `encryption_key` and `decryption_key` (`unique` / `multiple` / `multiple_reference_to_latest`), `count`, `range_count`, `sum = "<property>"`, `range_sum`, `average = "<property>"`, `range_average`, `index_only`, `requires = ["$createdAt", ...]` (system properties every document carries), `store` (`public` / `private`) |
+| `singleton` | struct | `collection` (required), `schema`, `write`, `security_level`, `encryption_key`, `decryption_key`, `requires = [...]`, `store` |
 | `token_cost` | struct, repeatable | `on` (an ordinary action, required), `token_position` (required), `amount` (required), `contract` (base58), `effect` (`transfer_to_contract_owner` / `burn`), `gas_paid_by` (`document_owner` / `contract_owner` / `prefer_contract_owner`) |
 | `index` | struct, repeatable | `name` (required), `fields(<path> = "asc", ...)` (required), `unique`, `null_searchable` (default true), `contested(field_matches(<path> = "<regex>"), resolution = "masternode_vote", description)`, `count` or `count = "offset"`, `range_count`, `sum = "<property>"`, `range_sum`, `average = "<property>"`, `range_average`, `ranked_count` or `ranked_count = ["<level>", ...]`, `ranked_sum`, `ranked_average`, `time_range(on, range_secs, step_secs, phase_secs)`, `terminal = "<property>"`, `preallocated`, `skip_if_absent` |
 | `field` | field | `position` (required), `max_chars`, `min_chars`, `max_len`, `min_len`, `min`, `max`, `values = [...]`, `required` (default true), `transient`, `refers_to` (`identity` / `contract` / `token` / `permanent_document` / `identity_public_key`), `document_type`, `contract`, `agreement(<mine> = "<theirs>")`, `key_id_field`, `description` |
@@ -243,6 +243,13 @@ sum, average and index-only flags, the document type switches, the bounded key
 requirements and per-action token costs are on `CollectionSpec`. Every
 reference target (identity, contract, token, permanent document with property
 agreement, identity public key) is a `FieldType::Reference`.
+
+System timestamps and block height stamps (`$createdAt`, `$updatedAt`,
+`$transferredAt` and their height variants) exist on a document only when the
+collection requires them, so `requires = ["$createdAt"]` on the collection is
+what makes them present; a time-range index on a system timestamp needs the
+collection to require it (`TimeRangeSourceNotRequired` otherwise), which is
+the native rule. User fields are required on the field itself.
 
 Average sugar (`average = "p"`, `range_average`) is expanded into `count`
 plus `sum = "p"` and `range_count` plus `range_sum` before the manifest,

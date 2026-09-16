@@ -81,6 +81,8 @@ pub struct CollectionManifest {
     pub range_sum: bool,
     /// Documents live only in their indexes.
     pub index_only: bool,
+    /// Required system properties, sorted.
+    pub requires: Vec<PropertyPath>,
     /// Token prices, sorted by action.
     pub token_costs: Vec<TokenCostSpec>,
     /// Document store.

@@ -8,7 +8,7 @@ use super::field::{FieldSpec, FieldType, ReferenceTarget};
 use super::index::IndexSpec;
 use super::rule::ActionScope;
 use super::DeclarationOrigin;
-use crate::identity::{CollectionName, PropertyName};
+use crate::identity::{CollectionName, PropertyName, PropertyPath};
 
 /// Whether a collection holds many documents or one reserved record.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -209,6 +209,12 @@ pub struct CollectionSpec {
     pub range_average: bool,
     /// Documents live only in their indexes.
     pub index_only: bool,
+    /// System properties every document must carry (`$createdAt`,
+    /// `$updatedAt`, `$transferredAt` and the block height stamps). A
+    /// system timestamp is populated only when required, so a time-range
+    /// index on one needs it listed here. User fields are required through
+    /// [`FieldSpec::required`].
+    pub requires: Vec<PropertyPath>,
     /// Token prices per action.
     pub token_costs: Vec<TokenCostSpec>,
     /// Document store.
@@ -249,6 +255,7 @@ impl CollectionSpec {
             average: None,
             range_average: false,
             index_only: false,
+            requires: Vec::new(),
             token_costs: Vec::new(),
             store: Store::default(),
             document_id_field: None,
@@ -417,6 +424,12 @@ impl CollectionSpec {
         self
     }
 
+    /// Requires a system property on every document.
+    pub fn requires(mut self, property: PropertyPath) -> Self {
+        self.requires.push(property);
+        self
+    }
+
     /// Prices an action.
     pub fn token_cost(mut self, action: ActionScope, cost: TokenCost) -> Self {
         self.token_costs.push(TokenCostSpec { action, cost });
@@ -443,6 +456,7 @@ impl CollectionSpec {
         let mut normalized = self.clone();
         normalize_fields(&mut normalized.fields);
         normalized.token_costs.sort_by_key(|cost| cost.action);
+        normalized.requires.sort();
         normalized
     }
 }
