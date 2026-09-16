@@ -1406,8 +1406,8 @@ fn verify_document_history_response_v0(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<DocumentHistory>, ResponseMetadata, Proof), Error> {
-    use drive::drive::document::history::{
-        DocumentHistoryFilter, DocumentHistoryProof, DocumentHistoryQueryV1,
+    use drive::query::document_history_drive_query::{
+        DocumentHistoryDriveQuery, DocumentHistoryFilter,
     };
     use platform::get_document_history_request::get_document_history_request_v0::Filter;
     let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -1433,7 +1433,7 @@ fn verify_document_history_response_v0(
         Filter::Revision(revision) => DocumentHistoryFilter::Revision(revision),
     };
     let query =
-        DocumentHistoryQueryV1 {
+        DocumentHistoryDriveQuery {
             contract_id: contract_id.to_buffer(),
             document_type_name: request.document_type_name,
             document_id: document_id.to_buffer(),
@@ -1455,23 +1455,15 @@ fn verify_document_history_response_v0(
         })?;
     // The proof arrives in the layout the protocol version stores: one GroveDB
     // proof before protocol version 14, and from then on one proof object
-    // carrying two, so the envelope floor is checked on each nested proof.
-    let proofs = DocumentHistoryProof::from_bytes(&proof.grovedb_proof, platform_version)
-        .map_drive_error(proof, metadata)?;
-    match &proofs {
-        DocumentHistoryProof::V0(grovedb_proof) => {
-            require_supported_grovedb_proof_bytes(grovedb_proof, platform_version)?;
-        }
-        DocumentHistoryProof::V1(proofs) => {
-            require_supported_grovedb_proof_bytes(&proofs.metadata_proof, platform_version)?;
-            if let Some(entries_proof) = &proofs.entries_proof {
-                require_supported_grovedb_proof_bytes(entries_proof, platform_version)?;
-            }
-        }
-    }
-    let (root, history) =
-        Drive::verify_document_history(&query, &proofs, document_type, platform_version)
-            .map_drive_error(proof, metadata)?;
+    // carrying two. Drive checks the envelope floor on each GroveDB proof, so
+    // only the signature over the authenticated root is checked here.
+    let (root, history) = Drive::verify_document_history(
+        &query,
+        &proof.grovedb_proof,
+        document_type,
+        platform_version,
+    )
+    .map_drive_error(proof, metadata)?;
     verify_tenderdash_signature(proof, metadata, &root, provider)?;
     Ok((
         Some(DocumentHistory {

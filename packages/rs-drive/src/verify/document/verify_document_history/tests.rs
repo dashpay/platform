@@ -1,9 +1,13 @@
-use super::*;
+use super::DocumentHistoryProof;
 use crate::drive::document::paths::{
     contract_document_type_path_vec, document_history_path, DOCUMENT_HISTORY_TREE_KEY,
 };
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::query::document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult, DocumentHistoryFilter,
+    DocumentHistoryLifecycle, DocumentHistoryState,
+};
 use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use crate::util::common::encode::encode_u64;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
@@ -23,37 +27,35 @@ use grovedb::{Element, PathQuery, Query, SizedQuery};
 /// tree, returning the two GroveDB proofs for tampering.
 fn prove(
     drive: &Drive,
-    query: &DocumentHistoryQueryV1,
+    query: &DocumentHistoryDriveQuery,
     document_type: DocumentTypeRef,
     version: &PlatformVersion,
-) -> (DocumentHistoryV1, DocumentHistoryProofV1) {
+) -> (
+    DocumentHistoryDriveQueryExecutionResult,
+    DocumentHistoryProof,
+) {
     let page = drive
         .fetch_document_history(query, document_type, None, version)
         .unwrap();
-    let DocumentHistoryProof::V1(proof) = drive
-        .prove_document_history(query, document_type, None, version)
-        .unwrap()
-    else {
-        panic!("the history tree is proved with two GroveDB proofs");
-    };
+    let proof = DocumentHistoryProof::from_bytes(
+        &drive
+            .prove_document_history(query, document_type, None, version)
+            .unwrap(),
+    )
+    .unwrap();
     (page, proof)
 }
 
 fn verify(
-    query: &DocumentHistoryQueryV1,
-    proof: &DocumentHistoryProofV1,
+    query: &DocumentHistoryDriveQuery,
+    proof: &DocumentHistoryProof,
     document_type: DocumentTypeRef,
     version: &PlatformVersion,
-) -> Result<(RootHash, DocumentHistoryV1), Error> {
-    Drive::verify_document_history(
-        query,
-        &DocumentHistoryProof::V1(proof.clone()),
-        document_type,
-        version,
-    )
+) -> Result<(RootHash, DocumentHistoryDriveQueryExecutionResult), Error> {
+    Drive::verify_document_history(query, &proof.to_bytes()?, document_type, version)
 }
 
-fn lifecycle(page: &DocumentHistoryV1) -> &DocumentHistoryLifecycle {
+fn lifecycle(page: &DocumentHistoryDriveQueryExecutionResult) -> &DocumentHistoryLifecycle {
     page.lifecycle
         .as_ref()
         .expect("pages of the history tree carry a lifecycle")
@@ -101,7 +103,7 @@ fn should_authenticate_history_pages_metadata_and_absence() {
             )
             .unwrap();
     }
-    let mut query = DocumentHistoryQueryV1 {
+    let mut query = DocumentHistoryDriveQuery {
         contract_id: contract.id().to_buffer(),
         document_type_name: "profile".into(),
         document_id: document.id().to_buffer(),
@@ -264,7 +266,7 @@ fn should_reject_point_in_time_history_reads_only_after_activation() {
 
 #[test]
 fn should_reject_invalid_selectors_and_unsupported_protocols() {
-    let mut query = DocumentHistoryQueryV1 {
+    let mut query = DocumentHistoryDriveQuery {
         contract_id: [1; 32],
         document_type_name: "note".into(),
         document_id: [2; 32],
@@ -290,11 +292,11 @@ fn should_reject_invalid_selectors_and_unsupported_protocols() {
     query.limit = Some(1);
     for protocol in [12, 13] {
         assert!(query
-            .entries_query(PlatformVersion::get(protocol).unwrap())
+            .construct_path_query(PlatformVersion::get(protocol).unwrap())
             .is_err());
     }
     assert!(query
-        .entries_query(PlatformVersion::get(14).unwrap())
+        .construct_path_query(PlatformVersion::get(14).unwrap())
         .is_ok());
 }
 
@@ -341,7 +343,7 @@ fn should_use_sequence_one_for_an_immutable_document_without_a_revision() {
             None,
         )
         .unwrap();
-    let query = DocumentHistoryQueryV1 {
+    let query = DocumentHistoryDriveQuery {
         contract_id: contract.id().to_buffer(),
         document_type_name: "note".into(),
         document_id: document.id().to_buffer(),
@@ -589,7 +591,7 @@ fn should_reject_history_keys_that_are_not_sixteen_bytes() {
     )
     .unwrap();
     document.set_revision(Some(1));
-    let query = DocumentHistoryQueryV1 {
+    let query = DocumentHistoryDriveQuery {
         contract_id: contract.id().to_buffer(),
         document_type_name: "profile".into(),
         document_id: document.id().to_buffer(),
@@ -669,7 +671,7 @@ fn should_reject_metadata_proofs_that_omit_a_queried_branch() {
             None,
         )
         .unwrap();
-    let query = DocumentHistoryQueryV1 {
+    let query = DocumentHistoryDriveQuery {
         contract_id: contract.id().to_buffer(),
         document_type_name: "profile".into(),
         document_id: document.id().to_buffer(),
@@ -703,7 +705,7 @@ fn should_reject_metadata_proofs_that_omit_a_queried_branch() {
         let metadata_proof = drive
             .grove_get_proved_path_query(&narrowed, None, &mut vec![], &version.drive)
             .unwrap();
-        let forged = DocumentHistoryProofV1 {
+        let forged = DocumentHistoryProof {
             entries_proof: None,
             metadata_proof,
         };
@@ -712,4 +714,35 @@ fn should_reject_metadata_proofs_that_omit_a_queried_branch() {
             "a metadata proof that omits branch {omitted} verified as an authenticated absence"
         );
     }
+}
+
+#[test]
+fn should_round_trip_the_proof_envelope_with_and_without_an_entries_proof() {
+    for entries_proof in [Some(vec![1u8, 2, 3]), None, Some(vec![])] {
+        let proof = DocumentHistoryProof {
+            metadata_proof: vec![9u8; 5],
+            entries_proof,
+        };
+        assert_eq!(
+            DocumentHistoryProof::from_bytes(&proof.to_bytes().unwrap()).unwrap(),
+            proof
+        );
+    }
+}
+
+/// A proof is produced only by a node, so bytes that are not exactly one
+/// envelope are not the proof this code believes it is reading.
+#[test]
+fn should_reject_truncated_and_padded_proof_envelopes() {
+    let bytes = DocumentHistoryProof {
+        metadata_proof: vec![9u8; 5],
+        entries_proof: Some(vec![1u8, 2, 3]),
+    }
+    .to_bytes()
+    .unwrap();
+    assert!(DocumentHistoryProof::from_bytes(&bytes[..bytes.len() - 1]).is_err());
+    let mut padded = bytes.clone();
+    padded.push(0);
+    assert!(DocumentHistoryProof::from_bytes(&padded).is_err());
+    assert!(DocumentHistoryProof::from_bytes(&[]).is_err());
 }

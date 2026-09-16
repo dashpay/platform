@@ -1,10 +1,12 @@
 mod v0;
 mod v1;
 
-use crate::drive::document::history::{DocumentHistoryQueryV1, DocumentHistoryV1};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
+};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -14,11 +16,11 @@ impl Drive {
     /// protocol version stores.
     pub fn fetch_document_history(
         &self,
-        query: &DocumentHistoryQueryV1,
+        query: &DocumentHistoryDriveQuery,
         document_type: DocumentTypeRef,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<DocumentHistoryV1, Error> {
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
         match platform_version
             .drive
             .methods
@@ -39,7 +41,7 @@ impl Drive {
                     None,
                     platform_version,
                 )?;
-                DocumentHistoryV1::from_legacy(revisions)
+                DocumentHistoryDriveQueryExecutionResult::from_legacy(revisions)
             }
             1 => {
                 self.fetch_document_history_v1(query, document_type, transaction, platform_version)
@@ -56,7 +58,7 @@ impl Drive {
 #[cfg(test)]
 mod legacy_tests {
     use super::*;
-    use crate::drive::document::history::{DocumentHistoryFilter, DocumentHistoryProof};
+    use crate::query::document_history_drive_query::DocumentHistoryFilter;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -141,8 +143,8 @@ mod legacy_tests {
         document: &dpp::document::Document,
         start_at_ms: u64,
         limit: Option<u16>,
-    ) -> DocumentHistoryQueryV1 {
-        DocumentHistoryQueryV1 {
+    ) -> DocumentHistoryDriveQuery {
+        DocumentHistoryDriveQuery {
             contract_id: contract.id().to_buffer(),
             document_type_name: DOCUMENT_TYPE_NAME.to_string(),
             document_id: document.id().to_buffer(),
@@ -151,7 +153,7 @@ mod legacy_tests {
         }
     }
 
-    fn times(history: &DocumentHistoryV1) -> Vec<u64> {
+    fn times(history: &DocumentHistoryDriveQueryExecutionResult) -> Vec<u64> {
         history.entries.iter().map(|entry| entry.time_ms).collect()
     }
 
@@ -218,7 +220,6 @@ mod legacy_tests {
         let proof = drive
             .prove_document_history(&query, document_type, None, platform_version)
             .expect("prove history");
-        assert!(matches!(proof, DocumentHistoryProof::V0(_)));
         let (_root_hash, history) =
             Drive::verify_document_history(&query, &proof, document_type, platform_version)
                 .expect("verify history");

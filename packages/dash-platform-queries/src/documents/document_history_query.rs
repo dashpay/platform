@@ -1,7 +1,7 @@
 //! Query type for retrieving document history.
 
 use dpp::prelude::Identifier;
-pub use drive::drive::document::history::DocumentHistoryFilter;
+pub use drive::query::document_history_drive_query::DocumentHistoryFilter;
 
 /// Query parameters for a document's historical revisions.
 #[derive(Debug, Clone, PartialEq, Eq, dash_platform_macros::Mockable)]

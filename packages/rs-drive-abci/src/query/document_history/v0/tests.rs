@@ -11,8 +11,8 @@ use dpp::data_contract::TokenConfiguration;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
-use drive::drive::document::history::DocumentHistoryProofV1;
 use drive::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
+use drive::verify::document::DocumentHistoryProof;
 use drive_proof_verifier::types::DocumentHistory;
 use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
 use std::sync::Arc;
@@ -242,7 +242,7 @@ fn history_api_proof_round_trip(gapped: bool) {
                 .unwrap()
                 .into_data()
                 .unwrap();
-            let query = DocumentHistoryQueryV1 {
+            let query = DocumentHistoryDriveQuery {
                 contract_id: contract.id().to_buffer(),
                 document_type_name: "profile".into(),
                 document_id: document.id().to_buffer(),
@@ -250,7 +250,7 @@ fn history_api_proof_round_trip(gapped: bool) {
                 limit: None,
             };
             let proof = proof_mut(&mut response);
-            let mut proofs = DocumentHistoryProofV1::from_bytes(&proof.grovedb_proof).unwrap();
+            let mut proofs = DocumentHistoryProof::from_bytes(&proof.grovedb_proof).unwrap();
             proofs.metadata_proof =
                 drive::util::test_helpers::history_proof::downgrade_history_count(
                     &proofs.metadata_proof,
@@ -261,14 +261,14 @@ fn history_api_proof_round_trip(gapped: bool) {
                 platform
                     .drive
                     .grove_get_proved_path_query(
-                        &query.entries_query(version).unwrap(),
+                        &query.construct_path_query(version).unwrap(),
                         None,
                         &mut vec![],
                         &version.drive,
                     )
                     .unwrap(),
             );
-            proof.grovedb_proof = proofs.to_bytes();
+            proof.grovedb_proof = proofs.to_bytes().unwrap();
             let error = DocumentHistory::maybe_from_proof(
                 request.clone(),
                 response.clone(),
@@ -335,7 +335,7 @@ fn history_api_proof_round_trip(gapped: bool) {
             .unwrap()
             .into_data()
             .unwrap();
-        let query = DocumentHistoryQueryV1 {
+        let query = DocumentHistoryDriveQuery {
             contract_id: contract.id().to_buffer(),
             document_type_name: "profile".into(),
             document_id: id,
@@ -418,11 +418,11 @@ fn history_api_proof_round_trip(gapped: bool) {
             } as i32
         );
         let with_proofs = |mut response: GetDocumentHistoryResponseV0,
-                           edit: &dyn Fn(&mut DocumentHistoryProofV1)| {
+                           edit: &dyn Fn(&mut DocumentHistoryProof)| {
             let proof = proof_mut(&mut response);
-            let mut proofs = DocumentHistoryProofV1::from_bytes(&proof.grovedb_proof).unwrap();
+            let mut proofs = DocumentHistoryProof::from_bytes(&proof.grovedb_proof).unwrap();
             edit(&mut proofs);
-            proof.grovedb_proof = proofs.to_bytes();
+            proof.grovedb_proof = proofs.to_bytes().unwrap();
             response
         };
         let legacy_metadata = with_proofs(response.clone(), &|proofs| {
@@ -450,7 +450,7 @@ fn history_api_proof_round_trip(gapped: bool) {
         assert!(verify(bad_signature).is_err());
         let has_entries_proof = {
             let mut probe = response.clone();
-            DocumentHistoryProofV1::from_bytes(&proof_mut(&mut probe).grovedb_proof)
+            DocumentHistoryProof::from_bytes(&proof_mut(&mut probe).grovedb_proof)
                 .unwrap()
                 .entries_proof
                 .is_some()

@@ -114,7 +114,7 @@ pub type RetrievedValues<K, I> = IndexMap<K, I>;
 ///
 /// Contains a map of data contract revisions to data contracts.
 pub type DataContractHistory = RetrievedValues<u64, DataContract>;
-pub use drive::drive::document::history::{
+pub use drive::query::document_history_drive_query::{
     DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
 };
 

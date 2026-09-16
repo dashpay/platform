@@ -1,10 +1,10 @@
 mod v0;
 mod v1;
 
-use crate::drive::document::history::{DocumentHistoryProof, DocumentHistoryQueryV1};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::document_history_drive_query::DocumentHistoryDriveQuery;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -14,11 +14,11 @@ impl Drive {
     /// protocol version stores.
     pub fn prove_document_history(
         &self,
-        query: &DocumentHistoryQueryV1,
+        query: &DocumentHistoryDriveQuery,
         document_type: DocumentTypeRef,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<DocumentHistoryProof, Error> {
+    ) -> Result<Vec<u8>, Error> {
         match platform_version
             .drive
             .methods
@@ -38,11 +38,10 @@ impl Drive {
                     None,
                     platform_version,
                 )
-                .map(DocumentHistoryProof::V0)
             }
-            1 => self
-                .prove_document_history_v1(query, document_type, transaction, platform_version)
-                .map(DocumentHistoryProof::V1),
+            1 => {
+                self.prove_document_history_v1(query, document_type, transaction, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_document_history".to_string(),
                 known_versions: vec![0, 1],

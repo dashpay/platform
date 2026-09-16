@@ -346,10 +346,11 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
         .unwrap();
     assert_eq!(history.len(), 2);
     assert_eq!(&history[1].0[8..], encode_u64(3));
-    use crate::drive::document::history::{
-        DocumentHistoryFilter, DocumentHistoryProof, DocumentHistoryQueryV1,
+    use crate::query::document_history_drive_query::{
+        DocumentHistoryDriveQuery, DocumentHistoryFilter,
     };
-    let mut history_query = DocumentHistoryQueryV1 {
+    use crate::verify::document::DocumentHistoryProof;
+    let mut history_query = DocumentHistoryDriveQuery {
         contract_id: contract.id().to_buffer(),
         document_type_name: "profile".into(),
         document_id: document.id().to_buffer(),
@@ -403,17 +404,17 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
     let committed_page = drive
         .fetch_document_history(&history_query, document_type, None, new)
         .unwrap();
-    let DocumentHistoryProof::V1(proof) = drive
-        .prove_document_history(&history_query, document_type, None, new)
-        .unwrap()
-    else {
-        panic!("the migrated history tree is proved with two GroveDB proofs");
-    };
+    let proof = DocumentHistoryProof::from_bytes(
+        &drive
+            .prove_document_history(&history_query, document_type, None, new)
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(committed_page, page);
     assert_eq!(
         Drive::verify_document_history(
             &history_query,
-            &DocumentHistoryProof::V1(proof.clone()),
+            &proof.to_bytes().unwrap(),
             document_type,
             new,
         )
@@ -431,16 +432,17 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
     );
     let error = Drive::verify_document_history(
         &history_query,
-        &DocumentHistoryProof::V1(legacy_entries.clone()),
+        &legacy_entries.to_bytes().unwrap(),
         document_type,
         new,
     )
     .expect_err("entries require a GroveDB v1 envelope");
     assert!(matches!(
         error,
-        Error::Query(crate::error::query::QuerySyntaxError::Unsupported(_))
+        Error::Proof(
+            crate::error::proof::ProofError::UnsupportedGroveDBProofEnvelopeVersion { .. }
+        )
     ));
-    use crate::drive::document::history::DocumentHistoryProofV1;
     for filter in [
         DocumentHistoryFilter::Revision(3),
         DocumentHistoryFilter::StartAtRevision(3),
@@ -448,11 +450,11 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
         history_query.filter = filter;
         let fetched = drive.fetch_document_history(&history_query, document_type, None, new);
         let proved = drive.prove_document_history(&history_query, document_type, None, new);
-        let dishonest = DocumentHistoryProofV1 {
+        let dishonest = DocumentHistoryProof {
             entries_proof: Some(
                 drive
                     .grove_get_proved_path_query(
-                        &history_query.entries_query(new).unwrap(),
+                        &history_query.construct_path_query(new).unwrap(),
                         None,
                         &mut vec![],
                         &new.drive,
@@ -463,7 +465,7 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
         };
         let verified = Drive::verify_document_history(
             &history_query,
-            &DocumentHistoryProof::V1(dishonest.clone()),
+            &dishonest.to_bytes().unwrap(),
             document_type,
             new,
         );
@@ -476,7 +478,7 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
             );
         let (legacy_root, _) = grovedb::GroveDb::verify_query_with_options(
             &downgraded.metadata_proof,
-            &history_query.metadata_query(new).unwrap(),
+            &history_query.metadata_path_query(new).unwrap(),
             grovedb::VerifyOptions {
                 absence_proofs_for_non_existing_searched_keys: false,
                 verify_proof_succinctness: true,
@@ -491,14 +493,16 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
         );
         let error = Drive::verify_document_history(
             &history_query,
-            &DocumentHistoryProof::V1(downgraded.clone()),
+            &downgraded.to_bytes().unwrap(),
             document_type,
             new,
         )
         .expect_err("document history rejects legacy metadata envelopes");
         assert!(matches!(
             error,
-            Error::Query(crate::error::query::QuerySyntaxError::Unsupported(_))
+            Error::Proof(
+                crate::error::proof::ProofError::UnsupportedGroveDBProofEnvelopeVersion { .. }
+            )
         ));
 
         assert!(fetched.is_err() && proved.is_err() && verified.is_err(), "revision 3 exists in retained [1,3], so an empty ordinal page must be rejected: fetch rejected={}, prove rejected={}, verify rejected={}", fetched.is_err(), proved.is_err(), verified.is_err());

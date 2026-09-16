@@ -1,20 +1,21 @@
-use crate::drive::document::history::{DocumentHistoryProofV1, DocumentHistoryQueryV1};
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::query::document_history_drive_query::DocumentHistoryDriveQuery;
+use crate::verify::document::DocumentHistoryProof;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
     /// Produces independent pagination and metadata proofs of the per-type
-    /// history tree from the same state.
+    /// history tree from the same state, carried as one proof envelope.
     pub(super) fn prove_document_history_v1(
         &self,
-        query: &DocumentHistoryQueryV1,
+        query: &DocumentHistoryDriveQuery,
         document_type: DocumentTypeRef,
         transaction: TransactionArg,
         version: &PlatformVersion,
-    ) -> Result<DocumentHistoryProofV1, Error> {
+    ) -> Result<Vec<u8>, Error> {
         let (_, present) = self.fetch_document_history_with_presence_v1(
             query,
             document_type,
@@ -22,7 +23,7 @@ impl Drive {
             version,
         )?;
         let metadata_proof = self.grove_get_proved_path_query(
-            &query.metadata_query(version)?,
+            &query.metadata_path_query(version)?,
             transaction,
             &mut vec![],
             &version.drive,
@@ -31,15 +32,16 @@ impl Drive {
             None
         } else {
             Some(self.grove_get_proved_path_query(
-                &query.entries_query(version)?,
+                &query.construct_path_query(version)?,
                 transaction,
                 &mut vec![],
                 &version.drive,
             )?)
         };
-        Ok(DocumentHistoryProofV1 {
-            entries_proof,
+        DocumentHistoryProof {
             metadata_proof,
-        })
+            entries_proof,
+        }
+        .to_bytes()
     }
 }

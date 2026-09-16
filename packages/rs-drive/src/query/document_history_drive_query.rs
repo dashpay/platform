@@ -1,24 +1,44 @@
-//! The history query and its validation and path queries.
+//! A page of a document's retained revisions with its lifecycle, read from
+//! whichever history layout the protocol version stores.
 
-use super::{
-    corrupt, invalid, DocumentHistoryEntry, DocumentHistoryFilter, DocumentHistoryLifecycle,
-    DocumentHistoryState,
-};
 use crate::drive::document::paths::{contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY};
 use crate::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::verify::RootHash;
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::document::Document;
-use dpp::document::DocumentV0Getters;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::version::PlatformVersion;
+#[cfg(feature = "server")]
+use grovedb::TransactionArg;
 use grovedb::{Element, PathQuery, Query, SizedQuery};
+use std::collections::BTreeMap;
 
-/// Query for composite-keyed document history.
+/// Exactly one lower bound or revision position for a history page.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DocumentHistoryQueryV1 {
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum DocumentHistoryFilter {
+    /// Inclusive time bound for the first page.
+    StartAtTime(u64),
+    /// Exclusive composite cursor for subsequent pages.
+    StartAfter {
+        /// Timestamp of the last entry received.
+        time_ms: u64,
+        /// History sequence of the last entry received.
+        revision: u64,
+    },
+    /// Inclusive retained revision position.
+    StartAtRevision(u64),
+    /// One retained revision position.
+    Revision(u64),
+}
+
+/// A page of one historical document's retained revisions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentHistoryDriveQuery {
     /// Contract identifier.
     pub contract_id: [u8; 32],
     /// Document type name.
@@ -31,7 +51,80 @@ pub struct DocumentHistoryQueryV1 {
     pub limit: Option<u16>,
 }
 
-impl DocumentHistoryQueryV1 {
+/// Lifecycle states supported by live-pointer storage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentHistoryState {
+    /// A current document is present.
+    Active,
+    /// Neither a current document nor a retained history exists.
+    Absent,
+}
+
+/// Authenticated history metadata independent of the requested page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentHistoryLifecycle {
+    /// Current lifecycle state.
+    pub state: DocumentHistoryState,
+    /// Count authenticated by the per-document count-tree element.
+    pub remaining_revisions: u64,
+}
+
+/// One retained edit, including its complete pagination cursor.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocumentHistoryEntry {
+    /// Block timestamp in milliseconds.
+    pub time_ms: u64,
+    /// History sequence, equal to the document revision when present.
+    pub revision: u64,
+    /// Document body at this revision.
+    pub document: Document,
+}
+
+/// The result of a history query: a page and the lifecycle of the whole
+/// history.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocumentHistoryDriveQueryExecutionResult {
+    /// Ordered retained revisions in this page.
+    pub entries: Vec<DocumentHistoryEntry>,
+    /// Metadata for the whole history, including empty pages. Absent when
+    /// the page was read from the layout that predates protocol version 14,
+    /// which keeps no lifecycle record.
+    pub lifecycle: Option<DocumentHistoryLifecycle>,
+}
+
+impl DocumentHistoryDriveQueryExecutionResult {
+    /// Builds a page from revisions read from the per-document history
+    /// subtree used before protocol version 14, keyed by block time.
+    pub(crate) fn from_legacy(revisions: BTreeMap<u64, Document>) -> Result<Self, Error> {
+        let entries = revisions
+            .into_iter()
+            .map(|(time_ms, document)| {
+                let revision = document
+                    .revision()
+                    .ok_or_else(|| corrupt("historical document has no revision"))?;
+                Ok(DocumentHistoryEntry {
+                    time_ms,
+                    revision,
+                    document,
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(Self {
+            entries,
+            lifecycle: None,
+        })
+    }
+}
+
+pub(crate) fn invalid(message: &str) -> Error {
+    Error::Query(QuerySyntaxError::Unsupported(message.to_owned()))
+}
+
+pub(crate) fn corrupt(message: &'static str) -> Error {
+    Error::Drive(DriveError::CorruptedDocumentPath(message))
+}
+
+impl DocumentHistoryDriveQuery {
     /// Validates the filter without accessing state.
     pub fn validate(&self) -> Result<(), Error> {
         if !(1..=MAX_DOCUMENT_HISTORY_FETCH_LIMIT)
@@ -64,8 +157,11 @@ impl DocumentHistoryQueryV1 {
 
     /// The path query of the page's entries in the layout the protocol
     /// version stores.
-    pub fn entries_query(&self, version: &PlatformVersion) -> Result<PathQuery, Error> {
-        match version
+    pub fn construct_path_query(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        match platform_version
             .drive
             .methods
             .document
@@ -81,12 +177,12 @@ impl DocumentHistoryQueryV1 {
                     start_at_ms,
                     limit,
                     None,
-                    version,
+                    platform_version,
                 )
             }
             1 => Drive::fetch_document_history_query_v1(self),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "entries_query".to_string(),
+                method: "DocumentHistoryDriveQuery::construct_path_query".to_string(),
                 known_versions: vec![0, 1],
                 received: version,
             })),
@@ -109,7 +205,7 @@ impl DocumentHistoryQueryV1 {
     }
 
     /// Queries the pointer, lifecycle reservation, and raw history tree separately.
-    pub fn metadata_query(&self, version: &PlatformVersion) -> Result<PathQuery, Error> {
+    pub fn metadata_path_query(&self, version: &PlatformVersion) -> Result<PathQuery, Error> {
         self.validate()?;
         let queries = [0, 1, DOCUMENT_HISTORY_TREE_KEY].map(|branch| {
             let mut path =
@@ -255,5 +351,39 @@ impl DocumentHistoryQueryV1 {
                 })
             })
             .collect()
+    }
+
+    /// Fetches the page in the layout the protocol version stores.
+    #[cfg(feature = "server")]
+    pub fn execute_no_proof(
+        &self,
+        drive: &Drive,
+        document_type: DocumentTypeRef,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        drive.fetch_document_history(self, document_type, transaction, platform_version)
+    }
+
+    /// Proves the page in the layout the protocol version stores.
+    #[cfg(feature = "server")]
+    pub fn execute_with_proof(
+        &self,
+        drive: &Drive,
+        document_type: DocumentTypeRef,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
+        drive.prove_document_history(self, document_type, transaction, platform_version)
+    }
+
+    /// Verifies a proof produced by [`Self::execute_with_proof`].
+    pub fn verify_document_history_proof(
+        &self,
+        proof: &[u8],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, DocumentHistoryDriveQueryExecutionResult), Error> {
+        Drive::verify_document_history(self, proof, document_type, platform_version)
     }
 }

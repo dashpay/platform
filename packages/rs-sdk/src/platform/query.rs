@@ -290,7 +290,9 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
         &self,
         settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetDocumentHistoryRequest, Error> {
-        use drive::drive::document::history::{DocumentHistoryFilter, DocumentHistoryQueryV1};
+        use drive::query::document_history_drive_query::{
+            DocumentHistoryDriveQuery, DocumentHistoryFilter,
+        };
         use proto::get_document_history_request::{
             get_document_history_request_v0::{Cursor, Filter},
             GetDocumentHistoryRequestV0,
@@ -308,14 +310,14 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
             .map(u16::try_from)
             .transpose()
             .map_err(|_| Error::Generic("history limit out of bounds".to_owned()))?;
-        DocumentHistoryQueryV1 {
+        DocumentHistoryDriveQuery {
             contract_id: self.data_contract_id.to_buffer(),
             document_type_name: self.document_type_name.clone(),
             document_id: self.document_id.to_buffer(),
             filter: self.filter.clone(),
             limit,
         }
-        .entries_query(settings.protocol_version)?;
+        .construct_path_query(settings.protocol_version)?;
         let filter = match self.filter {
             DocumentHistoryFilter::StartAtTime(time) => Filter::StartAtMs(time),
             DocumentHistoryFilter::StartAfter { time_ms, revision } => {
@@ -1447,7 +1449,7 @@ mod history_query_tests {
     use super::*;
     use crate::platform::QuerySettings;
     use dpp::version::PlatformVersion;
-    use drive::drive::document::history::DocumentHistoryFilter;
+    use drive::query::document_history_drive_query::DocumentHistoryFilter;
 
     #[cfg(feature = "mocks")]
     #[tokio::test]

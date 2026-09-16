@@ -15,8 +15,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::document::history::{
-    DocumentHistoryFilter, DocumentHistoryQueryV1, DocumentHistoryState,
+use drive::query::document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryFilter, DocumentHistoryState,
 };
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -52,7 +52,7 @@ impl<C> Platform<C> {
             .map(u16::try_from)
             .transpose()
             .map_err(|_| QueryError::InvalidArgument("history limit out of bounds".to_owned())));
-        let query = DocumentHistoryQueryV1 {
+        let query = DocumentHistoryDriveQuery {
             contract_id,
             document_type_name: request.document_type_name,
             document_id,
@@ -101,7 +101,7 @@ impl<C> Platform<C> {
             // signed once; from protocol version 14 that is one proof object
             // carrying both GroveDB proofs.
             let proof = self
-                .response_proof_v0(platform_state, proof.to_bytes(), GroveDBToUse::Current)?
+                .response_proof_v0(platform_state, proof, GroveDBToUse::Current)?
                 .1;
             ResponseResult::Proof(proof)
         } else {

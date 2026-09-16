@@ -193,6 +193,15 @@ pub mod vote_poll_contestant_votes_query;
 /// Vote polls by end date query
 pub mod vote_polls_by_end_date_query;
 
+/// A page of a historical document's retained revisions
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod document_history_drive_query;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult, DocumentHistoryEntry,
+    DocumentHistoryFilter, DocumentHistoryLifecycle, DocumentHistoryState,
+};
+
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Vote polls by document type query
 pub mod vote_polls_by_document_type_query;

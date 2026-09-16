@@ -3157,11 +3157,11 @@ fn test_query_historical_protocol_13() {
 #[cfg(feature = "server")]
 #[test]
 fn test_query_historical_protocol_14_uses_composite_history() {
-    use drive::drive::document::history::{
-        DocumentHistoryFilter, DocumentHistoryProof, DocumentHistoryQueryV1,
-    };
     use drive::drive::RootTree;
     use drive::grovedb::Element;
+    use drive::query::document_history_drive_query::{
+        DocumentHistoryDriveQuery, DocumentHistoryFilter,
+    };
 
     let version = PlatformVersion::get(14).unwrap();
     let (drive, contract) = setup(10, None, 73509, version);
@@ -3230,7 +3230,7 @@ fn test_query_historical_protocol_14_uses_composite_history() {
             .value
             .unwrap();
         assert!(matches!(pointer, Element::Reference(..)));
-        let query = DocumentHistoryQueryV1 {
+        let query = DocumentHistoryDriveQuery {
             contract_id: contract.id().to_buffer(),
             document_type_name: "person".into(),
             document_id: current.id().to_buffer(),
@@ -3243,7 +3243,6 @@ fn test_query_historical_protocol_14_uses_composite_history() {
         let proof = drive
             .prove_document_history(&query, document_type, None, version)
             .unwrap();
-        assert!(matches!(proof, DocumentHistoryProof::V1(_)));
         assert_eq!(page.lifecycle.as_ref().unwrap().remaining_revisions, 4);
         assert_eq!(
             page.entries

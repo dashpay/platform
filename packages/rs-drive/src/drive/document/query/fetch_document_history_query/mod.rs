@@ -1,19 +1,17 @@
 mod v0;
 mod v1;
 
-use crate::drive::document::history::{invalid, DocumentHistoryFilter, DocumentHistoryQueryV1};
 use crate::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::document_history_drive_query::invalid;
 use dpp::version::PlatformVersion;
 use grovedb::PathQuery;
 
 impl Drive {
-    /// Creates a path query for historical entries of a specified document.
-    ///
-    /// Filtering by revision or by cursor is expressed through
-    /// [`DocumentHistoryQueryV1::entries_query`].
+    /// Creates a path query for historical entries of a specified document
+    /// in the layout that predates protocol version 14.
     #[allow(clippy::too_many_arguments)]
     pub fn fetch_document_history_query(
         contract_id: [u8; 32],
@@ -39,22 +37,13 @@ impl Drive {
                 limit,
                 offset,
             ),
-            1 => {
-                // The per-type history tree pages by a cursor, not by a
-                // position within the time range.
-                if offset.is_some() {
-                    return Err(invalid(
-                        "offset pagination is not supported by the protocol version 14 history layout",
-                    ));
-                }
-                Self::fetch_document_history_query_v1(&DocumentHistoryQueryV1 {
-                    contract_id,
-                    document_type_name: document_type_name.to_string(),
-                    document_id,
-                    filter: DocumentHistoryFilter::StartAtTime(start_at_ms),
-                    limit,
-                })
-            }
+            // The layout changed at protocol version 14: the page query is
+            // built by `DocumentHistoryDriveQuery::construct_path_query`,
+            // which carries the revision and cursor filters this signature
+            // cannot express.
+            1 => Err(invalid(
+                "the document history layout changed at protocol version 14; use the history query",
+            )),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_document_history_query".to_string(),
                 known_versions: vec![0, 1],

@@ -1,8 +1,10 @@
-use crate::drive::document::history::{DocumentHistoryFilter, DocumentHistoryQueryV1};
 use crate::drive::document::paths::document_history_path;
 use crate::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::query::document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryFilter,
+};
 use crate::util::common::encode::encode_u64;
 use grovedb::{PathQuery, Query, SizedQuery};
 
@@ -10,7 +12,7 @@ impl Drive {
     /// The leaf-only query over the per-type history tree required for
     /// authenticated count-offset pagination.
     pub(crate) fn fetch_document_history_query_v1(
-        query: &DocumentHistoryQueryV1,
+        query: &DocumentHistoryDriveQuery,
     ) -> Result<PathQuery, Error> {
         query.validate()?;
         let mut grove_query = Query::new();

@@ -1,6 +1,8 @@
-use crate::drive::document::history::{invalid, DocumentHistoryQueryV1, DocumentHistoryV1};
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::query::document_history_drive_query::{
+    invalid, DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
+};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
@@ -11,11 +13,11 @@ impl Drive {
     /// current lifecycle metadata.
     pub(super) fn fetch_document_history_v1(
         &self,
-        query: &DocumentHistoryQueryV1,
+        query: &DocumentHistoryDriveQuery,
         document_type: DocumentTypeRef,
         transaction: TransactionArg,
         version: &PlatformVersion,
-    ) -> Result<DocumentHistoryV1, Error> {
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
         self.fetch_document_history_with_presence_v1(query, document_type, transaction, version)
             .map(|(history, _)| history)
     }
@@ -24,16 +26,16 @@ impl Drive {
     /// decides whether a proof of the page carries an entries proof.
     pub(crate) fn fetch_document_history_with_presence_v1(
         &self,
-        query: &DocumentHistoryQueryV1,
+        query: &DocumentHistoryDriveQuery,
         document_type: DocumentTypeRef,
         transaction: TransactionArg,
         version: &PlatformVersion,
-    ) -> Result<(DocumentHistoryV1, bool), Error> {
+    ) -> Result<(DocumentHistoryDriveQueryExecutionResult, bool), Error> {
         if !document_type.documents_keep_history() {
             return Err(invalid("document type does not keep history"));
         }
-        let entries_query = query.entries_query(version)?;
-        let metadata_query = query.metadata_query(version)?;
+        let entries_query = query.construct_path_query(version)?;
+        let metadata_query = query.metadata_path_query(version)?;
         let (metadata, _) = self.grove_get_raw_path_query(
             &metadata_query,
             transaction,
@@ -79,7 +81,7 @@ impl Drive {
             vec![]
         };
         Ok((
-            DocumentHistoryV1 {
+            DocumentHistoryDriveQueryExecutionResult {
                 entries,
                 lifecycle: Some(lifecycle),
             },
