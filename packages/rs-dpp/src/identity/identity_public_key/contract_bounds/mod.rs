@@ -6,6 +6,12 @@ use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use serde::{Deserialize, Serialize};
@@ -120,6 +126,32 @@ impl ContractBounds {
                 ..
             } => Some(document_type),
             // MultipleContractsOfSameOwner { .. } => None,
+        }
+    }
+
+    /// Whether a batch member is inside these bounds. Consensus uses this to authorize a batch
+    /// signed by a contract-bound AUTHENTICATION key. Token operations are contract-wide, so a
+    /// document-type bound never covers them.
+    #[cfg(feature = "state-transitions")]
+    pub fn allows_batched_transition(&self, transition: BatchedTransitionRef<'_>) -> bool {
+        match (self, transition) {
+            (SingleContract { id }, BatchedTransitionRef::Document(document)) => {
+                document.data_contract_id() == *id
+            }
+            (SingleContract { id }, BatchedTransitionRef::Token(token)) => {
+                token.data_contract_id() == *id
+            }
+            (
+                SingleContractDocumentType {
+                    id,
+                    document_type_name,
+                },
+                BatchedTransitionRef::Document(document),
+            ) => {
+                document.data_contract_id() == *id
+                    && document.document_type_name() == document_type_name.as_str()
+            }
+            (SingleContractDocumentType { .. }, BatchedTransitionRef::Token(_)) => false,
         }
     }
     //
@@ -341,5 +373,100 @@ mod tests {
         let obj = bounds.to_object().expect("to_object should succeed");
         let restored = ContractBounds::from_object(obj).expect("from_object should succeed");
         assert_eq!(bounds, restored);
+    }
+}
+
+#[cfg(all(test, feature = "state-transitions"))]
+mod batched_transition_tests {
+    use super::ContractBounds;
+    use crate::identifier::Identifier;
+    use crate::state_transition::batch_transition::batched_transition::{
+        document_create_transition::DocumentCreateTransitionV0,
+        document_delete_transition::DocumentDeleteTransitionV0,
+        document_index_only_delete_transition::DocumentIndexOnlyDeleteTransitionV0,
+        document_purchase_transition::DocumentPurchaseTransitionV0,
+        document_replace_transition::DocumentReplaceTransitionV0,
+        document_transfer_transition::DocumentTransferTransitionV0,
+        document_update_price_transition::DocumentUpdatePriceTransitionV0,
+        token_transfer_transition::TokenTransferTransitionV0, BatchedTransitionRef,
+        DocumentTransition, TokenTransition,
+    };
+
+    // Default transitions target contract [0; 32] and the empty document type name.
+    fn documents() -> Vec<DocumentTransition> {
+        vec![
+            DocumentTransition::Create(DocumentCreateTransitionV0::default().into()),
+            DocumentTransition::Replace(DocumentReplaceTransitionV0::default().into()),
+            DocumentTransition::Delete(DocumentDeleteTransitionV0::default().into()),
+            DocumentTransition::IndexOnlyDelete(
+                DocumentIndexOnlyDeleteTransitionV0::default().into(),
+            ),
+            DocumentTransition::Transfer(DocumentTransferTransitionV0::default().into()),
+            DocumentTransition::UpdatePrice(DocumentUpdatePriceTransitionV0::default().into()),
+            DocumentTransition::Purchase(DocumentPurchaseTransitionV0::default().into()),
+        ]
+    }
+
+    fn tokens() -> Vec<TokenTransition> {
+        vec![
+            TokenTransition::Burn(Default::default()),
+            TokenTransition::Mint(Default::default()),
+            TokenTransition::Transfer(TokenTransferTransitionV0::default().into()),
+            TokenTransition::Freeze(Default::default()),
+            TokenTransition::Unfreeze(Default::default()),
+            TokenTransition::DestroyFrozenFunds(Default::default()),
+            TokenTransition::Claim(Default::default()),
+            TokenTransition::EmergencyAction(Default::default()),
+            TokenTransition::ConfigUpdate(Default::default()),
+            TokenTransition::DirectPurchase(Default::default()),
+            TokenTransition::SetPriceForDirectPurchase(Default::default()),
+        ]
+    }
+
+    #[test]
+    fn single_contract_bounds_cover_every_operation_on_that_contract_only() {
+        let bounds = ContractBounds::SingleContract {
+            id: Identifier::from([0; 32]),
+        };
+        let foreign = ContractBounds::SingleContract {
+            id: Identifier::from([1; 32]),
+        };
+        for document in documents() {
+            let member = BatchedTransitionRef::Document(&document);
+            assert!(bounds.allows_batched_transition(member), "{document:?}");
+            assert!(!foreign.allows_batched_transition(member), "{document:?}");
+        }
+        for token in tokens() {
+            let member = BatchedTransitionRef::Token(&token);
+            assert!(bounds.allows_batched_transition(member), "{token:?}");
+            assert!(!foreign.allows_batched_transition(member), "{token:?}");
+        }
+    }
+
+    #[test]
+    fn document_type_bounds_cover_that_type_only_and_never_tokens() {
+        let bounds = ContractBounds::SingleContractDocumentType {
+            id: Identifier::from([0; 32]),
+            document_type_name: String::new(),
+        };
+        let other_type = ContractBounds::SingleContractDocumentType {
+            id: Identifier::from([0; 32]),
+            document_type_name: "other".to_string(),
+        };
+        for document in documents() {
+            let member = BatchedTransitionRef::Document(&document);
+            assert!(bounds.allows_batched_transition(member), "{document:?}");
+            assert!(
+                !other_type.allows_batched_transition(member),
+                "{document:?}"
+            );
+        }
+        for token in tokens() {
+            let member = BatchedTransitionRef::Token(&token);
+            assert!(
+                !bounds.allows_batched_transition(member),
+                "token operations are contract-wide: {token:?}"
+            );
+        }
     }
 }

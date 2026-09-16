@@ -1,3 +1,5 @@
+use super::signature::ContractBoundedKeyNonBatchErrorWasm;
+use super::signature::ContractBoundedKeyOutOfBoundsErrorWasm;
 use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm,
     InvalidSignaturePublicKeyPurposeErrorWasm, JsonSchemaErrorWasm,
@@ -1051,6 +1053,12 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         SignatureError::BasicBLSError(err) => BasicBLSErrorWasm::from(err).into(),
         SignatureError::InvalidSignaturePublicKeyPurposeError(err) => {
             InvalidSignaturePublicKeyPurposeErrorWasm::from(err).into()
+        }
+        SignatureError::ContractBoundedKeyNonBatchError(err) => {
+            ContractBoundedKeyNonBatchErrorWasm::from(err).into()
+        }
+        SignatureError::ContractBoundedKeyOutOfBoundsError(err) => {
+            ContractBoundedKeyOutOfBoundsErrorWasm::from(err).into()
         }
         SignatureError::UncompressedPublicKeyNotAllowedError(err) => {
             UncompressedPublicKeyNotAllowedErrorWasm::from(err).into()

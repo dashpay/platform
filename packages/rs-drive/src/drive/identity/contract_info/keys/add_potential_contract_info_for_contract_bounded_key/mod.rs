@@ -10,6 +10,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 mod v0;
+mod v1;
 
 impl Drive {
     /// Adds potential contract information for a contract-bounded key.
@@ -62,9 +63,18 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
+            1 => self.add_potential_contract_info_for_contract_bounded_key_v1(
+                identity_id,
+                identity_key,
+                epoch,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_potential_contract_info_for_contract_bounded_key".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

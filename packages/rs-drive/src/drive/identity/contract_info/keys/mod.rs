@@ -9,12 +9,93 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::{KeyID, Purpose};
-use grovedb::TransactionArg;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::{GroveOp, KeyInfoPath, QualifiedGroveDbOp};
+use grovedb::reference_path::ReferencePathType;
+use grovedb::{Element, TransactionArg};
+use integer_encoding::VarInt;
 use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod add_potential_contract_info_for_contract_bounded_key;
 mod refresh_potential_contract_info_key_references;
+
+/// Coalesces the current-key alias writes of contract-info purpose subtrees in one batch.
+///
+/// Every contract-bound authentication key covering a contract (or a contract document type)
+/// writes the alias at the empty key of the AUTHENTICATION purpose subtree, and disabling such a
+/// key refreshes it. An identity update can therefore queue several operations for one slot: two
+/// registered keys, or a registration and a revocation built by separate operation builders.
+/// GroveDB rejects two operations on one slot under batching consistency verification, and would
+/// otherwise apply whichever came last. Keep exactly one per slot: an insertion beats a refresh
+/// (the insertion rewrites the element and its hash), the insertion naming the highest key id wins
+/// so the newest key is current regardless of input order, and duplicate refreshes collapse.
+pub(crate) fn coalesce_current_key_alias_operations(operations: &mut Vec<LowLevelDriveOperation>) {
+    let mut winners: HashMap<&KeyInfoPath, (usize, Option<KeyID>)> = HashMap::new();
+    let mut alias_indices = Vec::new();
+    for (index, operation) in operations.iter().enumerate() {
+        let Some((path, key_id)) = current_key_alias_write(operation) else {
+            continue;
+        };
+        alias_indices.push(index);
+        let replaces = match winners.get(path) {
+            None => true,
+            Some((_, current)) => match (current, key_id) {
+                (None, Some(_)) => true,
+                (Some(current_id), Some(new_id)) => new_id > *current_id,
+                (Some(_), None) | (None, None) => false,
+            },
+        };
+        if replaces {
+            winners.insert(path, (index, key_id));
+        }
+    }
+    if alias_indices.len() == winners.len() {
+        return;
+    }
+    let kept: HashSet<usize> = winners.into_values().map(|(index, _)| index).collect();
+    let dropped: HashSet<usize> = alias_indices
+        .into_iter()
+        .filter(|index| !kept.contains(index))
+        .collect();
+    let mut index = 0;
+    operations.retain(|_| {
+        let keep = !dropped.contains(&index);
+        index += 1;
+        keep
+    });
+}
+
+/// Recognizes a current-key alias write: a sibling reference inserted at, or refreshed at, the
+/// empty key. Returns the subtree path and, for an insertion, the key id the alias names.
+fn current_key_alias_write(
+    operation: &LowLevelDriveOperation,
+) -> Option<(&KeyInfoPath, Option<KeyID>)> {
+    let LowLevelDriveOperation::GroveOperation(QualifiedGroveDbOp {
+        path,
+        key: Some(KeyInfo::KnownKey(key)),
+        op,
+    }) = operation
+    else {
+        return None;
+    };
+    if !key.is_empty() {
+        return None;
+    }
+    match op {
+        GroveOp::InsertOrReplace {
+            element: Element::Reference(ReferencePathType::SiblingReference(sibling), _, _),
+        }
+        | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences {
+            element: Element::Reference(ReferencePathType::SiblingReference(sibling), _, _),
+        } => KeyID::decode_var(sibling).map(|(key_id, _)| (path, Some(key_id))),
+        GroveOp::RefreshReference {
+            reference_path_type: ReferencePathType::SiblingReference(_),
+            ..
+        } => Some((path, None)),
+        _ => None,
+    }
+}
 
 pub enum IdentityDataContractKeyApplyInfo {
     /// The root_id is either a contract id or an owner id
