@@ -493,6 +493,193 @@ mod tests {
         );
     }
 
+    // A contested index's parameters (field matches, resolution) are part of
+    // the parsed `Index` value, so the same name-keyed comparison freezes
+    // them on update: a later contract update cannot re-parameterize a
+    // contest, and so cannot rewrite how an existing native poll resolves.
+    // The `description` is dropped at parse time and has no effect on the
+    // contest, so a description-only edit compares equal and is accepted.
+    mod contested_parameters {
+        use super::*;
+
+        /// An immutable document type with one unique index `ab`; `contested`
+        /// is the index's declaration, or `None` for a plain unique index.
+        fn contested_doc_type(
+            contested: Option<Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut index = platform_value!({
+                "name": "ab",
+                "properties": [{"a": "asc"}, {"b": "asc"}],
+                "unique": true,
+            });
+            if let Some(contested) = contested {
+                index
+                    .insert("contested".to_string(), contested)
+                    .expect("index is a map");
+            }
+            let schema = platform_value!({
+                "type": "object",
+                "documentsMutable": false,
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "b": {"type": "string", "position": 1, "maxLength": 60_u32},
+                },
+                "indices": [index],
+                "required": ["a", "b"],
+                "additionalProperties": false,
+            });
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+            DocumentType::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                true,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        fn contested(field: &str, pattern: &str, description: &str) -> Value {
+            platform_value!({
+                "fieldMatches": [{"field": field, "regexPattern": pattern}],
+                "resolution": 0,
+                "description": description
+            })
+        }
+
+        fn base_contested() -> Value {
+            contested("b", "^[a-z]{3,19}$", "short values are contested")
+        }
+
+        fn assert_changed_index(old: &DocumentType, new: &DocumentType) {
+            let platform_version = PlatformVersion::latest();
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+                )] if e.index_path() == "changed index 'ab'"
+            );
+        }
+
+        fn assert_accepted(old: &DocumentType, new: &DocumentType) {
+            let platform_version = PlatformVersion::latest();
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+
+            assert!(
+                result.is_valid(),
+                "expected the update to be accepted, got {:?}",
+                result.errors
+            );
+        }
+
+        #[test]
+        fn should_reject_changed_field_match_pattern() {
+            let platform_version = PlatformVersion::latest();
+
+            let old = contested_doc_type(Some(base_contested()), platform_version);
+            let new = contested_doc_type(
+                Some(contested(
+                    "b",
+                    "^[a-z]{3,10}$",
+                    "short values are contested",
+                )),
+                platform_version,
+            );
+
+            assert_changed_index(&old, &new);
+        }
+
+        #[test]
+        fn should_reject_added_field_match() {
+            let platform_version = PlatformVersion::latest();
+
+            let old = contested_doc_type(Some(base_contested()), platform_version);
+            let new = contested_doc_type(
+                Some(platform_value!({
+                    "fieldMatches": [
+                        {"field": "a", "regexPattern": "^[a-z]+$"},
+                        {"field": "b", "regexPattern": "^[a-z]{3,19}$"}
+                    ],
+                    "resolution": 0,
+                    "description": "short values are contested"
+                })),
+                platform_version,
+            );
+
+            assert_changed_index(&old, &new);
+        }
+
+        #[test]
+        fn should_reject_changed_matched_field() {
+            let platform_version = PlatformVersion::latest();
+
+            let old = contested_doc_type(Some(base_contested()), platform_version);
+            let new = contested_doc_type(
+                Some(contested(
+                    "a",
+                    "^[a-z]{3,19}$",
+                    "short values are contested",
+                )),
+                platform_version,
+            );
+
+            assert_changed_index(&old, &new);
+        }
+
+        #[test]
+        fn should_reject_removed_contested_declaration() {
+            let platform_version = PlatformVersion::latest();
+
+            let old = contested_doc_type(Some(base_contested()), platform_version);
+            let new = contested_doc_type(None, platform_version);
+
+            assert_changed_index(&old, &new);
+        }
+
+        #[test]
+        fn should_pass_when_contested_declaration_is_unchanged() {
+            let platform_version = PlatformVersion::latest();
+
+            let old = contested_doc_type(Some(base_contested()), platform_version);
+            let new = contested_doc_type(Some(base_contested()), platform_version);
+
+            assert_accepted(&old, &new);
+        }
+
+        #[test]
+        fn should_pass_when_only_the_description_changes() {
+            let platform_version = PlatformVersion::latest();
+
+            let old = contested_doc_type(Some(base_contested()), platform_version);
+            let new = contested_doc_type(
+                Some(contested(
+                    "b",
+                    "^[a-z]{3,19}$",
+                    "a reworded description with no effect on the contest",
+                )),
+                platform_version,
+            );
+
+            assert_accepted(&old, &new);
+        }
+    }
+
     // Ranked aggregate indexes (protocol v14 grammar) are covered by the
     // same name-keyed definition comparison as every other index flag:
     // toggling a ranking axis after creation changes the on-disk tree
