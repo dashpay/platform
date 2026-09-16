@@ -90,7 +90,7 @@ The flag only affects the all-null case. A document with *some* null values gets
 
 When set, this index identifies a **scarce, contested resource** (the canonical example is a DPNS name like `dash`). Documents trying to register the same value under a contested index don't auto-fail with a uniqueness error — they enter a masternode-vote resolution where each contender's claim is held until voting concludes. Contested indexes must also be `unique: true`; the parser rejects the combination otherwise.
 
-Out of scope for this chapter; see DPNS / contested-resource docs for the full lifecycle.
+The declaration, the parameters a contract may give it, the rule scopes around a contest and the native award are the subject of [Contested Resources](./contested-resources.md).
 
 ### `countable: IndexCountability`
 

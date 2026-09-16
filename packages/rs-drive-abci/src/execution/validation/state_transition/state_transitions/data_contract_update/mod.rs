@@ -806,7 +806,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(5.0)); // a contested create and a contested update each require a full balance ahead of the fee
 
             let data_contract = contested_fixture_with(&identity, |_| {}, platform_version);
 
@@ -822,6 +822,11 @@ mod tests {
             .await
             .expect("expected to create the contract create transition");
 
+            // The create transition derives the contract id from the owner and the
+            // nonce, so the update must name the id it registered.
+            let registered_contract_id =
+                DataContract::generate_data_contract_id_v0(identity.id(), 1);
+
             let result = process(
                 &platform,
                 create_transition
@@ -836,6 +841,7 @@ mod tests {
             );
 
             let mut updated_contract = contested_fixture_with(&identity, edit, platform_version);
+            updated_contract.set_id(registered_contract_id);
             updated_contract.set_version(2);
 
             let update_transition = DataContractUpdateTransition::new_from_data_contract(
