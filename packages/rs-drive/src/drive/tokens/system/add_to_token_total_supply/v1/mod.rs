@@ -9,11 +9,15 @@ use crate::util::grove_operations::DirectQueryType;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::Element::SumItem;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+
+/// The largest supply a token can hold: its leaf is a sum item.
+const MAX_TOKEN_SUPPLY: TokenAmount = i64::MAX as TokenAmount;
 
 impl Drive {
     /// Generation 1: the same supply write as v0, plus the issuer's lifecycle rollup moved by
@@ -107,8 +111,6 @@ impl Drive {
 
         // If we only estimate, add estimation costs
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            // Add your estimation logic similar to add_to_system_credits_operations_v1
-            // For example:
             Self::add_estimation_costs_for_token_total_supply(
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
@@ -128,24 +130,39 @@ impl Drive {
 
         let added_amount =
             if let Some(total_token_supply_in_platform) = total_token_supply_in_platform {
-                let new_total = if allow_saturation {
-                    (total_token_supply_in_platform as i64).saturating_add(amount as i64)
+                // The supply leaf is a sum item, so the ceiling is `i64::MAX`. The arithmetic
+                // stays unsigned: an amount above the ceiling must not be cast to `i64`,
+                // where it would turn negative and either write a negative supply or wrap
+                // the delta. Above the headroom the write is refused, or clamped to the
+                // headroom when saturation is allowed; within it the result is exactly v0's.
+                if total_token_supply_in_platform > MAX_TOKEN_SUPPLY {
+                    return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                        "total supply {} of token {} is above the sum item ceiling",
+                        total_token_supply_in_platform,
+                        Identifier::from(token_id)
+                    ))));
+                }
+                let headroom = MAX_TOKEN_SUPPLY - total_token_supply_in_platform;
+                let added_amount = if amount <= headroom {
+                    amount
+                } else if allow_saturation {
+                    headroom
                 } else {
-                    (total_token_supply_in_platform as i64)
-                        .checked_add(amount as i64)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "trying to add an amount that would overflow total supply",
-                        )))?
+                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "trying to add an amount that would overflow total supply",
+                    )));
                 };
+                // Fits: total plus added is at most the ceiling.
+                let new_total = total_token_supply_in_platform + added_amount;
                 let replace_op = QualifiedGroveDbOp::replace_op(
                     path_holding_total_token_supply_vec,
                     token_id.to_vec(),
-                    SumItem(new_total, None),
+                    SumItem(new_total as i64, None),
                 );
                 drive_operations.push(GroveOperation(replace_op));
-                new_total as u64 - total_token_supply_in_platform
+                added_amount
             } else if allow_first_mint {
-                if amount > i64::MAX as u64 {
+                if amount > MAX_TOKEN_SUPPLY {
                     return Err(Error::Drive(DriveError::CriticalCorruptedState(
                         "amount is over max allowed in Sum Item (i64::Max)",
                     )));
@@ -331,6 +348,92 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(rollup(&drive, contract_id), (i64::MAX as u128) - 10);
+    }
+
+    #[test]
+    fn should_reject_an_amount_above_the_sum_item_ceiling_without_saturation() {
+        // v0 cast the amount to i64 before adding, which turned an amount above i64::MAX
+        // negative; the unsigned arithmetic refuses it and leaves both the leaf and the
+        // rollup where they were.
+        let (drive, contract_id, token_id) = drive_with_token();
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+
+        drive
+            .add_to_token_total_supply(
+                token_id,
+                1_000,
+                false,
+                false,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected to seed supply");
+        let result = drive.add_to_token_total_supply(
+            token_id,
+            (i64::MAX as u64) + 1,
+            false,
+            false,
+            true,
+            &block_info,
+            None,
+            platform_version,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+        ));
+        assert_eq!(
+            drive
+                .fetch_token_total_supply(token_id, None, platform_version)
+                .expect("expected to fetch supply"),
+            Some(1_000)
+        );
+        assert_eq!(rollup(&drive, contract_id), 1_000);
+    }
+
+    #[test]
+    fn should_clamp_an_amount_above_the_sum_item_ceiling_to_the_headroom_with_saturation() {
+        let (drive, contract_id, token_id) = drive_with_token();
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+
+        drive
+            .add_to_token_total_supply(
+                token_id,
+                1_000,
+                false,
+                false,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected to seed supply");
+        let (_, added) = drive
+            .add_to_token_total_supply(
+                token_id,
+                u64::MAX,
+                false,
+                true,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected saturation to succeed");
+
+        assert_eq!(added, (i64::MAX as u64) - 1_000);
+        assert_eq!(
+            drive
+                .fetch_token_total_supply(token_id, None, platform_version)
+                .expect("expected to fetch supply"),
+            Some(i64::MAX as u64)
+        );
+        assert_eq!(rollup(&drive, contract_id), i64::MAX as u128);
     }
 
     #[test]

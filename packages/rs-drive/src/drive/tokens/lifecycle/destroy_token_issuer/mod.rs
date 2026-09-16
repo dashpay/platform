@@ -17,6 +17,12 @@ impl Drive {
     /// token. A contract that issues no tokens gets a wiped record with a zero rollup, so its
     /// destruction is recorded the same way. Destroying an issuer twice is an error.
     ///
+    /// This is the storage primitive only. No state transition and no block event calls it:
+    /// the governance outcome that applies a wipe arrives with the token path validation,
+    /// the query and proof binding and the bounded cleanup that make a destroyed issuer's
+    /// tokens unusable, so on a network at this version no issuer is destroyed until every
+    /// path honours the record.
+    ///
     /// # Parameters
     ///
     /// * `contract_id` - The issuer to destroy.
