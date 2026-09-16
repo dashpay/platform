@@ -386,6 +386,12 @@ const PERSISTENT_KEYS: &[KeySpec] = &[
         doc: "documents live only in their indexes, default false",
     },
     KeySpec {
+        name: "requires",
+        value: ValueShape::StrList,
+        required: false,
+        doc: "system properties every document carries, such as `$createdAt`; a time-range index on a system timestamp needs it here",
+    },
+    KeySpec {
         name: "store",
         value: ValueShape::Choice(&STORE),
         required: false,
@@ -429,6 +435,12 @@ const SINGLETON_KEYS: &[KeySpec] = &[
         value: ValueShape::Choice(&KEY_REQUIREMENT),
         required: false,
         doc: "identity decryption bounded key requirement, default none",
+    },
+    KeySpec {
+        name: "requires",
+        value: ValueShape::StrList,
+        required: false,
+        doc: "system properties the record carries, such as `$updatedAt`",
     },
     KeySpec {
         name: "store",
@@ -1073,9 +1085,10 @@ fn check_value(
 mod tests {
     use super::*;
 
-    /// The rows of the book table, kept literally so a table edit without a
-    /// grammar edit (or the reverse) fails here.
-    const BOOK_TABLE: &[(&str, &[&str])] = &[
+    /// A snapshot of the grammar, attribute by attribute, so an unintended
+    /// option change fails here. The book chapter's table is checked against
+    /// `ATTRIBUTES` by the `book_table` integration test.
+    const GRAMMAR_SNAPSHOT: &[(&str, &[&str])] = &[
         (
             "persistent",
             &[
@@ -1100,6 +1113,7 @@ mod tests {
                 "average",
                 "range_average",
                 "index_only",
+                "requires",
                 "store",
             ],
         ),
@@ -1112,6 +1126,7 @@ mod tests {
                 "security_level",
                 "encryption_key",
                 "decryption_key",
+                "requires",
                 "store",
             ],
         ),
@@ -1183,9 +1198,9 @@ mod tests {
     }
 
     #[test]
-    fn should_contain_every_attribute_and_option_of_the_book_table() {
-        assert_eq!(ATTRIBUTES.len(), BOOK_TABLE.len());
-        for (name, options) in BOOK_TABLE {
+    fn should_match_the_grammar_snapshot() {
+        assert_eq!(ATTRIBUTES.len(), GRAMMAR_SNAPSHOT.len());
+        for (name, options) in GRAMMAR_SNAPSHOT {
             let spec = attribute(name).unwrap_or_else(|| panic!("attribute {name} missing"));
             let declared: Vec<&str> = spec.keys.iter().map(|key| key.name).collect();
             assert_eq!(&declared, options, "options of {name}");

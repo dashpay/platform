@@ -1,5 +1,6 @@
 //! Diagnostics: typed, append-only, with stable codes.
 
+use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -69,9 +70,32 @@ pub enum DeclarationPath {
         /// The parameter name, or `return`.
         param: String,
     },
+    /// A member inside a wire value: struct members by name, list items as
+    /// `[]`, joined with `.` (`profile.avatars.[]`).
+    Member {
+        /// The parameter, return value or typed collection slot holding the
+        /// value.
+        parent: Box<DeclarationPath>,
+        /// The dotted member path.
+        member: String,
+    },
 }
 
 impl DeclarationPath {
+    /// The path of a member inside this wire value.
+    pub fn member(&self, segment: &str) -> Self {
+        match self {
+            DeclarationPath::Member { parent, member } => DeclarationPath::Member {
+                parent: parent.clone(),
+                member: alloc::format!("{member}.{segment}"),
+            },
+            other => DeclarationPath::Member {
+                parent: Box::new(other.clone()),
+                member: segment.to_string(),
+            },
+        }
+    }
+
     /// An attribute path.
     pub fn attribute(attribute: &str, option: Option<&str>) -> Self {
         DeclarationPath::Attribute {
@@ -185,6 +209,7 @@ impl fmt::Display for DeclarationPath {
                 f,
                 "interface {interface}, function {function}, parameter {param}"
             ),
+            DeclarationPath::Member { parent, member } => write!(f, "{parent}, member {member}"),
         }
     }
 }
@@ -467,6 +492,28 @@ pub enum DiagnosticKind {
         /// The property path.
         property: String,
     },
+    /// A ranked count names one index level twice.
+    DuplicateRankedLevel {
+        /// The property path.
+        property: String,
+    },
+    /// A required system property is not a system property; user fields are
+    /// required on the field itself.
+    RequiredPropertyNotSystem {
+        /// The property path.
+        property: String,
+    },
+    /// A collection lists one required system property twice.
+    DuplicateRequiredProperty {
+        /// The property path.
+        property: String,
+    },
+    /// A time range buckets a system timestamp the collection does not
+    /// require; the timestamp is populated only when required.
+    TimeRangeSourceNotRequired {
+        /// The property path.
+        property: String,
+    },
 }
 
 impl DiagnosticKind {
@@ -569,6 +616,16 @@ impl DiagnosticKind {
             }
             DiagnosticKind::DuplicateAgreementProperty { .. } => {
                 ("DSC0058", "DuplicateAgreementProperty")
+            }
+            DiagnosticKind::DuplicateRankedLevel { .. } => ("DSC0059", "DuplicateRankedLevel"),
+            DiagnosticKind::RequiredPropertyNotSystem { .. } => {
+                ("DSC0060", "RequiredPropertyNotSystem")
+            }
+            DiagnosticKind::DuplicateRequiredProperty { .. } => {
+                ("DSC0061", "DuplicateRequiredProperty")
+            }
+            DiagnosticKind::TimeRangeSourceNotRequired { .. } => {
+                ("DSC0062", "TimeRangeSourceNotRequired")
             }
         }
     }
@@ -755,6 +812,20 @@ impl fmt::Display for DiagnosticKind {
             DiagnosticKind::DuplicateAgreementProperty { property } => {
                 write!(f, "agreement property `{property}` declared twice")
             }
+            DiagnosticKind::DuplicateRankedLevel { property } => {
+                write!(f, "ranked level `{property}` named twice; each level is one ranking")
+            }
+            DiagnosticKind::RequiredPropertyNotSystem { property } => write!(
+                f,
+                "`{property}` is not a system property; require a user field on the field itself"
+            ),
+            DiagnosticKind::DuplicateRequiredProperty { property } => {
+                write!(f, "required system property `{property}` listed twice")
+            }
+            DiagnosticKind::TimeRangeSourceNotRequired { property } => write!(
+                f,
+                "time range buckets `{property}`, which the collection does not require; a system timestamp is populated only when required"
+            ),
         }
     }
 }
@@ -830,6 +901,9 @@ mod tests {
             DeclarationPath::rule("scores", "monotonic"),
             DeclarationPath::Capability(CapabilityRequirement::PrivateStore),
             DeclarationPath::interface_param("math", "add", "return"),
+            DeclarationPath::entry_param("f", "profile")
+                .member("avatars")
+                .member("[]"),
         ];
         for path in paths {
             assert!(!path.to_string().is_empty());
