@@ -152,8 +152,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p npm-packages
-          yarn workspaces foreach --all --no-private --parallel npm pack \
-            --pack-destination "$GITHUB_WORKSPACE/npm-packages"
+          yarn workspaces foreach --all --no-private --parallel pack \
+            --out "$GITHUB_WORKSPACE/npm-packages/%s-%v.tgz"
           test -n "$(find npm-packages -maxdepth 1 -type f -name '*.tgz' -print -quit)"
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
@@ -214,11 +214,13 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      # Composite action defaults to Node 24+ which ships npm 11.5.1+;
-      # required for trusted-publishers OIDC at the publish step below.
-      # See https://docs.npmjs.com/trusted-publishers.
+      # Only npm itself is needed here. Do not install dependencies or restore
+      # executable caches shared with the persistent builder in this OIDC job.
       - name: Setup Node.JS
-        uses: ./.github/actions/nodejs
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.1'
+          registry-url: https://registry.npmjs.org
 
       - name: Download built package artifacts
         uses: actions/download-artifact@v4
@@ -234,23 +236,43 @@ jobs:
           ARTIFACT_DIR: release-artifacts/npm-packages
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          tarballs=("$ARTIFACT_DIR"/*.tgz)
-          [ "${#tarballs[@]}" -gt 0 ] || { echo "::error::No NPM tarballs were uploaded."; exit 1; }
-          declare -A seen=()
-          for tarball in "${tarballs[@]}"; do
-            metadata=$(tar -xOf "$tarball" package/package.json)
-            name=$(jq -r '.name' <<<"$metadata")
-            version=$(jq -r '.version' <<<"$metadata")
-            [ -n "$name" ] && [ "$name" != null ] || { echo "::error::Tarball $tarball has no package name."; exit 1; }
-            [ -n "$version" ] && [ "$version" != null ] || { echo "::error::Tarball $tarball has no package version."; exit 1; }
-            [ -z "${seen[$name]+x}" ] || { echo "::error::Duplicate tarball for $name."; exit 1; }
-            seen[$name]=1
-            trusted=$(for manifest in packages/*/package.json; do
-              jq -r --arg name "$name" --arg version "$version" 'select(.name == $name and .version == $version) | .name' "$manifest"
-            done | head -n1)
-            [ "$trusted" = "$name" ] || { echo "::error::Tarball $tarball ($name@$version) does not match a trusted workspace manifest."; exit 1; }
-          done
+          NPM_CLI_PATH="$(command -v npm)" node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          // Match npm publish's own manifest parser, including archive path aliases.
+          const npmBin = path.dirname(fs.realpathSync(process.env.NPM_CLI_PATH));
+          const pacote = require(path.join(npmBin, '../node_modules/pacote'));
+          (async () => {
+            const trusted = new Map();
+            for (const workspace of JSON.parse(fs.readFileSync('package.json')).workspaces) {
+              const manifest = JSON.parse(fs.readFileSync(path.join(workspace, 'package.json')));
+              if (!manifest.private) trusted.set(manifest.name, manifest.version);
+            }
+            const tarballs = fs.readdirSync(process.env.ARTIFACT_DIR).filter(file => file.endsWith('.tgz'));
+            if (!tarballs.length) throw new Error('No NPM tarballs were uploaded.');
+            const seen = new Set();
+            for (const file of tarballs) {
+              const tarball = path.resolve(process.env.ARTIFACT_DIR, file);
+              if (!fs.lstatSync(tarball).isFile()) throw new Error(`Not a regular tarball: ${file}`);
+              const manifest = await pacote.manifest(tarball, {
+                fullmetadata: true,
+                fullReadJson: true,
+                ignoreScripts: true,
+                cache: path.join(process.env.RUNNER_TEMP, 'npm-metadata-cache'),
+              });
+              if (!trusted.has(manifest.name) || trusted.get(manifest.name) !== manifest.version) {
+                throw new Error(`Untrusted package identity in ${file}`);
+              }
+              if (seen.has(manifest.name)) throw new Error(`Duplicate tarball for ${manifest.name}`);
+              seen.add(manifest.name);
+              // No workspace requires publishConfig. It can override npm's proxy,
+              // TLS and registry options even with --ignore-scripts, exposing OIDC.
+              if (manifest.publishConfig !== undefined && JSON.stringify(manifest.publishConfig) !== '{}') {
+                throw new Error(`Builder-supplied publishConfig is not allowed in ${file}`);
+              }
+            }
+          })().catch(error => { console.error(error.message); process.exitCode = 1; });
+          NODE
 
       - name: Set suffix
         uses: actions/github-script@v8
@@ -418,14 +440,13 @@ jobs:
     with:
       tag: ${{ github.event.release.tag_name }}
 
-  release-dashmate-packages:
-    name: Release Dashmate packages
+  build-dashmate-packages:
+    name: Build Dashmate packages
     runs-on: ${{ matrix.os }}
     if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     needs: release-npm
     permissions:
-      id-token: write # s3 cache
-      contents: write # update release artifacts
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -443,12 +464,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Download JS build artifacts
         uses: actions/download-artifact@v4
         with:
           name: js-build-${{ github.sha }}
-          path: packages
+          # The mixed JS/NPM artifact is rooted at the repository, since its
+          # paths contain both packages/ and npm-packages/.
+          path: .
 
       - name: Install macOS build deps
         if: runner.os == 'macOS'
@@ -459,29 +483,6 @@ jobs:
         if: runner.os == 'macOS'
         uses: docker-practice/actions-setup-docker@master
 
-      - name: Install the Apple certificate
-        if: runner.os == 'macOS'
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.MACOS_BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
-        run: |
-          # create variables
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          # import certificate and provisioning profile from secrets
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
-
-          # create temporary keychain
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # import certificate to keychain
-          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-
       - name: Install Linux build deps
         if: runner.os == 'Linux'
         run: sudo apt-get install -y nsis
@@ -491,16 +492,78 @@ jobs:
 
       - name: Create package
         env:
-          OSX_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
+          # Packaging executes dependency and lifecycle scripts, including
+          # output from the persistent builder. Signing happens in a new job.
+          DASHMATE_UNSIGNED: 'true'
         run: |
           "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh" "${{ matrix.package_type }}"
 
-      - name: Upload artifacts to action summary
+      - name: Upload Dashmate packages
         uses: actions/upload-artifact@v4
-        if: github.event_name != 'release'
         with:
-          name: dashmate
+          name: dashmate-${{ matrix.package_type }}-${{ github.sha }}
           path: packages/dashmate/dist/**
+          if-no-files-found: error
+          retention-days: 7
+
+  release-dashmate-packages:
+    name: Release Dashmate packages
+    needs: build-dashmate-packages
+    if: github.event_name == 'release'
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package_type: tarballs
+            os: ubuntu-24.04
+          - package_type: win
+            os: ubuntu-24.04
+          - package_type: deb
+            os: ubuntu-24.04
+          - package_type: macos
+            os: macos-14
+    steps:
+      # Treat finished installers as data. This job never installs or runs
+      # package code and never restores caches from the build jobs.
+      - name: Download Dashmate packages
+        uses: actions/download-artifact@v4
+        with:
+          name: dashmate-${{ matrix.package_type }}-${{ github.sha }}
+          path: release-artifacts
+
+      - name: Install the Apple certificate
+        if: runner.os == 'macOS'
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.MACOS_BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      - name: Sign macOS installers
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          found=false
+          while IFS= read -r -d '' pkg; do
+            found=true
+            productsign --sign 'Developer ID Installer: The Dash Foundation, Inc.' \
+              --keychain "$RUNNER_TEMP/app-signing.keychain-db" \
+              "$pkg" "$RUNNER_TEMP/signed.pkg"
+            mv "$RUNNER_TEMP/signed.pkg" "$pkg"
+          done < <(find release-artifacts -type f -name '*.pkg' -print0)
+          "$found" || { echo '::error::No macOS installers were uploaded.'; exit 1; }
 
       - name: Notarize MacOS Release Build
         if: runner.os == 'macOS'
@@ -511,10 +574,16 @@ jobs:
         run: |
           while IFS= read -r -d '' pkg; do
             xcrun notarytool submit "$pkg" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$NOTARIZING_PASSWORD" --wait
-          done < <(find packages/dashmate/dist/ -name '*.pkg' -print0)
+          done < <(find release-artifacts -type f -name '*.pkg' -print0)
+
+      - name: Delete the Apple keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db"
+          rm -f "$RUNNER_TEMP/build_certificate.p12"
 
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v0.1.15
         if: github.event_name == 'release'
         with:
-          files: packages/dashmate/dist/**
+          files: release-artifacts/**
