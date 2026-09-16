@@ -3,7 +3,7 @@ pub mod v0_methods;
 use crate::balances::credits::TokenAmount;
 use crate::fee::Credits;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -11,7 +11,7 @@ use std::fmt;
 /// The Identifier fields in [`TokenDirectPurchaseTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, DecodeUntrusted)]
 // Auto-injects `json_safe_u64` on `token_count: TokenAmount` and
 // `total_agreed_price: Credits` (both u64).
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]

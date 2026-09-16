@@ -12,7 +12,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 
 use dpp::prelude::Revision;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
 use std::collections::BTreeMap;
@@ -83,7 +83,7 @@ impl Drive {
             if path == identity_keys_path {
                 if let Some(element) = maybe_element {
                     let item_bytes = element.into_item_bytes().map_err(Error::from)?;
-                    let key = IdentityPublicKey::deserialize_from_bytes(&item_bytes)?;
+                    let key = IdentityPublicKey::deserialize_from_bytes_untrusted(&item_bytes)?;
                     loaded_public_keys.insert(key.id(), key);
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(

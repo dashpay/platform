@@ -666,6 +666,11 @@
                 "type": "integer",
                 "minimum": 0,
                 "description": "Grid alignment phase, in seconds. Range starts are `phase + k * step`; must be strictly less than `step` (a larger value would be a redundant spelling of `phase % step`) and strictly less than one year (31536000 — a phase further out could sit past current block time on a huge step, leaving valid timestamps before the grid's first bucket). A pure alignment offset — it moves where window boundaries fall (e.g. daily windows cut at 06:00 UTC instead of midnight) and never excludes any real timestamp. Defaults to 0."
+              },
+              "ttl": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Time to live, in seconds: entries under this index exist for at most this long past their bucket's start, plus a bounded drainage lag — every write into the index continues draining the oldest expired bucket under a per-write operation budget, and expired windows are not queryable (a byStart selection past the horizon is rejected), so every queryable window is complete. Must be at least `range` (a window still able to receive consensus-timestamped writes can never expire) and at most a protocol-versioned cap (604800 — one week — at protocol version 14). Indexes bucketing one field with the same grid share its storage level and must declare the same ttl. Bytes written under a TTL'd index bill to processing at an ephemeral-bytes rate instead of to storage, carry no storage flags, and refund nothing on removal. Omitted means entries live forever. Available from protocol version 14."
               }
             },
             "required": ["on", "range", "step"],

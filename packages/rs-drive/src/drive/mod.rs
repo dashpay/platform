@@ -49,7 +49,9 @@ pub mod system;
 #[cfg(feature = "server")]
 mod asset_lock;
 #[cfg(feature = "server")]
-mod platform_state;
+/// The saved platform state: its record, the small per-block record, and the
+/// collections kept as one aux entry per member.
+pub mod platform_state;
 
 /// Prefunded specialized balances module
 #[cfg(any(feature = "server", feature = "verify"))]

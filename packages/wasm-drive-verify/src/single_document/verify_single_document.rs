@@ -1,3 +1,4 @@
+use crate::utils::proof::supported_grovedb_proof;
 use dpp::version::PlatformVersion;
 use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use wasm_bindgen::prelude::*;
@@ -132,10 +133,11 @@ pub fn verify_single_document_proof_keep_serialized(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     // Verify the proof keeping it serialized
-    match query
-        .inner
-        .verify_proof_keep_serialized(is_subset, &proof, platform_version)
-    {
+    match query.inner.verify_proof_keep_serialized(
+        is_subset,
+        supported_grovedb_proof(&proof, platform_version)?,
+        platform_version,
+    ) {
         Ok((root_hash, maybe_serialized_document)) => Ok(SingleDocumentProofResult {
             root_hash: root_hash.to_vec(),
             document_serialized: maybe_serialized_document,

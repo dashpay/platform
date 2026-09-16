@@ -306,7 +306,7 @@ ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
-git clone https://github.com/facebook/rocksdb.git -b v10.4.2 --depth 1 .
+git clone https://github.com/facebook/rocksdb.git -b v11.8.1 --depth 1 .
 source /root/env
 
 make -j$(nproc) static_lib

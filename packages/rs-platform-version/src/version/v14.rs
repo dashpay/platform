@@ -17,12 +17,12 @@ use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v3::DRIVE_ABCI_QUERY_VERSIONS_V3;
-use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
+use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
-use crate::version::fee::v2::FEE_VERSION2;
+use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
 use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
@@ -65,7 +65,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    contest under a vote poll describing a different index than the one
 ///    the contest was created on — which halts the chain when that poll
 ///    ends — or open a contest for a document that is not a contested
-///    resource at all.
+///    resource at all. State validation also prevents a non-contested create
+///    from occupying a live contested document's id before the contest winner
+///    is awarded into primary storage. Drive's contested insert also recreates
+///    an abstain or lock vote tree over the storage an earlier poll's cleanup
+///    left orphaned (it only removed the trees that received votes), so a
+///    resource can be contested again instead of failing with
+///    `CorruptedContractIndexes`.
 /// 4. **Relative daily withdrawal limit**: the flat 2000 Dash per 24 hours that
 ///    applied from v8 becomes 15% of the total credits Platform held a day ago
 ///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
@@ -187,10 +193,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   contested create transition's prefunded voting balance to name the
 ///   same vote poll the document itself resolves to, and rejecting one on a
 ///   document that resolves to no contested index. It also bumps document
-///   create state validation to 2 and document replace state validation to
-///   1, enforcing `refersTo` document references: a document whose
-///   reference property names an identity or contract that does not exist
-///   is rejected. v13 keeps the v9 table and therefore keeps
+///   create state validation to 2, enforcing `refersTo` document references
+///   and rejecting a non-contested create whose id is already present in the
+///   contested tree. Document replace state validation 1 enforces the same
+///   reference checks. v13 keeps the v9 table and therefore keeps
 ///   accepting all of these, so replay of pre-upgrade blocks is unchanged.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
 ///   default 3: documents are stamped with the contract version their bytes
@@ -203,6 +209,70 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   lookups are ever needed. Reads dispatch on the byte prefix, so
 ///   formats 0–2 (all pre-v14 documents) deserialize exactly as before with
 ///   an unstamped (pre-annotation) layout.
+/// 7. **Client-side GroveDB proof envelope floor**:
+///    `SYSTEM_LIMITS_V4.minimum_grovedb_proof_envelope_version` becomes 1, so
+///    a client verifying with v14 tables rejects the legacy V0 proof
+///    envelope before its bytes reach Drive (`drive-proof-verifier`,
+///    `wasm-drive-verify`, and the nested compacted address proofs). V0's
+///    item binding lets a prover return different item bytes under the same
+///    authenticated root; every live network has emitted V1 envelopes since
+///    v13 (grove version 3), so no honest response is affected.
+/// 8. **Epoch-based perpetual distribution claims stop wrapping**:
+///    `RewardDistributionType::max_cycle_moment` (the cap on how far one claim
+///    may redeem, selected by
+///    `TOKEN_VERSIONS_V3.reward_distribution_max_cycle_moment_version` 1)
+///    computes `start + interval * cycles` in `u64` with saturating
+///    arithmetic and narrows back to `EpochIndex` only after capping at the
+///    last completed cycle moment (`current cycle moment - interval`, the
+///    previous epoch for an interval of one as before; for wider intervals the
+///    same cycles are paid, but the cap now sits on a cycle boundary, the only
+///    shape in which `evaluate_interval`'s fixed-amount step count and its
+///    per-cycle loop agree). Up to v13 the sum was taken in `u16`: a
+///    fixed-amount function allows 32,767 cycles, so any epoch interval of
+///    three or more with a nonzero start (or two with a start at epoch two
+///    or later) pushed the cap past `u16::MAX`. Release builds wrap, the cap landed below the
+///    start, `evaluate_interval` saw an empty range and the claim was
+///    refused with `InvalidTokenClaimNoCurrentRewards` on every attempt. The
+///    v0 arithmetic is kept, wrapping explicitly, so those refusals replay.
+/// 9. **Evonode reward cycles weighted by the epochs they span**: the
+///    per-cycle evaluator in `DistributionFunction::evaluate_interval` asks
+///    the participation ratio for the epochs a cycle covers
+///    (`TOKEN_VERSIONS_V3.distribution_function_cycle_epochs_version` 1:
+///    `cycle moment - interval + 1 ..= cycle moment`). Up to v13 it passed the
+///    cycle's step index as if it were an epoch, which coincides only for an
+///    interval of one; for a wider interval it named epochs before the
+///    distribution started, outside the epoch window the claim loads, and an
+///    `EvonodesByParticipation` claim with a function other than a fixed
+///    amount failed as an internal error (reachable only once item 8 let the
+///    cap stop wrapping). Interval-one distributions are unchanged.
+/// 10. **A zero epoch interval is rejected at registration**:
+///     `RewardDistributionType::validate_structure_interval` v1
+///     (`CONTRACT_VERSIONS_V6.token_versions.validate_structure_interval`)
+///     refuses an `EpochBasedDistribution` with `interval: 0` with the new
+///     `InvalidTokenDistributionEpochIntervalTooShortError` (code 10828) on
+///     contract create and update. Up to v13 the epoch arm enforced nothing,
+///     so such a contract registered and every claim on it failed as an
+///     internal error, since no cycle can be computed from a zero step. Block
+///     and time minimums are unchanged.
+///
+/// * `ShieldFromIdentity` (state transition type 21) activates:
+///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
+///   `is_allowed`, and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` is the first
+///   table whose `shield_from_identity_state_transition` row enables basic
+///   structure, identity signature, and nonce validation. It moves credits
+///   from an identity balance straight into the shielded pool: the funding
+///   side is identity-signed like `IdentityCreditTransferToAddresses`, the
+///   pool side is an outputs-only Orchard bundle like `Shield`, and the fee
+///   is metered plus the shielded compute fee, paid from the identity.
+///
+/// * `IdentityTopUpFromShieldedPool` (state transition type 22) activates at the
+///   same gate (`IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION = 14`,
+///   `DRIVE_ABCI_VALIDATION_VERSIONS_V10` row). It spends shielded notes like
+///   `Unshield` and credits an EXISTING identity's balance instead of a platform
+///   address: pool-paid flat fee (`compute_shielded_identity_top_up_fee`), no
+///   platform signature, the target identity and gross amount bound into the
+///   Orchard sighash, and no system-credit adjustment (pool and identity balances
+///   are both conservation-equation terms).
 ///
 /// The wire surface changes only additively: `GetDocumentsRequestV1`
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
@@ -215,7 +285,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
     drive_abci: DriveAbciVersion {
-        structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
+        structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
@@ -229,18 +299,21 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
         state_transitions: STATE_TRANSITION_VERSIONS_V3,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
-        token_versions: TOKEN_VERSIONS_V3, // changed: distribution_function_evaluate v1 — deterministic libm for token reward math
+        token_versions: TOKEN_VERSIONS_V3, // changed: distribution_function_evaluate v1 — deterministic libm for token reward math; reward_distribution_max_cycle_moment v1: the epoch claim cap no longer wraps; distribution_function_cycle_epochs v1: evonode cycles weighted by the epochs they span
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
-    fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status
+    // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
+    // the shared storage table; it is dead below v14 (the `ttl` grammar
+    // does not parse), so no table fork is needed.
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
@@ -250,6 +323,27 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
 mod tests {
     use super::*;
     use crate::version::v13::PLATFORM_V13;
+
+    #[test]
+    fn should_halve_only_the_contested_document_fee_at_protocol_14() {
+        for protocol_version in 1..14 {
+            let version = PlatformVersion::get(protocol_version).expect("known protocol version");
+            assert_eq!(
+                version
+                    .fee_version
+                    .vote_resolution_fund_fees
+                    .contested_document_vote_resolution_fund_required_amount,
+                20_000_000_000,
+                "protocol {protocol_version} must preserve the 0.2 DASH contribution"
+            );
+        }
+
+        let mut expected_fees = PLATFORM_V13.fee_version.clone();
+        expected_fees
+            .vote_resolution_fund_fees
+            .contested_document_vote_resolution_fund_required_amount = 10_000_000_000;
+        assert_eq!(PLATFORM_V14.fee_version, expected_fees);
+    }
 
     /// The ranked / boolean-HAVING routing gate lives in v14's own query
     /// table, so flipping it touches only v14: a v13 node keeps running
@@ -416,6 +510,42 @@ mod tests {
                 .state_transitions
                 .batch_state_transition
                 .document_create_transition_structure_validation,
+            1
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .document_create_transition_state_validation,
+            1
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .document_create_transition_state_validation,
+            2
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .drive
+                .methods
+                .document
+                .insert_contested
+                .add_contested_vote_subtree_for_non_identities_operations,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive
+                .methods
+                .document
+                .insert_contested
+                .add_contested_vote_subtree_for_non_identities_operations,
             1
         );
     }

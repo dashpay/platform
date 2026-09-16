@@ -18,7 +18,7 @@ impl DriveDocumentQuery<'_> {
     /// sub-query is derived from those exactly as the prover derived it
     /// from its materialization, the merged query is rebuilt, and the
     /// AUTHORITATIVE full pass verifies the whole composition — grovedb
-    /// enforces every component's lifted per-instance limit and range
+    /// enforces every component's per-instance limit and range
     /// completeness. The proven results are then routed back to their
     /// components: an entry no derivation asked for is an invalid proof,
     /// so is a by-id join missing a referenced document (a

@@ -2,7 +2,7 @@ use crate::error::WasmDppResult;
 use crate::impl_wasm_type_info;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::codes::ErrorWithCode;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// Consensus error codes emitted by `refersTo` reference validation, which
@@ -69,9 +69,9 @@ pub struct ConsensusErrorWasm(ConsensusError);
 impl ConsensusErrorWasm {
     #[wasm_bindgen(js_name = "deserialize")]
     pub fn deserialize(error: Vec<u8>) -> WasmDppResult<Self> {
-        Ok(ConsensusErrorWasm(ConsensusError::deserialize_from_bytes(
-            error.as_slice(),
-        )?))
+        Ok(ConsensusErrorWasm(
+            ConsensusError::deserialize_from_bytes_untrusted(error.as_slice())?,
+        ))
     }
 
     #[wasm_bindgen(getter = "message")]

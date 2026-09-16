@@ -63,6 +63,9 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
+        #[cfg(debug_assertions)]
+        let mut phases = crate::perf::PhaseTimer::new("finalize_block_proposal");
+
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
 
         let block_state_info = block_execution_context.block_state_info();
@@ -93,6 +96,9 @@ where
             .map_err(AbciError::from)?
             .try_into()
             .expect("invalid sha256 length");
+
+        #[cfg(debug_assertions)]
+        phases.end_phase("calculate_block_id_hash");
 
         //// Verification that commit is for our current executed block
         // When receiving the finalized block, we need to make sure info matches our current block
@@ -154,6 +160,9 @@ where
             return Ok(validation_result.into());
         };
 
+        #[cfg(debug_assertions)]
+        phases.end_phase("verify_and_match_with_vote_extensions");
+
         // Verify commit
 
         // In production this will always be true
@@ -188,6 +197,9 @@ where
             }
         }
 
+        #[cfg(debug_assertions)]
+        phases.end_phase_if(verify_commit_signature, "verify_commit_signature");
+
         if height == self.config.abci.genesis_height {
             self.drive
                 .set_genesis_time(block_state_info.block_time_ms());
@@ -205,12 +217,19 @@ where
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
-        if !transaction_to_extension_matches.is_empty() {
+        let broadcast_withdrawals = !transaction_to_extension_matches.is_empty();
+        if broadcast_withdrawals {
             self.append_signatures_and_broadcast_withdrawal_transactions(
                 transaction_to_extension_matches,
                 platform_version,
             )?;
         }
+
+        #[cfg(debug_assertions)]
+        phases.end_phase_if(
+            broadcast_withdrawals,
+            "append_signatures_and_broadcast_withdrawal_transactions",
+        );
 
         // Update platform (drive abci) state
 
@@ -227,6 +246,9 @@ where
 
         self.update_drive_cache(&block_execution_context, platform_version)?;
 
+        #[cfg(debug_assertions)]
+        phases.end_phase("update_drive_cache");
+
         // Check if we should create a checkpoint (must be done before consuming block_execution_context)
         let checkpoint_needed =
             self.should_checkpoint(&block_execution_context, platform_version)?;
@@ -239,6 +261,9 @@ where
             transaction,
             platform_version,
         )?;
+
+        #[cfg(debug_assertions)]
+        phases.end_phase("update_state_cache");
 
         // Gather some metrics
         crate::metrics::abci_last_block_time(block_header.time.seconds as u64);

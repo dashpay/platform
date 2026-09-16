@@ -149,6 +149,11 @@ impl StateTransitionStateValidation for StateTransition {
                     "identity credit transfer to addresses should not have state validation",
                 )))
             }
+            StateTransition::ShieldFromIdentity(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "shield from identity should not have state validation",
+                )))
+            }
             StateTransition::IdentityCreateFromAddresses(st) => {
                 let action =
                     action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -198,6 +203,11 @@ impl StateTransitionStateValidation for StateTransition {
             StateTransition::Unshield(_) => Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("unshield should not have state validation"),
             )),
+            StateTransition::IdentityTopUpFromShieldedPool(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "identity top up from shielded pool should not have state validation",
+                )))
+            }
             StateTransition::ShieldFromAssetLock(_) => {
                 Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "shield from asset lock should not have state validation",
@@ -271,9 +281,11 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::AddressCreditWithdrawal(_)
+            | StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
+            | StateTransition::IdentityTopUpFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_) => false,
