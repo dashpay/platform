@@ -4,7 +4,19 @@ use crate::version::drive_versions::drive_token_method_versions::{
     DriveTokenUpdateMethodVersions,
 };
 
-pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenMethodVersions {
+/// Drive token methods for the 5.0 protocol version (17): the per-issuer
+/// token lifecycle ledger.
+///
+/// Differences from [`super::v1::DRIVE_TOKEN_METHOD_VERSIONS_V1`]:
+///
+/// * `update.create_token_trees` 0 -> 1, `update.add_to_token_total_supply`
+///   0 -> 1 and `update.remove_from_token_total_supply` 0 -> 1: every native
+///   supply write keeps the issuer's supply rollup current in the same batch
+///   and refuses a wiped issuer.
+/// * `calculate_total_tokens_balance` 0 -> 1: the block end conservation check
+///   reads the destroyed supply ledger and checks raw and active totals.
+/// * `lifecycle`: every slot turns on at generation 0.
+pub const DRIVE_TOKEN_METHOD_VERSIONS_V2: DriveTokenMethodVersions = DriveTokenMethodVersions {
     fetch: DriveTokenFetchMethodVersions {
         identity_token_balance: 0,
         identity_token_balances: 0,
@@ -38,13 +50,13 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         token_contract_info: 0,
     },
     update: DriveTokenUpdateMethodVersions {
-        create_token_trees: 0,
+        create_token_trees: 1, // changed in v2: creates the issuer's lifecycle record
         burn: 0,
         mint: 0,
         mint_many: 0,
         transfer: 0,
-        add_to_token_total_supply: 0,
-        remove_from_token_total_supply: 0,
+        add_to_token_total_supply: 1, // changed in v2: moves the issuer rollup with the supply
+        remove_from_token_total_supply: 1, // changed in v2: moves the issuer rollup with the supply
         remove_from_identity_token_balance: 0,
         add_to_identity_token_balance: 0,
         add_transaction_history_operations: 0,
@@ -53,7 +65,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         apply_status: 0,
         perpetual_distribution_next_event_for_identity_id: 0,
     },
-    calculate_total_tokens_balance: 0,
+    calculate_total_tokens_balance: 1, // changed in v2: reads the destroyed supply ledger
     distribution: DriveTokenDistributionMethodVersions {
         add_perpetual_distribution: 0,
         add_pre_programmed_distributions: 0,
@@ -61,10 +73,10 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         mark_pre_programmed_release_as_distributed: 0,
     },
     lifecycle: DriveTokenLifecycleMethodVersions {
-        fetch_contract_token_lifecycle: None,
-        fetch_token_lifecycles: None,
-        add_to_contract_issued_supply: None,
-        destroy_token_issuer: None,
-        add_estimation_costs_for_token_contract_lifecycles: None,
+        fetch_contract_token_lifecycle: Some(0),
+        fetch_token_lifecycles: Some(0),
+        add_to_contract_issued_supply: Some(0),
+        destroy_token_issuer: Some(0),
+        add_estimation_costs_for_token_contract_lifecycles: Some(0),
     },
 };

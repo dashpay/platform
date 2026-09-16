@@ -1,6 +1,7 @@
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveTokenMethodVersions {
@@ -9,6 +10,31 @@ pub struct DriveTokenMethodVersions {
     pub update: DriveTokenUpdateMethodVersions,
     pub calculate_total_tokens_balance: FeatureVersion,
     pub distribution: DriveTokenDistributionMethodVersions,
+    pub lifecycle: DriveTokenLifecycleMethodVersions,
+}
+
+/// Per-issuer token lifecycle: the supply rollup every contract that issues
+/// tokens carries, the destroyed-issuer ledger and the reads that resolve a
+/// token to its issuer's state. Every slot is optional because the ledger
+/// (`[Tokens] / 224`) only exists from the protocol version that introduces
+/// it; a shipped table keeps `None` and the dispatchers report
+/// `VersionNotActive`.
+#[derive(Clone, Debug, Default)]
+pub struct DriveTokenLifecycleMethodVersions {
+    /// Reads one contract's lifecycle record (supply rollup and wipe marker).
+    pub fetch_contract_token_lifecycle: OptionalFeatureVersion,
+    /// Resolves token ids to their issuer's lifecycle through the contract
+    /// info leaves.
+    pub fetch_token_lifecycles: OptionalFeatureVersion,
+    /// Moves a token's issuer rollup by the delta a supply write applies,
+    /// refusing wiped issuers. Called by `add_to_token_total_supply` and
+    /// `remove_from_token_total_supply` from their generation 1 on.
+    pub add_to_contract_issued_supply: OptionalFeatureVersion,
+    /// Marks an issuer wiped and moves its rollup into the destroyed supply
+    /// ledger in one bounded batch.
+    pub destroy_token_issuer: OptionalFeatureVersion,
+    /// Layer estimation for writes under the lifecycle ledger.
+    pub add_estimation_costs_for_token_contract_lifecycles: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
