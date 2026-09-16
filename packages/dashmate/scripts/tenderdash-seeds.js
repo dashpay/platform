@@ -68,15 +68,25 @@ function selectSeeds(nodes) {
     const j = crypto.randomInt(i + 1);
     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
-  const seeds = [];
+  // Match identities to hosts in sampled order. An identity whose hosts are all
+  // taken may move an earlier pick to one of its alternate endpoints, so a
+  // registry that admits a host-disjoint assignment always gets one. Earlier
+  // picks keep their slot; only the endpoint they are listed under can change.
+  const seedsByHost = new Map();
+  const assign = (endpoints, visited) => endpoints.some(endpoint => {
+    if (visited.has(endpoint.host)) { return false; }
+    visited.add(endpoint.host);
+    const holder = seedsByHost.get(endpoint.host);
+    if (holder && !assign(holder.endpoints, visited)) { return false; }
+    seedsByHost.set(endpoint.host, { endpoints, endpoint });
+    return true;
+  });
   for (const endpoints of candidates) {
-    const candidate = endpoints.find(({ host }) => !seeds.some(seed => seed.host === host));
-    if (candidate) {
-      seeds.push(candidate);
-    }
-    if (seeds.length === MAX_SEEDS) { break; }
+    if (seedsByHost.size === MAX_SEEDS) { break; }
+    assign(endpoints, new Set());
   }
-  return seeds.sort((a, b) => a.id.localeCompare(b.id));
+  return [...seedsByHost.values()].map(({ endpoint }) => endpoint)
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /**

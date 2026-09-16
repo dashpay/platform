@@ -72,6 +72,43 @@ describe('quorum-server Tenderdash seeds', () => {
     expect(new Set(seeds.map(seed => seed.host)).size).to.equal(5);
   });
 
+  it('should move an earlier pick to its alternate host instead of discarding a constrained peer', function matchHosts() {
+    // Sampling order is fixed to registry order: randomInt(max) = max - 1 swaps each index with itself.
+    this.sinon.stub(crypto, 'randomInt').callsFake(max => max - 1);
+    response.data = response.data.slice(0, 5);
+    // A lists X and Y and is sampled first; B lists only X. Greedy first-free-host
+    // gives A host X, skips B, and fails the five-peer minimum.
+    response.data[0].addresses = { platform_p2p: ['9.1.1.1:26656', '9.1.1.2:26656'] };
+    response.data[1].addresses = { platform_p2p: ['9.1.1.1:26656'] };
+    const { seeds } = generateSnapshot(response, 'mainnet', previous, NOW);
+    expect(seeds).to.have.length(5);
+    expect(new Set(seeds.map(seed => seed.host)).size).to.equal(5);
+    expect(seeds).to.deep.include({ id: '1'.padStart(40, '0'), host: '9.1.1.2', port: 26656 });
+    expect(seeds).to.deep.include({ id: '2'.padStart(40, '0'), host: '9.1.1.1', port: 26656 });
+    // The constrained peer first is the easy order; both orders must select the same identities.
+    response.data.reverse();
+    const reversed = generateSnapshot(response, 'mainnet', previous, NOW);
+    expect(reversed.seeds.map(seed => seed.id)).to.deep.equal(seeds.map(seed => seed.id));
+  });
+
+  it('should keep the sampled slot order when a chain of alternates has to shift', function chainHosts() {
+    this.sinon.stub(crypto, 'randomInt').callsFake(max => max - 1);
+    // Identity i (1-based) can use hosts i and i+1; the last one only host 5.
+    // Every earlier identity has to shift one host over for all five to fit.
+    response.data = response.data.slice(0, 5).map((node, index) => ({
+      ...node,
+      addresses: { platform_p2p: index === 4 ? ['9.1.1.5:26656'] : [`9.1.1.${index + 1}:26656`, `9.1.1.${index + 2}:26656`] },
+    }));
+    // Add a sixth identity that must not be picked over the constrained one.
+    // It is sampled last, so it only gets a slot if one is still free; with
+    // MAX_SEEDS at 20 and six identities, all six fit on distinct hosts.
+    response.data.push({ ...response.data[0], platformNodeID: '6'.padStart(40, '0'), addresses: { platform_p2p: ['9.1.1.9:26656'] } });
+    const { seeds } = generateSnapshot(response, 'mainnet', previous, NOW);
+    expect(seeds).to.have.length(6);
+    expect(new Set(seeds.map(seed => seed.host)).size).to.equal(6);
+    expect(seeds.find(seed => seed.id === '5'.padStart(40, '0')).host).to.equal('9.1.1.5');
+  });
+
   it('should exclude banned, failed, incomplete and malformed peers without guessing ports', () => {
     response.data[0].status = 'POSE_BANNED';
     response.data[1].versionCheck = 'fail';
