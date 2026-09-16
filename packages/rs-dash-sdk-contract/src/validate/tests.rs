@@ -378,6 +378,68 @@ fn should_report_duplicate_collection() {
 }
 
 #[test]
+fn should_canonicalize_enum_value_order_and_merge_a_reordered_enum_restatement() {
+    let with = |values: &[&str], origin| {
+        CollectionSpec::documents(collection("c"))
+            .with_origin(origin)
+            .document_id_field("id")
+            .field(FieldSpec::new(
+                property("nested"),
+                0,
+                FieldType::Object(vec![FieldSpec::new(
+                    property("state"),
+                    0,
+                    FieldType::Enum(values.iter().map(|v| v.to_string()).collect()),
+                )]),
+            ))
+    };
+    let forward = expect_manifest(
+        &ContractDeclaration::new()
+            .collection(with(&["open", "closed"], DeclarationOrigin::Attribute)),
+    );
+    let backward = expect_manifest(
+        &ContractDeclaration::new()
+            .collection(with(&["closed", "open"], DeclarationOrigin::Attribute)),
+    );
+    assert_eq!(forward, backward);
+    let merged = expect_manifest(
+        &ContractDeclaration::new()
+            .collection(with(&["open", "closed"], DeclarationOrigin::Attribute))
+            .collection(with(&["closed", "open"], DeclarationOrigin::Builder)),
+    );
+    assert_eq!(merged, forward);
+    let FieldType::Object(nested) = &forward.collection("c").unwrap().fields[0].ty else {
+        panic!()
+    };
+    assert_eq!(
+        nested[0].ty,
+        FieldType::Enum(vec!["closed".to_string(), "open".to_string()])
+    );
+}
+
+#[test]
+fn should_point_typed_collection_diagnostics_at_the_key_or_element() {
+    let declaration = ContractDeclaration::new().typed_collection(TypedCollectionSpec::new(
+        collection("lookup"),
+        TypedCollectionKind::Sum,
+        ValueType::String { max_chars: None },
+        ValueType::Struct(vec![(
+            "blob".to_string(),
+            ValueType::Bytes { max_len: None },
+        )]),
+    ));
+    let diagnostics = expect_diagnostics(&declaration);
+    let paths: Vec<String> = diagnostics.iter().map(|d| d.path().to_string()).collect();
+    assert_eq!(
+        paths,
+        [
+            "typed collection lookup, member key",
+            "typed collection lookup, member element.blob",
+        ]
+    );
+}
+
+#[test]
 fn should_report_duplicate_collection_between_typed_and_document_collections() {
     let declaration = ContractDeclaration::new()
         .collection(minimal("totals"))
@@ -795,7 +857,25 @@ fn created_at_window() -> TimeRangeSpec {
         range_secs: 3600,
         step_secs: 60,
         phase_secs: 0,
+        ttl_secs: None,
     }
+}
+
+#[test]
+fn should_carry_the_time_range_ttl_into_the_manifest() {
+    let window = TimeRangeSpec {
+        ttl_secs: Some(86_400),
+        ..created_at_window()
+    };
+    let spec = minimal("c")
+        .requires(path("$createdAt"))
+        .index(IndexSpec::new(index_name("i"), vec![path("$createdAt")]).time_range(window));
+    let manifest = expect_manifest(&ContractDeclaration::new().collection(spec));
+    let index = manifest.collection("c").unwrap().index("i").unwrap();
+    assert_eq!(
+        index.time_range.as_ref().and_then(|t| t.ttl_secs),
+        Some(86_400)
+    );
 }
 
 #[test]
