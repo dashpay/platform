@@ -469,6 +469,23 @@ extension SDK {
         return contracts
     }
 
+    /// One page of every data contract on Platform, in ascending contract id order.
+    /// Pass the last `id` of a page as `startAfter` to get the next page; a page shorter than `limit` is the last one.
+    public func getDataContractsByRange(limit: UInt32? = nil, startAfter: String? = nil, startAt: String? = nil, idsOnly: Bool = false) async throws -> [[String: Any]] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        let result = dash_sdk_data_contracts_fetch_by_range(
+            handle,
+            UInt32(limit ?? 100),
+            startAfter,
+            startAt,
+            idsOnly
+        )
+        return try processJSONArrayResult(result)
+    }
+
     // MARK: - Document Queries
 
     /// List documents

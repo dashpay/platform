@@ -7,6 +7,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::drive::CheckpointInfo;
 use std::collections::BTreeMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 /// Information needed to create a checkpoint
@@ -27,6 +28,12 @@ where
     ///
     /// Returns `Ok(Some(CheckpointNeededInfo))` if a checkpoint should be created,
     /// `Ok(None)` if no checkpoint is needed.
+    ///
+    /// A checkpoint is due at the first block after a checkpoint interval boundary,
+    /// counted from the later of the last checkpoint and the last checkpoint attempt.
+    /// Counting attempts means a failed checkpoint is skipped for the rest of its
+    /// interval rather than retried at a later block, so this node's checkpoint
+    /// heights stay the ones the rest of the network has.
     #[inline(always)]
     pub(super) fn should_checkpoint_v0(
         &self,
@@ -69,11 +76,23 @@ where
         // Load current checkpoints
         let current_checkpoints_guard = self.drive.checkpoints.load();
 
+        // The later of the last checkpoint's block time and the last attempt's block
+        // time: an attempt that failed still spends its interval.
+        let last_attempt_time = self
+            .last_checkpoint_attempt_block_time_ms
+            .load(Ordering::Relaxed);
+        let last_checkpoint_time = current_checkpoints_guard
+            .last_key_value()
+            .map(|(_height, checkpoint_info)| checkpoint_info.timestamp_ms)
+            .into_iter()
+            .chain((last_attempt_time > 0).then_some(last_attempt_time))
+            .max();
+
         // Determine whether we should checkpoint based on the last checkpoint timestamp
-        let should_checkpoint = match current_checkpoints_guard.last_key_value() {
+        let should_checkpoint = match last_checkpoint_time {
             None => true,
-            Some((_height, checkpoint_info)) => {
-                checkpoint_info.timestamp_ms < most_recent_checkpoint_interval_time
+            Some(last_checkpoint_time) => {
+                last_checkpoint_time < most_recent_checkpoint_interval_time
                     && block_time >= most_recent_checkpoint_interval_time
             }
         };
@@ -226,6 +245,62 @@ mod tests {
         assert!(
             result.is_none(),
             "a day-old block is being replayed, not followed"
+        );
+    }
+
+    /// A failed checkpoint is skipped, not retried at a later block: the attempt
+    /// itself spends the interval, and the next checkpoint waits for the next
+    /// interval boundary like on every other node.
+    #[test]
+    fn test_attempted_checkpoint_spends_its_interval() {
+        let platform_version = PlatformVersion::latest();
+        if platform_version
+            .drive_abci
+            .methods
+            .block_end
+            .should_checkpoint
+            .is_none()
+        {
+            return;
+        }
+
+        let platform_config = crate::config::PlatformConfig {
+            testing_configs: crate::config::PlatformTestConfig {
+                disable_checkpoints: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let interval_ms = platform_version.drive_abci.checkpoints.frequency_seconds as u64 * 1000;
+        // One second into the current interval: recent enough not to count as
+        // history, and both blocks below stay on the intended side of the boundary.
+        let now = now_ms();
+        let attempt_time = now - now % interval_ms + 1_000;
+        platform
+            .last_checkpoint_attempt_block_time_ms
+            .store(attempt_time, std::sync::atomic::Ordering::Relaxed);
+
+        let same_interval = make_block_execution_context(2, attempt_time + 1_000);
+        assert!(
+            platform
+                .should_checkpoint_v0(&same_interval, platform_version)
+                .expect("expected Ok")
+                .is_none(),
+            "the rest of the attempted interval is skipped"
+        );
+
+        let next_interval = make_block_execution_context(3, attempt_time + interval_ms);
+        assert!(
+            platform
+                .should_checkpoint_v0(&next_interval, platform_version)
+                .expect("expected Ok")
+                .is_some(),
+            "the next interval boundary checkpoints again"
         );
     }
 

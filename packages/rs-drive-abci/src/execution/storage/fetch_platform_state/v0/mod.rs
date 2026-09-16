@@ -3,7 +3,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::recent::PlatformStateRecent;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::query::TransactionArg;
@@ -21,7 +21,7 @@ impl<C> Platform<C> {
             return Ok(None);
         };
 
-        let mut state = PlatformState::versioned_deserialize(&bytes, platform_version)
+        let mut state = PlatformState::versioned_deserialize_trusted(&bytes, platform_version)
             .inspect_err(|_| {
                 tracing::error!(
                     bytes = hex::encode(&bytes),

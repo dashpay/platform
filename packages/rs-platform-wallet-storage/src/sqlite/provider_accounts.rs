@@ -1,54 +1,6 @@
-//! Provider account and public-key pool reconstruction for SQLite load.
+//! Platform-node public-key pool reconstruction for SQLite load.
 
 use key_wallet::account::AccountType;
-use platform_wallet::changeset::ProviderKeyExtendedPubKey;
-
-/// Why a provider key-material account could not be rebuilt into an
-/// [`AccountCollection`](key_wallet::account::account_collection::AccountCollection).
-#[derive(Debug, thiserror::Error)]
-pub(super) enum ProviderAccountRebuildError {
-    /// The curve-specific account constructor rejected the key.
-    #[error("provider key account is invalid")]
-    Invalid(#[from] key_wallet::error::Error),
-    /// The collection refused the account — its `account_type` does not match
-    /// the curve (e.g. a BLS key offered as `ProviderPlatformKeys`).
-    #[error("account collection rejected the provider key account: {0}")]
-    Rejected(&'static str),
-}
-
-/// Rebuild a watch-only provider account in its curve-specific collection slot.
-pub(super) fn rebuild_provider_key_account(
-    accounts: &mut key_wallet::account::account_collection::AccountCollection,
-    wallet_id: [u8; 32],
-    network: key_wallet::Network,
-    account_type: AccountType,
-    extended_public_key: &ProviderKeyExtendedPubKey,
-) -> Result<(), ProviderAccountRebuildError> {
-    match extended_public_key {
-        ProviderKeyExtendedPubKey::Bls(key) => {
-            let account = key_wallet::account::BLSAccount::new(
-                Some(wallet_id.to_vec()),
-                account_type,
-                key.clone(),
-                network,
-            )?;
-            accounts
-                .insert_bls_account(account)
-                .map_err(ProviderAccountRebuildError::Rejected)
-        }
-        ProviderKeyExtendedPubKey::EdDSA(key) => {
-            let account = key_wallet::account::EdDSAAccount::new(
-                Some(wallet_id.to_vec()),
-                account_type,
-                key.clone(),
-                network,
-            )?;
-            accounts
-                .insert_eddsa_account(account)
-                .map_err(ProviderAccountRebuildError::Rejected)
-        }
-    }
-}
 
 /// Errors while inserting a pre-derived platform-node key into its managed pool.
 #[derive(Debug, thiserror::Error)]
@@ -149,82 +101,189 @@ pub(super) fn insert_platform_node_pool_entry(
 mod tests {
     use super::*;
     use key_wallet::Network;
+    // Shared with `platform-wallet`'s own `rebuild_provider_key_account` tests
+    // via its `test-utils` feature (see this crate's `[dev-dependencies]`) —
+    // one fixture instead of two drifting copies.
+    use platform_wallet::changeset::provider_key_account::provider_key_test_wallet;
+    use platform_wallet::wallet::provider_key_at_index::derive_platform_node_public_keys;
 
-    fn provider_key_test_wallet() -> key_wallet::wallet::Wallet {
-        key_wallet::wallet::Wallet::from_seed_bytes(
-            [0x42; 64],
+    #[test]
+    fn insert_used_platform_node_pool_entry_restores_used_bookkeeping() {
+        use dashcore::hashes::Hash;
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = provider_key_test_wallet();
+        let key = derive_platform_node_public_keys(&wallet, Network::Testnet, 8)
+            .expect("platform-node derivation")
+            .pop()
+            .expect("derived key");
+        let payload = dashcore::address::Payload::PubkeyHash(
+            dashcore::PubkeyHash::from_byte_array(key.node_id),
+        );
+        let address = dashcore::Address::new(Network::Testnet, payload);
+        let script_pubkey = address.script_pubkey();
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+
+        insert_platform_node_pool_entry(
+            &mut wallet_info,
             Network::Testnet,
-            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+            key.index,
+            address,
+            script_pubkey,
+            key.public_key,
+            true,
         )
-        .expect("provider key test wallet")
+        .expect("restore used platform-node row");
+
+        let account = wallet_info
+            .accounts
+            .provider_platform_keys
+            .as_ref()
+            .expect("managed platform-node account");
+        let pool = account
+            .managed_account_type()
+            .address_pools()
+            .into_iter()
+            .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+            .cloned()
+            .expect("AbsentHardened pool");
+        let restored = pool.addresses.get(&key.index).expect("restored entry");
+        assert!(restored.is_used());
+        assert!(pool.used_indices.contains(&key.index));
+        assert_eq!(pool.highest_used, Some(key.index));
     }
 
     #[test]
-    fn rebuild_provider_key_account_restores_bls_and_eddsa() {
+    fn insert_platform_node_pool_entry_rejects_unmanaged_account() {
+        use dashcore::hashes::Hash;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
         let wallet = provider_key_test_wallet();
-        let bls_key = wallet
-            .accounts
-            .bls_account_of_type(AccountType::ProviderOperatorKeys)
-            .expect("BLS provider account")
-            .bls_public_key
-            .clone();
-        let eddsa_key = wallet
-            .accounts
-            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
-            .expect("EdDSA provider account")
-            .ed25519_public_key
-            .clone();
-        let mut accounts = key_wallet::account::account_collection::AccountCollection::new();
-        let wallet_id = [0x24; 32];
-
-        rebuild_provider_key_account(
-            &mut accounts,
-            wallet_id,
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        wallet_info.accounts.provider_platform_keys = None;
+        let address = dashcore::Address::new(
             Network::Testnet,
-            AccountType::ProviderOperatorKeys,
-            &ProviderKeyExtendedPubKey::Bls(bls_key),
-        )
-        .expect("rebuild BLS provider account");
-        rebuild_provider_key_account(
-            &mut accounts,
-            wallet_id,
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(
+                [0x42; 20],
+            )),
+        );
+
+        let err = insert_platform_node_pool_entry(
+            &mut wallet_info,
             Network::Testnet,
-            AccountType::ProviderPlatformKeys,
-            &ProviderKeyExtendedPubKey::EdDSA(eddsa_key),
-        )
-        .expect("rebuild EdDSA provider account");
-
-        assert!(accounts
-            .bls_account_of_type(AccountType::ProviderOperatorKeys)
-            .is_some());
-        assert!(accounts
-            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
-            .is_some());
-    }
-
-    #[test]
-    fn rebuild_provider_key_account_rejects_curve_account_type_mismatch() {
-        let wallet = provider_key_test_wallet();
-        let bls_key = wallet
-            .accounts
-            .bls_account_of_type(AccountType::ProviderOperatorKeys)
-            .expect("BLS provider account")
-            .bls_public_key
-            .clone();
-        let mut accounts = key_wallet::account::account_collection::AccountCollection::new();
-
-        let error = rebuild_provider_key_account(
-            &mut accounts,
+            0,
+            address.clone(),
+            address.script_pubkey(),
             [0x24; 32],
-            Network::Testnet,
-            AccountType::ProviderPlatformKeys,
-            &ProviderKeyExtendedPubKey::Bls(bls_key),
+            false,
         )
-        .expect_err("BLS key must not rebuild as a platform-node account");
+        .expect_err("an unmanaged account must not report a successful insert");
 
-        assert!(matches!(error, ProviderAccountRebuildError::Rejected(_)));
-        assert!(accounts
-            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
-            .is_none());
+        assert!(matches!(err, PlatformNodePoolError::NoManagedAccount));
+    }
+
+    #[test]
+    fn insert_platform_node_pool_entry_clears_stale_used_bookkeeping_on_downgrade() {
+        use dashcore::hashes::Hash;
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = provider_key_test_wallet();
+        let keys = derive_platform_node_public_keys(&wallet, Network::Testnet, 8)
+            .expect("platform-node derivation");
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+
+        for key in [&keys[2], &keys[7]] {
+            let payload = dashcore::address::Payload::PubkeyHash(
+                dashcore::PubkeyHash::from_byte_array(key.node_id),
+            );
+            let address = dashcore::Address::new(Network::Testnet, payload);
+            insert_platform_node_pool_entry(
+                &mut wallet_info,
+                Network::Testnet,
+                key.index,
+                address.clone(),
+                address.script_pubkey(),
+                key.public_key,
+                true,
+            )
+            .expect("insert used platform-node row");
+        }
+
+        for (key, expected_highest) in [(&keys[7], Some(keys[2].index)), (&keys[2], None)] {
+            let payload = dashcore::address::Payload::PubkeyHash(
+                dashcore::PubkeyHash::from_byte_array(key.node_id),
+            );
+            let address = dashcore::Address::new(Network::Testnet, payload);
+            insert_platform_node_pool_entry(
+                &mut wallet_info,
+                Network::Testnet,
+                key.index,
+                address.clone(),
+                address.script_pubkey(),
+                key.public_key,
+                false,
+            )
+            .expect("downgrade platform-node row to available");
+
+            let account = wallet_info
+                .accounts
+                .provider_platform_keys
+                .as_ref()
+                .expect("managed platform-node account");
+            let pool = account
+                .managed_account_type()
+                .address_pools()
+                .into_iter()
+                .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+                .expect("AbsentHardened pool");
+            assert!(!pool.used_indices.contains(&key.index));
+            assert_eq!(pool.highest_used, expected_highest);
+        }
+    }
+
+    #[test]
+    fn insert_platform_node_pool_entry_rejects_missing_hardened_pool() {
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = provider_key_test_wallet();
+        let keys = derive_platform_node_public_keys(&wallet, Network::Testnet, 1)
+            .expect("platform-node derivation");
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let account = info
+            .accounts
+            .provider_platform_keys
+            .as_mut()
+            .expect("managed platform-node account must exist");
+        for pool in account.managed_account_type_mut().address_pools_mut() {
+            pool.pool_type = AddressPoolType::Absent;
+        }
+
+        use dashcore::hashes::Hash;
+        let key = &keys[0];
+        let address = dashcore::Address::new(
+            Network::Testnet,
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(
+                key.node_id,
+            )),
+        );
+        let result = insert_platform_node_pool_entry(
+            &mut info,
+            Network::Testnet,
+            key.index,
+            address.clone(),
+            address.script_pubkey(),
+            key.public_key,
+            false,
+        );
+        assert!(matches!(
+            result,
+            Err(PlatformNodePoolError::MissingHardenedPool)
+        ));
     }
 }

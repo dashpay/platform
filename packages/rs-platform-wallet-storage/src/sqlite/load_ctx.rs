@@ -78,10 +78,10 @@ pub enum LoadSite {
     ContactRow,
     /// One wallet could not be rehydrated at all; the rest of the file was.
     WalletRehydration,
-    /// An `identity_keys` / `contacts` row's owner identity is tombstoned.
+    /// An `identity_keys` / `contacts` row's owner identity is absent.
     /// Counted per row, though `route_by_owner` decides once per collection
     /// after its walk, so one log line can carry many counts.
-    TombstonedIdentityOrphan,
+    MissingIdentityOwner,
     /// An identity owned by no wallet carries a registration index.
     UnownedIdentityHasRegistrationIndex,
     /// Two live `identities` rows of one wallet claim the same
@@ -122,7 +122,7 @@ impl LoadSite {
             Self::UnresolvedUtxoAddress => "unresolved_utxo_address",
             Self::UndecodableAddressScript => "undecodable_address_script",
             Self::UsedAddressOwnerConflict => "used_address_owner_conflict",
-            Self::TombstonedIdentityOrphan => "tombstoned_identity_orphan",
+            Self::MissingIdentityOwner => "missing_identity_owner",
             Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
             Self::IdentityIndexCollision => "identity_index_collision",
             Self::IdentityScanStateContradiction => "identity_scan_state_contradiction",
@@ -154,8 +154,8 @@ impl LoadSite {
             Self::RehydrationMaintainGapLimit => {
                 "recovery mode: leaving an address pool short after gap maintenance failed"
             }
-            Self::TombstonedIdentityOrphan => {
-                "recovery mode: skipping rows owned by a tombstoned identity"
+            Self::MissingIdentityOwner => {
+                "recovery mode: skipping rows whose owning identity is absent"
             }
             Self::WalletRehydration => {
                 "recovery mode: dropping one wallet that could not be rebuilt, keeping the rest of the file"
@@ -500,7 +500,7 @@ mod tests {
     fn tolerate_at_counts_every_occurrence_from_one_record() {
         let ctx = LoadCtx::recovery();
         ctx.tolerate_at(
-            LoadSite::TombstonedIdentityOrphan,
+            LoadSite::MissingIdentityOwner,
             SiteCoords {
                 wallet_id: Some([9u8; 32]),
                 account_type: &"n/a",
@@ -513,26 +513,26 @@ mod tests {
         let snapshot = ctx.degradation();
         assert_eq!(snapshot.total, 5);
         assert_eq!(
-            snapshot.by_site.get(&LoadSite::TombstonedIdentityOrphan),
+            snapshot.by_site.get(&LoadSite::MissingIdentityOwner),
             Some(&5)
         );
     }
 
     /// Invariant: `tolerate` must log the site's bespoke
     /// [`LoadSite::explanation`], not the old hard-coded generic literal —
-    /// `TombstonedIdentityOrphan` has bespoke prose that the previous
+    /// `MissingIdentityOwner` has bespoke prose that the previous
     /// literal could never surface.
     #[tracing_test::traced_test]
     #[test]
     fn tolerate_logs_the_site_explanation_as_the_message_field() {
         let ctx = LoadCtx::recovery();
         ctx.tolerate(
-            LoadSite::TombstonedIdentityOrphan,
+            LoadSite::MissingIdentityOwner,
             WalletStorageError::blob_decode("orphaned row"),
         )
         .expect("recovery must tolerate");
         assert!(logs_contain(
-            "recovery mode: skipping rows owned by a tombstoned identity"
+            "recovery mode: skipping rows whose owning identity is absent"
         ));
     }
 

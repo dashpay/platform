@@ -41,6 +41,19 @@ impl From<&dashcore::OutPoint> for OutPointFFI {
     }
 }
 
+impl From<&OutPointFFI> for dashcore::OutPoint {
+    /// The inverse of [`OutPointFFI::new`] — the one authority for reading
+    /// an outpoint a host hands back (a page cursor, a classification
+    /// query), so the byte order round-trips exactly.
+    fn from(outpoint: &OutPointFFI) -> Self {
+        use dashcore::hashes::Hash as _;
+        dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array(outpoint.txid),
+            vout: outpoint.vout,
+        }
+    }
+}
+
 /// Outpoint of a TXO that was spent, paired with the spending
 /// transaction's txid. Replaces the bare `OutPointFFI` on
 /// `AccountChangeSetFFI.utxos_spent` so the Swift persister can
@@ -52,6 +65,73 @@ impl From<&dashcore::OutPoint> for OutPointFFI {
 pub struct SpentOutPointFFI {
     pub outpoint: OutPointFFI,
     pub spending_txid: [u8; 32],
+}
+
+/// `UtxoCreditVerdictFFI::verdict`: the wallet observed a block at
+/// `spent_at_height` spending the outpoint before the output was
+/// recognised, so the engine never credited it (rust-dashcore#649 skip;
+/// the spender may be unrecorded — rust-dashcore#992).
+pub const UTXO_CREDIT_VERDICT_OBSERVED_SPENT: u8 = 1;
+/// `UtxoCreditVerdictFFI::verdict`: the record is an unconfirmed
+/// transaction whose input a block already spent; nothing it created was
+/// credited and no sweep will delete its row.
+pub const UTXO_CREDIT_VERDICT_DOOMED: u8 = 2;
+/// `UtxoCreditVerdictFFI::verdict`: not credited for a reason the bridge
+/// cannot name (spent, abandoned or swept between emit and drain, or an
+/// account-level spent mark). Carries no context: a persister must not
+/// hand the coin back as unspent on this delivery, and must not mark it
+/// spent on this evidence alone.
+pub const UTXO_CREDIT_VERDICT_UNCREDITED: u8 = 3;
+
+/// The engine's verdict on one `Received` / `Change` output that this
+/// round's records carry but the engine did NOT credit to the owning
+/// account — delivered through the size-negotiated extension slot
+/// `on_persist_wallet_changeset_utxo_verdicts_fn`, BEFORE the round's
+/// changeset callback, so a persister can consult it while it
+/// materialises the round's `utxos_added` entries. Absence of an outpoint
+/// here means credited: the ordinary case.
+///
+/// Rides the extension rather than `WalletChangeSetFFI` / `UtxoEntryFFI`
+/// for the layout reason documented on `WalletChangeSetFFI`: both cross
+/// by bare pointer, so a field appended to either cannot be proven present
+/// to a consumer built after a producer, while the extension's
+/// `struct_size` is exactly that proof.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct UtxoCreditVerdictFFI {
+    /// The output the verdict is about.
+    pub outpoint: OutPointFFI,
+    /// One of the `UTXO_CREDIT_VERDICT_*` constants.
+    pub verdict: u8,
+    /// Height of the block observed spending the outpoint when `verdict`
+    /// is [`UTXO_CREDIT_VERDICT_OBSERVED_SPENT`]; 0 otherwise.
+    pub spent_at_height: u32,
+}
+
+/// Project a changeset's credit verdicts into their C mirrors for the
+/// extension slot, in outpoint order (the map's own ordering — stable,
+/// so a host log of a round is reproducible).
+pub(crate) fn build_utxo_credit_verdicts_for_callback(
+    cs: &platform_wallet::changeset::CoreChangeSet,
+) -> Vec<UtxoCreditVerdictFFI> {
+    use platform_wallet::changeset::changeset::UtxoCreditVerdict;
+    cs.utxo_credit_verdicts
+        .iter()
+        .map(|(outpoint, verdict)| {
+            let (code, spent_at_height) = match verdict {
+                UtxoCreditVerdict::ObservedSpent { height } => {
+                    (UTXO_CREDIT_VERDICT_OBSERVED_SPENT, *height)
+                }
+                UtxoCreditVerdict::Doomed => (UTXO_CREDIT_VERDICT_DOOMED, 0),
+                UtxoCreditVerdict::Uncredited => (UTXO_CREDIT_VERDICT_UNCREDITED, 0),
+            };
+            UtxoCreditVerdictFFI {
+                outpoint: OutPointFFI::from(outpoint),
+                verdict: code,
+                spent_at_height,
+            }
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -2084,3 +2164,92 @@ mod tests {
         unsafe { crate::wallet::platform_wallet_manager_free_masternodes_v2(v2, 2) };
     }
 }
+
+// ---------------------------------------------------------------------------
+// Wallet UTXO inventory and outpoint classification (store reconcile)
+// ---------------------------------------------------------------------------
+
+/// One row of a wallet's UTXO inventory page — the C mirror of
+/// `platform_wallet::manager::accessors::WalletUtxoRow`, with the owning
+/// account projected into the same flat tag layout `AccountSpecFFI` and
+/// `AccountBalanceEntryFFI` use, so a store that keys rows by account can
+/// file a healed row under the right one.
+///
+/// Returned by `platform_wallet_wallet_utxos_page`; every row's `address`
+/// and `script_pubkey` allocations belong to Rust and are released by
+/// `platform_wallet_wallet_utxos_page_free`.
+#[repr(C)]
+#[derive(Debug)]
+pub struct WalletUtxoEntryFFI {
+    pub type_tag: crate::wallet_restore_types::AccountTypeTagFFI,
+    pub standard_tag: crate::wallet_restore_types::StandardAccountTypeTagFFI,
+    pub index: u32,
+    pub registration_index: u32,
+    pub key_class: u32,
+    pub user_identity_id: [u8; 32],
+    pub friend_identity_id: [u8; 32],
+    pub outpoint: OutPointFFI,
+    pub value_duffs: u64,
+    /// Base58Check address of the output, as the engine holds it. Never
+    /// null; an empty string when the script has no address form.
+    pub address: *mut c_char,
+    /// Null when `script_pubkey_len == 0`.
+    pub script_pubkey: *mut u8,
+    pub script_pubkey_len: usize,
+    pub height: u32,
+    pub is_confirmed: bool,
+    pub is_instantlocked: bool,
+    pub is_coinbase: bool,
+    pub is_locked: bool,
+}
+
+/// Cursor for `platform_wallet_wallet_utxos_page`: the owning account (the
+/// raw tag layout of `AccountSpecFFI`, validated on the Rust side) and
+/// outpoint of the LAST row of the previous page. Pass null to start.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct WalletUtxoCursorFFI {
+    pub type_tag: u8,
+    pub standard_tag: u8,
+    pub index: u32,
+    pub registration_index: u32,
+    pub key_class: u32,
+    pub user_identity_id: [u8; 32],
+    pub friend_identity_id: [u8; 32],
+    pub outpoint: OutPointFFI,
+}
+
+/// One store row handed to `platform_wallet_classify_outpoints`: the
+/// account the store files the coin under (raw `AccountSpecFFI` tag
+/// layout), the outpoint, and the script the store recorded for it. Every
+/// pointer is valid for the duration of the call only.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct OutpointOwnershipQueryFFI {
+    pub type_tag: u8,
+    pub standard_tag: u8,
+    pub index: u32,
+    pub registration_index: u32,
+    pub key_class: u32,
+    pub user_identity_id: [u8; 32],
+    pub friend_identity_id: [u8; 32],
+    pub outpoint: OutPointFFI,
+    pub script_pubkey: *const u8,
+    pub script_pubkey_len: usize,
+}
+
+/// `platform_wallet_classify_outpoints` answer: the engine has no opinion
+/// (a funding transaction this session never processed — after a restart
+/// the finalized set is empty, so absence proves nothing).
+pub const OUTPOINT_CLASS_UNKNOWN: u8 = 0;
+/// `platform_wallet_classify_outpoints` answer: the coin is in a funds
+/// account's live UTXO set.
+pub const OUTPOINT_CLASS_UNSPENT: u8 = 1;
+/// `platform_wallet_classify_outpoints` answer: the owning account knows
+/// the funding txid, owns the script, and does not hold the coin — the
+/// engine skipped it for a spent reason or consumed it. The one class a
+/// reconciler may act on.
+pub const OUTPOINT_CLASS_KNOWN_UNCREDITED: u8 = 2;
+/// `platform_wallet_classify_outpoints` answer: the owning account's pools
+/// do not monitor the script; the engine could never have credited it.
+pub const OUTPOINT_CLASS_NOT_OWNED: u8 = 3;

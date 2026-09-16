@@ -60,30 +60,58 @@ pub trait PlatformSerializableWithPlatformVersion {
     }
 }
 
-pub trait PlatformDeserializable {
-    fn deserialize_from_bytes(data: &[u8]) -> Result<Self, ProtocolError>
+/// Deserialization of bytes this node wrote itself: Drive state read back
+/// from GroveDB, wallet storage, locally generated fixtures.
+///
+/// Runs bincode's ordinary decoder, which reserves each collection from its
+/// length prefix, so it must never see bytes that arrived from a peer, a
+/// client, a proof or a host caller; those go through
+/// [`PlatformDeserializableUntrusted`].
+pub trait PlatformDeserializableTrusted {
+    fn deserialize_from_bytes_trusted(data: &[u8]) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
-        Self::deserialize_from_bytes_no_limit(data)
+        Self::deserialize_from_bytes_trusted_no_limit(data)
     }
 
-    fn deserialize_from_bytes_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
+    fn deserialize_from_bytes_trusted_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
     where
         Self: Sized;
 }
 
-pub trait PlatformDeserializableFromVersionedStructure {
-    /// We will deserialize a versioned structure into a code structure
-    /// For example we have DataContractV0 and DataContractV1
-    /// The system version will tell which version to deserialize into
-    /// This happens by first deserializing the data into a potentially versioned structure
-    /// For example we could have DataContractSerializationFormatV0 and DataContractSerializationFormatV1
-    /// Both of the structures will be valid in perpetuity as they are saved into the state.
-    /// So from the bytes we could get DataContractSerializationFormatV0.
-    /// Then the system_version given will tell to transform DataContractSerializationFormatV0 into
-    /// DataContractV1 (if system version is 1)
-    fn versioned_deserialize(
+/// Deserialization of bytes from outside this node: state transitions, query
+/// requests and cursors, proofs, SDK responses, host-supplied input.
+///
+/// Runs bincode's untrusted decoder, which reserves nothing from a length
+/// prefix before the elements it announces have actually been read, so a
+/// short input claiming a huge collection fails instead of allocating.
+pub trait PlatformDeserializableUntrusted {
+    fn deserialize_from_bytes_untrusted(data: &[u8]) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        Self::deserialize_from_bytes_untrusted_no_limit(data)
+    }
+
+    fn deserialize_from_bytes_untrusted_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+}
+
+/// We will deserialize a versioned structure into a code structure
+/// For example we have DataContractV0 and DataContractV1
+/// The system version will tell which version to deserialize into
+/// This happens by first deserializing the data into a potentially versioned structure
+/// For example we could have DataContractSerializationFormatV0 and DataContractSerializationFormatV1
+/// Both of the structures will be valid in perpetuity as they are saved into the state.
+/// So from the bytes we could get DataContractSerializationFormatV0.
+/// Then the system_version given will tell to transform DataContractSerializationFormatV0 into
+/// DataContractV1 (if system version is 1)
+///
+/// Trusted twin: bytes this node wrote itself, see [`PlatformDeserializableTrusted`].
+pub trait PlatformDeserializableFromVersionedStructureTrusted {
+    fn versioned_deserialize_trusted(
         data: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -91,17 +119,24 @@ pub trait PlatformDeserializableFromVersionedStructure {
         Self: Sized;
 }
 
-pub trait PlatformDeserializableWithPotentialValidationFromVersionedStructure {
-    /// We will deserialize a versioned structure into a code structure
-    /// For example we have DataContractV0 and DataContractV1
-    /// The system version will tell which version to deserialize into
-    /// This happens by first deserializing the data into a potentially versioned structure
-    /// For example we could have DataContractSerializationFormatV0 and DataContractSerializationFormatV1
-    /// Both of the structures will be valid in perpetuity as they are saved into the state.
-    /// So from the bytes we could get DataContractSerializationFormatV0.
-    /// Then the system_version given will tell to transform DataContractSerializationFormatV0 into
-    /// DataContractV1 (if system version is 1)
-    fn versioned_deserialize(
+/// Untrusted twin of [`PlatformDeserializableFromVersionedStructureTrusted`]:
+/// bytes from outside this node, see [`PlatformDeserializableUntrusted`].
+pub trait PlatformDeserializableFromVersionedStructureUntrusted {
+    fn versioned_deserialize_untrusted(
+        data: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+}
+
+/// Versioned deserialization with optional full validation of the decoded
+/// structure (see [`PlatformDeserializableFromVersionedStructureTrusted`] for
+/// how versioned structures decode).
+///
+/// Trusted twin: bytes this node wrote itself, see [`PlatformDeserializableTrusted`].
+pub trait PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted {
+    fn versioned_deserialize_trusted(
         data: &[u8],
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -110,17 +145,26 @@ pub trait PlatformDeserializableWithPotentialValidationFromVersionedStructure {
         Self: Sized;
 }
 
-pub trait PlatformDeserializableWithBytesLenFromVersionedStructure {
-    /// We will deserialize a versioned structure into a code structure
-    /// For example we have DataContractV0 and DataContractV1
-    /// The system version will tell which version to deserialize into
-    /// This happens by first deserializing the data into a potentially versioned structure
-    /// For example we could have DataContractSerializationFormatV0 and DataContractSerializationFormatV1
-    /// Both of the structures will be valid in perpetuity as they are saved into the state.
-    /// So from the bytes we could get DataContractSerializationFormatV0.
-    /// Then the system_version given will tell to transform DataContractSerializationFormatV0 into
-    /// DataContractV1 (if system version is 1)
-    fn versioned_deserialize_with_bytes_len(
+/// Untrusted twin of
+/// [`PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted`]:
+/// bytes from outside this node, see [`PlatformDeserializableUntrusted`].
+pub trait PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted {
+    fn versioned_deserialize_untrusted(
+        data: &[u8],
+        full_validation: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+}
+
+/// Versioned deserialization that also reports how many bytes were consumed
+/// (see [`PlatformDeserializableFromVersionedStructureTrusted`] for how
+/// versioned structures decode).
+///
+/// Trusted twin: bytes this node wrote itself, see [`PlatformDeserializableTrusted`].
+pub trait PlatformDeserializableWithBytesLenFromVersionedStructureTrusted {
+    fn versioned_deserialize_with_bytes_len_trusted(
         data: &[u8],
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -129,8 +173,24 @@ pub trait PlatformDeserializableWithBytesLenFromVersionedStructure {
         Self: Sized;
 }
 
-pub trait PlatformLimitDeserializableFromVersionedStructure {
-    fn versioned_limit_deserialize(
+/// Untrusted twin of
+/// [`PlatformDeserializableWithBytesLenFromVersionedStructureTrusted`]:
+/// bytes from outside this node, see [`PlatformDeserializableUntrusted`].
+pub trait PlatformDeserializableWithBytesLenFromVersionedStructureUntrusted {
+    fn versioned_deserialize_with_bytes_len_untrusted(
+        data: &[u8],
+        full_validation: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, usize), ProtocolError>
+    where
+        Self: Sized;
+}
+
+/// Versioned deserialization under the type's configured byte limit.
+///
+/// Trusted twin: bytes this node wrote itself, see [`PlatformDeserializableTrusted`].
+pub trait PlatformLimitDeserializableFromVersionedStructureTrusted {
+    fn versioned_limit_deserialize_trusted(
         data: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -138,41 +198,17 @@ pub trait PlatformLimitDeserializableFromVersionedStructure {
         Self: Sized;
 }
 
-/// Convert to/from `platform_value::Value` using **non-human-readable** serde
-/// (`Identifier` = `Value::Identifier(bytes)`, binary = `Value::Bytes(bytes)`,
-/// raw byte fields preserved without stringification).
-///
-/// # ⚠️ HR / non-HR divergence (Critical-1)
-///
-/// `ValueConvertible` calls `platform_value::to_value`, which uses a serializer
-/// that reports `is_human_readable() == false`. The mirror trait
-/// [`JsonConvertible`] uses `serde_json::to_value`, which reports `true`.
-/// Types whose `Serialize` impl branches on `is_human_readable()` produce
-/// **structurally different output** between the two paths:
-///
-/// | Type | `to_json()` (HR) | `to_object()` (non-HR) |
-/// |---|---|---|
-/// | [`platform_value::Identifier`] | `"5bV6jUfh..."` (bs58 string) | `Value::Identifier([u8; 32])` |
-/// | [`platform_value::BinaryData`] | `"sg=="` (base64 string) | `Value::Bytes(Vec<u8>)` |
-/// | `Bytes20` / `Bytes32` / `Bytes36` | base64 string | `Value::Bytes32([u8; N])` etc. |
-/// | `CoreScript` | `"dqkU..."` (base64 string) | `Value::Bytes(Vec<u8>)` |
-///
-/// **Do not assume** `self.to_object()?.try_into_json()` ≡ `self.to_json()`.
-/// They render the same field as a string in one and a byte array in the
-/// other. Round-trip tests should exercise each path independently.
-///
-/// # ⚠️ `ContentDeserializer` caveat
-///
-/// Manual `Deserialize` impls that branch on `deserializer.is_human_readable()`
-/// must also handle `serde::__private::de::ContentDeserializer`, used
-/// internally by `#[serde(tag = "...")]` enums. ContentDeserializer **always
-/// reports `is_human_readable: true`** regardless of the original source, so
-/// a non-HR `platform_value::Value` flowing into a tagged enum gets shape-
-/// inferred as if it were HR. Recipe: write a dual-shape visitor accepting
-/// both shapes in the HR branch via `deserialize_any`. See
-/// [`platform_value::Bytes32::deserialize`] for the canonical example, and
-/// `rs-dpp/src/serialization/serde_bytes.rs` for `[u8; N]` / `Vec<u8>`.
-#[cfg(feature = "value-conversion")]
+/// Untrusted twin of [`PlatformLimitDeserializableFromVersionedStructureTrusted`]:
+/// bytes from outside this node, see [`PlatformDeserializableUntrusted`].
+pub trait PlatformLimitDeserializableFromVersionedStructureUntrusted {
+    fn versioned_limit_deserialize_untrusted(
+        data: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+}
+
 pub trait ValueConvertible: Serialize + DeserializeOwned {
     fn to_object(&self) -> Result<Value, ProtocolError>
     where

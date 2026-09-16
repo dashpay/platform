@@ -13,23 +13,33 @@ use std::os::raw::c_char;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use platform_wallet::wallet::shielded::ShieldedSyncSummary;
+use platform_wallet::wallet::shielded::{
+    ShieldedBalanceSource, ShieldedLocalBalanceState, ShieldedSyncSummary,
+};
+use platform_wallet::PlatformWalletError;
 
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::{block_on_worker, runtime};
-use crate::shielded_types::ShieldedSyncWalletResultFFI;
+use crate::shielded_types::{
+    ShieldedBalanceSourceFFI, ShieldedLocalAccountBalanceFFI, ShieldedLocalBalanceSnapshotFFI,
+    ShieldedLocalBalanceStatusFFI, ShieldedSyncWalletResultFFI,
+};
 use crate::{check_ptr, unwrap_option_or_return};
 use rs_sdk_ffi::MnemonicResolverHandle;
 
 impl ShieldedSyncWalletResultFFI {
-    pub(crate) fn ok(wallet_id: [u8; 32], summary: &ShieldedSyncSummary) -> Self {
+    pub(crate) fn ok(
+        wallet_id: [u8; 32],
+        summary: &ShieldedSyncSummary,
+    ) -> Result<Self, PlatformWalletError> {
         // Multi-account on the Rust side; flattened to wallet-level
         // sums here. Hosts that want per-account detail call
-        // `platform_wallet_manager_shielded_balance(account)`.
+        // `platform_wallet_manager_local_shielded_balance_snapshot`.
+        let balance = summary.balance_total()?;
         let new_notes = u32::try_from(summary.notes_result.total_new_notes()).unwrap_or(u32::MAX);
         let newly_spent = u32::try_from(summary.total_newly_spent()).unwrap_or(u32::MAX);
-        Self {
+        Ok(Self {
             wallet_id,
             success: true,
             skipped: false,
@@ -37,10 +47,171 @@ impl ShieldedSyncWalletResultFFI {
             new_notes,
             total_scanned: summary.notes_result.total_scanned,
             newly_spent,
-            balance: summary.balance_total(),
+            balance,
             error_message: std::ptr::null(),
+        })
+    }
+}
+
+impl From<ShieldedLocalBalanceState> for ShieldedLocalBalanceSnapshotFFI {
+    fn from(state: ShieldedLocalBalanceState) -> Self {
+        let snapshot = match state {
+            ShieldedLocalBalanceState::Unbound => return Self::default(),
+            ShieldedLocalBalanceState::RestoreIncomplete => {
+                return Self {
+                    status: ShieldedLocalBalanceStatusFFI::RestoreIncomplete,
+                    ..Self::default()
+                }
+            }
+            ShieldedLocalBalanceState::Ready(snapshot) => snapshot,
+        };
+        let accounts: Box<[_]> = snapshot
+            .accounts
+            .into_iter()
+            .map(|(account_index, balance)| ShieldedLocalAccountBalanceFFI {
+                account_index,
+                spendable_credits: balance.spendable_credits,
+                last_scanned_index: balance.last_scanned_index.unwrap_or(0),
+                has_last_scanned_index: balance.last_scanned_index.is_some(),
+                source: match balance.source {
+                    ShieldedBalanceSource::NoHistory => ShieldedBalanceSourceFFI::NoHistory,
+                    ShieldedBalanceSource::Restored => ShieldedBalanceSourceFFI::Restored,
+                    ShieldedBalanceSource::ScannedThisSession => {
+                        ShieldedBalanceSourceFFI::ScannedThisSession
+                    }
+                },
+            })
+            .collect();
+        let accounts_count = accounts.len();
+        Self {
+            status: ShieldedLocalBalanceStatusFFI::Ready,
+            accounts: if accounts_count == 0 {
+                std::ptr::null()
+            } else {
+                Box::into_raw(accounts) as *const ShieldedLocalAccountBalanceFFI
+            },
+            accounts_count,
         }
     }
+}
+
+/// Read the bound wallet's local shielded balance, including pending-spend
+/// reservations, without starting sync or resolving a mnemonic. Waits at most
+/// 100 ms for the coordinator lifecycle/store locks. On contention, returns
+/// ErrorWalletOperation with an empty output; retain the last balance and retry.
+/// A store wait releases the lifecycle guard before parking, so unrelated
+/// store-free binds can proceed. The account set is revalidated on reacquisition.
+/// Check the returned result code before interpreting any output fields. Only
+/// Success makes the status authoritative; an error's reset Unbound value is
+/// allocation cleanup state, not a statement that the wallet is unbound.
+/// Call it off the host's UI thread.
+///
+/// # Safety
+/// `wallet_id_bytes` must point to 32 readable bytes; `out_snapshot` must be
+/// writable and must not still own an earlier snapshot. Free the result with
+/// `platform_wallet_manager_local_shielded_balance_snapshot_free`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_local_shielded_balance_snapshot(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    out_snapshot: *mut ShieldedLocalBalanceSnapshotFFI,
+) -> PlatformWalletFFIResult {
+    local_shielded_balance_snapshot_with_budget(
+        handle,
+        wallet_id_bytes,
+        out_snapshot,
+        Duration::from_millis(100),
+    )
+}
+
+// Separate the budget from the exported ABI so the registry-lock regression
+// can keep a snapshot parked longer than its independent writer/stop deadlines.
+unsafe fn local_shielded_balance_snapshot_with_budget(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    out_snapshot: *mut ShieldedLocalBalanceSnapshotFFI,
+    wait_budget: Duration,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_snapshot);
+    *out_snapshot = ShieldedLocalBalanceSnapshotFFI::default();
+    check_ptr!(wallet_id_bytes);
+    let mut wallet_id = [0; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), wallet_id.len());
+    let lookup = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(async {
+            let wallet = manager.get_wallet(&wallet_id).await;
+            let coordinator = manager.shielded_coordinator().await;
+            (wallet, coordinator)
+        })
+    });
+    let (wallet, coordinator) = unwrap_option_or_return!(lookup);
+    // Only the owned Arcs cross this wait. Holding the global registry's read
+    // guard while a scan owns the store lock can block an unrelated writer,
+    // which then blocks the stop lookup behind it on the fair registry lock.
+    let result = runtime().block_on(async {
+        // A missing wallet is an API error, not a legitimate unbound state.
+        let wallet = wallet.ok_or_else(|| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!(
+                    "local shielded balance snapshot failed: {}",
+                    PlatformWalletError::WalletNotFound(hex::encode(wallet_id))
+                ),
+            )
+        })?;
+        let Some(coordinator) = coordinator else {
+            return Ok(ShieldedLocalBalanceState::Unbound);
+        };
+        // Keep the wallet alive until the read completes. Coordinator
+        // lifecycle locking serializes removal/Clear against its snapshot.
+        tokio::time::timeout(
+            wait_budget,
+            coordinator.local_balance_snapshot(wallet.wallet_id()),
+        )
+        .await
+        .map_err(|_| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "local shielded balance snapshot busy; retry after sync releases its locks",
+            )
+        })?
+        .map_err(|error| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!("local shielded balance snapshot failed: {error}"),
+            )
+        })
+    });
+    match result {
+        Ok(snapshot) => {
+            *out_snapshot = snapshot.into();
+            PlatformWalletFFIResult::ok()
+        }
+        Err(error) => error,
+    }
+}
+
+/// Free the account array and reset the caller's snapshot. A null pointer is a
+/// no-op; calling again on the same reset value is also safe. Resetting only
+/// releases ownership; it does not establish the wallet's binding status.
+///
+/// # Safety
+/// `snapshot` must be null or point to a live value returned by the matching
+/// snapshot function, not a copied owner or an already-freed array.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_local_shielded_balance_snapshot_free(
+    snapshot: *mut ShieldedLocalBalanceSnapshotFFI,
+) {
+    let Some(snapshot) = snapshot.as_mut() else {
+        return;
+    };
+    if !snapshot.accounts.is_null() {
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            snapshot.accounts as *mut ShieldedLocalAccountBalanceFFI,
+            snapshot.accounts_count,
+        )));
+    }
+    *snapshot = ShieldedLocalBalanceSnapshotFFI::default();
 }
 
 // ---------------------------------------------------------------------------
@@ -300,17 +471,15 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     // Seedless path first: rebind from viewing keys persisted by a
     // prior seed-backed bind. `Ok(false)` means at least one
     // requested account has no persisted row — only then is the
-    // mnemonic resolved.
+    // mnemonic resolved. Persisted-key load/restore errors propagate without
+    // resolving the seed; fallback must not mask a persistence failure.
     match runtime()
         .block_on(wallet_arc.bind_shielded_from_persisted(accounts.as_slice(), &coordinator))
     {
         Ok(true) => return PlatformWalletFFIResult::ok(),
         Ok(false) => {}
         Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                format!("bind_shielded_from_persisted failed: {e}"),
-            );
+            return map_shielded_error(e, "bind_shielded_from_persisted");
         }
     }
 
@@ -330,10 +499,7 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
         accounts.as_slice(),
         &coordinator,
     )) {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("bind_shielded failed: {e}"),
-        );
+        return map_shielded_error(e, "bind_shielded");
     }
 
     PlatformWalletFFIResult::ok()
@@ -379,10 +545,7 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
     });
     let result = unwrap_option_or_return!(option);
     if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("configure_shielded failed: {e}"),
-        );
+        return map_shielded_error(e, "configure_shielded");
     }
     PlatformWalletFFIResult::ok()
 }
@@ -448,10 +611,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
         ) {
             return PlatformWalletFFIResult::from(e);
         }
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("clear_shielded failed: {e}"),
-        );
+        return map_shielded_error(e, "clear_shielded");
     }
     PlatformWalletFFIResult::ok()
 }
@@ -562,9 +722,457 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
     let result = unwrap_option_or_return!(option);
     match result {
         Ok(_) => PlatformWalletFFIResult::ok(),
-        Err(e) => PlatformWalletFFIResult::err(
+        Err(e) => map_shielded_error(e, "shielded sync"),
+    }
+}
+
+/// Recovery errors must remain typed when opening, binding or syncing durable state,
+/// just as they do when submitting or explicitly abandoning a payment.
+fn map_shielded_error(error: PlatformWalletError, operation: &str) -> PlatformWalletFFIResult {
+    match error {
+        error @ PlatformWalletError::ShieldedRecoveryCorrupted { .. }
+        | error @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. } => error.into(),
+        other => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded sync failed: {e}"),
+            format!("{operation} failed: {other}"),
         ),
+    }
+}
+
+#[cfg(test)]
+mod recovery_error_tests {
+    use super::*;
+
+    #[test]
+    fn should_preserve_recovery_errors_when_configuring_binding_or_syncing() {
+        for (error, expected) in [
+            (
+                PlatformWalletError::ShieldedRecoveryCorrupted {
+                    account_index: None,
+                    reason: "invalid durable recovery envelope".into(),
+                },
+                PlatformWalletFFIResultCode::ErrorShieldedRecoveryCorrupted,
+            ),
+            (
+                PlatformWalletError::ShieldedRecoveryKeysRequired {
+                    account_index: 9,
+                    reason: "account viewing keys required".into(),
+                },
+                PlatformWalletFFIResultCode::ErrorShieldedRecoveryKeysRequired,
+            ),
+        ] {
+            let message = error.to_string();
+            let result = map_shielded_error(error, "configure or bind");
+            assert_eq!(result.code, expected);
+            assert_eq!(
+                unsafe { CStr::from_ptr(result.message) }.to_str().unwrap(),
+                message
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod local_balance_tests {
+    use super::*;
+    use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
+    use crate::persistence::{FFIPersister, PersistenceCallbacks};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use platform_wallet::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use platform_wallet::wallet::shielded::{
+        OrchardKeySet, ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
+    };
+    use platform_wallet::PlatformWalletManager;
+    use std::collections::BTreeMap;
+    use std::future::{poll_fn, Future};
+    use std::sync::{mpsc, Arc};
+    use std::task::Poll;
+    use std::time::Instant;
+
+    fn mock_manager() -> PlatformWalletManager<FFIPersister> {
+        unsafe extern "C" fn begin(_: *mut std::ffi::c_void, _: *const u8) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end(_: *mut std::ffi::c_void, _: *const u8, _: bool) -> i32 {
+            0
+        }
+        let persister = FFIPersister::new(PersistenceCallbacks {
+            on_changeset_begin_fn: Some(begin),
+            on_changeset_end_fn: Some(end),
+            ..Default::default()
+        });
+        let events = FFIEventHandler::new(
+            EventHandlerCallbacks {
+                context: std::ptr::null_mut(),
+                on_wallet_event_fn: None,
+                on_error_fn: None,
+                on_platform_address_sync_completed_fn: None,
+                on_shielded_sync_completed_fn: None,
+                on_shielded_sync_progress_fn: None,
+                on_shielded_tree_progress_fn: None,
+                release_fn: None,
+            },
+            None,
+        );
+        let _runtime_guard = runtime().enter();
+        PlatformWalletManager::new(
+            Arc::new(
+                dash_sdk::SdkBuilder::new_mock()
+                    .with_network(dashcore::Network::Testnet)
+                    .build()
+                    .expect("mock sdk"),
+            ),
+            Arc::new(persister),
+            Arc::new(events),
+        )
+    }
+
+    fn bound_manager() -> (
+        Handle,
+        [u8; 32],
+        Arc<platform_wallet::wallet::shielded::NetworkShieldedCoordinator>,
+        PathBuf,
+    ) {
+        let manager = mock_manager();
+        let path = std::env::temp_dir().join(format!(
+            "ffi-shielded-local-balance-{}-{}.sqlite",
+            std::process::id(),
+            next_handle()
+        ));
+        let (wallet_id, coordinator) = runtime().block_on(async {
+            let wallet = manager
+                .create_wallet_from_seed_bytes(
+                    dashcore::Network::Testnet,
+                    &[42; 64],
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+                .expect("create mock wallet");
+            manager
+                .configure_shielded(&path)
+                .await
+                .expect("configure shielded");
+            let coordinator = manager.shielded_coordinator().await.expect("coordinator");
+            let wallet_id = wallet.wallet_id();
+            let views = OrchardKeySet::from_seed(&[42; 64], dashcore::Network::Testnet, 0)
+                .expect("viewing keys")
+                .viewing_keys();
+            coordinator
+                .register_wallet(
+                    wallet_id,
+                    BTreeMap::from([(0, views)]),
+                    WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+                )
+                .await
+                .expect("register test wallet");
+            coordinator.mark_hydrated(wallet_id, true).await;
+            (wallet_id, coordinator)
+        });
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
+        (handle, wallet_id, coordinator, path)
+    }
+
+    #[test]
+    fn should_allow_registry_writer_and_stop_while_local_balance_snapshot_is_parked() {
+        let (handle, wallet_id, coordinator, path) = bound_manager();
+        let unrelated_handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+        // Model a scan owning the real store lock. Once the FFI snapshot has
+        // cloned this coordinator, it cannot finish until this guard drops.
+        let store_guard = runtime().block_on(coordinator.store().write());
+        let coordinator_refs = Arc::strong_count(&coordinator);
+        let snapshot_thread = std::thread::spawn(move || unsafe {
+            let mut snapshot = ShieldedLocalBalanceSnapshotFFI::default();
+            let mut result = local_shielded_balance_snapshot_with_budget(
+                handle,
+                wallet_id.as_ptr(),
+                &mut snapshot,
+                Duration::from_secs(10),
+            );
+            let outcome = (result.code, snapshot.status, snapshot.accounts_count);
+            platform_wallet_manager_local_shielded_balance_snapshot_free(&mut snapshot);
+            crate::platform_wallet_ffi_result_free(&mut result);
+            outcome
+        });
+        // Observe the actual entrypoint's owned coordinator, not elapsed time
+        // or the lifecycle mutex (which a contended snapshot now releases).
+        // In the regressed with_item implementation this clone occurs while
+        // holding the registry guard; the store writer prevents that call from
+        // returning before the unrelated registry writer below is attempted.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let snapshot_entered = loop {
+            let entered = Arc::strong_count(&coordinator) > coordinator_refs;
+            if entered || Instant::now() >= deadline {
+                break entered;
+            }
+            std::thread::yield_now();
+        };
+
+        let (writer_done_tx, writer_done_rx) = mpsc::channel();
+        let writer_thread = std::thread::spawn(move || unsafe {
+            // Destroying another manager takes the same global registry's
+            // write lock. It must finish while the snapshot remains parked.
+            let mut result = crate::manager::platform_wallet_manager_destroy(unrelated_handle);
+            writer_done_tx.send(result.code).expect("writer receiver");
+            crate::platform_wallet_ffi_result_free(&mut result);
+        });
+        let writer_result = writer_done_rx.recv_timeout(Duration::from_secs(2));
+        let (stop_done_tx, stop_done_rx) = mpsc::channel();
+        let stop_thread = std::thread::spawn(move || unsafe {
+            let mut result = platform_wallet_manager_shielded_sync_stop(handle);
+            stop_done_tx.send(result.code).expect("stop receiver");
+            crate::platform_wallet_ffi_result_free(&mut result);
+        });
+        let stop_result = stop_done_rx.recv_timeout(Duration::from_secs(2));
+
+        // Always release the scan and join workers before asserting, even
+        // against the broken implementation, so a regression cannot leave
+        // the process-global handle registry locked for the rest of the suite.
+        drop(store_guard);
+        let snapshot_result = snapshot_thread.join().expect("snapshot thread");
+        writer_thread.join().expect("writer thread");
+        stop_thread.join().expect("stop thread");
+        unsafe {
+            let mut result = crate::manager::platform_wallet_manager_destroy(handle);
+            crate::platform_wallet_ffi_result_free(&mut result);
+        }
+        drop(coordinator);
+        std::fs::remove_file(path).expect("remove test store");
+
+        assert!(
+            snapshot_entered,
+            "snapshot never acquired its owned coordinator"
+        );
+        assert_eq!(writer_result, Ok(PlatformWalletFFIResultCode::Success));
+        assert_eq!(stop_result, Ok(PlatformWalletFFIResultCode::Success));
+        assert_eq!(
+            snapshot_result,
+            (
+                PlatformWalletFFIResultCode::Success,
+                ShieldedLocalBalanceStatusFFI::Ready,
+                1
+            )
+        );
+    }
+
+    fn assert_snapshot_contention_is_bounded(hold_lifecycle: bool) {
+        let (handle, wallet_id, coordinator, path) = bound_manager();
+        let store_guard = runtime().block_on(coordinator.store().write());
+        // A fresh registration checks durable pending rows under the store
+        // lock while holding lifecycle. Poll it once to park that transaction
+        // before any registry mutation, then test the exported read's deadline.
+        let other_wallet = [0xf3; 32];
+        let mut lifecycle_holder = Box::pin(coordinator.register_wallet(
+            other_wallet,
+            BTreeMap::new(),
+            WalletPersister::new(other_wallet, Arc::new(NoPlatformPersistence)),
+        ));
+        if hold_lifecycle {
+            let pending = runtime().block_on(poll_fn(|cx| {
+                Poll::Ready(lifecycle_holder.as_mut().poll(cx).is_pending())
+            }));
+            assert!(pending, "store guard must park the lifecycle holder");
+        }
+        let (done_tx, done_rx) = mpsc::channel();
+        let snapshot_thread = std::thread::spawn(move || unsafe {
+            let mut snapshot = ShieldedLocalBalanceSnapshotFFI {
+                status: ShieldedLocalBalanceStatusFFI::Ready,
+                accounts: std::ptr::dangling(),
+                accounts_count: 99,
+            };
+            let mut result = platform_wallet_manager_local_shielded_balance_snapshot(
+                handle,
+                wallet_id.as_ptr(),
+                &mut snapshot,
+            );
+            let message = if result.message.is_null() {
+                String::new()
+            } else {
+                CStr::from_ptr(result.message)
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            let outcome = (
+                result.code,
+                snapshot.status,
+                snapshot.accounts.is_null(),
+                snapshot.accounts_count,
+                message,
+            );
+            platform_wallet_manager_local_shielded_balance_snapshot_free(&mut snapshot);
+            crate::platform_wallet_ffi_result_free(&mut result);
+            done_tx.send(outcome).expect("snapshot receiver");
+        });
+        // Observe completion BEFORE releasing either guard. The generous
+        // watchdog tolerates slow CI without turning the lock release into
+        // what lets the read complete in a regressed implementation.
+        let bounded_result = done_rx.recv_timeout(Duration::from_secs(2));
+        drop(lifecycle_holder);
+        drop(store_guard);
+        snapshot_thread.join().expect("snapshot thread");
+        let (retry_code, retry_status, retry_count) = unsafe {
+            let mut snapshot = ShieldedLocalBalanceSnapshotFFI::default();
+            let mut result = platform_wallet_manager_local_shielded_balance_snapshot(
+                handle,
+                wallet_id.as_ptr(),
+                &mut snapshot,
+            );
+            let outcome = (result.code, snapshot.status, snapshot.accounts_count);
+            platform_wallet_manager_local_shielded_balance_snapshot_free(&mut snapshot);
+            crate::platform_wallet_ffi_result_free(&mut result);
+            let mut destroy = crate::manager::platform_wallet_manager_destroy(handle);
+            crate::platform_wallet_ffi_result_free(&mut destroy);
+            outcome
+        };
+        drop(coordinator);
+        std::fs::remove_file(path).expect("remove test store");
+        let (code, status, empty, count, message) =
+            bounded_result.expect("FFI read must finish while locks remain held");
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorWalletOperation);
+        assert_eq!(status, ShieldedLocalBalanceStatusFFI::Unbound);
+        assert!(empty);
+        assert_eq!(count, 0);
+        assert!(message.contains("snapshot busy; retry"), "{message}");
+        assert_eq!(retry_code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(retry_status, ShieldedLocalBalanceStatusFFI::Ready);
+        assert_eq!(retry_count, 1);
+    }
+
+    #[test]
+    fn should_bound_snapshot_store_lock_wait_and_allow_retry() {
+        assert_snapshot_contention_is_bounded(false);
+    }
+
+    #[test]
+    fn should_bound_snapshot_lifecycle_lock_wait_and_allow_retry() {
+        assert_snapshot_contention_is_bounded(true);
+    }
+
+    #[test]
+    fn should_reject_null_local_balance_output_pointer() {
+        let wallet_id = [1; 32];
+        let mut result = unsafe {
+            platform_wallet_manager_local_shielded_balance_snapshot(
+                NULL_HANDLE,
+                wallet_id.as_ptr(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    #[test]
+    fn should_reset_local_balance_output_before_rejecting_null_wallet_id() {
+        // A non-owning sentinel, not an earlier allocated snapshot: the API
+        // overwrites output but must not free a value supplied by the caller.
+        let mut snapshot = ShieldedLocalBalanceSnapshotFFI {
+            status: ShieldedLocalBalanceStatusFFI::Ready,
+            accounts: std::ptr::dangling(),
+            accounts_count: 99,
+        };
+        let mut result = unsafe {
+            platform_wallet_manager_local_shielded_balance_snapshot(
+                NULL_HANDLE,
+                std::ptr::null(),
+                &mut snapshot,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert_eq!(snapshot.status, ShieldedLocalBalanceStatusFFI::Unbound);
+        assert!(snapshot.accounts.is_null());
+        assert_eq!(snapshot.accounts_count, 0);
+        unsafe {
+            platform_wallet_manager_local_shielded_balance_snapshot_free(&mut snapshot);
+            crate::platform_wallet_ffi_result_free(&mut result);
+        }
+    }
+
+    #[test]
+    fn local_balance_ffi_preserves_accounts_provenance_and_explicit_zero_then_frees() {
+        let ready = ShieldedLocalBalanceSnapshot {
+            accounts: BTreeMap::from([
+                (
+                    0,
+                    ShieldedLocalAccountBalance {
+                        spendable_credits: 12,
+                        last_scanned_index: None,
+                        source: ShieldedBalanceSource::Restored,
+                    },
+                ),
+                (
+                    2,
+                    ShieldedLocalAccountBalance {
+                        spendable_credits: 0,
+                        last_scanned_index: Some(0),
+                        source: ShieldedBalanceSource::ScannedThisSession,
+                    },
+                ),
+                (3, ShieldedLocalAccountBalance::default()),
+            ]),
+        };
+        let mut ffi =
+            ShieldedLocalBalanceSnapshotFFI::from(ShieldedLocalBalanceState::Ready(ready));
+        assert_eq!(ffi.status, ShieldedLocalBalanceStatusFFI::Ready);
+        assert_eq!(ffi.accounts_count, 3);
+        let accounts = unsafe { std::slice::from_raw_parts(ffi.accounts, ffi.accounts_count) };
+        assert_eq!(accounts[0].account_index, 0);
+        assert_eq!(accounts[0].spendable_credits, 12);
+        assert!(!accounts[0].has_last_scanned_index);
+        assert_eq!(accounts[0].source, ShieldedBalanceSourceFFI::Restored);
+        assert_eq!(accounts[1].account_index, 2);
+        assert!(accounts[1].has_last_scanned_index);
+        assert_eq!(accounts[1].last_scanned_index, 0);
+        assert_eq!(
+            accounts[1].source,
+            ShieldedBalanceSourceFFI::ScannedThisSession
+        );
+        assert_eq!(accounts[2].source, ShieldedBalanceSourceFFI::NoHistory);
+        unsafe { platform_wallet_manager_local_shielded_balance_snapshot_free(&mut ffi) };
+        assert!(ffi.accounts.is_null());
+        assert_eq!(ffi.accounts_count, 0);
+        assert_eq!(ffi.status, ShieldedLocalBalanceStatusFFI::Unbound);
+        unsafe {
+            platform_wallet_manager_local_shielded_balance_snapshot_free(&mut ffi);
+            platform_wallet_manager_local_shielded_balance_snapshot_free(std::ptr::null_mut());
+        }
+    }
+
+    #[test]
+    fn local_balance_ffi_unavailable_states_never_allocate_numeric_payloads() {
+        for state in [
+            ShieldedLocalBalanceState::Unbound,
+            ShieldedLocalBalanceState::RestoreIncomplete,
+        ] {
+            let mut ffi = ShieldedLocalBalanceSnapshotFFI::from(state.clone());
+            assert_eq!(
+                ffi.status,
+                if state == ShieldedLocalBalanceState::Unbound {
+                    ShieldedLocalBalanceStatusFFI::Unbound
+                } else {
+                    ShieldedLocalBalanceStatusFFI::RestoreIncomplete
+                }
+            );
+            assert!(ffi.accounts.is_null());
+            assert_eq!(ffi.accounts_count, 0);
+            unsafe { platform_wallet_manager_local_shielded_balance_snapshot_free(&mut ffi) };
+        }
+    }
+
+    #[test]
+    fn local_balance_ffi_invalid_handle_initializes_output_and_returns_error() {
+        let mut ffi = ShieldedLocalBalanceSnapshotFFI::default();
+        let wallet_id = [1; 32];
+        let mut result = unsafe {
+            platform_wallet_manager_local_shielded_balance_snapshot(
+                NULL_HANDLE,
+                wallet_id.as_ptr(),
+                &mut ffi,
+            )
+        };
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(ffi.accounts.is_null());
+        assert_eq!(ffi.accounts_count, 0);
+        unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
     }
 }

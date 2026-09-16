@@ -1,7 +1,7 @@
 mod from_document;
 pub mod v0_methods;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 #[cfg(feature = "value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
@@ -47,7 +47,7 @@ pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 /// The Identifier fields in [`DocumentCreateTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, DecodeUntrusted)]
 // `json_safe_fields`:
 // - Auto-injects `crate::serialization::serde_bytes` on `entropy: [u8; 32]`
 //   → base64 string in JSON HR, raw bytes in non-HR.

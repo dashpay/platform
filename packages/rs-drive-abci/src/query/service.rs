@@ -22,15 +22,16 @@ use dapi_grpc::platform::v0::{
     GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
     GetContestedResourcesRequest, GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest,
     GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
-    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
-    GetDataContractsResponse, GetDocumentHistoryRequest, GetDocumentHistoryResponse,
-    GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
-    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
-    GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
-    GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse,
-    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
-    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetDataContractRequest, GetDataContractResponse, GetDataContractsByRangeRequest,
+    GetDataContractsLatestVersionsRequest, GetDataContractsLatestVersionsResponse,
+    GetDataContractsRequest, GetDataContractsResponse, GetDocumentHistoryRequest,
+    GetDocumentHistoryResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
+    GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest,
+    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
+    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
+    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -387,6 +388,30 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_data_contracts,
             "get_data_contracts",
+        )
+        .await
+    }
+
+    async fn get_data_contracts_by_range(
+        &self,
+        request: Request<GetDataContractsByRangeRequest>,
+    ) -> Result<Response<GetDataContractsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_data_contracts_by_range,
+            "get_data_contracts_by_range",
+        )
+        .await
+    }
+
+    async fn get_data_contracts_latest_versions(
+        &self,
+        request: Request<GetDataContractsLatestVersionsRequest>,
+    ) -> Result<Response<GetDataContractsLatestVersionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_data_contracts_latest_versions,
+            "get_data_contracts_latest_versions",
         )
         .await
     }
@@ -991,6 +1016,7 @@ fn query_error_into_status(error: QueryError) -> Status {
         QueryError::NotFound(message) => Status::not_found(message),
         QueryError::InvalidArgument(message) => Status::invalid_argument(message),
         QueryError::Query(error) => Status::invalid_argument(error.to_string()),
+        QueryError::TooManyElements(message) => Status::invalid_argument(message),
         QueryError::ResourceExhausted(message) => Status::resource_exhausted(message),
         _ => {
             tracing::error!("unexpected query error: {:?}", error);

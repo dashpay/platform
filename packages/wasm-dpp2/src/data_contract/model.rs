@@ -32,7 +32,7 @@ use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::platform_value::{Value, ValueMap};
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::serialization::{
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
     PlatformSerializableWithPlatformVersion,
 };
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
@@ -680,7 +680,7 @@ impl DataContractWasm {
     ) -> WasmDppResult<DataContractWasm> {
         let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
-        let rs_data_contract = DataContract::versioned_deserialize(
+        let rs_data_contract = DataContract::versioned_deserialize_untrusted(
             bytes.as_slice(),
             full_validation,
             &platform_version.into(),

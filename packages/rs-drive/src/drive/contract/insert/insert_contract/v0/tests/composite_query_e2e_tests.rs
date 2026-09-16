@@ -124,6 +124,9 @@ fn insert_post(
     doc.set_properties(props);
     doc.set_id(Identifier::from(id));
     doc.set_owner_id(Identifier::from(owner));
+    // Posts carry a creation time in seed order, so the
+    // `byHashtagCreated` timeline reads newest-first as C, B, A.
+    doc.set_created_at(Some(seed * 1_000));
     insert(drive, contract, "post", &doc);
 }
 
@@ -230,6 +233,48 @@ fn page_by_hashtag<'a>(
         resolved_time_ranges: vec![],
         sub_queries: vec![],
     }
+}
+
+/// The feed's timeline page (issue #4728's shape): `hashtag == <tag>`
+/// and `$createdAt > 0` on the `byHashtagCreated` index, ordered by the
+/// index's properties with the newest post first.
+fn timeline_page<'a>(
+    contract: &'a DataContract,
+    hashtag: &str,
+    limit: u16,
+) -> DriveDocumentQuery<'a> {
+    let mut page = page_by_hashtag(contract, hashtag, Some(limit));
+    page.internal_clauses = InternalClauses::extract_from_clauses(
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text(hashtag.to_string()),
+            },
+            WhereClause {
+                field: "$createdAt".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::U64(0),
+            },
+        ],
+        platform_version(),
+    )
+    .expect("timeline page");
+    page.order_by.insert(
+        "hashtag".to_string(),
+        OrderClause {
+            field: "hashtag".to_string(),
+            ascending: true,
+        },
+    );
+    page.order_by.insert(
+        "$createdAt".to_string(),
+        OrderClause {
+            field: "$createdAt".to_string(),
+            ascending: false,
+        },
+    );
+    page
 }
 
 fn bound<'a>(
@@ -1619,4 +1664,243 @@ fn should_reject_two_limited_lookups_on_one_index_path() {
         .expect_err("two limited lookups on one index path are refused");
     assert!(refused.to_string().contains("carries a limit"), "{refused}");
     drop(drive);
+}
+
+/// A feed page selected from the `[hashtag, $createdAt]` timeline index
+/// with an explicit range and a descending order, plus a like count
+/// bound to it, is ONE merged proof (issue #4728: on dev.9 the merged
+/// proof of this shape failed to verify with "more data than limit"
+/// whenever the timeline held more keys than the page's limit).
+#[test]
+fn should_prove_an_ordered_timeline_page_with_a_bound_count() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let like_counts = || {
+        bound(
+            &feed,
+            "like",
+            SubQueryKind::Count,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            None,
+        )
+    };
+    let round_trip = |query: &DriveDocumentQuery, expected: Vec<[u8; 32]>, what: &str| {
+        let materialized = drive
+            .query_composite_documents(query, None, None, pv)
+            .unwrap_or_else(|e| panic!("{what} materializes: {e}"))
+            .result;
+        assert_eq!(ids(&materialized.page_documents), expected, "{what}");
+        let (proof, _) = drive
+            .query_composite_documents_with_proof(query, pv)
+            .unwrap_or_else(|e| panic!("{what} proves: {e}"));
+        let (_, verified) = query
+            .verify_composite_documents_proof(&proof, pv)
+            .unwrap_or_else(|e| panic!("{what} verifies: {e}"));
+        assert_eq!(verified.page_documents, materialized.page_documents);
+        assert_eq!(verified.sub_results, materialized.sub_results);
+        materialized
+    };
+
+    // A limit the page does not fill: the whole timeline comes back.
+    let full = timeline_page(&feed, "dash", 20).with_sub_queries(vec![like_counts()]);
+    let result = round_trip(
+        &full,
+        vec![POST_C, POST_B, POST_A],
+        "the unfilled timeline page",
+    );
+    assert_eq!(
+        counts(&result.sub_results[0]),
+        BTreeMap::from([(POST_A, 2), (POST_B, 1)])
+    );
+
+    // A limit the page fills: the newest two, and only their counts.
+    let cut = timeline_page(&feed, "dash", 2).with_sub_queries(vec![like_counts()]);
+    let result = round_trip(&cut, vec![POST_C, POST_B], "the filled timeline page");
+    assert_eq!(
+        counts(&result.sub_results[0]),
+        BTreeMap::from([(POST_B, 1)])
+    );
+}
+
+/// A timeline page whose only bound sub-query derives nothing is a proof
+/// of the page alone; it is built and read in the same lifted-limit form
+/// as a merged one, so the page's proof shape does not depend on what
+/// its sub-queries derived.
+#[test]
+fn should_prove_a_timeline_page_alone_in_the_merged_limit_form() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    // Two more `btc` posts quoting nothing: the timeline holds three
+    // keys, the page takes the newest two, and the quoted-post join
+    // derives no value.
+    const POST_E: [u8; 32] = [0xF6; 32];
+    const POST_F: [u8; 32] = [0xF7; 32];
+    insert_post(&drive, &feed, POST_E, OWNER_1, "btc", None, 5);
+    insert_post(&drive, &feed, POST_F, OWNER_2, "btc", None, 6);
+    let query = timeline_page(&feed, "btc", 2).with_sub_queries(vec![bound(
+        &feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(ids(&materialized.page_documents), vec![POST_F, POST_E]);
+    assert!(materialized.sub_results[0].documents().is_empty());
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+/// A limited lookup that feeds a later binding is itself bootstrapped
+/// out of the merged proof. Its index level holds one key per bound
+/// value, more than its limit, so it too must be read under the cap the
+/// merge lifted its limit into.
+#[test]
+fn should_bootstrap_a_limited_lookup_that_feeds_a_later_binding() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let query = timeline_page(&feed, "dash", 20).with_sub_queries(vec![
+        // One repost across the page's three posts (A and B have some).
+        bound(
+            &feed,
+            "repost",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            Some(1),
+        ),
+        // The likes of whichever post that repost points at.
+        bound(
+            &feed,
+            "like",
+            SubQueryKind::Count,
+            BindingSource::SubQuery(0),
+            "postId",
+            "postId",
+            None,
+        ),
+    ]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(
+        ids(&materialized.page_documents),
+        vec![POST_C, POST_B, POST_A]
+    );
+    let reposted = post_ids_of(&materialized.sub_results[0], "postId");
+    assert_eq!(reposted.len(), 1, "the lookup's limit holds");
+    let expected_likes = if reposted[0] == POST_A { 2 } else { 1 };
+    assert_eq!(
+        counts(&materialized.sub_results[1]),
+        BTreeMap::from([(reposted[0], expected_likes)])
+    );
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+/// An empty index branch on the page's walk. The fixture preallocates
+/// `like.byHashtagPost` buckets when a post is inserted, so post C,
+/// which nobody liked, holds an empty bucket the newest-first walk
+/// visits before B's and A's. Grovedb charges that bucket against a
+/// global limit but not against the per-instance cap the proof carries,
+/// so a page materialized through the plain lowering would stop one row
+/// short of the proven page, and the counts derived from it would leave
+/// the proof missing a branch. Materialization runs the proof's own
+/// query, so both sides agree.
+#[test]
+fn should_materialize_the_page_under_the_proofs_budget_past_an_empty_index_branch() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut page = DriveDocumentQuery {
+        contract: &feed,
+        document_type: feed.document_type_for_name("like").expect("like"),
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            }],
+            pv,
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(2),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+    page.order_by.insert(
+        "postId".to_string(),
+        OrderClause {
+            field: "postId".to_string(),
+            ascending: false,
+        },
+    );
+    let query = page.with_sub_queries(vec![bound(
+        &feed,
+        "repost",
+        SubQueryKind::Count,
+        BindingSource::Page,
+        "postId",
+        "postId",
+        None,
+    )]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    // Past C's empty bucket: B's one like, then the first of A's two.
+    let liked: Vec<[u8; 32]> = materialized
+        .page_documents
+        .iter()
+        .map(|d| {
+            d.properties()
+                .get("postId")
+                .expect("postId present")
+                .to_identifier()
+                .expect("identifier")
+                .to_buffer()
+        })
+        .collect();
+    assert_eq!(liked, vec![POST_B, POST_A]);
+    assert_eq!(
+        counts(&materialized.sub_results[0]),
+        BTreeMap::from([(POST_A, 1), (POST_B, 2)])
+    );
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
 }

@@ -1,21 +1,28 @@
-* @QuantumExplorer
-
-# SDK packages
-/packages/rs-sdk/ @QuantumExplorer @shumkov @lklimek
-/packages/rs-sdk-ffi/ @QuantumExplorer @shumkov @lklimek
-/packages/rs-sdk-trusted-context-provider/ @QuantumExplorer @shumkov
-/packages/js-dash-sdk/ @QuantumExplorer @shumkov
-/packages/js-evo-sdk/ @QuantumExplorer @shumkov
-/packages/wasm-sdk/ @QuantumExplorer @shumkov
-/packages/swift-sdk/ @QuantumExplorer @shumkov @llbartekll @ZocoLini
-
-# Platform wallet stack
-/packages/rs-platform-wallet/ @QuantumExplorer @shumkov @lklimek @llbartekll @ZocoLini
-/packages/rs-platform-wallet-ffi/ @QuantumExplorer @shumkov @lklimek @llbartekll @ZocoLini
-/packages/rs-platform-wallet-storage/ @QuantumExplorer @shumkov @lklimek @llbartekll @ZocoLini
-
-# Proof verification
-/packages/rs-drive-proof-verifier/ @QuantumExplorer @shumkov @lklimek
-
-# WASM DPP v2
-/packages/wasm-dpp2/ @QuantumExplorer @shumkov
+# Generated from dashpay/stale_prs_are_bad policies/platform.json; do not edit by hand.
+# Owners and reviewers are combined here for native review routing.
+* @QuantumExplorer @shumkov
+/packages/rs-drive/ @QuantumExplorer @shumkov
+/packages/rs-drive-abci/ @QuantumExplorer @shumkov
+/packages/rs-dpp/ @QuantumExplorer @shumkov
+/packages/rs-platform-wallet/ @llbartekll @ZocoLini @HashEngineering @romchornyi
+/packages/rs-platform-wallet-ffi/ @llbartekll @ZocoLini @HashEngineering @romchornyi
+/packages/rs-platform-wallet-storage/ @lklimek
+/packages/swift-sdk/ @llbartekll @romchornyi
+/packages/rs-sdk/ @lklimek @shumkov
+/packages/rs-sdk-ffi/ @lklimek @shumkov
+# Unresolved ownership or reviewer identities; see responsibility documentation.
+/packages/dashmate/ @shumkov
+/packages/js-dash-sdk/ @shumkov
+/packages/js-evo-sdk/ @shumkov
+/packages/wasm-sdk/ @shumkov
+/packages/rs-dapi/ @lklimek @QuantumExplorer @shumkov
+/packages/data-contracts/ @QuantumExplorer @shumkov
+/packages/dashpay-contract/ @QuantumExplorer @shumkov
+/packages/dpns-contract/ @QuantumExplorer @shumkov
+/packages/masternode-reward-shares-contract/ @QuantumExplorer @shumkov
+/packages/withdrawals-contract/ @QuantumExplorer @shumkov
+/packages/wallet-utils-contract/ @QuantumExplorer @shumkov
+/packages/token-history-contract/ @QuantumExplorer @shumkov
+/packages/document-history-contract/ @QuantumExplorer @shumkov
+/packages/keyword-search-contract/ @QuantumExplorer @shumkov
+/packages/kotlin-sdk/ @HashEngineering

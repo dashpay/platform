@@ -214,8 +214,8 @@ fn seed_identity_index_collision(persister: &SqlitePersister, wallet_id: WalletI
         let entry = identity_entry(wallet_id, id, 7);
         conn.execute(
             "INSERT INTO identities \
-                (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-             VALUES (?1, ?2, 7, ?3, 0)",
+                (identity_id, wallet_id, identity_index, entry_blob) \
+             VALUES (?1, ?2, 7, ?3)",
             params![
                 entry.id.as_slice(),
                 wallet_id.as_slice(),
@@ -899,8 +899,8 @@ fn seed_self_contradictory_unowned_identity(persister: &SqlitePersister, identit
     let payload = blob::encode(&entry).expect("encode unowned identity entry");
     let conn = persister.lock_conn_for_test();
     conn.execute(
-        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-         VALUES (?1, NULL, 4, ?2, 0)",
+        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob) \
+         VALUES (?1, NULL, 4, ?2)",
         params![id.as_slice(), payload],
     )
     .expect("seed unowned identity carrying a registration index");
@@ -1546,8 +1546,8 @@ fn an_unreadable_identity_row_costs_its_wallet_not_just_the_identity() {
         let entry = identity_entry(sick, 0x99, 0);
         conn.execute(
             "INSERT INTO identities \
-                (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-             VALUES (?1, ?2, 0, ?3, 0)",
+                (identity_id, wallet_id, identity_index, entry_blob) \
+             VALUES (?1, ?2, 0, ?3)",
             params![
                 [0x58_u8; 32].as_slice(),
                 sick.as_slice(),

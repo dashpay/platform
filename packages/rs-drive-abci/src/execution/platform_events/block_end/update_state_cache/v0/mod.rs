@@ -240,7 +240,7 @@ mod tests {
         use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
         use dpp::dashcore::{ProTxHash, Txid};
         use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
-        use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+        use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
@@ -344,8 +344,9 @@ mod tests {
             .fetch_platform_state_bytes(Some(&transaction), platform_version)
             .expect("fetch must succeed")
             .expect("a full record was stored");
-        let full_record = PlatformState::versioned_deserialize(&full_bytes, platform_version)
-            .expect("full record must deserialize");
+        let full_record =
+            PlatformState::versioned_deserialize_trusted(&full_bytes, platform_version)
+                .expect("full record must deserialize");
         assert_eq!(
             full_record.last_committed_block_height(),
             7,

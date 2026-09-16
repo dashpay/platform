@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 use std::convert::TryInto;
 
@@ -33,7 +33,9 @@ pub use self::batched_transition::{
     token_unfreeze_transition, token_unfreeze_transition::TokenUnfreezeTransition,
 };
 
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_versioning::PlatformVersioned;
 
 pub mod accessors;
@@ -66,11 +68,13 @@ pub use v1::*;
     PartialEq,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
     From,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

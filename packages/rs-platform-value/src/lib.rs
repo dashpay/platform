@@ -181,131 +181,155 @@ fn validate_value_decode_depth(depth: usize) -> Result<(), DecodeError> {
     })
 }
 
-impl<Context> Decode<Context> for Value {
-    fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let mut frames = Vec::<ValueDecodeFrame>::new();
-        let mut completed_value = None;
+// Share the wire schema and domain checks across both decoding APIs.
+macro_rules! impl_value_decode {
+    ($decode:ident, $decoder:ident, $method:ident, $untrusted:expr) => {
+        impl<Context> bincode::$decode<Context> for Value {
+            fn $method<D: bincode::de::$decoder<Context = Context>>(
+                decoder: &mut D,
+            ) -> Result<Self, DecodeError> {
+                let mut frames = Vec::<ValueDecodeFrame>::new();
+                let mut completed_value = None;
 
-        loop {
-            if let Some(value) = completed_value.take() {
-                let Some(frame) = frames.last_mut() else {
-                    return Ok(value);
-                };
+                loop {
+                    if let Some(value) = completed_value.take() {
+                        let Some(frame) = frames.last_mut() else {
+                            return Ok(value);
+                        };
 
-                match frame {
-                    ValueDecodeFrame::Array { values, remaining } => {
-                        values.push(value);
-                        *remaining -= 1;
+                        match frame {
+                            ValueDecodeFrame::Array { values, remaining } => {
+                                if $untrusted {
+                                    values
+                                        .try_reserve(1)
+                                        .map_err(|_| DecodeError::LimitExceeded)?;
+                                }
+                                values.push(value);
+                                *remaining -= 1;
 
-                        if *remaining == 0 {
-                            let ValueDecodeFrame::Array { values, .. } =
-                                frames.pop().expect("the array frame was just observed")
-                            else {
-                                unreachable!("the observed frame changed")
-                            };
-                            completed_value = Some(Value::Array(values));
-                        } else {
-                            decoder.unclaim_bytes_read(std::mem::size_of::<Value>());
-                        }
-                    }
-                    ValueDecodeFrame::Map {
-                        entries,
-                        remaining,
-                        pending_key,
-                    } => {
-                        if pending_key.is_none() {
-                            *pending_key = Some(value);
-                        } else {
-                            let key = pending_key
-                                .take()
-                                .expect("the map frame was expecting a value");
-                            entries.push((key, value));
-                            *remaining -= 1;
+                                if *remaining == 0 {
+                                    let ValueDecodeFrame::Array { values, .. } =
+                                        frames.pop().expect("the array frame was just observed")
+                                    else {
+                                        unreachable!("the observed frame changed")
+                                    };
+                                    completed_value = Some(Value::Array(values));
+                                } else {
+                                    decoder.unclaim_bytes_read(std::mem::size_of::<Value>());
+                                }
+                            }
+                            ValueDecodeFrame::Map {
+                                entries,
+                                remaining,
+                                pending_key,
+                            } => {
+                                if pending_key.is_none() {
+                                    *pending_key = Some(value);
+                                } else {
+                                    let key = pending_key
+                                        .take()
+                                        .expect("the map frame was expecting a value");
+                                    if $untrusted {
+                                        entries
+                                            .try_reserve(1)
+                                            .map_err(|_| DecodeError::LimitExceeded)?;
+                                    }
+                                    entries.push((key, value));
+                                    *remaining -= 1;
 
-                            if *remaining == 0 {
-                                let ValueDecodeFrame::Map { entries, .. } =
-                                    frames.pop().expect("the map frame was just observed")
-                                else {
-                                    unreachable!("the observed frame changed")
-                                };
-                                completed_value = Some(Value::Map(entries));
-                            } else {
-                                decoder.unclaim_bytes_read(std::mem::size_of::<(Value, Value)>());
+                                    if *remaining == 0 {
+                                        let ValueDecodeFrame::Map { entries, .. } =
+                                            frames.pop().expect("the map frame was just observed")
+                                        else {
+                                            unreachable!("the observed frame changed")
+                                        };
+                                        completed_value = Some(Value::Map(entries));
+                                    } else {
+                                        decoder.unclaim_bytes_read(std::mem::size_of::<(
+                                            Value,
+                                            Value,
+                                        )>(
+                                        ));
+                                    }
+                                }
                             }
                         }
-                    }
-                }
 
-                continue;
-            }
-
-            let variant_index = <u32 as Decode<Context>>::decode(decoder)?;
-            completed_value = Some(match variant_index {
-                0 => Value::U128(Decode::decode(decoder)?),
-                1 => Value::I128(Decode::decode(decoder)?),
-                2 => Value::U64(Decode::decode(decoder)?),
-                3 => Value::I64(Decode::decode(decoder)?),
-                4 => Value::U32(Decode::decode(decoder)?),
-                5 => Value::I32(Decode::decode(decoder)?),
-                6 => Value::U16(Decode::decode(decoder)?),
-                7 => Value::I16(Decode::decode(decoder)?),
-                8 => Value::U8(Decode::decode(decoder)?),
-                9 => Value::I8(Decode::decode(decoder)?),
-                10 => Value::Bytes(Decode::decode(decoder)?),
-                11 => Value::Bytes20(Decode::decode(decoder)?),
-                12 => Value::Bytes32(Decode::decode(decoder)?),
-                13 => Value::Bytes36(Decode::decode(decoder)?),
-                14 => Value::EnumU8(Decode::decode(decoder)?),
-                15 => Value::EnumString(Decode::decode(decoder)?),
-                16 => Value::Identifier(Decode::decode(decoder)?),
-                17 => Value::Float(Decode::decode(decoder)?),
-                18 => Value::Text(Decode::decode(decoder)?),
-                19 => Value::Bool(Decode::decode(decoder)?),
-                20 => Value::Null,
-                21 => {
-                    validate_value_decode_depth(frames.len() + 1)?;
-                    let len = decode_value_container_len(decoder)?;
-                    decoder.claim_container_read::<Value>(len)?;
-
-                    if len == 0 {
-                        Value::Array(Vec::new())
-                    } else {
-                        frames.push(ValueDecodeFrame::Array {
-                            values: Vec::with_capacity(len),
-                            remaining: len,
-                        });
-                        decoder.unclaim_bytes_read(std::mem::size_of::<Value>());
                         continue;
                     }
-                }
-                22 => {
-                    validate_value_decode_depth(frames.len() + 1)?;
-                    let len = decode_value_container_len(decoder)?;
-                    decoder.claim_container_read::<(Value, Value)>(len)?;
 
-                    if len == 0 {
-                        Value::Map(Vec::new())
-                    } else {
-                        frames.push(ValueDecodeFrame::Map {
-                            entries: Vec::with_capacity(len),
-                            remaining: len,
-                            pending_key: None,
-                        });
-                        decoder.unclaim_bytes_read(std::mem::size_of::<(Value, Value)>());
-                        continue;
-                    }
-                }
-                found => {
-                    return Err(DecodeError::UnexpectedVariant {
-                        type_name: std::any::type_name::<Self>(),
-                        allowed: &AllowedEnumVariants::Range { min: 0, max: 22 },
-                        found,
+                    let variant_index = <u32 as bincode::$decode<Context>>::$method(decoder)?;
+                    completed_value = Some(match variant_index {
+                        0 => Value::U128(bincode::$decode::$method(decoder)?),
+                        1 => Value::I128(bincode::$decode::$method(decoder)?),
+                        2 => Value::U64(bincode::$decode::$method(decoder)?),
+                        3 => Value::I64(bincode::$decode::$method(decoder)?),
+                        4 => Value::U32(bincode::$decode::$method(decoder)?),
+                        5 => Value::I32(bincode::$decode::$method(decoder)?),
+                        6 => Value::U16(bincode::$decode::$method(decoder)?),
+                        7 => Value::I16(bincode::$decode::$method(decoder)?),
+                        8 => Value::U8(bincode::$decode::$method(decoder)?),
+                        9 => Value::I8(bincode::$decode::$method(decoder)?),
+                        10 => Value::Bytes(bincode::$decode::$method(decoder)?),
+                        11 => Value::Bytes20(bincode::$decode::$method(decoder)?),
+                        12 => Value::Bytes32(bincode::$decode::$method(decoder)?),
+                        13 => Value::Bytes36(bincode::$decode::$method(decoder)?),
+                        14 => Value::EnumU8(bincode::$decode::$method(decoder)?),
+                        15 => Value::EnumString(bincode::$decode::$method(decoder)?),
+                        16 => Value::Identifier(bincode::$decode::$method(decoder)?),
+                        17 => Value::Float(bincode::$decode::$method(decoder)?),
+                        18 => Value::Text(bincode::$decode::$method(decoder)?),
+                        19 => Value::Bool(bincode::$decode::$method(decoder)?),
+                        20 => Value::Null,
+                        21 => {
+                            validate_value_decode_depth(frames.len() + 1)?;
+                            let len = decode_value_container_len(decoder)?;
+                            decoder.claim_container_read::<Value>(len)?;
+
+                            if len == 0 {
+                                Value::Array(Vec::new())
+                            } else {
+                                frames.push(ValueDecodeFrame::Array {
+                                    values: Vec::with_capacity(if $untrusted { 0 } else { len }),
+                                    remaining: len,
+                                });
+                                decoder.unclaim_bytes_read(std::mem::size_of::<Value>());
+                                continue;
+                            }
+                        }
+                        22 => {
+                            validate_value_decode_depth(frames.len() + 1)?;
+                            let len = decode_value_container_len(decoder)?;
+                            decoder.claim_container_read::<(Value, Value)>(len)?;
+
+                            if len == 0 {
+                                Value::Map(Vec::new())
+                            } else {
+                                frames.push(ValueDecodeFrame::Map {
+                                    entries: Vec::with_capacity(if $untrusted { 0 } else { len }),
+                                    remaining: len,
+                                    pending_key: None,
+                                });
+                                decoder.unclaim_bytes_read(std::mem::size_of::<(Value, Value)>());
+                                continue;
+                            }
+                        }
+                        found => {
+                            return Err(DecodeError::UnexpectedVariant {
+                                type_name: std::any::type_name::<Self>(),
+                                allowed: &AllowedEnumVariants::Range { min: 0, max: 22 },
+                                found,
+                            });
+                        }
                     });
                 }
-            });
+            }
         }
-    }
+    };
 }
+impl_value_decode!(Decode, Decoder, decode, false);
+impl_value_decode!(DecodeUntrusted, UntrustedDecoder, decode_untrusted, true);
+bincode::impl_borrow_decode_untrusted!(Value);
 
 bincode::impl_borrow_decode!(Value);
 

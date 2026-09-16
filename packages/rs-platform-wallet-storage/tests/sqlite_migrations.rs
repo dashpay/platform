@@ -73,8 +73,8 @@ fn tc027_smoke_insert_every_table() {
     .unwrap();
     let identity_id = [7u8; 32];
     conn.execute(
-        "INSERT INTO identities (wallet_id, identity_index, identity_id, entry_blob, tombstoned) \
-         VALUES (?1, NULL, ?2, X'01', 0)",
+        "INSERT INTO identities (wallet_id, identity_index, identity_id, entry_blob) \
+         VALUES (?1, NULL, ?2, X'01')",
         params![wallet_id.as_slice(), identity_id.as_slice()],
     )
     .unwrap();

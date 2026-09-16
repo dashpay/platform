@@ -2955,7 +2955,7 @@ mod tests {
 
     mod serialization_tests {
         use super::*;
-        use dpp::serialization::PlatformDeserializable;
+        use dpp::serialization::PlatformDeserializableUntrusted;
         use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
         use dpp::state_transition::StateTransitionIdentitySigned;
         use dpp::state_transition::StateTransitionLike;
@@ -2988,8 +2988,8 @@ mod tests {
                 .expect("should serialize");
 
             // Deserialize
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             // Verify the deserialized transition matches the original
             match (&original_transition, &deserialized) {
@@ -3042,8 +3042,8 @@ mod tests {
             let serialized = transition.serialize_to_bytes().expect("should serialize");
 
             // Should deserialize successfully
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             match deserialized {
                 StateTransition::IdentityCreditTransferToAddresses(t) => {

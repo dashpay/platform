@@ -199,8 +199,8 @@ public final class PersistentAssetLock {
     /// `ModelContainer(for:migrationPlan:configurations:)` would fail to
     /// open it with Cocoa error 134504 ("Cannot use staged migration with
     /// an unknown model version"). So V1 and V2 now reference a frozen
-    /// copy of this model (`DashSchemaV1.PersistentAssetLock`, in
-    /// `DashSchemaFrozenModels.swift`), this property is what schema
+    /// copy of this model (`DashSchemaV1.PersistentAssetLock`, generated
+    /// under `FrozenSchemas/`), this property is what schema
     /// `DashSchemaV3` adds, and a lightweight V2 -> V3 stage carries
     /// existing stores across. Do the same for the next property added
     /// here.

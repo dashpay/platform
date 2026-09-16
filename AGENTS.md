@@ -81,6 +81,7 @@ Platform uses data contracts to define application data schemas:
 - Editor config: 2-space indent (4 for `*.rs`), LF, UTF‑8, final newline (`.editorconfig`).
 - JS/TS: ESLint (Airbnb/TypeScript rules via package configs). Use camelCase for variables/functions, PascalCase for classes; prefer kebab-case filenames within JS packages.
 - Rust: Follow rustfmt defaults; keep code clippy-clean. Modules `snake_case`, types `PascalCase`, constants `SCREAMING_SNAKE_CASE`.
+- Rust architecture rules live in The Dash Platform Book (`book/`). Read [book/src/contributing/coding-conventions.md](book/src/contributing/coding-conventions.md) before changing versioned behaviour, validation, errors, fees, or limits; it states each rule, why it exists, and links to the chapter with the mechanics. Key rules: shipped `vN` modules are frozen and new behaviour is a new `vN` selected only by the unreleased protocol version's tables; numbers go in `SystemLimits`, fees in named `FEE_VERSION*` schedules; `platform_version` is the last parameter; no `unwrap`/`expect` on block-execution paths (a panic halts the chain); imports at the top, no inline `crate::` paths; latest-generation tests use `PlatformVersion::latest()`.
 
 ## Testing Guidelines
 - Unit/integration tests live alongside each package (e.g., `packages/<name>/tests`). E2E lives in `packages/platform-test-suite`.

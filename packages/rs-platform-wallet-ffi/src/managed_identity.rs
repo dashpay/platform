@@ -4,7 +4,7 @@ use crate::types::*;
 use crate::{check_ptr, deref_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use platform_wallet::ManagedIdentity;
 use std::os::raw::c_char;
 
@@ -21,7 +21,7 @@ pub unsafe extern "C" fn managed_identity_create_from_identity_bytes(
     let bytes = unsafe { std::slice::from_raw_parts(identity_bytes, identity_len) };
 
     let identity = unwrap_result_or_return!(
-        dpp::identity::Identity::deserialize_from_bytes_no_limit(bytes)
+        dpp::identity::Identity::deserialize_from_bytes_untrusted_no_limit(bytes)
     );
 
     let managed_identity = ManagedIdentity::new(identity, 0);

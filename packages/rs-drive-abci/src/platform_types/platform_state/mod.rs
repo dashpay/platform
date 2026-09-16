@@ -10,7 +10,9 @@ use derive_more::From;
 use dpp::bincode::config;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
-use dpp::serialization::{PlatformDeserializableFromVersionedStructure, PlatformSerializable};
+use dpp::serialization::{
+    PlatformDeserializableFromVersionedStructureTrusted, PlatformSerializable,
+};
 use dpp::util::deserializer::ProtocolVersion;
 
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
@@ -183,8 +185,8 @@ impl PlatformSerializable for PlatformState {
     }
 }
 
-impl PlatformDeserializableFromVersionedStructure for PlatformState {
-    fn versioned_deserialize(
+impl PlatformDeserializableFromVersionedStructureTrusted for PlatformState {
+    fn versioned_deserialize_trusted(
         data: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -312,7 +314,7 @@ mod tests {
             let serialized_state =
                 hex::decode(PLATFORM_STATE_V3_TESTNET.deref()).expect("failed to decode hex");
 
-            PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V3)
+            PlatformState::versioned_deserialize_trusted(&serialized_state, &PLATFORM_V3)
                 .expect("failed to deserialize state");
         }
 
@@ -322,8 +324,9 @@ mod tests {
             let serialized_state =
                 hex::decode(PLATFORM_STATE_V8_DEVNET.deref()).expect("failed to decode hex");
 
-            let state = PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V9)
-                .expect("failed to deserialize state");
+            let state =
+                PlatformState::versioned_deserialize_trusted(&serialized_state, &PLATFORM_V9)
+                    .expect("failed to deserialize state");
 
             // Generated with serialize_to_bytes() at pre-change commit
             // 9dfffa611a9554cb14c9464374c8de1356c1d92f, using the fixture above.
@@ -340,7 +343,7 @@ mod tests {
             let serialized_state =
                 hex::decode(PLATFORM_STATE_V8_DEVNET.deref()).expect("failed to decode hex");
 
-            PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V9)
+            PlatformState::versioned_deserialize_trusted(&serialized_state, &PLATFORM_V9)
                 .expect("failed to deserialize state");
         }
     }

@@ -324,11 +324,10 @@ impl TryFromRequest<GetContestedResourcesRequest> for VotePollsByDocumentTypeQue
                     .start_at_value_info
                     .map(|i| {
                         let (value, _): (Value, _) =
-                            bincode::decode_from_slice(&i.start_value, BINCODE_CONFIG).map_err(
-                                |e| Error::RequestError {
+                            bincode::decode_from_slice_untrusted(&i.start_value, BINCODE_CONFIG)
+                                .map_err(|e| Error::RequestError {
                                     error: format!("cannot decode start value: {}", e),
-                                },
-                            )?;
+                                })?;
                         Ok::<_, Error>((value, i.start_value_included))
                     })
                     .transpose()?,
@@ -454,7 +453,7 @@ fn bincode_decode_values<V: AsRef<[u8]>, T: IntoIterator<Item = V>>(
     values
         .into_iter()
         .map(|v| {
-            dpp::bincode::decode_from_slice(v.as_ref(), BINCODE_CONFIG)
+            dpp::bincode::decode_from_slice_untrusted(v.as_ref(), BINCODE_CONFIG)
                 .map_err(|e| Error::RequestError {
                     error: format!("cannot decode value: {}", e),
                 })

@@ -315,6 +315,11 @@ jobs:
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
+      # `npm publish` in release-npm returns before the registry makes the new
+      # versions resolvable; pack_dashmate.sh installs them from the registry.
+      - name: Wait for published NPM packages to become resolvable
+        run: "${GITHUB_WORKSPACE}/scripts/wait_for_npm_packages.sh"
+
       - name: Create package
         env:
           OSX_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
