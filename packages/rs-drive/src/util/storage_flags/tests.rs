@@ -437,11 +437,17 @@ mod split {
         assert_eq!(refund_owners.get(&owner.removal_key()), Some(&owner));
     }
 
+    /// The shipped batch apply generations bind their closures to the crate
+    /// type, so this is the property they rely on.
     #[test]
-    fn should_fail_closed_on_bucket_flags_through_the_shipped_closure_entry_points() {
+    fn should_be_rejected_by_the_crate_closure_entry_points_the_shipped_generations_use() {
         let mut flags = SingleEpochContractBucket(5, CONTRACT_ID, 7).to_element_flags();
         assert!(matches!(
-            StorageFlags::split_removal_bytes(&mut flags, 1, 1),
+            CrateStorageFlags::split_removal_bytes(&mut flags, 1, 1),
+            Err(StorageFlagsError::DeserializeUnknownStorageFlagsType(_))
+        ));
+        assert!(matches!(
+            CrateStorageFlags::from_element_flags_ref(&flags),
             Err(StorageFlagsError::DeserializeUnknownStorageFlagsType(_))
         ));
 
@@ -452,7 +458,7 @@ mod split {
         };
         let mut new_flags = SingleEpochContractBucket(6, CONTRACT_ID, 7).to_element_flags();
         assert!(matches!(
-            StorageFlags::update_element_flags(
+            CrateStorageFlags::update_element_flags(
                 &cost,
                 Some(SingleEpochContractBucket(5, CONTRACT_ID, 7).to_element_flags()),
                 &mut new_flags
@@ -460,10 +466,10 @@ mod split {
             Err(StorageFlagsError::DeserializeUnknownStorageFlagsType(_))
         ));
 
-        // the shipped entry points still work for the historical variants
+        // the crate still serves the historical variants Drive writes today
         let mut owned = SingleEpochOwned(5, OWNER_ID).to_element_flags();
         let (key_removal, _) =
-            StorageFlags::split_removal_bytes(&mut owned, 3, 4).expect("should split");
+            CrateStorageFlags::split_removal_bytes(&mut owned, 3, 4).expect("should split");
         assert_eq!(key_removal, sectioned(OWNER_ID, &[(5, 3)]));
     }
 }

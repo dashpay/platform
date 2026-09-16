@@ -1,14 +1,13 @@
 //! Splitting removed bytes across epochs and owners when an element shrinks
 //! or is deleted.
 
-use super::{CrateStorageFlags, StorageFlags};
+use super::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::fee::refund_owner::{RefundOwner, RefundOwnersByIdentifier, SYSTEM_REFUND_CARRIER_KEY};
 use grovedb::ElementFlags;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
-use grovedb_epoch_based_storage_flags::error::StorageFlagsError;
 
 impl StorageFlags {
     /// Sections removed bytes per epoch, taking from the latest epochs
@@ -25,19 +24,6 @@ impl StorageFlags {
     ) -> (StorageRemovedBytes, StorageRemovedBytes) {
         self.to_crate_flags_keyed_by_removal_key()
             .split_storage_removed_bytes(removed_key_bytes, removed_value_bytes)
-    }
-
-    /// The batch split closure that shipped with identity-only owners.
-    ///
-    /// Hands the raw bytes to the crate, so a contract bucket type byte is
-    /// rejected as an unknown flags type: the batch apply generation that
-    /// predates typed owners cannot price bytes it cannot attribute.
-    pub fn split_removal_bytes(
-        flags: &mut ElementFlags,
-        removed_key_bytes: u32,
-        removed_value_bytes: u32,
-    ) -> Result<(StorageRemovedBytes, StorageRemovedBytes), StorageFlagsError> {
-        CrateStorageFlags::split_removal_bytes(flags, removed_key_bytes, removed_value_bytes)
     }
 
     /// The batch split closure for typed owners.

@@ -12,16 +12,14 @@
 //! bytes paid for by a contract credit bucket. The type byte declares the
 //! owner's kind; it is never inferred from the shape of an identifier.
 //!
-//! Two groups of entry points differ in what they accept. The parse helpers
-//! (`deserialize`, `from_element_flags_ref`, the `map_*` helpers) decode all
-//! six variants so that readers carry bucket-owned flags through unchanged.
-//! The batch closure entry points that keep their historical names
-//! (`update_element_flags`, `split_removal_bytes`) hand the raw bytes to the
-//! crate and therefore reject the two bucket variants: the batch apply
-//! generation that predates typed owners fails closed on flags it was never
-//! written to price. The typed closure entry points
-//! (`update_element_flags_typed`, `split_removal_bytes_typed`) accept all
-//! six variants and record the owner of every sectioned removal.
+//! The parse helpers (`deserialize`, `from_element_flags_ref`, the `map_*`
+//! helpers) decode all six variants so that readers carry bucket-owned flags
+//! through unchanged. The batch apply generations that predate typed owners
+//! do not use this type at all: their closures are bound to the crate's
+//! flags type, which rejects the two bucket variants, so they fail closed on
+//! flags they were never written to price. The typed closure entry points
+//! here (`update_element_flags_typed`, `split_removal_bytes_typed`) accept
+//! all six variants and record the owner of every sectioned removal.
 
 mod codec;
 mod combine;

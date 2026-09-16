@@ -6,9 +6,13 @@ use crate::query::GroveError;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
 use crate::util::grove_operations::push_drive_operation_result;
-use crate::util::storage_flags::StorageFlags;
+// The shipped generation is bound to the crate's flags type on purpose: it
+// splits and combines exactly the four historical flag types and rejects any
+// other type byte, so bytes owned by a contract credit bucket can never be
+// sectioned by this generation. The typed flags live in version 1.
 use grovedb::batch::{BatchApplyOptions, QualifiedGroveDbOp};
 use grovedb::TransactionArg;
+use grovedb_epoch_based_storage_flags::StorageFlags;
 use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
