@@ -117,33 +117,27 @@ where
             .into_iter()
             .collect();
 
-        // Checked before taking a mutable borrow: on most blocks Core reports the
-        // same quorums as the block before, and taking the borrow marks the whole
-        // platform state as needing a full rewrite to disk.
-        let removed_a_validator_set = block_platform_state
+        // Decided read-only: on most blocks Core reports the same quorums as the
+        // block before, and each removal below is recorded on its own so the
+        // store deletes only that validator set's entry.
+        let removed_validator_sets: Vec<QuorumHash> = block_platform_state
             .validator_sets()
             .keys()
-            .any(|quorum_hash| !validator_quorums_list.contains_key::<QuorumHash>(quorum_hash));
+            .filter(|quorum_hash| !validator_quorums_list.contains_key::<QuorumHash>(quorum_hash))
+            .copied()
+            .collect();
+        let removed_a_validator_set = !removed_validator_sets.is_empty();
 
         // Remove validator_sets entries that are no longer valid for the core block height
-        if removed_a_validator_set {
-            block_platform_state
-                .validator_sets_mut()
-                .retain(|quorum_hash, _| {
-                    let retain = validator_quorums_list.contains_key::<QuorumHash>(quorum_hash);
-
-                    if !retain {
-                        tracing::trace!(
-                            ?quorum_hash,
-                            quorum_type = ?self.config.validator_set.quorum_type,
-                            "removed validator set {} with quorum type {}",
-                            quorum_hash,
-                            self.config.validator_set.quorum_type
-                        )
-                    }
-
-                    retain
-                });
+        for quorum_hash in removed_validator_sets {
+            block_platform_state.remove_validator_set(&quorum_hash);
+            tracing::trace!(
+                ?quorum_hash,
+                quorum_type = ?self.config.validator_set.quorum_type,
+                "removed validator set {} with quorum type {}",
+                quorum_hash,
+                self.config.validator_set.quorum_type
+            );
         }
 
         // Fetch quorum info and their keys from the RPC for new quorums
@@ -202,24 +196,22 @@ where
         // Add new validator_sets entries. Nothing added and nothing removed means
         // the map is already the one the previous block sorted, so leave it be.
         if is_validator_set_updated {
-            block_platform_state
-                .validator_sets_mut()
-                .extend(new_validator_sets);
+            for (quorum_hash, validator_set) in new_validator_sets {
+                block_platform_state.insert_validator_set(quorum_hash, validator_set);
+            }
 
             // Sort all validator sets into deterministic order by core block height of creation
-            block_platform_state
-                .validator_sets_mut()
-                .sort_by(|_, quorum_a, _, quorum_b| {
-                    let primary_comparison = quorum_b.core_height().cmp(&quorum_a.core_height());
-                    if primary_comparison == std::cmp::Ordering::Equal {
-                        quorum_b
-                            .quorum_hash()
-                            .cmp(quorum_a.quorum_hash())
-                            .then_with(|| quorum_b.core_height().cmp(&quorum_a.core_height()))
-                    } else {
-                        primary_comparison
-                    }
-                });
+            block_platform_state.sort_validator_sets_by(&mut |quorum_a, quorum_b| {
+                let primary_comparison = quorum_b.core_height().cmp(&quorum_a.core_height());
+                if primary_comparison == std::cmp::Ordering::Equal {
+                    quorum_b
+                        .quorum_hash()
+                        .cmp(quorum_a.quorum_hash())
+                        .then_with(|| quorum_b.core_height().cmp(&quorum_a.core_height()))
+                } else {
+                    primary_comparison
+                }
+            });
         }
 
         // Update Chain Lock quorums

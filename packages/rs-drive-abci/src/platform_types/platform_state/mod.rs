@@ -1,6 +1,8 @@
 mod accessors;
+pub mod entry_changes;
 mod masternode_list_changes;
-mod platform_state_for_saving;
+/// The saved forms of the platform state, one structure per version.
+pub mod platform_state_for_saving;
 pub mod recent;
 
 use crate::error::Error;
@@ -22,7 +24,9 @@ use indexmap::IndexMap;
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 pub use crate::platform_types::platform_state::accessors::PlatformStateV0Methods;
+use crate::platform_types::platform_state::entry_changes::EntryChanges;
 use crate::platform_types::platform_state::platform_state_for_saving::v1::PlatformStateForSavingV1;
+use crate::platform_types::platform_state::platform_state_for_saving::v2::PlatformStateForSavingV2;
 use crate::platform_types::platform_state::platform_state_for_saving::PlatformStateForSaving;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
@@ -74,7 +78,19 @@ pub struct PlatformState {
     /// blocks, so the full record is rewritten only when this is set; every block
     /// still writes the small record holding the block info and quorum hashes.
     /// Not part of the saved record: a state read back from disk starts dirty.
+    ///
+    /// Drives the structure 0 store only. Under structure 1 the record is small
+    /// and written every block, and the large collections track their own
+    /// changes below.
     pub heavy_fields_dirty: bool,
+
+    /// Which masternode entries the next store writes or deletes. Not part of
+    /// the saved record.
+    pub masternode_changes: EntryChanges<ProTxHash>,
+
+    /// Which validator set entries the next store writes or deletes. Not part
+    /// of the saved record.
+    pub validator_set_changes: EntryChanges<QuorumHash>,
 }
 
 fn hex_encoded_validator_sets(validator_sets: &IndexMap<QuorumHash, ValidatorSet>) -> String {
@@ -124,14 +140,49 @@ impl Debug for PlatformState {
                 "instant_lock_validating_quorums",
                 &self.instant_lock_validating_quorums,
             )
+            .field("heavy_fields_dirty", &self.heavy_fields_dirty)
+            .field("masternode_changes", &self.masternode_changes)
+            .field("validator_set_changes", &self.validator_set_changes)
             .finish()
     }
 }
 
 impl PlatformState {
-    /// Get the state fingerprint
+    /// Get the state fingerprint: a hash over the whole state, the per-entry
+    /// collections included.
     pub fn fingerprint(&self) -> Result<[u8; 32], Error> {
-        Ok(hash_double(self.serialize_to_bytes()?))
+        Ok(hash_double(self.serialize_standalone_to_bytes()?))
+    }
+
+    /// The whole state in one record, for a standalone snapshot such as the
+    /// file written beside a checkpoint. Structure 1 keeps the masternode list
+    /// and the validator sets as entries in the database, so a structure 1
+    /// record cannot be read on its own; this always writes structure 0.
+    pub fn serialize_standalone_to_bytes(&self) -> Result<Vec<u8>, Error> {
+        let config = config::standard().with_big_endian().with_no_limit();
+        let saving_v1: PlatformStateForSavingV1 = self.try_into()?;
+        bincode::encode_to_vec(PlatformStateForSaving::V1(saving_v1), config).map_err(|e| {
+            ProtocolError::PlatformSerializationError(format!(
+                "unable to serialize PlatformState: {}",
+                e
+            ))
+            .into()
+        })
+    }
+
+    /// Nothing on disk can be trusted to match this state: the next store
+    /// rewrites the full record and every entry of the per-entry collections.
+    pub fn mark_all_unsaved(&mut self) {
+        self.heavy_fields_dirty = true;
+        self.masternode_changes.mark_rewrite_all();
+        self.validator_set_changes.mark_rewrite_all();
+    }
+
+    /// What the store just wrote is now what is on disk for this state.
+    pub fn mark_saved(&mut self) {
+        self.heavy_fields_dirty = false;
+        self.masternode_changes.clear();
+        self.validator_set_changes.clear();
     }
     /// The default state at init chain
     pub fn default_with_protocol_versions(
@@ -161,6 +212,8 @@ impl PlatformState {
             genesis_block_info: None,
             previous_fee_versions: Default::default(),
             heavy_fields_dirty: true,
+            masternode_changes: EntryChanges::all(),
+            validator_set_changes: EntryChanges::all(),
         };
 
         Ok(state)
@@ -225,10 +278,11 @@ impl TryFromPlatformVersioned<&PlatformState> for PlatformStateForSaving {
                 let saving_v1: PlatformStateForSavingV1 = value.try_into()?;
                 Ok(saving_v1.into())
             }
+            1 => Ok(PlatformStateForSavingV2::from(value).into()),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "PlatformStateForSaving::try_from_platform_versioned(&PlatformState)"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -250,10 +304,11 @@ impl TryFromPlatformVersioned<PlatformState> for PlatformStateForSaving {
                 let saving_v1: PlatformStateForSavingV1 = value.try_into()?;
                 Ok(saving_v1.into())
             }
+            1 => Ok(PlatformStateForSavingV2::from(&value).into()),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "PlatformStateForSaving::try_from_platform_versioned(PlatformState)"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -291,6 +346,16 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
                         received: version,
                     })),
                 }
+            }
+            // The record alone is not the state: its masternode list and
+            // validator sets are entries in the database, read together with it
+            // by `fetch_platform_state`.
+            PlatformStateForSaving::V2(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                    "a structure 1 platform state record is only readable together with its \
+                     entries; load it through fetch_platform_state"
+                        .to_string(),
+                )))
             }
         }
     }

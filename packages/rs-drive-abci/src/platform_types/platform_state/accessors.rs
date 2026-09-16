@@ -10,12 +10,13 @@ use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
 use dpp::core_types::validator_set::ValidatorSet;
 use dpp::dashcore::{ProTxHash, QuorumHash};
-use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
+use dpp::dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListItem, MasternodeType};
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 /// Platform state methods introduced in version 0 of Platform State Struct
@@ -174,6 +175,40 @@ pub trait PlatformStateV0Methods {
 
     /// Returns a mutable reference to the list of high performance masternodes.
     fn hpmn_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem>;
+
+    /// Adds or replaces a masternode in the full list, and in the HPMN list when
+    /// it is an Evo node. Records the change for the per-entry store.
+    fn insert_masternode(&mut self, masternode: MasternodeListItem);
+
+    /// Applies a Core state diff to a listed masternode in both lists. Returns
+    /// false, changing nothing, when the masternode is not listed.
+    fn apply_masternode_state_diff(
+        &mut self,
+        pro_tx_hash: &ProTxHash,
+        state_diff: &DMNStateDiff,
+    ) -> bool;
+
+    /// Removes a masternode from both lists.
+    fn remove_masternode(&mut self, pro_tx_hash: &ProTxHash) -> Option<MasternodeListItem>;
+
+    /// Empties both masternode lists.
+    fn clear_masternode_lists(&mut self);
+
+    /// One validator set for mutation, recorded for the per-entry store.
+    fn validator_set_mut(&mut self, quorum_hash: &QuorumHash) -> Option<&mut ValidatorSet>;
+
+    /// Adds or replaces a validator set, appended at the end of the order.
+    fn insert_validator_set(&mut self, quorum_hash: QuorumHash, validator_set: ValidatorSet);
+
+    /// Removes a validator set, keeping the order of the rest.
+    fn remove_validator_set(&mut self, quorum_hash: &QuorumHash) -> Option<ValidatorSet>;
+
+    /// Reorders the validator sets. The order is saved with the record, so this
+    /// does not rewrite any entry.
+    fn sort_validator_sets_by(
+        &mut self,
+        compare: &mut dyn FnMut(&ValidatorSet, &ValidatorSet) -> Ordering,
+    );
 
     /// The epoch ref
     fn last_committed_block_epoch_ref(&self) -> &Epoch;
@@ -401,8 +436,9 @@ impl PlatformStateV0Methods for PlatformState {
         self.current_protocol_version_in_consensus = version;
         // The protocol version chooses the structure the full record is written
         // in, so a change has to rewrite it rather than leave an older structure
-        // on disk with a newer version recorded beside it.
-        self.heavy_fields_dirty = true;
+        // on disk with a newer version recorded beside it. A structure that keeps
+        // the collections as entries needs every entry written the first time.
+        self.mark_all_unsaved();
     }
 
     /// Sets the next epoch protocol version.
@@ -427,6 +463,7 @@ impl PlatformStateV0Methods for PlatformState {
     fn set_validator_sets(&mut self, sets: IndexMap<QuorumHash, ValidatorSet>) {
         self.validator_sets = sets;
         self.heavy_fields_dirty = true;
+        self.validator_set_changes.mark_rewrite_all();
     }
 
     /// Sets the current chain lock validating quorums.
@@ -445,12 +482,16 @@ impl PlatformStateV0Methods for PlatformState {
     fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>) {
         self.full_masternode_list = list;
         self.heavy_fields_dirty = true;
+        self.masternode_changes.mark_rewrite_all();
     }
 
     /// Sets the list of high performance masternodes.
     fn set_hpmn_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>) {
         self.hpmn_masternode_list = list;
         self.heavy_fields_dirty = true;
+        // The HPMN list is not stored (it is the Evo subset of the full list),
+        // but a caller replacing it wholesale may have changed the full list too.
+        self.masternode_changes.mark_rewrite_all();
     }
 
     /// Sets the platform initialization information.
@@ -467,7 +508,7 @@ impl PlatformStateV0Methods for PlatformState {
     }
 
     fn current_protocol_version_in_consensus_mut(&mut self) -> &mut ProtocolVersion {
-        self.heavy_fields_dirty = true;
+        self.mark_all_unsaved();
         &mut self.current_protocol_version_in_consensus
     }
 
@@ -486,6 +527,8 @@ impl PlatformStateV0Methods for PlatformState {
 
     fn validator_sets_mut(&mut self) -> &mut IndexMap<QuorumHash, ValidatorSet> {
         self.heavy_fields_dirty = true;
+        // The caller may change any member through the borrow.
+        self.validator_set_changes.mark_rewrite_all();
         &mut self.validator_sets
     }
 
@@ -501,12 +544,94 @@ impl PlatformStateV0Methods for PlatformState {
 
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {
         self.heavy_fields_dirty = true;
+        // The caller may change any member through the borrow.
+        self.masternode_changes.mark_rewrite_all();
         &mut self.full_masternode_list
     }
 
     fn hpmn_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {
         self.heavy_fields_dirty = true;
+        self.masternode_changes.mark_rewrite_all();
         &mut self.hpmn_masternode_list
+    }
+
+    fn insert_masternode(&mut self, masternode: MasternodeListItem) {
+        let pro_tx_hash = masternode.pro_tx_hash;
+        if masternode.node_type == MasternodeType::Evo {
+            self.hpmn_masternode_list
+                .insert(pro_tx_hash, masternode.clone());
+        } else {
+            self.hpmn_masternode_list.remove(&pro_tx_hash);
+        }
+        self.full_masternode_list.insert(pro_tx_hash, masternode);
+        self.heavy_fields_dirty = true;
+        self.masternode_changes.upsert(pro_tx_hash);
+    }
+
+    fn apply_masternode_state_diff(
+        &mut self,
+        pro_tx_hash: &ProTxHash,
+        state_diff: &DMNStateDiff,
+    ) -> bool {
+        let Some(masternode) = self.full_masternode_list.get_mut(pro_tx_hash) else {
+            return false;
+        };
+        masternode.state.apply_diff(state_diff.clone());
+        if let Some(hpmn) = self.hpmn_masternode_list.get_mut(pro_tx_hash) {
+            hpmn.state.apply_diff(state_diff.clone());
+        }
+        self.heavy_fields_dirty = true;
+        self.masternode_changes.upsert(*pro_tx_hash);
+        true
+    }
+
+    fn remove_masternode(&mut self, pro_tx_hash: &ProTxHash) -> Option<MasternodeListItem> {
+        self.hpmn_masternode_list.remove(pro_tx_hash);
+        let removed = self.full_masternode_list.remove(pro_tx_hash);
+        if removed.is_some() {
+            self.heavy_fields_dirty = true;
+            self.masternode_changes.remove(*pro_tx_hash);
+        }
+        removed
+    }
+
+    fn clear_masternode_lists(&mut self) {
+        self.full_masternode_list.clear();
+        self.hpmn_masternode_list.clear();
+        self.heavy_fields_dirty = true;
+        self.masternode_changes.mark_rewrite_all();
+    }
+
+    fn validator_set_mut(&mut self, quorum_hash: &QuorumHash) -> Option<&mut ValidatorSet> {
+        let validator_set = self.validator_sets.get_mut(quorum_hash)?;
+        self.heavy_fields_dirty = true;
+        self.validator_set_changes.upsert(*quorum_hash);
+        Some(validator_set)
+    }
+
+    fn insert_validator_set(&mut self, quorum_hash: QuorumHash, validator_set: ValidatorSet) {
+        self.validator_sets.insert(quorum_hash, validator_set);
+        self.heavy_fields_dirty = true;
+        self.validator_set_changes.upsert(quorum_hash);
+    }
+
+    fn remove_validator_set(&mut self, quorum_hash: &QuorumHash) -> Option<ValidatorSet> {
+        let removed = self.validator_sets.shift_remove(quorum_hash);
+        if removed.is_some() {
+            self.heavy_fields_dirty = true;
+            self.validator_set_changes.remove(*quorum_hash);
+        }
+        removed
+    }
+
+    fn sort_validator_sets_by(
+        &mut self,
+        compare: &mut dyn FnMut(&ValidatorSet, &ValidatorSet) -> Ordering,
+    ) {
+        self.validator_sets.sort_by(|_, a, _, b| compare(a, b));
+        // The order is part of the record, which structure 0 rewrites when dirty
+        // and structure 1 writes every block; no entry changes.
+        self.heavy_fields_dirty = true;
     }
 
     fn last_committed_block_epoch_ref(&self) -> &Epoch {
@@ -649,7 +774,7 @@ mod tests {
             &PlatformConfig::default_for_network(Network::Testnet),
         )
         .expect("platform state");
-        state.heavy_fields_dirty = false;
+        state.mark_saved();
         state
     }
 
@@ -751,5 +876,193 @@ mod tests {
         assert!(!leaves_dirty(|s| {
             s.next_validator_set_quorum_hash_mut();
         }));
+    }
+
+    fn masternode(pro_tx_hash: ProTxHash, node_type: MasternodeType) -> MasternodeListItem {
+        use dpp::dashcore::hashes::Hash;
+        use dpp::dashcore::Txid;
+        use dpp::dashcore_rpc::dashcore_rpc_json::DMNState;
+
+        MasternodeListItem {
+            node_type,
+            pro_tx_hash,
+            collateral_hash: Txid::from_byte_array([0u8; 32]),
+            collateral_index: 0,
+            collateral_address: [0u8; 20],
+            operator_reward: 0.0,
+            state: DMNState {
+                service: "1.2.3.4:1234".parse().expect("socket address"),
+                registered_height: 0,
+                pose_revived_height: None,
+                pose_ban_height: None,
+                revocation_reason: 0,
+                owner_address: [0u8; 20],
+                voting_address: [0u8; 20],
+                payout_address: [0u8; 20],
+                pub_key_operator: vec![0u8; 48],
+                operator_payout_address: None,
+                platform_node_id: None,
+                platform_p2p_port: None,
+                platform_http_port: None,
+            },
+        }
+    }
+
+    fn service_change() -> DMNStateDiff {
+        DMNStateDiff {
+            service: Some("5.6.7.8:5678".parse().expect("socket address")),
+            registered_height: None,
+            last_paid_height: None,
+            consecutive_payments: None,
+            pose_penalty: None,
+            pose_revived_height: None,
+            pose_ban_height: None,
+            revocation_reason: None,
+            owner_address: None,
+            voting_address: None,
+            payout_address: None,
+            pub_key_operator: None,
+            operator_payout_address: None,
+            platform_node_id: None,
+            platform_p2p_port: None,
+            platform_http_port: None,
+        }
+    }
+
+    /// The per-member accessors record exactly the masternodes they touched, so
+    /// the structure 1 store writes only those entries.
+    #[test]
+    fn per_member_masternode_accessors_record_exactly_what_they_touched() {
+        use dpp::dashcore::hashes::Hash;
+        use std::collections::BTreeSet;
+
+        let mut state = clean_state();
+        let evo = ProTxHash::from_byte_array([1u8; 32]);
+        let regular = ProTxHash::from_byte_array([2u8; 32]);
+        let unknown = ProTxHash::from_byte_array([3u8; 32]);
+
+        state.insert_masternode(masternode(evo, MasternodeType::Evo));
+        state.insert_masternode(masternode(regular, MasternodeType::Regular));
+        assert_eq!(
+            state.masternode_changes.upserted,
+            BTreeSet::from([evo, regular])
+        );
+        assert_eq!(
+            state.hpmn_masternode_list().keys().collect::<Vec<_>>(),
+            vec![&evo],
+            "only the Evo node joins the HPMN list"
+        );
+
+        assert!(state.apply_masternode_state_diff(&evo, &service_change()));
+        assert!(!state.apply_masternode_state_diff(&unknown, &service_change()));
+        assert_eq!(
+            state.masternode_changes.upserted,
+            BTreeSet::from([evo, regular])
+        );
+        assert_eq!(
+            state.hpmn_masternode_list()[&evo].state.service,
+            state.full_masternode_list()[&evo].state.service,
+            "the diff reaches both lists"
+        );
+
+        assert!(state.remove_masternode(&evo).is_some());
+        assert!(state.remove_masternode(&unknown).is_none());
+        assert_eq!(state.masternode_changes.upserted, BTreeSet::from([regular]));
+        assert_eq!(state.masternode_changes.removed, BTreeSet::from([evo]));
+        assert!(state.hpmn_masternode_list().is_empty());
+
+        assert!(!state.masternode_changes.rewrite_all);
+        assert!(
+            state.heavy_fields_dirty,
+            "structure 0 still rewrites its record"
+        );
+    }
+
+    /// An accessor that hands out or replaces a whole collection cannot say
+    /// which members changed, so the store rewrites every entry.
+    #[test]
+    fn whole_collection_accessors_mark_a_rewrite() {
+        fn masternodes_rewritten(mutate: impl FnOnce(&mut PlatformState)) -> bool {
+            let mut state = clean_state();
+            mutate(&mut state);
+            state.masternode_changes.rewrite_all
+        }
+        fn validator_sets_rewritten(mutate: impl FnOnce(&mut PlatformState)) -> bool {
+            let mut state = clean_state();
+            mutate(&mut state);
+            state.validator_set_changes.rewrite_all
+        }
+
+        assert!(masternodes_rewritten(
+            |s| s.set_full_masternode_list(BTreeMap::new())
+        ));
+        assert!(masternodes_rewritten(
+            |s| s.set_hpmn_masternode_list(BTreeMap::new())
+        ));
+        assert!(masternodes_rewritten(|s| {
+            s.full_masternode_list_mut();
+        }));
+        assert!(masternodes_rewritten(|s| {
+            s.hpmn_masternode_list_mut();
+        }));
+        assert!(masternodes_rewritten(|s| s.clear_masternode_lists()));
+        assert!(validator_sets_rewritten(
+            |s| s.set_validator_sets(IndexMap::new())
+        ));
+        assert!(validator_sets_rewritten(|s| {
+            s.validator_sets_mut();
+        }));
+
+        // The per-member accessors and everything else do not.
+        assert!(!masternodes_rewritten(|s| {
+            s.remove_masternode(&ProTxHash::all_zeros());
+        }));
+        assert!(!validator_sets_rewritten(|s| {
+            s.remove_validator_set(&QuorumHash::all_zeros());
+        }));
+        assert!(!masternodes_rewritten(
+            |s| s.set_last_committed_block_info(None)
+        ));
+    }
+
+    /// A protocol version change may switch the saved structure to one that
+    /// keeps the collections as entries, so every entry has to be written.
+    #[test]
+    fn a_protocol_version_change_marks_everything_unsaved() {
+        let mut state = clean_state();
+        state.set_current_protocol_version_in_consensus(1);
+        assert!(state.heavy_fields_dirty);
+        assert!(state.masternode_changes.rewrite_all);
+        assert!(state.validator_set_changes.rewrite_all);
+
+        let mut state = clean_state();
+        state.current_protocol_version_in_consensus_mut();
+        assert!(state.masternode_changes.rewrite_all);
+        assert!(state.validator_set_changes.rewrite_all);
+    }
+
+    /// A new state has everything pending; a stored one has nothing; a state
+    /// whose store did not reach disk has everything again.
+    #[test]
+    fn mark_saved_and_mark_all_unsaved_cover_every_tracker() {
+        let platform_version = PlatformVersion::latest();
+        let mut state = PlatformState::default_with_protocol_versions(
+            platform_version.protocol_version,
+            platform_version.protocol_version,
+            &PlatformConfig::default_for_network(Network::Testnet),
+        )
+        .expect("platform state");
+        assert!(state.masternode_changes.rewrite_all);
+        assert!(state.validator_set_changes.rewrite_all);
+
+        state.mark_saved();
+        assert!(!state.heavy_fields_dirty);
+        assert!(state.masternode_changes.is_empty());
+        assert!(state.validator_set_changes.is_empty());
+
+        state.mark_all_unsaved();
+        assert!(state.heavy_fields_dirty);
+        assert!(state.masternode_changes.rewrite_all);
+        assert!(state.validator_set_changes.rewrite_all);
     }
 }
