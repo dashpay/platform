@@ -1,5 +1,6 @@
 mod address_funds;
 mod contract;
+mod contract_group;
 mod document;
 mod drive_methods;
 pub(crate) mod finalize_task;
@@ -21,6 +22,7 @@ use dpp::fee::Credits;
 
 pub use address_funds::AddressFundsOperationType;
 pub use contract::DataContractOperationType;
+pub use contract_group::ContractGroupOperationType;
 pub use document::DocumentOperation;
 pub use document::DocumentOperationType;
 pub use document::DocumentOperationsForContractDocumentType;
@@ -91,6 +93,8 @@ pub enum DriveOperation<'a> {
     SystemOperation(SystemOperationType),
     /// A group operation
     GroupOperation(GroupOperationType),
+    /// A contract group operation
+    ContractGroupOperation(ContractGroupOperationType),
     /// An address funds operation
     AddressFundsOperation(AddressFundsOperationType),
     /// A shielded pool operation
@@ -197,6 +201,15 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     transaction,
                     platform_version,
                 ),
+            DriveOperation::ContractGroupOperation(contract_group_operation_type) => {
+                contract_group_operation_type.into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                )
+            }
             DriveOperation::AddressFundsOperation(address_funds_operation_type) => {
                 address_funds_operation_type.into_low_level_drive_operations(
                     drive,

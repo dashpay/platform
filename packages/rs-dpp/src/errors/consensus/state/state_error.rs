@@ -11,6 +11,10 @@ use crate::consensus::state::shielded::insufficient_shielded_fee_error::Insuffic
 use crate::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
+use crate::consensus::state::contract_group::{
+    ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
+    IdentityNotContractGroupOwnerError,
+};
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
@@ -407,6 +411,16 @@ pub enum StateError {
 
     #[error(transparent)]
     ReferencedDocumentPropertyMismatchError(ReferencedDocumentPropertyMismatchError),
+
+    // Contract groups (protocol version 14).
+    #[error(transparent)]
+    ContractGroupAlreadyExistsError(ContractGroupAlreadyExistsError),
+
+    #[error(transparent)]
+    ContractGroupNotFoundError(ContractGroupNotFoundError),
+
+    #[error(transparent)]
+    IdentityNotContractGroupOwnerError(IdentityNotContractGroupOwnerError),
 }
 
 impl From<StateError> for ConsensusError {

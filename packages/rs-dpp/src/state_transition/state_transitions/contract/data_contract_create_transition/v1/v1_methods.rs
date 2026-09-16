@@ -1,0 +1,115 @@
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV1;
+
+use crate::{data_contract::DataContract, identity::KeyID, NonConsensusError, ProtocolError};
+
+use crate::serialization::Signable;
+
+use crate::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
+use crate::contract_group::{ContractGroupMembership, ContractGroupRegistration};
+use crate::data_contract::accessors::v0::DataContractV0Setters;
+use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use crate::identity::signer::Signer;
+use crate::identity::{IdentityPublicKey, PartialIdentity};
+use crate::prelude::IdentityNonce;
+use crate::state_transition::data_contract_create_transition::methods::{
+    DataContractCreateTransitionMethodsV0, DataContractCreateTransitionMethodsV1,
+};
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use platform_version::version::PlatformVersion;
+use platform_version::TryIntoPlatformVersioned;
+
+use crate::state_transition::StateTransition;
+use crate::version::FeatureVersion;
+
+impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV1 {
+    async fn new_from_data_contract<S: Signer<IdentityPublicKey>>(
+        data_contract: DataContract,
+        identity_nonce: IdentityNonce,
+        identity: &PartialIdentity,
+        key_id: KeyID,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        Self::new_from_data_contract_with_contract_group(
+            data_contract,
+            identity_nonce,
+            None,
+            vec![],
+            identity,
+            key_id,
+            signer,
+            platform_version,
+            feature_version,
+        )
+        .await
+    }
+}
+
+impl DataContractCreateTransitionMethodsV1 for DataContractCreateTransitionV1 {
+    async fn new_from_data_contract_with_contract_group<S: Signer<IdentityPublicKey>>(
+        mut data_contract: DataContract,
+        identity_nonce: IdentityNonce,
+        contract_group: Option<ContractGroupRegistration>,
+        contract_group_memberships: Vec<ContractGroupMembership>,
+        identity: &PartialIdentity,
+        key_id: KeyID,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        _feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        data_contract.set_id(DataContract::generate_data_contract_id_v0(
+            identity.id,
+            identity_nonce,
+        ));
+
+        data_contract.set_owner_id(identity.id);
+
+        let transition = DataContractCreateTransition::V1(DataContractCreateTransitionV1 {
+            data_contract: data_contract.try_into_platform_versioned(platform_version)?,
+            identity_nonce,
+            contract_group,
+            contract_group_memberships,
+            user_fee_increase: 0,
+            signature_public_key_id: key_id,
+            signature: Default::default(),
+        });
+
+        let mut state_transition: StateTransition = transition.into();
+        let value = state_transition.signable_bytes()?;
+
+        // The public key ids don't always match the keys in the map, so look the key up by id.
+        let public_key = identity
+            .loaded_public_keys
+            .values()
+            .find(|public_key| public_key.id() == key_id)
+            .ok_or(ProtocolError::NonConsensusError(
+                NonConsensusError::StateTransitionCreationError(
+                    "public key did not exist".to_string(),
+                ),
+            ))?;
+
+        let security_level_requirements = state_transition
+            .security_level_requirement(public_key.purpose())
+            .ok_or(ProtocolError::CorruptedCodeExecution(
+                "expected security level requirements".to_string(),
+            ))?;
+
+        if !security_level_requirements.contains(&public_key.security_level()) {
+            return Err(ProtocolError::ConsensusError(Box::new(
+                SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                    InvalidSignaturePublicKeySecurityLevelError::new(
+                        public_key.security_level(),
+                        security_level_requirements,
+                    ),
+                )
+                .into(),
+            )));
+        }
+
+        let signature = signer.sign(public_key, &value).await?;
+        state_transition.set_signature(signature);
+
+        Ok(state_transition)
+    }
+}

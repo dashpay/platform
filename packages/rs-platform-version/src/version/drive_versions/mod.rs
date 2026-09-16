@@ -2,6 +2,7 @@ use crate::version::drive_versions::drive_group_method_versions::{
     DriveAddressFundsMethodVersions, DriveShieldedMethodVersions,
 };
 use crate::version::FeatureVersion;
+use drive_contract_group_method_versions::DriveContractGroupMethodVersions;
 use drive_contract_method_versions::DriveContractMethodVersions;
 use drive_credit_pool_method_versions::DriveCreditPoolMethodVersions;
 use drive_document_method_versions::DriveDocumentMethodVersions;
@@ -16,6 +17,7 @@ use drive_vote_method_versions::DriveVoteMethodVersions;
 use grovedb_version::version::GroveVersion;
 
 pub mod drive_address_funds_method_versions;
+pub mod drive_contract_group_method_versions;
 pub mod drive_contract_method_versions;
 pub mod drive_credit_pool_method_versions;
 pub mod drive_document_method_versions;
@@ -69,6 +71,7 @@ pub struct DriveMethodVersions {
     pub state_transitions: DriveStateTransitionMethodVersions,
     pub platform_state: DrivePlatformStateMethodVersions,
     pub group: DriveGroupMethodVersions,
+    pub contract_group: DriveContractGroupMethodVersions,
     pub address_funds: DriveAddressFundsMethodVersions,
     pub shielded: DriveShieldedMethodVersions,
     pub saved_block_transactions: DriveSavedBlockTransactionsMethodVersions,

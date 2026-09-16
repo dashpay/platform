@@ -61,6 +61,9 @@ pub mod prefunded_specialized_balances;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod votes;
 
+/// Contract groups: identity-owned sets of contracts, document types and tokens.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod contract_groups;
 /// Group module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod group;
@@ -230,6 +233,10 @@ pub enum RootTree {
     Votes = 112,
     /// Group actions
     GroupActions = 88,
+    /// Contract groups: identity-owned sets of contracts, contract document types and contract
+    /// tokens, with a backwards index from each member contract to its groups (protocol
+    /// version 14).
+    ContractGroups = 68,
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -256,6 +263,7 @@ impl fmt::Display for RootTree {
             RootTree::Versions => "Versions",
             RootTree::Votes => "Votes",
             RootTree::GroupActions => "GroupActions",
+            RootTree::ContractGroups => "ContractGroups",
         };
         write!(f, "{}", variant_name)
     }
@@ -301,6 +309,8 @@ impl TryFrom<u8> for RootTree {
             16 => Ok(RootTree::Tokens),
             120 => Ok(RootTree::Versions),
             112 => Ok(RootTree::Votes),
+            88 => Ok(RootTree::GroupActions),
+            68 => Ok(RootTree::ContractGroups),
             _ => Err(Error::Drive(DriveError::NotSupported(
                 "unknown root tree item",
             ))),
@@ -329,6 +339,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::Versions => &[120],
             RootTree::Votes => &[112],
             RootTree::GroupActions => &[88],
+            RootTree::ContractGroups => &[68],
         }
     }
 }

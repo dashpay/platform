@@ -1,5 +1,7 @@
 mod advanced_structure;
 mod basic_structure;
+#[cfg(test)]
+mod contract_group_tests;
 mod identity_nonce;
 mod state;
 
@@ -223,6 +225,7 @@ mod tests {
     use dpp::platform_value::Value;
     use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use dpp::state_transition::StateTransition;
@@ -388,12 +391,14 @@ mod tests {
         ]);
 
         match &mut state_transition {
-            StateTransition::DataContractCreate(DataContractCreateTransition::V0(v0)) => {
-                let schemas = v0.data_contract.document_schemas_mut();
+            StateTransition::DataContractCreate(create) => {
+                let mut data_contract = create.data_contract().clone();
+                let schemas = data_contract.document_schemas_mut();
                 schemas.clear();
                 schemas.insert("note".to_string(), malicious_schema);
+                create.set_data_contract(data_contract);
             }
-            _ => panic!("expected a V0 DataContractCreate"),
+            _ => panic!("expected a DataContractCreate"),
         }
 
         state_transition

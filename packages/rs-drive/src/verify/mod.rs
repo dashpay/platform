@@ -35,6 +35,8 @@ pub mod system;
 
 /// Address funds proof verification module
 pub mod address_funds;
+/// Contract group proof verification
+pub mod contract_groups;
 /// Group proof verification module
 pub mod group;
 /// Shielded pool proof verification module

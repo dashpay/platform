@@ -1,4 +1,5 @@
 use crate::state_transition_action::contract::data_contract_create::v0::DataContractCreateTransitionActionV0;
+use crate::state_transition_action::contract::data_contract_create::v1::DataContractCreateTransitionActionV1;
 use crate::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -28,6 +29,16 @@ impl DataContractCreateTransitionAction {
                 )?
                 .into())
             }
+            DataContractCreateTransition::V1(v1) => {
+                Ok(DataContractCreateTransitionActionV1::try_from_transition(
+                    v1,
+                    block_info,
+                    full_validation,
+                    validation_operations,
+                    platform_version,
+                )?
+                .into())
+            }
         }
     }
 
@@ -45,6 +56,16 @@ impl DataContractCreateTransitionAction {
             DataContractCreateTransition::V0(v0) => Ok(
                 DataContractCreateTransitionActionV0::try_from_borrowed_transition(
                     v0,
+                    block_info,
+                    full_validation,
+                    validation_operations,
+                    platform_version,
+                )?
+                .into(),
+            ),
+            DataContractCreateTransition::V1(v1) => Ok(
+                DataContractCreateTransitionActionV1::try_from_borrowed_transition(
+                    v1,
                     block_info,
                     full_validation,
                     validation_operations,

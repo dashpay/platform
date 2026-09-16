@@ -699,6 +699,10 @@ impl StateTransitionWasm {
                         v0.identity_nonce = nonce;
                         v0.into()
                     }
+                    DataContractCreateTransition::V1(mut v1) => {
+                        v1.identity_nonce = nonce;
+                        v1.into()
+                    }
                 };
 
                 contract_create.into()

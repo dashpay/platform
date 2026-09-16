@@ -134,6 +134,16 @@ impl ErrorWithCode for BasicError {
             Self::GroupRequiredPowerIsInvalidError(_) => 10358,
             Self::GroupHasTooFewMembersError(_) => 10359,
 
+            // Contract groups
+            Self::ContractGroupMembershipsOverLimitError(_) => 10360,
+            Self::DuplicateContractGroupMembershipError(_) => 10361,
+            Self::RedundantContractGroupMembershipError(_) => 10362,
+            Self::ContractGroupMemberNotInContractError(_) => 10363,
+            Self::InvalidContractGroupOwnersError(_) => 10364,
+            Self::ContractGroupRegistrantNotOwnerError(_) => 10365,
+            Self::InvalidContractGroupNameLengthError(_) => 10366,
+            Self::InvalidContractGroupDescriptionLengthError(_) => 10367,
+
             // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
             Self::DuplicateDocumentTransitionsWithIdsError { .. } => 10401,
@@ -342,6 +352,10 @@ impl ErrorWithCode for StateError {
             Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
             Self::RecipientIdentityDoesNotExistError(_) => 40216,
             Self::IdentityToFreezeDoesNotExistError(_) => 40217,
+            // Contract groups
+            Self::ContractGroupAlreadyExistsError(_) => 40218,
+            Self::ContractGroupNotFoundError(_) => 40219,
+            Self::IdentityNotContractGroupOwnerError(_) => 40220,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,

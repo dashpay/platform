@@ -5,6 +5,12 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
+use crate::consensus::basic::contract_group::{
+    ContractGroupMemberNotInContractError, ContractGroupMembershipsOverLimitError,
+    ContractGroupRegistrantNotOwnerError, DuplicateContractGroupMembershipError,
+    InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
+    InvalidContractGroupOwnersError, RedundantContractGroupMembershipError,
+};
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
@@ -716,6 +722,31 @@ pub enum BasicError {
 
     #[error(transparent)]
     DataContractInvalidRequiredFieldsUpdateError(DataContractInvalidRequiredFieldsUpdateError),
+
+    // Contract groups (protocol version 14).
+    #[error(transparent)]
+    ContractGroupMembershipsOverLimitError(ContractGroupMembershipsOverLimitError),
+
+    #[error(transparent)]
+    DuplicateContractGroupMembershipError(DuplicateContractGroupMembershipError),
+
+    #[error(transparent)]
+    RedundantContractGroupMembershipError(RedundantContractGroupMembershipError),
+
+    #[error(transparent)]
+    ContractGroupMemberNotInContractError(ContractGroupMemberNotInContractError),
+
+    #[error(transparent)]
+    InvalidContractGroupOwnersError(InvalidContractGroupOwnersError),
+
+    #[error(transparent)]
+    ContractGroupRegistrantNotOwnerError(ContractGroupRegistrantNotOwnerError),
+
+    #[error(transparent)]
+    InvalidContractGroupNameLengthError(InvalidContractGroupNameLengthError),
+
+    #[error(transparent)]
+    InvalidContractGroupDescriptionLengthError(InvalidContractGroupDescriptionLengthError),
 }
 
 impl From<BasicError> for ConsensusError {

@@ -15,6 +15,9 @@ use dpp::version::ProtocolVersion;
 use dpp::voting::vote_polls::VotePoll;
 use drive::drive::address_funds::queries::CLEAR_ADDRESS_POOL_U8;
 use drive::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
+use drive::drive::contract_groups::paths::{
+    contract_groups_root_path, CONTRACT_GROUPS_GROUPS_KEY, CONTRACT_GROUPS_MEMBERS_KEY,
+};
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
@@ -759,6 +762,28 @@ impl<C> Platform<C> {
         // contracts. Every contract stored before this block gets its item here.
         self.drive
             .add_version_items_to_all_contracts(transaction, platform_version)?;
+
+        // ContractGroups root tree: identity-owned sets of contracts, contract document types
+        // and contract tokens, with a backwards index from each member contract. Fresh chains
+        // get the same three trees from `create_initial_state_structure` v4.
+        self.drive.grove_insert_if_not_exists(
+            SubtreePath::empty(),
+            &[RootTree::ContractGroups as u8],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+        for subtree_key in [CONTRACT_GROUPS_GROUPS_KEY, CONTRACT_GROUPS_MEMBERS_KEY] {
+            self.drive.grove_insert_if_not_exists(
+                contract_groups_root_path().as_slice().into(),
+                subtree_key,
+                Element::empty_tree(),
+                Some(transaction),
+                None,
+                &platform_version.drive,
+            )?;
+        }
 
         Ok(())
     }

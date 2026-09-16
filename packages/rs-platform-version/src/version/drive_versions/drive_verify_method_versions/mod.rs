@@ -14,6 +14,7 @@ pub struct DriveVerifyMethodVersions {
     pub document_ranked: DriveVerifyDocumentRankedMethodVersions,
     pub identity: DriveVerifyIdentityMethodVersions,
     pub group: DriveVerifyGroupMethodVersions,
+    pub contract_group: DriveVerifyContractGroupMethodVersions,
     pub token: DriveVerifyTokenMethodVersions,
     pub single_document: DriveVerifySingleDocumentMethodVersions,
     pub system: DriveVerifySystemMethodVersions,
@@ -21,6 +22,14 @@ pub struct DriveVerifyMethodVersions {
     pub address_funds: DriveVerifyAddressFundsMethodVersions,
     pub state_transition: DriveVerifyStateTransitionMethodVersions,
     pub shielded: DriveVerifyShieldedMethodVersions,
+}
+
+/// Versions for the contract group proof verifiers: one group with its members, and the
+/// groups a contract (or its document types and tokens) belongs to.
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyContractGroupMethodVersions {
+    pub verify_contract_group: FeatureVersion,
+    pub verify_contract_group_memberships_for_contract: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

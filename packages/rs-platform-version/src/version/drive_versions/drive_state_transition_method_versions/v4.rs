@@ -16,7 +16,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
         },
         convert_to_high_level_operations:
             DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions {
-                data_contract_create_transition: 0,
+                data_contract_create_transition: 1, // changed: also emits contract group registration and membership operations for version 1 create transitions
                 data_contract_update_transition: 0,
                 document_create_transition: 0,
                 document_delete_transition: 0,

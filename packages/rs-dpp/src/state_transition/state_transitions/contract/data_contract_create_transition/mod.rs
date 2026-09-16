@@ -5,6 +5,7 @@ pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
+mod v1;
 mod version;
 
 #[cfg(feature = "json-conversion")]
@@ -32,8 +33,9 @@ use serde::{Deserialize, Serialize};
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 pub use v0::*;
+pub use v1::*;
 
-pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
+pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV1;
 
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),
@@ -66,6 +68,8 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 pub enum DataContractCreateTransition {
     #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DataContractCreateTransitionV0),
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
+    V1(DataContractCreateTransitionV1),
 }
 
 impl TryFromPlatformVersioned<CreatedDataContract> for DataContractCreateTransition {
@@ -86,9 +90,14 @@ impl TryFromPlatformVersioned<CreatedDataContract> for DataContractCreateTransit
                     value.try_into_platform_versioned(platform_version)?;
                 Ok(data_contract_create_transition.into())
             }
+            1 => {
+                let data_contract_create_transition: DataContractCreateTransitionV1 =
+                    value.try_into_platform_versioned(platform_version)?;
+                Ok(data_contract_create_transition.into())
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractCreateTransition::try_from(CreatedDataContract)".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -126,9 +135,14 @@ impl TryFromPlatformVersioned<DataContract> for DataContractCreateTransition {
                     value.try_into_platform_versioned(platform_version)?;
                 Ok(data_contract_create_transition.into())
             }
+            1 => {
+                let data_contract_create_transition: DataContractCreateTransitionV1 =
+                    value.try_into_platform_versioned(platform_version)?;
+                Ok(data_contract_create_transition.into())
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractCreateTransition::try_from(DataContract)".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -153,6 +167,7 @@ impl DataContractCreateTransition {
     pub fn state_transition_version(&self) -> u16 {
         match self {
             DataContractCreateTransition::V0(_) => 0,
+            DataContractCreateTransition::V1(_) => 1,
         }
     }
 }
@@ -368,7 +383,9 @@ pub(crate) mod json_convertible_tests {
     }
 
     fn assert_v0_fields(t: &DataContractCreateTransition) {
-        let DataContractCreateTransition::V0(rec) = t;
+        let DataContractCreateTransition::V0(rec) = t else {
+            panic!("expected a V0 transition");
+        };
         assert_eq!(rec.identity_nonce, 5, "identity_nonce");
         assert_eq!(rec.user_fee_increase, 3, "user_fee_increase");
         assert_eq!(rec.signature_public_key_id, 1, "signature_public_key_id");

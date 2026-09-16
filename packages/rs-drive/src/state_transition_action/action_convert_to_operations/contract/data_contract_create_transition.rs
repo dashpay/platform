@@ -2,8 +2,12 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
-use crate::util::batch::DriveOperation::{DataContractOperation, IdentityOperation};
-use crate::util::batch::{DataContractOperationType, DriveOperation, IdentityOperationType};
+use crate::util::batch::DriveOperation::{
+    ContractGroupOperation, DataContractOperation, IdentityOperation,
+};
+use crate::util::batch::{
+    ContractGroupOperationType, DataContractOperationType, DriveOperation, IdentityOperationType,
+};
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
@@ -42,10 +46,56 @@ impl DriveHighLevelOperationConverter for DataContractCreateTransitionAction {
                     }),
                 ])
             }
+            1 => {
+                // Version 1 adds contract groups: a registration and the memberships the created
+                // contract declares. The group registration comes before the memberships so a
+                // contract may join the group registered by its own create transition; both come
+                // after the contract itself is applied.
+                let owner_id = self.data_contract_ref().owner_id().into_buffer();
+                let contract_id = self.data_contract_ref().id();
+                let contract_group = self.contract_group().cloned();
+                let memberships = self.contract_group_memberships().to_vec();
+
+                let mut operations = vec![
+                    IdentityOperation(IdentityOperationType::UpdateIdentityNonce {
+                        identity_id: owner_id,
+                        nonce: self.identity_nonce(),
+                    }),
+                    IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
+                        identity_id: owner_id,
+                        contract_id: contract_id.into_buffer(),
+                        nonce: 1,
+                    }),
+                    DataContractOperation(DataContractOperationType::ApplyContract {
+                        contract: Cow::Owned(self.data_contract()),
+                        storage_flags: None,
+                    }),
+                ];
+
+                if let Some((contract_group_id, info)) = contract_group {
+                    operations.push(ContractGroupOperation(
+                        ContractGroupOperationType::RegisterContractGroup {
+                            contract_group_id,
+                            info,
+                        },
+                    ));
+                }
+
+                if !memberships.is_empty() {
+                    operations.push(ContractGroupOperation(
+                        ContractGroupOperationType::AddContractGroupMemberships {
+                            contract_id,
+                            memberships,
+                        },
+                    ));
+                }
+
+                Ok(operations)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DataContractCreateTransitionAction::into_high_level_drive_operations"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
