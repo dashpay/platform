@@ -9,9 +9,30 @@ use crate::util::common::encode::encode_u64;
 use grovedb::{PathQuery, Query, SizedQuery};
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn fetch_document_history_query_v1(
+        contract_id: [u8; 32],
+        document_type_name: &str,
+        document_id: [u8; 32],
+        start_at_ms: u64,
+        limit: Option<u16>,
+        offset: Option<u16>,
+    ) -> Result<PathQuery, Error> {
+        let query = DocumentHistoryDriveQuery {
+            contract_id,
+            document_type_name: document_type_name.to_owned(),
+            document_id,
+            filter: DocumentHistoryFilter::StartAtTime(start_at_ms),
+            limit,
+        };
+        let mut path_query = Self::fetch_document_history_drive_query_v1(&query)?;
+        path_query.query.offset = offset;
+        Ok(path_query)
+    }
+
     /// The leaf-only query over the per-type history tree required for
     /// authenticated count-offset pagination.
-    pub(crate) fn fetch_document_history_query_v1(
+    pub(crate) fn fetch_document_history_drive_query_v1(
         query: &DocumentHistoryDriveQuery,
     ) -> Result<PathQuery, Error> {
         query.validate()?;

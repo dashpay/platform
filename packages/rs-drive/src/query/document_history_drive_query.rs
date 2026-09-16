@@ -180,7 +180,7 @@ impl DocumentHistoryDriveQuery {
                     platform_version,
                 )
             }
-            1 => Drive::fetch_document_history_query_v1(self),
+            1 => Drive::fetch_document_history_drive_query_v1(self),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DocumentHistoryDriveQuery::construct_path_query".to_string(),
                 known_versions: vec![0, 1],
