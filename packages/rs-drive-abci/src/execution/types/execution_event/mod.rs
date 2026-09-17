@@ -15,6 +15,7 @@ use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::signing_key_limits::SigningKeyLimits;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
@@ -42,6 +43,10 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         additional_fixed_fee_cost: Option<Credits>,
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
         user_fee_increase: UserFeeIncrease,
+        /// The usage limits of the key that signed the state transition, when that key carries a
+        /// budget or an expiry. Fee validation enforces them and execution deducts from the
+        /// budget, both from protocol version 14.
+        signing_key_limits: Option<SigningKeyLimits>,
     },
     /// A drive event that is paid by address inputs, this one can also be used by asset lock to address
     PaidFromAddressInputs {
@@ -182,6 +187,9 @@ impl ExecutionEvent<'_> {
         execution_context: StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
+        // Only ever set for an identity-signed state transition, all of which are `Paid` events
+        // (or the fixed cost masternode vote, whose voting key cannot carry limits).
+        let signing_key_limits = execution_context.signing_key_limits();
         match &action {
             StateTransitionAction::IdentityCreateAction(identity_create_action) => {
                 let user_fee_increase = identity_create_action.user_fee_increase();
@@ -241,6 +249,7 @@ impl ExecutionEvent<'_> {
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: None,
                         user_fee_increase,
+                        signing_key_limits,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -262,6 +271,7 @@ impl ExecutionEvent<'_> {
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: None,
                         user_fee_increase,
+                        signing_key_limits,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -283,6 +293,7 @@ impl ExecutionEvent<'_> {
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: None,
                         user_fee_increase,
+                        signing_key_limits,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -318,6 +329,7 @@ impl ExecutionEvent<'_> {
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: Some(registration_cost),
                         user_fee_increase,
+                        signing_key_limits,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -343,6 +355,7 @@ impl ExecutionEvent<'_> {
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: Some(registration_cost),
                         user_fee_increase,
+                        signing_key_limits,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -514,6 +527,7 @@ impl ExecutionEvent<'_> {
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: None,
                         user_fee_increase,
+                        signing_key_limits,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -588,6 +602,7 @@ impl ExecutionEvent<'_> {
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: Some(shielded_verification_fee),
                         user_fee_increase,
+                        signing_key_limits,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -745,6 +760,7 @@ impl ExecutionEvent<'_> {
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: None,
                         user_fee_increase,
+                        signing_key_limits,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

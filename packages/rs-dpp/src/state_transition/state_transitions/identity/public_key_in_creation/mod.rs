@@ -5,6 +5,8 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0Signable;
+use crate::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
+use crate::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1Signable;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
@@ -19,6 +21,7 @@ mod fields;
 mod methods;
 mod types;
 pub mod v0;
+pub mod v1;
 mod version;
 
 #[cfg_attr(
@@ -37,6 +40,9 @@ mod version;
 pub enum IdentityPublicKeyInCreation {
     #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(IdentityPublicKeyInCreationV0),
+    /// A key in creation that may carry a budget and an expiry, from protocol version 14
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
+    V1(IdentityPublicKeyInCreationV1),
 }
 
 impl IdentityPublicKeyInCreation {
@@ -60,6 +66,7 @@ impl From<&IdentityPublicKeyInCreation> for IdentityPublicKey {
     fn from(val: &IdentityPublicKeyInCreation) -> Self {
         match val {
             IdentityPublicKeyInCreation::V0(v0) => v0.into(),
+            IdentityPublicKeyInCreation::V1(v1) => v1.into(),
         }
     }
 }
@@ -68,18 +75,14 @@ impl From<IdentityPublicKeyInCreation> for IdentityPublicKey {
     fn from(val: IdentityPublicKeyInCreation) -> Self {
         match val {
             IdentityPublicKeyInCreation::V0(v0) => v0.into(),
+            IdentityPublicKeyInCreation::V1(v1) => v1.into(),
         }
     }
 }
 
 impl From<IdentityPublicKey> for IdentityPublicKeyInCreation {
     fn from(val: IdentityPublicKey) -> Self {
-        match val {
-            IdentityPublicKey::V0(_) => {
-                let v0: IdentityPublicKeyInCreationV0 = val.into();
-                v0.into()
-            }
-        }
+        (&val).into()
     }
 }
 
@@ -90,6 +93,8 @@ impl From<&IdentityPublicKey> for IdentityPublicKeyInCreation {
                 let v0: IdentityPublicKeyInCreationV0 = val.into();
                 v0.into()
             }
+            // The limits are part of what the identity signs, so they follow the key.
+            IdentityPublicKey::V1(v1) => IdentityPublicKeyInCreationV1::from(v1).into(),
         }
     }
 }
@@ -147,9 +152,7 @@ mod test {
     fn test_default_versioned() {
         let key = IdentityPublicKeyInCreation::default_versioned(LATEST_PLATFORM_VERSION)
             .expect("should create default");
-        match key {
-            IdentityPublicKeyInCreation::V0(_) => {}
-        }
+        assert!(matches!(key, IdentityPublicKeyInCreation::V0(_)));
     }
 
     #[test]

@@ -347,6 +347,9 @@ pub enum IdentityRootStructure {
     IdentityTreeNegativeCredit = 96,
     /// Identity contract information
     IdentityContractInfo = 32,
+    /// What is left of the budget of each budgeted key. The tree only exists once the identity
+    /// has been given a budgeted key, which protocol version 14 introduced.
+    IdentityTreeKeyBudgets = 224,
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -359,6 +362,7 @@ impl fmt::Display for IdentityRootStructure {
             IdentityRootStructure::IdentityTreeKeyReferences => "IdentityKeyReferences",
             IdentityRootStructure::IdentityTreeNegativeCredit => "NegativeCredit",
             IdentityRootStructure::IdentityContractInfo => "ContractInfo",
+            IdentityRootStructure::IdentityTreeKeyBudgets => "IdentityKeyBudgets",
         };
         write!(f, "{}", variant_name)
     }
@@ -376,6 +380,7 @@ impl TryFrom<u8> for IdentityRootStructure {
             160 => Ok(IdentityRootStructure::IdentityTreeKeyReferences),
             96 => Ok(IdentityRootStructure::IdentityTreeNegativeCredit),
             32 => Ok(IdentityRootStructure::IdentityContractInfo),
+            224 => Ok(IdentityRootStructure::IdentityTreeKeyBudgets),
             _ => Err(Error::Drive(DriveError::NotSupported(
                 "unknown identity root structure tree item",
             ))),
@@ -414,6 +419,7 @@ impl From<IdentityRootStructure> for &'static [u8; 1] {
             IdentityRootStructure::IdentityTreeKeyReferences => &[160],
             IdentityRootStructure::IdentityTreeNegativeCredit => &[96],
             IdentityRootStructure::IdentityContractInfo => &[32],
+            IdentityRootStructure::IdentityTreeKeyBudgets => &[224],
         }
     }
 }
@@ -451,6 +457,16 @@ mod tests {
                 IdentityRootStructure::try_from(32u8),
                 Ok(IdentityRootStructure::IdentityContractInfo)
             ));
+            assert!(matches!(
+                IdentityRootStructure::try_from(224u8),
+                Ok(IdentityRootStructure::IdentityTreeKeyBudgets)
+            ));
+            // Every conversion agrees on the byte.
+            let key_budgets = IdentityRootStructure::IdentityTreeKeyBudgets;
+            assert_eq!(u8::from(key_budgets), 224);
+            assert_eq!(<[u8; 1]>::from(key_budgets), [224]);
+            assert_eq!(<&'static [u8; 1]>::from(key_budgets), &[224]);
+            assert_eq!(format!("{}", key_budgets), "IdentityKeyBudgets");
         }
 
         #[test]

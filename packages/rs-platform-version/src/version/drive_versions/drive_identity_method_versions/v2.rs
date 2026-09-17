@@ -3,12 +3,12 @@ use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchFullIdentityMethodVersions,
     DriveIdentityFetchMethodVersions, DriveIdentityFetchPartialIdentityMethodVersions,
     DriveIdentityFetchPublicKeyHashesMethodVersions, DriveIdentityInsertMethodVersions,
-    DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysFetchMethodVersions,
-    DriveIdentityKeysInsertMethodVersions, DriveIdentityKeysMethodVersions,
-    DriveIdentityKeysProveMethodVersions, DriveIdentityMethodVersions,
-    DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions,
-    DriveIdentityWithdrawalDocumentMethodVersions, DriveIdentityWithdrawalMethodVersions,
-    DriveIdentityWithdrawalTransactionIndexMethodVersions,
+    DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysBudgetMethodVersions,
+    DriveIdentityKeysFetchMethodVersions, DriveIdentityKeysInsertMethodVersions,
+    DriveIdentityKeysMethodVersions, DriveIdentityKeysProveMethodVersions,
+    DriveIdentityMethodVersions, DriveIdentityProveMethodVersions,
+    DriveIdentityUpdateMethodVersions, DriveIdentityWithdrawalDocumentMethodVersions,
+    DriveIdentityWithdrawalMethodVersions, DriveIdentityWithdrawalTransactionIndexMethodVersions,
     DriveIdentityWithdrawalTransactionMethodVersions,
     DriveIdentityWithdrawalTransactionQueueMethodVersions,
 };
@@ -20,6 +20,11 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 ///   `contract_info.refresh_potential_contract_info_key_references` 0 -> 1:
 ///   write and refresh contract-bound authentication-key references. Both v0s preserve the
 ///   historical rejection of authentication keys with contract bounds before v14.
+/// * `keys.insert.insert_new_unique_key` 0 -> 1 and `keys.insert.insert_new_non_unique_key`
+///   0 -> 1: a key that carries a budget also gets its remaining budget written to the identity's
+///   key budgets subtree. Keys cannot carry a budget before v14, so both v0s never write it.
+/// * `keys.budget.*` `None -> Some(0)`: the key budgets subtree and the methods that write, read
+///   and deduct from it. The subtree does not exist before v14, so V1 keeps the slots `None`.
 /// * `update.disable_identity_keys` 0 -> 1: fee estimation reads the stored keys so a
 ///   bound key's reference refreshes are priced; v0 estimated with an unbounded
 ///   stand-in key.
@@ -112,8 +117,8 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
                 create_new_identity_key_query_trees: 0,
                 insert_key_searchable_references: 0,
                 insert_key_to_storage: 0,
-                insert_new_non_unique_key: 0,
-                insert_new_unique_key: 0,
+                insert_new_non_unique_key: 1,
+                insert_new_unique_key: 1,
                 replace_key_in_storage: 0,
             },
             insert_key_hash_identity_reference:
@@ -125,6 +130,12 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
                     insert_reference_to_unique_key: 0,
                     insert_unique_public_key_hash_reference_to_identity: 0,
                 },
+            budget: DriveIdentityKeysBudgetMethodVersions {
+                insert_identity_key_budget: Some(0),
+                fetch_identity_key_remaining_budget: Some(0),
+                deduct_from_identity_key_budget: Some(0),
+                add_estimation_costs_for_key_budgets: Some(0),
+            },
         },
         update: DriveIdentityUpdateMethodVersions {
             update_identity_revision: 0,

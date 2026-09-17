@@ -6,13 +6,17 @@ use crate::ProtocolError;
 impl IdentityPublicKeyInCreation {
     pub fn hash(&self) -> Result<[u8; 20], ProtocolError> {
         match self {
-            IdentityPublicKeyInCreation::V0(_v0) => self.hash_v0(),
+            IdentityPublicKeyInCreation::V0(_) | IdentityPublicKeyInCreation::V1(_) => {
+                self.hash_v0()
+            }
         }
     }
 
     pub fn hash_as_vec(&self) -> Result<Vec<u8>, ProtocolError> {
         match self {
-            IdentityPublicKeyInCreation::V0(_v0) => self.hash_v0().map(|hash| hash.to_vec()),
+            IdentityPublicKeyInCreation::V0(_) | IdentityPublicKeyInCreation::V1(_) => {
+                self.hash_v0().map(|hash| hash.to_vec())
+            }
         }
     }
 }

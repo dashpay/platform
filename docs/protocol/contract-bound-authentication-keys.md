@@ -74,11 +74,16 @@ level do not already allow.
 
 ## What bounds do not do
 
-There are no per-operation permissions, no spending limits and no expiry. A bound key
-can perform every document and token operation on its contract, including document
-purchases (credits move to the seller) and token transfers, until the identity disables
-it through a master-key identity update. Treat a bound key as full authority over the
-bound contract, limited in scope but not in amount.
+There are no per-operation permissions. A bound key can perform every document and token
+operation on its contract, including document purchases (credits move to the seller) and
+token transfers, until the identity disables it through a master-key identity update.
+Treat a bound key as full authority over the bound contract, limited in scope but not in
+amount.
+
+Bounds themselves carry no spending limit and no expiry. Those are separate, optional
+properties of the key and combine with bounds: see
+[authentication keys with a budget or an expiry](authentication-key-limits.md). A budget
+caps the credits a key can take from the identity; it does not cap token amounts.
 
 ## Compatibility
 

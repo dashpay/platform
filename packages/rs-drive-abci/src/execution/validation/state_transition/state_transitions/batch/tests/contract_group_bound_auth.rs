@@ -114,7 +114,9 @@ async fn should_authorize_documents_by_the_contract_group_memberships_of_their_c
             }
         }
         let mut stored_key = signing_key.clone();
-        let IdentityPublicKey::V0(ref mut key) = stored_key;
+        let IdentityPublicKey::V0(ref mut key) = stored_key else {
+            panic!("expected a version 0 key")
+        };
         key.contract_bounds = Some(ContractBounds::ContractGroup {
             id: Identifier::from(KEY_GROUP),
         });
@@ -282,7 +284,9 @@ async fn should_authorize_token_operations_by_the_contract_group_memberships_of_
         let (mut identity, signer, signing_key) =
             setup_identity_without_adding_it(234, dash_to_credits!(0.1));
         let mut stored_key = signing_key.clone();
-        let IdentityPublicKey::V0(ref mut key) = stored_key;
+        let IdentityPublicKey::V0(ref mut key) = stored_key else {
+            panic!("expected a version 0 key")
+        };
         key.contract_bounds = Some(ContractBounds::ContractGroup {
             id: Identifier::from(KEY_GROUP),
         });
@@ -371,7 +375,9 @@ async fn should_reject_non_batch_use_of_a_key_bound_to_a_contract_group() {
         .unwrap();
     register_contract_group(&platform, KEY_GROUP, version);
     let mut stored_key = signing_key.clone();
-    let IdentityPublicKey::V0(ref mut key) = stored_key;
+    let IdentityPublicKey::V0(ref mut key) = stored_key else {
+        panic!("expected a version 0 key")
+    };
     key.contract_bounds = Some(ContractBounds::ContractGroup {
         id: Identifier::from(KEY_GROUP),
     });
@@ -468,7 +474,9 @@ async fn should_resolve_contract_group_memberships_only_for_a_group_bound_signin
         );
         if group_bound {
             let mut stored_key = signing_key.clone();
-            let IdentityPublicKey::V0(ref mut key) = stored_key;
+            let IdentityPublicKey::V0(ref mut key) = stored_key else {
+                panic!("expected a version 0 key")
+            };
             key.contract_bounds = Some(ContractBounds::ContractGroup {
                 id: Identifier::from(KEY_GROUP),
             });

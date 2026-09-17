@@ -18,6 +18,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::common::validate_identity_public_key_contract_bounds::validate_identity_public_keys_contract_bounds;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::validate_identity_public_key_ids_dont_exist_in_state;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::validate_identity_public_key_ids_exist_in_state;
+use crate::execution::validation::state_transition::common::validate_identity_public_keys_limits::validate_identity_public_keys_limits;
 use crate::execution::validation::state_transition::common::validate_not_disabling_last_master_key::validate_master_key_uniqueness;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_not_in_state;
 
@@ -101,6 +102,27 @@ impl IdentityUpdateStateTransitionStateValidationV1 for IdentityUpdateTransition
                 &block_info.epoch,
                 tx,
                 state_transition_execution_context,
+                platform_version,
+            )?
+            .errors,
+        );
+
+        if !validation_result.is_valid() {
+            let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                BumpIdentityNonceAction::from_borrowed_identity_update_transition(self),
+            );
+
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                validation_result.errors,
+            ));
+        }
+
+        // A key must not already be expired in the block that registers it
+        validation_result.add_errors(
+            validate_identity_public_keys_limits(
+                self.public_keys_to_add(),
+                block_info,
                 platform_version,
             )?
             .errors,

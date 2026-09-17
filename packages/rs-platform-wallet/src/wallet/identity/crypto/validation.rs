@@ -401,6 +401,7 @@ pub fn pubkey_binds_expected_key_data(derived_pubkey: &[u8; 33], expected_key_da
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::{IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::Identifier;
@@ -533,8 +534,7 @@ mod tests {
     #[test]
     fn test_disabled_sender_key() {
         let mut key = make_key(0, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION);
-        let IdentityPublicKey::V0(ref mut k) = key;
-        k.disabled_at = Some(12345);
+        key.set_disabled_at(12345);
         let sender = make_identity(vec![key]);
         let recipient = make_identity(vec![make_key(
             0,
