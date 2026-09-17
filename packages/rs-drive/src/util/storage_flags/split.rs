@@ -51,6 +51,7 @@ impl StorageFlags {
                     Self::record_refund_owner(owner, refund_owners)?;
                 }
                 Ok(storage_flags
+                    .into_crate_flags_keyed_by_removal_key()
                     .split_storage_removed_bytes(removed_key_bytes, removed_value_bytes))
             }
         }
