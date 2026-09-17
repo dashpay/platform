@@ -44,6 +44,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetIdentityContractNonceRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityContractNonceResponse.FromString,
                 )
+        self.getIdentityKeysRemainingBudgets = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentityKeysRemainingBudgets',
+                request_serializer=platform__pb2.GetIdentityKeysRemainingBudgetsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentityKeysRemainingBudgetsResponse.FromString,
+                )
         self.getIdentityBalance = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityBalance',
                 request_serializer=platform__pb2.GetIdentityBalanceRequest.SerializeToString,
@@ -376,6 +381,12 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getIdentityContractNonce(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getIdentityKeysRemainingBudgets(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -773,6 +784,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getIdentityContractNonce,
                     request_deserializer=platform__pb2.GetIdentityContractNonceRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityContractNonceResponse.SerializeToString,
+            ),
+            'getIdentityKeysRemainingBudgets': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentityKeysRemainingBudgets,
+                    request_deserializer=platform__pb2.GetIdentityKeysRemainingBudgetsRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentityKeysRemainingBudgetsResponse.SerializeToString,
             ),
             'getIdentityBalance': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityBalance,
@@ -1178,6 +1194,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityContractNonce',
             platform__pb2.GetIdentityContractNonceRequest.SerializeToString,
             platform__pb2.GetIdentityContractNonceResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getIdentityKeysRemainingBudgets(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityKeysRemainingBudgets',
+            platform__pb2.GetIdentityKeysRemainingBudgetsRequest.SerializeToString,
+            platform__pb2.GetIdentityKeysRemainingBudgetsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

@@ -201,6 +201,37 @@ public final class PlatformGrpc {
     return getGetIdentityContractNonceMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse> getGetIdentityKeysRemainingBudgetsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getIdentityKeysRemainingBudgets",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse> getGetIdentityKeysRemainingBudgetsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse> getGetIdentityKeysRemainingBudgetsMethod;
+    if ((getGetIdentityKeysRemainingBudgetsMethod = PlatformGrpc.getGetIdentityKeysRemainingBudgetsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetIdentityKeysRemainingBudgetsMethod = PlatformGrpc.getGetIdentityKeysRemainingBudgetsMethod) == null) {
+          PlatformGrpc.getGetIdentityKeysRemainingBudgetsMethod = getGetIdentityKeysRemainingBudgetsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getIdentityKeysRemainingBudgets"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getIdentityKeysRemainingBudgets"))
+              .build();
+        }
+      }
+    }
+    return getGetIdentityKeysRemainingBudgetsMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> getGetIdentityBalanceMethod;
 
@@ -2125,6 +2156,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getIdentityKeysRemainingBudgets(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityKeysRemainingBudgetsMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityBalanceMethod(), responseObserver);
@@ -2598,6 +2636,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse>(
                   this, METHODID_GET_IDENTITY_CONTRACT_NONCE)))
+          .addMethod(
+            getGetIdentityKeysRemainingBudgetsMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse>(
+                  this, METHODID_GET_IDENTITY_KEYS_REMAINING_BUDGETS)))
           .addMethod(
             getGetIdentityBalanceMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -3078,6 +3123,14 @@ public final class PlatformGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetIdentityContractNonceMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getIdentityKeysRemainingBudgets(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetIdentityKeysRemainingBudgetsMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -3632,6 +3685,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse getIdentityKeysRemainingBudgets(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetIdentityKeysRemainingBudgetsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetIdentityBalanceMethod(), getCallOptions(), request);
@@ -4125,6 +4185,14 @@ public final class PlatformGrpc {
         org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetIdentityContractNonceMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse> getIdentityKeysRemainingBudgets(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetIdentityKeysRemainingBudgetsMethod(), getCallOptions()), request);
     }
 
     /**
@@ -4624,65 +4692,66 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_IDENTITIES_CONTRACT_KEYS = 3;
   private static final int METHODID_GET_IDENTITY_NONCE = 4;
   private static final int METHODID_GET_IDENTITY_CONTRACT_NONCE = 5;
-  private static final int METHODID_GET_IDENTITY_BALANCE = 6;
-  private static final int METHODID_GET_IDENTITIES_BALANCES = 7;
-  private static final int METHODID_GET_IDENTITY_BALANCE_AND_REVISION = 8;
-  private static final int METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_IDS = 9;
-  private static final int METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_RANGE = 10;
-  private static final int METHODID_GET_DATA_CONTRACT = 11;
-  private static final int METHODID_GET_DATA_CONTRACT_HISTORY = 12;
-  private static final int METHODID_GET_DATA_CONTRACTS_LATEST_VERSIONS = 13;
-  private static final int METHODID_GET_DATA_CONTRACTS = 14;
-  private static final int METHODID_GET_DATA_CONTRACTS_BY_RANGE = 15;
-  private static final int METHODID_GET_CONTRACT_GROUP_INFO = 16;
-  private static final int METHODID_GET_CONTRACT_GROUP_MEMBERS = 17;
-  private static final int METHODID_GET_CONTRACT_GROUPS_FOR_CONTRACT = 18;
-  private static final int METHODID_GET_DOCUMENT_HISTORY = 19;
-  private static final int METHODID_GET_DOCUMENTS = 20;
-  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 21;
-  private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 22;
-  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 23;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 24;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 25;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 26;
-  private static final int METHODID_GET_EPOCHS_INFO = 27;
-  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 28;
-  private static final int METHODID_GET_CONTESTED_RESOURCES = 29;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 30;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 31;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 32;
-  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 33;
-  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 34;
-  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 35;
-  private static final int METHODID_GET_PATH_ELEMENTS = 36;
-  private static final int METHODID_GET_STATUS = 37;
-  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 38;
-  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 39;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 40;
-  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 41;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 42;
-  private static final int METHODID_GET_TOKEN_STATUSES = 43;
-  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 44;
-  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 45;
-  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 46;
-  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 47;
-  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 48;
-  private static final int METHODID_GET_GROUP_INFO = 49;
-  private static final int METHODID_GET_GROUP_INFOS = 50;
-  private static final int METHODID_GET_GROUP_ACTIONS = 51;
-  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 52;
-  private static final int METHODID_GET_ADDRESS_INFO = 53;
-  private static final int METHODID_GET_ADDRESSES_INFOS = 54;
-  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 55;
-  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 56;
-  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 57;
-  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 58;
-  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 59;
-  private static final int METHODID_GET_SHIELDED_ANCHORS = 60;
-  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 61;
-  private static final int METHODID_GET_SHIELDED_POOL_STATE = 62;
-  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 63;
-  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 64;
+  private static final int METHODID_GET_IDENTITY_KEYS_REMAINING_BUDGETS = 6;
+  private static final int METHODID_GET_IDENTITY_BALANCE = 7;
+  private static final int METHODID_GET_IDENTITIES_BALANCES = 8;
+  private static final int METHODID_GET_IDENTITY_BALANCE_AND_REVISION = 9;
+  private static final int METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_IDS = 10;
+  private static final int METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_RANGE = 11;
+  private static final int METHODID_GET_DATA_CONTRACT = 12;
+  private static final int METHODID_GET_DATA_CONTRACT_HISTORY = 13;
+  private static final int METHODID_GET_DATA_CONTRACTS_LATEST_VERSIONS = 14;
+  private static final int METHODID_GET_DATA_CONTRACTS = 15;
+  private static final int METHODID_GET_DATA_CONTRACTS_BY_RANGE = 16;
+  private static final int METHODID_GET_CONTRACT_GROUP_INFO = 17;
+  private static final int METHODID_GET_CONTRACT_GROUP_MEMBERS = 18;
+  private static final int METHODID_GET_CONTRACT_GROUPS_FOR_CONTRACT = 19;
+  private static final int METHODID_GET_DOCUMENT_HISTORY = 20;
+  private static final int METHODID_GET_DOCUMENTS = 21;
+  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 22;
+  private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 23;
+  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 24;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 25;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 26;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 27;
+  private static final int METHODID_GET_EPOCHS_INFO = 28;
+  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 29;
+  private static final int METHODID_GET_CONTESTED_RESOURCES = 30;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 31;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 32;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 33;
+  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 34;
+  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 35;
+  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 36;
+  private static final int METHODID_GET_PATH_ELEMENTS = 37;
+  private static final int METHODID_GET_STATUS = 38;
+  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 39;
+  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 40;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 41;
+  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 42;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 43;
+  private static final int METHODID_GET_TOKEN_STATUSES = 44;
+  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 45;
+  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 46;
+  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 47;
+  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 48;
+  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 49;
+  private static final int METHODID_GET_GROUP_INFO = 50;
+  private static final int METHODID_GET_GROUP_INFOS = 51;
+  private static final int METHODID_GET_GROUP_ACTIONS = 52;
+  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 53;
+  private static final int METHODID_GET_ADDRESS_INFO = 54;
+  private static final int METHODID_GET_ADDRESSES_INFOS = 55;
+  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 56;
+  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 57;
+  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 58;
+  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 59;
+  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 60;
+  private static final int METHODID_GET_SHIELDED_ANCHORS = 61;
+  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 62;
+  private static final int METHODID_GET_SHIELDED_POOL_STATE = 63;
+  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 64;
+  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 65;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -4724,6 +4793,10 @@ public final class PlatformGrpc {
         case METHODID_GET_IDENTITY_CONTRACT_NONCE:
           serviceImpl.getIdentityContractNonce((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse>) responseObserver);
+          break;
+        case METHODID_GET_IDENTITY_KEYS_REMAINING_BUDGETS:
+          serviceImpl.getIdentityKeysRemainingBudgets((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse>) responseObserver);
           break;
         case METHODID_GET_IDENTITY_BALANCE:
           serviceImpl.getIdentityBalance((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest) request,
@@ -5028,6 +5101,7 @@ public final class PlatformGrpc {
               .addMethod(getGetIdentitiesContractKeysMethod())
               .addMethod(getGetIdentityNonceMethod())
               .addMethod(getGetIdentityContractNonceMethod())
+              .addMethod(getGetIdentityKeysRemainingBudgetsMethod())
               .addMethod(getGetIdentityBalanceMethod())
               .addMethod(getGetIdentitiesBalancesMethod())
               .addMethod(getGetIdentityBalanceAndRevisionMethod())

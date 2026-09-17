@@ -203,6 +203,26 @@
              responseClass:[GetIdentityContractNonceResponse class]];
 }
 
+#pragma mark getIdentityKeysRemainingBudgets(GetIdentityKeysRemainingBudgetsRequest) returns (GetIdentityKeysRemainingBudgetsResponse)
+
+- (void)getIdentityKeysRemainingBudgetsWithRequest:(GetIdentityKeysRemainingBudgetsRequest *)request handler:(void(^)(GetIdentityKeysRemainingBudgetsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentityKeysRemainingBudgetsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentityKeysRemainingBudgetsWithRequest:(GetIdentityKeysRemainingBudgetsRequest *)request handler:(void(^)(GetIdentityKeysRemainingBudgetsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentityKeysRemainingBudgets"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentityKeysRemainingBudgetsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentityKeysRemainingBudgetsWithMessage:(GetIdentityKeysRemainingBudgetsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentityKeysRemainingBudgets"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentityKeysRemainingBudgetsResponse class]];
+}
+
 #pragma mark getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse)
 
 - (void)getIdentityBalanceWithRequest:(GetIdentityBalanceRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler{

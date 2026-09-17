@@ -285,6 +285,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityKeysRemainingBudgets}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getIdentityKeysRemainingBudgetsCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse} [response] GetIdentityKeysRemainingBudgetsResponse
+                         */
+
+                        /**
+                         * Calls getIdentityKeysRemainingBudgets.
+                         * @function getIdentityKeysRemainingBudgets
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityKeysRemainingBudgetsRequest} request GetIdentityKeysRemainingBudgetsRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getIdentityKeysRemainingBudgetsCallback} callback Node-style callback called with the error, if any, and GetIdentityKeysRemainingBudgetsResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getIdentityKeysRemainingBudgets = function getIdentityKeysRemainingBudgets(request, callback) {
+                            return this.rpcCall(getIdentityKeysRemainingBudgets, $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest, $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse, request, callback);
+                        }, "name", { value: "getIdentityKeysRemainingBudgets" });
+
+                        /**
+                         * Calls getIdentityKeysRemainingBudgets.
+                         * @function getIdentityKeysRemainingBudgets
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityKeysRemainingBudgetsRequest} request GetIdentityKeysRemainingBudgetsRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityBalance}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getIdentityBalanceCallback
@@ -7147,6 +7180,1399 @@ $root.org = (function() {
                         })();
 
                         return GetIdentityContractNonceResponse;
+                    })();
+
+                    v0.GetIdentityKeysRemainingBudgetsRequest = (function() {
+
+                        /**
+                         * Properties of a GetIdentityKeysRemainingBudgetsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentityKeysRemainingBudgetsRequest
+                         * @property {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.IGetIdentityKeysRemainingBudgetsRequestV0|null} [v0] GetIdentityKeysRemainingBudgetsRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetIdentityKeysRemainingBudgetsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentityKeysRemainingBudgetsRequest.
+                         * @implements IGetIdentityKeysRemainingBudgetsRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityKeysRemainingBudgetsRequest=} [properties] Properties to set
+                         */
+                        function GetIdentityKeysRemainingBudgetsRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentityKeysRemainingBudgetsRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.IGetIdentityKeysRemainingBudgetsRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                         * @instance
+                         */
+                        GetIdentityKeysRemainingBudgetsRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentityKeysRemainingBudgetsRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentityKeysRemainingBudgetsRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentityKeysRemainingBudgetsRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityKeysRemainingBudgetsRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest} GetIdentityKeysRemainingBudgetsRequest instance
+                         */
+                        GetIdentityKeysRemainingBudgetsRequest.create = function create(properties) {
+                            return new GetIdentityKeysRemainingBudgetsRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentityKeysRemainingBudgetsRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityKeysRemainingBudgetsRequest} message GetIdentityKeysRemainingBudgetsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentityKeysRemainingBudgetsRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentityKeysRemainingBudgetsRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityKeysRemainingBudgetsRequest} message GetIdentityKeysRemainingBudgetsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentityKeysRemainingBudgetsRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentityKeysRemainingBudgetsRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest} GetIdentityKeysRemainingBudgetsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentityKeysRemainingBudgetsRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentityKeysRemainingBudgetsRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest} GetIdentityKeysRemainingBudgetsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentityKeysRemainingBudgetsRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentityKeysRemainingBudgetsRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentityKeysRemainingBudgetsRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentityKeysRemainingBudgetsRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest} GetIdentityKeysRemainingBudgetsRequest
+                         */
+                        GetIdentityKeysRemainingBudgetsRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentityKeysRemainingBudgetsRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest} message GetIdentityKeysRemainingBudgetsRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentityKeysRemainingBudgetsRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentityKeysRemainingBudgetsRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentityKeysRemainingBudgetsRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetIdentityKeysRemainingBudgetsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                             * @interface IGetIdentityKeysRemainingBudgetsRequestV0
+                             * @property {Uint8Array|null} [identityId] GetIdentityKeysRemainingBudgetsRequestV0 identityId
+                             * @property {Array.<number>|null} [keyIds] GetIdentityKeysRemainingBudgetsRequestV0 keyIds
+                             * @property {boolean|null} [prove] GetIdentityKeysRemainingBudgetsRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetIdentityKeysRemainingBudgetsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest
+                             * @classdesc Represents a GetIdentityKeysRemainingBudgetsRequestV0.
+                             * @implements IGetIdentityKeysRemainingBudgetsRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.IGetIdentityKeysRemainingBudgetsRequestV0=} [properties] Properties to set
+                             */
+                            function GetIdentityKeysRemainingBudgetsRequestV0(properties) {
+                                this.keyIds = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentityKeysRemainingBudgetsRequestV0 identityId.
+                             * @member {Uint8Array} identityId
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0
+                             * @instance
+                             */
+                            GetIdentityKeysRemainingBudgetsRequestV0.prototype.identityId = $util.newBuffer([]);
+
+                            /**
+                             * GetIdentityKeysRemainingBudgetsRequestV0 keyIds.
+                             * @member {Array.<number>} keyIds
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0
+                             * @instance
+                             */
+                            GetIdentityKeysRemainingBudgetsRequestV0.prototype.keyIds = $util.emptyArray;
+
+                            /**
+                             * GetIdentityKeysRemainingBudgetsRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0
+                             * @instance
+                             */
+                            GetIdentityKeysRemainingBudgetsRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetIdentityKeysRemainingBudgetsRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.IGetIdentityKeysRemainingBudgetsRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0} GetIdentityKeysRemainingBudgetsRequestV0 instance
+                             */
+                            GetIdentityKeysRemainingBudgetsRequestV0.create = function create(properties) {
+                                return new GetIdentityKeysRemainingBudgetsRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityKeysRemainingBudgetsRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.IGetIdentityKeysRemainingBudgetsRequestV0} message GetIdentityKeysRemainingBudgetsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityKeysRemainingBudgetsRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identityId != null && Object.hasOwnProperty.call(message, "identityId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identityId);
+                                if (message.keyIds != null && message.keyIds.length) {
+                                    writer.uint32(/* id 2, wireType 2 =*/18).fork();
+                                    for (var i = 0; i < message.keyIds.length; ++i)
+                                        writer.uint32(message.keyIds[i]);
+                                    writer.ldelim();
+                                }
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityKeysRemainingBudgetsRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.IGetIdentityKeysRemainingBudgetsRequestV0} message GetIdentityKeysRemainingBudgetsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityKeysRemainingBudgetsRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentityKeysRemainingBudgetsRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0} GetIdentityKeysRemainingBudgetsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityKeysRemainingBudgetsRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.identityId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        if (!(message.keyIds && message.keyIds.length))
+                                            message.keyIds = [];
+                                        if ((tag & 7) === 2) {
+                                            var end2 = reader.uint32() + reader.pos;
+                                            while (reader.pos < end2)
+                                                message.keyIds.push(reader.uint32());
+                                        } else
+                                            message.keyIds.push(reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentityKeysRemainingBudgetsRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0} GetIdentityKeysRemainingBudgetsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityKeysRemainingBudgetsRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentityKeysRemainingBudgetsRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentityKeysRemainingBudgetsRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                    if (!(message.identityId && typeof message.identityId.length === "number" || $util.isString(message.identityId)))
+                                        return "identityId: buffer expected";
+                                if (message.keyIds != null && message.hasOwnProperty("keyIds")) {
+                                    if (!Array.isArray(message.keyIds))
+                                        return "keyIds: array expected";
+                                    for (var i = 0; i < message.keyIds.length; ++i)
+                                        if (!$util.isInteger(message.keyIds[i]))
+                                            return "keyIds: integer[] expected";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentityKeysRemainingBudgetsRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0} GetIdentityKeysRemainingBudgetsRequestV0
+                             */
+                            GetIdentityKeysRemainingBudgetsRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0();
+                                if (object.identityId != null)
+                                    if (typeof object.identityId === "string")
+                                        $util.base64.decode(object.identityId, message.identityId = $util.newBuffer($util.base64.length(object.identityId)), 0);
+                                    else if (object.identityId.length >= 0)
+                                        message.identityId = object.identityId;
+                                if (object.keyIds) {
+                                    if (!Array.isArray(object.keyIds))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0.keyIds: array expected");
+                                    message.keyIds = [];
+                                    for (var i = 0; i < object.keyIds.length; ++i)
+                                        message.keyIds[i] = object.keyIds[i] >>> 0;
+                                }
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentityKeysRemainingBudgetsRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0} message GetIdentityKeysRemainingBudgetsRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentityKeysRemainingBudgetsRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.keyIds = [];
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.identityId = "";
+                                    else {
+                                        object.identityId = [];
+                                        if (options.bytes !== Array)
+                                            object.identityId = $util.newBuffer(object.identityId);
+                                    }
+                                    object.prove = false;
+                                }
+                                if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                    object.identityId = options.bytes === String ? $util.base64.encode(message.identityId, 0, message.identityId.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityId) : message.identityId;
+                                if (message.keyIds && message.keyIds.length) {
+                                    object.keyIds = [];
+                                    for (var j = 0; j < message.keyIds.length; ++j)
+                                        object.keyIds[j] = message.keyIds[j];
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentityKeysRemainingBudgetsRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentityKeysRemainingBudgetsRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetIdentityKeysRemainingBudgetsRequestV0;
+                        })();
+
+                        return GetIdentityKeysRemainingBudgetsRequest;
+                    })();
+
+                    v0.GetIdentityKeysRemainingBudgetsResponse = (function() {
+
+                        /**
+                         * Properties of a GetIdentityKeysRemainingBudgetsResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentityKeysRemainingBudgetsResponse
+                         * @property {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.IGetIdentityKeysRemainingBudgetsResponseV0|null} [v0] GetIdentityKeysRemainingBudgetsResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetIdentityKeysRemainingBudgetsResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentityKeysRemainingBudgetsResponse.
+                         * @implements IGetIdentityKeysRemainingBudgetsResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityKeysRemainingBudgetsResponse=} [properties] Properties to set
+                         */
+                        function GetIdentityKeysRemainingBudgetsResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentityKeysRemainingBudgetsResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.IGetIdentityKeysRemainingBudgetsResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                         * @instance
+                         */
+                        GetIdentityKeysRemainingBudgetsResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentityKeysRemainingBudgetsResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentityKeysRemainingBudgetsResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentityKeysRemainingBudgetsResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityKeysRemainingBudgetsResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse} GetIdentityKeysRemainingBudgetsResponse instance
+                         */
+                        GetIdentityKeysRemainingBudgetsResponse.create = function create(properties) {
+                            return new GetIdentityKeysRemainingBudgetsResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentityKeysRemainingBudgetsResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityKeysRemainingBudgetsResponse} message GetIdentityKeysRemainingBudgetsResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentityKeysRemainingBudgetsResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentityKeysRemainingBudgetsResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityKeysRemainingBudgetsResponse} message GetIdentityKeysRemainingBudgetsResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentityKeysRemainingBudgetsResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentityKeysRemainingBudgetsResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse} GetIdentityKeysRemainingBudgetsResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentityKeysRemainingBudgetsResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentityKeysRemainingBudgetsResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse} GetIdentityKeysRemainingBudgetsResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentityKeysRemainingBudgetsResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentityKeysRemainingBudgetsResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentityKeysRemainingBudgetsResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentityKeysRemainingBudgetsResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse} GetIdentityKeysRemainingBudgetsResponse
+                         */
+                        GetIdentityKeysRemainingBudgetsResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentityKeysRemainingBudgetsResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse} message GetIdentityKeysRemainingBudgetsResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentityKeysRemainingBudgetsResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentityKeysRemainingBudgetsResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentityKeysRemainingBudgetsResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetIdentityKeysRemainingBudgetsResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                             * @interface IGetIdentityKeysRemainingBudgetsResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.IKeysRemainingBudgets|null} [keysRemainingBudgets] GetIdentityKeysRemainingBudgetsResponseV0 keysRemainingBudgets
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentityKeysRemainingBudgetsResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentityKeysRemainingBudgetsResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetIdentityKeysRemainingBudgetsResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse
+                             * @classdesc Represents a GetIdentityKeysRemainingBudgetsResponseV0.
+                             * @implements IGetIdentityKeysRemainingBudgetsResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.IGetIdentityKeysRemainingBudgetsResponseV0=} [properties] Properties to set
+                             */
+                            function GetIdentityKeysRemainingBudgetsResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentityKeysRemainingBudgetsResponseV0 keysRemainingBudgets.
+                             * @member {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.IKeysRemainingBudgets|null|undefined} keysRemainingBudgets
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @instance
+                             */
+                            GetIdentityKeysRemainingBudgetsResponseV0.prototype.keysRemainingBudgets = null;
+
+                            /**
+                             * GetIdentityKeysRemainingBudgetsResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @instance
+                             */
+                            GetIdentityKeysRemainingBudgetsResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetIdentityKeysRemainingBudgetsResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @instance
+                             */
+                            GetIdentityKeysRemainingBudgetsResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetIdentityKeysRemainingBudgetsResponseV0 result.
+                             * @member {"keysRemainingBudgets"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetIdentityKeysRemainingBudgetsResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["keysRemainingBudgets", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetIdentityKeysRemainingBudgetsResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.IGetIdentityKeysRemainingBudgetsResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0} GetIdentityKeysRemainingBudgetsResponseV0 instance
+                             */
+                            GetIdentityKeysRemainingBudgetsResponseV0.create = function create(properties) {
+                                return new GetIdentityKeysRemainingBudgetsResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityKeysRemainingBudgetsResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.IGetIdentityKeysRemainingBudgetsResponseV0} message GetIdentityKeysRemainingBudgetsResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityKeysRemainingBudgetsResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.keysRemainingBudgets != null && Object.hasOwnProperty.call(message, "keysRemainingBudgets"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets.encode(message.keysRemainingBudgets, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityKeysRemainingBudgetsResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.IGetIdentityKeysRemainingBudgetsResponseV0} message GetIdentityKeysRemainingBudgetsResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityKeysRemainingBudgetsResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentityKeysRemainingBudgetsResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0} GetIdentityKeysRemainingBudgetsResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityKeysRemainingBudgetsResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.keysRemainingBudgets = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentityKeysRemainingBudgetsResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0} GetIdentityKeysRemainingBudgetsResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityKeysRemainingBudgetsResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentityKeysRemainingBudgetsResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentityKeysRemainingBudgetsResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.keysRemainingBudgets != null && message.hasOwnProperty("keysRemainingBudgets")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets.verify(message.keysRemainingBudgets);
+                                        if (error)
+                                            return "keysRemainingBudgets." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentityKeysRemainingBudgetsResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0} GetIdentityKeysRemainingBudgetsResponseV0
+                             */
+                            GetIdentityKeysRemainingBudgetsResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0();
+                                if (object.keysRemainingBudgets != null) {
+                                    if (typeof object.keysRemainingBudgets !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.keysRemainingBudgets: object expected");
+                                    message.keysRemainingBudgets = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets.fromObject(object.keysRemainingBudgets);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentityKeysRemainingBudgetsResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0} message GetIdentityKeysRemainingBudgetsResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentityKeysRemainingBudgetsResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.keysRemainingBudgets != null && message.hasOwnProperty("keysRemainingBudgets")) {
+                                    object.keysRemainingBudgets = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets.toObject(message.keysRemainingBudgets, options);
+                                    if (options.oneofs)
+                                        object.result = "keysRemainingBudgets";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentityKeysRemainingBudgetsResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentityKeysRemainingBudgetsResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry = (function() {
+
+                                /**
+                                 * Properties of a KeyRemainingBudgetEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                                 * @interface IKeyRemainingBudgetEntry
+                                 * @property {number|null} [keyId] KeyRemainingBudgetEntry keyId
+                                 * @property {number|Long|null} [remainingBudget] KeyRemainingBudgetEntry remainingBudget
+                                 */
+
+                                /**
+                                 * Constructs a new KeyRemainingBudgetEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                                 * @classdesc Represents a KeyRemainingBudgetEntry.
+                                 * @implements IKeyRemainingBudgetEntry
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.IKeyRemainingBudgetEntry=} [properties] Properties to set
+                                 */
+                                function KeyRemainingBudgetEntry(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * KeyRemainingBudgetEntry keyId.
+                                 * @member {number} keyId
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry
+                                 * @instance
+                                 */
+                                KeyRemainingBudgetEntry.prototype.keyId = 0;
+
+                                /**
+                                 * KeyRemainingBudgetEntry remainingBudget.
+                                 * @member {number|Long} remainingBudget
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry
+                                 * @instance
+                                 */
+                                KeyRemainingBudgetEntry.prototype.remainingBudget = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Creates a new KeyRemainingBudgetEntry instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.IKeyRemainingBudgetEntry=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry} KeyRemainingBudgetEntry instance
+                                 */
+                                KeyRemainingBudgetEntry.create = function create(properties) {
+                                    return new KeyRemainingBudgetEntry(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified KeyRemainingBudgetEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.IKeyRemainingBudgetEntry} message KeyRemainingBudgetEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                KeyRemainingBudgetEntry.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.keyId != null && Object.hasOwnProperty.call(message, "keyId"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.keyId);
+                                    if (message.remainingBudget != null && Object.hasOwnProperty.call(message, "remainingBudget"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.remainingBudget);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified KeyRemainingBudgetEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.IKeyRemainingBudgetEntry} message KeyRemainingBudgetEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                KeyRemainingBudgetEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a KeyRemainingBudgetEntry message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry} KeyRemainingBudgetEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                KeyRemainingBudgetEntry.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.keyId = reader.uint32();
+                                            break;
+                                        case 2:
+                                            message.remainingBudget = reader.uint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a KeyRemainingBudgetEntry message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry} KeyRemainingBudgetEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                KeyRemainingBudgetEntry.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a KeyRemainingBudgetEntry message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                KeyRemainingBudgetEntry.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.keyId != null && message.hasOwnProperty("keyId"))
+                                        if (!$util.isInteger(message.keyId))
+                                            return "keyId: integer expected";
+                                    if (message.remainingBudget != null && message.hasOwnProperty("remainingBudget"))
+                                        if (!$util.isInteger(message.remainingBudget) && !(message.remainingBudget && $util.isInteger(message.remainingBudget.low) && $util.isInteger(message.remainingBudget.high)))
+                                            return "remainingBudget: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a KeyRemainingBudgetEntry message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry} KeyRemainingBudgetEntry
+                                 */
+                                KeyRemainingBudgetEntry.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry();
+                                    if (object.keyId != null)
+                                        message.keyId = object.keyId >>> 0;
+                                    if (object.remainingBudget != null)
+                                        if ($util.Long)
+                                            (message.remainingBudget = $util.Long.fromValue(object.remainingBudget)).unsigned = true;
+                                        else if (typeof object.remainingBudget === "string")
+                                            message.remainingBudget = parseInt(object.remainingBudget, 10);
+                                        else if (typeof object.remainingBudget === "number")
+                                            message.remainingBudget = object.remainingBudget;
+                                        else if (typeof object.remainingBudget === "object")
+                                            message.remainingBudget = new $util.LongBits(object.remainingBudget.low >>> 0, object.remainingBudget.high >>> 0).toNumber(true);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a KeyRemainingBudgetEntry message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry} message KeyRemainingBudgetEntry
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                KeyRemainingBudgetEntry.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.keyId = 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.remainingBudget = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.remainingBudget = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.keyId != null && message.hasOwnProperty("keyId"))
+                                        object.keyId = message.keyId;
+                                    if (message.remainingBudget != null && message.hasOwnProperty("remainingBudget"))
+                                        if (typeof message.remainingBudget === "number")
+                                            object.remainingBudget = options.longs === String ? String(message.remainingBudget) : message.remainingBudget;
+                                        else
+                                            object.remainingBudget = options.longs === String ? $util.Long.prototype.toString.call(message.remainingBudget) : options.longs === Number ? new $util.LongBits(message.remainingBudget.low >>> 0, message.remainingBudget.high >>> 0).toNumber(true) : message.remainingBudget;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this KeyRemainingBudgetEntry to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                KeyRemainingBudgetEntry.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return KeyRemainingBudgetEntry;
+                            })();
+
+                            GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets = (function() {
+
+                                /**
+                                 * Properties of a KeysRemainingBudgets.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                                 * @interface IKeysRemainingBudgets
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.IKeyRemainingBudgetEntry>|null} [entries] KeysRemainingBudgets entries
+                                 */
+
+                                /**
+                                 * Constructs a new KeysRemainingBudgets.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0
+                                 * @classdesc Represents a KeysRemainingBudgets.
+                                 * @implements IKeysRemainingBudgets
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.IKeysRemainingBudgets=} [properties] Properties to set
+                                 */
+                                function KeysRemainingBudgets(properties) {
+                                    this.entries = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * KeysRemainingBudgets entries.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.IKeyRemainingBudgetEntry>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets
+                                 * @instance
+                                 */
+                                KeysRemainingBudgets.prototype.entries = $util.emptyArray;
+
+                                /**
+                                 * Creates a new KeysRemainingBudgets instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.IKeysRemainingBudgets=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets} KeysRemainingBudgets instance
+                                 */
+                                KeysRemainingBudgets.create = function create(properties) {
+                                    return new KeysRemainingBudgets(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified KeysRemainingBudgets message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.IKeysRemainingBudgets} message KeysRemainingBudgets message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                KeysRemainingBudgets.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.entries != null && message.entries.length)
+                                        for (var i = 0; i < message.entries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified KeysRemainingBudgets message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.IKeysRemainingBudgets} message KeysRemainingBudgets message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                KeysRemainingBudgets.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a KeysRemainingBudgets message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets} KeysRemainingBudgets
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                KeysRemainingBudgets.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.entries && message.entries.length))
+                                                message.entries = [];
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a KeysRemainingBudgets message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets} KeysRemainingBudgets
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                KeysRemainingBudgets.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a KeysRemainingBudgets message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                KeysRemainingBudgets.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (!Array.isArray(message.entries))
+                                            return "entries: array expected";
+                                        for (var i = 0; i < message.entries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry.verify(message.entries[i]);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a KeysRemainingBudgets message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets} KeysRemainingBudgets
+                                 */
+                                KeysRemainingBudgets.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets();
+                                    if (object.entries) {
+                                        if (!Array.isArray(object.entries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets.entries: array expected");
+                                        message.entries = [];
+                                        for (var i = 0; i < object.entries.length; ++i) {
+                                            if (typeof object.entries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry.fromObject(object.entries[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a KeysRemainingBudgets message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets} message KeysRemainingBudgets
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                KeysRemainingBudgets.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.entries = [];
+                                    if (message.entries && message.entries.length) {
+                                        object.entries = [];
+                                        for (var j = 0; j < message.entries.length; ++j)
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry.toObject(message.entries[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this KeysRemainingBudgets to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                KeysRemainingBudgets.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return KeysRemainingBudgets;
+                            })();
+
+                            return GetIdentityKeysRemainingBudgetsResponseV0;
+                        })();
+
+                        return GetIdentityKeysRemainingBudgetsResponse;
                     })();
 
                     v0.GetIdentityBalanceResponse = (function() {
