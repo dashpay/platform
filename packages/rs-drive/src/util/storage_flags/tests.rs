@@ -599,6 +599,82 @@ mod combine {
         );
     }
 
+    /// A single epoch element that shrinks in a later epoch has no epoch map
+    /// to subtract from. The crate returns the old flags before it looks at
+    /// the strategy; the typed path must still honour it, or a shrinking
+    /// replace would keep the old owner while a growing one transfers.
+    #[test]
+    fn should_transfer_ownership_across_kinds_when_a_single_epoch_element_shrinks_later() {
+        let identity = RefundOwner::Identity(Identifier::from(OWNER_ID));
+        let removed = sectioned(identity.removal_key(), &[(1, 2)]);
+
+        let bucket_to_identity = SingleEpochContractBucket(1, CONTRACT_ID, 7)
+            .combine_removed_bytes(
+                SingleEpochOwned(2, OWNER_ID),
+                &removed,
+                MergingOwnersStrategy::UseTheirs,
+            )
+            .expect("should combine");
+        assert_eq!(bucket_to_identity, SingleEpochOwned(1, OWNER_ID));
+
+        let identity_to_bucket = SingleEpochOwned(1, OWNER_ID)
+            .combine_removed_bytes(
+                SingleEpochContractBucket(2, CONTRACT_ID, 7),
+                &removed,
+                MergingOwnersStrategy::UseTheirs,
+            )
+            .expect("should combine");
+        assert_eq!(
+            identity_to_bucket,
+            SingleEpochContractBucket(1, CONTRACT_ID, 7)
+        );
+
+        let kept_ours = SingleEpochContractBucket(1, CONTRACT_ID, 7)
+            .combine_removed_bytes(
+                SingleEpochOwned(2, OWNER_ID),
+                &removed,
+                MergingOwnersStrategy::UseOurs,
+            )
+            .expect("should combine");
+        assert_eq!(kept_ours, SingleEpochContractBucket(1, CONTRACT_ID, 7));
+
+        assert!(matches!(
+            SingleEpochContractBucket(1, CONTRACT_ID, 7).combine_removed_bytes(
+                SingleEpochOwned(2, OWNER_ID),
+                &removed,
+                MergingOwnersStrategy::RaiseIssue,
+            ),
+            Err(StorageFlagsError::MergingStorageFlagsFromDifferentOwners(_))
+        ));
+
+        // unowned on either side yields to the owned side, as in the crate
+        let gained = SingleEpoch(1)
+            .combine_removed_bytes(
+                SingleEpochContractBucket(2, CONTRACT_ID, 7),
+                &removed,
+                MergingOwnersStrategy::RaiseIssue,
+            )
+            .expect("should combine");
+        assert_eq!(gained, SingleEpochContractBucket(1, CONTRACT_ID, 7));
+
+        // the same owner on both sides is unchanged, matching the crate
+        let same = SingleEpochOwned(1, OWNER_ID)
+            .combine_removed_bytes(
+                SingleEpochOwned(2, OWNER_ID),
+                &removed,
+                MergingOwnersStrategy::UseTheirs,
+            )
+            .expect("should combine");
+        let crate_same = CrateStorageFlags::SingleEpochOwned(1, OWNER_ID)
+            .combine_removed_bytes(
+                CrateStorageFlags::SingleEpochOwned(2, OWNER_ID),
+                &removed,
+                MergingOwnersStrategy::UseTheirs,
+            )
+            .expect("should combine");
+        assert_eq!(same, StorageFlags::from(crate_same));
+    }
+
     #[test]
     fn should_keep_the_typed_owner_when_removing_bytes_in_a_higher_epoch() {
         let owner = bucket_owner(7);

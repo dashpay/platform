@@ -62,6 +62,12 @@ impl StorageFlags {
     }
 
     /// Combine removed bytes
+    ///
+    /// When a single epoch element shrinks in a later epoch there is no epoch
+    /// map to subtract from and the crate returns the old flags untouched,
+    /// before it looks at the merging strategy. The typed path resolves the
+    /// owner itself in that case so that `UseTheirs` transfers ownership on a
+    /// shrinking replace exactly as it does on a growing one.
     pub fn combine_removed_bytes(
         self,
         rhs: Self,
@@ -71,6 +77,10 @@ impl StorageFlags {
         let ours_owner = self.refund_owner();
         let theirs_owner = rhs.refund_owner();
         Self::reject_colliding_owners(ours_owner, theirs_owner)?;
+        if self.epoch_index_map().is_none() && self.base_epoch() < rhs.base_epoch() {
+            let owner = Self::resolve_owner(ours_owner, theirs_owner, merging_owners_strategy)?;
+            return Ok(Self::new_single_epoch_for_owner(*self.base_epoch(), owner));
+        }
         let combined = self
             .to_crate_flags_keyed_by_removal_key()
             .combine_removed_bytes(
@@ -79,6 +89,30 @@ impl StorageFlags {
                 merging_owners_strategy,
             )?;
         Self::from_crate_combined(combined, ours_owner, theirs_owner)
+    }
+
+    /// The crate's owner rule over typed owners: a side without an owner
+    /// yields to the other, equal owners keep, different owners follow the
+    /// strategy.
+    fn resolve_owner(
+        ours: Option<RefundOwner>,
+        theirs: Option<RefundOwner>,
+        merging_owners_strategy: MergingOwnersStrategy,
+    ) -> Result<Option<RefundOwner>, StorageFlagsError> {
+        match (ours, theirs) {
+            (None, theirs) => Ok(theirs),
+            (ours, None) => Ok(ours),
+            (Some(ours), Some(theirs)) if ours == theirs => Ok(Some(ours)),
+            (Some(ours), Some(theirs)) => match merging_owners_strategy {
+                MergingOwnersStrategy::RaiseIssue => {
+                    Err(StorageFlagsError::MergingStorageFlagsFromDifferentOwners(
+                        "can not merge from different owners".to_string(),
+                    ))
+                }
+                MergingOwnersStrategy::UseOurs => Ok(Some(ours)),
+                MergingOwnersStrategy::UseTheirs => Ok(Some(theirs)),
+            },
+        }
     }
 
     /// Two different typed owners with one carrier key can never be told
