@@ -1,3 +1,8 @@
+use crate::types::contract_groups::{
+    contract_group_info_from_proto, members_page_from_response, members_query_from_request,
+    memberships_from_response, ContractGroupInfo, ContractGroupMembersPage,
+    ContractGroupMembershipsForContract,
+};
 use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
 };
@@ -831,5 +836,398 @@ mod data_contracts_latest_versions_tests {
         };
         let err = parse(response).unwrap_err();
         assert!(matches!(err, Error::EmptyResponseMetadata), "got: {err:?}");
+    }
+}
+
+impl FromUnproved<platform::GetContractGroupInfoRequest> for ContractGroupInfo {
+    type Request = platform::GetContractGroupInfoRequest;
+    type Response = platform::GetContractGroupInfoResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_group_info_response::get_contract_group_info_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_group_info_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let info = match v0.result {
+            Some(V0Result::ContractGroupInfo(info)) => Some(contract_group_info_from_proto(info)?),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract group info, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((info, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractGroupMembersRequest> for ContractGroupMembersPage {
+    type Request = platform::GetContractGroupMembersRequest;
+    type Response = platform::GetContractGroupMembersResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_group_members_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let query = members_query_from_request(request_v0.members)?;
+
+        let platform::get_contract_group_members_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let page = v0
+            .result
+            .map(|result| members_page_from_response(&query, result))
+            .transpose()?;
+
+        Ok((page, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractGroupsForContractRequest>
+    for ContractGroupMembershipsForContract
+{
+    type Request = platform::GetContractGroupsForContractRequest;
+    type Response = platform::GetContractGroupsForContractResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_groups_for_contract_response::get_contract_groups_for_contract_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_groups_for_contract_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let memberships = match v0.result {
+            Some(V0Result::ContractGroupMemberships(memberships)) => {
+                Some(memberships_from_response(memberships)?)
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract group memberships, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((memberships, metadata))
+    }
+}
+
+#[cfg(test)]
+mod contract_groups_tests {
+    use super::*;
+    use crate::types::contract_groups::{ContractGroupMembersQuery, ContractGroupOwner};
+    use dapi_grpc::platform::v0::get_contract_group_info_response::{
+        get_contract_group_info_response_v0::Result as InfoResult,
+        ContractGroupInfo as ContractGroupInfoProto, GetContractGroupInfoResponseV0,
+        Version as InfoVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_group_members_request::get_contract_group_members_request_v0::Members;
+    use dapi_grpc::platform::v0::get_contract_group_members_request::{
+        ContractMembersQuery, GetContractGroupMembersRequestV0, TokenMembersQuery,
+        Version as MembersRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_group_members_response::{
+        get_contract_group_members_response_v0::Result as MembersResult, ContractMembers,
+        GetContractGroupMembersResponseV0, TokenMembers, Version as MembersVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_groups_for_contract_response::{
+        get_contract_groups_for_contract_response_v0::Result as MembershipsResult,
+        ContractGroupMemberships, DocumentTypeMemberships, GetContractGroupsForContractResponseV0,
+        TokenMemberships, Version as MembershipsVersion,
+    };
+    use dapi_grpc::platform::v0::ContractGroupTokenMember;
+    use std::collections::BTreeSet;
+
+    fn info_response(result: Option<InfoResult>) -> platform::GetContractGroupInfoResponse {
+        platform::GetContractGroupInfoResponse {
+            version: Some(InfoVersion::V0(GetContractGroupInfoResponseV0 {
+                result,
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        }
+    }
+
+    fn parse_info(
+        response: platform::GetContractGroupInfoResponse,
+    ) -> Result<Option<ContractGroupInfo>, Error> {
+        <ContractGroupInfo as FromUnproved<platform::GetContractGroupInfoRequest>>::maybe_from_unproved(
+            platform::GetContractGroupInfoRequest::default(),
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+    }
+
+    #[test]
+    fn info_with_no_admins_is_a_single_owner() {
+        let info = parse_info(info_response(Some(InfoResult::ContractGroupInfo(
+            ContractGroupInfoProto {
+                owner_id: vec![1; 32],
+                admin_ids: vec![],
+                name: Some("alpha".to_string()),
+                description: None,
+            },
+        ))))
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            info.owner(),
+            &ContractGroupOwner::SingleOwner(Identifier::new([1; 32]))
+        );
+        assert_eq!(info.name(), Some("alpha"));
+        assert_eq!(info.description(), None);
+    }
+
+    #[test]
+    fn info_with_admins_is_an_owner_and_admins() {
+        let info = parse_info(info_response(Some(InfoResult::ContractGroupInfo(
+            ContractGroupInfoProto {
+                owner_id: vec![1; 32],
+                admin_ids: vec![vec![3; 32], vec![2; 32]],
+                name: None,
+                description: Some("shared".to_string()),
+            },
+        ))))
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            info.owner(),
+            &ContractGroupOwner::OwnerAndAdmins {
+                owner: Identifier::new([1; 32]),
+                admins: BTreeSet::from([Identifier::new([2; 32]), Identifier::new([3; 32])]),
+            }
+        );
+        assert_eq!(info.description(), Some("shared"));
+    }
+
+    #[test]
+    fn info_absent_group_and_bad_owner_and_proof() {
+        assert_eq!(parse_info(info_response(None)).expect("parse"), None);
+
+        let err = parse_info(info_response(Some(InfoResult::ContractGroupInfo(
+            ContractGroupInfoProto {
+                owner_id: vec![1; 4],
+                admin_ids: vec![],
+                name: None,
+                description: None,
+            },
+        ))))
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ProtocolError { .. }),
+            "a malformed response field is the node's error: {err:?}"
+        );
+
+        let err = parse_info(info_response(Some(InfoResult::Proof(
+            platform::Proof::default(),
+        ))))
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
+    }
+
+    fn members_request(members: Members) -> platform::GetContractGroupMembersRequest {
+        platform::GetContractGroupMembersRequest {
+            version: Some(MembersRequestVersion::V0(
+                GetContractGroupMembersRequestV0 {
+                    contract_group_id: vec![1; 32],
+                    members: Some(members),
+                    limit: None,
+                    prove: false,
+                },
+            )),
+        }
+    }
+
+    fn members_response(
+        result: Option<MembersResult>,
+    ) -> platform::GetContractGroupMembersResponse {
+        platform::GetContractGroupMembersResponse {
+            version: Some(MembersVersion::V0(GetContractGroupMembersResponseV0 {
+                result,
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        }
+    }
+
+    fn parse_members(
+        request: platform::GetContractGroupMembersRequest,
+        response: platform::GetContractGroupMembersResponse,
+    ) -> Result<Option<ContractGroupMembersPage>, Error> {
+        <ContractGroupMembersPage as FromUnproved<platform::GetContractGroupMembersRequest>>::maybe_from_unproved(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+    }
+
+    #[test]
+    fn members_page_of_the_requested_kind_is_read() {
+        let page = parse_members(
+            members_request(Members::Tokens(TokenMembersQuery { start_after: None })),
+            members_response(Some(MembersResult::Tokens(TokenMembers {
+                tokens: vec![ContractGroupTokenMember {
+                    contract_id: vec![5; 32],
+                    token_position: 2,
+                }],
+            }))),
+        )
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            page,
+            ContractGroupMembersPage::Tokens(vec![(Identifier::new([5; 32]), 2)])
+        );
+        assert_eq!(
+            page.next_query(),
+            Some(ContractGroupMembersQuery::Tokens {
+                start_after: Some((Identifier::new([5; 32]), 2)),
+            })
+        );
+    }
+
+    #[test]
+    fn members_page_of_another_kind_is_rejected() {
+        let err = parse_members(
+            members_request(Members::Contracts(ContractMembersQuery {
+                start_after: None,
+            })),
+            members_response(Some(MembersResult::Tokens(TokenMembers::default()))),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
+
+        let err = parse_members(
+            members_request(Members::Contracts(ContractMembersQuery {
+                start_after: None,
+            })),
+            members_response(Some(MembersResult::Proof(platform::Proof::default()))),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn members_page_contracts_are_read_in_order() {
+        let page = parse_members(
+            members_request(Members::Contracts(ContractMembersQuery {
+                start_after: None,
+            })),
+            members_response(Some(MembersResult::Contracts(ContractMembers {
+                contract_ids: vec![vec![1; 32], vec![2; 32]],
+            }))),
+        )
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            page,
+            ContractGroupMembersPage::Contracts(vec![
+                Identifier::new([1; 32]),
+                Identifier::new([2; 32])
+            ])
+        );
+    }
+
+    #[test]
+    fn memberships_are_read_into_sets() {
+        let response = platform::GetContractGroupsForContractResponse {
+            version: Some(MembershipsVersion::V0(
+                GetContractGroupsForContractResponseV0 {
+                    result: Some(MembershipsResult::ContractGroupMemberships(
+                        ContractGroupMemberships {
+                            contract_group_ids: vec![vec![1; 32]],
+                            document_types: vec![DocumentTypeMemberships {
+                                document_type_name: "note".to_string(),
+                                contract_group_ids: vec![vec![2; 32], vec![1; 32]],
+                            }],
+                            tokens: vec![TokenMemberships {
+                                token_position: 7,
+                                contract_group_ids: vec![vec![3; 32]],
+                            }],
+                        },
+                    )),
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+
+        let memberships = <ContractGroupMembershipsForContract as FromUnproved<
+            platform::GetContractGroupsForContractRequest,
+        >>::maybe_from_unproved(
+            platform::GetContractGroupsForContractRequest::default(),
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            memberships.contract,
+            BTreeSet::from([Identifier::new([1; 32])])
+        );
+        assert_eq!(
+            memberships.document_types["note"],
+            BTreeSet::from([Identifier::new([1; 32]), Identifier::new([2; 32])])
+        );
+        assert_eq!(
+            memberships.tokens[&7],
+            BTreeSet::from([Identifier::new([3; 32])])
+        );
+        assert_eq!(
+            memberships.all_contract_group_ids(),
+            BTreeSet::from([
+                Identifier::new([1; 32]),
+                Identifier::new([2; 32]),
+                Identifier::new([3; 32])
+            ])
+        );
     }
 }

@@ -57,6 +57,9 @@ The following endpoints are defined in the gRPC service but are served by Drive 
 - `getDataContractsByRange`
 - `getDataContractHistory`
 - `getDataContractsLatestVersions`
+- `getContractGroupInfo`
+- `getContractGroupMembers`
+- `getContractGroupsForContract`
 - `getIdentityByPublicKeyHash`
 - `getIdentitiesByPublicKeyHashes`
 - `getProofs`

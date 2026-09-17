@@ -165,6 +165,15 @@ impl MockDashPlatformSdk {
                 "GetDataContractHistoryRequest" => {
                     load_expectation::<proto::GetDataContractHistoryRequest>(&mut dapi, filename)?
                 }
+                "GetContractGroupInfoRequest" => {
+                    load_expectation::<proto::GetContractGroupInfoRequest>(&mut dapi, filename)?
+                }
+                "GetContractGroupMembersRequest" => {
+                    load_expectation::<proto::GetContractGroupMembersRequest>(&mut dapi, filename)?
+                }
+                "GetContractGroupsForContractRequest" => load_expectation::<
+                    proto::GetContractGroupsForContractRequest,
+                >(&mut dapi, filename)?,
                 "GetDocumentHistoryRequest" => {
                     load_expectation::<proto::GetDocumentHistoryRequest>(&mut dapi, filename)?
                 }

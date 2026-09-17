@@ -404,6 +404,25 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetDataContractsLatestVersionsResponse
     );
 
+    // Contract group methods
+    drive_method!(
+        get_contract_group_info,
+        dapi_grpc::platform::v0::GetContractGroupInfoRequest,
+        dapi_grpc::platform::v0::GetContractGroupInfoResponse
+    );
+
+    drive_method!(
+        get_contract_group_members,
+        dapi_grpc::platform::v0::GetContractGroupMembersRequest,
+        dapi_grpc::platform::v0::GetContractGroupMembersResponse
+    );
+
+    drive_method!(
+        get_contract_groups_for_contract,
+        dapi_grpc::platform::v0::GetContractGroupsForContractRequest,
+        dapi_grpc::platform::v0::GetContractGroupsForContractResponse
+    );
+
     // Document methods
     drive_method!(
         get_documents,

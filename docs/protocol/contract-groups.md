@@ -121,5 +121,9 @@ at once. Three path queries cover the tree:
   It needs no limit: a contract's memberships are recorded at creation only, at most
   `maxContractGroupMembershipsPerContract` of them.
 
-Each is a single GroveDB proof against the state root. DAPI queries and SDK surfaces for
-them follow separately and carry the same cursor and limit.
+Each is a single GroveDB proof against the state root. DAPI exposes them as
+`getContractGroupInfo`, `getContractGroupMembers` (the `members` oneof names the kind and
+carries its cursor; `limit` defaults to and is capped by 100) and
+`getContractGroupsForContract`, each with a `prove` flag. `rs-drive-proof-verifier` verifies
+the responses into `ContractGroupInfo`, `ContractGroupMembersPage` and
+`ContractGroupMembershipsForContract`, which implement `Fetch` and `FetchUnproved` in `rs-sdk`.

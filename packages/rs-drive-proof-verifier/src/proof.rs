@@ -6,6 +6,7 @@ pub mod chained_document;
 /// derived from it (joins, lookups, counts, siblings), ONE merged
 /// grovedb proof bound to one quorum-signed root.
 pub mod composite_document;
+pub mod contract_groups;
 pub mod data_contracts_by_range;
 pub mod data_contracts_latest_versions;
 /// Verified average result. Holds the `(count, sum)` pair recovered

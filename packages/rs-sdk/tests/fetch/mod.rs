@@ -16,6 +16,7 @@ mod contested_resource_identity_votes;
 mod contested_resource_polls_by_ts;
 mod contested_resource_vote_state;
 mod contested_resource_voters;
+mod contract_groups;
 mod data_contract;
 mod data_contracts_by_range;
 mod data_contracts_latest_versions;

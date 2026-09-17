@@ -39,6 +39,12 @@ service Platform {
       returns (GetDataContractsResponse);
   rpc getDataContractsByRange(GetDataContractsByRangeRequest)
       returns (GetDataContractsResponse);
+  rpc getContractGroupInfo(GetContractGroupInfoRequest)
+      returns (GetContractGroupInfoResponse);
+  rpc getContractGroupMembers(GetContractGroupMembersRequest)
+      returns (GetContractGroupMembersResponse);
+  rpc getContractGroupsForContract(GetContractGroupsForContractRequest)
+      returns (GetContractGroupsForContractResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
       returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
@@ -550,6 +556,150 @@ message GetDataContractsLatestVersionsResponse {
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetDataContractsLatestVersionsResponseV0 v0 = 1; }
+}
+
+// A document type that belongs to a contract group: the contract and the
+// document type name.
+message ContractGroupDocumentTypeMember {
+  bytes contract_id = 1;         // The contract the document type belongs to
+  string document_type_name = 2; // The document type name within the contract
+}
+
+// A token that belongs to a contract group: the contract and the token's
+// position within it.
+message ContractGroupTokenMember {
+  bytes contract_id = 1;      // The contract the token belongs to
+  uint32 token_position = 2;  // The token's position in the contract (u16)
+}
+
+message GetContractGroupInfoRequest {
+  message GetContractGroupInfoRequestV0 {
+    bytes contract_group_id = 1; // The 32-byte id of the contract group
+    bool prove = 2;              // Flag to request a proof as the response
+  }
+  oneof version { GetContractGroupInfoRequestV0 v0 = 1; }
+}
+
+message GetContractGroupInfoResponse {
+  message ContractGroupInfo {
+    bytes owner_id = 1; // The identity that registered the group and owns it
+    repeated bytes admin_ids =
+        2; // Identities that may add members besides the owner; empty for a
+           // single owner
+    optional string name = 3;        // The group's name, when it has one
+    optional string description = 4; // The group's description, when it has one
+  }
+
+  message GetContractGroupInfoResponseV0 {
+    oneof result {
+      ContractGroupInfo contract_group_info =
+          1; // The group's stored information; absent when no such group exists
+      Proof proof = 2; // Cryptographic proof of the information, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractGroupInfoResponseV0 v0 = 1; }
+}
+
+message GetContractGroupMembersRequest {
+  // Contracts that belong to the group as a whole, in contract id order.
+  message ContractMembersQuery {
+    optional bytes start_after =
+        1; // 32-byte contract id; the page starts after it
+  }
+
+  // Document types that belong to the group, in contract id then document
+  // type name order.
+  message DocumentTypeMembersQuery {
+    optional ContractGroupDocumentTypeMember start_after =
+        1; // The page starts after this document type
+  }
+
+  // Tokens that belong to the group, in contract id then token position order.
+  message TokenMembersQuery {
+    optional ContractGroupTokenMember start_after =
+        1; // The page starts after this token
+  }
+
+  message GetContractGroupMembersRequestV0 {
+    bytes contract_group_id = 1; // The 32-byte id of the contract group
+    oneof members {
+      ContractMembersQuery contracts = 2;          // Read the member contracts
+      DocumentTypeMembersQuery document_types = 3; // Read the member document types
+      TokenMembersQuery tokens = 4;                // Read the member tokens
+    }
+    optional uint32 limit =
+        5; // Maximum number of members to return, 1..=100; absent means 100
+    bool prove = 6; // Flag to request a proof as the response
+  }
+  oneof version { GetContractGroupMembersRequestV0 v0 = 1; }
+}
+
+message GetContractGroupMembersResponse {
+  message ContractMembers {
+    repeated bytes contract_ids = 1; // Member contracts, in contract id order
+  }
+
+  message DocumentTypeMembers {
+    repeated ContractGroupDocumentTypeMember document_types =
+        1; // Member document types, in contract id then name order
+  }
+
+  message TokenMembers {
+    repeated ContractGroupTokenMember tokens =
+        1; // Member tokens, in contract id then position order
+  }
+
+  message GetContractGroupMembersResponseV0 {
+    oneof result {
+      ContractMembers contracts = 1;          // One page of member contracts
+      DocumentTypeMembers document_types = 2; // One page of member document types
+      TokenMembers tokens = 3;                // One page of member tokens
+      Proof proof = 4; // Cryptographic proof of the page, if requested
+    }
+    ResponseMetadata metadata = 5; // Metadata about the blockchain state
+  }
+  oneof version { GetContractGroupMembersResponseV0 v0 = 1; }
+}
+
+message GetContractGroupsForContractRequest {
+  message GetContractGroupsForContractRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the contract
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractGroupsForContractRequestV0 v0 = 1; }
+}
+
+message GetContractGroupsForContractResponse {
+  message DocumentTypeMemberships {
+    string document_type_name = 1; // The document type within the contract
+    repeated bytes contract_group_ids =
+        2; // The groups the document type belongs to
+  }
+
+  message TokenMemberships {
+    uint32 token_position = 1; // The token's position in the contract (u16)
+    repeated bytes contract_group_ids = 2; // The groups the token belongs to
+  }
+
+  message ContractGroupMemberships {
+    repeated bytes contract_group_ids =
+        1; // The groups the whole contract belongs to
+    repeated DocumentTypeMemberships document_types =
+        2; // The groups each document type belongs to
+    repeated TokenMemberships tokens = 3; // The groups each token belongs to
+  }
+
+  message GetContractGroupsForContractResponseV0 {
+    oneof result {
+      ContractGroupMemberships contract_group_memberships =
+          1; // The memberships; every list is empty when the contract belongs
+             // to no group
+      Proof proof = 2; // Cryptographic proof of the memberships, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractGroupsForContractResponseV0 v0 = 1; }
 }
 
 message GetDataContractsRequest {

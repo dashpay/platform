@@ -33,6 +33,7 @@ pub struct DriveAbciQueryVersions {
     pub voting_based_queries: DriveAbciQueryVotingVersions,
     pub system: DriveAbciQuerySystemVersions,
     pub group_queries: DriveAbciQueryGroupVersions,
+    pub contract_group_queries: DriveAbciQueryContractGroupVersions,
     pub address_funds_queries: DriveAbciQueryAddressFundsVersions,
     pub shielded_queries: DriveAbciQueryShieldedVersions,
 }
@@ -86,6 +87,15 @@ pub struct DriveAbciQueryGroupVersions {
     pub group_infos: FeatureVersionBounds,
     pub group_actions: FeatureVersionBounds,
     pub group_action_signers: FeatureVersionBounds,
+}
+
+/// The contract group queries: a group's stored information, one page of its members of one
+/// kind, and the groups a contract belongs to.
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryContractGroupVersions {
+    pub contract_group_info: FeatureVersionBounds,
+    pub contract_group_members: FeatureVersionBounds,
+    pub contract_groups_for_contract: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

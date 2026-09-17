@@ -25,6 +25,9 @@ use dpp::{
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
 use drive::grovedb::Element;
+use drive_proof_verifier::types::contract_groups::{
+    ContractGroupInfo, ContractGroupMembersPage, ContractGroupMembershipsForContract,
+};
 use drive_proof_verifier::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
 };
@@ -364,6 +367,96 @@ impl MockResponse for DataContractsLatestVersions {
         DataContractsLatestVersions(
             IndexMap::<Identifier, Option<DataContractLatestVersion>>::mock_deserialize(sdk, buf),
         )
+    }
+}
+
+impl MockResponse for ContractGroupInfo {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(self, BINCODE_CONFIG).expect("encode ContractGroupInfo")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        bincode::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode ContractGroupInfo")
+            .0
+    }
+}
+
+/// One byte for the kind (0 contracts, 1 document types, 2 tokens) followed by the bincode
+/// entries of that kind.
+impl MockResponse for ContractGroupMembersPage {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let (kind, entries) = match self {
+            ContractGroupMembersPage::Contracts(entries) => (
+                0u8,
+                bincode::encode_to_vec(entries, BINCODE_CONFIG).expect("encode member contracts"),
+            ),
+            ContractGroupMembersPage::DocumentTypes(entries) => (
+                1u8,
+                bincode::encode_to_vec(entries, BINCODE_CONFIG)
+                    .expect("encode member document types"),
+            ),
+            ContractGroupMembersPage::Tokens(entries) => (
+                2u8,
+                bincode::encode_to_vec(entries, BINCODE_CONFIG).expect("encode member tokens"),
+            ),
+        };
+        let mut buf = vec![kind];
+        buf.extend(entries);
+        buf
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (kind, entries) = buf.split_first().expect("members page kind byte");
+        match kind {
+            0 => ContractGroupMembersPage::Contracts(
+                bincode::decode_from_slice(entries, BINCODE_CONFIG)
+                    .expect("decode member contracts")
+                    .0,
+            ),
+            1 => ContractGroupMembersPage::DocumentTypes(
+                bincode::decode_from_slice(entries, BINCODE_CONFIG)
+                    .expect("decode member document types")
+                    .0,
+            ),
+            2 => ContractGroupMembersPage::Tokens(
+                bincode::decode_from_slice(entries, BINCODE_CONFIG)
+                    .expect("decode member tokens")
+                    .0,
+            ),
+            other => panic!("unknown members page kind {other}"),
+        }
+    }
+}
+
+/// The three membership maps, bincode encoded as a tuple.
+impl MockResponse for ContractGroupMembershipsForContract {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(
+            (&self.contract, &self.document_types, &self.tokens),
+            BINCODE_CONFIG,
+        )
+        .expect("encode ContractGroupMembershipsForContract")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (contract, document_types, tokens) = bincode::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode ContractGroupMembershipsForContract")
+            .0;
+        ContractGroupMembershipsForContract {
+            contract,
+            document_types,
+            tokens,
+        }
     }
 }
 

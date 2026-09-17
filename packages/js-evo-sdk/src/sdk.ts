@@ -11,6 +11,7 @@ import { ProtocolFacade } from './protocol/facade.js';
 import { StateTransitionsFacade } from './state-transitions/facade.js';
 import { SystemFacade } from './system/facade.js';
 import { GroupFacade } from './group/facade.js';
+import { ContractGroupsFacade } from './contract-groups/facade.js';
 import { VotingFacade } from './voting/facade.js';
 import { ShieldedFacade } from './shielded/facade.js';
 
@@ -69,6 +70,7 @@ export class EvoSDK {
   public stateTransitions!: StateTransitionsFacade;
   public system!: SystemFacade;
   public group!: GroupFacade;
+  public contractGroups!: ContractGroupsFacade;
   public voting!: VotingFacade;
   public shielded!: ShieldedFacade;
   constructor(options: EvoSDKOptions = {}) {
@@ -106,6 +108,7 @@ export class EvoSDK {
     this.stateTransitions = new StateTransitionsFacade(this);
     this.system = new SystemFacade(this);
     this.group = new GroupFacade(this);
+    this.contractGroups = new ContractGroupsFacade(this);
     this.voting = new VotingFacade(this);
     this.shielded = new ShieldedFacade(this);
   }
@@ -329,6 +332,7 @@ export { ProtocolFacade } from './protocol/facade.js';
 export { StateTransitionsFacade } from './state-transitions/facade.js';
 export { SystemFacade } from './system/facade.js';
 export { GroupFacade } from './group/facade.js';
+export { ContractGroupsFacade } from './contract-groups/facade.js';
 export { VotingFacade } from './voting/facade.js';
 export { ShieldedFacade } from './shielded/facade.js';
 export { wallet } from './wallet/functions.js';

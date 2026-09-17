@@ -1,10 +1,10 @@
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
     DriveAbciDataContractQueryHelperVersions, DriveAbciDocumentQueryHelperVersions,
-    DriveAbciQueryAddressFundsVersions, DriveAbciQueryDataContractVersions,
-    DriveAbciQueryGroupVersions, DriveAbciQueryIdentityVersions,
-    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQueryShieldedVersions,
-    DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions,
-    DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+    DriveAbciQueryAddressFundsVersions, DriveAbciQueryContractGroupVersions,
+    DriveAbciQueryDataContractVersions, DriveAbciQueryGroupVersions,
+    DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions,
+    DriveAbciQueryShieldedVersions, DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions,
+    DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
 };
 use versioned_feature_core::FeatureVersionBounds;
 
@@ -272,6 +272,23 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             default_current_version: 0,
         },
         group_action_signers: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+    },
+    contract_group_queries: DriveAbciQueryContractGroupVersions {
+        contract_group_info: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_group_members: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_groups_for_contract: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,
