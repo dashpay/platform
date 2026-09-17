@@ -547,7 +547,9 @@ mod tests {
             } else {
                 ContractBounds::SingleContract { id: dashpay.id() }
             };
-            let IdentityPublicKey::V0(ref mut key_v0) = key;
+            let IdentityPublicKey::V0(ref mut key_v0) = key else {
+                panic!("expected a version 0 key")
+            };
             key_v0.contract_bounds = Some(bounds.clone());
             signer.add_identity_public_key(key.clone(), private_key);
 
@@ -736,7 +738,9 @@ mod tests {
             let bounds = ContractBounds::ContractGroup {
                 id: contract_group_id,
             };
-            let IdentityPublicKey::V0(ref mut key_v0) = key;
+            let IdentityPublicKey::V0(ref mut key_v0) = key else {
+                panic!("expected a version 0 key")
+            };
             key_v0.contract_bounds = Some(bounds.clone());
             signer.add_identity_public_key(key.clone(), private_key);
 

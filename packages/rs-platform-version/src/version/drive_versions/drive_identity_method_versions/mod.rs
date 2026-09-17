@@ -153,6 +153,21 @@ pub struct DriveIdentityKeysMethodVersions {
     pub prove: DriveIdentityKeysProveMethodVersions,
     pub insert: DriveIdentityKeysInsertMethodVersions,
     pub insert_key_hash_identity_reference: DriveIdentityKeyHashesToIdentityInsertMethodVersions,
+    pub budget: DriveIdentityKeysBudgetMethodVersions,
+}
+
+/// The remaining budget of budgeted identity keys. The key budgets subtree does not exist before
+/// protocol version 14, so earlier tables keep every slot `None`.
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityKeysBudgetMethodVersions {
+    /// Writes the full budget of a newly added budgeted key as its remaining budget
+    pub insert_identity_key_budget: OptionalFeatureVersion,
+    /// Reads the remaining budget of a key
+    pub fetch_identity_key_remaining_budget: OptionalFeatureVersion,
+    /// Takes what a state transition spent out of the remaining budget of the key that signed it
+    pub deduct_from_identity_key_budget: OptionalFeatureVersion,
+    /// Estimated layer information for the key budgets subtree of an identity
+    pub add_estimation_costs_for_key_budgets: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

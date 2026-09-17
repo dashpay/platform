@@ -1,5 +1,7 @@
 use crate::consensus::signature::ContractBoundedKeyNonBatchError;
 use crate::consensus::signature::ContractBoundedKeyOutOfBoundsError;
+use crate::consensus::signature::PublicKeyBudgetExhaustedError;
+use crate::consensus::signature::PublicKeyExpiredError;
 use crate::consensus::signature::{
     BasicBLSError, BasicECDSAError, IdentityNotFoundError, InvalidIdentityPublicKeyTypeError,
     InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError,
@@ -78,6 +80,13 @@ pub enum SignatureError {
 
     #[error(transparent)]
     ContractBoundedKeyOutOfBoundsError(ContractBoundedKeyOutOfBoundsError),
+
+    // Authentication key limits (protocol version 14).
+    #[error(transparent)]
+    PublicKeyBudgetExhaustedError(PublicKeyBudgetExhaustedError),
+
+    #[error(transparent)]
+    PublicKeyExpiredError(PublicKeyExpiredError),
 }
 
 impl From<SignatureError> for ConsensusError {
@@ -123,6 +132,18 @@ mod tests {
                 ContractBoundedKeyOutOfBoundsError::new(1)
             )),
             14
+        );
+        assert_eq!(
+            discriminant_of(SignatureError::PublicKeyBudgetExhaustedError(
+                PublicKeyBudgetExhaustedError::new(1)
+            )),
+            15
+        );
+        assert_eq!(
+            discriminant_of(SignatureError::PublicKeyExpiredError(
+                PublicKeyExpiredError::new(1, 2, 3)
+            )),
+            16
         );
     }
 }

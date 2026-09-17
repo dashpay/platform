@@ -2,6 +2,7 @@
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use crate::identity::identity_public_key::v1::IdentityPublicKeyV1;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
@@ -20,6 +21,8 @@ pub mod accessors;
 pub mod conversion;
 pub mod fields;
 pub mod v0;
+pub mod v1;
+use crate::fee::Credits;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 pub use fields::*;
@@ -61,6 +64,9 @@ pub type TimestampMillis = u64;
 pub enum IdentityPublicKey {
     #[serde(rename = "0")]
     V0(IdentityPublicKeyV0),
+    /// A key that may carry a budget and an expiry, from protocol version 14
+    #[serde(rename = "1")]
+    V1(IdentityPublicKeyV1),
 }
 
 #[cfg(feature = "json-conversion")]
@@ -206,6 +212,25 @@ impl IdentityPublicKey {
                 known_versions: vec![0],
                 received: version,
             }),
+        }
+    }
+
+    /// Returns the key with the given usage limits. Limits only exist from the V1 key format,
+    /// so a V0 key becomes a V1 key; every other field is kept.
+    pub fn with_limits(
+        self,
+        total_budget: Option<Credits>,
+        expires_at: Option<TimestampMillis>,
+    ) -> Self {
+        match self {
+            IdentityPublicKey::V0(v0) => {
+                IdentityPublicKeyV1::from_v0_with_limits(v0, total_budget, expires_at).into()
+            }
+            IdentityPublicKey::V1(mut v1) => {
+                v1.total_budget = total_budget;
+                v1.expires_at = expires_at;
+                v1.into()
+            }
         }
     }
 }

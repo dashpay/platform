@@ -217,6 +217,9 @@ impl ErrorWithCode for BasicError {
             Self::InvalidKeyPurposeForContractBoundsError(_) => 10533,
             Self::IdentityAssetLockTransactionTooManyInputsError(_) => 10534,
             Self::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError(_) => 10535,
+            Self::IdentityPublicKeyLimitsNotAllowedError(_) => 10536,
+            Self::InvalidIdentityPublicKeyBudgetError(_) => 10537,
+            Self::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(_) => 10538,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,
@@ -279,6 +282,8 @@ impl ErrorWithCode for SignatureError {
             Self::UncompressedPublicKeyNotAllowedError(_) => 20012,
             Self::ContractBoundedKeyOutOfBoundsError(_) => 20014,
             Self::ContractBoundedKeyNonBatchError(_) => 20013,
+            Self::PublicKeyBudgetExhaustedError(_) => 20015,
+            Self::PublicKeyExpiredError(_) => 20016,
         }
     }
 }
@@ -354,6 +359,8 @@ impl ErrorWithCode for StateError {
             Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
             Self::RecipientIdentityDoesNotExistError(_) => 40216,
             Self::IdentityToFreezeDoesNotExistError(_) => 40217,
+            Self::IdentityPublicKeyBudgetExceededError(_) => 40218,
+            Self::IdentityPublicKeyAlreadyExpiredError(_) => 40219,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,

@@ -7,7 +7,7 @@ use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
-use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_state_transition_method_versions::v2::STATE_TRANSITION_METHOD_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v3::STATE_TRANSITION_SERIALIZATION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_versions::v4::STATE_TRANSITION_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_token_versions::v3::TOKEN_VERSIONS_V3;
@@ -291,6 +291,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// shielded pool, whose sighash preimage layout predates them.
 /// A transition carrying such a key is inactive before this version (`active_version_range`),
 /// so earlier protocol versions reject it without charging, as a binary that cannot decode it does.
+/// Authentication keys may carry a budget and an expiry (the version 1 public key format, which
+/// `StateTransition::active_version_range` admits from 14). Key structure validation v1
+/// (`STATE_TRANSITION_METHOD_VERSIONS_V2`) and `validate_identity_public_keys_limits` decide
+/// which keys may carry them; Drive identity methods v2 write the remaining budget when the key
+/// is added; identity-signature validation v1 refuses a key whose budget is spent;
+/// `validate_fees_of_event` v1 refuses an expired key and a spend the remaining budget does not
+/// cover (only metered processing may overshoot); `execute_event` v1 deducts what was spent.
+/// Shielded-proof validation v1 refuses a key that carries a budget or an expiry in identity
+/// creation from the shielded pool, whose sighash preimage does not cover the limits.
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
@@ -307,7 +316,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         validation: DPP_VALIDATION_VERSIONS_V5,
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
         contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties

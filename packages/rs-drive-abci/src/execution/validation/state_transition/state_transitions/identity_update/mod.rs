@@ -2973,4 +2973,225 @@ mod tests {
             [StateTransitionExecutionResult::PaidConsensusError { .. }]
         );
     }
+    mod key_limits {
+        use super::*;
+        use dpp::consensus::codes::ErrorWithCode;
+        use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+        use dpp::identity::{IdentityPublicKey, TimestampMillis};
+        use dpp::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
+        use drive::drive::identity::key::fetch::{
+            IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
+        };
+
+        const IDENTITY_PUBLIC_KEY_LIMITS_NOT_ALLOWED: u32 = 10536;
+        const INVALID_IDENTITY_PUBLIC_KEY_BUDGET: u32 = 10537;
+        const IDENTITY_PUBLIC_KEY_ALREADY_EXPIRED: u32 = 40219;
+
+        const BLOCK_TIME_MS: TimestampMillis = 1_000_000;
+        const NEW_KEY_ID: u32 = 2;
+
+        struct AddedKey {
+            purpose: Purpose,
+            security_level: SecurityLevel,
+            total_budget: Option<u64>,
+            expires_at: Option<TimestampMillis>,
+        }
+
+        /// Processes an identity update, signed by the master key, that adds one version 1 key
+        /// with the given limits, and gives back the platform to look at the outcome.
+        async fn add_key(
+            added_key: AddedKey,
+        ) -> (
+            crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+            Identifier,
+            StateTransitionExecutionResult,
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, _, master_key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+            let platform_state = platform.state.load();
+
+            let secp = Secp256k1::new();
+            let mut rng = StdRng::seed_from_u64(292);
+            let new_key_pair = Keypair::new(&secp, &mut rng);
+            let mut new_key = IdentityPublicKeyInCreationV1 {
+                id: NEW_KEY_ID,
+                purpose: added_key.purpose,
+                security_level: added_key.security_level,
+                key_type: ECDSA_SECP256K1,
+                read_only: false,
+                data: new_key_pair.public_key().serialize().to_vec().into(),
+                contract_bounds: None,
+                total_budget: added_key.total_budget,
+                expires_at: added_key.expires_at,
+                signature: Default::default(),
+            };
+
+            let transition_adding = |new_key: IdentityPublicKeyInCreationV1| -> StateTransition {
+                let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                    identity_id: identity.id(),
+                    revision: 1,
+                    nonce: 1,
+                    add_public_keys: vec![new_key.into()],
+                    disable_public_keys: vec![],
+                    user_fee_increase: 0,
+                    signature_public_key_id: master_key.id(),
+                    signature: Default::default(),
+                }
+                .into();
+                update_transition.into()
+            };
+
+            // The limits are part of the signable bytes: the new key and the master key both
+            // sign over them.
+            let signable_bytes = transition_adding(new_key.clone())
+                .signable_bytes()
+                .expect("expected signable bytes");
+            new_key.signature =
+                signer::sign(&signable_bytes, &new_key_pair.secret_key().secret_bytes())
+                    .expect("expected to sign")
+                    .to_vec()
+                    .into();
+
+            let mut update_transition = transition_adding(new_key);
+            update_transition.set_signature(
+                signer
+                    .sign(&master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![update_transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize")],
+                    &platform_state,
+                    &BlockInfo {
+                        time_ms: BLOCK_TIME_MS,
+                        ..Default::default()
+                    },
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            let execution = processing_result.execution_results()[0].clone();
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+            drop(platform_state);
+            (platform, identity.id(), execution)
+        }
+
+        fn stored_key(
+            platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+            identity_id: Identifier,
+        ) -> Option<IdentityPublicKey> {
+            platform
+                .drive
+                .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
+                    IdentityKeysRequest::new_specific_key_query(identity_id.as_bytes(), NEW_KEY_ID),
+                    None,
+                    PlatformVersion::latest(),
+                )
+                .expect("expected to fetch keys")
+                .remove(&NEW_KEY_ID)
+        }
+
+        #[tokio::test]
+        async fn should_register_a_key_with_a_budget_and_an_expiry() {
+            let (platform, identity_id, execution) = add_key(AddedKey {
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                total_budget: Some(5_000_000),
+                expires_at: Some(BLOCK_TIME_MS + 1),
+            })
+            .await;
+            assert_matches!(
+                execution,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+
+            let key = stored_key(&platform, identity_id).expect("expected the new key");
+            assert_eq!(key.total_budget(), Some(5_000_000));
+            assert_eq!(key.expires_at(), Some(BLOCK_TIME_MS + 1));
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_identity_key_remaining_budget(
+                        identity_id.to_buffer(),
+                        NEW_KEY_ID,
+                        None,
+                        PlatformVersion::latest()
+                    )
+                    .expect("expected to fetch the remaining budget"),
+                Some(5_000_000),
+                "a new key has its whole budget left"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_paid_a_key_that_is_already_expired() {
+            // Seconds instead of milliseconds is the usual way to get here.
+            let (platform, identity_id, execution) = add_key(AddedKey {
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                total_budget: None,
+                expires_at: Some(BLOCK_TIME_MS),
+            })
+            .await;
+            assert!(
+                matches!(&execution, StateTransitionExecutionResult::PaidConsensusError { error, .. } if error.code() == IDENTITY_PUBLIC_KEY_ALREADY_EXPIRED),
+                "{execution:?}"
+            );
+            assert_eq!(stored_key(&platform, identity_id), None);
+        }
+
+        #[tokio::test]
+        async fn should_reject_limits_on_a_key_that_may_not_carry_them() {
+            for (purpose, security_level) in [
+                (Purpose::TRANSFER, SecurityLevel::CRITICAL),
+                (Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            ] {
+                let (platform, identity_id, execution) = add_key(AddedKey {
+                    purpose,
+                    security_level,
+                    total_budget: Some(5_000_000),
+                    expires_at: None,
+                })
+                .await;
+                assert!(
+                    matches!(&execution, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.code() == IDENTITY_PUBLIC_KEY_LIMITS_NOT_ALLOWED),
+                    "{purpose:?} {security_level:?}: {execution:?}"
+                );
+                assert_eq!(stored_key(&platform, identity_id), None);
+            }
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_budget_of_zero() {
+            let (_, _, execution) = add_key(AddedKey {
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                total_budget: Some(0),
+                expires_at: None,
+            })
+            .await;
+            assert!(
+                matches!(&execution, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.code() == INVALID_IDENTITY_PUBLIC_KEY_BUDGET),
+                "{execution:?}"
+            );
+        }
+    }
 }

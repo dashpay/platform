@@ -48,6 +48,7 @@ enum KnownPath {
     IdentityTreeKeyReferencesInSecurityLevel(Purpose, SecurityLevel), //Level 4
     IdentityTreeNegativeCreditRoot,                                   //Level 2
     IdentityContractInfoRoot,                                         //Level 2
+    IdentityTreeKeyBudgetsRoot,                                       //Level 2
     UniquePublicKeyHashesToIdentitiesRoot,                            //Level 1
     NonUniquePublicKeyKeyHashesToIdentitiesRoot,                      //Level 1
     PoolsRoot,                                                        //Level 1
@@ -118,6 +119,7 @@ impl From<IdentityRootStructure> for KnownPath {
                 KnownPath::IdentityTreeNegativeCreditRoot
             }
             IdentityRootStructure::IdentityContractInfo => KnownPath::IdentityContractInfoRoot,
+            IdentityRootStructure::IdentityTreeKeyBudgets => KnownPath::IdentityTreeKeyBudgetsRoot,
         }
     }
 }

@@ -191,6 +191,45 @@ This enables fine-grained delegation: an identity owner can create a key that is
 allowed to interact with one specific dApp, or with one project's set of contracts,
 limiting exposure if that key is compromised.
 
+## Budget and Expiry
+
+Bounds limit where a key may act. From protocol version 14 an AUTHENTICATION key below the
+MASTER level can also be limited in how much it may spend and for how long it may sign. The
+limits live on the version 1 key, `IdentityPublicKeyV1`, which is the version 0 key followed by
+two optional fields:
+
+```rust
+pub struct IdentityPublicKeyV1 {
+    // ... the IdentityPublicKeyV0 fields, in the same order ...
+    pub total_budget: Option<Credits>,        // total credits the key may take from the identity
+    pub expires_at: Option<TimestampMillis>,  // block time from which the key no longer signs
+}
+```
+
+Version 0 keys are untouched: keys already in state decode as before and a key without limits
+is still written as version 0. Read the limits through `IdentityPublicKeyGettersV1`
+(`total_budget()`, `expires_at()`, `is_expired_at(time_ms)`, `has_limits()`), which answers `None` for
+a version 0 key, and turn a key into a limited one with `IdentityPublicKey::with_limits`.
+
+- **`total_budget`** caps everything state transitions signed with the key take from the identity:
+  fees (net of the storage refunds the same transition returns) and credits moved out, such as
+  a document purchase price. What is left is tracked by Drive next to the key and only goes
+  down. Before a transition runs, everything but the metered processing fee must fit in what is
+  left; that processing fee may take the key over its budget once, after which the key can no
+  longer sign. This is the rule identity balances follow (storage must be covered, processing
+  may leave a debt), applied to the key.
+- **`expires_at`** is compared with the time of the block the transition executes in. The key
+  signs at `expires_at - 1` and not at `expires_at`. A key cannot be registered already expired.
+
+The limits are part of the signable bytes of the transition that registers the key and cannot
+be changed afterwards. An identity created from the shielded pool is the exception: it has no
+identity signature and its sighash does not cover the limits, so a key that carries a budget or
+an expiry is refused there and has to be added with an identity update (a version 1 key without
+limits is accepted). Refusals for a spent, exceeded or expired key leave the transition
+unpaid, like an identity that cannot afford its fee. [Key Budgets and Expiry](../data-model/key-limits.md) explains the design: the budget rule, where
+each check runs in the validation pipeline, and how Drive keeps the running total. The rules
+and error codes as a reference are in `docs/protocol/authentication-key-limits.md`.
+
 ## Storage in GroveDB
 
 Identity keys are stored across multiple trees in GroveDB for efficient access patterns.
@@ -222,7 +261,9 @@ Identities [RootTree::Identities]
     │
     ├── IdentityTreeRevision [192]
     ├── IdentityTreeNonce [64]
-    └── IdentityContractInfo [32]
+    ├── IdentityContractInfo [32]
+    └── IdentityTreeKeyBudgets [224]    ← created with the first budgeted key
+        └── {key_id (varint)} → remaining budget (u64, 8 bytes big endian)
 ```
 
 **IdentityTreeKeys** stores the actual serialized key data, keyed by the key ID
@@ -235,6 +276,11 @@ to the actual key in IdentityTreeKeys.
 The MEDIUM security level subtree under AUTHENTICATION is pre-created during identity
 initialization, even if no MEDIUM keys exist yet. Other security level subtrees are
 created on-demand when a key with that level is first added.
+
+**IdentityTreeKeyBudgets** holds what is left of the budget of each budgeted key. The key
+itself is immutable, so the running value lives here. It is fixed width so that spending from a
+budget replaces the value without changing what is stored, which lets the deduction be applied
+outside of the fee, like the balance change it accompanies.
 
 ### Global Key Hash Tables
 
@@ -339,6 +385,10 @@ When a state transition is signed:
    - The key's security level meets the minimum required
    - If the key has `contract_bounds`, the transition targets the bound contract
    - If the key is `read_only`, it cannot sign
+   - If the key has a `total_budget`, some of it is left
+   Two more checks on a limited key need the block time and the fee, so they run with fee
+   validation instead: the key has not expired, and what the transition requires from the
+   budget fits in what is left.
 4. The signature is verified using the appropriate algorithm:
    - ECDSA_SECP256K1: standard secp256k1 signature verification
    - BLS12_381: BLS signature verification
@@ -359,6 +409,8 @@ When a state transition is signed:
 - Unique key hashes must not exist in either the unique or non-unique global tables
 - The signing key must have sufficient security level to add keys
 - All purpose/security level constraints apply
+- A budget or an expiry is only allowed on an AUTHENTICATION key below MASTER; the budget is
+  not zero and the expiry is after the block time
 
 **At signing time:**
 - Key must not be disabled
@@ -366,6 +418,7 @@ When a state transition is signed:
 - Key security level must be >= the required level
 - Contract bounds must match (if set)
 - Key must not be read-only
+- Key must not be expired, and its budget must cover the transition (if set)
 
 ## Querying Keys
 

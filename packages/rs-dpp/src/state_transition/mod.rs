@@ -853,12 +853,15 @@ pub struct StateTransitionSigningOptions {
 }
 
 /// The active range of a transition carrying `keys`: from protocol version 14 when one of them
-/// is bound to a contract group, `otherwise` when none is.
+/// is bound to a contract group or is a version 1 key (the format that can carry a budget or an
+/// expiry), `otherwise` when none is.
 fn active_version_range_for_keys_in_creation(
     keys: &[IdentityPublicKeyInCreation],
     otherwise: RangeInclusive<ProtocolVersion>,
 ) -> RangeInclusive<ProtocolVersion> {
-    if IdentityPublicKeyInCreation::first_bound_to_a_contract_group(keys).is_some() {
+    if IdentityPublicKeyInCreation::first_bound_to_a_contract_group(keys).is_some()
+        || IdentityPublicKeyInCreation::first_in_version_1_format(keys).is_some()
+    {
         14..=LATEST_VERSION
     } else {
         otherwise
@@ -929,9 +932,9 @@ impl StateTransition {
                 BatchTransition::V0(_) => ALL_VERSIONS,
                 BatchTransition::V1(_) => 9..=LATEST_VERSION,
             },
-            // A key bound to a contract group exists from protocol version 14, so a transition
-            // carrying one is inactive before that: an earlier version rejects it without
-            // charging, exactly as a binary that cannot decode the variant does.
+            // A key bound to a contract group, and a version 1 key, exist from protocol version
+            // 14, so a transition carrying one is inactive before that: an earlier version
+            // rejects it without charging, exactly as a binary that cannot decode it does.
             StateTransition::IdentityCreate(st) => {
                 active_version_range_for_keys_in_creation(st.public_keys(), ALL_VERSIONS)
             }
@@ -2926,6 +2929,62 @@ mod tests {
         assert_eq!(
             sample_shielded_withdrawal_st().active_version_range(),
             shielded_range
+        );
+    }
+
+    fn sample_identity_update_st_adding(
+        public_key: crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
+    ) -> StateTransition {
+        StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(IdentityUpdateTransitionV0 {
+            identity_id: Identifier::from([5u8; 32]),
+            revision: 1,
+            nonce: 2,
+            add_public_keys: vec![public_key],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::new(vec![0xFF; 65]),
+        }))
+    }
+
+    #[test]
+    fn should_only_admit_a_version_1_public_key_in_creation_from_protocol_version_14() {
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+        use crate::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
+
+        let version_0_key = IdentityPublicKeyInCreationV0 {
+            id: 1,
+            data: BinaryData::new(vec![2; 33]),
+            ..Default::default()
+        };
+        let limited_key = IdentityPublicKeyInCreationV1::from_v0_with_limits(
+            version_0_key.clone(),
+            Some(1_000),
+            None,
+        );
+
+        let plain = sample_identity_update_st_adding(version_0_key.into());
+        assert_eq!(plain.active_version_range(), ALL_VERSIONS);
+
+        let limited = sample_identity_update_st_adding(limited_key.into());
+        assert_eq!(limited.active_version_range(), 14..=LATEST_VERSION);
+
+        // Protocol version 13 refuses it while decoding, the way a binary that does not know
+        // the version 1 key does; protocol version 14 decodes it.
+        let bytes = limited.serialize_to_bytes().expect("expected to serialize");
+        let version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        assert!(matches!(
+            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_13),
+            Err(ProtocolError::StateTransitionError(
+                StateTransitionIsNotActiveError { .. }
+            ))
+        ));
+        let version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        assert_eq!(
+            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14)
+                .expect("expected protocol version 14 to decode a limited key"),
+            limited
         );
     }
 

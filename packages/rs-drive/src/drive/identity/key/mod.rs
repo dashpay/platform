@@ -1,3 +1,6 @@
+#[cfg(feature = "server")]
+/// The remaining budget of budgeted identity keys
+pub mod budget;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Fetching of Identity Keys
 pub mod fetch;
