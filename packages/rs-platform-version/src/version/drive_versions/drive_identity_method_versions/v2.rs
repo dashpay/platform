@@ -135,6 +135,8 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
                 fetch_identity_key_remaining_budget: Some(0),
                 deduct_from_identity_key_budget: Some(0),
                 add_estimation_costs_for_key_budgets: Some(0),
+                fetch_identity_keys_remaining_budgets: Some(0),
+                prove_identity_keys_remaining_budgets: Some(0),
             },
         },
         update: DriveIdentityUpdateMethodVersions {

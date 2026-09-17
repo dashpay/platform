@@ -180,6 +180,27 @@ pub(crate) fn identity_key_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
     ]
 }
 
+#[cfg(feature = "server")]
+/// The path to the key budgets subtree of an identity, which holds what is left of the budget of
+/// each of its budgeted keys
+pub(crate) fn identity_key_budgets_path(identity_id: &[u8]) -> [&[u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyBudgets),
+    ]
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// The path to the key budgets subtree of an identity as a vec
+pub fn identity_key_budgets_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityTreeKeyBudgets as u8],
+    ]
+}
+
 #[cfg(any(feature = "server", feature = "verify"))]
 /// The path for all identity keys as a vec
 pub fn identity_key_tree_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {

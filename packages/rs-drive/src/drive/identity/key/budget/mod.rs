@@ -13,34 +13,18 @@
 mod add_estimation_costs_for_key_budgets;
 mod deduct_from_identity_key_budget;
 mod fetch_identity_key_remaining_budget;
+mod fetch_identity_keys_remaining_budgets;
 mod insert_identity_key_budget;
+mod prove_identity_keys_remaining_budgets;
 
-use crate::drive::identity::IdentityRootStructure;
-use crate::drive::RootTree;
+pub(crate) use crate::drive::identity::identity_key_budgets_path;
+pub use crate::drive::identity::identity_key_budgets_path_vec;
 
 /// The size of an encoded remaining budget
 pub(crate) const KEY_BUDGET_SIZE: u32 = 8;
 
 /// The most bytes a key id takes as the key of a budget entry: a `u32` as a varint
 pub(crate) const KEY_ID_MAX_ENCODED_SIZE: u8 = 5;
-
-/// The path to the key budgets subtree of an identity
-pub(crate) fn identity_key_budgets_path(identity_id: &[u8]) -> [&[u8]; 3] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::Identities),
-        identity_id,
-        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyBudgets),
-    ]
-}
-
-/// The path to the key budgets subtree of an identity as a vec
-pub fn identity_key_budgets_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
-    vec![
-        vec![RootTree::Identities as u8],
-        identity_id.to_vec(),
-        vec![IdentityRootStructure::IdentityTreeKeyBudgets as u8],
-    ]
-}
 
 #[cfg(test)]
 mod tests {
@@ -412,5 +396,181 @@ mod tests {
             ),
             Err(Error::Drive(DriveError::VersionNotActive { .. }))
         ));
+    }
+
+    mod remaining_budgets_query {
+        use super::*;
+        use std::collections::BTreeMap;
+
+        fn prove_and_verify(
+            drive: &Drive,
+            identity_id: [u8; 32],
+            key_ids: &[KeyID],
+        ) -> BTreeMap<KeyID, Option<Credits>> {
+            let platform_version = PlatformVersion::latest();
+            let proof = drive
+                .prove_identity_keys_remaining_budgets(identity_id, key_ids, None, platform_version)
+                .expect("expected a proof");
+            let (root_hash, proved): (_, BTreeMap<KeyID, Option<Credits>>) =
+                Drive::verify_identity_keys_remaining_budgets(
+                    proof.as_slice(),
+                    identity_id,
+                    key_ids,
+                    false,
+                    platform_version,
+                )
+                .expect("expected the proof to verify");
+            assert_eq!(
+                root_hash,
+                drive
+                    .grove
+                    .root_hash(None, &platform_version.drive.grove_version)
+                    .unwrap()
+                    .expect("expected a root hash"),
+                "the proof must commit to the current state"
+            );
+
+            // What the node answers without a proof must be what the proof says.
+            let fetched = drive
+                .fetch_identity_keys_remaining_budgets(identity_id, key_ids, None, platform_version)
+                .expect("expected to fetch");
+            assert_eq!(fetched, proved);
+            proved
+        }
+
+        #[test]
+        fn should_prove_budgeted_keys_next_to_keys_without_a_budget() {
+            let platform_version = PlatformVersion::latest();
+            let (drive, identity_id) = setup_identity(platform_version);
+            drive
+                .add_new_unique_keys_to_identity(
+                    identity_id,
+                    vec![
+                        budgeted_key(BUDGETED_KEY_ID, 15, Some(1_000)),
+                        budgeted_key(BUDGETED_KEY_ID + 1, 16, None),
+                        budgeted_key(300, 17, Some(77)),
+                    ],
+                    &block(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add keys");
+            drive
+                .deduct_from_identity_key_budget(
+                    identity_id,
+                    BUDGETED_KEY_ID,
+                    400,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to deduct");
+
+            // A budgeted key, an ordinary key of the identity, a key that only has no budget, a
+            // key id that takes two varint bytes, and a key id the identity does not have.
+            let proved = prove_and_verify(
+                &drive,
+                identity_id,
+                &[BUDGETED_KEY_ID, 0, BUDGETED_KEY_ID + 1, 300, 9_999],
+            );
+            assert_eq!(
+                proved,
+                BTreeMap::from([
+                    (0, None),
+                    (BUDGETED_KEY_ID, Some(600)),
+                    (BUDGETED_KEY_ID + 1, None),
+                    (300, Some(77)),
+                    (9_999, None),
+                ])
+            );
+        }
+
+        #[test]
+        fn should_prove_the_absence_of_a_budget_when_the_identity_has_no_budgeted_key() {
+            // The key budgets subtree itself does not exist for such an identity.
+            let platform_version = PlatformVersion::latest();
+            let (drive, identity_id) = setup_identity(platform_version);
+            let proved = prove_and_verify(&drive, identity_id, &[0, 1]);
+            assert_eq!(proved, BTreeMap::from([(0, None), (1, None)]));
+        }
+
+        #[test]
+        fn should_prove_the_absence_of_a_budget_for_an_identity_that_does_not_exist() {
+            let platform_version = PlatformVersion::latest();
+            let (drive, _) = setup_identity(platform_version);
+            let proved = prove_and_verify(&drive, [9u8; 32], &[0]);
+            assert_eq!(proved, BTreeMap::from([(0, None)]));
+        }
+
+        #[test]
+        fn should_never_verify_to_an_answer_that_is_not_in_state() {
+            let platform_version = PlatformVersion::latest();
+            let (drive, identity_id) = setup_identity(platform_version);
+            drive
+                .add_new_unique_keys_to_identity(
+                    identity_id,
+                    vec![budgeted_key(BUDGETED_KEY_ID, 15, Some(1_000))],
+                    &block(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add the key");
+            let proof = drive
+                .prove_identity_keys_remaining_budgets(
+                    identity_id,
+                    &[BUDGETED_KEY_ID],
+                    None,
+                    platform_version,
+                )
+                .expect("expected a proof");
+            let state_root = drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("expected a root hash");
+
+            // Replayed against another query, a proof may still verify: a one entry subtree is
+            // revealed whole, so it truthfully shows that its neighbour is absent. What it must
+            // never do is answer with a budget that key does not have.
+            for (claimed_identity, claimed_key) in [
+                (identity_id, BUDGETED_KEY_ID + 1),
+                ([9u8; 32], BUDGETED_KEY_ID),
+            ] {
+                let result: Result<(_, BTreeMap<KeyID, Option<Credits>>), _> =
+                    Drive::verify_identity_keys_remaining_budgets(
+                        proof.as_slice(),
+                        claimed_identity,
+                        &[claimed_key],
+                        false,
+                        platform_version,
+                    );
+                if let Ok((root_hash, proved)) = result {
+                    assert_eq!(root_hash, state_root);
+                    assert_eq!(proved, BTreeMap::from([(claimed_key, None)]));
+                }
+            }
+
+            // A proof whose stored value was altered no longer commits to the state.
+            let needle = 1_000u64.to_be_bytes();
+            let position = proof
+                .windows(needle.len())
+                .position(|window| window == needle)
+                .expect("expected the remaining budget in the proof");
+            let mut forged = proof.clone();
+            forged[position..position + needle.len()].copy_from_slice(&999_999u64.to_be_bytes());
+            let result: Result<(_, BTreeMap<KeyID, Option<Credits>>), _> =
+                Drive::verify_identity_keys_remaining_budgets(
+                    forged.as_slice(),
+                    identity_id,
+                    &[BUDGETED_KEY_ID],
+                    false,
+                    platform_version,
+                );
+            assert!(
+                result.map_or(true, |(root_hash, _)| root_hash != state_root),
+                "a forged budget must not verify against the state root"
+            );
+        }
     }
 }

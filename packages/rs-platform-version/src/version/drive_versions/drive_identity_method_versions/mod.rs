@@ -168,6 +168,10 @@ pub struct DriveIdentityKeysBudgetMethodVersions {
     pub deduct_from_identity_key_budget: OptionalFeatureVersion,
     /// Estimated layer information for the key budgets subtree of an identity
     pub add_estimation_costs_for_key_budgets: OptionalFeatureVersion,
+    /// Reads what is left of the budgets of several keys of one identity, for the query
+    pub fetch_identity_keys_remaining_budgets: OptionalFeatureVersion,
+    /// Proves what is left of the budgets of several keys of one identity
+    pub prove_identity_keys_remaining_budgets: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
