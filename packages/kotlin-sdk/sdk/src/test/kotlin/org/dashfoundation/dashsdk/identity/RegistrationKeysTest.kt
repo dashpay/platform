@@ -2,7 +2,6 @@ package org.dashfoundation.dashsdk.identity
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -94,71 +93,5 @@ class RegistrationKeysTest {
             golden,
             encoded,
         )
-    }
-
-    /**
-     * Kind 3 (ContractGroup) rides the wire as the kind byte plus the 32-byte
-     * contract group id, with no document type: the layout
-     * `pubkey_rows::parse_pubkey_rows` reads
-     * (`pubkey_rows::tests::round_trips_contract_group_bounds_kind`).
-     */
-    @Test
-    fun `should encode contract group bounds as kind 3 with the id and no document type`() {
-        val contractGroupId = ByteArray(32) { (it + 0x40).toByte() }
-        val pubkey = fixturePubkey(7)
-        val encoded = IdentityPubkeyCodec.encode(
-            listOf(
-                IdentityPubkey(
-                    keyId = 7,
-                    keyType = KeyType.ECDSA_SECP256K1,
-                    purpose = KeyPurpose.AUTHENTICATION,
-                    securityLevel = SecurityLevel.HIGH,
-                    pubkeyBytes = pubkey,
-                    contractBounds = ContractBounds.ContractGroup(contractGroupId),
-                ),
-            ),
-        )
-
-        val expected = byteArrayOf(
-            0, 0, 0, 1, // rowCount
-            0, 0, 0, 7, // keyId
-            0, // keyType ECDSA_SECP256K1
-            0, // purpose AUTHENTICATION
-            2, // securityLevel HIGH
-            0, // readOnly
-            3, // contractBoundsKind ContractGroup
-            0, 33, // pubkeyLen
-        ) + pubkey + contractGroupId
-        assertArrayEquals(expected, encoded)
-        // Nothing follows the id: no docTypeLen, no docType.
-        assertEquals(4 + 4 + 5 + 2 + 33 + 32, encoded.size)
-    }
-
-    @Test
-    fun `should keep the contract bounds kind bytes of the other variants`() {
-        val id = ByteArray(32) { 9 }
-        assertEquals(0, IdentityPubkeyCodec.contractBoundsKind(null))
-        assertEquals(1, IdentityPubkeyCodec.contractBoundsKind(ContractBounds.SingleContract(id)))
-        assertEquals(
-            2,
-            IdentityPubkeyCodec.contractBoundsKind(
-                ContractBounds.SingleContractDocumentType(id, "contactRequest"),
-            ),
-        )
-        assertEquals(3, IdentityPubkeyCodec.contractBoundsKind(ContractBounds.ContractGroup(id)))
-    }
-
-    @Test
-    fun `should require a 32 byte contract group id and compare by content`() {
-        val failure = runCatching { ContractBounds.ContractGroup(ByteArray(31)) }
-        assertTrue(failure.exceptionOrNull() is IllegalArgumentException)
-
-        val a: ContractBounds = ContractBounds.ContractGroup(ByteArray(32) { 5 })
-        val b: ContractBounds = ContractBounds.ContractGroup(ByteArray(32) { 5 })
-        assertEquals(a, b)
-        assertEquals(a.hashCode(), b.hashCode())
-        // Same id, different variant: a group bound is not a contract bound.
-        val single: ContractBounds = ContractBounds.SingleContract(ByteArray(32) { 5 })
-        assertNotEquals(single, a)
     }
 }

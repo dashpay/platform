@@ -142,17 +142,9 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * pre-migration row reads back as an ordinary, unstamped, non-tombstone
  * entry, and a wallet with no recorded chainlock height has no boundary
  * at all (nothing collects).
- *
- * Version 12 (contract group key bounds): adds the nullable
- * `public_keys.contractBoundsKind` column. The id and document type name
- * alone cannot tell a ContractGroup bound (kind 3) from a SingleContract
- * bound (kind 1), so a group-bound AUTHENTICATION key used to restore as
- * SingleContract on the group id. The persist callback now records the
- * kind the native row carries; a NULL kind (legacy row) keeps the old
- * inference on restore.
  */
 @Database(
-    version = 12,
+    version = 11,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -625,21 +617,6 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
-         * v11 → v12: additive nullable `public_keys.contractBoundsKind`, see
-         * the version-12 class doc above. NULL for every pre-existing row:
-         * the restore path infers a legacy row's kind as before, and the
-         * persist callback records the real kind on the next upsert of each
-         * key.
-         */
-        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "ALTER TABLE `public_keys` ADD COLUMN `contractBoundsKind` INTEGER",
-                )
-            }
-        }
-
-        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -658,7 +635,6 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
-                    MIGRATION_11_12,
                 )
                 .build()
 

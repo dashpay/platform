@@ -47,11 +47,9 @@ enum class SecurityLevel(val ffiValue: Int) {
 }
 
 /**
- * Contract bounds of an identity public key: Kotlin mirror of the rs-dpp
- * `ContractBounds` enum (and of Swift's `ManagedPlatformWallet.ContractBounds`).
- * Drive requires them on ENCRYPTION / DECRYPTION keys. AUTHENTICATION keys
- * may carry them since protocol version 14, where they limit what the key
- * can sign. Null means unbounded.
+ * Contract-bounds shape for an ENCRYPTION / DECRYPTION key — Kotlin mirror
+ * of Swift's `ManagedPlatformWallet.ContractBounds`. Required by Drive for
+ * those purposes; omitted (null) for AUTHENTICATION / TRANSFER.
  */
 sealed class ContractBounds {
     /** Bind the key to a single contract (any of its document types). */
@@ -86,24 +84,6 @@ sealed class ContractBounds {
 
         override fun hashCode(): Int =
             31 * contractId.contentHashCode() + documentTypeName.hashCode()
-    }
-
-    /**
-     * Bind an AUTHENTICATION key to a contract group: the key signs only
-     * within the group's members. [contractGroupId] is the 32-byte contract
-     * group id; there is never a document type.
-     */
-    data class ContractGroup(val contractGroupId: ByteArray) : ContractBounds() {
-        init {
-            require(contractGroupId.size == 32) {
-                "contractGroupId must be 32 bytes, got ${contractGroupId.size}"
-            }
-        }
-
-        override fun equals(other: Any?): Boolean =
-            other is ContractGroup && contractGroupId.contentEquals(other.contractGroupId)
-
-        override fun hashCode(): Int = contractGroupId.contentHashCode()
     }
 }
 

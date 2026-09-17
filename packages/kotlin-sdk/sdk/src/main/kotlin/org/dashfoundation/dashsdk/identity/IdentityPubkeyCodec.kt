@@ -28,16 +28,14 @@ import java.io.DataOutputStream
  *   u8  purpose          (DPP Purpose discriminant, 0 = AUTHENTICATION)
  *   u8  securityLevel    (DPP SecurityLevel discriminant, 0 = MASTER)
  *   u8  readOnly         (0 / 1)
- *   u8  contractBoundsKind (0 none, 1 SingleContract, 2 SingleContractDocumentType,
- *                           3 ContractGroup)
+ *   u8  contractBoundsKind (0 none, 1 SingleContract, 2 SingleContractDocumentType)
  *   u16 pubkeyLen
  *   u8[pubkeyLen] pubkeyBytes  (compressed pubkey, or 20-byte HASH160)
  *   if contractBoundsKind != 0:
- *     u8[32] contractBoundsId  (contract id, or contract group id for kind 3)
+ *     u8[32] contractBoundsId
  *   if contractBoundsKind == 2:
  *     u16 docTypeLen, u8[docTypeLen] docType (UTF-8)
  * ```
- * Kind 3 carries the id only, never a document type.
  */
 object IdentityPubkeyCodec {
 
@@ -68,20 +66,15 @@ object IdentityPubkeyCodec {
                     dos.writeShort(dt.size)
                     dos.write(dt)
                 }
-                is ContractBounds.ContractGroup -> dos.write(bounds.contractGroupId)
             }
         }
         return out.toByteArray()
     }
 
-    /**
-     * Discriminant matching the FFI: 0 none, 1 SingleContract, 2 with doc type,
-     * 3 ContractGroup.
-     */
+    /** Discriminant matching the FFI: 0 none, 1 SingleContract, 2 with doc type. */
     internal fun contractBoundsKind(bounds: ContractBounds?): Int = when (bounds) {
         null -> 0
         is ContractBounds.SingleContract -> 1
         is ContractBounds.SingleContractDocumentType -> 2
-        is ContractBounds.ContractGroup -> 3
     }
 }

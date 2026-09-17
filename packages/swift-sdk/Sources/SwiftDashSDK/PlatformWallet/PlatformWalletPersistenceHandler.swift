@@ -3939,38 +3939,26 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             )
             // Project the snapshot's ContractBounds enum into the
-            // three columns `PersistentPublicKey` uses:
-            //   * `contractBoundsIds`: `[boundId]` (or nil)
-            //   * `contractBoundsDocumentTypeName`: non-nil iff the
+            // pair of columns `PersistentPublicKey` uses:
+            //   * `contractBoundsIds` — `[contractId]` (or nil)
+            //   * `contractBoundsDocumentTypeName` — non-nil iff the
             //     bound was `.singleContractDocumentType`
-            //   * `contractBoundsKind`: the FFI discriminant
-            // Keeping all three lets the SwiftData row round-trip
-            // every variant verbatim. The kind is what separates
-            // `.contractGroup` from `.singleContract`: both carry a
-            // bare id, so a store that only had the first two columns
-            // restored a group bound as unbounded. Legacy rows
-            // written before the column exists leave it `nil` and
-            // keep the old inference.
+            // Keeping both lets the SwiftData row round-trip both
+            // variants verbatim; legacy stores without the
+            // doc-type column just see `nil` for the second field
+            // and reconstruct as `.singleContract`.
             let snapshotBoundsIds: [Data]?
             let snapshotBoundsDocType: String?
-            let snapshotBoundsKind: Int
             switch entry.contractBounds {
             case .some(.singleContract(let id)):
                 snapshotBoundsIds = [id]
                 snapshotBoundsDocType = nil
-                snapshotBoundsKind = 1
             case .some(.singleContractDocumentType(let id, let name)):
                 snapshotBoundsIds = [id]
                 snapshotBoundsDocType = name
-                snapshotBoundsKind = 2
-            case .some(.contractGroup(let id)):
-                snapshotBoundsIds = [id]
-                snapshotBoundsDocType = nil
-                snapshotBoundsKind = 3
             case .none:
                 snapshotBoundsIds = nil
                 snapshotBoundsDocType = nil
-                snapshotBoundsKind = 0
             }
 
             let row: PersistentPublicKey
@@ -3990,7 +3978,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     disabledAt: entry.disabledAt.map { Int64(bitPattern: $0) },
                     contractBounds: snapshotBoundsIds,
                     contractBoundsDocumentTypeName: snapshotBoundsDocType,
-                    contractBoundsKind: snapshotBoundsKind,
                     identityId: identityHex
                 )
                 backgroundContext.insert(row)
@@ -4018,7 +4005,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // scope) must overwrite any stale value here.
             row.contractBounds = snapshotBoundsIds
             row.contractBoundsDocumentTypeName = snapshotBoundsDocType
-            row.contractBoundsKind = snapshotBoundsKind
 
             // Private-key handling: no secret crosses the FFI. A
             // wallet-derivable key whose private bytes were materialized by
@@ -5024,13 +5010,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let derivationIndices: (identityIndex: UInt32, keyIndex: UInt32)?
         /// Full ContractBounds projection mirrored from Rust:
         /// `nil` when the key has no bounds; `.singleContract` for
-        /// kind=1; `.singleContractDocumentType` for kind=2;
-        /// `.contractGroup` for kind=3. Carried so the SwiftData row
-        /// preserves the doc-type name on round-trip (would
-        /// otherwise be silently downgraded to `.singleContract` and
-        /// break local DPP projections that read
-        /// `identity.identityPublicKeys`) and so a group bound is not
-        /// mistaken for a whole-contract one.
+        /// kind=1; `.singleContractDocumentType` for kind=2. Carried
+        /// so the SwiftData row preserves the doc-type name on
+        /// round-trip (would otherwise be silently downgraded to
+        /// `.singleContract` and break local DPP projections that
+        /// read `identity.identityPublicKeys`).
         let contractBounds: ManagedPlatformWallet.ContractBounds?
     }
 
@@ -8118,45 +8102,30 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
                     // Mirror the contract-bounds projection into
                     // the restore row so scoped keys (DashPay's
-                    // SingleContractDocumentType, and AUTHENTICATION
-                    // keys bound to a contract group) come back with
-                    // their full variant on cold restart instead of
-                    // silently degrading to unbounded. Encoding
-                    // matches `IdentityKeyEntryFFI` on the persist
-                    // side:
+                    // SingleContractDocumentType, in particular)
+                    // come back with their full variant on cold
+                    // restart instead of silently degrading to
+                    // unbounded. Encoding matches
+                    // `IdentityKeyEntryFFI` on the persist side:
                     //   * kind=0 → no bounds; id zeroed, doc-type null
                     //   * kind=1 → SingleContract; id meaningful
                     //   * kind=2 → SingleContractDocumentType; id +
                     //     doc-type both meaningful
-                    //   * kind=3 → ContractGroup; id meaningful (a
-                    //     group id), doc-type null
-                    // The kind comes off the row when it was stored
-                    // and from the legacy inference when it was not
-                    // (`effectiveContractBoundsKind`). A kind=2 row
-                    // whose doc-type went missing demotes to kind=1,
-                    // the same demotion Rust performs, rather than
-                    // handing the decoder a null doc-type for a
-                    // variant that needs one. Id length is validated
-                    // here; a row with a wrong-length id, or a kind
-                    // this build does not know, falls back to "no
-                    // bounds" rather than crashing FFI marshalling on
-                    // the Rust side or asserting a bound we cannot
-                    // describe.
-                    let boundsKind = pk.effectiveContractBoundsKind
-                    if (1...3).contains(boundsKind),
-                        let id = pk.contractBounds?.first, id.count == 32 {
+                    // Length-validated by `pk.publicKeyData.count
+                    // == 32` (matches the gating in
+                    // `toIdentityPublicKey()`); a row with a
+                    // wrong-length id falls back to "no bounds"
+                    // rather than crashing FFI marshalling on the
+                    // Rust side.
+                    if let id = pk.contractBounds?.first, id.count == 32 {
                         withUnsafeMutableBytes(of: &row.contract_bounds_id) { dst in
                             id.copyBytes(to: dst.bindMemory(to: UInt8.self).baseAddress!, count: 32)
                         }
-                        let docType = pk.contractBoundsDocumentTypeName
-                        if boundsKind == 2, let docType = docType, !docType.isEmpty {
+                        if let docType = pk.contractBoundsDocumentTypeName, !docType.isEmpty {
                             row.contract_bounds_kind = 2
                             row.contract_bounds_document_type = UnsafePointer(
                                 duplicateCString(docType, allocation: allocation)
                             )
-                        } else if boundsKind == 3 {
-                            row.contract_bounds_kind = 3
-                            row.contract_bounds_document_type = nil
                         } else {
                             row.contract_bounds_kind = 1
                             row.contract_bounds_document_type = nil
@@ -9834,8 +9803,6 @@ private func persistIdentityKeysCallback(
             //   0 → no bounds
             //   1 → SingleContract { id }
             //   2 → SingleContractDocumentType { id, doc_type_name }
-            //   3 → ContractGroup { id } (id is a group id, doc-type
-            //       pointer is always null)
             // The doc-type C-string for kind=2 is owned by Rust and
             // freed via `free_identity_key_entry_ffi` after this
             // callback returns, so we copy it into a Swift String
@@ -9855,8 +9822,6 @@ private func persistIdentityKeysCallback(
                 } else {
                     bounds = nil
                 }
-            case 3:
-                bounds = .contractGroup(id: dataFromTuple32(e.contract_bounds_id))
             default:
                 bounds = nil
             }

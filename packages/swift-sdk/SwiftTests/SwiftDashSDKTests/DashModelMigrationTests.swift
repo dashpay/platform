@@ -15,8 +15,7 @@ import XCTest
 /// the persistence sources as of commit 5f58417079 — the last state before
 /// V4, the state the frozen copies under `FrozenSchemas/` are generated
 /// from — through that build's own `DashSchemaV1` / `DashSchemaV2` /
-/// `DashSchemaV3`, `dash-v4` by the build that registered V4 and `dash-v5`
-/// by the build that registered V5, both through
+/// `DashSchemaV3`, and `dash-v4` by the build that registered V4, through
 /// `DashModelContainer.create`. They pin the frozen copies as the pre-V4
 /// build defined them, not what the original V1 release wrote (see the
 /// `DashSchemaV1` doc for why those stores are expected to fail open and
@@ -70,9 +69,6 @@ final class DashModelMigrationTests: XCTestCase {
         Fixture(
             name: "dash-v4", version: DashSchemaV4.self,
             hasTrackedMasternode: true, assetLockRecipientIsExternal: true),
-        Fixture(
-            name: "dash-v5", version: DashSchemaV5.self,
-            hasTrackedMasternode: true, assetLockRecipientIsExternal: true),
     ]
 
     /// Every schema version that has ever shipped, oldest first, as
@@ -84,7 +80,7 @@ final class DashModelMigrationTests: XCTestCase {
     /// give it a fixture store in `fixtures`, written by that build with
     /// `testWriteTheLiveSchemaFixtureStore`. Every entry has a fixture,
     /// the live one included.
-    private static let shippedVersions = ["1.0.0", "2.0.0", "3.0.0", "4.0.0", "5.0.0"]
+    private static let shippedVersions = ["1.0.0", "2.0.0", "3.0.0", "4.0.0"]
 
     private static let fixtureWalletId = Data(repeating: 0x31, count: 32)
     private static let fixtureSpendTxid = Data(repeating: 0x32, count: 32)
@@ -580,14 +576,15 @@ final class DashModelMigrationTests: XCTestCase {
             1)
     }
 
-    /// A V3 store must reach the live schema with the sweep columns V4
-    /// added backfilled to their "nothing swept yet" values. V3 registers
-    /// the frozen graph, so the row goes in as the frozen type and comes
-    /// out as the live one, which is the whole point of the freeze: the
-    /// same entity, one property wider. A pending-input row rides along so
-    /// the tombstone index V4 adds is exercised by the migration too.
+    /// The stage this change adds: a V3 store must migrate to V4 and read
+    /// back with the sweep columns backfilled to their "nothing swept yet"
+    /// values. V3 registers the frozen graph, so the row goes in as the
+    /// frozen type and comes out as the live one — which is the whole point
+    /// of the freeze: the same entity, one property wider. A pending-input
+    /// row rides along so the tombstone index V4 adds is exercised by the
+    /// migration too.
     @MainActor
-    func testV3StoreMigratesToTheLiveSchemaAndBackfillsTheSweepColumns() throws {
+    func testV3StoreMigratesToV4AndBackfillsTheSweepColumns() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(
@@ -636,17 +633,17 @@ final class DashModelMigrationTests: XCTestCase {
         try v3Container?.mainContext.save()
         v3Container = nil
 
-        let liveSchema = Schema(versionedSchema: DashSchemaV5.self)
-        let liveConfiguration = ModelConfiguration(
+        let v4Schema = Schema(versionedSchema: DashSchemaV4.self)
+        let v4Configuration = ModelConfiguration(
             "DashSweepMigrationTest",
-            schema: liveSchema,
+            schema: v4Schema,
             url: storeURL,
             allowsSave: true,
             cloudKitDatabase: .none)
         let migrated = try ModelContainer(
-            for: liveSchema,
+            for: v4Schema,
             migrationPlan: DashMigrationPlan.self,
-            configurations: [liveConfiguration])
+            configurations: [v4Configuration])
 
         let wallets = try migrated.mainContext.fetch(
             FetchDescriptor<PersistentWallet>())
@@ -672,15 +669,14 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertEqual(transactions.map(\.context), [2], "the V3 transaction row survives unchanged")
     }
 
-    /// The whole chain from the oldest registered version, on the wallet
-    /// models V4 widened: a V1 store carrying a wallet, a transaction and a
-    /// coin must arrive at the live schema with every row intact and those
-    /// columns at their backfill values. V1 and V2 register the frozen
-    /// graph, so the rows go in as frozen types and come out live, the
-    /// property the freeze exists to guarantee, pinned here where it
-    /// matters most.
+    /// The whole chain from the oldest registered version, on the models this
+    /// change actually widens: a V1 store carrying a wallet, a transaction
+    /// and a coin must arrive at V4 with every row intact and the V4 columns
+    /// at their backfill values. V1 and V2 register the frozen graph,
+    /// so the rows go in as frozen types and come out live — the property
+    /// the freeze exists to guarantee, pinned here where it matters most.
     @MainActor
-    func testV1StoreWithWalletTransactionAndCoinMigratesToTheLiveSchema() throws {
+    func testV1StoreWithWalletTransactionAndCoinMigratesToV4() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(
@@ -722,17 +718,17 @@ final class DashModelMigrationTests: XCTestCase {
         try v1Container?.mainContext.save()
         v1Container = nil
 
-        let liveSchema = Schema(versionedSchema: DashSchemaV5.self)
-        let liveConfiguration = ModelConfiguration(
+        let v4Schema = Schema(versionedSchema: DashSchemaV4.self)
+        let v4Configuration = ModelConfiguration(
             "DashChainMigrationTest",
-            schema: liveSchema,
+            schema: v4Schema,
             url: storeURL,
             allowsSave: true,
             cloudKitDatabase: .none)
         let migrated = try ModelContainer(
-            for: liveSchema,
+            for: v4Schema,
             migrationPlan: DashMigrationPlan.self,
-            configurations: [liveConfiguration])
+            configurations: [v4Configuration])
 
         let wallets = try migrated.mainContext.fetch(FetchDescriptor<PersistentWallet>())
         XCTAssertEqual(wallets.map(\.walletId), [walletId])
@@ -785,114 +781,6 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertNil(frozenTxo.attributesByName["supersededByTxid"])
     }
 
-    /// What makes the V4 -> V5 stage lightweight: the two versions name the
-    /// same entity set, and V5 widens exactly one of them. The per-entity
-    /// sweep also pins that nothing else drifted while V4 was being frozen,
-    /// which the checksum test can only report as one opaque mismatch.
-    func testV4AndV5NameTheSameEntitySet() throws {
-        let v4 = Schema(versionedSchema: DashSchemaV4.self)
-        let v5 = Schema(versionedSchema: DashSchemaV5.self)
-        XCTAssertEqual(
-            v4.entities.map(\.name).sorted(),
-            v5.entities.map(\.name).sorted())
-
-        let key = try XCTUnwrap(v5.entities.first { $0.name == "PersistentPublicKey" })
-        XCTAssertNotNil(key.attributesByName["contractBoundsKind"])
-        let frozenKey = try XCTUnwrap(v4.entities.first { $0.name == "PersistentPublicKey" })
-        XCTAssertNil(
-            frozenKey.attributesByName["contractBoundsKind"],
-            "V4's frozen copy predates the column")
-
-        for entity in v5.entities where entity.name != "PersistentPublicKey" {
-            let frozen = try XCTUnwrap(v4.entities.first { $0.name == entity.name })
-            XCTAssertEqual(
-                entity.attributesByName.keys.sorted(),
-                frozen.attributesByName.keys.sorted(),
-                "V5 adds no column to \(entity.name)")
-        }
-    }
-
-    /// The stage this change adds: a V4 store must migrate to V5 with its
-    /// key rows intact and `contractBoundsKind` backfilled to NULL, which
-    /// the model reads as "legacy row, infer the variant the way V4 did".
-    /// V4 registers the frozen graph, so the rows go in as the frozen type
-    /// and come out as the live one.
-    @MainActor
-    func testV4StoreMigratesToV5AndBackfillsTheContractBoundsKind() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let storeURL = directory.appendingPathComponent("dash.store")
-
-        let contractId = Data(repeating: 0x7C, count: 32)
-
-        let v4Schema = Schema(versionedSchema: DashSchemaV4.self)
-        let v4Configuration = ModelConfiguration(
-            "DashContractBoundsKindMigrationTest",
-            schema: v4Schema,
-            url: storeURL,
-            allowsSave: true,
-            cloudKitDatabase: .none)
-        var v4Container: ModelContainer? = try ModelContainer(
-            for: v4Schema,
-            migrationPlan: DashMigrationPlan.self,
-            configurations: [v4Configuration])
-        v4Container?.mainContext.insert(DashSchemaV4.PersistentPublicKey(
-            keyId: 3,
-            purpose: .authentication,
-            securityLevel: .high,
-            keyType: .ecdsaSecp256k1,
-            publicKeyData: Data(repeating: 0x02, count: 33),
-            contractBounds: [contractId],
-            contractBoundsDocumentTypeName: "contactRequest",
-            identityId: "legacyDocTypeKey"))
-        v4Container?.mainContext.insert(DashSchemaV4.PersistentPublicKey(
-            keyId: 4,
-            purpose: .authentication,
-            securityLevel: .high,
-            keyType: .ecdsaSecp256k1,
-            publicKeyData: Data(repeating: 0x03, count: 33),
-            contractBounds: [contractId],
-            identityId: "legacyContractKey"))
-        try v4Container?.mainContext.save()
-        v4Container = nil
-
-        let liveSchema = Schema(versionedSchema: DashSchemaV5.self)
-        let liveConfiguration = ModelConfiguration(
-            "DashContractBoundsKindMigrationTest",
-            schema: liveSchema,
-            url: storeURL,
-            allowsSave: true,
-            cloudKitDatabase: .none)
-        let migrated = try ModelContainer(
-            for: liveSchema,
-            migrationPlan: DashMigrationPlan.self,
-            configurations: [liveConfiguration])
-
-        let rows = try migrated.mainContext.fetch(
-            FetchDescriptor<PersistentPublicKey>(sortBy: [SortDescriptor(\.keyId)]))
-        XCTAssertEqual(rows.map(\.keyId), [3, 4], "both V4 rows survive the migration")
-        XCTAssertEqual(
-            rows.map(\.contractBoundsKind), [nil, nil],
-            "a row written before the column backfills NULL")
-        XCTAssertEqual(rows[0].contractBounds?.first, contractId)
-        XCTAssertEqual(
-            rows[0].effectiveContractBoundsKind, 2,
-            "a legacy row with a doc-type name still infers SingleContractDocumentType")
-        XCTAssertEqual(
-            rows[1].effectiveContractBoundsKind, 1,
-            "a legacy row with a bare id still infers SingleContract")
-
-        // And the new column is writable on the migrated row.
-        rows[1].contractBoundsKind = 3
-        try migrated.mainContext.save()
-        let reread = try migrated.mainContext.fetch(
-            FetchDescriptor<PersistentPublicKey>(sortBy: [SortDescriptor(\.keyId)]))
-        XCTAssertEqual(reread[1].effectiveContractBoundsKind, 3)
-    }
-
     /// Guards the freeze itself: `DashSchemaV1.PersistentAssetLock` only
     /// keeps V1/V2 stores openable if SwiftData names its entity
     /// "PersistentAssetLock" — i.e. from the UNQUALIFIED type name. If a
@@ -905,8 +793,7 @@ final class DashModelMigrationTests: XCTestCase {
             Schema(versionedSchema: DashSchemaV1.self),
             Schema(versionedSchema: DashSchemaV2.self),
             Schema(versionedSchema: DashSchemaV3.self),
-            Schema(versionedSchema: DashSchemaV4.self),
-            Schema(versionedSchema: DashSchemaV5.self)
+            Schema(versionedSchema: DashSchemaV4.self)
         ] {
             let names = schema.entities.map(\.name)
             XCTAssertTrue(
