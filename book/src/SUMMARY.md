@@ -11,6 +11,7 @@
 
 - [Monorepo Overview](architecture/overview.md)
 - [Component Pipeline](architecture/component-pipeline.md)
+- [Block Failure Classes](architecture/block-failure-classes.md)
 
 # Versioning
 
