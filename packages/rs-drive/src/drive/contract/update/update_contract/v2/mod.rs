@@ -601,7 +601,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let mut contract = inserted_contract_without_tokens(&drive);
 
-        let member = Identifier::random();
+        let member = Identifier::from([42u8; 32]);
         let group = Group::V0(GroupV0 {
             members: BTreeMap::from([(member, 1)]),
             required_power: 1,
