@@ -23,9 +23,11 @@ use dpp::{
     data_contract::accessors::v0::DataContractV0Getters,
     data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters},
 };
+use drive::query::drive_document_count_query::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT;
 use drive::query::validate_and_canonicalize_where_clauses;
 use drive::query::{
-    CountMode, DocumentCountMode, DriveDocumentCountQuery, SelectFunction, WhereOperator,
+    CountMode, DocumentCountMode, DriveDocumentCountQuery, SelectFunction, WhereClause,
+    WhereOperator,
 };
 use drive_proof_verifier::{
     verify_aggregate_count_proof, verify_carrier_aggregate_count_proof,
@@ -91,6 +93,70 @@ fn limit_to_u16_or_default(limit: u32) -> Result<u16, drive_proof_verifier::Erro
             limit
         ),
     })
+}
+
+/// The outer-walk limit a carrier-aggregate COUNT proof was produced
+/// with, derived from the request the way the server's COUNT
+/// dispatcher derives it (`RangeAggregateCarrierProof` arm of
+/// `execute_document_count_request`).
+///
+/// Two shapes share the carrier proof primitive and they treat the
+/// request limit differently:
+///
+/// - **Range-outer (G8)** — two range clauses on distinct fields
+///   (`brand > X AND color > Y`, `group_by = [brand]`). The server
+///   caps the outer walk at the compile-time
+///   [`MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`]: an unset limit is
+///   lowered to the cap, an explicit limit up to the cap passes
+///   through, and anything above it is refused with `InvalidLimit`.
+/// - **In-outer (G7)** — one `In` and one range clause. The `In`
+///   array already bounds the walk, so the server keeps `None` and
+///   refuses every explicit limit.
+///
+/// The value returned here lands in the reconstructed
+/// `SizedQuery::limit`. On the G8 shape it decides where the merk
+/// walker expects the prover to have stopped, so passing `None`
+/// where the server used `Some(10)` makes an honest proof fail with
+/// "proof is missing data" as soon as the outer range holds more
+/// than ten keys. The limits the server refuses are refused here
+/// too, before any proof bytes are inspected, so a request the
+/// server would never have answered cannot be paired with a proof
+/// for a narrower one.
+fn carrier_walk_limit(
+    where_clauses: &[WhereClause],
+    limit: u32,
+) -> Result<Option<u16>, drive_proof_verifier::Error> {
+    let has_outer_range = where_clauses
+        .iter()
+        .filter(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
+        .count()
+        == 2;
+    if has_outer_range {
+        if limit == 0 {
+            return Ok(Some(MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT));
+        }
+        if limit > u32::from(MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT) {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: format!(
+                    "limit {limit} exceeds the carrier-aggregate range-outer cap of \
+                     {MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT}; the server refuses such \
+                     requests, so no proof can belong to this query"
+                ),
+            });
+        }
+        // `limit <= MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` fits in u16.
+        Ok(Some(limit as u16))
+    } else if limit == 0 {
+        Ok(None)
+    } else {
+        Err(drive_proof_verifier::Error::RequestError {
+            error: format!(
+                "limit {limit} on a carrier-aggregate In-outer COUNT; the In array bounds \
+                 the walk and the server refuses an explicit limit here, so no proof can \
+                 belong to this query"
+            ),
+        })
+    }
 }
 
 /// Verify a count-shape proof and return per-branch entries.
@@ -319,17 +385,12 @@ pub(super) fn verify_count_query(
         }
         DocumentCountMode::RangeAggregateCarrierProof => {
             // Carrier-ACOR (grovedb #663) — one verified `u64` per
-            // present In branch. `limit` cap on the per-branch
-            // walk follows the same `validate-don't-clamp`
-            // contract the distinct path uses; pass through what
-            // the caller asked for (with the `0` → default
-            // sentinel) so the path-query bytes match the
-            // server's exactly.
-            let limit_u16 = if request.limit == 0 {
-                None
-            } else {
-                Some(limit_to_u16_or_default(request.limit)?)
-            };
+            // outer branch. The COUNT dispatcher's outer-walk limit
+            // is shape-dependent, and `SizedQuery::limit` is part
+            // of the path query the proof commits to, so the
+            // translation here must mirror the dispatcher exactly
+            // or verification fails on honest proofs.
+            let limit_u16 = carrier_walk_limit(&request.where_clauses, request.limit)?;
             let left_to_right = request
                 .order_by_clauses
                 .first()
@@ -465,7 +526,7 @@ mod tests {
     };
     use dash_context_provider::ContextProviderError;
     use dpp::data_contract::{DataContractFactory, TokenConfiguration};
-    use dpp::platform_value::platform_value;
+    use dpp::platform_value::{platform_value, Value};
     use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
     use drive::query::{SelectProjection, TimeRangeSelector, WhereClause};
     use std::sync::Arc;
@@ -731,5 +792,75 @@ mod tests {
             matches!(error, drive_proof_verifier::Error::NoProofInResult),
             "expected NoProofInResult, got: {error:?}"
         );
+    }
+
+    /// The range-outer (G8) carrier shape must reproduce the COUNT
+    /// dispatcher's outer-walk limit exactly: an unset limit lowers
+    /// to `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` (never `None`),
+    /// explicit limits pass through up to the cap, and anything
+    /// above the cap is refused before a proof is looked at.
+    #[test]
+    fn carrier_walk_limit_mirrors_dispatcher_on_range_outer_shape() {
+        let clauses = vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("a".to_string()),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("b".to_string()),
+            },
+        ];
+        let cap = MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT;
+
+        assert_eq!(
+            carrier_walk_limit(&clauses, 0).unwrap(),
+            Some(cap),
+            "unset limit must lower to the carrier cap, not None"
+        );
+        assert_eq!(carrier_walk_limit(&clauses, 1).unwrap(), Some(1));
+        assert_eq!(
+            carrier_walk_limit(&clauses, u32::from(cap)).unwrap(),
+            Some(cap)
+        );
+
+        match carrier_walk_limit(&clauses, u32::from(cap) + 1) {
+            Err(drive_proof_verifier::Error::RequestError { error }) => {
+                assert!(
+                    error.contains("range-outer cap"),
+                    "unexpected error: {error}"
+                )
+            }
+            other => panic!("expected RequestError, got {other:?}"),
+        }
+    }
+
+    /// The In-outer (G7) carrier shape keeps `None` for an unset
+    /// limit (the In array bounds the walk) and refuses every
+    /// explicit limit, as the dispatcher does.
+    #[test]
+    fn carrier_walk_limit_mirrors_dispatcher_on_in_outer_shape() {
+        let clauses = vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![Value::Text("a".to_string())]),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("b".to_string()),
+            },
+        ];
+
+        assert_eq!(carrier_walk_limit(&clauses, 0).unwrap(), None);
+        match carrier_walk_limit(&clauses, 1) {
+            Err(drive_proof_verifier::Error::RequestError { error }) => {
+                assert!(error.contains("In-outer"), "unexpected error: {error}")
+            }
+            other => panic!("expected RequestError, got {other:?}"),
+        }
     }
 }
