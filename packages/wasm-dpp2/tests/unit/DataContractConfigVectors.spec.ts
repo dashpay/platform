@@ -65,12 +65,30 @@ describe('DataContract configuration vectors', () => {
           const platformVersion = new wasm.PlatformVersion(vector.platformVersion);
           const dataContract = wasm.DataContract.fromJSON(vector.contract, true, platformVersion);
 
-          const config = toObjectForm(vector.expect) as wasm.DataContractConfig;
+          // The getter's output feeds setConfig back untouched; no cast.
+          const config = toObjectForm(vector.expect);
           dataContract.setConfig(config, platformVersion);
 
           expect(dataContract.config).to.deep.equal(config);
         });
       }
+    });
+  });
+
+  it('should accept the bare flags without a format tag and default sizedIntegerTypes', () => {
+    const vector = cases.find((c) => c.name === 'v1_all_set') as VectorCase;
+    const platformVersion = new wasm.PlatformVersion(vector.platformVersion);
+    const dataContract = wasm.DataContract.fromJSON(vector.contract, true, platformVersion);
+
+    const flags = Object.fromEntries(
+      Object.entries(vector.expect).filter(([key]) => key !== '$formatVersion' && key !== 'sizedIntegerTypes'),
+    );
+    dataContract.setConfig(toObjectForm(flags), platformVersion);
+
+    expect(dataContract.config).to.deep.equal({
+      ...toObjectForm(flags),
+      $formatVersion: '1',
+      sizedIntegerTypes: true,
     });
   });
 

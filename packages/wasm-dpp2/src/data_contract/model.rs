@@ -97,17 +97,12 @@ export interface DataContractJSON {
 }
 
 /**
- * DataContract configuration, format version 0: the generation contracts
- * registered before protocol version 11 carry. Mirrors the rs-dpp
- * `DataContractConfig::V0` wire shape one to one.
- *
- * The key requirements are `StorageKeyRequirements` values (0 unique,
- * 1 multiple, 2 multiple reference to latest). An absent requirement is
- * `undefined` in object form (the `config` getter) and `null` in JSON form
- * (`toJSON`).
+ * The flags every contract configuration generation carries. The key
+ * requirements are `StorageKeyRequirements` values (0 unique, 1 multiple,
+ * 2 multiple reference to latest); an absent requirement is `undefined` in
+ * object form (the `config` getter) and `null` in JSON form (`toJSON`).
  */
-export interface DataContractConfigV0 {
-    $formatVersion: '0';
+export interface DataContractConfigFlags {
     canBeDeleted: boolean;
     readonly: boolean;
     keepsHistory: boolean;
@@ -119,10 +114,19 @@ export interface DataContractConfigV0 {
 }
 
 /**
+ * DataContract configuration, format version 0: the generation contracts
+ * registered before protocol version 11 carry. Mirrors the rs-dpp
+ * `DataContractConfig::V0` wire shape one to one.
+ */
+export interface DataContractConfigV0 extends DataContractConfigFlags {
+    $formatVersion: '0';
+}
+
+/**
  * DataContract configuration, format version 1: the current generation.
  * Adds `sizedIntegerTypes` to the V0 fields.
  */
-export interface DataContractConfigV1 extends Omit<DataContractConfigV0, '$formatVersion'> {
+export interface DataContractConfigV1 extends DataContractConfigFlags {
     $formatVersion: '1';
     sizedIntegerTypes: boolean;
 }
@@ -130,12 +134,20 @@ export interface DataContractConfigV1 extends Omit<DataContractConfigV0, '$forma
 /**
  * DataContract configuration as the runtime exposes it: the tagged union of
  * the shipped generations. Contracts already in state may carry either tag.
- *
- * `setConfig(config, platformVersion)` selects the configuration generation
- * from the platform version it is given, not from the `$formatVersion` in
- * the input; the tag in the input is ignored.
  */
 export type DataContractConfig = DataContractConfigV0 | DataContractConfigV1;
+
+/**
+ * The configuration `setConfig` accepts: a tagged configuration as the
+ * `config` getter returns it, or the bare flags. The generation is selected
+ * from the platform version passed alongside, so `$formatVersion` in the
+ * input is ignored; `sizedIntegerTypes` is dropped when that version selects
+ * format version 0 and defaults to `true` when it selects format version 1.
+ */
+export interface DataContractConfigLike extends DataContractConfigFlags {
+    $formatVersion?: string;
+    sizedIntegerTypes?: boolean;
+}
 "#;
 
 #[wasm_bindgen]
@@ -151,6 +163,9 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "DataContractConfig")]
     pub type DataContractConfigJs;
+
+    #[wasm_bindgen(typescript_type = "DataContractConfigLike")]
+    pub type DataContractConfigLikeJs;
 
     #[wasm_bindgen(typescript_type = "Record<string, object>")]
     pub type DataContractSchemasJs;
@@ -511,7 +526,7 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "setConfig")]
     pub fn set_config(
         &mut self,
-        config: DataContractConfigJs,
+        config: DataContractConfigLikeJs,
         #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<()> {
         let config: JsValue = config.into();
