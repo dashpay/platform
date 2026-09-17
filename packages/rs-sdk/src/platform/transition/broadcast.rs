@@ -679,6 +679,49 @@ mod tests {
         assert_eq!(requests, vec![expected_request.clone(), expected_request]);
         assert_ne!(used_addresses[0], used_addresses[1]);
         assert!(addresses.is_banned(&used_addresses[0]));
+        let bans = addresses.ban_info();
+        let rejected = bans
+            .iter()
+            .find(|info| info.uri == used_addresses[0].to_string())
+            .unwrap();
+        assert_eq!(rejected.ban_count, 1);
+        let remaining = rejected.banned_until.unwrap() - chrono::Utc::now();
+        assert!(remaining <= chrono::Duration::seconds(2));
+    }
+
+    #[tokio::test]
+    async fn should_keep_repeated_missing_owner_exclusions_short_and_flat() {
+        let transition = document_create(SystemDataContract::DPNS.id(), "preorder");
+        let addresses = addresses();
+        for round in 0..2 {
+            let _ = broadcast_with_retries(
+                &transition,
+                &addresses,
+                RequestSettings::default(),
+                |_, _| {
+                    let address = addresses.get_live_addresses().into_iter().next().unwrap();
+                    ready(Err(ExecutionError {
+                        inner: missing_owner(owner_id()),
+                        address: Some(address),
+                        retries: 0,
+                    }))
+                },
+            )
+            .await;
+            for ban in addresses.ban_info().iter().filter(|ban| ban.banned) {
+                assert_eq!(
+                    ban.ban_count, 1,
+                    "rejections must not climb the health ladder"
+                );
+                assert!(
+                    ban.banned_until.unwrap() - chrono::Utc::now() <= chrono::Duration::seconds(2)
+                );
+            }
+            if round == 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(2100)).await;
+                assert_eq!(addresses.get_live_addresses().len(), addresses.len());
+            }
+        }
     }
 
     #[tokio::test]
