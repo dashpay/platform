@@ -15,12 +15,14 @@ use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::fee::refund_owner::{RefundOwner, RefundOwnersByIdentifier};
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
+use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::Element;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::{
     NoStorageRemoval, SectionedStorageRemoval,
 };
 use grovedb_costs::OperationCost;
+use grovedb_path::SubtreePath;
 use platform_version::version::drive_versions::DriveVersion;
 
 const OWNER_ID: [u8; 32] = [0x22; 32];
@@ -158,6 +160,98 @@ fn should_record_the_bucket_owner_when_a_bucket_owned_item_is_deleted_under_v1()
     assert_eq!(
         *refund_owners,
         RefundOwnersByIdentifier::from([(owner.removal_key(), owner)])
+    );
+}
+
+/// A replace whose new flags name a different owner transfers the bytes.
+/// GroveDB prices a replace with the old flags still attached, so a smaller
+/// payload in a later epoch takes the shrinking path, where the crate returns
+/// the old single epoch flags untouched. The typed generation must still
+/// transfer: the bytes freed by the shrink refund the bucket that paid for
+/// them, and the delete afterwards refunds the identity, not the bucket.
+#[test]
+fn should_transfer_a_bucket_owned_item_to_an_identity_on_a_later_epoch_shrinking_replace() {
+    let typed = typed_drive_version();
+    let bucket = RefundOwner::ContractBucket {
+        contract_id: Identifier::from(CONTRACT_ID),
+        position: 7,
+    };
+    let identity = RefundOwner::Identity(Identifier::from(OWNER_ID));
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    insert_flagged_item(
+        &drive,
+        &StorageFlags::new_single_epoch_for_owner(1, Some(bucket)),
+        &typed,
+    );
+
+    let mut batch = GroveDbOpBatch::new();
+    batch.push(QualifiedGroveDbOp::replace_op(
+        misc_path_vec(),
+        KEY.to_vec(),
+        Element::new_item_with_flags(
+            vec![7u8; 100],
+            StorageFlags::new_single_epoch_for_owner(2, Some(identity)).to_some_element_flags(),
+        ),
+    ));
+    let mut replace_operations = vec![];
+    drive
+        .grove_apply_batch_with_add_costs(batch, false, None, &mut replace_operations, &typed)
+        .expect("v1 should replace across kinds");
+
+    // the bytes freed by the shrink were paid for by the bucket
+    let [LowLevelDriveOperation::CalculatedCostOperationWithRefundOwners {
+        cost: shrink_cost,
+        refund_owners: shrink_owners,
+    }] = replace_operations.as_slice()
+    else {
+        panic!(
+            "v1 should push one typed cost operation, got {:?}",
+            replace_operations
+        );
+    };
+    let SectionedStorageRemoval(shrink_removal) = sectioned_removal(shrink_cost) else {
+        panic!("a shrinking replace sections its removed bytes");
+    };
+    assert_eq!(
+        shrink_removal.keys().copied().collect::<Vec<_>>(),
+        vec![bucket.removal_key()]
+    );
+    assert_eq!(
+        *shrink_owners,
+        RefundOwnersByIdentifier::from([(bucket.removal_key(), bucket)])
+    );
+
+    let stored = drive
+        .grove
+        .get(
+            SubtreePath::from(misc_path_vec().as_slice()),
+            KEY,
+            None,
+            &typed.grove_version,
+        )
+        .unwrap()
+        .expect("item should exist");
+    let flags = StorageFlags::map_some_element_flags_ref(stored.get_flags())
+        .expect("flags should decode")
+        .expect("flags should be present");
+    assert_eq!(flags, StorageFlags::SingleEpochOwned(1, OWNER_ID));
+
+    let ops = delete_item(&drive, &typed).expect("v1 should delete");
+    let [LowLevelDriveOperation::CalculatedCostOperationWithRefundOwners {
+        cost,
+        refund_owners,
+    }] = ops.as_slice()
+    else {
+        panic!("v1 should push one typed cost operation, got {:?}", ops);
+    };
+    let SectionedStorageRemoval(removal) = sectioned_removal(cost) else {
+        panic!("an owned delete sections its removed bytes");
+    };
+    assert_eq!(removal.keys().copied().collect::<Vec<_>>(), vec![OWNER_ID]);
+    assert_eq!(
+        *refund_owners,
+        RefundOwnersByIdentifier::from([(OWNER_ID, identity)])
     );
 }
 

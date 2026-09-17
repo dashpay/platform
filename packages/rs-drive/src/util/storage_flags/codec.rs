@@ -7,7 +7,7 @@
 
 use super::{
     BaseEpoch, BytesAddedInEpoch, ContractId, CrateStorageFlags, EpochIndex, StorageFlags,
-    CONTRACT_BUCKET_OWNER_SIZE, SINGLE_EPOCH_FLAGS_SIZE,
+    CONTRACT_BUCKET_OWNER_SIZE, OWNER_ID_SIZE, SINGLE_EPOCH_FLAGS_SIZE,
 };
 use dpp::fee::refund_owner::ContractCreditBucketPosition;
 use grovedb::ElementFlags;
@@ -59,8 +59,34 @@ impl StorageFlags {
                 Self::append_epoch_map(&mut buffer, epochs);
                 buffer
             }
-            // the four historical variants are exactly the crate's
-            _ => self.to_crate_flags_keyed_by_removal_key().serialize(),
+            // the two historical multi epoch variants write the crate's
+            // layout without cloning their epoch map; equality with the
+            // crate's bytes is pinned by test
+            StorageFlags::MultiEpoch(base_epoch, epochs) => {
+                let mut buffer = Vec::with_capacity(
+                    SINGLE_EPOCH_FLAGS_SIZE as usize + epochs.len() * MIN_EPOCH_MAP_ENTRY_SIZE,
+                );
+                buffer.push(self.type_byte());
+                buffer.extend_from_slice(&base_epoch.to_be_bytes());
+                Self::append_epoch_map(&mut buffer, epochs);
+                buffer
+            }
+            StorageFlags::MultiEpochOwned(base_epoch, epochs, owner_id) => {
+                let mut buffer = Vec::with_capacity(
+                    (SINGLE_EPOCH_FLAGS_SIZE + OWNER_ID_SIZE) as usize
+                        + epochs.len() * MIN_EPOCH_MAP_ENTRY_SIZE,
+                );
+                buffer.push(self.type_byte());
+                buffer.extend_from_slice(owner_id);
+                buffer.extend_from_slice(&base_epoch.to_be_bytes());
+                Self::append_epoch_map(&mut buffer, epochs);
+                buffer
+            }
+            // the single epoch variants carry no map, so the crate value is
+            // a plain copy
+            StorageFlags::SingleEpoch(_) | StorageFlags::SingleEpochOwned(..) => {
+                self.to_crate_flags_keyed_by_removal_key().serialize()
+            }
         }
     }
 
@@ -71,7 +97,14 @@ impl StorageFlags {
             StorageFlags::MultiEpochContractBucket(_, epochs, ..) => {
                 CONTRACT_BUCKET_HEADER_SIZE as u32 + Self::epoch_map_size(epochs)
             }
-            _ => self.to_crate_flags_keyed_by_removal_key().serialized_size(),
+            StorageFlags::MultiEpoch(_, epochs) => {
+                SINGLE_EPOCH_FLAGS_SIZE + Self::epoch_map_size(epochs)
+            }
+            StorageFlags::MultiEpochOwned(_, epochs, _) => {
+                SINGLE_EPOCH_FLAGS_SIZE + OWNER_ID_SIZE + Self::epoch_map_size(epochs)
+            }
+            StorageFlags::SingleEpoch(_) => SINGLE_EPOCH_FLAGS_SIZE,
+            StorageFlags::SingleEpochOwned(..) => SINGLE_EPOCH_FLAGS_SIZE + OWNER_ID_SIZE,
         }
     }
 

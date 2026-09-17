@@ -178,6 +178,20 @@ impl FeeRefunds {
     /// reported, never resolved by picking one.
     pub fn checked_add_assign(&mut self, rhs: Self) -> Result<(), ProtocolError> {
         let Self(rhs_credits, rhs_owners) = rhs;
+        // owners are checked before either map changes, so a rejected merge
+        // leaves the accumulator exactly as it was
+        for (identifier, owner) in &rhs_owners {
+            if let Some(existing) = self.1.get(identifier) {
+                if existing != owner {
+                    return Err(ProtocolError::CorruptedCodeExecution(format!(
+                        "storage removal carrier key {} is recorded for two different refund owners: {:?} and {:?}",
+                        hex::encode(identifier),
+                        existing,
+                        owner
+                    )));
+                }
+            }
+        }
         for (identifier, mut int_map_b) in rhs_credits.into_iter() {
             let to_insert_int_map = if let Some(sint_map_a) = self.0.remove(&identifier) {
                 // other has an int_map with the same identifier
@@ -200,22 +214,7 @@ impl FeeRefunds {
             // reinsert the now combined IntMap
             self.0.insert(identifier, to_insert_int_map);
         }
-        for (identifier, owner) in rhs_owners {
-            match self.1.get(&identifier) {
-                Some(existing) if *existing != owner => {
-                    return Err(ProtocolError::CorruptedCodeExecution(format!(
-                        "storage removal carrier key {} is recorded for two different refund owners: {:?} and {:?}",
-                        hex::encode(identifier),
-                        existing,
-                        owner
-                    )));
-                }
-                Some(_) => {}
-                None => {
-                    self.1.insert(identifier, owner);
-                }
-            }
-        }
+        self.1.extend(rhs_owners);
         Ok(())
     }
 
@@ -539,12 +538,14 @@ mod tests {
                 RefundOwnersByIdentifier::from_iter([(key, bucket)]),
             );
 
+            let before = refunds.clone();
             let result = refunds.checked_add_assign(colliding);
 
             assert!(matches!(
                 result,
                 Err(ProtocolError::CorruptedCodeExecution(_))
             ));
+            assert_eq!(refunds, before, "a rejected merge changes nothing");
         }
     }
 

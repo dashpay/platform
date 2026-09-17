@@ -37,6 +37,10 @@ pub type ContractCreditBucketPosition = u16;
 /// the owner's confirmation in the fees workstream register (issue 4689).
 pub const REFUND_OWNER_CONTRACT_BUCKET_DOMAIN: &[u8; 35] = b"dash-platform/refund-owner/bucket/0";
 
+/// Size of a contract bucket carrier key preimage: domain, contract id and
+/// big-endian position, no length prefixes
+const CONTRACT_BUCKET_PREIMAGE_SIZE: usize = 35 + 32 + 2;
+
 /// The system carrier key. Bytes that no owner paid for are sectioned under
 /// this key and are never refunded, so it is never a recorded owner.
 pub const SYSTEM_REFUND_CARRIER_KEY: [u8; 32] = [0; 32];
@@ -82,11 +86,10 @@ impl RefundOwner {
                 contract_id,
                 position,
             } => {
-                let mut preimage =
-                    Vec::with_capacity(REFUND_OWNER_CONTRACT_BUCKET_DOMAIN.len() + 32 + 2);
-                preimage.extend_from_slice(REFUND_OWNER_CONTRACT_BUCKET_DOMAIN);
-                preimage.extend_from_slice(contract_id.as_bytes());
-                preimage.extend_from_slice(&position.to_be_bytes());
+                let mut preimage = [0u8; CONTRACT_BUCKET_PREIMAGE_SIZE];
+                preimage[..35].copy_from_slice(REFUND_OWNER_CONTRACT_BUCKET_DOMAIN);
+                preimage[35..67].copy_from_slice(contract_id.as_bytes());
+                preimage[67..].copy_from_slice(&position.to_be_bytes());
                 hash_double(preimage)
             }
         }
