@@ -128,13 +128,13 @@ The same helper gates keys bound to a contract group. The gate is on the *varian
 
 ## Registering a Limited Key
 
-A limited key arrives the way any key does, in the key list of a transition that registers keys: `IdentityCreate`, `IdentityUpdate`, `IdentityCreateFromAddresses` or `IdentityCreateFromShieldedPool`. Five things can stop it, in this order:
+A version 1 key arrives the way any key does, in the key list of a transition that registers keys: `IdentityCreate`, `IdentityUpdate`, `IdentityCreateFromAddresses` or `IdentityCreateFromShieldedPool`. Five things can stop it, in this order:
 
 ```mermaid
 flowchart TD
     T["a transition registers<br/>a version 1 key"] --> PV{"protocol version<br/>at least 14?"}
     PV -->|no| NA["not active<br/>rejected while decoding"]
-    PV -->|yes| SH{"created from the<br/>shielded pool?"}
+    PV -->|yes| SH{"has limits and is created<br/>from the shielded pool?"}
     SH -->|yes| E38["<b>10538</b><br/>refused"]
     SH -->|no| ST{"AUTHENTICATION and<br/>below MASTER?"}
     ST -->|no| E36["<b>10536</b><br/>limits not allowed"]
@@ -159,7 +159,7 @@ The checks sit in the tier their inputs dictate (see [Where a check belongs](../
 | Only AUTHENTICATION below MASTER | the key | `rs-dpp` `validate_identity_public_keys_structure` v1 | `IdentityPublicKeyLimitsNotAllowedError` 10536 |
 | Budget is not zero | the key | same | `InvalidIdentityPublicKeyBudgetError` 10537 |
 | Expiry is after the block time | the block time | `drive-abci` `validate_identity_public_keys_limits`, called from the four identity create and update `state/v1` validators | `IdentityPublicKeyAlreadyExpiredError` 40219 |
-| Not in a shielded identity creation | the transition | `drive-abci` `validate_shielded_proof` v1, and the transition builder | `IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError` 10538 |
+| No limits in a shielded identity creation | the transition | `drive-abci` `validate_shielded_proof` v1, and the transition builder | `IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError` 10538 |
 
 The expiry rule exists because a key that is dead on arrival is not harmless. It still uses up its key id and, for a unique key type, registers its public key hash, which can then never be used on any identity again. The usual way to get there is passing seconds where milliseconds are expected, and the check turns that mistake into an error instead of a burnt key.
 
@@ -167,9 +167,11 @@ The expiry rule exists because a key that is dead on arrival is not harmless. It
 
 `IdentityCreateFromShieldedPool` has no identity signature. Its authorization is the Orchard proof, the spend authorization signatures, and a binding signature over a sighash. The new identity's keys are committed into that sighash by a hand-written preimage, `identity_create_from_shielded_extra_sighash_data_v0`, which lists the key fields it binds one by one: id, purpose, security level, type, data, `read_only`, contract bounds. That layout is frozen, and it predates the version 1 key. A budget or an expiry would simply not be in it.
 
-For ECDSA and BLS keys the per-key proof of possession signs the transition's signable bytes, limits included. Hash based key types carry no proof of possession. For those, a relay or a proposer could strip a budget from an observed transition, or move an expiry, and every signature would still verify. A test pins the cause: the preimage of a key with limits and of the same key without is byte for byte identical.
+How exposed would the limits be? Each ECDSA or BLS key carries a proof of possession, and that signature is over the signable bytes of the whole transition, which include every key with its variant and its limits. One such key is therefore enough to pin the limits of all of them. Hash based key types must carry an empty signature, so a transition whose keys are *all* hash based has nothing signing the limits. That is not an exotic case: hash based keys are the privacy-minded choice, and privacy is why one creates an identity from the shielded pool. For such a transition a relay or a proposer could strip a budget, or move an expiry, and everything would still verify. A test pins the cause: the preimage of a key with limits and of the same key without is byte for byte identical.
 
-The preimage stays frozen and the key is refused instead, the same decision taken for keys bound to a contract group. `validate_shielded_proof` v1 refuses any version 1 key before the preimage is built, and the transition builder refuses it before a proof is generated. Add the key with an identity update once the identity exists.
+The preimage stays frozen and the key is refused instead, the same decision taken for keys bound to a contract group. `validate_shielded_proof` v1 refuses a key that carries a budget or an expiry before the preimage is built, and the transition builder refuses it before a proof is generated. Add the key with an identity update once the identity exists.
+
+The refusal is about the limits, not about the format. A version 1 key *without* limits is accepted, because everything it holds is in the layout: it binds the same preimage bytes as the version 0 key with the same fields, and a second test pins that too. This keeps shielded identity creation working if version 1 ever becomes the default key format. What it leaves possible, and only when every key is hash based, is a relay re-encoding a limit-less key from one version to the other. The two are the same key, so nothing the identity granted changes; the visible effects are two more stored bytes and a different transition hash.
 
 > **The general lesson.** `PlatformSignable` covers a new key field automatically. The shielded preimage does not. Any future field on the key must be checked against `packages/rs-dpp/src/shielded/sighash.rs` as well.
 
@@ -406,20 +408,20 @@ This change is the consensus core. Known gaps, all deliberate:
 - **SDK surfaces.** Rust callers can use `with_limits` today. The wasm, JavaScript, Swift and Kotlin bindings do not expose the two fields for creation, and SDK key selection does not skip an expired or spent key before signing.
 - **Changing limits.** There is no top-up and no extension. Register a new key.
 - **Limits on other purposes.** A TRANSFER key with a budget would cap transfers and withdrawals. The rule for it would differ (the amount moved is the point, not a side effect), so it was left out rather than half done.
-- **Shielded identity creation.** Refused, as explained above. Lifting it means a new generation of the sighash preimage.
+- **Limits in a shielded identity creation.** A key with a budget or an expiry is refused there, as explained above. Lifting that means a new generation of the sighash preimage.
 
 ## Tests
 
 - **dpp** (`identity_public_key/v1`, `public_key_in_creation/v1`, `validate_identity_public_keys_structure/v1`, `state_transition/mod.rs`): the version 1 round trip; the version 0 encoding unchanged byte for byte; the JSON shape; the expiry boundary; limits surviving the conversions and being signed over; the structure rules; the protocol version 13 and 14 sides of the decode gate; frozen error discriminants.
 - **drive** (`drive/identity/key/budget`): the budget written on key add and on identity create; two budgeted keys in one batch; the deduction stopping at zero and never changing storage; estimated at least actual; protocol version 13 untouched.
 - **drive-abci** (`batch/tests/key_limits.rs`), end to end through `process_raw_state_transitions` and `check_tx`: the exact deduction; the rule pinned one credit either side of the storage fee; the user fee increase counted up front; the expiry boundary; both limits on one key; a paid failure spending from the budget; an invalid transition through an unusable key not being charged; mempool admission.
-- **drive-abci** (`identity_update` `key_limits`, `identity_create_from_shielded_pool/tests.rs`): registration storing a version 1 key with its whole budget left; an already expired key as a paid failure; limits on TRANSFER and MASTER keys and a zero budget as unpaid; the shielded creation refusal, with and without limits.
+- **drive-abci** (`identity_update` `key_limits`, `identity_create_from_shielded_pool/tests.rs`): registration storing a version 1 key with its whole budget left; an already expired key as a paid failure; limits on TRANSFER and MASTER keys and a zero budget as unpaid; the shielded creation refusing a key with either limit and accepting a version 1 key without any. The builder has the same pair of cases in `rs-dpp` (`shielded/builder/identity_create_from_shielded_pool.rs`).
 
 ```bash
 cargo test -p dpp --all-features --lib -- identity_public_key public_key_in_creation should_only_admit
 cargo test -p drive --lib -- identity::key::budget
 cargo test -p drive-abci --lib -- key_limits validate_identity_public_keys_limits validate_fees_of_event
-cargo test -p drive-abci --lib -- should_refuse_a_version_1_key
+cargo test -p drive-abci --lib -- should_refuse_a_key_with_limits
 ```
 
 ## Rules and Guidelines

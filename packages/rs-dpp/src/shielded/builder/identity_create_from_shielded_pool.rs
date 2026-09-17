@@ -11,6 +11,7 @@ use crate::serialization::Signable;
 use crate::shielded::compute_shielded_identity_create_fee;
 use crate::state_transition::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
+    IdentityPublicKeyInCreationV1Getters,
 };
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::shielded::OrchardBundleParams;
@@ -199,16 +200,12 @@ where
             key.id()
         )));
     }
-    // Likewise for a version 1 key: a budget or an expiry is not in the sighash layout, so it
-    // would not be bound to the spend.
-    if let Some(key) = in_creation_keys
-        .iter()
-        .find(|key| matches!(key, IdentityPublicKeyInCreation::V1(_)))
-    {
+    // Likewise for a key that carries a budget or an expiry: neither is in the sighash layout,
+    // so it would not be bound to the spend. A version 1 key without limits is accepted.
+    if let Some(key) = in_creation_keys.iter().find(|key| key.has_limits()) {
         return Err(ProtocolError::ShieldedBuildError(format!(
-            "key {} is a version 1 key (the format that can carry a budget or an expiry), which \
-             an identity created from the shielded pool cannot register; add it with an \
-             identity update",
+            "key {} carries a budget or an expiry, which an identity created from the shielded \
+             pool cannot register; add it with an identity update",
             key.id()
         )));
     }
@@ -381,6 +378,79 @@ mod tests {
 
     /// 0.1 DASH in credits — the smallest member of the versioned exit-denomination set.
     const DENOMINATION: u64 = 10_000_000_000;
+
+    /// A second, HIGH level key in the version 1 format, in both forms the builder takes.
+    fn version_1_key_pair(
+        id: u32,
+        total_budget: Option<u64>,
+        expires_at: Option<u64>,
+    ) -> (IdentityPublicKey, IdentityPublicKeyInCreation) {
+        let public = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: BinaryData::new(vec![0xCD; 20]),
+            disabled_at: None,
+        })
+        .with_limits(total_budget, expires_at);
+        let in_creation = IdentityPublicKeyInCreation::from(&public);
+        (public, in_creation)
+    }
+
+    /// Consensus refuses a key that carries a budget or an expiry in this transition, because the
+    /// Orchard sighash does not cover them. The builder refuses it up front, before a proof is
+    /// generated, and builds a version 1 key without limits like any other key.
+    #[tokio::test]
+    async fn should_refuse_a_key_with_limits_and_build_a_version_1_key_without() {
+        let platform_version = PlatformVersion::latest();
+        let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+        let change_address = test_orchard_address();
+
+        for (total_budget, expires_at, refused) in [
+            (Some(1_000), None, true),
+            (None, Some(2_000), true),
+            (None, None, false),
+        ] {
+            let spend = test_spendable_note(12_000_000_000);
+            let cmx = ExtractedNoteCommitment::from(spend.note.commitment());
+            let anchor = spend.merkle_path.root(cmx);
+
+            let result = build_identity_create_from_shielded_pool_transition(
+                vec![key_pair(0), version_1_key_pair(1, total_budget, expires_at)],
+                DENOMINATION,
+                PlatformAddress::P2pkh([0u8; 20]),
+                vec![spend],
+                &change_address,
+                &fvk,
+                &ask,
+                anchor,
+                &TestProver,
+                &DummySigner,
+                [0u8; 36],
+                platform_version,
+            )
+            .await;
+
+            if refused {
+                assert!(
+                    matches!(
+                        &result,
+                        Err(ProtocolError::ShieldedBuildError(message))
+                            if message.contains("carries a budget or an expiry")
+                    ),
+                    "a key with limits must be refused, got {:?}",
+                    result.map(|_| "a built transition")
+                );
+            } else {
+                result.expect("a version 1 key without limits must build");
+            }
+        }
+    }
 
     /// The padded-bundle regression test for the dummy-nullifier bug: a SINGLE-spend bundle is
     /// padded by `BundleType::DEFAULT` to the 2-action minimum, and the padding action's random

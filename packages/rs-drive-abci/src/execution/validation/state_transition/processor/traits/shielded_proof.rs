@@ -17,7 +17,9 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::serialization::{PlatformMessageSignable, Signable};
-use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use dpp::state_transition::public_key_in_creation::accessors::{
+    IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV1Getters,
+};
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
@@ -476,9 +478,11 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                 // v1 refuses, in `IdentityCreateFromShieldedPool`, the keys the v0 Orchard sighash
                 // preimage cannot bind, before that preimage is built: a key bound to a contract
                 // group (the layout predates group bounds, and an error out of the preimage
-                // builder would be an internal error rather than a rejection) and a version 1
-                // key (its budget and expiry are not in the layout, so nothing would stop a relay
-                // from altering them). Everything else is v0.
+                // builder would be an internal error rather than a rejection) and a key that
+                // carries a budget or an expiry (they are not in the layout, so nothing would
+                // stop a relay from altering them when no key has a proof of possession). A
+                // version 1 key without limits is fine: everything it holds is in the layout.
+                // Everything else is v0.
                 if let Some(error) = key_not_allowed_in_shielded_creation(self) {
                     return Ok(SimpleConsensusValidationResult::new_with_error(error));
                 }
@@ -673,7 +677,8 @@ fn validate_shielded_proof_v0(
 }
 
 /// The error v1 of `validate_shielded_proof` refuses an `IdentityCreateFromShieldedPool` with:
-/// that of its first key that is bound to a contract group or is a version 1 key, if any.
+/// that of its first key that is bound to a contract group or carries a budget or an expiry, if
+/// any.
 fn key_not_allowed_in_shielded_creation(
     state_transition: &StateTransition,
 ) -> Option<ConsensusError> {
@@ -690,7 +695,7 @@ fn key_not_allowed_in_shielded_creation(
                 ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError::new(key.id())
                     .into(),
             )
-        } else if matches!(key, IdentityPublicKeyInCreation::V1(_)) {
+        } else if key.has_limits() {
             Some(
                 IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError::new(key.id())
                     .into(),

@@ -10,9 +10,9 @@ use thiserror::Error;
 
 /// `IdentityCreateFromShieldedPool` has no identity signature: its keys are bound into the
 /// Orchard sighash preimage field by field, and that layout predates the version 1 key. A
-/// budget or an expiry would not be covered, so a relay could alter it on a key type that
-/// carries no proof of possession. A version 1 key must be added with an identity update
-/// instead.
+/// budget or an expiry would not be covered, so a relay could alter it when no key of the
+/// transition carries a proof of possession. A key with limits must be added with an identity
+/// update instead. A version 1 key without limits is accepted: everything it holds is bound.
 #[derive(
     Error,
     Debug,
@@ -26,7 +26,7 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("Key {public_key_id} is a version 1 key, the format that can carry a budget or an expiry, which an identity created from the shielded pool cannot register; add the key with an identity update")]
+#[error("Key {public_key_id} carries a budget or an expiry, which an identity created from the shielded pool cannot register; add the key with an identity update")]
 #[platform_serialize(unversioned)]
 pub struct IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError {
     /*

@@ -192,8 +192,9 @@ pub fn identity_top_up_from_shielded_extra_sighash_data_v0(
 /// so the v0 bytes of every reachable input are unchanged.
 ///
 /// The budget and the expiry of a version 1 key are not in the layout either, and for the same
-/// reason never need to be: a version 1 key is refused at the same two places, so every key that
-/// reaches this preimage is fully described by the fields above.
+/// reason never need to be: a key that carries either is refused at the same two places, so
+/// every key that reaches this preimage is fully described by the fields above. A version 1 key
+/// without limits binds the same bytes as its version 0 equivalent.
 ///
 /// `IdentityCreateFromShieldedPool` carries NO platform identity signature: authorization is 100%
 /// the Orchard proof + per-action spend-auth signatures + binding signature over this sighash. The

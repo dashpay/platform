@@ -298,8 +298,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// is added; identity-signature validation v1 refuses a key whose budget is spent;
 /// `validate_fees_of_event` v1 refuses an expired key and a spend the remaining budget does not
 /// cover (only metered processing may overshoot); `execute_event` v1 deducts what was spent.
-/// Shielded-proof validation v1 refuses a version 1 key in identity creation from the shielded
-/// pool, whose sighash preimage does not cover the limits.
+/// Shielded-proof validation v1 refuses a key that carries a budget or an expiry in identity
+/// creation from the shielded pool, whose sighash preimage does not cover the limits.
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
