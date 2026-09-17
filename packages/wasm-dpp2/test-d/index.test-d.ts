@@ -2,9 +2,37 @@
 // compiles this file against `dist/dpp.d.ts` and never runs it: a line
 // that stops compiling, or a `@ts-expect-error` line that starts
 // compiling, fails the check.
-import type { DataContract, DataContractConfig, DataContractConfigLike } from '@dashevo/wasm-dpp2';
+import type {
+  DataContract, DataContractConfig, DataContractConfigLike, DataContractConfigV0, DataContractConfigV1,
+} from '@dashevo/wasm-dpp2';
+// The canonical corpus rs-dpp generates and pins; its `expect` blocks carry
+// every configuration key a mirror must model.
+import vectors from '../../rs-dpp/src/data_contract/config/vectors/contract_config_vectors.json' with { type: 'json' };
 
 declare const dataContract: DataContract;
+
+type Equal<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type Check<T extends true> = T;
+
+// The declarations mirror the corpus key sets exactly. `expect` is written in
+// JSON form: `sizedIntegerTypes` is absent from the V0 cases, so it is the
+// only optional corpus key, and an absent key requirement is `null` where
+// object form carries `undefined`. A key added to the corpus without a
+// declaration, or a declaration key the corpus never carries, fails here.
+type CorpusExpect = (typeof vectors)['cases'][number]['expect'];
+type CorpusKeys = Exclude<keyof CorpusExpect, '$formatVersion'>;
+// Every key required, `undefined` (the object-form spelling of an absent
+// requirement) removed, so the declared value types are compared with the
+// JSON-form types the corpus carries, `null` included.
+type Shape<T> = { [K in keyof T]-?: Exclude<T[K], undefined> };
+type CorpusShape = Shape<Pick<CorpusExpect, CorpusKeys>>;
+type V1Shape = Shape<Omit<DataContractConfigV1, '$formatVersion'>>;
+type V0Shape = Shape<Omit<DataContractConfigV0, '$formatVersion'>>;
+type FlagsShape = Shape<Omit<DataContractConfigLike, '$formatVersion'>>;
+export type V1MirrorsCorpus = Check<Equal<V1Shape, CorpusShape>>;
+export type V0MirrorsCorpus = Check<Equal<V0Shape, Omit<CorpusShape, 'sizedIntegerTypes'>>>;
+export type SetterInputMirrorsCorpus = Check<Equal<FlagsShape, CorpusShape>>;
+export type TagMirrorsCorpus = Check<DataContractConfig['$formatVersion'] extends CorpusExpect['$formatVersion'] ? true : false>;
 
 function expectAssignable<T>(value: T): T {
   return value;
