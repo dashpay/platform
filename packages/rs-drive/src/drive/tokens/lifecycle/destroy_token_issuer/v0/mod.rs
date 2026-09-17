@@ -1,5 +1,7 @@
 use crate::drive::tokens::lifecycle::estimated_costs::ESTIMATED_TOKEN_CONTRACT_LIFECYCLE_SIZE_BYTES;
-use crate::drive::tokens::lifecycle::{encode_destroyed_supply, TOKEN_DESTROYED_SUPPLY_SIZE};
+use crate::drive::tokens::lifecycle::{
+    decode_destroyed_supply, encode_destroyed_supply, TOKEN_DESTROYED_SUPPLY_SIZE,
+};
 use crate::drive::tokens::paths::{
     token_contract_lifecycles_root_path_vec, TOKEN_DESTROYED_SUPPLY_KEY,
 };
@@ -12,14 +14,66 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::Identifier;
+use dpp::serialization::PlatformDeserializable;
 use dpp::serialization::PlatformSerializable;
 use dpp::tokens::contract_lifecycle::v0::ContractTokenLifecycleV0Accessors;
 use dpp::tokens::contract_lifecycle::{ContractTokenLifecycle, ContractWipe};
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::KeyInfoPath;
+use grovedb::batch::{GroveOp, KeyInfoPath};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
+
+/// An item write of the lifecycle ledger already pending in the batch lowered so far: its
+/// slot, its bytes and whether it inserts (a record the batch created) or replaces.
+struct PendingLedgerWrite {
+    index: usize,
+    bytes: Vec<u8>,
+    inserts: bool,
+}
+
+/// Finds the pending write of `key` under the lifecycle ledger in the batch lowered so far.
+/// Any other kind of write of that key is a coding error, so it is refused rather than
+/// silently overwritten.
+fn pending_ledger_write(
+    previous_batch_operations: Option<&Vec<LowLevelDriveOperation>>,
+    lifecycles_path: &[Vec<u8>],
+    key: &[u8],
+) -> Result<Option<PendingLedgerWrite>, Error> {
+    let Some(operations) = previous_batch_operations else {
+        return Ok(None);
+    };
+    for (index, operation) in operations.iter().enumerate() {
+        let LowLevelDriveOperation::GroveOperation(grove_op) = operation else {
+            continue;
+        };
+        if grove_op.path.to_path() != lifecycles_path
+            || grove_op.key != Some(KeyInfo::KnownKey(key.to_vec()))
+        {
+            continue;
+        }
+        return match &grove_op.op {
+            GroveOp::Replace {
+                element: Element::Item(bytes, _),
+            } => Ok(Some(PendingLedgerWrite {
+                index,
+                bytes: bytes.clone(),
+                inserts: false,
+            })),
+            GroveOp::InsertOrReplace {
+                element: Element::Item(bytes, _),
+            } => Ok(Some(PendingLedgerWrite {
+                index,
+                bytes: bytes.clone(),
+                inserts: true,
+            })),
+            _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a pending token lifecycle ledger write is not an item insert or replacement",
+            ))),
+        };
+    }
+    Ok(None)
+}
 
 impl Drive {
     pub(super) fn destroy_token_issuer_v0(
@@ -66,6 +120,7 @@ impl Drive {
         let batch_operations = self.destroy_token_issuer_operations_v0(
             contract_id,
             block_info,
+            &mut None,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -82,11 +137,16 @@ impl Drive {
 
     /// Two reads (the record and the destroyed supply scalar) and two writes, whatever the
     /// issuer holds: the destroyed supply is the record's rollup, so no token and no holder
-    /// is visited.
+    /// is visited. A write of the record or of the scalar already pending in the batch
+    /// lowered so far is the base and its slot is rewritten, so several destructions in one
+    /// batch, or a destruction after a supply write of the same issuer, leave one write per
+    /// key; a record the batch already wiped is refused like a stored one.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn destroy_token_issuer_operations_v0(
         &self,
         contract_id: [u8; 32],
         block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -104,30 +164,57 @@ impl Drive {
             )?;
         }
 
-        let record = self.fetch_contract_token_lifecycle_operations(
-            contract_id,
-            apply,
-            transaction,
-            &mut drive_operations,
-            platform_version,
+        let lifecycles_path = token_contract_lifecycles_root_path_vec();
+
+        let pending_record = pending_ledger_write(
+            previous_batch_operations.as_deref(),
+            &lifecycles_path,
+            &contract_id,
+        )?;
+        let pending_scalar = pending_ledger_write(
+            previous_batch_operations.as_deref(),
+            &lifecycles_path,
+            &TOKEN_DESTROYED_SUPPLY_KEY,
         )?;
 
-        let direct_query_type = if apply {
-            DirectQueryType::StatefulDirectQuery
-        } else {
-            DirectQueryType::StatelessDirectQuery {
-                in_tree_type: TreeType::NormalTree,
-                query_target: QueryTargetValue(TOKEN_DESTROYED_SUPPLY_SIZE as u32),
+        let record = match &pending_record {
+            Some(pending) if apply => Some(ContractTokenLifecycle::deserialize_from_bytes(
+                pending.bytes.as_slice(),
+            )?),
+            _ => self.fetch_contract_token_lifecycle_operations(
+                contract_id,
+                apply,
+                transaction,
+                &mut drive_operations,
+                platform_version,
+            )?,
+        };
+
+        let destroyed_supply = match &pending_scalar {
+            Some(pending) if apply => {
+                Some(decode_destroyed_supply(&pending.bytes).ok_or_else(|| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "a pending destroyed token supply write has the wrong size",
+                    ))
+                })?)
+            }
+            _ => {
+                let direct_query_type = if apply {
+                    DirectQueryType::StatefulDirectQuery
+                } else {
+                    DirectQueryType::StatelessDirectQuery {
+                        in_tree_type: TreeType::NormalTree,
+                        query_target: QueryTargetValue(TOKEN_DESTROYED_SUPPLY_SIZE as u32),
+                    }
+                };
+                self.fetch_token_destroyed_supply_operations(
+                    direct_query_type,
+                    transaction,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )?
             }
         };
-        let destroyed_supply = self.fetch_token_destroyed_supply_operations(
-            direct_query_type,
-            transaction,
-            &mut drive_operations,
-            &platform_version.drive,
-        )?;
-
-        let lifecycles_path = token_contract_lifecycles_root_path_vec();
 
         if !apply {
             // An insert rather than a replace: the estimator charges a replace no storage,
@@ -162,6 +249,8 @@ impl Drive {
             Some(record) => (record, true),
             None => (ContractTokenLifecycle::new(0, platform_version)?, false),
         };
+        // A record the batch inserts is not stored yet, so its rewrite stays an insert.
+        let record_exists = record_exists && !pending_record.as_ref().is_some_and(|p| p.inserts);
 
         if record.is_wiped() {
             return Err(Error::Drive(DriveError::TokenIssuerAlreadyDestroyed(
@@ -189,25 +278,33 @@ impl Drive {
         )?);
         let record_element = Element::new_item(record.serialize_consume_to_bytes()?);
 
-        if record_exists {
-            drive_operations.push(LowLevelDriveOperation::replace_for_known_path_key_element(
+        let record_write = if record_exists {
+            LowLevelDriveOperation::replace_for_known_path_key_element(
                 lifecycles_path.clone(),
                 contract_id.to_vec(),
                 record_element,
-            ));
+            )
         } else {
-            drive_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
+            LowLevelDriveOperation::insert_for_known_path_key_element(
                 lifecycles_path.clone(),
                 contract_id.to_vec(),
                 record_element,
-            ));
-        }
-
-        drive_operations.push(LowLevelDriveOperation::replace_for_known_path_key_element(
+            )
+        };
+        let scalar_write = LowLevelDriveOperation::replace_for_known_path_key_element(
             lifecycles_path,
             TOKEN_DESTROYED_SUPPLY_KEY.to_vec(),
             Element::new_item(encode_destroyed_supply(new_destroyed_supply)),
-        ));
+        );
+
+        match (pending_record, previous_batch_operations.as_deref_mut()) {
+            (Some(pending), Some(operations)) => operations[pending.index] = record_write,
+            _ => drive_operations.push(record_write),
+        }
+        match (pending_scalar, previous_batch_operations.as_deref_mut()) {
+            (Some(pending), Some(operations)) => operations[pending.index] = scalar_write,
+            _ => drive_operations.push(scalar_write),
+        }
 
         Ok(drive_operations)
     }
@@ -329,6 +426,174 @@ mod tests {
                 .expect("expected the balance"),
             Some(700)
         );
+    }
+
+    fn ledger_writes(batch: &[LowLevelDriveOperation]) -> usize {
+        batch
+            .iter()
+            .filter(|operation| match operation {
+                LowLevelDriveOperation::GroveOperation(grove_op) => {
+                    grove_op.path == token_contract_lifecycles_root_path_vec()
+                }
+                _ => false,
+            })
+            .count()
+    }
+
+    #[test]
+    fn should_accumulate_the_destroyed_supply_of_two_issuers_in_one_batch() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let first_issuer = Identifier::from([3u8; 32]);
+        let second_issuer = Identifier::from([4u8; 32]);
+        create_token(&drive, first_issuer, 0, [1u8; 32]);
+        create_token(&drive, second_issuer, 0, [2u8; 32]);
+        mint(&drive, [1u8; 32], [10u8; 32], 100);
+        mint(&drive, [2u8; 32], [11u8; 32], 200);
+
+        let block_info = BlockInfo::default();
+        let mut batch = drive
+            .destroy_token_issuer_operations(
+                first_issuer.to_buffer(),
+                &block_info,
+                &mut None,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the first destruction");
+        let second = drive
+            .destroy_token_issuer_operations(
+                second_issuer.to_buffer(),
+                &block_info,
+                &mut Some(&mut batch),
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the second destruction");
+        batch.extend(second);
+
+        // Two records and one scalar: the second destruction rewrote the pending scalar.
+        assert_eq!(ledger_writes(&batch), 3);
+
+        // The batch consistency check of the test drive would reject a second scalar write.
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                batch,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the batch to apply");
+
+        drive.assert_token_rollups_consistent(None, platform_version);
+        let totals = drive
+            .calculate_total_tokens_balance(None, platform_version)
+            .expect("expected totals");
+        assert!(totals.ok().expect("expected a verdict"));
+        assert_eq!(totals.total_destroyed_supply, 300);
+        for issuer in [first_issuer, second_issuer] {
+            assert!(drive
+                .fetch_contract_token_lifecycle(issuer.to_buffer(), None, platform_version)
+                .expect("expected to read")
+                .expect("expected a record")
+                .is_wiped());
+        }
+    }
+
+    #[test]
+    fn should_destroy_after_a_supply_write_of_the_same_issuer_in_one_batch() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let contract_id = Identifier::from([3u8; 32]);
+        let token_id = [1u8; 32];
+        create_token(&drive, contract_id, 0, token_id);
+        mint(&drive, token_id, [10u8; 32], 100);
+
+        let mut batch = drive
+            .token_mint_operations(
+                token_id,
+                [10u8; 32],
+                50,
+                false,
+                false,
+                &mut None,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the mint operations");
+        let destruction = drive
+            .destroy_token_issuer_operations(
+                contract_id.to_buffer(),
+                &BlockInfo::default(),
+                &mut Some(&mut batch),
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the destruction operations");
+        batch.extend(destruction);
+
+        // The record write of the mint was rewritten; only the scalar write was added.
+        assert_eq!(ledger_writes(&batch), 2);
+
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                batch,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the batch to apply");
+
+        drive.assert_token_rollups_consistent(None, platform_version);
+        let totals = drive
+            .calculate_total_tokens_balance(None, platform_version)
+            .expect("expected totals");
+        assert!(totals.ok().expect("expected a verdict"));
+        assert_eq!(totals.total_destroyed_supply, 150);
+        let record = drive
+            .fetch_contract_token_lifecycle(contract_id.to_buffer(), None, platform_version)
+            .expect("expected to read")
+            .expect("expected a record");
+        assert_eq!(record.issued_supply(), 150);
+        assert!(record.is_wiped());
+    }
+
+    #[test]
+    fn should_refuse_a_second_destruction_pending_in_the_same_batch() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let contract_id = Identifier::from([3u8; 32]);
+        create_token(&drive, contract_id, 0, [1u8; 32]);
+
+        let mut batch = drive
+            .destroy_token_issuer_operations(
+                contract_id.to_buffer(),
+                &BlockInfo::default(),
+                &mut None,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the first destruction");
+        let result = drive.destroy_token_issuer_operations(
+            contract_id.to_buffer(),
+            &BlockInfo::default(),
+            &mut Some(&mut batch),
+            &mut None,
+            None,
+            platform_version,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::TokenIssuerAlreadyDestroyed(id))) if id == contract_id
+        ));
     }
 
     #[test]

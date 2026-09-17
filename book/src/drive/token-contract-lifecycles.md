@@ -37,7 +37,7 @@ An issuer's rollup can exceed `i64`: two tokens at the largest legal base supply
 | Contract update | `update_contract` v2 | Hands its accumulated batch to every added token's tree creation, so the record is written once per update however many tokens are added. |
 | Supply increase | `add_to_token_total_supply` v1 | Resolves the issuer through the contract info leaf and raises the rollup by the amount actually added (the saturated amount when saturation was allowed). |
 | Supply decrease | `remove_from_token_total_supply` v1 | Lowers the rollup by the same amount. |
-| Destruction | `destroy_token_issuer` | Marks the record wiped and raises the scalar by its rollup: two reads, two writes, whatever the issuer holds. A contract without tokens gets a wiped zero record. |
+| Destruction | `destroy_token_issuer` | Marks the record wiped and raises the scalar by its rollup: two reads, two writes, whatever the issuer holds. A contract without tokens gets a wiped zero record. The operations builder folds onto a write of the record or of the scalar already pending in the batch it is handed, so several destructions composed into one batch accumulate the scalar and a record the batch already wiped is refused. |
 
 Transfers change no rollup and read no record. The supply writers refuse a wiped issuer as corrupted state: every path that changes supply is closed by validation before it reaches Drive, so reaching a wiped record there means a validator missed the check.
 

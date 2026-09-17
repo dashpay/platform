@@ -120,12 +120,16 @@ impl Drive {
         }
     }
 
-    /// The operations of the destruction without applying them.
+    /// The operations of the destruction without applying them. A write of the issuer's
+    /// record or of the destroyed supply scalar already pending in `previous_batch_operations`
+    /// is taken as the base and rewritten in place, so several destructions composed into
+    /// one batch accumulate the scalar and a record the batch already wiped is refused.
     ///
     /// # Parameters
     ///
     /// * `contract_id` - The issuer to destroy.
     /// * `block_info` - The block the destruction happens in.
+    /// * `previous_batch_operations` - The batch lowered so far, amended in place.
     /// * `estimated_costs_only_with_layer_info` - `Some` to price the write without state.
     /// * `transaction` - The current transaction.
     /// * `platform_version` - The platform version to use.
@@ -137,6 +141,7 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -153,6 +158,7 @@ impl Drive {
             Some(0) => self.destroy_token_issuer_operations_v0(
                 contract_id,
                 block_info,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
