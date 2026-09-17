@@ -15,8 +15,9 @@ import XCTest
 /// the persistence sources as of commit 5f58417079 — the last state before
 /// V4, the state the frozen copies under `FrozenSchemas/` are generated
 /// from — through that build's own `DashSchemaV1` / `DashSchemaV2` /
-/// `DashSchemaV3`, and `dash-v4` / `dash-v5` by the builds that registered
-/// V4 and V5, through
+/// `DashSchemaV3`, `dash-v4` by the build that registered V4, and `dash-v5`
+/// by the build that last changed V5 before it shipped (the bounds kind
+/// column), all through
 /// `DashModelContainer.create`. They pin the frozen copies as the pre-V4
 /// build defined them, not what the original V1 release wrote (see the
 /// `DashSchemaV1` doc for why those stores are expected to fail open and
@@ -759,11 +760,11 @@ final class DashModelMigrationTests: XCTestCase {
             "the coin's relationship to its funding transaction survives three stages")
     }
 
-    /// The stage this change adds: a V4 store must migrate to V5 and read
-    /// back with the key usage-limit columns backfilled to "no limits",
-    /// which is exactly what a version 0 key is. V4 registers a frozen
-    /// graph, so the row goes in as V4's copy and comes out as the live
-    /// one: the same entity, two properties wider.
+    /// The V4 -> V5 stage: a V4 store must migrate to V5 and read back with
+    /// the key usage-limit columns backfilled to "no limits", which is
+    /// exactly what a version 0 key is. V4 registers a frozen graph, so the
+    /// row goes in as V4's copy and comes out as the live one: the same
+    /// entity, three properties wider.
     @MainActor
     func testV4StoreMigratesToV5AndBackfillsTheKeyLimitColumns() throws {
         let directory = FileManager.default.temporaryDirectory
@@ -829,9 +830,88 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertTrue(reread.hasLimits)
     }
 
+    /// The bounds half of the same stage: a V4 store's key rows arrive with
+    /// `contractBoundsKind` backfilled to NULL, which the model reads as
+    /// "legacy row, infer the variant the way V4 did", and the column is
+    /// writable on the migrated row.
+    @MainActor
+    func testV4StoreMigratesToV5AndBackfillsTheContractBoundsKind() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("dash.store")
+
+        let contractId = Data(repeating: 0x7C, count: 32)
+
+        let v4Schema = Schema(versionedSchema: DashSchemaV4.self)
+        let v4Configuration = ModelConfiguration(
+            "DashContractBoundsKindMigrationTest",
+            schema: v4Schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none)
+        var v4Container: ModelContainer? = try ModelContainer(
+            for: v4Schema,
+            configurations: [v4Configuration])
+        v4Container?.mainContext.insert(DashSchemaV4.PersistentPublicKey(
+            keyId: 3,
+            purpose: .authentication,
+            securityLevel: .high,
+            keyType: .ecdsaSecp256k1,
+            publicKeyData: Data(repeating: 0x02, count: 33),
+            contractBounds: [contractId],
+            contractBoundsDocumentTypeName: "contactRequest",
+            identityId: "legacyDocTypeKey"))
+        v4Container?.mainContext.insert(DashSchemaV4.PersistentPublicKey(
+            keyId: 4,
+            purpose: .authentication,
+            securityLevel: .high,
+            keyType: .ecdsaSecp256k1,
+            publicKeyData: Data(repeating: 0x03, count: 33),
+            contractBounds: [contractId],
+            identityId: "legacyContractKey"))
+        try v4Container?.mainContext.save()
+        v4Container = nil
+
+        let v5Schema = Schema(versionedSchema: DashSchemaV5.self)
+        let v5Configuration = ModelConfiguration(
+            "DashContractBoundsKindMigrationTest",
+            schema: v5Schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none)
+        let migrated = try ModelContainer(
+            for: v5Schema,
+            migrationPlan: DashMigrationPlan.self,
+            configurations: [v5Configuration])
+
+        let rows = try migrated.mainContext.fetch(
+            FetchDescriptor<PersistentPublicKey>(sortBy: [SortDescriptor(\.keyId)]))
+        XCTAssertEqual(rows.map(\.keyId), [3, 4], "both V4 rows survive the migration")
+        XCTAssertEqual(
+            rows.map(\.contractBoundsKind), [nil, nil],
+            "a row written before the column backfills NULL")
+        XCTAssertEqual(rows[0].contractBounds?.first, contractId)
+        XCTAssertEqual(
+            rows[0].effectiveContractBoundsKind, 2,
+            "a legacy row with a doc-type name still infers SingleContractDocumentType")
+        XCTAssertEqual(
+            rows[1].effectiveContractBoundsKind, 1,
+            "a legacy row with a bare id still infers SingleContract")
+
+        // And the new column is writable on the migrated row.
+        rows[1].contractBoundsKind = 3
+        try migrated.mainContext.save()
+        let reread = try migrated.mainContext.fetch(
+            FetchDescriptor<PersistentPublicKey>(sortBy: [SortDescriptor(\.keyId)]))
+        XCTAssertEqual(reread[1].effectiveContractBoundsKind, 3)
+    }
+
     /// What makes the V4 -> V5 stage lightweight: the two versions name the
     /// same entity set, and V5 only widens `PersistentPublicKey`. Also pins
-    /// that V4's frozen copy does NOT carry the two columns: one that came
+    /// that V4's frozen copy does NOT carry the three columns: one that came
     /// back would silently change V4's checksum and strand every store the
     /// V4 build wrote.
     func testV4AndV5NameTheSameEntitySet() throws {
@@ -844,10 +924,14 @@ final class DashModelMigrationTests: XCTestCase {
         let key = try XCTUnwrap(v5.entities.first { $0.name == "PersistentPublicKey" })
         XCTAssertNotNil(key.attributesByName["totalBudget"])
         XCTAssertNotNil(key.attributesByName["expiresAt"])
+        XCTAssertNotNil(key.attributesByName["contractBoundsKind"])
 
         let frozenKey = try XCTUnwrap(v4.entities.first { $0.name == "PersistentPublicKey" })
         XCTAssertNil(frozenKey.attributesByName["totalBudget"])
         XCTAssertNil(frozenKey.attributesByName["expiresAt"])
+        XCTAssertNil(
+            frozenKey.attributesByName["contractBoundsKind"],
+            "V4's frozen copy predates the column")
 
         // V5 widens that entity and nothing else.
         for name in v5.entities.map(\.name) where name != "PersistentPublicKey" {

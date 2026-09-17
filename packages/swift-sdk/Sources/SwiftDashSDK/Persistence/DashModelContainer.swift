@@ -473,24 +473,37 @@ public enum DashSchemaV4: VersionedSchema {
     }
 }
 
-/// Version 5 adds the key usage-limit columns (protocol version 14) to
-/// `PersistentPublicKey`, on the same entity set as V4:
-///   - `totalBudget` (optional): the credits an authentication key may take
-///     from its identity over its whole lifetime, `nil` for a key registered
-///     without a budget. Signed carrier for the protocol's unsigned
-///     `Credits`, read through `totalBudgetCredits`.
-///   - `expiresAt` (optional): the block time in milliseconds from which the
-///     key can no longer sign, `nil` for a key registered without an expiry.
-///     Read through `expiresAtMillis`.
-/// Both are what make a key an `IdentityPublicKey::V1`; without the columns a
-/// limited key would come back unlimited on cold restart and the wallet would
-/// offer it for signing work consensus refuses. Existing rows migrate with
-/// both `NULL`, which is exactly "a version 0 key, no limits".
+/// Version 5 adds three optional columns to `PersistentPublicKey`, on the
+/// same entity set as V4:
+///   - `totalBudget`: the credits an authentication key may take from its
+///     identity over its whole lifetime, `nil` for a key registered without
+///     a budget. Signed carrier for the protocol's unsigned `Credits`, read
+///     through `totalBudgetCredits`.
+///   - `expiresAt`: the block time in milliseconds from which the key can
+///     no longer sign, `nil` for a key registered without an expiry. Read
+///     through `expiresAtMillis`.
+///   - `contractBoundsKind`: the FFI `contract_bounds_kind` discriminant
+///     (0 none, 1 SingleContract, 2 SingleContractDocumentType,
+///     3 ContractGroup) the key row was written with. The two columns V4
+///     had (`contractBoundsData`, `contractBoundsDocumentTypeName`) cannot
+///     tell a contract-group bound apart from a whole-contract one, so
+///     restoring an identity that held a group-bound AUTHENTICATION key
+///     brought the key back unbounded and changed its authorization
+///     metadata. `NULL` reads as "legacy row, infer the variant the way V4
+///     did" (`PersistentPublicKey.effectiveContractBoundsKind`).
+/// The two limits are what make a key an `IdentityPublicKey::V1` (protocol
+/// version 14); without the columns a limited key would come back unlimited
+/// on cold restart and the wallet would offer it for signing work consensus
+/// refuses. Existing rows migrate with all three `NULL`, which is exactly "a
+/// version 0 key, no limits, bounds as V4 stored them".
 ///
-/// Both columns are additive and optional, so a lightweight migration
-/// preserves every existing row.
+/// All three columns are additive and optional, so a lightweight migration
+/// preserves every existing row. The bounds kind joined V5 before the
+/// version shipped, in the change that rewrote the `dash-v5` fixture store
+/// on purpose (see the `DashModelContainer.modelTypes` doc); a store written
+/// by a V5 build from before that change matches no registered version.
 ///
-/// Registering it required freezing every model V4 registers: the generated
+/// Registering V5 required freezing every model V4 registers: the generated
 /// copies under `FrozenSchemas/`, see `scripts/freeze_schema_models.py`.
 /// V4 needed the whole graph rather than a row for `PersistentPublicKey`
 /// alone: see `DashModelContainer.v4ModelTypes`.
