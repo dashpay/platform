@@ -18,6 +18,7 @@
 //!     produced by the query layer.
 //!   - The query function re-exports from `queries::*`.
 
+mod json;
 mod put;
 mod queries;
 mod util;

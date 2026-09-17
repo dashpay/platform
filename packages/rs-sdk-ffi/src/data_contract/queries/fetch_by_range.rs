@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
+use crate::data_contract::json::contract_json_value;
 use crate::error::{DashSDKError, DashSDKErrorCode, FFIError};
 use crate::runtime::BigStackRuntime;
 use crate::sdk::SDKWrapper;
@@ -145,17 +146,13 @@ unsafe fn fetch_data_contracts_by_range(
     // empty so an exhausted enumeration reads as `[]` rather than an error.
     let page = page?.unwrap_or_default();
 
+    // Render every contract at the SDK's network protocol version, the same
+    // way every other contract emitter does.
+    let platform_version = wrapper.sdk.version();
     let mut entries = Vec::with_capacity(page.0.len());
     for (id, contract) in page.0.iter() {
-        // The outer DataContract enum has a manual Serialize impl that threads the
-        // active platform version, so canonical serde is the right JSON here.
         let contract_json = match contract {
-            Some(contract) => serde_json::to_value(contract).map_err(|e| {
-                DashSDKError::new(
-                    DashSDKErrorCode::SerializationError,
-                    format!("Failed to convert contract to JSON: {}", e),
-                )
-            })?,
+            Some(contract) => contract_json_value(contract, platform_version)?,
             None => Value::Null,
         };
 
