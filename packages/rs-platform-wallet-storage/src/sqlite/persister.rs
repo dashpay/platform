@@ -1455,11 +1455,10 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// and counted on [`last_load_degradation`](Self::last_load_degradation)
     /// instead, and the persister is read-only for the rest of its life.
     ///
-    /// Two sites degrade in **both** policies because their signal cannot
-    /// distinguish corruption from a healthy wallet: a used address whose
-    /// owner is not one of this wallet's funds accounts, and a restored
-    /// address that does not resolve against its account xpub. Both re-warm
-    /// on the next sync and the balance total is exact regardless.
+    /// A used address whose owner is not a funds account is counted as
+    /// degraded in either policy. A restored unspent coin whose address
+    /// cannot be verified against its account fails wallet restoration;
+    /// restore the missing derivation range before retrying.
     ///
     /// **Query budget.** Platform addresses load via grouped bulk scans
     /// (constant), but the keyless per-wallet payload is a fan-out: one

@@ -78,13 +78,11 @@ runs migrations and migrating a structurally corrupt file only deepens the
 damage. Recovery also refuses `auto_backup_dir = None`, so the rescue
 attempt always keeps a rollback point.
 
-Two sites degrade under *both* policies, because their signal cannot
-distinguish corruption from a healthy wallet: a used address whose owner is
-not one of the wallet's funds accounts (what a masternode-operator wallet
-looks like — provider accounts are not funds accounts), and a restored
-address that does not resolve against its account xpub (foreign, or
-legitimately sparse past the bounded-work cap). Both re-warm on the next
-sync; the balance total is exact regardless.
+A used address whose owner is not one of the wallet's funds accounts degrades
+under both policies (provider accounts are not funds accounts). A persisted
+unspent coin whose address cannot be verified against its restored account
+instead fails wallet restoration. Restore a missing derivation range before
+retrying; the loader cannot report an exact balance while ownership is unknown.
 
 `LoadDegradation` also reports `unimplemented_rows`: rows sitting in tables
 `load()` has no reader for. Those are intact, merely unread, so they never

@@ -411,7 +411,7 @@ async fn assert_spent_utxo_is_not_resurrected(records_spend_first: bool, record_
     drop(persister);
 
     let reopened = reopen(&path);
-    let (core, utxo_accounts, restored_spends) = {
+    let (mut core, utxo_accounts, restored_spends) = {
         let conn = reopened.lock_conn_for_test();
         core_state::load_state(
             &conn,
@@ -421,6 +421,23 @@ async fn assert_spent_utxo_is_not_resurrected(records_spend_first: bool, record_
         )
         .expect("load state")
     };
+
+    core.records.sort_by_key(|record| {
+        record.txid
+            != if records_spend_first {
+                spend_txid
+            } else {
+                funding_outpoint.txid
+            }
+    });
+    assert_eq!(
+        core.records.first().map(|record| record.txid),
+        Some(if records_spend_first {
+            spend_txid
+        } else {
+            funding_outpoint.txid
+        })
+    );
 
     let mut restored_info = ManagedWalletInfo::from_wallet(&wallet, 1);
     platform_wallet_storage::sqlite::rehydrate::apply_persisted_core_state(

@@ -119,9 +119,8 @@ pub struct CoreChangeSet {
     /// account's bucket so the per-account transaction callback still
     /// writes the tx↔account involvement join for payload-only
     /// matches (provider owner/voting keys) that restart restoration
-    /// depends on. Persisters that resolve accounts another way
-    /// (SQLite looks the address up in `core_derived_addresses`) can
-    /// ignore this field.
+    /// depends on. SQLite also persists these slices for accurate
+    /// per-account transaction history after restart.
     ///
     /// Merge coalesces by `(txid, account_type)` newest-wins, mirroring
     /// the wallet-level coalesce on `records`.
@@ -305,10 +304,11 @@ pub struct CoreChangeSet {
 /// Why the engine did not credit a `Received` / `Change` output of a
 /// record it emitted — see [`CoreChangeSet::utxo_credit_verdicts`].
 ///
-/// A persister may treat [`Self::ObservedSpent`] and [`Self::Doomed`] as
-/// positive evidence that the coin is not spendable and store its row as
-/// spent; [`Self::Uncredited`] carries no context and only says "do not
-/// hand this coin back as unspent on a re-delivery".
+/// [`Self::ObservedSpent`] is durable spend evidence. [`Self::Doomed`]
+/// suppresses this delivery but is not evidence that the output itself was
+/// spent; a persister removes a stale unspent row but retains independent
+/// spent evidence. A later authoritative confirmation can make it spendable.
+/// [`Self::Uncredited`] only says not to credit this delivery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum UtxoCreditVerdict {
@@ -320,8 +320,8 @@ pub enum UtxoCreditVerdict {
         height: u32,
     },
     /// Not in `utxos`: the record is an unconfirmed transaction one of
-    /// whose inputs a block already spent, so it can never confirm and
-    /// nothing it created was credited (`doomed_by_a_settled_spend`).
+    /// whose inputs a block already spent, so this candidate cannot confirm
+    /// and nothing it created was credited (`doomed_by_a_settled_spend`).
     Doomed,
     /// Not in `utxos` for a reason the bridge cannot name — an account-level
     /// spent mark, a spend, an abandon or a sweep between emit and drain.
