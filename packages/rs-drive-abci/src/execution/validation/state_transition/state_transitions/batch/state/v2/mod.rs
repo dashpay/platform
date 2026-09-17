@@ -78,10 +78,13 @@ impl DocumentsBatchStateTransitionStateValidationV2 for BatchTransition {
             execution_context,
         )?;
 
+        // A result with errors never reaches the bounds check, so nothing is resolved for it.
+        let bounds_will_be_checked =
+            signed_by_a_group_bound_key && validation_result.errors.is_empty();
         if let Some(action) = validation_result
             .data
             .as_mut()
-            .filter(|_| signed_by_a_group_bound_key)
+            .filter(|_| bounds_will_be_checked)
         {
             let platform_version = platform.state.current_platform_version()?;
             let contract_ids: BTreeSet<Identifier> = self

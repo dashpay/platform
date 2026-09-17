@@ -91,7 +91,9 @@ mod tests {
     use crate::execution::types::state_transition_execution_context::{
         StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
     };
-    use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::contract_groups::{register_group, single_owner_info};
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
     use dpp::consensus::basic::BasicError;
@@ -619,31 +621,16 @@ mod tests {
 
     fn platform_with_contract_group(
         contract_group_id: Identifier,
-    ) -> crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike> {
-        use dpp::contract_group::{ContractGroupInfo, ContractGroupRegistration};
+    ) -> TempPlatform<MockCoreRPCLike> {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_genesis_state();
-        let info: ContractGroupInfo = (
-            Identifier::from([0x60; 32]),
-            ContractGroupRegistration {
-                admins: Default::default(),
-                name: None,
-                description: None,
-            },
-        )
-            .into();
-        platform
-            .drive
-            .insert_contract_group(
-                contract_group_id,
-                &info,
-                &BlockInfo::default(),
-                true,
-                None,
-                PlatformVersion::latest(),
-            )
-            .expect("expected to register the group");
+        register_group(
+            &platform,
+            contract_group_id,
+            &single_owner_info(Identifier::from([0x60; 32]), None, None),
+            PlatformVersion::latest(),
+        );
         platform
     }
 

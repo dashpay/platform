@@ -928,7 +928,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_contract_bounds_kind_3_decodes_a_contract_group_and_rejects_null_id() {
+    fn should_decode_kind_3_as_a_contract_group_and_reject_a_null_id() {
         let pk = [0x02u8; 33];
         let contract_group_id = [0x47u8; 32];
         let mut row = ffi_row(0, &pk);

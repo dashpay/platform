@@ -1246,7 +1246,7 @@ mod tests {
     }
 
     #[test]
-    fn test_identity_key_entry_ffi_contract_bounds_contract_group() {
+    fn should_flatten_contract_group_bounds_as_kind_3() {
         use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
         let contract_group_id = Identifier::from([0x47; 32]);
         let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {

@@ -58,9 +58,10 @@ level do not already allow.
 - A group-bound key may sign only Batch transitions. A member on contract `C` is inside
   the bounds when `C` is a whole-contract member of the group, when the member's document
   type is a member of the group, or when the member's token is a member of the group.
-  Consensus reads `C`'s group memberships once per batch member and bills the read; a
-  member outside the group fails as a paid `ContractBoundedKeyOutOfBoundsError`, as for
-  a contract bound.
+  Consensus reads the group memberships of each distinct contract the batch touches
+  once, however many members name that contract, and bills each read once; a member
+  outside the group fails as a paid `ContractBoundedKeyOutOfBoundsError`, as for a
+  contract bound.
 - Memberships are append-only, so what a group-bound key may sign grows whenever the
   group's owner or an admin adds a contract, document type or token. Binding a key to a
   group trusts the group's owner and admins with that growth.

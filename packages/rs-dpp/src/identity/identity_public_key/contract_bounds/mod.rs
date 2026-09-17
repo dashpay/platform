@@ -1,3 +1,4 @@
+#[cfg(feature = "state-transitions")]
 use crate::contract_group::ContractGroupMember;
 use crate::identifier::Identifier;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
@@ -416,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn contract_bounds_contract_group_json_round_trip() {
+    fn should_round_trip_contract_group_bounds_through_json() {
         let id = Identifier::from([0xEFu8; 32]);
         let bounds = ContractBounds::ContractGroup { id };
 

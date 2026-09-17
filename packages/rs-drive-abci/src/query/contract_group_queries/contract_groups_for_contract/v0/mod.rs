@@ -100,10 +100,8 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::error::query::QueryError;
-    use crate::query::contract_group_queries::tests::{
-        join_group, register_group, single_owner_info,
-    };
     use crate::query::tests::setup_platform;
+    use crate::test::helpers::contract_groups::{join_group, register_group, single_owner_info};
     use dpp::contract_group::ContractGroupMember;
     use dpp::dashcore::Network;
     use dpp::identifier::Identifier;
