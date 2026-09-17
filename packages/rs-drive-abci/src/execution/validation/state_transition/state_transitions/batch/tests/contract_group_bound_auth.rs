@@ -1,6 +1,9 @@
 use super::*;
+use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::validation::state_transition::tests::setup_identity_without_adding_it;
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::MockCoreRPCLike;
+use crate::test::helpers::contract_groups::{join_group, register_group, single_owner_info};
 use crate::test::helpers::setup::TempPlatform;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::contract_group::{
@@ -11,6 +14,7 @@ use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{accessors::IdentitySettersV0, IdentityPublicKey};
 use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
+use dpp::version::PLATFORM_VERSIONS;
 use std::collections::BTreeSet;
 
 const KEY_GROUP: [u8; 32] = [0x61; 32];
@@ -21,26 +25,12 @@ fn register_contract_group(
     contract_group_id: [u8; 32],
     version: &PlatformVersion,
 ) {
-    let info: ContractGroupInfo = (
-        Identifier::from([0x60; 32]),
-        ContractGroupRegistration {
-            admins: BTreeSet::new(),
-            name: None,
-            description: None,
-        },
-    )
-        .into();
-    platform
-        .drive
-        .insert_contract_group(
-            Identifier::from(contract_group_id),
-            &info,
-            &BlockInfo::default(),
-            true,
-            None,
-            version,
-        )
-        .expect("expected to register the group");
+    register_group(
+        platform,
+        Identifier::from(contract_group_id),
+        &single_owner_info(Identifier::from([0x60; 32]), None, None),
+        version,
+    );
 }
 
 fn join_contract_group(
@@ -50,20 +40,12 @@ fn join_contract_group(
     member: ContractGroupMember,
     version: &PlatformVersion,
 ) {
-    platform
-        .drive
-        .insert_contract_group_memberships(
-            contract_id,
-            &[ContractGroupMembership {
-                contract_group_id: Identifier::from(contract_group_id),
-                member,
-            }],
-            &BlockInfo::default(),
-            true,
-            None,
-            version,
-        )
-        .expect("expected to record the membership");
+    join_group(
+        platform,
+        contract_id,
+        &[(Identifier::from(contract_group_id), member)],
+        version,
+    );
 }
 
 /// Sign with the original unbounded key metadata to bypass the SDK preflight; validators must
@@ -167,6 +149,31 @@ async fn should_authorize_documents_by_the_contract_group_memberships_of_their_c
         .await
         .unwrap();
         let bytes = batch.serialize_to_bytes().unwrap();
+
+        // CheckTx resolves the memberships through the same transformer and reaches the same
+        // verdict, so the mempool neither admits a batch outside the group nor drops one
+        // inside it.
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+        let check_tx_result = platform
+            .check_tx(&bytes, CheckTxLevel::FirstTimeCheck, &platform_ref, version)
+            .expect("expected to check tx");
+        let check_tx_codes: Vec<u32> = check_tx_result
+            .errors
+            .iter()
+            .map(ErrorWithCode::code)
+            .collect();
+        match case {
+            "whole_contract" | "document_type" | "joined_after_registration" => {
+                assert!(check_tx_codes.is_empty(), "{case}: {check_tx_codes:?}")
+            }
+            _ => assert_eq!(check_tx_codes, vec![20014], "{case}"),
+        }
+
         let tx = platform.drive.grove.start_transaction();
         let block_info = BlockInfo {
             time_ms: 100,
@@ -432,7 +439,8 @@ async fn should_reject_non_batch_use_of_a_key_bound_to_a_contract_group() {
 
 /// The transformer reads a contract's group memberships only when the batch is signed by a key
 /// bound to a contract group. Any other batch is transformed exactly as before, with no extra
-/// read, and a transformer that is not told who signed resolves nothing.
+/// read, and a transformer that is not told who signed resolves nothing. Nor does it resolve
+/// anything for a batch that already failed: such a result never reaches the bounds check.
 #[tokio::test]
 async fn should_resolve_contract_group_memberships_only_for_a_group_bound_signing_key() {
     use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
@@ -444,7 +452,7 @@ async fn should_resolve_contract_group_memberships_only_for_a_group_bound_signin
     use dpp::version::DefaultForPlatformVersion;
     use drive::state_transition_action::StateTransitionAction;
 
-    for group_bound in [false, true] {
+    for (group_bound, fails_in_state) in [(false, false), (true, false), (true, true)] {
         let version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -500,20 +508,38 @@ async fn should_resolve_contract_group_memberships_only_for_a_group_bound_signin
             .unwrap();
         set_valid_profile_payment_addresses(&mut document, profile);
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
-        let batch = BatchTransition::new_document_creation_transition_from_document(
-            document,
-            profile,
-            entropy.0,
-            &signing_key,
-            2,
-            0,
-            None,
-            &signer,
-            version,
-            None,
-        )
-        .await
-        .unwrap();
+        let batch = if fails_in_state {
+            // Replacing a profile that was never created fails in the transformer, which
+            // still yields an action (the nonce bump) next to the error.
+            BatchTransition::new_document_replacement_transition_from_document(
+                document,
+                profile,
+                &signing_key,
+                2,
+                0,
+                None,
+                &signer,
+                version,
+                None,
+            )
+            .await
+            .unwrap()
+        } else {
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                profile,
+                entropy.0,
+                &signing_key,
+                2,
+                0,
+                None,
+                &signer,
+                version,
+                None,
+            )
+            .await
+            .unwrap()
+        };
 
         let state = platform.state.load();
         let platform_ref = PlatformRef {
@@ -546,9 +572,13 @@ async fn should_resolve_contract_group_memberships_only_for_a_group_bound_signin
                 ),
             }
             .expect("expected to transform the batch");
-            let StateTransitionAction::BatchAction(action) =
-                result.into_data().expect("expected an action")
-            else {
+            assert_eq!(
+                result.errors.is_empty(),
+                !fails_in_state,
+                "{:?}",
+                result.errors
+            );
+            let Some(StateTransitionAction::BatchAction(action)) = result.data else {
                 panic!("expected a batch action");
             };
             action
@@ -559,8 +589,8 @@ async fn should_resolve_contract_group_memberships_only_for_a_group_bound_signin
         let with_signer = resolved_for(Some(&signer_identity));
         assert_eq!(
             with_signer.is_some(),
-            group_bound,
-            "group_bound={group_bound}"
+            group_bound && !fails_in_state,
+            "group_bound={group_bound} fails_in_state={fails_in_state}"
         );
         if let Some(memberships) = with_signer {
             assert!(memberships.contains(&ContractGroupMembership {
@@ -571,6 +601,29 @@ async fn should_resolve_contract_group_memberships_only_for_a_group_bound_signin
         assert!(
             resolved_for(None).is_none(),
             "a transformer that is not told who signed resolves nothing"
+        );
+    }
+}
+
+/// Advanced structure v1 judges a group-bound key from the memberships that transform v2
+/// resolved into the action. Paired with an older transformer it would find none and fail every
+/// such batch with a corrupted code execution error, so no protocol version may select one
+/// without the other.
+#[test]
+fn should_pair_advanced_structure_v1_with_the_transformer_that_resolves_memberships() {
+    for version in PLATFORM_VERSIONS {
+        let batch = &version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition;
+        assert_eq!(
+            batch.advanced_structure >= 1,
+            batch.transform_into_action >= 2,
+            "protocol version {}: advanced structure {} with transform_into_action {}",
+            version.protocol_version,
+            batch.advanced_structure,
+            batch.transform_into_action
         );
     }
 }
