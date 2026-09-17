@@ -309,7 +309,7 @@ In `rs-sdk`, `ContractGroupInfo`, `ContractGroupMembersPage` and `ContractGroupM
 
 ## Versioning Touchpoints
 
-Contract groups arrive with protocol version 14, which is unreleased, so every table below was edited in place rather than copied into a new version (the rule in [Coding Conventions](../contributing/coding-conventions.md)).
+Contract groups arrived with protocol version 14, which was unreleased while they were built, so every table below was edited in place rather than copied into a new version (the rule in [Coding Conventions](../contributing/coding-conventions.md)).
 
 | Table | What changed |
 |-------|--------------|

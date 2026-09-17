@@ -415,7 +415,7 @@ What the query returns is the state as of the last committed block. A transition
 
 ## Versioning Touchpoints
 
-Everything is gated to protocol version 14. Tables that protocol version 14 already owned were amended in place; one new table was needed.
+Everything is gated to protocol version 14. Tables that protocol version 14 already owned (it was unreleased at the time) were amended in place; one new table was needed.
 
 | Table | Slot | Change |
 |---|---|---|
@@ -430,7 +430,7 @@ Everything is gated to protocol version 14. Tables that protocol version 14 alre
 | `DRIVE_ABCI_QUERY_VERSIONS_V0` and `_V1` | `identity_based_queries.keys_remaining_budgets` | new slot at 0; the Drive methods behind it are `None` before 14, which is what refuses the query there |
 | `DRIVE_VERIFY_METHOD_VERSIONS_V1` | `identity.verify_identity_keys_remaining_budgets` | new, 0 (verification is client side and not gated) |
 
-Two of these are worth a second look. Identity signature validation v1 and shielded proof validation v1 were introduced for protocol version 14 by the contract bounds work and had never shipped, so they were [extended in place](../contributing/coding-conventions.md#shipped-generations-are-frozen) rather than given a v2. `validate_fees_of_event` and `execute_event` had shipped, so they got new generations, and those generations delegate to v0 for every event they do not handle instead of copying it.
+Two of these are worth a second look. Identity signature validation v1 and shielded proof validation v1 were introduced for protocol version 14 by the contract bounds work and had not shipped yet, so they were [extended in place](../contributing/coding-conventions.md#shipped-generations-are-frozen) rather than given a v2. `validate_fees_of_event` and `execute_event` had shipped, so they got new generations, and those generations delegate to v0 for every event they do not handle instead of copying it.
 
 ## Fees
 
