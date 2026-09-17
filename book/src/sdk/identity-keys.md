@@ -222,7 +222,9 @@ a version 0 key, and turn a key into a limited one with `IdentityPublicKey::with
   signs at `expires_at - 1` and not at `expires_at`. A key cannot be registered already expired.
 
 The limits are part of the signable bytes of the transition that registers the key and cannot
-be changed afterwards. Refusals for a spent, exceeded or expired key leave the transition
+be changed afterwards. An identity created from the shielded pool is the exception: it has no
+identity signature and its sighash does not cover the limits, so a version 1 key is refused
+there and has to be added with an identity update. Refusals for a spent, exceeded or expired key leave the transition
 unpaid, like an identity that cannot afford its fee. The full rules and error codes are in
 `docs/protocol/authentication-key-limits.md`.
 

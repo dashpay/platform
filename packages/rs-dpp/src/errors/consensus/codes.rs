@@ -219,6 +219,7 @@ impl ErrorWithCode for BasicError {
             Self::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError(_) => 10535,
             Self::IdentityPublicKeyLimitsNotAllowedError(_) => 10536,
             Self::InvalidIdentityPublicKeyBudgetError(_) => 10537,
+            Self::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(_) => 10538,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,

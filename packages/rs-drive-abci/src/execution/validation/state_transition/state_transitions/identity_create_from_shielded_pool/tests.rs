@@ -1165,3 +1165,63 @@ fn should_refuse_a_key_bound_to_a_contract_group_before_verifying_the_proof() {
         result.errors
     );
 }
+
+/// `validate_shielded_proof` v1 refuses a version 1 key, the format that can carry a budget or an
+/// expiry, before the Orchard sighash preimage is built: the preimage lists the key fields it
+/// binds, the limits are not among them, and a hash based key carries no proof of possession
+/// that would bind them instead.
+#[test]
+fn should_refuse_a_version_1_key_before_verifying_the_proof() {
+    use crate::execution::validation::state_transition::processor::traits::shielded_proof::StateTransitionShieldedProofValidationV0;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
+    use dpp::state_transition::StateTransition;
+
+    let version = PlatformVersion::latest();
+    let limited_key = |budget, expires_at| IdentityPublicKeyInCreationV1 {
+        id: 1,
+        key_type: KeyType::ECDSA_HASH160,
+        purpose: Purpose::AUTHENTICATION,
+        security_level: SecurityLevel::HIGH,
+        contract_bounds: None,
+        read_only: false,
+        data: vec![0x72; 20].into(),
+        budget,
+        expires_at,
+        signature: Default::default(),
+    };
+
+    // With limits, and without: the preimage cannot tell a version 1 key from a version 0 key,
+    // so the format itself is refused.
+    for key in [
+        limited_key(Some(1_000), Some(2_000)),
+        limited_key(None, None),
+    ] {
+        let st: StateTransition =
+            transition(vec![master_key(), key.into()], vec![action(30)]).into();
+        let result = st
+            .validate_shielded_proof(version)
+            .expect("a refusal is a consensus error, not an internal one");
+        assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+        assert_eq!(result.errors[0].code(), 10538);
+    }
+
+    // The limits are what the preimage would have missed: the same keys with and without them
+    // produce the same bytes, which is why the refusal has to exist.
+    let identity_id = [7u8; 32];
+    let fallback = dpp::address_funds::PlatformAddress::P2pkh([9u8; 20]);
+    let preimage = |key: IdentityPublicKeyInCreationV1| {
+        dpp::shielded::identity_create_from_shielded_extra_sighash_data(
+            &identity_id,
+            1_000,
+            &fallback,
+            &[key.into()],
+            version,
+        )
+        .expect("expected a preimage")
+    };
+    assert_eq!(
+        preimage(limited_key(Some(1_000), Some(2_000))),
+        preimage(limited_key(None, None))
+    );
+}

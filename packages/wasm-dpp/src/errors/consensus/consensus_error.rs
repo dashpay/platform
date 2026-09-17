@@ -98,7 +98,9 @@ use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupAction
 use dpp::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::consensus::basic::identity::{
-    IdentityPublicKeyLimitsNotAllowedError, InvalidIdentityPublicKeyBudgetError,
+    IdentityPublicKeyLimitsNotAllowedError,
+    IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError,
+    InvalidIdentityPublicKeyBudgetError,
 };
 use dpp::consensus::signature::{PublicKeyBudgetExhaustedError, PublicKeyExpiredError};
 use dpp::consensus::state::identity::identity_public_key_already_expired_error::IdentityPublicKeyAlreadyExpiredError;
@@ -1086,6 +1088,13 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::InvalidIdentityPublicKeyBudgetError(e) => {
             generic_consensus_error!(InvalidIdentityPublicKeyBudgetError, e).into()
+        }
+        BasicError::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(e) => {
+            generic_consensus_error!(
+                IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError,
+                e
+            )
+            .into()
         }
     }
 }

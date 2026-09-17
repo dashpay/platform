@@ -57,6 +57,7 @@ use crate::consensus::basic::document::{
     MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::identity::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError;
+use crate::consensus::basic::identity::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError;
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
@@ -759,6 +760,11 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidIdentityPublicKeyBudgetError(InvalidIdentityPublicKeyBudgetError),
+
+    #[error(transparent)]
+    IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(
+        IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError,
+    ),
 }
 
 impl From<BasicError> for ConsensusError {

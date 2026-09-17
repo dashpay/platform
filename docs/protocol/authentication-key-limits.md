@@ -44,6 +44,13 @@ does.
 Registration goes through the normal identity create or identity update flow. Whoever adds a
 budgeted key pays for the entry that tracks what is left of its budget.
 
+The one exception is an identity created from the shielded pool. That transition has no identity
+signature: its keys are bound into the Orchard sighash field by field, in a layout that predates
+the version 1 key, so a budget or an expiry would not be covered and could be altered in transit
+on a key type without a proof of possession. A version 1 key is refused there
+(`IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError`, 10538), by consensus and by
+the transition builder; add it with an identity update once the identity exists.
+
 ## What counts against a budget
 
 Everything a state transition signed with the key takes from the identity:

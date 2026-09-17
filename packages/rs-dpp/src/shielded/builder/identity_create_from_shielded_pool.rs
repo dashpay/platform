@@ -199,6 +199,19 @@ where
             key.id()
         )));
     }
+    // Likewise for a version 1 key: a budget or an expiry is not in the sighash layout, so it
+    // would not be bound to the spend.
+    if let Some(key) = in_creation_keys
+        .iter()
+        .find(|key| matches!(key, IdentityPublicKeyInCreation::V1(_)))
+    {
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "key {} is a version 1 key (the format that can carry a budget or an expiry), which \
+             an identity created from the shielded pool cannot register; add it with an \
+             identity update",
+            key.id()
+        )));
+    }
 
     let bundle = build_spend_bundle_with(
         spends,
