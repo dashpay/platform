@@ -36,10 +36,11 @@ pub trait UpdateIdentityKeyLimits: Waitable {
     /// transition claims its next revision.
     ///
     /// If `signing_key_to_use` is not set, the first MASTER key, else the first CRITICAL
-    /// authentication key without limits, that the signer can sign with is used.
+    /// authentication key without limits and without contract bounds, that the signer can sign
+    /// with is used.
     ///
-    /// This method resolves once the state transition is proved executed, with the key as it is
-    /// stored after the update.
+    /// This method resolves once the key is proved to hold the requested limits at the claimed
+    /// revision, with the key as it is stored after the update.
     #[allow(clippy::too_many_arguments)]
     async fn update_key_limits<S: Signer<IdentityPublicKey> + Send>(
         &self,
@@ -109,8 +110,11 @@ impl UpdateIdentityKeyLimits for Identity {
         .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-        // The proof binds the rewritten key and the revision, so the strict wait applies.
-        let identity: PartialIdentity = state_transition.broadcast_and_wait(sdk, settings).await?;
+        // The proof shows the rewritten key and the revision, not this exact transition (the
+        // nonce is not stored), so it is waited for as affected state.
+        let identity: PartialIdentity = state_transition
+            .broadcast_and_wait_for_affected_state(sdk, settings)
+            .await?;
 
         identity
             .loaded_public_keys
@@ -181,8 +185,9 @@ impl UpdateIdentityKeyLimits for Identity {
     }
 }
 
-/// The first MASTER key, else the first CRITICAL authentication key without limits, that is
-/// enabled and that the signer can sign with.
+/// The first MASTER key, else the first CRITICAL authentication key without limits and without
+/// contract bounds (a bound key may only sign batches), that is enabled and that the signer can
+/// sign with.
 fn signing_key_for_key_limits_update<S: Signer<IdentityPublicKey>>(
     identity: &Identity,
     signer: &S,
@@ -192,6 +197,7 @@ fn signing_key_for_key_limits_update<S: Signer<IdentityPublicKey>>(
             key.purpose() == Purpose::AUTHENTICATION
                 && key.security_level() == security_level
                 && key.disabled_at().is_none()
+                && key.contract_bounds().is_none()
                 && !key.has_limits()
                 && signer.can_sign_with(key)
         })
@@ -205,4 +211,115 @@ fn signing_key_for_key_limits_update<S: Signer<IdentityPublicKey>>(
                     .to_string(),
             )
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::address_funds::AddressWitness;
+    use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::KeyType;
+    use dpp::platform_value::{BinaryData, Identifier};
+    use dpp::ProtocolError;
+    use std::collections::BTreeMap;
+
+    /// Holds the ids of the keys it can sign with; nothing is signed in these tests.
+    #[derive(Debug)]
+    struct KeyIdSigner(Vec<KeyID>);
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for KeyIdSigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "not signing in this test".to_string(),
+            ))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "not signing in this test".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
+            self.0.contains(&key.id())
+        }
+    }
+
+    fn authentication_key(
+        id: KeyID,
+        security_level: SecurityLevel,
+        contract_bounds: Option<ContractBounds>,
+    ) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level,
+            contract_bounds,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![id as u8; 33]),
+            disabled_at: None,
+        })
+    }
+
+    /// MASTER key 0, a contract-bound CRITICAL key 1, an unbound CRITICAL key 2, and a CRITICAL
+    /// key 3 with a budget.
+    fn identity() -> Identity {
+        let bounds = ContractBounds::SingleContract {
+            id: Identifier::from([7; 32]),
+        };
+        let keys = [
+            authentication_key(0, SecurityLevel::MASTER, None),
+            authentication_key(1, SecurityLevel::CRITICAL, Some(bounds)),
+            authentication_key(2, SecurityLevel::CRITICAL, None),
+            authentication_key(3, SecurityLevel::CRITICAL, None).with_limits(Some(1_000), None),
+        ];
+        IdentityV0 {
+            id: Identifier::from([1; 32]),
+            public_keys: keys
+                .into_iter()
+                .map(|key| (key.id(), key))
+                .collect::<BTreeMap<_, _>>(),
+            balance: 0,
+            revision: 0,
+        }
+        .into()
+    }
+
+    #[test]
+    fn should_prefer_the_master_key_the_signer_holds() {
+        let signing_key_id =
+            signing_key_for_key_limits_update(&identity(), &KeyIdSigner(vec![0, 1, 2, 3]))
+                .expect("expected a signing key");
+        assert_eq!(signing_key_id, 0);
+    }
+
+    #[test]
+    fn should_skip_a_contract_bound_critical_key_when_the_master_key_is_unavailable() {
+        // Key 1 has the lower id but may only sign batches; key 2 is the usable one.
+        let signing_key_id =
+            signing_key_for_key_limits_update(&identity(), &KeyIdSigner(vec![1, 2, 3]))
+                .expect("expected a signing key");
+        assert_eq!(signing_key_id, 2);
+    }
+
+    #[test]
+    fn should_refuse_when_the_signer_only_holds_bound_or_limited_keys() {
+        let result = signing_key_for_key_limits_update(&identity(), &KeyIdSigner(vec![1, 3]));
+        assert!(
+            matches!(result, Err(Error::Generic(_))),
+            "a bound key and a limited key are no use here: {result:?}"
+        );
+    }
 }

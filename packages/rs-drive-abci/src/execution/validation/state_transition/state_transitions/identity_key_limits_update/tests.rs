@@ -680,11 +680,13 @@ async fn should_prove_the_rewritten_key_and_the_revision() {
             .unwrap()
             .expect("expected a root hash")
     );
-    let StateTransitionProofOutcome::ExecutionProved(
+    // The proof shows the resulting key and revision, not the nonce, so it authenticates the
+    // affected state rather than this exact transition.
+    let StateTransitionProofOutcome::AffectedState(
         StateTransitionProofResult::VerifiedPartialIdentity(identity),
     ) = outcome
     else {
-        panic!("expected the execution to be proved, got {outcome:?}");
+        panic!("expected the affected state to be proved, got {outcome:?}");
     };
     assert_eq!(identity.revision, Some(1));
     let key = &identity.loaded_public_keys[&LIMITED_KEY_ID];

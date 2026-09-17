@@ -140,8 +140,9 @@ paid for by bumping the identity nonce: a stale revision (40203), a missing (402
 that does not raise it (`IdentityPublicKeyLimitNotRaisedError`, 40221), and a key that would stay
 expired (40219).
 
-The proof of execution is the identity's keys with its revision; the key must hold exactly the
-values the transition asked for. In the SDKs: `Identity::update_key_limits`, `top_up_key_budget`,
+The proof is the identity's keys with its revision; the key must hold exactly the values the
+transition asked for. It authenticates the resulting state rather than this exact transition (the
+nonce is not stored), so SDKs wait for it as affected state. In the SDKs: `Identity::update_key_limits`, `top_up_key_budget`,
 `extend_key_expiry` (Rust), `identityUpdateKeyLimits` (wasm-sdk), `sdk.identities.updateKeyLimits`
 (js-evo-sdk).
 

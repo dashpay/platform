@@ -2448,9 +2448,10 @@ impl Drive {
             // Binds the transition's revision and its exact key additions
             // and disabling timestamps.
             StateTransition::IdentityUpdate(_) => true,
-            // Binds the transition's revision, which only one transition of the identity can
-            // consume, and the exact limits the rewritten key holds.
-            StateTransition::IdentityKeyLimitsUpdate(_) => true,
+            // The proof shows the resulting limits and the revision, not the nonce or the fee
+            // increase: another update by the identity with the same revision, key and limits
+            // would produce the same proof, so this only authenticates the affected state.
+            StateTransition::IdentityKeyLimitsUpdate(_) => false,
             // The proven vote is stored under the masternode's identity and
             // must equal the transition's declared vote.
             StateTransition::MasternodeVote(_) => true,

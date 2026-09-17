@@ -90,8 +90,9 @@ struct IdentityKeyLimitsUpdateOptionsInput {
     total_budget: Option<u64>,
     #[serde(default)]
     expires_at: Option<u64>,
+    /// `undefined` reaches serde as a unit value, so the fee is read as an option and defaulted
     #[serde(default)]
-    user_fee_increase: UserFeeIncrease,
+    user_fee_increase: Option<UserFeeIncrease>,
 }
 
 #[wasm_bindgen(js_name = "IdentityKeyLimitsUpdate")]
@@ -133,7 +134,7 @@ impl IdentityKeyLimitsUpdateWasm {
                 key_id: input.key_id,
                 total_budget: input.total_budget,
                 expires_at: input.expires_at,
-                user_fee_increase: input.user_fee_increase,
+                user_fee_increase: input.user_fee_increase.unwrap_or_default(),
                 signature_public_key_id: 0,
                 signature: Default::default(),
             }),
