@@ -1,4 +1,5 @@
 pub mod address_funds;
+pub mod contract_group;
 pub mod data_contract;
 pub mod data_trigger;
 pub mod document;

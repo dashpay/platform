@@ -11,6 +11,10 @@ use crate::consensus::state::shielded::insufficient_shielded_fee_error::Insuffic
 use crate::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
+use crate::consensus::state::contract_group::{
+    ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
+    ContractGroupAdminNotFoundError, IdentityNotContractGroupOwnerOrAdminError,
+};
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
@@ -407,6 +411,19 @@ pub enum StateError {
 
     #[error(transparent)]
     ReferencedDocumentPropertyMismatchError(ReferencedDocumentPropertyMismatchError),
+
+    // Contract groups (protocol version 14).
+    #[error(transparent)]
+    ContractGroupAlreadyExistsError(ContractGroupAlreadyExistsError),
+
+    #[error(transparent)]
+    ContractGroupNotFoundError(ContractGroupNotFoundError),
+
+    #[error(transparent)]
+    IdentityNotContractGroupOwnerOrAdminError(IdentityNotContractGroupOwnerOrAdminError),
+
+    #[error(transparent)]
+    ContractGroupAdminNotFoundError(ContractGroupAdminNotFoundError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -426,7 +443,7 @@ mod tests {
     /// clients, which would then decode an existing error as a different one.
     /// These are the frozen discriminants of the first variant, of the variant
     /// that follows the document contest block (the one an insertion there
-    /// would shift first), and of the last two.
+    /// would shift first), and of the last four.
     fn discriminant_of(error: StateError) -> u8 {
         let bytes = bincode::encode_to_vec(error, bincode::config::standard())
             .expect("expected to encode the state error");
@@ -553,6 +570,33 @@ mod tests {
                 )
             )),
             100
+        );
+        // Contract groups (protocol version 14): the tail of the enum.
+        let group_id = Identifier::from([1u8; 32]);
+        let identity_id = Identifier::from([2u8; 32]);
+        assert_eq!(
+            discriminant_of(StateError::ContractGroupAlreadyExistsError(
+                ContractGroupAlreadyExistsError::new(group_id)
+            )),
+            101
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractGroupNotFoundError(
+                ContractGroupNotFoundError::new(group_id)
+            )),
+            102
+        );
+        assert_eq!(
+            discriminant_of(StateError::IdentityNotContractGroupOwnerOrAdminError(
+                IdentityNotContractGroupOwnerOrAdminError::new(identity_id, group_id)
+            )),
+            103
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractGroupAdminNotFoundError(
+                ContractGroupAdminNotFoundError::new(group_id, identity_id)
+            )),
+            104
         );
     }
 }

@@ -64,8 +64,8 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
         },
         contract_create_state_transition: FeatureVersionBounds {
             min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
+            max_version: 1, // changed: version 1 registers contract groups and declares contract group memberships
+            default_current_version: 1,
         },
         contract_update_state_transition: FeatureVersionBounds {
             min_version: 0,

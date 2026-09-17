@@ -82,6 +82,16 @@ use dpp::consensus::state::document::document_contest_not_paid_for_error::Docume
 use dpp::consensus::state::document::document_contest_not_required_error::DocumentContestNotRequiredError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
+use dpp::consensus::basic::contract_group::{
+    ContractGroupMemberNotInContractError, ContractGroupMembershipsOverLimitError,
+    DuplicateContractGroupMembershipError,
+    InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
+    InvalidContractGroupAdminsError, RedundantContractGroupMembershipError,
+};
+use dpp::consensus::state::contract_group::{
+    ContractGroupAdminNotFoundError, ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
+    IdentityNotContractGroupOwnerOrAdminError,
+};
 use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
 use dpp::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
@@ -504,6 +514,18 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedDocumentPropertyMismatchError(e) => {
             generic_consensus_error!(ReferencedDocumentPropertyMismatchError, e).into()
+        }
+        StateError::ContractGroupAlreadyExistsError(e) => {
+            generic_consensus_error!(ContractGroupAlreadyExistsError, e).into()
+        }
+        StateError::ContractGroupNotFoundError(e) => {
+            generic_consensus_error!(ContractGroupNotFoundError, e).into()
+        }
+        StateError::IdentityNotContractGroupOwnerOrAdminError(e) => {
+            generic_consensus_error!(IdentityNotContractGroupOwnerOrAdminError, e).into()
+        }
+        StateError::ContractGroupAdminNotFoundError(e) => {
+            generic_consensus_error!(ContractGroupAdminNotFoundError, e).into()
         }
     }
 }
@@ -1020,6 +1042,27 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::DataContractInvalidRequiredFieldsUpdateError(e) => {
             generic_consensus_error!(DataContractInvalidRequiredFieldsUpdateError, e).into()
+        }
+        BasicError::ContractGroupMembershipsOverLimitError(e) => {
+            generic_consensus_error!(ContractGroupMembershipsOverLimitError, e).into()
+        }
+        BasicError::DuplicateContractGroupMembershipError(e) => {
+            generic_consensus_error!(DuplicateContractGroupMembershipError, e).into()
+        }
+        BasicError::RedundantContractGroupMembershipError(e) => {
+            generic_consensus_error!(RedundantContractGroupMembershipError, e).into()
+        }
+        BasicError::ContractGroupMemberNotInContractError(e) => {
+            generic_consensus_error!(ContractGroupMemberNotInContractError, e).into()
+        }
+        BasicError::InvalidContractGroupAdminsError(e) => {
+            generic_consensus_error!(InvalidContractGroupAdminsError, e).into()
+        }
+        BasicError::InvalidContractGroupNameLengthError(e) => {
+            generic_consensus_error!(InvalidContractGroupNameLengthError, e).into()
+        }
+        BasicError::InvalidContractGroupDescriptionLengthError(e) => {
+            generic_consensus_error!(InvalidContractGroupDescriptionLengthError, e).into()
         }
     }
 }

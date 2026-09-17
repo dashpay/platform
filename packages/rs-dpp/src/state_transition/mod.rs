@@ -886,9 +886,17 @@ impl StateTransition {
     pub fn active_version_range(&self) -> RangeInclusive<ProtocolVersion> {
         match self {
             StateTransition::DataContractCreate(data_contract_create_transition) => {
-                match data_contract_create_transition.data_contract() {
-                    DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
-                    DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+                match data_contract_create_transition {
+                    // Version 1 carries contract groups, which exist from protocol version 14.
+                    // The embedded contract format alone would admit it at 9 and above, where
+                    // the group data would be silently dropped.
+                    DataContractCreateTransition::V1(_) => 14..=LATEST_VERSION,
+                    DataContractCreateTransition::V0(_) => {
+                        match data_contract_create_transition.data_contract() {
+                            DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
+                            DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+                        }
+                    }
                 }
             }
             StateTransition::DataContractUpdate(data_contract_update_transition) => {
@@ -2497,6 +2505,7 @@ mod tests {
     use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
     use crate::state_transition::data_contract_create_transition::{
         DataContractCreateTransition, DataContractCreateTransitionV0,
+        DataContractCreateTransitionV1,
     };
     use crate::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
@@ -2562,6 +2571,20 @@ mod tests {
             DataContractCreateTransitionV0 {
                 data_contract: sample_data_contract_in_serialization_format(),
                 identity_nonce: 1,
+                user_fee_increase: 5,
+                signature_public_key_id: 2,
+                signature: BinaryData::new(vec![0xAB; 65]),
+            },
+        ))
+    }
+
+    fn sample_data_contract_create_v1_st() -> StateTransition {
+        StateTransition::DataContractCreate(DataContractCreateTransition::V1(
+            DataContractCreateTransitionV1 {
+                data_contract: sample_data_contract_in_serialization_format(),
+                identity_nonce: 1,
+                contract_group: None,
+                contract_group_memberships: vec![],
                 user_fee_increase: 5,
                 signature_public_key_id: 2,
                 signature: BinaryData::new(vec![0xAB; 65]),
@@ -3409,6 +3432,41 @@ mod tests {
             }
             other => panic!("expected StateTransitionIsNotActiveError, got {other:?}"),
         }
+    }
+
+    // A version 1 data contract create carries contract groups, which only exist from
+    // protocol version 14. Below that a node must reject it rather than create the
+    // contract and drop the group data.
+    #[test]
+    fn test_data_contract_create_v1_is_not_active_before_protocol_version_14() {
+        use crate::serialization::PlatformSerializable;
+
+        let original = sample_data_contract_create_v1_st();
+        assert_eq!(original.active_version_range(), 14..=LATEST_VERSION);
+
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&original).expect("serialize succeeds");
+
+        let version_13 = PlatformVersion::get(13).expect("platform version 13 exists");
+        let err = StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_13)
+            .expect_err("expected StateTransitionIsNotActiveError at protocol version 13");
+        match err {
+            ProtocolError::StateTransitionError(
+                crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError {
+                    active_version_range,
+                    current_protocol_version,
+                    ..
+                },
+            ) => {
+                assert_eq!(current_protocol_version, 13);
+                assert_eq!(*active_version_range.start(), 14);
+            }
+            other => panic!("expected StateTransitionIsNotActiveError, got {other:?}"),
+        }
+
+        let version_14 = PlatformVersion::get(14).expect("platform version 14 exists");
+        StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14)
+            .expect("a version 1 create is active at protocol version 14");
     }
 
     // -----------------------------------------------------------------------

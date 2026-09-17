@@ -29,6 +29,7 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::v1::DRI
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v1::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::drive_address_funds_method_versions::v1::DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::drive_contract_group_method_versions::v1::DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_contract_method_versions::v1::DRIVE_CONTRACT_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v1::DRIVE_DOCUMENT_METHOD_VERSIONS_V1;
@@ -147,6 +148,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 empty_prefunded_specialized_balance: 0,
             },
             group: DRIVE_GROUP_METHOD_VERSIONS_V1,
+            contract_group: DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1,
             address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1,
             shielded: DriveShieldedMethodVersions {
                 insert_note: 0,
@@ -533,7 +535,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         min_withdrawal_amount: 190_000,
         core_dust_relay_fee_per_kb: None,
         max_core_fee_per_byte: None,
-        max_contract_group_size: 256,
+        max_group_member_count: 256,
+        max_contract_group_memberships_per_contract: 16,
+        max_contract_group_admins: 16,
+        max_contract_group_name_length: 64,
+        max_contract_group_description_length: 256,
         max_token_redemption_cycles: 128,
         max_shielded_transition_actions: 16,
         max_time_range_overlap_factor: None,

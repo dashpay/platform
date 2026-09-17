@@ -1,4 +1,5 @@
 use crate::version::drive_versions::drive_address_funds_method_versions::v2::DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V2;
+use crate::version::drive_versions::drive_contract_group_method_versions::v1::DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_contract_method_versions::v4::DRIVE_CONTRACT_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v4::DRIVE_DOCUMENT_METHOD_VERSIONS_V4;
@@ -42,13 +43,19 @@ use grovedb_version::version::v4::GROVE_V4;
 ///   storage an earlier poll's cleanup left behind (it only removed the
 ///   trees that received votes) instead of failing with
 ///   `CorruptedContractIndexes`.
+/// * **Contract groups** — `create_initial_state_structure` 4 creates the
+///   `ContractGroups` root tree (key 68) with its groups and members subtrees;
+///   `DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1` carries the insert, fetch, prove
+///   and estimation slots; `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` moves
+///   the contract create converter to 1 so a version 1 create transition also
+///   emits the group registration and membership operations.
 ///
 /// Everything else matches `DRIVE_VERSION_V8`.
 pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
     structure: DRIVE_STRUCTURE_V1,
     methods: DriveMethodVersions {
         initialization: DriveInitializationMethodVersions {
-            create_initial_state_structure: 3, // changed in v8: adds shielded pool trees (commitment tree, nullifiers, anchors)
+            create_initial_state_structure: 4, // changed in v9: adds the ContractGroups root tree with its groups and members subtrees (v3 added the shielded pool trees)
         },
         credit_pools: CREDIT_POOL_METHOD_VERSIONS_V1,
         protocol_upgrade: DriveProtocolUpgradeVersions {
@@ -130,6 +137,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             empty_prefunded_specialized_balance: 0,
         },
         group: DRIVE_GROUP_METHOD_VERSIONS_V1,
+        contract_group: DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1,
         address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V2,
         shielded: DriveShieldedMethodVersions {
             insert_note: 0,

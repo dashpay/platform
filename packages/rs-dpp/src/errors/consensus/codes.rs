@@ -134,6 +134,17 @@ impl ErrorWithCode for BasicError {
             Self::GroupRequiredPowerIsInvalidError(_) => 10358,
             Self::GroupHasTooFewMembersError(_) => 10359,
 
+            // Contract groups
+            Self::ContractGroupMembershipsOverLimitError(_) => 10360,
+            Self::DuplicateContractGroupMembershipError(_) => 10361,
+            Self::RedundantContractGroupMembershipError(_) => 10362,
+            Self::ContractGroupMemberNotInContractError(_) => 10363,
+            Self::InvalidContractGroupAdminsError(_) => 10364,
+            // 10365 is unassigned: the registrant-not-owner rule became inexpressible when the
+            // owner left the wire, before protocol version 14 shipped.
+            Self::InvalidContractGroupNameLengthError(_) => 10366,
+            Self::InvalidContractGroupDescriptionLengthError(_) => 10367,
+
             // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
             Self::DuplicateDocumentTransitionsWithIdsError { .. } => 10401,
@@ -402,6 +413,12 @@ impl ErrorWithCode for StateError {
             Self::InvalidShieldedProofError(_) => 40902,
             Self::InsufficientPoolNotesError(_) => 40903,
             Self::InsufficientShieldedFeeError(_) => 40904,
+
+            // Contract group errors: 41000-41099
+            Self::ContractGroupAlreadyExistsError(_) => 41000,
+            Self::ContractGroupNotFoundError(_) => 41001,
+            Self::IdentityNotContractGroupOwnerOrAdminError(_) => 41002,
+            Self::ContractGroupAdminNotFoundError(_) => 41003,
         }
     }
 }

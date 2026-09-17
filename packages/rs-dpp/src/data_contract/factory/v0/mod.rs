@@ -347,7 +347,14 @@ mod tests {
             .create_unsigned_data_contract_create_transition(created_data_contract.clone())
             .expect("Data Contract Transition should be created");
 
-        assert_eq!(0, result.state_transition_protocol_version());
+        assert_eq!(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .contract_create_state_transition
+                .default_current_version,
+            result.state_transition_protocol_version()
+        );
         assert_eq!(
             created_data_contract.identity_nonce(),
             result.identity_nonce()

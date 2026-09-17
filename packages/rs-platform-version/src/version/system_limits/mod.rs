@@ -90,7 +90,20 @@ pub struct SystemLimits {
     /// Maximum Core transaction fee rate, in duffs per byte, accepted for a withdrawal.
     /// `None` preserves the behavior of protocol versions that predate this limit.
     pub max_core_fee_per_byte: Option<u32>,
-    pub max_contract_group_size: u16,
+    /// Maximum number of members a change-control `Group` declared inside a data contract may
+    /// have (the groups token change-control rules delegate to). Not to be confused with
+    /// contract groups, the identity-owned sets of contracts below.
+    pub max_group_member_count: u16,
+    /// Maximum number of contract group memberships one data contract create transition may
+    /// declare. Contract groups exist from protocol version 14; earlier versions never reach
+    /// the check.
+    pub max_contract_group_memberships_per_contract: u16,
+    /// Maximum number of admins a contract group may name besides its owner.
+    pub max_contract_group_admins: u16,
+    /// Maximum length, in characters, of a contract group name.
+    pub max_contract_group_name_length: u16,
+    /// Maximum length, in characters, of a contract group description.
+    pub max_contract_group_description_length: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to

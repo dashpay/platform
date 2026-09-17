@@ -54,6 +54,7 @@
 # Data Model
 
 - [Data Contracts](data-model/data-contracts.md)
+- [Contract Groups](data-model/contract-groups.md)
 - [Documents](data-model/documents.md)
 - [Identities](data-model/identities.md)
 

@@ -1,10 +1,23 @@
 use crate::error::Error;
+use dpp::consensus::basic::contract_group::{
+    ContractGroupMemberNotInContractError, ContractGroupMembershipsOverLimitError,
+    DuplicateContractGroupMembershipError, InvalidContractGroupAdminsError,
+    InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
+    RedundantContractGroupMembershipError,
+};
 use dpp::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError;
+use dpp::consensus::ConsensusError;
+use dpp::contract_group::ContractGroupMember;
 use dpp::dashcore::Network;
-use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::identifier::Identifier;
+use dpp::state_transition::data_contract_create_transition::accessors::{
+    DataContractCreateTransitionAccessorsV0, DataContractCreateTransitionAccessorsV1,
+};
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::StateTransitionOwned;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use std::collections::BTreeSet;
 
 use super::v1::DataContractCreateStateTransitionBasicStructureValidationV1;
 
@@ -85,7 +98,135 @@ impl DataContractCreateStateTransitionBasicStructureValidationV2 for DataContrac
             }
         }
 
+        // Contract groups (version 1 transitions; a version 0 transition carries none).
+        if let Some(error) = contract_group_basic_structure_error(self, platform_version) {
+            return Ok(SimpleConsensusValidationResult::new_with_error(error));
+        }
+
         Ok(SimpleConsensusValidationResult::new())
+    }
+}
+
+/// Checks everything about the transition's contract group registration and memberships that
+/// needs no state: the registrant is an owner, owner and text limits hold, every member exists
+/// in the created contract, and no membership repeats or is implied by a whole-contract
+/// membership of the same group. Whether the groups exist and who owns them is checked against
+/// the state.
+fn contract_group_basic_structure_error(
+    transition: &DataContractCreateTransition,
+    platform_version: &PlatformVersion,
+) -> Option<ConsensusError> {
+    {
+        let limits = &platform_version.system_limits;
+        let owner_id = transition.owner_id();
+
+        if let Some(registration) = transition.contract_group() {
+            // The owner is the signer and never on the wire; only the admins need checking.
+            let admins = &registration.admins;
+            if admins.len() > limits.max_contract_group_admins as usize
+                || admins.contains(&owner_id)
+            {
+                return Some(
+                    InvalidContractGroupAdminsError::new(
+                        admins.len() as u32,
+                        limits.max_contract_group_admins,
+                    )
+                    .into(),
+                );
+            }
+            if let Some(name) = &registration.name {
+                let length = name.chars().count();
+                if length == 0 || length > limits.max_contract_group_name_length as usize {
+                    return Some(
+                        InvalidContractGroupNameLengthError::new(
+                            name.clone(),
+                            limits.max_contract_group_name_length,
+                        )
+                        .into(),
+                    );
+                }
+            }
+            if let Some(description) = &registration.description {
+                let length = description.chars().count();
+                if length == 0 || length > limits.max_contract_group_description_length as usize {
+                    return Some(
+                        InvalidContractGroupDescriptionLengthError::new(
+                            description.clone(),
+                            limits.max_contract_group_description_length,
+                        )
+                        .into(),
+                    );
+                }
+            }
+        }
+
+        let memberships = transition.contract_group_memberships();
+        if memberships.len() > limits.max_contract_group_memberships_per_contract as usize {
+            return Some(
+                ContractGroupMembershipsOverLimitError::new(
+                    memberships.len() as u32,
+                    limits.max_contract_group_memberships_per_contract,
+                )
+                .into(),
+            );
+        }
+
+        let contract = transition.data_contract();
+        let whole_contract_groups: BTreeSet<Identifier> = memberships
+            .iter()
+            .filter(|membership| membership.member == ContractGroupMember::Contract)
+            .map(|membership| membership.contract_group_id)
+            .collect();
+        let mut seen = BTreeSet::new();
+        for membership in memberships {
+            match &membership.member {
+                ContractGroupMember::Contract => {}
+                ContractGroupMember::DocumentType(document_type_name) => {
+                    if !contract.document_schemas().contains_key(document_type_name) {
+                        return Some(
+                            ContractGroupMemberNotInContractError::new(
+                                contract.id(),
+                                membership.member.clone(),
+                            )
+                            .into(),
+                        );
+                    }
+                }
+                ContractGroupMember::Token(token_position) => {
+                    if !contract.tokens().contains_key(token_position) {
+                        return Some(
+                            ContractGroupMemberNotInContractError::new(
+                                contract.id(),
+                                membership.member.clone(),
+                            )
+                            .into(),
+                        );
+                    }
+                }
+            }
+            if !seen.insert((membership.contract_group_id, membership.member.clone())) {
+                return Some(
+                    DuplicateContractGroupMembershipError::new(
+                        membership.contract_group_id,
+                        membership.member.clone(),
+                    )
+                    .into(),
+                );
+            }
+            if membership.member != ContractGroupMember::Contract
+                && whole_contract_groups.contains(&membership.contract_group_id)
+            {
+                return Some(
+                    RedundantContractGroupMembershipError::new(
+                        membership.contract_group_id,
+                        membership.member.clone(),
+                    )
+                    .into(),
+                );
+            }
+        }
+
+        None
     }
 }
 
