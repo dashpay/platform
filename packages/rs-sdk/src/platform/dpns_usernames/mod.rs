@@ -23,6 +23,8 @@ use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use tracing::info;
+use tracing::warn;
 
 fn extract_dpns_label(name: &str) -> &str {
     if let Some(dot_pos) = name.rfind('.') {
@@ -257,6 +259,7 @@ impl Sdk {
         });
 
         // Submit preorder document first
+        info!(%identity_id, document_id = %preorder_id, stage = "preorder", "DPNS registration: submitting document");
         let platform_preorder_document = preorder_document
             .put_to_platform_and_wait_for_response(
                 self,
@@ -267,7 +270,11 @@ impl Sdk {
                 &input.signer,
                 None, // settings
             )
-            .await?;
+            .await
+            .inspect_err(|error| {
+                warn!(%identity_id, document_id = %preorder_id, stage = "preorder", %error, "DPNS registration: document failed");
+            })?;
+        info!(%identity_id, document_id = %preorder_id, stage = "preorder", "DPNS registration: document confirmed");
 
         // Call the preorder callback if provided
         if let Some(callback) = input.preorder_callback {
@@ -275,6 +282,7 @@ impl Sdk {
         }
 
         // Submit domain document after preorder
+        info!(%identity_id, document_id = %domain_id, stage = "domain", "DPNS registration: submitting document");
         let platform_domain_document = domain_document
             .put_to_platform_and_wait_for_response(
                 self,
@@ -285,7 +293,11 @@ impl Sdk {
                 &input.signer,
                 None, // settings
             )
-            .await?;
+            .await
+            .inspect_err(|error| {
+                warn!(%identity_id, document_id = %domain_id, stage = "domain", %error, "DPNS registration: document failed");
+            })?;
+        info!(%identity_id, document_id = %domain_id, stage = "domain", "DPNS registration: document confirmed");
 
         Ok(RegisterDpnsNameResult {
             preorder_document: platform_preorder_document,

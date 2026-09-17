@@ -2,21 +2,40 @@ use super::broadcast_request::BroadcastRequestForStateTransition;
 use super::put_settings::PutSettings;
 use crate::error::StateTransitionBroadcastError;
 use crate::sync::retry;
+use crate::sync::retry_with_additional_error;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
+use dapi_grpc::platform::v0::BroadcastStateTransitionResponse;
 use dapi_grpc::platform::v0::{
     wait_for_state_transition_result_response, BroadcastStateTransitionRequest, ResponseMetadata,
     WaitForStateTransitionResultResponse,
 };
 use dash_context_provider::ContextProviderError;
+use dpp::consensus::signature::SignatureError;
+use dpp::consensus::ConsensusError;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::proof_result::{
     StateTransitionProofOutcome, StateTransitionProofResult,
 };
 use dpp::state_transition::StateTransition;
+use dpp::system_data_contracts::SystemDataContract;
+use dpp::util::hash::hash_single;
+use dpp::ProtocolError;
 use drive_proof_verifier::FromProof;
+use rs_dapi_client::AddressList;
+use rs_dapi_client::CanRetry;
+use rs_dapi_client::ExecutionResult;
 use rs_dapi_client::WrapToExecutionResult;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
-use tracing::{trace, warn};
+use std::future::Future;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use tracing::{info, trace, warn};
+
+const DPNS_REGISTRATION_BROADCAST_RETRIES: usize = 2;
 
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
@@ -116,16 +135,7 @@ impl BroadcastStateTransition for StateTransition {
             None => sdk.dapi_client_settings,
         };
 
-        // async fn retry_test_function(settings: RequestSettings) -> ExecutionResult<(), dash_sdk::Error>
-        let factory = |request_settings: RequestSettings| async move {
-            trace!("broadcast: creating request");
-            let request =
-                self.broadcast_request_for_state_transition()
-                    .map_err(|e| ExecutionError {
-                        inner: e,
-                        address: None,
-                        retries: 0,
-                    })?;
+        let execute = |request: BroadcastStateTransitionRequest, request_settings| async move {
             trace!("broadcast: executing request");
             let result = request
                 .execute(sdk, request_settings)
@@ -141,7 +151,7 @@ impl BroadcastStateTransition for StateTransition {
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
         trace!("broadcast: starting retry mechanism");
-        let result = retry(sdk.address_list(), retry_settings, factory)
+        let result = broadcast_with_retries(self, sdk.address_list(), retry_settings, execute)
             .await
             .into_inner()
             .map(|_| ());
@@ -260,6 +270,120 @@ impl BroadcastStateTransition for StateTransition {
         }
         result
     }
+}
+
+/// DPNS registration has two separate creates. Fail over each signed create,
+/// never restart the registration (which would generate a new preorder salt).
+/// This applies only to the immediate CheckTx rejection, not wait outcomes.
+async fn broadcast_with_retries<Fut, Execute>(
+    transition: &StateTransition,
+    addresses: &AddressList,
+    mut settings: RequestSettings,
+    mut execute: Execute,
+) -> ExecutionResult<BroadcastStateTransitionResponse, Error>
+where
+    Fut: Future<Output = ExecutionResult<BroadcastStateTransitionResponse, Error>> + Send,
+    Execute: FnMut(BroadcastStateTransitionRequest, RequestSettings) -> Fut + Send,
+{
+    let dpns_stage = dpns_registration_document_type(transition);
+    let is_dpns_registration = dpns_stage.is_some();
+    if is_dpns_registration {
+        // Include any lower-level transport retries in the same three-send
+        // budget. An explicitly smaller caller budget must still win.
+        settings.retries = Some(
+            settings
+                .finalize()
+                .retries
+                .min(DPNS_REGISTRATION_BROADCAST_RETRIES),
+        );
+    }
+    let request = transition
+        .broadcast_request_for_state_transition()
+        .map_err(|inner| ExecutionError {
+            inner,
+            address: None,
+            retries: 0,
+        })?;
+    // Same DPP helper and signed serialization as StateTransition::transaction_id().
+    let dpns_transaction_id =
+        dpns_stage.map(|_| hex::encode(hash_single(&request.state_transition)));
+    let transaction_id = dpns_transaction_id.as_deref();
+    let broadcast_attempts = AtomicUsize::new(0);
+    let attempts = &broadcast_attempts;
+    let factory = |settings| {
+        let response = execute(request.clone(), settings);
+        async move {
+            let result = response.await;
+            // Successful retry results only report the lower layer's latest
+            // attempt count. Accumulate every dispatch, including its transport
+            // retries; running out of addresses adds no new dispatch.
+            if let (Some(stage), Some(transaction_id)) = (dpns_stage, transaction_id) {
+                let sent = match &result {
+                    Ok(response) => response.retries.saturating_add(1),
+                    Err(error) => error
+                        .retries
+                        .saturating_add(usize::from(!error.is_no_available_addresses())),
+                };
+                let attempts = attempts
+                    .fetch_add(sent, Ordering::Relaxed)
+                    .saturating_add(sent);
+                match &result {
+                    Ok(response) => info!(
+                        stage,
+                        transaction_id,
+                        node = %response.address,
+                        attempts,
+                        result = "accepted_for_processing",
+                        "DPNS registration: broadcast attempt finished"
+                    ),
+                    Err(error) => warn!(
+                        stage,
+                        transaction_id,
+                        node = ?error.address,
+                        attempts,
+                        result = "failed",
+                        "DPNS registration: broadcast attempt finished"
+                    ),
+                }
+            }
+            result
+        }
+    };
+    retry_with_additional_error(addresses, settings, factory, |error| {
+        is_dpns_registration && is_missing_transition_owner(transition, error)
+    })
+    .await
+}
+
+fn dpns_registration_document_type(transition: &StateTransition) -> Option<&str> {
+    let StateTransition::Batch(batch) = transition else {
+        return None;
+    };
+    if batch.transitions_len() != 1 {
+        return None;
+    }
+    let BatchedTransitionRef::Document(document @ DocumentTransition::Create(_)) =
+        batch.first_transition()?
+    else {
+        return None;
+    };
+    if document.data_contract_id() != SystemDataContract::DPNS.id() {
+        return None;
+    }
+    match document.document_type_name().as_str() {
+        name @ ("preorder" | "domain") => Some(name),
+        _ => None,
+    }
+}
+
+fn is_missing_transition_owner(transition: &StateTransition, error: &Error) -> bool {
+    let Error::Protocol(ProtocolError::ConsensusError(consensus)) = error else {
+        return false;
+    };
+    matches!(consensus.as_ref(),
+        ConsensusError::SignatureError(SignatureError::IdentityNotFoundError(missing))
+            if Some(missing.identity_id()) == transition.owner_id()
+    )
 }
 
 /// Reject snapshot outcomes for the strict wait APIs with a typed error.
@@ -461,7 +585,362 @@ impl WaitForOutcome for StateTransition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dapi_grpc::tonic::Status;
+    use dpp::consensus::signature::IdentityNotFoundError;
     use dpp::prelude::Identifier;
+    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
+    use dpp::state_transition::batch_transition::document_replace_transition::DocumentReplaceTransitionV0;
+    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use rs_dapi_client::transport::TransportError;
+    use rs_dapi_client::DapiClientError;
+    use rs_dapi_client::ExecutionResponse;
+    use std::future::ready;
+    use std::time::Duration;
+
+    fn owner_id() -> Identifier {
+        Identifier::from([1; 32])
+    }
+
+    fn document_create(contract_id: Identifier, document_type: &str) -> StateTransition {
+        StateTransition::Batch(
+            BatchTransitionV0 {
+                owner_id: owner_id(),
+                transitions: vec![DocumentTransition::Create(
+                    DocumentCreateTransitionV0 {
+                        base: DocumentBaseTransitionV0 {
+                            id: Identifier::from([2; 32]),
+                            identity_contract_nonce: 17,
+                            document_type_name: document_type.to_string(),
+                            data_contract_id: contract_id,
+                        }
+                        .into(),
+                        entropy: [3; 32],
+                        ..Default::default()
+                    }
+                    .into(),
+                )],
+                signature: vec![4; 65].into(),
+                ..Default::default()
+            }
+            .into(),
+        )
+    }
+
+    fn missing_owner(id: Identifier) -> Error {
+        Error::Protocol(ProtocolError::ConsensusError(Box::new(
+            IdentityNotFoundError::new(id).into(),
+        )))
+    }
+
+    fn addresses() -> AddressList {
+        "http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3003,http://127.0.0.1:3004"
+            .parse()
+            .expect("valid addresses")
+    }
+
+    #[test_case::test_case("preorder")]
+    #[test_case::test_case("domain")]
+    #[tokio::test]
+    async fn should_retry_identical_dpns_bytes_on_another_node(document_type: &str) {
+        let transition = document_create(SystemDataContract::DPNS.id(), document_type);
+        let expected_request = transition.broadcast_request_for_state_transition().unwrap();
+        let addresses = addresses();
+        let mut requests = Vec::new();
+        let mut used_addresses = Vec::new();
+
+        broadcast_with_retries(
+            &transition,
+            &addresses,
+            RequestSettings::default(),
+            |request, _| {
+                let address = addresses.get_live_addresses().into_iter().next().unwrap();
+                requests.push(request);
+                used_addresses.push(address.clone());
+                ready(if requests.len() == 1 {
+                    Err(ExecutionError {
+                        inner: missing_owner(owner_id()),
+                        address: Some(address),
+                        retries: 0,
+                    })
+                } else {
+                    Ok(ExecutionResponse {
+                        inner: BroadcastStateTransitionResponse {},
+                        address,
+                        retries: 0,
+                    })
+                })
+            },
+        )
+        .await
+        .expect("second node accepts the same signed transition");
+
+        assert_eq!(requests, vec![expected_request.clone(), expected_request]);
+        assert_ne!(used_addresses[0], used_addresses[1]);
+        assert!(addresses.is_banned(&used_addresses[0]));
+    }
+
+    #[tokio::test]
+    async fn should_retry_only_domain_after_successful_preorder() {
+        let preorder = document_create(SystemDataContract::DPNS.id(), "preorder");
+        let domain = document_create(SystemDataContract::DPNS.id(), "domain");
+        let preorder_request = preorder.broadcast_request_for_state_transition().unwrap();
+        let domain_request = domain.broadcast_request_for_state_transition().unwrap();
+        let addresses = addresses();
+        let mut requests = Vec::new();
+        let mut execute = |request, _| {
+            let address = addresses.get_live_addresses().into_iter().next().unwrap();
+            requests.push(request);
+            ready(if requests.len() == 2 {
+                Err(ExecutionError {
+                    inner: missing_owner(owner_id()),
+                    address: Some(address),
+                    retries: 0,
+                })
+            } else {
+                Ok(ExecutionResponse {
+                    inner: BroadcastStateTransitionResponse {},
+                    address,
+                    retries: 0,
+                })
+            })
+        };
+
+        // The two registration stages use separate signed creates. Failure in
+        // the second broadcast must not replay the already accepted first one.
+        broadcast_with_retries(
+            &preorder,
+            &addresses,
+            RequestSettings::default(),
+            &mut execute,
+        )
+        .await
+        .expect("preorder is accepted on its first attempt");
+        broadcast_with_retries(
+            &domain,
+            &addresses,
+            RequestSettings::default(),
+            &mut execute,
+        )
+        .await
+        .expect("only the rejected domain is retried");
+
+        assert_eq!(
+            requests,
+            vec![preorder_request, domain_request.clone(), domain_request]
+        );
+    }
+
+    #[tokio::test]
+    async fn should_not_classify_timeouts_as_missing_owner_or_override_zero_retries() {
+        let transition = document_create(SystemDataContract::DPNS.id(), "domain");
+        let timeouts = [
+            Error::TimeoutReached(Duration::from_secs(10), "broadcast timed out".to_string()),
+            Error::from(DapiClientError::Transport(TransportError::Grpc(
+                Status::deadline_exceeded("broadcast timed out"),
+            ))),
+        ];
+        for timeout in timeouts {
+            assert!(!is_missing_transition_owner(&transition, &timeout));
+            let addresses = addresses();
+            let mut timeout = Some(timeout);
+            let mut attempts = 0;
+            let error = broadcast_with_retries(
+                &transition,
+                &addresses,
+                RequestSettings {
+                    retries: Some(0),
+                    ..Default::default()
+                },
+                |_, _| {
+                    attempts += 1;
+                    ready(Err(ExecutionError {
+                        inner: timeout.take().expect("zero retries permits only one send"),
+                        address: addresses.get_live_addresses().into_iter().next(),
+                        retries: 0,
+                    }))
+                },
+            )
+            .await
+            .expect_err("ambiguous timeout is returned under the existing retry budget");
+            assert_eq!(attempts, 1);
+            assert!(!is_missing_transition_owner(&transition, &error.inner));
+        }
+    }
+
+    #[test_case::test_case(None, 3)]
+    #[test_case::test_case(Some(0), 1)]
+    #[test_case::test_case(Some(1), 2)]
+    #[test_case::test_case(Some(9), 3)]
+    #[tokio::test]
+    async fn should_bound_dpns_broadcast_attempts(retries: Option<usize>, expected: usize) {
+        let transition = document_create(SystemDataContract::DPNS.id(), "preorder");
+        let addresses = addresses();
+        let mut attempts = 0;
+        let error = broadcast_with_retries(
+            &transition,
+            &addresses,
+            RequestSettings {
+                retries,
+                ..Default::default()
+            },
+            |_, settings| {
+                attempts += 1;
+                assert_eq!(settings.retries, Some(expected - attempts));
+                ready(Err(ExecutionError {
+                    inner: missing_owner(owner_id()),
+                    address: addresses.get_live_addresses().into_iter().next(),
+                    retries: 0,
+                }))
+            },
+        )
+        .await
+        .expect_err("all nodes reject the owner");
+        assert_eq!(attempts, expected);
+        assert_eq!(error.retries, expected);
+        assert!(is_missing_transition_owner(&transition, &error.inner));
+        assert_eq!(addresses.get_live_addresses().len(), 4 - (expected - 1));
+    }
+
+    #[tokio::test]
+    async fn should_count_lower_level_attempts_in_dpns_budget() {
+        let transition = document_create(SystemDataContract::DPNS.id(), "domain");
+        let addresses = addresses();
+        let mut attempts = 0;
+        let error = broadcast_with_retries(
+            &transition,
+            &addresses,
+            RequestSettings::default(),
+            |_, settings| {
+                attempts += 1;
+                assert_eq!(settings.retries, Some(2));
+                ready(Err(ExecutionError {
+                    inner: missing_owner(owner_id()),
+                    address: addresses.get_live_addresses().into_iter().next(),
+                    retries: 2,
+                }))
+            },
+        )
+        .await
+        .expect_err("lower layer already consumed all three sends");
+        assert_eq!(attempts, 1);
+        assert_eq!(error.retries, 3);
+    }
+
+    #[test_case::test_case(false, true)]
+    #[test_case::test_case(true, false)]
+    #[test_case::test_case(true, true)]
+    #[tokio::test]
+    async fn should_stop_when_rejected_node_cannot_be_avoided(ban: bool, known_address: bool) {
+        let transition = document_create(SystemDataContract::DPNS.id(), "domain");
+        let addresses: AddressList = "http://127.0.0.1:3001".parse().unwrap();
+        let address = addresses.get_live_addresses()[0].clone();
+        let mut attempts = 0;
+        let error = broadcast_with_retries(
+            &transition,
+            &addresses,
+            RequestSettings {
+                ban_failed_address: Some(ban),
+                ..Default::default()
+            },
+            |_, _| {
+                attempts += 1;
+                ready(Err(ExecutionError {
+                    inner: missing_owner(owner_id()),
+                    address: known_address.then(|| address.clone()),
+                    retries: 0,
+                }))
+            },
+        )
+        .await
+        .expect_err("cannot fail over safely");
+        assert_eq!(attempts, 1);
+        assert!(is_missing_transition_owner(&transition, &error.inner));
+        assert_eq!(addresses.get_live_addresses().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn should_not_retry_unrelated_or_wait_phase_rejections() {
+        let dpns = SystemDataContract::DPNS.id();
+        let cases = [
+            (
+                document_create(Identifier::from([9; 32]), "preorder"),
+                missing_owner(owner_id()),
+            ),
+            (document_create(dpns, "other"), missing_owner(owner_id())),
+            (
+                document_create(dpns, "domain"),
+                missing_owner(Identifier::from([9; 32])),
+            ),
+            (
+                document_create(dpns, "domain"),
+                Error::AlreadyExists("already in mempool".into()),
+            ),
+            (
+                document_create(dpns, "domain"),
+                Error::Generic("Identity not found".into()),
+            ),
+            (
+                document_create(dpns, "domain"),
+                Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                    code: 20000,
+                    message: "Identity not found".into(),
+                    cause: Some(IdentityNotFoundError::new(owner_id()).into()),
+                }),
+            ),
+        ];
+        for (transition, error) in cases {
+            let addresses = addresses();
+            let mut error = Some(error);
+            let mut attempts = 0;
+            broadcast_with_retries(
+                &transition,
+                &addresses,
+                RequestSettings::default(),
+                |_, _| {
+                    attempts += 1;
+                    ready(Err(ExecutionError {
+                        inner: error
+                            .take()
+                            .expect("unrelated rejection must not be retried"),
+                        address: addresses.get_live_addresses().into_iter().next(),
+                        retries: 0,
+                    }))
+                },
+            )
+            .await
+            .expect_err("rejection is returned unchanged");
+            assert_eq!(attempts, 1);
+            assert_eq!(addresses.get_live_addresses().len(), 4);
+        }
+    }
+
+    #[test]
+    fn should_exclude_multi_document_batches_and_non_create_actions() {
+        let StateTransition::Batch(mut batch) =
+            document_create(SystemDataContract::DPNS.id(), "domain")
+        else {
+            unreachable!();
+        };
+        let BatchTransition::V0(ref mut v0) = batch else {
+            unreachable!();
+        };
+        v0.transitions.push(v0.transitions[0].clone());
+        assert!(dpns_registration_document_type(&StateTransition::Batch(batch)).is_none());
+
+        let transition = StateTransition::Batch(
+            BatchTransitionV0 {
+                owner_id: owner_id(),
+                transitions: vec![DocumentTransition::Replace(
+                    DocumentReplaceTransitionV0::default().into(),
+                )],
+                ..Default::default()
+            }
+            .into(),
+        );
+        assert!(dpns_registration_document_type(&transition).is_none());
+    }
 
     #[test]
     fn strict_wait_rejects_affected_state_outcomes() {

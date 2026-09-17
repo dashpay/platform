@@ -73,12 +73,30 @@ impl From<AsyncError> for crate::Error {
 pub async fn retry<Fut, FutureFactoryFn, R>(
     address_list: &AddressList,
     settings: RequestSettings,
-    mut future_factory_fn: FutureFactoryFn,
+    future_factory_fn: FutureFactoryFn,
 ) -> ExecutionResult<R, Error>
 where
     Fut: Future<Output = ExecutionResult<R, Error>>,
     FutureFactoryFn: FnMut(RequestSettings) -> Fut,
     R: Send,
+{
+    retry_with_additional_error(address_list, settings, future_factory_fn, |_| false).await
+}
+
+/// Retry an operation-specific rejection only when its responding node can be
+/// excluded. This does not change the error's global retry classification.
+/// Callers must restrict the predicate to definitive, safe-to-repeat failures.
+pub(crate) async fn retry_with_additional_error<Fut, FutureFactoryFn, R, AdditionalError>(
+    address_list: &AddressList,
+    settings: RequestSettings,
+    mut future_factory_fn: FutureFactoryFn,
+    additional_error: AdditionalError,
+) -> ExecutionResult<R, Error>
+where
+    Fut: Future<Output = ExecutionResult<R, Error>>,
+    FutureFactoryFn: FnMut(RequestSettings) -> Fut,
+    R: Send,
+    AdditionalError: Fn(&Error) -> bool,
 {
     let max_retries = settings.retries.unwrap_or_default();
     let mut total_retries: usize = 0;
@@ -121,7 +139,8 @@ where
                 let requests_sent = error.retries + 1;
                 total_retries += requests_sent;
 
-                if !error.can_retry() {
+                let retry_additional_error = additional_error(&error.inner);
+                if !error.can_retry() && !retry_additional_error {
                     // Non-retryable error, return immediately
                     let mut final_error = error;
                     final_error.retries = total_retries;
@@ -139,6 +158,27 @@ where
                     let mut final_error = error;
                     final_error.retries = total_retries;
                     return Err(final_error);
+                }
+
+                if retry_additional_error {
+                    // A node can retain rejected transaction hashes. Never
+                    // resend this rejection to the same node, including when
+                    // the caller disabled banning or the address is unknown.
+                    // Only exclude it when a retry to another node is possible;
+                    // a single-node client must remain usable after failure.
+                    let excluded = current_settings.finalize().ban_failed_address
+                        && error.address.as_ref().is_some_and(|address| {
+                            address_list
+                                .get_live_addresses()
+                                .iter()
+                                .any(|candidate| candidate != address)
+                                && address_list.ban_with_reason(address, Some(error.to_string()))
+                        });
+                    if !excluded || address_list.get_live_addresses().is_empty() {
+                        let mut final_error = error;
+                        final_error.retries = total_retries;
+                        return Err(final_error);
+                    }
                 }
 
                 // Log retry decision (matches original `when()` callback)
