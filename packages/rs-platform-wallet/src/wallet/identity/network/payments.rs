@@ -6309,9 +6309,7 @@ mod tests {
             register_sender_and_external_account().await;
         let wallet = manager.get_wallet(&wallet_id).await.unwrap();
         let iw = wallet.identity();
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
-            .unwrap()
-            .to_seed("");
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
         persister.stores.lock().unwrap().clear();
         let first = iw
@@ -6365,9 +6363,7 @@ mod tests {
         let wallet = manager.get_wallet(&wallet_id).await.unwrap();
         let iw = wallet.identity();
         fund_bip44_account_0(&manager, wallet_id, 0xC6, 120_000).await;
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
-            .unwrap()
-            .to_seed("");
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
         let signer = SeedSigner::new(seed, Network::Testnet);
         let entered = Arc::new(tokio::sync::Barrier::new(2));
@@ -6425,9 +6421,7 @@ mod tests {
         let contact = Identifier::from([0xBB; 32]);
         let addresses = install_external_account(&manager, wallet_id, owner, contact).await;
         let wallet = manager.get_wallet(&wallet_id).await.unwrap();
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
-            .unwrap()
-            .to_seed("");
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed("");
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
         *persister.allow_stores_then_fail.lock().unwrap() = Some(0);
         assert!(matches!(
@@ -6467,6 +6461,179 @@ mod tests {
                 .await
                 .is_err(),
             "the owner/contact scope cannot be reversed"
+        );
+    }
+
+    /// Persister that parks the FIRST external-pool store inside `store`,
+    /// after the caller has captured its whole-pool snapshot, until the
+    /// test releases it. Every store is recorded in arrival order so the
+    /// test can assert which snapshot reached the host last. Both waits
+    /// are bounded so a regression fails the test instead of wedging the
+    /// runtime on a worker thread parked inside a sync store.
+    struct PausingPoolPersister {
+        stores: Mutex<Vec<PlatformWalletChangeSet>>,
+        parked_once: std::sync::atomic::AtomicBool,
+        entered: (Mutex<bool>, std::sync::Condvar),
+        release: (Mutex<bool>, std::sync::Condvar),
+    }
+
+    impl PausingPoolPersister {
+        const WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+        fn new() -> Self {
+            Self {
+                stores: Mutex::new(Vec::new()),
+                parked_once: std::sync::atomic::AtomicBool::new(false),
+                entered: (Mutex::new(false), std::sync::Condvar::new()),
+                release: (Mutex::new(false), std::sync::Condvar::new()),
+            }
+        }
+
+        fn signal(flag: &(Mutex<bool>, std::sync::Condvar)) {
+            *flag.0.lock().unwrap() = true;
+            flag.1.notify_all();
+        }
+
+        /// Block until `flag` is raised; `false` if `WAIT` elapsed first.
+        fn wait_for(flag: &(Mutex<bool>, std::sync::Condvar)) -> bool {
+            let guard = flag.0.lock().unwrap();
+            let (guard, _) = flag
+                .1
+                .wait_timeout_while(guard, Self::WAIT, |raised| !*raised)
+                .unwrap();
+            *guard
+        }
+
+        fn external_pool_snapshots(&self) -> Vec<Vec<key_wallet::AddressInfo>> {
+            self.stores
+                .lock()
+                .unwrap()
+                .iter()
+                .flat_map(|cs| &cs.account_address_pools)
+                .filter(|pool| {
+                    matches!(
+                        pool.account_type,
+                        key_wallet::account::AccountType::DashpayExternalAccount { .. }
+                    )
+                })
+                .map(|pool| pool.addresses.clone())
+                .collect()
+        }
+    }
+
+    impl PlatformWalletPersistence for PausingPoolPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            let is_external_pool = changeset.account_address_pools.iter().any(|pool| {
+                matches!(
+                    pool.account_type,
+                    key_wallet::account::AccountType::DashpayExternalAccount { .. }
+                )
+            });
+            if is_external_pool
+                && !self
+                    .parked_once
+                    .swap(true, std::sync::atomic::Ordering::SeqCst)
+            {
+                // The snapshot is already in `changeset`; park before it
+                // is recorded, exactly where a slow host write would sit.
+                Self::signal(&self.entered);
+                Self::wait_for(&self.release);
+            }
+            self.stores.lock().unwrap().push(changeset);
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// Pool snapshots are whole-pool and last-write-wins on the host. Two
+    /// reservations that interleave as
+    /// `A: snapshot → B: snapshot → B: store → A: store` leave A's older
+    /// snapshot (B's address still unused) as the persisted truth, and a
+    /// relaunch re-hands B's address. The contact-payment gate holds each
+    /// reservation from snapshot through store, so B cannot even snapshot
+    /// until A's store has returned. This drives that interleaving on a
+    /// real multithreaded runtime with A parked inside the host store;
+    /// removing the gate from `reserve_payment_address` lets B complete
+    /// while A is parked and fails the first assertion.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reserve_payment_address_cannot_persist_ahead_of_a_paused_reservation() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        let persister = Arc::new(PausingPoolPersister::new());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAC; 32]);
+        let contact = Identifier::from([0xBD; 32]);
+        install_external_account(&manager, wallet_id, owner, contact).await;
+        let wallet = manager.get_wallet(&wallet_id).await.unwrap();
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed("");
+        let reserve = |wallet: Arc<crate::wallet::platform_wallet::PlatformWallet>| {
+            tokio::spawn(async move {
+                let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+                wallet
+                    .identity()
+                    .dashpay()
+                    .reserve_payment_address(&owner, &contact, &provider)
+                    .await
+            })
+        };
+
+        let first = reserve(Arc::clone(&wallet));
+        // The first reservation has captured its snapshot and is parked
+        // inside the host store, gate still held.
+        let entered = Arc::clone(&persister);
+        assert!(
+            tokio::task::spawn_blocking(move || PausingPoolPersister::wait_for(&entered.entered))
+                .await
+                .unwrap(),
+            "the first reservation never reached the host store"
+        );
+
+        let mut second = reserve(Arc::clone(&wallet));
+        let raced = tokio::time::timeout(std::time::Duration::from_millis(500), &mut second).await;
+        let leaked = persister.external_pool_snapshots();
+        // Unpark the first store before any assertion so a failure
+        // reports instead of wedging runtime shutdown on the parked worker.
+        PausingPoolPersister::signal(&persister.release);
+        assert!(
+            raced.is_err(),
+            "a competing reservation completed while the first one's store was still \
+             parked, so its snapshot can be overwritten by the stale one: {raced:?}"
+        );
+        assert!(
+            leaked.is_empty(),
+            "nothing may reach the host while the first store is parked"
+        );
+
+        let first = first.await.unwrap().unwrap();
+        let second = second.await.unwrap().unwrap();
+        assert_ne!(first, second);
+
+        let snapshots = persister.external_pool_snapshots();
+        assert_eq!(
+            snapshots.len(),
+            2,
+            "one whole-pool snapshot per reservation"
+        );
+        let used = |snapshot: &[key_wallet::AddressInfo]| {
+            snapshot
+                .iter()
+                .filter(|info| info.is_used())
+                .map(|info| info.address.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(used(&snapshots[0]), vec![first.clone()]);
+        let latest = used(&snapshots[1]);
+        assert!(
+            latest.contains(&first) && latest.contains(&second),
+            "the last persisted snapshot must carry both reservations, got {latest:?}"
         );
     }
 
