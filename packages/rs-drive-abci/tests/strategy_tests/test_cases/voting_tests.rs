@@ -54,6 +54,7 @@ mod tests {
                 disable_instant_lock_signature_verification: true,
                 disable_contested_documents_is_allowed_validation: false,
                 disable_checkpoints: true,
+                scheduled_event_host_fault: false,
             },
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
