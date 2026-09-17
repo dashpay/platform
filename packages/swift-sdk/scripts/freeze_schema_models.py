@@ -147,6 +147,13 @@ V1_GRAPH_MODELS = [
     "PersistentMasternode",
 ]
 
+# Every model V4 registers: the V1 graph, the asset lock with
+# `recipientIsExternal`, and the tracked-masternode registry V2 added.
+V4_GRAPH_MODELS = V1_GRAPH_MODELS + [
+    "PersistentAssetLock",
+    "PersistentTrackedMasternode",
+]
+
 
 @dataclasses.dataclass(frozen=True)
 class Freeze:
@@ -176,6 +183,15 @@ FREEZES = [
     Freeze("DashSchemaV2", "5f58417079", ("PersistentTrackedMasternode",)),
     # V3 replaces the asset lock with the shape that has `recipientIsExternal`.
     Freeze("DashSchemaV3", "5f58417079", ("PersistentAssetLock",)),
+    # V4's whole graph, at the last commit before `PersistentPublicKey`
+    # gained `contractBoundsKind` (the column V5 adds).
+    Freeze(
+        "DashSchemaV4",
+        "d8b7944ef3",
+        tuple(V4_GRAPH_MODELS),
+        TOKEN_TYPES_FILE,
+        tuple(TOKEN_VALUE_TYPES),
+    ),
 ]
 
 HEADER = "import Foundation\nimport SwiftData\n\n"

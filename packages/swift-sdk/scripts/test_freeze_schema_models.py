@@ -41,7 +41,10 @@ class CheckTests(unittest.TestCase):
         )
 
     def test_should_find_the_committed_files_are_the_generators_output(self):
-        self.assertEqual(len(self.files), 37)
+        # 37 for V1 to V3 (34 V1 models, V1's value types, V2's tracked
+        # masternode, V3's asset lock) plus 36 for V4 (35 models and its
+        # value types).
+        self.assertEqual(len(self.files), 73)
         self.assertEqual(gen.check_problems(ROOT, self.files), [])
 
     def test_should_report_a_hand_edit_to_a_frozen_file(self):

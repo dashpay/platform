@@ -85,7 +85,52 @@ public enum DashModelContainer {
             + [DashSchemaV2.PersistentTrackedMasternode.self]
     }
 
-    /// All persistent model types in the current Dash SDK schema (V4).
+    /// The exact model set registered as schema V4: the same entities V3
+    /// names, frozen at their V4 shapes (V4 widened the wallet transaction
+    /// models rather than adding an entity). Frozen for the same reason as
+    /// `v1ModelTypes`, and listed in the order `modelTypes` lists its live
+    /// counterparts.
+    fileprivate static var v4ModelTypes: [any PersistentModel.Type] {
+        [
+            DashSchemaV4.PersistentIdentity.self,
+            DashSchemaV4.PersistentDPNSName.self,
+            DashSchemaV4.PersistentDashpayProfile.self,
+            DashSchemaV4.PersistentDashpayContactProfile.self,
+            DashSchemaV4.PersistentDashpayContactRequest.self,
+            DashSchemaV4.PersistentDashpayPayment.self,
+            DashSchemaV4.PersistentDashpayIgnoredSender.self,
+            DashSchemaV4.PersistentDocument.self,
+            DashSchemaV4.PersistentDataContract.self,
+            DashSchemaV4.PersistentPublicKey.self,
+            DashSchemaV4.PersistentTokenBalance.self,
+            DashSchemaV4.PersistentKeyword.self,
+            DashSchemaV4.PersistentToken.self,
+            DashSchemaV4.PersistentDocumentType.self,
+            DashSchemaV4.PersistentIndex.self,
+            DashSchemaV4.PersistentProperty.self,
+            DashSchemaV4.PersistentTokenHistoryEvent.self,
+            DashSchemaV4.PersistentPlatformAddress.self,
+            DashSchemaV4.PersistentPlatformAddressesSyncState.self,
+            DashSchemaV4.PersistentWallet.self,
+            DashSchemaV4.PersistentAccount.self,
+            DashSchemaV4.PersistentCoreAddress.self,
+            DashSchemaV4.PersistentTransaction.self,
+            DashSchemaV4.PersistentTxo.self,
+            DashSchemaV4.PersistentPendingInput.self,
+            DashSchemaV4.PersistentWalletManagerMetadata.self,
+            DashSchemaV4.PersistentShieldedNote.self,
+            DashSchemaV4.PersistentShieldedOutgoingNote.self,
+            DashSchemaV4.PersistentShieldedSyncState.self,
+            DashSchemaV4.PersistentShieldedActivity.self,
+            DashSchemaV4.PersistentShieldedViewingKey.self,
+            DashSchemaV4.PersistentAssetLock.self,
+            DashSchemaV4.PersistentInvitation.self,
+            DashSchemaV4.PersistentMasternode.self,
+            DashSchemaV4.PersistentTrackedMasternode.self
+        ]
+    }
+
+    /// All persistent model types in the current Dash SDK schema (V5).
     /// Unlike the released versions above this list tracks the LIVE models,
     /// so it moves whenever a model gains a property — which is exactly why
     /// the released versions must not. When the next property lands: freeze
@@ -139,7 +184,7 @@ public enum DashModelContainer {
 
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV4.self)
+        Schema(versionedSchema: DashSchemaV5.self)
     }
 
     /// Create a persistent model container for storing data
@@ -206,14 +251,18 @@ public enum DashModelContainer {
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self]
+        [
+            DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self,
+            DashSchemaV5.self
+        ]
     }
 
     public static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self),
             .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self),
-            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)
+            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),
+            .lightweight(fromVersion: DashSchemaV4.self, toVersion: DashSchemaV5.self)
         ]
     }
 }
@@ -414,6 +463,34 @@ public enum DashSchemaV3: VersionedSchema {
 public enum DashSchemaV4: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
         Schema.Version(4, 0, 0)
+    }
+
+    public static var models: [any PersistentModel.Type] {
+        DashModelContainer.v4ModelTypes
+    }
+}
+
+/// Version 5 adds `PersistentPublicKey.contractBoundsKind`, the FFI
+/// `contract_bounds_kind` discriminant (0 none, 1 SingleContract,
+/// 2 SingleContractDocumentType, 3 ContractGroup) the key row was written
+/// with. The two columns V4 had (`contractBoundsData`,
+/// `contractBoundsDocumentTypeName`) could not tell a contract-group bound
+/// apart from a whole-contract one, so restoring an identity that held a
+/// group-bound AUTHENTICATION key brought the key back unbounded and
+/// changed its authorization metadata. The column is optional, so a
+/// lightweight migration preserves every existing row and backfills
+/// `NULL`, which the model reads as "legacy row, infer the variant the way
+/// V4 did" (`PersistentPublicKey.effectiveContractBoundsKind`).
+///
+/// Registering it retired V4, which meant freezing every model V4 declared
+/// (`FrozenSchemas/DashSchemaV4+*`, see `scripts/freeze_schema_models.py`):
+/// without those copies, adding the property would have moved V4's
+/// checksum in place and a store written by the V4 binary would have
+/// matched no registered schema, failing to open with Cocoa error 134504
+/// rather than migrating.
+public enum DashSchemaV5: VersionedSchema {
+    public static var versionIdentifier: Schema.Version {
+        Schema.Version(5, 0, 0)
     }
 
     public static var models: [any PersistentModel.Type] {
