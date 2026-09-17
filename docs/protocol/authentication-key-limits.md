@@ -108,9 +108,20 @@ by such a key is dropped rather than recorded as a paid failure.
 Disabling works as before and is independent of the limits: a master-key identity update can
 disable a limited key at any time.
 
+## Reading what is left
+
+`getIdentityKeysRemainingBudgets` takes an identity id and a list of key ids (at least one, none
+repeated, at most `max_returned_elements`) and answers every one of them: the remaining credits
+for a key with a budget (zero means spent), nothing for a key without a budget or a key that does
+not exist. With `prove` the answer is a proof over the identity's key budgets subtree, which also
+proves the absence of an entry and the absence of the subtree itself. The number is the state of
+the last committed block, so it is an upper bound on what the next transition can spend.
+
+In the SDKs: `IdentityKeysRemainingBudgets::fetch` (Rust), `getIdentityKeysRemainingBudgets`
+(wasm-sdk), `sdk.identities.keysRemainingBudgets` (js-evo-sdk).
+
 ## Not included
 
 - Raising, lowering or resetting the limits of an existing key.
-- A query for what is left of a budget, and SDK helpers for creating limited keys and for
-  choosing a usable key when signing. These follow separately; until then the remaining budget
-  is only readable from Drive.
+- SDK helpers for creating limited keys and for choosing a usable key when signing. These follow
+  separately.

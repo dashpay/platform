@@ -376,6 +376,43 @@ The methods live in `packages/rs-drive/src/drive/identity/key/budget/`:
 | `deduct_from_identity_key_budget` | subtracts, stopping at zero, and applies; errors if the key has no entry |
 | `add_estimation_costs_for_key_budgets` | the layer information for the subtree in estimation mode |
 
+## Reading What Is Left
+
+A spent key is refused, so a client wants to know where a budget stands before it signs. The `getIdentityKeysRemainingBudgets` query answers for several keys of one identity at once:
+
+```text
+request:  identity_id, key_ids [3, 4, 5], prove
+response: 3 -> 250000000    a budgeted key
+          4 -> 0            a budgeted key that is spent
+          5 -> (nothing)    no budget, or no such key
+```
+
+Every requested key id is answered. A key without a budget and a key that does not exist look the same here, because the query reads the budgets subtree and nothing else; `getIdentityKeys` tells them apart. The request names at least one key, none twice, and at most `max_returned_elements` of them.
+
+With `prove`, the answer is a GroveDB proof of the path query `[Identities, identity_id, IdentityTreeKeyBudgets]` with one query item per key id, limited to their count. The interesting part is that "no budget" is provable in all three shapes state can have:
+
+```mermaid
+flowchart LR
+    Q["prove the budgets<br/>of keys 3, 4, 5"] --> S{"budgets subtree<br/>exists?"}
+    S -->|no| A["subtree proved absent<br/>every key is <b>None</b>"]
+    S -->|yes| E{"entry for<br/>the key?"}
+    E -->|yes| V["8 byte value proved<br/><b>Some(remaining)</b>"]
+    E -->|no| N["entry proved absent<br/><b>None</b>"]
+```
+
+The verifier, `Drive::verify_identity_keys_remaining_budgets`, rebuilds the same path query from the request and uses `verify_query_with_absence_proof`, so it returns one entry per requested key and never an entry that was not asked for. `packages/rs-drive/src/drive/identity/key/budget/mod.rs` pins this with a test that forges a value inside a proof and expects it to no longer verify against the state root.
+
+The same call is available at every layer:
+
+| Layer | Call |
+|---|---|
+| Drive | `fetch_identity_keys_remaining_budgets`, `prove_identity_keys_remaining_budgets`, `verify_identity_keys_remaining_budgets` |
+| Rust SDK | `IdentityKeysRemainingBudgets::fetch(&sdk, IdentityKeysRemainingBudgetsQuery { identity_id, key_ids })`, also `fetch_unproved` |
+| wasm-sdk | `getIdentityKeysRemainingBudgets(identityId, keyIds)`, `...WithProofInfo`, returning `Map<number, bigint \| null>` |
+| js-evo-sdk | `sdk.identities.keysRemainingBudgets(identityId, keyIds)`, `keysRemainingBudgetsWithProof` |
+
+What the query returns is the state as of the last committed block. A transition already in the mempool may spend from the budget before yours runs, so treat the number as an upper bound, not a reservation.
+
 ## Versioning Touchpoints
 
 Everything is gated to protocol version 14. Tables that protocol version 14 already owned were amended in place; one new table was needed.
@@ -389,7 +426,9 @@ Everything is gated to protocol version 14. Tables that protocol version 14 alre
 | `DRIVE_ABCI_METHOD_VERSIONS_V10` | `validate_fees_of_event` | 0 → 1 |
 | | `execute_event` | 0 → 1 |
 | `DRIVE_IDENTITY_METHOD_VERSIONS_V2` | `keys.insert.insert_new_unique_key`, `insert_new_non_unique_key` | 0 → 1 |
-| | `keys.budget.*` (four slots) | new, `None` → `Some(0)` |
+| | `keys.budget.*` (six slots, two of them for the query) | new, `None` → `Some(0)` |
+| `DRIVE_ABCI_QUERY_VERSIONS_V0` and `_V1` | `identity_based_queries.keys_remaining_budgets` | new slot at 0; the Drive methods behind it are `None` before 14, which is what refuses the query there |
+| `DRIVE_VERIFY_METHOD_VERSIONS_V1` | `identity.verify_identity_keys_remaining_budgets` | new, 0 (verification is client side and not gated) |
 
 Two of these are worth a second look. Identity signature validation v1 and shielded proof validation v1 were introduced for protocol version 14 by the contract bounds work and had never shipped, so they were [extended in place](../contributing/coding-conventions.md#shipped-generations-are-frozen) rather than given a v2. `validate_fees_of_event` and `execute_event` had shipped, so they got new generations, and those generations delegate to v0 for every event they do not handle instead of copying it.
 
@@ -403,8 +442,7 @@ Signing with a budgeted key adds one fixed charge, the key retrieval that reads 
 
 This change is the consensus core. Known gaps, all deliberate:
 
-- **A query for what is left.** `fetch_identity_key_remaining_budget` exists in Drive, but there is no DAPI query, proof or SDK call for it yet. Until there is, a client can only learn that a key is spent by being refused.
-- **SDK surfaces.** Rust callers can use `with_limits` today. The wasm, JavaScript, Swift and Kotlin bindings do not expose the two fields for creation, and SDK key selection does not skip an expired or spent key before signing.
+- **SDK surfaces.** Rust callers can use `with_limits` today. The wasm, JavaScript, Swift and Kotlin bindings do not expose the two fields for creation, and SDK key selection does not skip an expired or spent key before signing, although the [query above](#reading-what-is-left) gives it what it needs. Swift and Kotlin do not expose that query yet.
 - **Changing limits.** There is no top-up and no extension. Register a new key.
 - **Limits on other purposes.** A TRANSFER key with a budget would cap transfers and withdrawals. The rule for it would differ (the amount moved is the point, not a side effect), so it was left out rather than half done.
 - **Limits in a shielded identity creation.** A key with a budget or an expiry is refused there, as explained above. Lifting that means a new generation of the sighash preimage.
