@@ -228,21 +228,12 @@ impl IdentityDataContractKeyApplyInfo {
                 id: contract_group_id,
             } => {
                 // Only authentication keys may be bound to a group (consensus refuses the
-                // rest); the group must exist, and the read is billed.
+                // rest). Nothing of the group is needed to build the apply info, so it is not
+                // read here: `fetch_bound_root_with_fee` checks that the group exists and
+                // bills that one read when the references are written.
                 if purpose != Purpose::AUTHENTICATION {
                     return Err(Error::Identity(IdentityError::IdentityKeyBoundsError(
                         "only authentication keys can be bound to a contract group",
-                    )));
-                }
-                let info = drive.fetch_contract_group_info_add_to_operations(
-                    *contract_group_id,
-                    transaction,
-                    drive_operations,
-                    platform_version,
-                )?;
-                if info.is_none() {
-                    return Err(Error::Identity(IdentityError::IdentityKeyBoundsError(
-                        "Contract group for key bounds not found",
                     )));
                 }
                 return Ok(ContractGroupBased {
@@ -299,7 +290,34 @@ mod tests {
         identity_contract_info_group_keys_path_vec,
         identity_contract_info_group_path_key_purpose_vec,
     };
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use grovedb::reference_path::ReferencePathType::SiblingReference;
+
+    /// The group of a group bound is read, checked and billed once, by
+    /// `fetch_bound_root_with_fee` when the references are written. Building the apply info
+    /// must not read it a second time.
+    #[test]
+    fn should_not_read_the_contract_group_when_building_the_apply_info() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract_group_id = Identifier::from([0x61; 32]);
+        let mut drive_operations = vec![];
+        let apply_info = IdentityDataContractKeyApplyInfo::new_from_single_key(
+            7,
+            Purpose::AUTHENTICATION,
+            &ContractBounds::ContractGroup {
+                id: contract_group_id,
+            },
+            &drive,
+            &Epoch::new(0).expect("expected epoch 0"),
+            None,
+            &mut drive_operations,
+            platform_version,
+        )
+        .expect("expected the apply info of a group bound");
+        assert!(drive_operations.is_empty(), "{drive_operations:?}");
+        assert_eq!(apply_info.root_id(), contract_group_id.to_buffer());
+    }
 
     fn alias_insert(path: Vec<Vec<u8>>, key_id: KeyID) -> LowLevelDriveOperation {
         LowLevelDriveOperation::insert_for_known_path_key_element(
