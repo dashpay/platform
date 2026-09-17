@@ -42,8 +42,7 @@ impl Drive {
         }
         if key != fund_id {
             return Err(Error::Proof(ProofError::CorruptedProof(
-                "we did not get back an element for the correct key in readiness funds"
-                    .to_string(),
+                "we did not get back an element for the correct key in readiness funds".to_string(),
             )));
         }
         let balance = maybe_element

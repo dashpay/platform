@@ -44,7 +44,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match platform_version.drive.methods.vote.readiness.deduct_from_fund {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .readiness
+            .deduct_from_fund
+        {
             Some(0) => self.deduct_from_readiness_fund_operations_v0(
                 fund_id,
                 amount,

@@ -64,8 +64,7 @@ impl Drive {
                 })?;
                 match element {
                     Element::Item(bytes, _) => {
-                        let record = ReadinessReportRecord::deserialize_from_bytes(&bytes)
-                            ?;
+                        let record = ReadinessReportRecord::deserialize_from_bytes(&bytes)?;
                         Ok((pro_tx_hash, record))
                     }
                     _ => Err(Error::Drive(DriveError::CorruptedElementType(

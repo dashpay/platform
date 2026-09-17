@@ -47,9 +47,11 @@ impl Drive {
             .to_path_key_elements()
             .into_iter()
             .map(|(path, key, element)| {
-                let time_key = path.last().ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                    "readiness deadline entry has no time key".to_string(),
-                )))?;
+                let time_key = path
+                    .last()
+                    .ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                        "readiness deadline entry has no time key".to_string(),
+                    )))?;
                 let deadline_ms = decode_u64(time_key)?;
                 let contract_id: [u8; 32] = key.try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedDriveState(

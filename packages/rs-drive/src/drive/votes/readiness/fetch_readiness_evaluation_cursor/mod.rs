@@ -65,6 +65,10 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<[u8; 32]>, Error> {
-        self.fetch_readiness_evaluation_cursor_operations(transaction, &mut vec![], platform_version)
+        self.fetch_readiness_evaluation_cursor_operations(
+            transaction,
+            &mut vec![],
+            platform_version,
+        )
     }
 }

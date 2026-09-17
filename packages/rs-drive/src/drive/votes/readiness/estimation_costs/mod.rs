@@ -58,6 +58,49 @@ impl Drive {
         }
     }
 
+    /// Adds the layer estimation for the per-time tree of one activation deadline.
+    ///
+    /// # Parameters
+    ///
+    /// * `deadline_ms` - The deadline whose tree is written.
+    /// * `estimated_costs_only_with_layer_info` - The estimation map to fill.
+    /// * `platform_version` - The platform version to use.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` on success.
+    /// * `Err(DriveError::VersionNotActive)` on a platform version without readiness.
+    pub(crate) fn add_estimation_costs_for_readiness_deadline(
+        deadline_ms: u64,
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .readiness
+            .estimation_costs
+        {
+            Some(0) => {
+                Self::add_estimation_costs_for_readiness_deadline_v0(
+                    deadline_ms,
+                    estimated_costs_only_with_layer_info,
+                );
+                Ok(())
+            }
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "add_estimation_costs_for_readiness_deadline".to_string(),
+                known_versions: vec![0],
+            })),
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_estimation_costs_for_readiness_deadline".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
     /// Adds the layer estimation for a readiness fund write.
     ///
     /// # Parameters

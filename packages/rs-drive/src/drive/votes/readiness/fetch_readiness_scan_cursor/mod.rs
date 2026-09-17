@@ -31,7 +31,13 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<ReadinessScanCursor>, Error> {
-        match platform_version.drive.methods.vote.readiness.fetch_scan_cursor {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .readiness
+            .fetch_scan_cursor
+        {
             Some(0) => self.fetch_readiness_scan_cursor_operations_v0(
                 contract_id,
                 round_id,

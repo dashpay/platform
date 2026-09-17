@@ -33,7 +33,13 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<u64, Error> {
-        match platform_version.drive.methods.vote.readiness.fetch_raw_count {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .readiness
+            .fetch_raw_count
+        {
             Some(0) => self.fetch_readiness_round_raw_count_operations_v0(
                 contract_id,
                 round_id,

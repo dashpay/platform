@@ -5,7 +5,6 @@ use crate::drive::votes::paths::{
     readiness_round_tree_path, readiness_round_tree_path_vec, READINESS_CURRENT_ROUND_POINTER_KEY,
     READINESS_ROUND_RECORD_KEY, READINESS_ROUND_REPORTS_TREE_KEY, READINESS_ROUND_SCAN_CURSOR_KEY,
 };
-use grovedb::query_result_type::QueryResultType;
 use crate::drive::votes::readiness::cleanup_retired_readiness_round_operations::ReadinessCleanupOutcome;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -15,8 +14,9 @@ use crate::util::grove_operations::{BatchDeleteApplyType, DirectQueryType};
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U32;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::batch::SubelementsDeletionBehavior;
+use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
+use grovedb::query_result_type::QueryResultType;
 use grovedb::{
     EstimatedLayerInformation, MaybeTree, PathQuery, Query, SizedQuery, TransactionArg, TreeType,
 };
@@ -260,44 +260,46 @@ impl Drive {
         round_id: [u8; 32],
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) {
-        let round_path = KeyInfoPath::from_known_owned_path(
-            readiness_round_tree_path_vec(contract_id, round_id),
-        );
-        for key in [
-            READINESS_ROUND_RECORD_KEY,
-            READINESS_ROUND_SCAN_CURSOR_KEY,
-        ] {
+        let round_path = KeyInfoPath::from_known_owned_path(readiness_round_tree_path_vec(
+            contract_id,
+            round_id,
+        ));
+        for key in [READINESS_ROUND_RECORD_KEY, READINESS_ROUND_SCAN_CURSOR_KEY] {
             drive_operations.push(GroveOperation(QualifiedGroveDbOp::delete_estimated_op(
                 round_path.clone(),
                 KeyInfo::KnownKey(vec![key]),
             )));
         }
-        drive_operations.push(GroveOperation(QualifiedGroveDbOp::delete_estimated_tree_op(
-            round_path,
-            KeyInfo::KnownKey(vec![READINESS_ROUND_REPORTS_TREE_KEY]),
-            TreeType::CountTree,
-            SubelementsDeletionBehavior::DontCheckWithNoCleanup,
-        )));
+        drive_operations.push(GroveOperation(
+            QualifiedGroveDbOp::delete_estimated_tree_op(
+                round_path,
+                KeyInfo::KnownKey(vec![READINESS_ROUND_REPORTS_TREE_KEY]),
+                TreeType::CountTree,
+                SubelementsDeletionBehavior::DontCheckWithNoCleanup,
+            ),
+        ));
         let contract_path =
             KeyInfoPath::from_known_owned_path(readiness_contract_tree_path_vec(contract_id));
-        drive_operations.push(GroveOperation(QualifiedGroveDbOp::delete_estimated_tree_op(
-            contract_path,
-            KeyInfo::KnownKey(round_id.to_vec()),
-            TreeType::NormalTree,
-            SubelementsDeletionBehavior::DontCheckWithNoCleanup,
-        )));
-        let contracts_path = KeyInfoPath::from_known_owned_path(
-            readiness_contracts_tree_path_vec(),
-        );
-        drive_operations.push(GroveOperation(QualifiedGroveDbOp::delete_estimated_tree_op(
-            contracts_path,
-            KeyInfo::KnownKey(contract_id.to_vec()),
-            TreeType::NormalTree,
-            SubelementsDeletionBehavior::DontCheckWithNoCleanup,
-        )));
-        let retired_path = KeyInfoPath::from_known_owned_path(
-            readiness_retired_rounds_tree_path_vec(),
-        );
+        drive_operations.push(GroveOperation(
+            QualifiedGroveDbOp::delete_estimated_tree_op(
+                contract_path,
+                KeyInfo::KnownKey(round_id.to_vec()),
+                TreeType::NormalTree,
+                SubelementsDeletionBehavior::DontCheckWithNoCleanup,
+            ),
+        ));
+        let contracts_path =
+            KeyInfoPath::from_known_owned_path(readiness_contracts_tree_path_vec());
+        drive_operations.push(GroveOperation(
+            QualifiedGroveDbOp::delete_estimated_tree_op(
+                contracts_path,
+                KeyInfo::KnownKey(contract_id.to_vec()),
+                TreeType::NormalTree,
+                SubelementsDeletionBehavior::DontCheckWithNoCleanup,
+            ),
+        ));
+        let retired_path =
+            KeyInfoPath::from_known_owned_path(readiness_retired_rounds_tree_path_vec());
         drive_operations.push(GroveOperation(QualifiedGroveDbOp::delete_estimated_op(
             retired_path,
             KeyInfo::KnownKey(round_id.to_vec()),

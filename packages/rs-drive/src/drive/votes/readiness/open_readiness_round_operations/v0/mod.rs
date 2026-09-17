@@ -30,8 +30,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(ReadinessRound, Vec<LowLevelDriveOperation>), Error> {
-        let round = ReadinessRound::new(self.config.network.magic(), opening, platform_version)
-            ?;
+        let round = ReadinessRound::new(self.config.network.magic(), opening, platform_version)?;
         let contract_id = round.contract_id().to_buffer();
         let round_id = round.round_id();
         let mut drive_operations = vec![];
@@ -46,7 +45,8 @@ impl Drive {
         }
 
         // Is there a round to replace? Only a real run reads; an estimate prices the
-        // replacement shape (the larger of the two) so the estimate covers both.
+        // replacement shape (the larger of the two: a crossed round with a deadline entry and
+        // a fund to settle) so the estimate covers both.
         let previous = if estimated_costs_only_with_layer_info.is_none() {
             self.fetch_readiness_round_operations(
                 contract_id,
@@ -55,7 +55,16 @@ impl Drive {
                 platform_version,
             )?
         } else {
-            None
+            let mut placeholder = ReadinessRound::new(
+                self.config.network.magic(),
+                ReadinessRoundOpening {
+                    accepted_at_height: opening.accepted_at_height.wrapping_sub(1),
+                    ..opening
+                },
+                platform_version,
+            )?;
+            placeholder.record_crossing(opening.accepted_at_ms, 0, u64::MAX)?;
+            Some(placeholder)
         };
         let contract_tree_exists = if estimated_costs_only_with_layer_info.is_none() {
             let contracts_path = readiness_contracts_tree_path();

@@ -4,9 +4,9 @@ use crate::drive::prefunded_specialized_balances::{
 };
 use crate::drive::votes::paths::{
     readiness_contract_tree_path_vec, readiness_contracts_tree_path_vec,
-    readiness_deadlines_tree_path_vec, readiness_retired_rounds_tree_path_vec,
-    readiness_round_reports_tree_path_vec, readiness_round_tree_path_vec, readiness_tree_path_vec,
-    vote_root_path_vec,
+    readiness_deadline_tree_path_vec, readiness_deadlines_tree_path_vec,
+    readiness_retired_rounds_tree_path_vec, readiness_round_reports_tree_path_vec,
+    readiness_round_tree_path_vec, readiness_tree_path_vec, vote_root_path_vec,
 };
 use crate::drive::Drive;
 use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U64_SIZE_U8, U8_SIZE_U8};
@@ -173,7 +173,31 @@ impl Drive {
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
                 estimated_layer_count: ApproximateElements(ESTIMATED_PENDING_ROUNDS),
-                estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, DEFAULT_HASH_SIZE_U8 as u32, None),
+                estimated_layer_sizes: AllItems(
+                    DEFAULT_HASH_SIZE_U8,
+                    DEFAULT_HASH_SIZE_U8 as u32,
+                    None,
+                ),
+            },
+        );
+    }
+
+    /// Describes the per-time tree of one activation deadline: contract id keys with round
+    /// id items, a few per distinct time.
+    pub(super) fn add_estimation_costs_for_readiness_deadline_v0(
+        deadline_ms: u64,
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+    ) {
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_owned_path(readiness_deadline_tree_path_vec(deadline_ms)),
+            EstimatedLayerInformation {
+                tree_type: TreeType::NormalTree,
+                estimated_layer_count: ApproximateElements(2),
+                estimated_layer_sizes: AllItems(
+                    DEFAULT_HASH_SIZE_U8,
+                    DEFAULT_HASH_SIZE_U8 as u32,
+                    None,
+                ),
             },
         );
     }

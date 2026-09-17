@@ -43,7 +43,13 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<ReadinessRoundDue>, Error> {
-        match platform_version.drive.methods.vote.readiness.fetch_rounds_due {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .readiness
+            .fetch_rounds_due
+        {
             Some(0) => self.fetch_readiness_rounds_due_operations_v0(
                 at_ms,
                 limit,

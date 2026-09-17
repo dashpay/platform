@@ -37,7 +37,13 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<([u8; 32], ReadinessReportRecord)>, Error> {
-        match platform_version.drive.methods.vote.readiness.fetch_reports_page {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .readiness
+            .fetch_reports_page
+        {
             Some(0) => self.fetch_readiness_reports_page_operations_v0(
                 contract_id,
                 round_id,

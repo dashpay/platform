@@ -42,9 +42,9 @@ impl Drive {
         };
         match element {
             None => Ok(None),
-            Some(Element::Item(bytes, _)) => Ok(Some(
-                ReadinessScanCursor::deserialize_from_bytes(&bytes)?,
-            )),
+            Some(Element::Item(bytes, _)) => {
+                Ok(Some(ReadinessScanCursor::deserialize_from_bytes(&bytes)?))
+            }
             Some(_) => Err(Error::Drive(DriveError::CorruptedElementType(
                 "readiness scan cursor was present but was not an item",
             ))),

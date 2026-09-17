@@ -25,15 +25,16 @@ impl Drive {
     ) -> Result<(RootHash, Option<VerifiedReadinessRound>), Error> {
         let grove_version = &platform_version.drive.grove_version;
 
-        // The pointer first; a proof of a round without a round is a proof of absence.
-        let pointer_query = readiness_round_pointer_path_query(contract_id);
-        let (root_hash, mut pointer_values) = if verify_subset_of_proof {
-            GroveDb::verify_subset_query_with_absence_proof(proof, &pointer_query, grove_version)?
-        } else {
-            // The full proof also carries the round elements when the round exists; verify it
-            // as a subset here and pin the round elements below.
-            GroveDb::verify_subset_query_with_absence_proof(proof, &pointer_query, grove_version)?
-        };
+        // The pointer first; a proof of a round without a round is a proof of absence. The
+        // prover's query carries no limit (a limited query cannot land at a merged root), so
+        // the absence check sets the one-key limit on its own copy. Whether or not the
+        // caller verifies a subset, the pointer is verified as a subset: the full proof also
+        // carries the round elements when the round exists, and those are pinned below.
+        let mut pointer_query = readiness_round_pointer_path_query(contract_id);
+        pointer_query.query.limit = Some(1);
+        let _ = verify_subset_of_proof;
+        let (root_hash, mut pointer_values) =
+            GroveDb::verify_subset_query_with_absence_proof(proof, &pointer_query, grove_version)?;
         if pointer_values.len() != 1 {
             return Err(Error::Proof(ProofError::TooManyElements(
                 "expected one readiness round pointer",

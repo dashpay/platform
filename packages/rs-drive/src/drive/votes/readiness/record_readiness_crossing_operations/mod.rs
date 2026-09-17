@@ -43,7 +43,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(u64, Vec<LowLevelDriveOperation>), Error> {
-        match platform_version.drive.methods.vote.readiness.record_crossing {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .readiness
+            .record_crossing
+        {
             Some(0) => self.record_readiness_crossing_operations_v0(
                 round,
                 crossing_ms,

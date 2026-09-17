@@ -71,16 +71,13 @@ impl Drive {
         };
         let spendable = previous_credits.saturating_sub(reserve);
         if amount > spendable {
-            return Err(Error::Drive(DriveError::PrefundedSpecializedBalanceNotEnough(
-                spendable, amount,
-            )));
+            return Err(Error::Drive(
+                DriveError::PrefundedSpecializedBalanceNotEnough(spendable, amount),
+            ));
         }
-        let new_total = previous_credits
-            .checked_sub(amount)
-            .ok_or(Error::Drive(DriveError::PrefundedSpecializedBalanceNotEnough(
-                previous_credits,
-                amount,
-            )))?;
+        let new_total = previous_credits.checked_sub(amount).ok_or(Error::Drive(
+            DriveError::PrefundedSpecializedBalanceNotEnough(previous_credits, amount),
+        ))?;
         let replace_op = QualifiedGroveDbOp::replace_op(
             prefunded_specialized_balances_for_readiness_path_vec(),
             fund_id.to_vec(),

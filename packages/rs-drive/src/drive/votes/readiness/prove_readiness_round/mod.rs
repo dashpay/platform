@@ -63,7 +63,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        match platform_version.drive.methods.vote.readiness.fetch_reports_page {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .readiness
+            .fetch_reports_page
+        {
             Some(0) => self.prove_readiness_report_v0(
                 contract_id,
                 round_id,

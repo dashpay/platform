@@ -1,4 +1,6 @@
-use crate::drive::votes::paths::{readiness_deadline_tree_path_vec, readiness_deadlines_tree_path_vec};
+use crate::drive::votes::paths::{
+    readiness_deadline_tree_path_vec, readiness_deadlines_tree_path_vec,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -37,9 +39,15 @@ impl Drive {
         }
         let contract_id = round.contract_id().to_buffer();
         let round_id = round.round_id();
-        let deadline_ms = round
-            .record_crossing(crossing_ms, min_wait_ms, max_wait_ms)
-            ?;
+        let deadline_ms = round.record_crossing(crossing_ms, min_wait_ms, max_wait_ms)?;
+
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_readiness_deadline(
+                deadline_ms,
+                estimated_costs_only_with_layer_info,
+                platform_version,
+            )?;
+        }
 
         let mut drive_operations = self.update_readiness_round_evaluation_operations(
             round,
@@ -58,8 +66,8 @@ impl Drive {
         // The deadline tree at this time may already exist (another round crossed with the
         // same deadline in this or an earlier block), so insert it only if absent.
         let deadline_key = DriveKeyInfo::Key(encode_u64(deadline_ms));
-        let path_key_info =
-            deadline_key.add_path_info::<0>(PathInfo::PathAsVec(readiness_deadlines_tree_path_vec()));
+        let path_key_info = deadline_key
+            .add_path_info::<0>(PathInfo::PathAsVec(readiness_deadlines_tree_path_vec()));
         let tree_apply_type = if estimated_costs_only_with_layer_info.is_none() {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {

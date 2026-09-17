@@ -44,6 +44,13 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 platform_version,
             )?;
+            if let Some(deadline_ms) = round.deadline_ms() {
+                Self::add_estimation_costs_for_readiness_deadline(
+                    deadline_ms,
+                    estimated_costs_only_with_layer_info,
+                    platform_version,
+                )?;
+            }
         }
 
         // 1. Queue the round for the bounded cleanup. Its subtree stays under its own key.
@@ -173,11 +180,17 @@ impl Drive {
                 "adding over i64::MAX to the processing fee pool",
             ))));
         }
-        let updated_value = existing_value
-            .checked_add(amount as i64)
-            .ok_or(ProtocolError::Overflow("overflow when adding to the processing fee pool"))?;
+        let updated_value =
+            existing_value
+                .checked_add(amount as i64)
+                .ok_or(ProtocolError::Overflow(
+                    "overflow when adding to the processing fee pool",
+                ))?;
         Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
-            epoch_tree_path.iter().map(|segment| segment.to_vec()).collect(),
+            epoch_tree_path
+                .iter()
+                .map(|segment| segment.to_vec())
+                .collect(),
             KEY_POOL_PROCESSING_FEES.to_vec(),
             Element::new_sum_item(updated_value),
         ))

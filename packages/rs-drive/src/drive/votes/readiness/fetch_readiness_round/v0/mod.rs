@@ -37,9 +37,11 @@ impl Drive {
             platform_version,
         )?;
         // The pointer names a round; its record must exist.
-        round.map(Some).ok_or(Error::Drive(DriveError::CorruptedDriveState(
-            "readiness round pointer names a round with no record".to_string(),
-        )))
+        round
+            .map(Some)
+            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                "readiness round pointer names a round with no record".to_string(),
+            )))
     }
 
     pub(super) fn fetch_readiness_current_round_id_operations_v0(
@@ -120,9 +122,9 @@ impl Drive {
         };
         match element {
             None => Ok(None),
-            Some(Element::Item(bytes, _)) => Ok(Some(
-                ReadinessRound::deserialize_from_bytes(&bytes)?,
-            )),
+            Some(Element::Item(bytes, _)) => {
+                Ok(Some(ReadinessRound::deserialize_from_bytes(&bytes)?))
+            }
             Some(_) => Err(Error::Drive(DriveError::CorruptedElementType(
                 "readiness round record was present but was not an item",
             ))),

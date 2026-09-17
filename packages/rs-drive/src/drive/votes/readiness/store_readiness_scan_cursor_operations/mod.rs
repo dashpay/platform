@@ -37,7 +37,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match platform_version.drive.methods.vote.readiness.store_scan_cursor {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .readiness
+            .store_scan_cursor
+        {
             Some(0) => self.store_readiness_scan_cursor_operations_v0(
                 contract_id,
                 round_id,

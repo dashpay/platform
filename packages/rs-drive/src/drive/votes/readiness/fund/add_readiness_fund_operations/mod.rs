@@ -74,8 +74,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let batch_operations =
-            self.add_readiness_fund_operations(fund_id, amount, &mut None, transaction, platform_version)?;
+        let batch_operations = self.add_readiness_fund_operations(
+            fund_id,
+            amount,
+            &mut None,
+            transaction,
+            platform_version,
+        )?;
         let grove_db_operations =
             LowLevelDriveOperation::grovedb_operations_batch_consume(batch_operations);
         self.grove_apply_batch_with_add_costs(

@@ -52,9 +52,9 @@ impl Drive {
         }
         let record = match maybe_element {
             None => None,
-            Some(Element::Item(bytes, _)) => Some(ReadinessReportRecord::deserialize_from_bytes(
-                &bytes,
-            )?),
+            Some(Element::Item(bytes, _)) => {
+                Some(ReadinessReportRecord::deserialize_from_bytes(&bytes)?)
+            }
             Some(_) => {
                 return Err(Error::Proof(ProofError::CorruptedProof(
                     "readiness report was present but was not an item".to_string(),
