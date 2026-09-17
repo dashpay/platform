@@ -9,15 +9,17 @@ use super::v5::DPP_VALIDATION_VERSIONS_V5;
 /// Turns on `validate_contested_index_parameters` (`Some(0)`): a contested
 /// index registered or updated at this version may only name parameters the
 /// native contest machinery can honour. Every contested index property must be
-/// a top-level, required, user-defined property, and every `fieldMatches`
-/// entry must name a string property of that index. Each rule closes a way
-/// for a declaration the parser accepts to break at contest time: a nested or
-/// system property yields an empty vote poll key, an optional property reaches
-/// the contested tree walker as a null, a match on a non-index property lets
-/// two documents with equal index values take different insert paths so the
-/// later award collides in the unique index during block execution, and a
-/// match on a non-string property never matches so the contest can never
-/// start.
+/// a top-level, required, non-transient, user-defined property, and every
+/// `fieldMatches` entry must name a string property of that index and
+/// classify the empty string and the one-byte string `"\0"` alike. Each rule
+/// closes a way for a declaration the parser accepts to break at contest
+/// time: a nested or system property yields an empty vote poll key, an
+/// optional or transient property reaches the contested tree walker as an
+/// empty key, a match on a non-index property or one that tells apart the two
+/// strings the index stores under one key lets two documents with equal index
+/// keys take different insert paths so the later award collides in the unique
+/// index during block execution, and a match on a non-string property never
+/// matches so the contest can never start.
 ///
 /// Stored contracts are parsed without full validation and never run the
 /// check; only contract create and update transitions validated at v17 or

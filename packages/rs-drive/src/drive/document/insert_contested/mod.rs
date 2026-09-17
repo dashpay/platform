@@ -41,7 +41,9 @@ mod add_contested_vote_subtrees_for_non_identities_operations;
 // inserts the winning document in one operation
 mod award_contested_document_vote_poll;
 
-pub use award_contested_document_vote_poll::ContestedDocumentVotePollAwardOutcome;
+pub use award_contested_document_vote_poll::{
+    ContestedDocumentVotePollAwardContender, ContestedDocumentVotePollAwardOutcome,
+};
 
 // TODO: Disabled module add_contested_indices_for_index_level_for_contract_operations
 

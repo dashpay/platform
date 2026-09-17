@@ -537,6 +537,97 @@ mod tests {
         );
     }
 
+    /// Loads the contested DPNS fixture and replaces its `normalizedLabel` field match
+    /// pattern with `^$`, which admits the empty string but not the one-byte string `"\0"`
+    /// that the index stores under the same key. `normalizedLabel` has no `minLength`, so
+    /// both are document values.
+    fn contested_contract_with_key_aliasing_field_match(
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let mut value = json_document_to_platform_value(
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+        )
+        .expect("expected to load the contested fixture");
+        value
+            .get_mut_value_at_path("documentSchemas.domain.indices")
+            .expect("expected the domain indices")
+            .to_array_mut()
+            .expect("expected the indices to be an array")
+            .first_mut()
+            .expect("expected the contested index first")
+            .get_mut_value_at_path("contested.fieldMatches")
+            .expect("expected the field matches")
+            .to_array_mut()
+            .expect("expected the field matches to be an array")
+            .first_mut()
+            .expect("expected one field match")
+            .insert("regexPattern".to_string(), Value::Text("^$".to_string()))
+            .expect("expected to replace the pattern");
+
+        let mut data_contract = DataContract::from_value(value, false, platform_version)
+            .expect("expected the fixture to parse without validation");
+        data_contract
+            .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+        data_contract
+    }
+
+    /// A field match that tells apart the two strings the index stores under one key would
+    /// let an ordinary insert occupy the entry a later award needs; the registration is
+    /// rejected at the latest version and still accepted at protocol version 14.
+    #[tokio::test]
+    async fn test_data_contract_creation_with_key_aliasing_field_match_is_rejected_at_latest_version(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                network: Network::Mainnet,
+                ..Default::default()
+            })
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let data_contract = contested_contract_with_key_aliasing_field_match(platform_version);
+
+        let result = process_contract_create(&mut platform, data_contract, platform_version).await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::ContestedIndexInvalidParametersError(
+                    ref error
+                )),
+                ..
+            } if error.index_name() == "parentNameAndLabel"
+                && error.reason().starts_with(
+                    "field match 'normalizedLabel' distinguishes the empty string"
+                )
+        );
+    }
+
+    #[tokio::test]
+    async fn test_data_contract_creation_with_key_aliasing_field_match_is_accepted_at_protocol_version_14(
+    ) {
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                network: Network::Mainnet,
+                ..Default::default()
+            })
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let data_contract = contested_contract_with_key_aliasing_field_match(platform_version);
+
+        let result = process_contract_create(&mut platform, data_contract, platform_version).await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
     /// End-to-end regression test for the nested-property `position` chain-halt.
     ///
     /// A `DataContractCreate` whose document schema has a nested object property with a

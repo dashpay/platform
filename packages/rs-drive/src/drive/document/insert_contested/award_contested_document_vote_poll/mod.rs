@@ -5,12 +5,24 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
+use dpp::identifier::Identifier;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
-use dpp::voting::contender_structs::FinalizedContenderWithSerializedDocument;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use grovedb::TransactionArg;
+
+/// A contender as the award tallied it: the identity and the vote tally it finished with,
+/// which is all the finalization record needs. The stored contender documents stay in the
+/// contest storage until the cleanup that follows the award; the award reads them in place
+/// and moves only the winner's bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContestedDocumentVotePollAwardContender {
+    /// The contender's identity.
+    pub identity_id: Identifier,
+    /// The contender's final vote tally.
+    pub final_vote_tally: u32,
+}
 
 /// What the native award decided for an ended contested resource vote poll.
 #[derive(Debug, Clone, PartialEq)]
@@ -23,7 +35,7 @@ pub struct ContestedDocumentVotePollAwardOutcome {
     pub winner: ContestedDocumentVotePollWinnerInfo,
     /// Every contender the selection considered, with the vote tally each one finished with,
     /// sorted by tally descending. The caller records them with the finalized poll.
-    pub contenders: Vec<FinalizedContenderWithSerializedDocument>,
+    pub contenders: Vec<ContestedDocumentVotePollAwardContender>,
 }
 
 impl Drive {

@@ -6,6 +6,7 @@ use crate::consensus::basic::data_contract::ContestedIndexInvalidParametersError
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 use crate::ProtocolError;
+use platform_value::Value;
 
 /// Generation 0 of the supported contested parameter rules, checked in this
 /// order and each naming the index and the offending parameter:
@@ -31,6 +32,20 @@ use crate::ProtocolError;
 /// 5. Every matched property is a string. A regex match on any other type
 ///    never matches, so the index silently degrades to a plain unique index
 ///    and the contest can never start.
+/// 6. Every field match classifies the two strings the index stores under one
+///    key alike. The tree key encoder maps the empty string to a single zero
+///    byte so it never collides with an absent value, which makes it collide
+///    with the one-byte string `"\0"` instead; those two are the only strings
+///    that share an encoded key. A regex that admits one and not the other
+///    (`^$`, for instance) would send one document into the contest and the
+///    other through the ordinary unique insert, and the award would then find
+///    its index entry taken. The rule is skipped when the property's
+///    `minLength` is at least 1, because the empty string can then never be a
+///    document value.
+///
+/// Anything else a contract might get wrong is either unrepresentable (the
+/// contested declaration has no other members) or already rejected by the
+/// parser.
 ///
 /// An index without a `contested` declaration passes; a contested index
 /// without `fieldMatches` (always contested) is supported.
@@ -99,9 +114,24 @@ pub(super) fn validate_contested_index_parameters_v0(
         }
         match flattened_document_properties.get(field) {
             Some(DocumentProperty {
-                property_type: DocumentPropertyType::String(_),
+                property_type: DocumentPropertyType::String(sizes),
                 ..
-            }) => {}
+            }) => {
+                let empty_string_is_a_document_value = sizes.min_length.unwrap_or(0) == 0;
+                if empty_string_is_a_document_value {
+                    let field_match = &contested_index.field_matches[field];
+                    let matches_empty = field_match.matches(&Value::Text(String::new()));
+                    let matches_nul = field_match.matches(&Value::Text("\0".to_string()));
+                    if matches_empty != matches_nul {
+                        return reject(format!(
+                            "field match '{field}' distinguishes the empty string from a \
+                             one-byte string containing only a zero byte, which the index \
+                             stores under the same key; the match must classify both alike, \
+                             or the property must declare a minLength of at least 1"
+                        ));
+                    }
+                }
+            }
             Some(property) => {
                 return reject(format!(
                     "field match '{field}' names a property of type '{}'; only string \
@@ -391,5 +421,93 @@ mod tests {
             "field match 'priority' names a property of type 'i64'; only string properties can \
              be matched"
         );
+    }
+
+    /// The tree key encoder stores the empty string and the one-byte string `"\0"` under
+    /// the same key, so a match that admits one and not the other would split two
+    /// documents with one index key between the contest and the ordinary insert.
+    #[test]
+    fn should_reject_a_field_match_that_splits_the_two_strings_sharing_an_encoded_key() {
+        let indices = platform_value!([{
+            "name": "parentNameAndLabel",
+            "properties": [{"normalizedParentDomainName": "asc"}, {"normalizedLabel": "asc"}],
+            "unique": true,
+            "contested": {
+                "fieldMatches": [{"field": "normalizedLabel", "regexPattern": "^$"}],
+                "resolution": 0
+            }
+        }]);
+
+        let reason = rejection_reason(parse(indices, all_required()), "parentNameAndLabel");
+
+        assert_eq!(
+            reason,
+            "field match 'normalizedLabel' distinguishes the empty string from a one-byte \
+             string containing only a zero byte, which the index stores under the same key; \
+             the match must classify both alike, or the property must declare a minLength of \
+             at least 1"
+        );
+    }
+
+    /// A match that admits both aliased strings, or neither, is supported: the two documents
+    /// take the same path.
+    #[test]
+    fn should_accept_a_field_match_that_classifies_the_two_aliased_strings_alike() {
+        for pattern in ["^[a-z]{3,19}$", "^.{0,5}$"] {
+            let indices = platform_value!([{
+                "name": "parentNameAndLabel",
+                "properties": [{"normalizedParentDomainName": "asc"}, {"normalizedLabel": "asc"}],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [{"field": "normalizedLabel", "regexPattern": pattern}],
+                    "resolution": 0
+                }
+            }]);
+
+            parse(indices, all_required())
+                .unwrap_or_else(|error| panic!("pattern {pattern} is supported: {error:?}"));
+        }
+    }
+
+    /// With a `minLength` of at least 1 the empty string can never be a document value, so a
+    /// match that would split the aliased pair is harmless and stays supported.
+    #[test]
+    fn should_accept_a_splitting_field_match_when_the_property_forbids_the_empty_string() {
+        let platform_version = PlatformVersion::latest();
+        let schema = platform_value!({
+            "type": "object",
+            "documentsMutable": false,
+            "properties": {
+                "name": {"type": "string", "position": 0, "minLength": 1, "maxLength": 63},
+            },
+            "indices": [{
+                "name": "byName",
+                "properties": [{"name": "asc"}],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [{"field": "name", "regexPattern": "^$"}],
+                    "resolution": 0
+                }
+            }],
+            "required": ["name"],
+            "additionalProperties": false,
+        });
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("default config available on this platform version");
+
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "named",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("a property that forbids the empty string cannot store the aliased pair");
     }
 }

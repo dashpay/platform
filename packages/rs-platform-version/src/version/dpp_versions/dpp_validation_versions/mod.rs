@@ -61,8 +61,9 @@ pub struct DocumentTypeValidationVersions {
     pub contested_index_limit: u16,
     /// Version of `DocumentType::validate_contested_index_parameters`, the
     /// registration-time check that a contested index declares only
-    /// parameters the native contest machinery can honour (top-level required
-    /// user properties, field matches naming string properties of the index).
+    /// parameters the native contest machinery can honour (top-level, required,
+    /// non-transient user properties; field matches naming string properties
+    /// of the index that classify the two strings stored under one key alike).
     /// `None` on the versions that predate the check: they accept every
     /// declaration the parser accepts, exactly as they always did, so stored
     /// contracts and pre-activation history are never re-judged.

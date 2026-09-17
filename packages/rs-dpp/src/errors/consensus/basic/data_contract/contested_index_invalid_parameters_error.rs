@@ -6,9 +6,10 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 /// A contested index declares a parameter the native contest machinery
-/// cannot honour: an index property that is nested, a system property or
-/// not required, or a field match that names a property outside the index
-/// or a property that is not a string.
+/// cannot honour: an index property that is nested, a system property,
+/// not required or transient, or a field match that names a property
+/// outside the index, a property that is not a string, or a pattern that
+/// tells apart the two strings the index stores under one key.
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]

@@ -38,7 +38,7 @@ The parser enforces the shape: a contested index must be `unique`, a document ty
 
 ## Supported parameters
 
-From protocol version 17 the parameters themselves are validated at contract create and update, by `validate_contested_index_parameters`, a versioned class method called from the shared document-type parser under full validation (`packages/rs-dpp/src/data_contract/document_type/class_methods/validate_contested_index_parameters/`). Five rules, each closing a way for a declaration the parser accepts to break once a contest starts:
+From protocol version 17 the parameters themselves are validated at contract create and update, by `validate_contested_index_parameters`, a versioned class method called from the shared document-type parser under full validation (`packages/rs-dpp/src/data_contract/document_type/class_methods/validate_contested_index_parameters/`). Six rules, each closing a way for a declaration the parser accepts to break once a contest starts:
 
 | Rule | Why the native machinery needs it |
 |---|---|
@@ -47,8 +47,9 @@ From protocol version 17 the parameters themselves are validated at contract cre
 | No property of a contested index is `transient`. | A transient property is stripped from the document before it is stored, so the contest would be classified and the poll keyed from the submitted value while the contested tree walker reads the stored document and finds nothing: the same empty key as an absent property, on every create. `required` and `transient` are independent (DPNS's `preorderSalt` is both), so this is a separate rule. |
 | Every `fieldMatches` entry names a property of the index. | A match on a property outside the index lets two documents with equal index values take different paths (one becomes a contender, the other an ordinary unique insert). When the poll ends, the award collides with the ordinary document in the unique index while the block executes. |
 | Every matched property is a string. | A regex never matches a non-string, so the index silently degrades to a plain unique index and no contest can start. |
+| Every field match classifies the empty string and the one-byte string `"\0"` alike, unless the property declares a `minLength` of at least 1. | The tree key encoder stores the empty string as a single zero byte so it never collides with an absent value, which makes it collide with `"\0"` instead; those two are the only strings that share an encoded key. A match admitting one and not the other (`^$`) would send one document into the contest and the other through the ordinary unique insert, and the award would find its index entry taken. With a `minLength` of 1 the empty string is never a document value and the pair cannot occur. |
 
-A rejected declaration fails the create or update with `ContestedIndexInvalidParametersError` (code 10277), naming the document type, the index and the parameter. The check is versioned on `dpp.validation.document_type.validate_contested_index_parameters`: `None` on every protocol version before 17, so contracts stored before the check existed are never re-judged (a stored contract is parsed without full validation and never runs it), and a contract accepted at protocol version 14 to 16 stays accepted on replay. DPNS and every contested fixture in the tree pass all five rules.
+A rejected declaration fails the create or update with `ContestedIndexInvalidParametersError` (code 10277), naming the document type, the index and the parameter. The check is versioned on `dpp.validation.document_type.validate_contested_index_parameters`: `None` on every protocol version before 17, so contracts stored before the check existed are never re-judged (a stored contract is parsed without full validation and never runs it), and a contract accepted at protocol version 14 to 16 stays accepted on replay. DPNS and every contested fixture in the tree pass all six rules.
 
 ### Parameters are frozen on update
 

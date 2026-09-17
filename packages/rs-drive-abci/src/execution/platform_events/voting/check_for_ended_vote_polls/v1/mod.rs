@@ -7,7 +7,9 @@ use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use dpp::voting::vote_polls::VotePoll;
-use drive::drive::document::ContestedDocumentVotePollAwardOutcome;
+use drive::drive::document::{
+    ContestedDocumentVotePollAwardContender, ContestedDocumentVotePollAwardOutcome,
+};
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePollWithVotes;
 use drive::grovedb::TransactionArg;
 use drive::query::VotePollsByEndDateDriveQuery;
@@ -83,10 +85,10 @@ where
                                 // voted for them; contenders without votes are recorded
                                 // with no voters.
                                 let (contenders_with_votes, contenders_with_no_votes): (
-                                    Vec<_>,
-                                    Vec<_>,
+                                    Vec<ContestedDocumentVotePollAwardContender>,
+                                    Vec<ContestedDocumentVotePollAwardContender>,
                                 ) = contenders
-                                    .iter()
+                                    .into_iter()
                                     .partition(|contender| contender.final_vote_tally > 0);
 
                                 let fetch_contenders = contenders_with_votes

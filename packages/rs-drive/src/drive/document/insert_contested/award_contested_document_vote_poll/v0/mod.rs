@@ -1,4 +1,6 @@
-use crate::drive::document::insert_contested::award_contested_document_vote_poll::ContestedDocumentVotePollAwardOutcome;
+use crate::drive::document::insert_contested::award_contested_document_vote_poll::{
+    ContestedDocumentVotePollAwardContender, ContestedDocumentVotePollAwardOutcome,
+};
 use crate::drive::votes::paths::vote_contested_resource_end_date_queries_at_time_tree_path_vec;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::Drive;
@@ -12,10 +14,10 @@ use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DocumentInfo::DocumentAndSerialization;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::block::block_info::BlockInfo;
-use dpp::document::DocumentV0Getters;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
-use dpp::voting::contender_structs::FinalizedContender;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
 };
@@ -167,67 +169,80 @@ impl Drive {
             .sorted_by(|a, b| Ord::cmp(&b.final_vote_tally, &a.final_vote_tally))
             .collect();
 
+        let award_contenders: Vec<_> = sorted_contenders
+            .iter()
+            .map(|contender| ContestedDocumentVotePollAwardContender {
+                identity_id: contender.identity_id,
+                final_vote_tally: contender.final_vote_tally,
+            })
+            .collect();
+
         let highest_vote_tally = sorted_contenders
             .first()
             .map(|top| top.final_vote_tally)
             .unwrap_or_default();
 
-        let top_contenders = sorted_contenders
+        // The contenders sharing the top tally are a prefix of the sorted list. Their stored
+        // documents are deserialized in place for the tie-break; nothing is copied.
+        let top_contender_documents = sorted_contenders
             .iter()
-            .filter(|contender| contender.final_vote_tally == highest_vote_tally)
+            .take_while(|contender| contender.final_vote_tally == highest_vote_tally)
             .take(MAX_TOP_CONTENDERS_TO_TIE_BREAK)
-            .cloned()
-            .map(|contender| {
-                FinalizedContender::try_from_contender_with_serialized_document(
-                    contender,
+            .enumerate()
+            .map(|(position, contender)| {
+                Document::from_bytes(
+                    &contender.serialized_document,
                     document_type,
                     platform_version,
                 )
+                .map(|document| (position, document))
                 .map_err(Error::from)
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
-        let maybe_top_contender = top_contenders.into_iter().max_by(|a, b| {
-            a.document
-                .created_at()
-                .cmp(&b.document.created_at())
-                .then_with(|| {
-                    a.document
-                        .created_at_block_height()
-                        .cmp(&b.document.created_at_block_height())
-                })
-                .then_with(|| {
-                    a.document
-                        .created_at_core_block_height()
-                        .cmp(&b.document.created_at_core_block_height())
-                })
-                .then_with(|| a.document.id().cmp(&b.document.id()))
-        });
+        let maybe_top_contender_position =
+            top_contender_documents
+                .into_iter()
+                .max_by(|(_, a), (_, b)| {
+                    a.created_at()
+                        .cmp(&b.created_at())
+                        .then_with(|| {
+                            a.created_at_block_height()
+                                .cmp(&b.created_at_block_height())
+                        })
+                        .then_with(|| {
+                            a.created_at_core_block_height()
+                                .cmp(&b.created_at_core_block_height())
+                        })
+                        .then_with(|| a.id().cmp(&b.id()))
+                });
 
-        let Some(top_contender) = maybe_top_contender else {
+        let Some((top_contender_position, document)) = maybe_top_contender_position else {
             return Ok(ContestedDocumentVotePollAwardOutcome {
                 vote_poll: vote_poll.clone(),
                 winner: ContestedDocumentVotePollWinnerInfo::NoWinner,
-                contenders: sorted_contenders,
+                contenders: award_contenders,
             });
         };
 
         // A lock tied with the top contender does not lock: the top contender gets it.
-        if locked_vote_tally > top_contender.final_vote_tally {
+        if locked_vote_tally > highest_vote_tally {
             return Ok(ContestedDocumentVotePollAwardOutcome {
                 vote_poll: vote_poll.clone(),
                 winner: ContestedDocumentVotePollWinnerInfo::Locked,
-                contenders: sorted_contenders,
+                contenders: award_contenders,
             });
         }
 
-        // 4. Award: insert the stored contender document as the winner's document.
-        let FinalizedContender {
-            identity_id,
-            document,
-            serialized_document,
-            ..
-        } = top_contender;
+        // 4. Award: insert the stored contender document as the winner's document. Only the
+        // winner's bytes are moved out of the tallied list.
+        let Some(top_contender) = sorted_contenders.into_iter().nth(top_contender_position) else {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "the tie-break selected a contender position outside the tallied list",
+            )));
+        };
+        let identity_id = top_contender.identity_id;
+        let serialized_document = top_contender.serialized_document;
 
         let owned_document_info = OwnedDocumentInfo {
             document_info: DocumentAndSerialization((document, serialized_document, None)),
@@ -252,7 +267,7 @@ impl Drive {
         Ok(ContestedDocumentVotePollAwardOutcome {
             vote_poll: vote_poll.clone(),
             winner: ContestedDocumentVotePollWinnerInfo::WonByIdentity(identity_id),
-            contenders: sorted_contenders,
+            contenders: award_contenders,
         })
     }
 }
@@ -275,8 +290,7 @@ mod tests {
         CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
     };
     use dpp::data_contract::DataContract;
-    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::document::DocumentV0Setters;
     use dpp::identifier::Identifier;
     use dpp::platform_value::{Bytes32, Value};
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;

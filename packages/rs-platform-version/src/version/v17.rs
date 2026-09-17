@@ -16,8 +16,9 @@ pub const PROTOCOL_VERSION_17: ProtocolVersion = 17;
 ///
 /// * `DPP_VALIDATION_VERSIONS_V6` turns on `validate_contested_index_parameters`: a contested
 ///   index registered or updated at this version may only declare parameters the native
-///   contest machinery can honour (top-level required user properties, field matches naming
-///   string properties of the index). Stored contracts are never re-judged.
+///   contest machinery can honour (top-level, required, non-transient user properties; field
+///   matches naming string properties of the index that classify the two strings stored
+///   under one key alike). Stored contracts are never re-judged.
 /// * `DRIVE_VERSION_V10` turns on `award_contested_document_vote_poll`, the native award
 ///   operation: it re-derives the ended poll's winner from state and inserts the winning
 ///   document in one Drive call, takes no contender, and rejects any call that names a wrong
