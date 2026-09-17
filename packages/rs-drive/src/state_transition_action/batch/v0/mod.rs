@@ -1,4 +1,6 @@
+use crate::state_transition_action::batch::ResolvedContractGroupMemberships;
 use dpp::fee::Credits;
+use std::collections::BTreeMap;
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use dpp::identifier::Identifier;
 use dpp::prelude::UserFeeIncrease;
@@ -18,6 +20,11 @@ pub struct BatchTransitionActionV0 {
     pub transitions: Vec<BatchedTransitionAction>,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
+    /// The contract group memberships of every contract the batch touches, keyed by contract
+    /// id, as the transformer read them from state (protocol version 14). They let a key bound
+    /// to a contract group be judged from the action alone. Empty under transformer versions
+    /// that do not resolve them.
+    pub contract_group_memberships: BTreeMap<Identifier, ResolvedContractGroupMemberships>,
 }
 
 impl BatchTransitionActionV0 {

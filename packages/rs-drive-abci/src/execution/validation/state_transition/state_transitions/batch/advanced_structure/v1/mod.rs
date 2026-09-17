@@ -3,8 +3,7 @@ use dpp::consensus::signature::ContractBoundedKeyOutOfBoundsError;
 use dpp::contract_group::{ContractGroupMember, ContractGroupMembership};
 use dpp::identity::contract_bounds::BatchedTransitionBoundsCheck;
 use dpp::identity::Purpose;
-use drive::drive::Drive;
-use drive::grovedb::TransactionArg;
+use std::collections::BTreeSet;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
 use dpp::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
@@ -49,15 +48,12 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStructureValidationV1
 {
-    #[allow(clippy::too_many_arguments)] // Drive and the transaction serve the group read.
     fn validate_advanced_structure_from_state_v1(
         &self,
         block_info: &BlockInfo,
         network: Network,
         action: &BatchTransitionAction,
         identity: &PartialIdentity,
-        drive: &Drive,
-        transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -70,8 +66,6 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
         network: Network,
         action: &BatchTransitionAction,
         identity: &PartialIdentity,
-        drive: &Drive,
-        transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -111,6 +105,7 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
         if signing_key.purpose() == Purpose::AUTHENTICATION {
             if let Some(bounds) = signing_key.contract_bounds() {
                 let mut out_of_bounds = false;
+                let mut billed_contracts = BTreeSet::new();
                 for member in self.transitions_iter() {
                     match bounds.check_batched_transition(member) {
                         BatchedTransitionBoundsCheck::Allowed => {}
@@ -123,18 +118,24 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                             contract_id,
                             member,
                         } => {
-                            // One billed read of the member contract's memberships (at most
-                            // the per-contract cap of them). The whole contract or the exact
-                            // document type or token must belong to the key's group.
-                            let (fee, memberships) = drive
-                                .fetch_contract_group_memberships_for_contract_with_fee(
-                                    contract_id,
-                                    &block_info.epoch,
-                                    transaction,
-                                    platform_version,
-                                )?;
-                            execution_context
-                                .add_operation(ValidationOperation::PrecalculatedOperation(fee));
+                            // The transformer resolved the member contract's group
+                            // memberships into the action, with the fee of that read. The
+                            // fee is billed here, once per contract, where the answer is
+                            // used. The whole contract or the exact document type or token
+                            // must belong to the key's group.
+                            let resolved = action.contract_group_memberships(&contract_id).ok_or(
+                                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                                    "the batch transformer must resolve the contract group memberships of every contract in the batch",
+                                )),
+                            )?;
+                            if billed_contracts.insert(contract_id) {
+                                execution_context.add_operation(
+                                    ValidationOperation::PrecalculatedOperation(
+                                        resolved.fee.clone(),
+                                    ),
+                                );
+                            }
+                            let memberships = &resolved.memberships;
                             let whole_contract = ContractGroupMembership {
                                 contract_group_id,
                                 member: ContractGroupMember::Contract,

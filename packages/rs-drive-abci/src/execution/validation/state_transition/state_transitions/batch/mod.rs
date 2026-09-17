@@ -19,7 +19,6 @@ use dpp::prelude::*;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::Drive;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 
@@ -36,6 +35,7 @@ use crate::execution::validation::state_transition::batch::advanced_structure::v
 use crate::execution::validation::state_transition::batch::identity_contract_nonce::v0::DocumentsBatchStateTransitionIdentityContractNonceV0;
 use crate::execution::validation::state_transition::batch::state::v0::DocumentsBatchStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::batch::state::v1::DocumentsBatchStateTransitionStateValidationV1;
+use crate::execution::validation::state_transition::batch::state::v2::DocumentsBatchStateTransitionStateValidationV2;
 use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::identity_nonces::StateTransitionIdentityNonceValidationV0;
@@ -92,9 +92,19 @@ impl StateTransitionActionTransformer for BatchTransition {
                 execution_context,
                 tx,
             ),
+            // PROTOCOL_VERSION_14+: `_v2` also resolves the contract group
+            // memberships of the batch's contracts into the action, so a key
+            // bound to a contract group is judged from the action.
+            2 => self.transform_into_action_v2(
+                &platform.into(),
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: transform_into_action".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -167,8 +177,6 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
         network: Network,
         action: &StateTransitionAction,
         identity: Option<&PartialIdentity>,
-        drive: &Drive,
-        transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -203,8 +211,6 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
                         network,
                         documents_batch_transition_action,
                         identity,
-                        drive,
-                        transaction,
                         execution_context,
                         platform_version,
                     )

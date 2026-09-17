@@ -298,8 +298,6 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             platform.config.network,
             &action,
             maybe_identity.as_ref(),
-            platform.drive,
-            transaction,
             &mut state_transition_execution_context,
             platform_version,
         )?;

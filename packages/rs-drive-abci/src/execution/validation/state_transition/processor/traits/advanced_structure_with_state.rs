@@ -11,8 +11,6 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
-use drive::drive::Drive;
-use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 
 /// A trait for validating state transitions within a blockchain.
@@ -27,15 +25,12 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
     /// # Returns
     ///
     /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
-    #[allow(clippy::too_many_arguments)] // Drive and the transaction serve state-backed checks.
     fn validate_advanced_structure_from_state(
         &self,
         block_info: &BlockInfo,
         network: Network,
         action: &StateTransitionAction,
         maybe_identity: Option<&PartialIdentity>,
-        drive: &Drive,
-        transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -54,8 +49,6 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
         network: Network,
         action: &StateTransitionAction,
         maybe_identity: Option<&PartialIdentity>,
-        drive: &Drive,
-        transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -65,8 +58,6 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
                 network,
                 action,
                 maybe_identity,
-                drive,
-                transaction,
                 execution_context,
                 platform_version,
             ),
@@ -90,8 +81,6 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
                 network,
                 action,
                 maybe_identity,
-                drive,
-                transaction,
                 execution_context,
                 platform_version,
             ),

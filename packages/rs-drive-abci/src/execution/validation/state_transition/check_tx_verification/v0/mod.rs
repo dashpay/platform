@@ -316,8 +316,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     platform.config.network,
                     &action,
                     maybe_identity.as_ref(),
-                    platform.drive,
-                    None,
                     &mut state_transition_execution_context,
                     platform_version,
                 )?;
