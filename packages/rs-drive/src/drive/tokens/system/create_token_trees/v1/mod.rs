@@ -21,7 +21,7 @@ use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::contract_lifecycle::ContractTokenLifecycle;
 use dpp::tokens::status::TokenStatus;
 use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::KeyInfoPath;
+use grovedb::batch::{GroveOp, KeyInfoPath};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
@@ -290,7 +290,9 @@ impl Drive {
         // an earlier token of the same contract in this batch) keeps it, unless it is wiped:
         // a destroyed issuer never gains a token. The batch scan is what keeps a contract
         // update that adds several tokens from inserting the record once per token; the
-        // first token of the batch is the one that reads the stored record.
+        // first token of the batch is the one that reads the stored record, and a record
+        // already written by the batch is checked from the pending write, so a destruction
+        // composed into the same batch refuses the token like a stored one.
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_token_contract_lifecycles(
                 estimated_costs_only_with_layer_info,
@@ -307,50 +309,74 @@ impl Drive {
                 ),
             }
         };
-        let record_already_in_batch = previous_batch_operations
-            .as_deref()
-            .map(|operations| {
-                let lifecycles_path =
-                    KeyInfoPath::from_known_owned_path(token_contract_lifecycles_root_path_vec());
-                let contract_key = Some(KeyInfo::KnownKey(contract_id.to_vec()));
-                operations.iter().any(|operation| match operation {
-                    LowLevelDriveOperation::GroveOperation(grove_op) => {
-                        grove_op.path == lifecycles_path && grove_op.key == contract_key
-                    }
-                    _ => false,
-                })
+        let pending_record_write = previous_batch_operations.as_deref().and_then(|operations| {
+            let lifecycles_path =
+                KeyInfoPath::from_known_owned_path(token_contract_lifecycles_root_path_vec());
+            let contract_key = Some(KeyInfo::KnownKey(contract_id.to_vec()));
+            operations.iter().find_map(|operation| match operation {
+                LowLevelDriveOperation::GroveOperation(grove_op)
+                    if grove_op.path == lifecycles_path && grove_op.key == contract_key =>
+                {
+                    Some(&grove_op.op)
+                }
+                _ => None,
             })
-            .unwrap_or(false);
-        if !record_already_in_batch {
-            let record_bytes =
-                ContractTokenLifecycle::new(0, platform_version)?.serialize_consume_to_bytes()?;
-            let existing_record = self.batch_insert_if_not_exists_return_existing_element(
-                PathKeyElementInfo::PathFixedSizeKeyRefElement::<2>((
-                    token_contract_lifecycles_root_path(),
-                    contract_id.as_slice(),
-                    Element::Item(record_bytes, None),
-                )),
-                record_apply_type,
-                transaction,
-                &mut batch_operations,
-                &platform_version.drive,
-            )?;
-            if let Some(existing_record) = existing_record {
-                let record = match existing_record {
-                    Element::Item(bytes, _) => {
-                        ContractTokenLifecycle::deserialize_from_bytes(bytes.as_slice())?
+        });
+        match pending_record_write {
+            Some(pending) if estimated_costs_only_with_layer_info.is_none() => {
+                let record = match pending {
+                    GroveOp::InsertOrReplace {
+                        element: Element::Item(bytes, _),
                     }
+                    | GroveOp::Replace {
+                        element: Element::Item(bytes, _),
+                    } => ContractTokenLifecycle::deserialize_from_bytes(bytes.as_slice())?,
                     _ => {
-                        return Err(Error::Drive(DriveError::CorruptedElementType(
-                            "contract token lifecycle was present but was not an item",
+                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "a pending contract token lifecycle write is not an item insert or replacement",
                         )))
                     }
                 };
                 if record.is_wiped() {
                     return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                        "contract {} was destroyed, it cannot issue a new token",
+                        "contract {} is destroyed in this batch, it cannot issue a new token",
                         contract_id
                     ))));
+                }
+            }
+            // Priced without state: the earlier token of the batch priced the record.
+            Some(_) => {}
+            None => {
+                let record_bytes = ContractTokenLifecycle::new(0, platform_version)?
+                    .serialize_consume_to_bytes()?;
+                let existing_record = self.batch_insert_if_not_exists_return_existing_element(
+                    PathKeyElementInfo::PathFixedSizeKeyRefElement::<2>((
+                        token_contract_lifecycles_root_path(),
+                        contract_id.as_slice(),
+                        Element::Item(record_bytes, None),
+                    )),
+                    record_apply_type,
+                    transaction,
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+                if let Some(existing_record) = existing_record {
+                    let record = match existing_record {
+                        Element::Item(bytes, _) => {
+                            ContractTokenLifecycle::deserialize_from_bytes(bytes.as_slice())?
+                        }
+                        _ => {
+                            return Err(Error::Drive(DriveError::CorruptedElementType(
+                                "contract token lifecycle was present but was not an item",
+                            )))
+                        }
+                    };
+                    if record.is_wiped() {
+                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                            "contract {} was destroyed, it cannot issue a new token",
+                            contract_id
+                        ))));
+                    }
                 }
             }
         }
@@ -602,6 +628,64 @@ mod tests {
             .expect("expected to read")
             .expect("expected a record")
             .is_wiped());
+    }
+
+    fn expect_refused_after_a_pending_destruction(
+        drive: &Drive,
+        contract_id: Identifier,
+        position: u16,
+        new_token: [u8; 32],
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let mut batch = drive
+            .destroy_token_issuer_operations(
+                contract_id.to_buffer(),
+                &BlockInfo::default(),
+                &mut None,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the destruction operations");
+
+        let result = drive.create_token_trees_operations(
+            contract_id,
+            position,
+            new_token,
+            false,
+            false,
+            &mut Some(&mut batch),
+            &mut None,
+            None,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+            ),
+            "expected the token to be refused, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_new_token_when_the_issuer_is_destroyed_in_the_same_batch() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract_id = Identifier::from([52u8; 32]);
+        create(&drive, contract_id, 0, [51u8; 32], false);
+
+        // The pending destruction replaces the stored record.
+        expect_refused_after_a_pending_destruction(&drive, contract_id, 1, [53u8; 32]);
+    }
+
+    #[test]
+    fn should_refuse_a_first_token_when_the_contract_is_destroyed_in_the_same_batch() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract_id = Identifier::from([52u8; 32]);
+
+        // A contract without tokens has no record; the pending destruction inserts a wiped one.
+        expect_refused_after_a_pending_destruction(&drive, contract_id, 0, [51u8; 32]);
     }
 
     #[test]
