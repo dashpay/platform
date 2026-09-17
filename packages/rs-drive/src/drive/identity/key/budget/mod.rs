@@ -1,6 +1,6 @@
 //! The remaining budget of budgeted identity keys.
 //!
-//! A public key may carry a `budget`: the total credits that state transitions signed with it may
+//! A public key may carry a `total_budget`: the total credits that state transitions signed with it may
 //! take from the identity. The key itself is immutable, so what is left of the budget lives next
 //! to it, in the identity's key budgets subtree:
 //!
