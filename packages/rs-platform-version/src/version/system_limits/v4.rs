@@ -4,7 +4,8 @@ use crate::version::system_limits::SystemLimits;
 /// released table (V3) this changes the withdrawal limit, adds the
 /// time-range overlap-factor cap, adds the time-range TTL pair, and raises
 /// the GroveDB proof envelope floor (the TTL and floor fields joined this
-/// still-unreleased table in place rather than spawning a new version):
+/// table in place while protocol version 14 was unreleased, rather than
+/// spawning a new version; it shipped with 4.2 and is now frozen):
 ///
 /// * `max_time_range_ttl_seconds` is set to one week: the ceiling on the
 ///   `ttl` a `timeRange` index transform may declare. The cap is what makes
