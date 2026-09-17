@@ -1981,10 +1981,13 @@ class PlatformWalletPersistenceHandler(
             val identityBase58 = identityId.toBase58String()
             val existing = db.publicKeyDao().getByIdentityAndKeyId(identityBase58, keyId)
             // ContractBounds projection → the legacy JSON blob column +
-            // doc-type name (Swift stores `[base64(contractId)]` JSON).
-            val boundsData = if ((contractBoundsKind.toInt() and 0xFF) != 0)
+            // doc-type name (Swift stores `[base64(contractId)]` JSON), plus
+            // the kind itself: the blob holds the contract group id for kind
+            // 3, which the other two columns cannot tell from kind 1.
+            val boundsKind = contractBoundsKind.toInt() and 0xFF
+            val boundsData = if (boundsKind != 0)
                 contractBoundsIdToJson(contractBoundsId) else null
-            val docTypeName = if ((contractBoundsKind.toInt() and 0xFF) == 2)
+            val docTypeName = if (boundsKind == 2)
                 contractBoundsDocumentType else null
             val row = PublicKeyEntity(
                 id = existing?.id ?: 0,
@@ -2001,6 +2004,7 @@ class PlatformWalletPersistenceHandler(
                 publicKeyData = publicKeyData,
                 contractBoundsData = boundsData,
                 contractBoundsDocumentTypeName = docTypeName,
+                contractBoundsKind = boundsKind,
                 // Set to the Keystore identifier when the deriver stored the
                 // scalar; otherwise preserve any prior identifier (idempotent
                 // re-persist) and fall back to watch-only (null) for
@@ -2857,17 +2861,35 @@ class PlatformWalletPersistenceHandler(
                 .sortedBy { it.keyId }
                 .map { pk ->
                     // ContractBounds → (kind, 32-byte id, doc-type). Inverse
-                    // of `contractBoundsIdToJson` on the persist side:
-                    //   * no blob        → kind 0 (unbounded)
-                    //   * blob + docType → kind 2 (SingleContractDocumentType)
-                    //   * blob, no docType → kind 1 (SingleContract)
+                    // of `contractBoundsIdToJson` on the persist side. The
+                    // stored kind decides:
+                    //   * no blob          → kind 0 (unbounded)
+                    //   * stored kind 3    → kind 3 (ContractGroup, no docType)
+                    //   * stored kind 2    → kind 2 with its docType; without
+                    //                        one it demotes to kind 1, as the
+                    //                        Rust loader does
+                    //   * stored kind 1    → kind 1 (SingleContract)
+                    //   * stored kind 0, or a kind this build does not know
+                    //                      → kind 0, the same fallback the
+                    //                        Swift restore path applies,
+                    //                        rather than asserting a
+                    //                        SingleContract bound the key
+                    //                        never had
+                    // A NULL stored kind is a legacy row (schema < 13) and
+                    // keeps the inference those rows have always used:
+                    // blob + docType → kind 2, blob alone → kind 1.
                     // A blob that fails to decode to 32 bytes degrades to
                     // kind 0 rather than crashing FFI marshalling.
                     val boundsId = pk.contractBoundsData?.let { contractBoundsJsonToId(it) }
+                    val hasDocType = !pk.contractBoundsDocumentTypeName.isNullOrEmpty()
+                    val storedKind = pk.contractBoundsKind
                     val (kind, id) = when {
                         boundsId == null -> 0.toByte() to ByteArray(0)
-                        pk.contractBoundsDocumentTypeName != null -> 2.toByte() to boundsId
-                        else -> 1.toByte() to boundsId
+                        storedKind == 3 -> 3.toByte() to boundsId
+                        storedKind == 1 -> 1.toByte() to boundsId
+                        storedKind == 2 || storedKind == null ->
+                            (if (hasDocType) 2 else 1).toByte() to boundsId
+                        else -> 0.toByte() to ByteArray(0)
                     }
                     IdentityKeyRestoreData(
                         keyId = pk.keyId,
