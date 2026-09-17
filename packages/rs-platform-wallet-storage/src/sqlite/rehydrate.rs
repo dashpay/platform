@@ -224,18 +224,18 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// - **Address-pool used-state**: every `used_pool_addresses` entry is
 ///   re-marked used (in union with the unspent-UTXO addresses), so an
 ///   address whose funds were since spent is not re-handed-out as fresh.
-/// - **InstantSend locks**: every `instant_locks_for_non_final_records`
-///   entry is replayed through `mark_instant_send_utxos` after the UTXO
-///   restore, so instant-locked funds come back instant-locked instead of
-///   waiting for the next sync to re-learn them.
+/// - **InstantSend locks**: separately persisted locks reconcile unconfirmed
+///   records and coins before validation. Mined contexts retain their block
+///   information; lock replay also restores transaction-level lock tracking.
 /// - **Sync watermarks**: `synced_height` / `last_processed_height`.
 ///
 /// # Reconstructed when the persister supplies it
 ///
 /// - **`last_applied_chain_lock`**: restored from `core` on both backends
 ///   when the supplied [`CoreChangeSet`](platform_wallet::changeset::CoreChangeSet)
-///   carries it, so the asset-lock-resume CL-from-metadata fallback
-///   (`proof.rs`) fires at launch instead of waiting for SPV. The FFI/iOS
+///   carries it, promoting covered records before returning so finality is
+///   effective at open. The asset-lock-resume CL-from-metadata fallback
+///   (`proof.rs`) also fires at launch instead of waiting for SPV. The FFI/iOS
 ///   persister round-trips the value Swift held; the SQLite persister
 ///   reads it from `core_sync_state.last_applied_chain_lock` (present
 ///   since V001) via a monotonic height-max merge on write and
@@ -453,6 +453,16 @@ fn restore_core_state(
         }
     }
 
+    // Lock events persist independently of records; validation requires their
+    // unconfirmed lifecycle to agree with the restored coin flags.
+    for record in &mut persisted.transactions {
+        if matches!(record.context, TransactionContext::Mempool) {
+            if let Some(lock) = core.instant_locks_for_non_final_records.get(&record.txid) {
+                record.update_context(TransactionContext::InstantSend(lock.clone()));
+            }
+        }
+    }
+
     wallet_info.restore_persisted_state(persisted)?;
 
     // Replay lock metadata after restoring records. Coins are already marked
@@ -460,6 +470,9 @@ fn restore_core_state(
     // make this method return early.
     for (txid, lock) in &core.instant_locks_for_non_final_records {
         wallet_info.mark_instant_send_utxos(txid, lock);
+    }
+    if let Some(chain_lock) = &core.last_applied_chain_lock {
+        wallet_info.apply_chain_lock(chain_lock.clone());
     }
 
     // Recompute per-account + wallet balance from the restored set.
@@ -475,12 +488,7 @@ fn reconstruct_legacy_account_records(
 ) -> Result<Vec<TransactionRecord>, WalletStorageError> {
     use key_wallet::wallet::managed_wallet_info::RestoreError;
 
-    let accounts: Vec<_> = wallet_info
-        .accounts
-        .all_accounts()
-        .into_iter()
-        .filter(|account| account.as_funds().is_some())
-        .collect();
+    let accounts = wallet_info.accounts.all_funding_accounts();
     let mut slices = Vec::new();
     for account in &accounts {
         let inputs: Vec<_> = record
@@ -3151,13 +3159,8 @@ mod tests {
         );
     }
 
-    /// A restored UTXO whose transaction carried an InstantSend lock must come
-    /// back instant-locked, not wait for the next sync to re-learn it. The
-    /// persisted `core_instant_locks` rows arrive in
-    /// `CoreChangeSet::instant_locks_for_non_final_records`, and replaying them
-    /// has to happen AFTER the UTXO restore — `mark_instant_send_utxos` marks
-    /// the UTXOs it can find, so calling it first would insert the txid and
-    /// mark nothing.
+    // Lock events persist separately from transaction records and must restore
+    // the record and coin to the same lifecycle before validation.
     #[test]
     fn rehydration_restores_instant_send_locks_onto_restored_utxos() {
         use dashcore::blockdata::transaction::txout::TxOut;
@@ -3257,7 +3260,7 @@ mod tests {
         let record = key_wallet::managed_account::transaction_record::TransactionRecord::new(
             transaction,
             bip44_type,
-            key_wallet::transaction_checking::TransactionContext::InstantSend(lock.clone()),
+            key_wallet::transaction_checking::TransactionContext::Mempool,
             key_wallet::transaction_checking::TransactionType::Standard,
             key_wallet::managed_account::transaction_record::TransactionDirection::Incoming,
             Vec::new(),
@@ -3265,41 +3268,99 @@ mod tests {
             12_345,
         );
 
-        let core = platform_wallet::changeset::CoreChangeSet {
-            records: vec![record],
-            new_utxos: vec![utxo],
-            instant_locks_for_non_final_records: [(txid, lock)].into_iter().collect(),
-            last_processed_height: Some(1),
-            synced_height: Some(1),
-            ..Default::default()
-        };
-
-        apply_persisted_core_state(
-            &mut wallet_info,
-            &manifest,
-            &core,
-            &Default::default(),
-            &Default::default(),
-            &Default::default(),
-            &LoadCtx::strict(),
-        )
-        .unwrap();
-
-        assert!(
-            wallet_info.instant_send_locks().contains(&txid),
-            "the persisted InstantSend lock must be replayed onto the wallet"
-        );
-        let restored = wallet_info
-            .accounts
-            .standard_bip44_accounts
-            .get(&0)
-            .and_then(|a| a.utxos.get(&outpoint))
-            .expect("the restored UTXO must be present on the BIP44 account");
-        assert!(
-            restored.is_instantlocked,
-            "the restored UTXO must carry instant-locked status, not wait for the next sync"
-        );
-        assert!(!restored.is_confirmed);
+        use key_wallet::transaction_checking::BlockInfo;
+        let block = BlockInfo::new(1, dashcore::BlockHash::from([0xB1; 32]), 123);
+        for context in [
+            TransactionContext::Mempool,
+            TransactionContext::InstantSend(lock.clone()),
+            TransactionContext::InBlock(block),
+            TransactionContext::InChainLockedBlock(block),
+        ] {
+            for exact_records in [false, true] {
+                let mut record = record.clone();
+                record.update_context(context.clone());
+                let mut utxo = utxo.clone();
+                if let Some(block) = record.block_info() {
+                    utxo.height = block.height();
+                    utxo.is_confirmed = true;
+                }
+                let wallet_id = wallet_info.wallet_id;
+                let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+                crate::sqlite::migrations::run(&mut conn).unwrap();
+                conn.execute(
+                "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+                rusqlite::params![wallet_id.as_slice()],
+            ).unwrap();
+                let tx = conn.transaction().unwrap();
+                crate::sqlite::schema::core_state::apply(
+                    &tx,
+                    &wallet_id,
+                    &CoreChangeSet {
+                        records: vec![record.clone()],
+                        account_records: if exact_records {
+                            vec![record.clone()]
+                        } else {
+                            vec![]
+                        },
+                        new_utxos: vec![utxo.clone()],
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                // TransactionInstantLocked persists a lock without rewriting the record.
+                crate::sqlite::schema::core_state::apply(
+                    &tx,
+                    &wallet_id,
+                    &CoreChangeSet {
+                        instant_locks_for_non_final_records: [(txid, lock.clone())]
+                            .into_iter()
+                            .collect(),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                tx.commit().unwrap();
+                let (core, owners, spent) = crate::sqlite::schema::core_state::load_state(
+                    &conn,
+                    &wallet_id,
+                    Network::Testnet,
+                    &LoadCtx::strict(),
+                )
+                .unwrap();
+                assert_eq!(core.records[0].context, context);
+                assert_eq!(!core.account_records.is_empty(), exact_records);
+                wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+                apply_persisted_core_state(
+                    &mut wallet_info,
+                    &manifest,
+                    &core,
+                    &owners,
+                    &Default::default(),
+                    &spent,
+                    &LoadCtx::strict(),
+                )
+                .unwrap();
+                assert!(wallet_info.instant_send_locks().contains(&txid));
+                let account = &wallet_info.accounts.standard_bip44_accounts[&0];
+                let restored = &account.utxos[&outpoint];
+                assert!(restored.is_instantlocked);
+                assert_eq!(restored.is_confirmed, record.block_info().is_some());
+                assert_eq!(restored.height, utxo.height);
+                if context.is_chain_locked() {
+                    assert!(account.transaction_is_finalized(&txid));
+                    if let Some(retained) = account.transactions().get(&txid) {
+                        assert_eq!(retained.context, context);
+                    }
+                } else {
+                    let expected = if record.block_info().is_some() {
+                        context.clone()
+                    } else {
+                        TransactionContext::InstantSend(lock.clone())
+                    };
+                    assert_eq!(account.transactions()[&txid].context, expected);
+                }
+            }
+        }
 
         let mut already_locked_info = ManagedWalletInfo::from_wallet(&wallet, 1);
         apply_persisted_core_state(
@@ -3319,6 +3380,190 @@ mod tests {
             already_locked_info.accounts.standard_bip44_accounts[&0].utxos[&outpoint]
                 .is_instantlocked
         );
+    }
+
+    #[test]
+    fn rehydration_applies_saved_chainlock_to_restored_records() {
+        use dashcore::hashes::Hash;
+        use key_wallet::account::StandardAccountType;
+        use key_wallet::transaction_checking::BlockInfo;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        let wallet = Wallet::from_seed_bytes(
+            [0x57; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let account_type = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        let record = TransactionRecord::new(
+            tx,
+            account_type,
+            TransactionContext::InBlock(BlockInfo::new(80, dashcore::BlockHash::all_zeros(), 0)),
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            0,
+        );
+        let txid = record.txid;
+        let mut later_record = record.clone();
+        later_record.transaction.lock_time = 1;
+        later_record.txid = later_record.transaction.txid();
+        later_record.update_context(TransactionContext::InBlock(BlockInfo::new(
+            101,
+            dashcore::BlockHash::all_zeros(),
+            0,
+        )));
+        let later_txid = later_record.txid;
+        let chainlock = dashcore::ChainLock {
+            block_height: 100,
+            block_hash: dashcore::BlockHash::all_zeros(),
+            signature: [0; 96].into(),
+        };
+        let mut restored = ManagedWalletInfo::from_wallet(&wallet, 1);
+        apply_persisted_core_state(
+            &mut restored,
+            &manifest_for(&wallet),
+            &CoreChangeSet {
+                records: vec![record, later_record.clone()],
+                last_applied_chain_lock: Some(chainlock.clone()),
+                synced_height: Some(100),
+                ..Default::default()
+            },
+            &Default::default(),
+            &Default::default(),
+            &Default::default(),
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+        assert!(
+            restored.accounts.standard_bip44_accounts[&0].transaction_is_finalized(&txid),
+            "saved ChainLock must already finalize the restored record at open"
+        );
+        let account = &restored.accounts.standard_bip44_accounts[&0];
+        assert!(!account.transaction_is_finalized(&later_txid));
+        assert_eq!(
+            account.transactions()[&later_txid].context,
+            later_record.context
+        );
+        let repeated = restored.apply_chain_lock(chainlock);
+        assert!(!repeated.metadata_advanced);
+        assert!(
+            repeated.locked_transactions.is_empty(),
+            "nothing remains to promote on replay"
+        );
+    }
+
+    #[test]
+    fn rehydration_accepts_legacy_outgoing_contact_payment() {
+        use key_wallet::account::StandardAccountType;
+        use key_wallet::managed_account::transaction_record::{InputDetail, OutputDetail};
+        let mut wallet = Wallet::from_seed_bytes(
+            [0x58; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let contact_wallet = Wallet::from_seed_bytes(
+            [0x59; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let contact_type = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: [1; 32],
+            friend_identity_id: [2; 32],
+        };
+        let contact_account = Account::from_xpub(
+            None,
+            contact_type,
+            contact_wallet.accounts.standard_bip44_accounts[&0].account_xpub,
+            Network::Testnet,
+        )
+        .unwrap();
+        wallet.accounts.insert(contact_account).unwrap();
+        let mut restored = ManagedWalletInfo::from_wallet(&wallet, 1);
+        let address = restored.accounts.standard_bip44_accounts[&0].all_addresses()[0].clone();
+        let contact_address = restored
+            .accounts
+            .dashpay_external_accounts
+            .values()
+            .next()
+            .unwrap()
+            .all_addresses()[0]
+            .clone();
+        let transaction = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![dashcore::TxIn {
+                previous_output: dashcore::OutPoint {
+                    txid: dashcore::Txid::from([0x60; 32]),
+                    vout: 0,
+                },
+                ..Default::default()
+            }],
+            output: vec![dashcore::TxOut {
+                value: 900,
+                script_pubkey: contact_address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let record = TransactionRecord::new(
+            transaction,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: 1000,
+                address,
+            }],
+            vec![OutputDetail {
+                index: 0,
+                value: 900,
+                address: Some(contact_address),
+                role: OutputRole::Sent,
+            }],
+            -1000,
+        );
+        let txid = record.txid;
+        apply_persisted_core_state(
+            &mut restored,
+            &manifest_for(&wallet),
+            &CoreChangeSet {
+                records: vec![record],
+                ..Default::default()
+            },
+            &Default::default(),
+            &Default::default(),
+            &Default::default(),
+            &LoadCtx::strict(),
+        )
+        .expect("legacy outgoing contact payment must load without treating contact coins as ours");
+        let outgoing = &restored.accounts.standard_bip44_accounts[&0].transactions()[&txid];
+        assert_eq!(outgoing.net_amount, -1000);
+        assert_eq!(outgoing.direction, TransactionDirection::Outgoing);
+        assert_eq!(outgoing.output_details[0].role, OutputRole::Sent);
+        assert!(restored
+            .accounts
+            .dashpay_external_accounts
+            .values()
+            .all(|account| { account.transactions().is_empty() && account.utxos.is_empty() }));
     }
 
     #[tokio::test]

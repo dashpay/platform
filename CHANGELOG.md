@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Fixed
+
+- Restore wallet records and coins consistently after separately persisted InstantSend locks, accept legacy outgoing contact payments, and apply saved ChainLock finality when opening a wallet.
+
 ## [4.2.0-dev.11](https://github.com/dashpay/platform/compare/v4.2.0-dev.10...v4.2.0-dev.11) (2026-09-14)
 
 
