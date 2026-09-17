@@ -3231,9 +3231,9 @@ mod tests {
                 script_pubkey: address.script_pubkey(),
             },
             address,
-            height: 1,
+            height: 0,
             is_coinbase: false,
-            is_confirmed: true,
+            is_confirmed: false,
             is_instantlocked: false,
             is_locked: false,
             is_trusted: false,
@@ -3299,6 +3299,7 @@ mod tests {
             restored.is_instantlocked,
             "the restored UTXO must carry instant-locked status, not wait for the next sync"
         );
+        assert!(!restored.is_confirmed);
 
         let mut already_locked_info = ManagedWalletInfo::from_wallet(&wallet, 1);
         apply_persisted_core_state(
