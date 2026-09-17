@@ -39,6 +39,7 @@ pub mod document_split_sum;
 /// Lights up alongside grovedb PR 670; see the file's docs.
 pub mod document_sum;
 pub mod groups;
+pub mod identity_keys_remaining_budgets;
 pub mod identity_token_balance;
 pub mod token_contract_info;
 pub mod token_direct_purchase;

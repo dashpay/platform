@@ -184,6 +184,7 @@ impl_wire_query!(
     proto::GetIdentityByNonUniquePublicKeyHashRequest,
     proto::GetIdentityByPublicKeyHashRequest,
     proto::GetIdentityContractNonceRequest,
+    proto::GetIdentityKeysRemainingBudgetsRequest,
     proto::GetIdentityKeysRequest,
     proto::GetIdentityNonceRequest,
     proto::GetIdentityRequest,

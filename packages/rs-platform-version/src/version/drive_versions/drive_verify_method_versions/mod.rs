@@ -131,6 +131,7 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_revision_for_identity_id: FeatureVersion,
     pub verify_full_identity_by_non_unique_public_key_hash: FeatureVersion,
     pub verify_identity_id_by_non_unique_public_key_hash: FeatureVersion,
+    pub verify_identity_keys_remaining_budgets: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

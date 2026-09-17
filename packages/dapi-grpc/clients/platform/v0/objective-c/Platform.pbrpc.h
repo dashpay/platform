@@ -88,6 +88,8 @@
 @class GetIdentityByPublicKeyHashResponse;
 @class GetIdentityContractNonceRequest;
 @class GetIdentityContractNonceResponse;
+@class GetIdentityKeysRemainingBudgetsRequest;
+@class GetIdentityKeysRemainingBudgetsResponse;
 @class GetIdentityKeysRequest;
 @class GetIdentityKeysResponse;
 @class GetIdentityNonceRequest;
@@ -198,6 +200,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse)
 
 - (GRPCUnaryProtoCall *)getIdentityContractNonceWithMessage:(GetIdentityContractNonceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getIdentityKeysRemainingBudgets(GetIdentityKeysRemainingBudgetsRequest) returns (GetIdentityKeysRemainingBudgetsResponse)
+
+- (GRPCUnaryProtoCall *)getIdentityKeysRemainingBudgetsWithMessage:(GetIdentityKeysRemainingBudgetsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse)
 
@@ -511,6 +517,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getIdentityContractNonceWithRequest:(GetIdentityContractNonceRequest *)request handler:(void(^)(GetIdentityContractNonceResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetIdentityContractNonceWithRequest:(GetIdentityContractNonceRequest *)request handler:(void(^)(GetIdentityContractNonceResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentityKeysRemainingBudgets(GetIdentityKeysRemainingBudgetsRequest) returns (GetIdentityKeysRemainingBudgetsResponse)
+
+- (void)getIdentityKeysRemainingBudgetsWithRequest:(GetIdentityKeysRemainingBudgetsRequest *)request handler:(void(^)(GetIdentityKeysRemainingBudgetsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentityKeysRemainingBudgetsWithRequest:(GetIdentityKeysRemainingBudgetsRequest *)request handler:(void(^)(GetIdentityKeysRemainingBudgetsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse)

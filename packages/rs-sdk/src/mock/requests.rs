@@ -25,6 +25,7 @@ use dpp::{
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
 use drive::grovedb::Element;
+use drive_proof_verifier::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use drive_proof_verifier::types::contract_groups::{
     ContractGroupInfo, ContractGroupMembersPage, ContractGroupMembershipsForContract,
 };
@@ -457,6 +458,20 @@ impl MockResponse for ContractGroupMembershipsForContract {
             document_types,
             tokens,
         }
+    }
+}
+
+impl MockResponse for IdentityKeysRemainingBudgets {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.0.mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let map = RetrievedValues::mock_deserialize(sdk, buf);
+        Self(map)
     }
 }
 

@@ -21,6 +21,8 @@ describe('IdentitiesFacade', () => {
   let getIdentityNonceWithProofInfoStub: SinonStub;
   let getIdentityContractNonceStub: SinonStub;
   let getIdentityContractNonceWithProofInfoStub: SinonStub;
+  let getIdentityKeysRemainingBudgetsStub: SinonStub;
+  let getIdentityKeysRemainingBudgetsWithProofInfoStub: SinonStub;
   let getIdentityBalanceStub: SinonStub;
   let getIdentityBalanceWithProofInfoStub: SinonStub;
   let getIdentitiesBalancesStub: SinonStub;
@@ -101,6 +103,14 @@ describe('IdentitiesFacade', () => {
     getIdentityBalanceAndRevisionWithProofInfoStub = this.sinon
       .stub(wasmSdk, 'getIdentityBalanceAndRevisionWithProofInfo').resolves({
         data: { balance: BigInt(100000000), revision: BigInt(1) },
+        proof: {},
+        metadata: {},
+      });
+    getIdentityKeysRemainingBudgetsStub = this.sinon
+      .stub(wasmSdk, 'getIdentityKeysRemainingBudgets').resolves(new Map());
+    getIdentityKeysRemainingBudgetsWithProofInfoStub = this.sinon
+      .stub(wasmSdk, 'getIdentityKeysRemainingBudgetsWithProofInfo').resolves({
+        data: new Map(),
         proof: {},
         metadata: {},
       });
@@ -248,6 +258,31 @@ describe('IdentitiesFacade', () => {
 
       expect(getIdentityContractNonceWithProofInfoStub)
         .to.be.calledOnceWithExactly(identityId, contractId);
+    });
+  });
+
+  describe('keysRemainingBudgets()', () => {
+    it('should fetch the remaining budgets of the given keys', async () => {
+      const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
+      getIdentityKeysRemainingBudgetsStub.resolves(new Map([[3, BigInt(1000)], [4, null]]));
+
+      const budgets = await client.identities.keysRemainingBudgets(identityId, [3, 4]);
+
+      expect(getIdentityKeysRemainingBudgetsStub)
+        .to.be.calledOnceWithExactly(identityId, [3, 4]);
+      expect(budgets.get(3)).to.equal(BigInt(1000));
+      expect(budgets.get(4)).to.equal(null);
+    });
+  });
+
+  describe('keysRemainingBudgetsWithProof()', () => {
+    it('should fetch the remaining budgets of the given keys with proof', async () => {
+      const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
+
+      await client.identities.keysRemainingBudgetsWithProof(identityId, [3, 4]);
+
+      expect(getIdentityKeysRemainingBudgetsWithProofInfoStub)
+        .to.be.calledOnceWithExactly(identityId, [3, 4]);
     });
   });
 

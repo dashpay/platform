@@ -331,6 +331,12 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_identity_keys_remaining_budgets,
+        dapi_grpc::platform::v0::GetIdentityKeysRemainingBudgetsRequest,
+        dapi_grpc::platform::v0::GetIdentityKeysRemainingBudgetsResponse
+    );
+
+    drive_method!(
         get_identity_balance,
         dapi_grpc::platform::v0::GetIdentityBalanceRequest,
         dapi_grpc::platform::v0::GetIdentityBalanceResponse

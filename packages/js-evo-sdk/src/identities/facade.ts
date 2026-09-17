@@ -62,6 +62,27 @@ export class IdentitiesFacade {
     return w.getIdentityContractNonceWithProofInfo(identityId, contractId);
   }
 
+  /**
+   * What is left of the budgets of several keys of one identity (protocol version 14).
+   * Every requested key id is in the map: a bigint for a budgeted key (0n means the key
+   * can no longer sign), null for a key without a budget or a key that does not exist.
+   */
+  async keysRemainingBudgets(
+    identityId: wasm.IdentifierLike,
+    keyIds: number[],
+  ): Promise<Map<number, bigint | null>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityKeysRemainingBudgets(identityId, keyIds);
+  }
+
+  async keysRemainingBudgetsWithProof(
+    identityId: wasm.IdentifierLike,
+    keyIds: number[],
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<number, bigint | null>>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityKeysRemainingBudgetsWithProofInfo(identityId, keyIds);
+  }
+
   async balance(identityId: wasm.IdentifierLike): Promise<bigint | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityBalance(identityId);

@@ -5,8 +5,11 @@ use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey;
-use dash_sdk::dpp::identity::Purpose;
+use dash_sdk::dpp::identity::{KeyID, Purpose};
 use dash_sdk::platform::identities_contract_keys_query::IdentitiesContractKeysQuery;
+use dash_sdk::platform::identity_keys_remaining_budgets::{
+    IdentityKeysRemainingBudgets, IdentityKeysRemainingBudgetsQuery,
+};
 use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity, IdentityKeysQuery};
 use drive_proof_verifier::types::IdentityPublicKeys;
 use js_sys::{Array, BigInt, Map};
@@ -1144,6 +1147,103 @@ impl WasmSdk {
             proof,
         ))
     }
+
+    /// What is left of the budgets of several keys of one identity (protocol version 14).
+    ///
+    /// Every requested key id is in the returned map: a `bigint` for a key with a budget (`0n`
+    /// means the key can no longer sign), `null` for a key without a budget or a key that does
+    /// not exist.
+    #[wasm_bindgen(
+        js_name = "getIdentityKeysRemainingBudgets",
+        unchecked_return_type = "Map<number, bigint | null>"
+    )]
+    pub async fn get_identity_keys_remaining_budgets(
+        &self,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "keyIds", unchecked_param_type = "number[]")] key_ids: Array,
+    ) -> Result<Map, WasmSdkError> {
+        let query = parse_identity_keys_remaining_budgets_query(identity_id, key_ids)?;
+        let key_ids = query.key_ids.clone();
+
+        let budgets = IdentityKeysRemainingBudgets::fetch(self.as_ref(), query)
+            .await?
+            .unwrap_or_default();
+
+        Ok(identity_keys_remaining_budgets_to_map(&key_ids, &budgets))
+    }
+
+    /// [`Self::get_identity_keys_remaining_budgets`] with the proof and the response metadata.
+    #[wasm_bindgen(
+        js_name = "getIdentityKeysRemainingBudgetsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<number, bigint | null>>"
+    )]
+    pub async fn get_identity_keys_remaining_budgets_with_proof_info(
+        &self,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "keyIds", unchecked_param_type = "number[]")] key_ids: Array,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let query = parse_identity_keys_remaining_budgets_query(identity_id, key_ids)?;
+        let key_ids = query.key_ids.clone();
+
+        let (budgets, metadata, proof) =
+            IdentityKeysRemainingBudgets::fetch_with_metadata_and_proof(self.as_ref(), query, None)
+                .await?;
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            JsValue::from(identity_keys_remaining_budgets_to_map(
+                &key_ids,
+                &budgets.unwrap_or_default(),
+            )),
+            metadata,
+            proof,
+        ))
+    }
+}
+
+/// Key ids arrive as JS numbers: anything that is not a whole number a key id can hold is
+/// refused here rather than silently wrapped into another key's id.
+fn parse_identity_keys_remaining_budgets_query(
+    identity_id: IdentifierLikeJs,
+    key_ids: Array,
+) -> Result<IdentityKeysRemainingBudgetsQuery, WasmSdkError> {
+    let identity_id: Identifier = identity_id
+        .try_into()
+        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
+
+    let key_ids = key_ids
+        .iter()
+        .map(|value| {
+            value
+                .as_f64()
+                .filter(|id| id.fract() == 0.0 && (0.0..=f64::from(KeyID::MAX)).contains(id))
+                .map(|id| id as KeyID)
+                .ok_or_else(|| {
+                    WasmSdkError::invalid_argument(
+                        "keyIds must be whole numbers between 0 and 4294967295",
+                    )
+                })
+        })
+        .collect::<Result<Vec<KeyID>, WasmSdkError>>()?;
+
+    Ok(IdentityKeysRemainingBudgetsQuery {
+        identity_id,
+        key_ids,
+    })
+}
+
+fn identity_keys_remaining_budgets_to_map(
+    key_ids: &[KeyID],
+    budgets: &IdentityKeysRemainingBudgets,
+) -> Map {
+    let map = Map::new();
+    for key_id in key_ids {
+        let value = match budgets.get(key_id) {
+            Some(Some(remaining)) => JsValue::from(BigInt::from(*remaining)),
+            _ => JsValue::NULL,
+        };
+        map.set(&JsValue::from(*key_id), &value);
+    }
+    map
 }
 
 #[cfg(test)]

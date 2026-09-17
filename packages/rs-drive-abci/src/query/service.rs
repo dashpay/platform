@@ -41,9 +41,11 @@ use dapi_grpc::platform::v0::{
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
     GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
     GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
-    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
-    GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
-    GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
+    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse,
+    GetIdentityKeysRemainingBudgetsRequest, GetIdentityKeysRemainingBudgetsResponse,
+    GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest,
+    GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
+    GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
     GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse,
     GetMostRecentShieldedAnchorRequest, GetMostRecentShieldedAnchorResponse,
     GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
@@ -331,6 +333,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_identity_contract_nonce,
             "get_identity_contract_nonce",
+        )
+        .await
+    }
+
+    async fn get_identity_keys_remaining_budgets(
+        &self,
+        request: Request<GetIdentityKeysRemainingBudgetsRequest>,
+    ) -> Result<Response<GetIdentityKeysRemainingBudgetsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_keys_remaining_budgets,
+            "get_identity_keys_remaining_budgets",
         )
         .await
     }

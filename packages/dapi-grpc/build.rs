@@ -86,7 +86,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 61] = [
+    const VERSIONED_REQUESTS: [&str; 62] = [
         "GetContractGroupInfoRequest",
         "GetContractGroupMembersRequest",
         "GetContractGroupsForContractRequest",
@@ -102,6 +102,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentitiesBalancesRequest",
         "GetIdentityNonceRequest",
         "GetIdentityContractNonceRequest",
+        "GetIdentityKeysRemainingBudgetsRequest",
         "GetIdentityBalanceAndRevisionRequest",
         "GetIdentityBalanceRequest",
         "GetIdentityByNonUniquePublicKeyHashRequest",
@@ -162,7 +163,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 58] = [
+    const VERSIONED_RESPONSES: [&str; 59] = [
         "GetContractGroupInfoResponse",
         "GetContractGroupMembersResponse",
         "GetContractGroupsForContractResponse",
@@ -179,6 +180,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentityBalanceResponse",
         "GetIdentityNonceResponse",
         "GetIdentityContractNonceResponse",
+        "GetIdentityKeysRemainingBudgetsResponse",
         "GetIdentityByPublicKeyHashResponse",
         "GetIdentityKeysResponse",
         "GetIdentityResponse",

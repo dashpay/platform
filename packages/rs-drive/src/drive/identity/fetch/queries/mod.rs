@@ -8,15 +8,17 @@ use crate::error::Error;
 
 use crate::drive::identity::contract_info::ContractInfoStructure;
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
+use crate::drive::identity::identity_key_budgets_path_vec;
 use crate::drive::identity::IdentityRootStructure::{IdentityTreeNonce, IdentityTreeRevision};
 use crate::drive::identity::{
     identity_contract_info_group_path_vec, identity_path_vec, IdentityRootStructure,
 };
 use crate::error::query::QuerySyntaxError;
-use dpp::identity::Purpose;
+use dpp::identity::{KeyID, Purpose};
 use grovedb::query_result_type::Key;
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use grovedb_version::version::GroveVersion;
+use integer_encoding::VarInt;
 
 /// An enumeration representing the types of identity prove requests.
 ///
@@ -377,6 +379,22 @@ impl Drive {
     pub fn balance_for_identity_id_query(identity_id: [u8; 32]) -> PathQuery {
         let balance_path = balance_path_vec();
         PathQuery::new_single_key(balance_path, identity_id.to_vec())
+    }
+
+    /// The query for what is left of the budgets of several keys of one identity. Keys without a
+    /// budget, and an identity that was never given a budgeted key, prove as absent.
+    pub fn identity_keys_remaining_budgets_query(
+        identity_id: [u8; 32],
+        key_ids: &[KeyID],
+    ) -> PathQuery {
+        let mut query = Query::new();
+        for key_id in key_ids {
+            query.insert_key(key_id.encode_var_vec());
+        }
+        PathQuery::new(
+            identity_key_budgets_path_vec(identity_id.as_slice()),
+            SizedQuery::new(query, Some(key_ids.len() as u16), None),
+        )
     }
 
     /// The query for proving an identity's nonce.
