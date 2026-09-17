@@ -24,6 +24,7 @@ import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
+import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -4527,6 +4528,143 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(2.toByte(), key.contractBoundsKind)
         assertTrue(boundsId.contentEquals(key.contractBoundsId))
         assertEquals("contactRequest", key.contractBoundsDocumentType)
+    }
+
+    /** A wallet, one account and one identity: what `onLoadWalletList` needs to restore keys. */
+    private suspend fun seedWalletWithIdentity(identityId: ByteArray) {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+        )
+        seedIdentity(identityId)
+    }
+
+    @Test
+    fun shouldRestoreContractGroupBoundKeyAsKindThree() = runTest {
+        // Kind 3 (ContractGroup) carries the contract group id and no document
+        // type. The id and docType columns alone read back as kind 1, so the
+        // stored kind has to survive the round trip.
+        val identityId = ByteArray(32) { 12 }
+        seedWalletWithIdentity(identityId)
+        val contractGroupId = ByteArray(32) { 33 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId = walletId,
+            identityId = identityId,
+            keyId = 5,
+            purpose = 0,
+            securityLevel = 2,
+            keyType = 0,
+            readOnly = false,
+            disabledAtIsSome = false,
+            disabledAt = 0,
+            publicKeyData = ByteArray(33) { 7 },
+            publicKeyHash = ByteArray(20),
+            walletIdIsSome = true,
+            keyWalletId = walletId,
+            derivationIndicesIsSome = false,
+            identityIndex = 0,
+            keyIndex = 0,
+            contractBoundsKind = 3,
+            contractBoundsId = contractGroupId,
+            contractBoundsDocumentType = null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 5)
+        assertNotNull(row)
+        assertEquals(3, row!!.contractBoundsKind)
+        assertNull(row.contractBoundsDocumentTypeName)
+
+        val key = handler.onLoadWalletList()[0].identities[0].keys.single()
+        assertEquals(5, key.keyId)
+        assertEquals(3.toByte(), key.contractBoundsKind)
+        assertTrue(contractGroupId.contentEquals(key.contractBoundsId))
+        assertNull(key.contractBoundsDocumentType)
+    }
+
+    @Test
+    fun shouldStoreTheContractBoundsKindTheNativeRowCarries() = runTest {
+        val identityId = ByteArray(32) { 12 }
+        seedWalletWithIdentity(identityId)
+        val boundsId = ByteArray(32) { 21 }
+
+        // (keyId = kind, docType): one key per kind the native side emits.
+        val rows = listOf(0 to null, 1 to null, 2 to "contactRequest", 3 to null)
+        handler.onChangesetBegin(walletId)
+        for ((kind, docType) in rows) {
+            handler.onPersistIdentityKeyUpsert(
+                walletId = walletId,
+                identityId = identityId,
+                keyId = kind,
+                purpose = 0,
+                securityLevel = 2,
+                keyType = 0,
+                readOnly = false,
+                disabledAtIsSome = false,
+                disabledAt = 0,
+                publicKeyData = ByteArray(33) { (kind + 7).toByte() },
+                publicKeyHash = ByteArray(20),
+                walletIdIsSome = true,
+                keyWalletId = walletId,
+                derivationIndicesIsSome = false,
+                identityIndex = 0,
+                keyIndex = 0,
+                contractBoundsKind = kind.toByte(),
+                contractBoundsId = if (kind == 0) ByteArray(32) else boundsId,
+                contractBoundsDocumentType = docType,
+            )
+        }
+        handler.onChangesetEnd(walletId, success = true)
+
+        for ((kind, _) in rows) {
+            val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), kind)
+            assertEquals(kind, row!!.contractBoundsKind)
+        }
+        val keys = handler.onLoadWalletList()[0].identities[0].keys
+        assertEquals(listOf(0, 1, 2, 3), keys.map { it.contractBoundsKind.toInt() })
+        assertEquals(0, keys[0].contractBoundsId.size)
+        (1..3).forEach { assertTrue(boundsId.contentEquals(keys[it].contractBoundsId)) }
+        assertEquals(
+            listOf(null, null, "contactRequest", null),
+            keys.map { it.contractBoundsDocumentType },
+        )
+    }
+
+    @Test
+    fun shouldInferContractBoundsKindForLegacyRowsWithNoStoredKind() = runTest {
+        // Rows written before schema 12 have a NULL kind: the restore keeps
+        // inferring it from the blob and the document type name.
+        val identityId = ByteArray(32) { 12 }
+        seedWalletWithIdentity(identityId)
+        val boundsId = ByteArray(32) { 21 }
+
+        fun legacyRow(keyId: Int, bounds: ByteArray?, docType: String?) = PublicKeyEntity(
+            keyId = keyId,
+            purpose = "1",
+            securityLevel = "3",
+            keyType = "0",
+            publicKeyData = ByteArray(33) { (keyId + 7).toByte() },
+            contractBoundsData = bounds?.let { contractBoundsIdToJson(it) },
+            contractBoundsDocumentTypeName = docType,
+            contractBoundsKind = null,
+            identityId = identityId.toBase58String(),
+            identityIdData = identityId,
+        )
+        db.publicKeyDao().insert(legacyRow(0, null, null))
+        db.publicKeyDao().insert(legacyRow(1, boundsId, null))
+        db.publicKeyDao().insert(legacyRow(2, boundsId, "contactRequest"))
+
+        val keys = handler.onLoadWalletList()[0].identities[0].keys
+        assertEquals(listOf(0, 1, 2), keys.map { it.contractBoundsKind.toInt() })
+        assertEquals(0, keys[0].contractBoundsId.size)
+        assertTrue(boundsId.contentEquals(keys[1].contractBoundsId))
+        assertTrue(boundsId.contentEquals(keys[2].contractBoundsId))
+        assertEquals(
+            listOf(null, null, "contactRequest"),
+            keys.map { it.contractBoundsDocumentType },
+        )
     }
 
     // ── DashPay contacts: upsert metadata, ignore delta, restore ──────

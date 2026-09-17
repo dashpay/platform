@@ -470,13 +470,67 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v11 → v12 adds the nullable `public_keys.contractBoundsKind` column
+     * (additive). Pre-existing keys, bounded or not, must survive with a
+     * NULL kind (the restore path infers a legacy row's kind), and new rows
+     * must accept an explicit kind, including 3 (ContractGroup).
+     */
+    @Test
+    fun migrate11To12AddsContractBoundsKindColumn() {
+        helper.createDatabase(dbName, 11).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, identityType, " +
+                    "createdAt, lastUpdated, networkRaw, identityIndex, walletId) " +
+                    "VALUES (x'0A', 0, 0, 1, 'User', 0, 0, 1, 0, x'01')",
+            )
+            execSQL(
+                "INSERT INTO public_keys (keyId, purpose, securityLevel, keyType, readOnly, " +
+                    "publicKeyData, contractBoundsData, contractBoundsDocumentTypeName, " +
+                    "identityId, createdAt, identityIdData) " +
+                    "VALUES (0, '1', '3', '0', 0, x'02AB', x'5B5D', 'contactRequest', " +
+                    "'id-base58', 0, x'0A')",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 12, true, DashDatabase.MIGRATION_11_12)
+
+        // Pre-existing rows survive with a NULL kind and their bounds intact.
+        db.query(
+            "SELECT contractBoundsKind, contractBoundsDocumentTypeName FROM public_keys " +
+                "WHERE keyId = 0",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(c.isNull(0))
+            assertEquals("contactRequest", c.getString(1))
+        }
+        // New rows accept an explicit kind.
+        db.execSQL(
+            "INSERT INTO public_keys (keyId, purpose, securityLevel, keyType, readOnly, " +
+                "publicKeyData, contractBoundsData, contractBoundsKind, identityId, " +
+                "createdAt, identityIdData) " +
+                "VALUES (1, '0', '2', '0', 0, x'02CD', x'5B5D', 3, 'id-base58', 0, x'0A')",
+        )
+        db.query("SELECT contractBoundsKind FROM public_keys WHERE keyId = 1").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(3, c.getInt(0))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            11,
+            12,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -485,16 +539,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
+            DashDatabase.MIGRATION_11_12,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v11 schema. */
+    /** The full chain from v1 must also land on a valid v12 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            11,
+            12,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -506,6 +561,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
+            DashDatabase.MIGRATION_11_12,
         ).close()
     }
 }

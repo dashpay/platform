@@ -1977,10 +1977,13 @@ class PlatformWalletPersistenceHandler(
             val identityBase58 = identityId.toBase58String()
             val existing = db.publicKeyDao().getByIdentityAndKeyId(identityBase58, keyId)
             // ContractBounds projection → the legacy JSON blob column +
-            // doc-type name (Swift stores `[base64(contractId)]` JSON).
-            val boundsData = if ((contractBoundsKind.toInt() and 0xFF) != 0)
+            // doc-type name (Swift stores `[base64(contractId)]` JSON), plus
+            // the kind itself: the blob holds the contract group id for kind
+            // 3, which the other two columns cannot tell from kind 1.
+            val boundsKind = contractBoundsKind.toInt() and 0xFF
+            val boundsData = if (boundsKind != 0)
                 contractBoundsIdToJson(contractBoundsId) else null
-            val docTypeName = if ((contractBoundsKind.toInt() and 0xFF) == 2)
+            val docTypeName = if (boundsKind == 2)
                 contractBoundsDocumentType else null
             val row = PublicKeyEntity(
                 id = existing?.id ?: 0,
@@ -1993,6 +1996,7 @@ class PlatformWalletPersistenceHandler(
                 publicKeyData = publicKeyData,
                 contractBoundsData = boundsData,
                 contractBoundsDocumentTypeName = docTypeName,
+                contractBoundsKind = boundsKind,
                 // Set to the Keystore identifier when the deriver stored the
                 // scalar; otherwise preserve any prior identifier (idempotent
                 // re-persist) and fall back to watch-only (null) for
@@ -2851,13 +2855,21 @@ class PlatformWalletPersistenceHandler(
                     // ContractBounds → (kind, 32-byte id, doc-type). Inverse
                     // of `contractBoundsIdToJson` on the persist side:
                     //   * no blob        → kind 0 (unbounded)
+                    //   * stored kind 3  → kind 3 (ContractGroup, no docType)
+                    //   * stored kind 1  → kind 1 (SingleContract)
                     //   * blob + docType → kind 2 (SingleContractDocumentType)
                     //   * blob, no docType → kind 1 (SingleContract)
+                    // The last two are the inference legacy rows (NULL stored
+                    // kind) have always used; a stored kind 2 lands on them
+                    // too, so a kind 2 row without its docType demotes to 1,
+                    // as the Rust loader does.
                     // A blob that fails to decode to 32 bytes degrades to
                     // kind 0 rather than crashing FFI marshalling.
                     val boundsId = pk.contractBoundsData?.let { contractBoundsJsonToId(it) }
                     val (kind, id) = when {
                         boundsId == null -> 0.toByte() to ByteArray(0)
+                        pk.contractBoundsKind == 3 -> 3.toByte() to boundsId
+                        pk.contractBoundsKind == 1 -> 1.toByte() to boundsId
                         pk.contractBoundsDocumentTypeName != null -> 2.toByte() to boundsId
                         else -> 1.toByte() to boundsId
                     }

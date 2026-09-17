@@ -151,7 +151,8 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
 ///   u8   purpose           (DPP Purpose discriminant, 0 = AUTHENTICATION)
 ///   u8   security_level    (DPP SecurityLevel discriminant, 0 = MASTER)
 ///   u8   read_only         (0 / 1)
-///   u8   contract_bounds_kind (0 none, 1 SingleContract, 2 SingleContractDocumentType)
+///   u8   contract_bounds_kind (0 none, 1 SingleContract, 2 SingleContractDocumentType,
+///                             3 ContractGroup)
 ///   u16  pubkey_len
 ///   u8[pubkey_len]  pubkey_bytes  (compressed pubkey, or 20-byte HASH160)
 ///   if contract_bounds_kind != 0:
