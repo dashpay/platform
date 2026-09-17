@@ -548,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn round_trips_contract_group_bounds_kind() {
+    fn should_round_trip_the_contract_group_bounds_kind() {
         let contract_group_id = [0x47u8; 32];
         let rows = vec![Row {
             key_id: 2,

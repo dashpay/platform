@@ -15,11 +15,8 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
-use dpp::identity::contract_bounds::ContractBounds;
 use dpp::serialization::{PlatformMessageSignable, Signable};
-use dpp::state_transition::public_key_in_creation::accessors::{
-    IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV1Getters,
-};
+use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
@@ -686,24 +683,16 @@ fn key_not_allowed_in_shielded_creation(
         return None;
     };
     let IdentityCreateFromShieldedPoolTransition::V0(v0) = st;
-    v0.public_keys.iter().find_map(|key| {
-        if matches!(
-            key.contract_bounds(),
-            Some(ContractBounds::ContractGroup { .. })
-        ) {
-            Some(
-                ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError::new(key.id())
-                    .into(),
-            )
-        } else if key.has_limits() {
-            Some(
+    IdentityPublicKeyInCreation::first_bound_to_a_contract_group(&v0.public_keys)
+        .map(|key| {
+            ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError::new(key.id()).into()
+        })
+        .or_else(|| {
+            IdentityPublicKeyInCreation::first_with_limits(&v0.public_keys).map(|key| {
                 IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError::new(key.id())
-                    .into(),
-            )
-        } else {
-            None
-        }
-    })
+                    .into()
+            })
+        })
 }
 
 #[cfg(test)]

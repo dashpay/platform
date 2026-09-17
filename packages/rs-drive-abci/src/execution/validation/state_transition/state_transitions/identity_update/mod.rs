@@ -132,9 +132,11 @@ mod tests {
         setup_add_key_to_identity, setup_identity_return_master_key,
     };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use crate::test::helpers::contract_groups::{register_group, single_owner_info};
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::codes::ErrorWithCode;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::dashcore::key::{Keypair, Secp256k1};
@@ -692,6 +694,200 @@ mod tests {
             .drive
             .grove
             .commit_transaction(tx)
+            .unwrap()
+            .unwrap();
+        let fetched = platform
+            .drive
+            .fetch_identity_keys_as_partial_identity(
+                IdentityKeysRequest::new_specific_key_query(&identity.id().to_buffer(), 2),
+                None,
+                platform_version,
+            )
+            .unwrap()
+            .unwrap();
+        let revoked = fetched.loaded_public_keys.get(&2).unwrap();
+        assert_eq!(revoked.disabled_at(), Some(50));
+        assert_eq!(revoked.contract_bounds(), Some(&bounds));
+        assert!(platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .unwrap()
+            .is_empty());
+    }
+
+    /// A key bound to a contract group is registered through the whole pipeline only once the
+    /// group exists; it is then indexed under the group, and stays bound after revocation.
+    #[tokio::test]
+    async fn should_register_and_revoke_an_authentication_key_bound_to_a_contract_group() {
+        use drive::drive::identity::key::fetch::IdentityKeysRequest;
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, signer, _, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let contract_group_id = Identifier::from([0x61; 32]);
+        let bounds = ContractBounds::ContractGroup {
+            id: contract_group_id,
+        };
+        let platform_state = platform.state.load();
+        let secp = Secp256k1::new();
+        let mut rng = StdRng::seed_from_u64(293);
+        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let build =
+            |revision: u64, nonce: u64, add: Vec<IdentityPublicKeyInCreationV0>, disable| {
+                StateTransition::from(IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                    identity_id: identity.id(),
+                    revision,
+                    nonce,
+                    add_public_keys: add
+                        .into_iter()
+                        .map(IdentityPublicKeyInCreation::V0)
+                        .collect(),
+                    disable_public_keys: disable,
+                    user_fee_increase: 0,
+                    signature_public_key_id: key.id(),
+                    signature: Default::default(),
+                }))
+            };
+        let mut signed_updates = Vec::new();
+        for (revision, nonce) in [(1, 1), (1, 2)] {
+            let mut new_key = IdentityPublicKeyInCreationV0 {
+                id: 2,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                key_type: ECDSA_SECP256K1,
+                read_only: false,
+                data: new_key_pair.public_key().serialize().to_vec().into(),
+                signature: Default::default(),
+                contract_bounds: Some(bounds.clone()),
+            };
+            let signable_bytes = build(revision, nonce, vec![new_key.clone()], vec![])
+                .signable_bytes()
+                .unwrap();
+            new_key.signature =
+                signer::sign(&signable_bytes, &new_key_pair.secret_key().secret_bytes())
+                    .unwrap()
+                    .to_vec()
+                    .into();
+            let mut update = build(revision, nonce, vec![new_key], vec![]);
+            update.set_signature(signer.sign(&key, signable_bytes.as_slice()).await.unwrap());
+            signed_updates.push(update);
+        }
+
+        // The group does not exist yet: a paid failure that registers nothing.
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![signed_updates[0].serialize_to_bytes().unwrap()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError { error, .. }]
+                if error.code() == 41001
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+
+        register_group(
+            &platform,
+            contract_group_id,
+            &single_owner_info(Identifier::from([0x60; 32]), None, None),
+            platform_version,
+        );
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![signed_updates[1].serialize_to_bytes().unwrap()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+
+        // The key is indexed as the current authentication key of the group.
+        let group_keys_request = || {
+            IdentityKeysRequest::new_contract_group_authentication_keys_query(
+                identity.id().to_buffer(),
+                contract_group_id.to_buffer(),
+            )
+        };
+        let indexed = platform
+            .drive
+            .fetch_identity_keys_as_partial_identity(group_keys_request(), None, platform_version)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            indexed
+                .loaded_public_keys
+                .get(&2)
+                .unwrap()
+                .contract_bounds(),
+            Some(&bounds)
+        );
+
+        // Revocation through the master key refreshes the group references and keeps the
+        // bounds on the disabled key.
+        let mut revoke = build(2, 3, vec![], vec![2]);
+        revoke.set_signature(
+            signer
+                .sign(&key, &revoke.signable_bytes().unwrap())
+                .await
+                .unwrap(),
+        );
+        let block = BlockInfo {
+            time_ms: 50,
+            ..Default::default()
+        };
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![revoke.serialize_to_bytes().unwrap()],
+                &platform_state,
+                &block,
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
             .unwrap()
             .unwrap();
         let fetched = platform

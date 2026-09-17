@@ -198,10 +198,8 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::contract_group_queries::tests::{
-        join_group, register_group, single_owner_info,
-    };
     use crate::query::tests::setup_platform;
+    use crate::test::helpers::contract_groups::{join_group, register_group, single_owner_info};
     use dapi_grpc::platform::v0::get_contract_group_members_request::{
         ContractMembersQuery, DocumentTypeMembersQuery, TokenMembersQuery,
     };

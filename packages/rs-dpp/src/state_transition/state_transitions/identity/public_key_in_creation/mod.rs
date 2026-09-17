@@ -1,8 +1,12 @@
+use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
+use crate::state_transition::public_key_in_creation::accessors::{
+    IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV1Getters,
+};
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0Signable;
 use crate::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
@@ -59,6 +63,31 @@ impl IdentityPublicKeyInCreation {
                 received: version,
             }),
         }
+    }
+
+    /// The first of `keys` bound to a contract group, if any. A transition carrying such a key
+    /// is active from protocol version 14, and an identity created from the shielded pool
+    /// cannot register one.
+    pub fn first_bound_to_a_contract_group(keys: &[Self]) -> Option<&Self> {
+        keys.iter().find(|key| {
+            key.contract_bounds()
+                .and_then(ContractBounds::contract_group_id)
+                .is_some()
+        })
+    }
+
+    /// The first of `keys` in the version 1 format, the one that can carry a budget or an
+    /// expiry, if any. A transition carrying such a key is active from protocol version 14,
+    /// whether or not the key has limits: a binary from before cannot decode the format.
+    pub fn first_in_version_1_format(keys: &[Self]) -> Option<&Self> {
+        keys.iter()
+            .find(|key| matches!(key, IdentityPublicKeyInCreation::V1(_)))
+    }
+
+    /// The first of `keys` that carries a budget or an expiry, if any. An identity created from
+    /// the shielded pool cannot register one; a version 1 key without limits is fine there.
+    pub fn first_with_limits(keys: &[Self]) -> Option<&Self> {
+        keys.iter().find(|key| key.has_limits())
     }
 }
 
