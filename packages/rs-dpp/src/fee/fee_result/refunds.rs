@@ -208,8 +208,8 @@ impl FeeRefunds {
             }
         }
         for (identifier, owner) in &rhs_owners {
-            if let Some(existing) = self.1.get(identifier) {
-                if existing != owner {
+            match self.1.get(identifier) {
+                Some(existing) if existing != owner => {
                     return Err(ProtocolError::CorruptedCodeExecution(format!(
                         "storage removal carrier key {} is recorded for two different refund owners: {:?} and {:?}",
                         hex::encode(identifier),
@@ -217,6 +217,15 @@ impl FeeRefunds {
                         owner
                     )));
                 }
+                // an owner record arriving without credits must not lend an
+                // owner to credits already held without one
+                None if self.0.contains_key(identifier) => {
+                    return Err(ProtocolError::CorruptedCodeExecution(format!(
+                        "storage refund carrier key {} has no recorded refund owner",
+                        hex::encode(identifier)
+                    )));
+                }
+                _ => {}
             }
         }
         for (identifier, mut int_map_b) in rhs_credits.into_iter() {
@@ -632,10 +641,24 @@ mod tests {
             let mut right = owned;
             let before = right.clone();
             assert!(matches!(
-                right.checked_add_assign(unowned),
+                right.checked_add_assign(unowned.clone()),
                 Err(ProtocolError::CorruptedCodeExecution(_))
             ));
             assert_eq!(right, before, "a rejected merge changes nothing");
+
+            // an owner record with no credits of its own must not attach
+            // itself to credits held without an owner
+            let owner_only = FeeRefunds(
+                CreditsPerEpochByIdentifier::new(),
+                RefundOwnersByIdentifier::from_iter([(key, bucket)]),
+            );
+            let mut left = unowned;
+            let before = left.clone();
+            assert!(matches!(
+                left.checked_add_assign(owner_only),
+                Err(ProtocolError::CorruptedCodeExecution(_))
+            ));
+            assert_eq!(left, before, "a rejected merge changes nothing");
         }
     }
 

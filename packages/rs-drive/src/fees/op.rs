@@ -351,18 +351,62 @@ impl LowLevelDriveOperation {
         }
     }
 
-    /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
+    /// Sums the plain calculated costs of a list of operations.
+    ///
+    /// Only `CalculatedCostOperation` is folded. A typed cost operation is
+    /// left out on purpose, as function operations and pre-calculated fee
+    /// results are: folding it into a plain `OperationCost` would erase the
+    /// recorded refund owners that `operation_cost` refuses to drop, and the
+    /// operation itself stays in the list for the fee decoder. Use
+    /// [`Self::combine_cost_operations_with_refund_owners`] to aggregate
+    /// typed costs without losing their owners.
     pub fn combine_cost_operations(operations: &[LowLevelDriveOperation]) -> OperationCost {
         let mut cost = OperationCost::default();
-        operations.iter().for_each(|op| match op {
-            CalculatedCostOperation(operation_cost)
-            | CalculatedCostOperationWithRefundOwners {
-                cost: operation_cost,
-                ..
-            } => cost += operation_cost.clone(),
-            _ => {}
+        operations.iter().for_each(|op| {
+            if let CalculatedCostOperation(operation_cost) = op {
+                cost += operation_cost.clone()
+            }
         });
         cost
+    }
+
+    /// Sums the plain and typed calculated costs of a list of operations,
+    /// keeping the recorded refund owners of the typed ones.
+    ///
+    /// Owner maps merge by carrier key; one key recorded for two different
+    /// owners is a collision and is reported, never resolved by picking one.
+    pub fn combine_cost_operations_with_refund_owners(
+        operations: &[LowLevelDriveOperation],
+    ) -> Result<(OperationCost, RefundOwnersByIdentifier), Error> {
+        let mut cost = OperationCost::default();
+        let mut owners = RefundOwnersByIdentifier::new();
+        for op in operations {
+            match op {
+                CalculatedCostOperation(operation_cost) => cost += operation_cost.clone(),
+                CalculatedCostOperationWithRefundOwners {
+                    cost: operation_cost,
+                    refund_owners,
+                } => {
+                    for (key, owner) in refund_owners {
+                        match owners.get(key) {
+                            Some(existing) if existing != owner => {
+                                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "two different refund owners share one storage removal \
+                                     carrier key across combined cost operations",
+                                )));
+                            }
+                            Some(_) => {}
+                            None => {
+                                owners.insert(*key, *owner);
+                            }
+                        }
+                    }
+                    cost += operation_cost.clone();
+                }
+                _ => {}
+            }
+        }
+        Ok((cost, owners))
     }
 
     /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
@@ -2101,8 +2145,11 @@ mod tests {
         ));
     }
 
+    /// The plain combiner cannot carry owners, so it leaves typed costs out
+    /// rather than laundering them into a plain cost that the shipped
+    /// decoder would price by reading a bucket's carrier key as an identity.
     #[test]
-    fn should_sum_typed_cost_operations_into_combined_costs() {
+    fn should_leave_typed_cost_operations_out_of_the_plain_combiner() {
         let cost = OperationCost {
             seek_count: 4,
             storage_cost: StorageCost {
@@ -2114,21 +2161,102 @@ mod tests {
             hash_node_calls: 2,
             sinsemilla_hash_calls: 0,
         };
+        let owner = RefundOwner::Identity(Identifier::from([5u8; 32]));
         let operations = vec![
             CalculatedCostOperation(cost.clone()),
             CalculatedCostOperationWithRefundOwners {
                 cost: cost.clone(),
-                refund_owners: Default::default(),
+                refund_owners: BTreeMap::from([(owner.removal_key(), owner)]),
             },
         ];
 
         let combined = LowLevelDriveOperation::combine_cost_operations(&operations);
 
-        assert_eq!(combined.seek_count, 8);
-        assert_eq!(combined.storage_cost.added_bytes, 14);
-        assert_eq!(combined.storage_cost.replaced_bytes, 6);
-        assert_eq!(combined.storage_loaded_bytes, 22);
-        assert_eq!(combined.hash_node_calls, 4);
+        assert_eq!(combined, cost, "only the plain cost is folded");
+    }
+
+    #[test]
+    fn should_sum_typed_cost_operations_and_merge_their_owners() {
+        let cost = OperationCost {
+            seek_count: 4,
+            storage_cost: StorageCost {
+                added_bytes: 7,
+                replaced_bytes: 3,
+                removed_bytes: StorageRemovedBytes::NoStorageRemoval,
+            },
+            storage_loaded_bytes: 11,
+            hash_node_calls: 2,
+            sinsemilla_hash_calls: 0,
+        };
+        let identity = RefundOwner::Identity(Identifier::from([5u8; 32]));
+        let bucket = RefundOwner::ContractBucket {
+            contract_id: Identifier::from([6u8; 32]),
+            position: 1,
+        };
+        let operations = vec![
+            CalculatedCostOperation(cost.clone()),
+            CalculatedCostOperationWithRefundOwners {
+                cost: cost.clone(),
+                refund_owners: BTreeMap::from([(identity.removal_key(), identity)]),
+            },
+            CalculatedCostOperationWithRefundOwners {
+                cost: cost.clone(),
+                refund_owners: BTreeMap::from([
+                    (identity.removal_key(), identity),
+                    (bucket.removal_key(), bucket),
+                ]),
+            },
+            FunctionOperation(FunctionOp::new_with_round_count(HashFunction::Sha256, 1)),
+        ];
+
+        let (combined, owners) =
+            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&operations)
+                .expect("should combine");
+
+        assert_eq!(combined.seek_count, 12);
+        assert_eq!(combined.storage_cost.added_bytes, 21);
+        assert_eq!(combined.storage_cost.replaced_bytes, 9);
+        assert_eq!(combined.storage_loaded_bytes, 33);
+        assert_eq!(combined.hash_node_calls, 6);
+        assert_eq!(
+            owners,
+            BTreeMap::from([
+                (identity.removal_key(), identity),
+                (bucket.removal_key(), bucket),
+            ])
+        );
+    }
+
+    #[test]
+    fn should_reject_one_carrier_key_with_two_owners_across_combined_cost_operations() {
+        let key = [9u8; 32];
+        let operations = vec![
+            CalculatedCostOperationWithRefundOwners {
+                cost: OperationCost::default(),
+                refund_owners: BTreeMap::from([(
+                    key,
+                    RefundOwner::Identity(Identifier::from(key)),
+                )]),
+            },
+            CalculatedCostOperationWithRefundOwners {
+                cost: OperationCost::default(),
+                refund_owners: BTreeMap::from([(
+                    key,
+                    RefundOwner::ContractBucket {
+                        contract_id: Identifier::from([1u8; 32]),
+                        position: 0,
+                    },
+                )]),
+            },
+        ];
+
+        let result =
+            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&operations);
+
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+        ));
     }
 
     // ---------------------------------------------------------------
