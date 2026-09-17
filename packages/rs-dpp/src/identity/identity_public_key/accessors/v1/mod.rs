@@ -4,8 +4,9 @@ use crate::identity::TimestampMillis;
 /// Trait for the getters added with `IdentityPublicKeyV1`. A V0 key answers `None` to both.
 pub trait IdentityPublicKeyGettersV1 {
     /// The total credits that state transitions signed with this key may take from the
-    /// identity, `None` when the key has no budget.
-    fn budget(&self) -> Option<Credits>;
+    /// identity over its lifetime, `None` when the key has no budget. What is left of it is not
+    /// in the key: Drive tracks it.
+    fn total_budget(&self) -> Option<Credits>;
 
     /// The block time, in milliseconds, from which the key can no longer sign, `None` when the
     /// key does not expire.
@@ -19,6 +20,6 @@ pub trait IdentityPublicKeyGettersV1 {
 
     /// Does the key carry a budget or an expiry
     fn has_limits(&self) -> bool {
-        self.budget().is_some() || self.expires_at().is_some()
+        self.total_budget().is_some() || self.expires_at().is_some()
     }
 }

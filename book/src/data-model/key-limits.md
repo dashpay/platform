@@ -10,7 +10,7 @@ This chapter calls the two properties together **limits**. It covers the key for
 
 Five facts define a limited key:
 
-1. **Limits are opt-in per key and live on a new key version.** `IdentityPublicKey::V1` is the version 0 key followed by `budget` and `expires_at`. Every key that existed before, and every key without limits registered after, is still a version 0 key with the same bytes as ever.
+1. **Limits are opt-in per key and live on a new key version.** `IdentityPublicKey::V1` is the version 0 key followed by `total_budget` and `expires_at`. Every key that existed before, and every key without limits registered after, is still a version 0 key with the same bytes as ever.
 2. **Only AUTHENTICATION keys below MASTER may carry them.** The master key is what registers a replacement when a key runs out, so it must never run out itself. TRANSFER, ENCRYPTION and DECRYPTION keys cannot be limited.
 3. **Limits are signed and immutable.** They are part of the signable bytes of the transition that registers the key, and there is no transition that changes them. To give an application more, register another key.
 4. **A budget caps what leaves the identity, and only goes down.** Fees, and credits the transition moves out (a document purchase, a prefunded voting balance), count against it. Storage refunds do not top it up. What is left is tracked by Drive next to the key, because the key itself never changes.
@@ -47,11 +47,13 @@ pub struct IdentityPublicKeyV1 {
     pub data: BinaryData,
     pub disabled_at: Option<TimestampMillis>,
     /// The total credits that state transitions signed with this key may take from the identity.
-    pub budget: Option<Credits>,
+    pub total_budget: Option<Credits>,
     /// The block time, in milliseconds, from which the key can no longer sign.
     pub expires_at: Option<TimestampMillis>,
 }
 ```
+
+The field is called `total_budget`, not `budget`, because it is the fixed amount the identity granted and never changes. What is left of it is a different number, kept by Drive, and the code calls that one the remaining budget throughout.
 
 The first eight fields are the version 0 fields in the same order, so the two encodings differ only by the variant byte and the two trailing options. Version 0 is every key from before protocol version 14 and every key without limits; version 1 is a key that may carry them:
 
@@ -63,7 +65,7 @@ flowchart TB
     end
     subgraph V1["IdentityPublicKey::V1"]
         direction LR
-        b0["variant<br/><b>1</b>"] --- b1["the same eight fields<br/>in the same order"] --- b9["<b>budget</b><br/>optional credits"] --- b10["<b>expires at</b><br/>optional milliseconds"]
+        b0["variant<br/><b>1</b>"] --- b1["the same eight fields<br/>in the same order"] --- b9["<b>total budget</b><br/>optional credits"] --- b10["<b>expires at</b><br/>optional milliseconds"]
     end
     V0 ~~~ V1
     style a0 fill:#2d3748,color:#e2e8f0
@@ -72,9 +74,9 @@ flowchart TB
     style b10 fill:#c05621,color:#fff
 ```
 
-`IdentityPublicKeyInCreationV1` mirrors it in `public_key_in_creation/v1/mod.rs`, with `budget` and `expires_at` placed before the `signature`. Only the signature is excluded from the signable bytes, so the identity signs the limits it grants and a test pins it: changing a budget changes the signable bytes, changing the key's own signature does not.
+`IdentityPublicKeyInCreationV1` mirrors it in `public_key_in_creation/v1/mod.rs`, with `total_budget` and `expires_at` placed before the `signature`. Only the signature is excluded from the signable bytes, so the identity signs the limits it grants and a test pins it: changing a budget changes the signable bytes, changing the key's own signature does not.
 
-In JSON the key is tagged `"$formatVersion": "1"` and the two fields appear as `budget` and `expiresAt`. Like `disabledAt`, they are left out when absent.
+In JSON the key is tagged `"$formatVersion": "1"` and the two fields appear as `totalBudget` and `expiresAt`. Like `disabledAt`, they are left out when absent.
 
 ### Reading and Building
 
@@ -82,7 +84,7 @@ Call sites never match on the variant. `IdentityPublicKeyGettersV1` (`accessors/
 
 ```rust
 pub trait IdentityPublicKeyGettersV1 {
-    fn budget(&self) -> Option<Credits>;
+    fn total_budget(&self) -> Option<Credits>;
     fn expires_at(&self) -> Option<TimestampMillis>;
 
     /// The expiry instant itself is already expired.
@@ -95,22 +97,12 @@ To build one, take any key and call `with_limits`. A version 0 key becomes a ver
 
 ```rust
 let app_key = key.with_limits(
-    Some(dash_to_credits!(0.1)),          // budget
+    Some(dash_to_credits!(0.1)),          // total budget
     Some(now_ms + 30 * 24 * 3_600_000),   // expires in 30 days
 );
 ```
 
 The conversions between `IdentityPublicKey` and `IdentityPublicKeyInCreation` carry the limits in both directions, so the existing identity update builders register a limited key without knowing about limits. The one conversion that would lose them is building an `IdentityPublicKeyInCreationV0` directly from a key; go through the enum instead.
-
-### Why a New Key Version
-
-Two cheaper-looking designs were considered and rejected.
-
-*Adding the fields to `IdentityPublicKeyV0`* is impossible without a migration. The key is serialized with bincode and `#[platform_serialize(unversioned)]`, so there is no version byte other than the enum discriminant: appending two options to the struct would make every key already in state fail to decode.
-
-*Putting the limits inside `ContractBounds`* (as a new bounds variant) avoids touching the key, but ties two unrelated ideas together: a key could not have a budget without being bound to something, and a bound could not be reused without restating the limits. Limits are a property of the key.
-
-A new variant costs one forwarding arm per accessor in `rs-dpp` and nothing anywhere else, because everything outside `rs-dpp` already goes through the accessor traits. The one hazard is a pattern such as `let IdentityPublicKey::V0(key) = key`, which was irrefutable while the enum had one variant. Tests that used it now say `let ... else`.
 
 ### The Protocol Version Gate
 
@@ -354,7 +346,7 @@ flowchart LR
     ID --> CI["IdentityContractInfo <b>32</b>"]
     ID --> N["IdentityTreeNonce <b>64</b>"]
     ID --> NC["IdentityTreeNegativeCredit <b>96</b>"]
-    ID --> K["IdentityTreeKeys <b>128</b><br/>key id → serialized key<br/><i>immutable: holds budget and expires_at</i>"]
+    ID --> K["IdentityTreeKeys <b>128</b><br/>key id → serialized key<br/><i>immutable: holds total_budget and expires_at</i>"]
     ID --> KR["IdentityTreeKeyReferences <b>160</b>"]
     ID --> REV["IdentityTreeRevision <b>192</b>"]
     ID --> KB["IdentityTreeKeyBudgets <b>224</b><br/><i>created with the first budgeted key</i>"]

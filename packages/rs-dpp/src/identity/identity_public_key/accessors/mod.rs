@@ -86,10 +86,10 @@ impl IdentityPublicKeyGettersV0 for IdentityPublicKey {
 }
 
 impl IdentityPublicKeyGettersV1 for IdentityPublicKey {
-    fn budget(&self) -> Option<Credits> {
+    fn total_budget(&self) -> Option<Credits> {
         match self {
             IdentityPublicKey::V0(_) => None,
-            IdentityPublicKey::V1(v1) => v1.budget(),
+            IdentityPublicKey::V1(v1) => v1.total_budget(),
         }
     }
 

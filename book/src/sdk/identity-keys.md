@@ -201,17 +201,17 @@ two optional fields:
 ```rust
 pub struct IdentityPublicKeyV1 {
     // ... the IdentityPublicKeyV0 fields, in the same order ...
-    pub budget: Option<Credits>,              // total credits the key may take from the identity
+    pub total_budget: Option<Credits>,        // total credits the key may take from the identity
     pub expires_at: Option<TimestampMillis>,  // block time from which the key no longer signs
 }
 ```
 
 Version 0 keys are untouched: keys already in state decode as before and a key without limits
 is still written as version 0. Read the limits through `IdentityPublicKeyGettersV1`
-(`budget()`, `expires_at()`, `is_expired_at(time_ms)`, `has_limits()`), which answers `None` for
+(`total_budget()`, `expires_at()`, `is_expired_at(time_ms)`, `has_limits()`), which answers `None` for
 a version 0 key, and turn a key into a limited one with `IdentityPublicKey::with_limits`.
 
-- **`budget`** caps everything state transitions signed with the key take from the identity:
+- **`total_budget`** caps everything state transitions signed with the key take from the identity:
   fees (net of the storage refunds the same transition returns) and credits moved out, such as
   a document purchase price. What is left is tracked by Drive next to the key and only goes
   down. Before a transition runs, everything but the metered processing fee must fit in what is
@@ -384,7 +384,7 @@ When a state transition is signed:
    - The key's security level meets the minimum required
    - If the key has `contract_bounds`, the transition targets the bound contract
    - If the key is `read_only`, it cannot sign
-   - If the key has a `budget`, some of it is left
+   - If the key has a `total_budget`, some of it is left
    Two more checks on a limited key need the block time and the fee, so they run with fee
    validation instead: the key has not expired, and what the transition requires from the
    budget fits in what is left.

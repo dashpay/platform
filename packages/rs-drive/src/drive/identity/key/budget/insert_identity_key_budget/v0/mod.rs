@@ -29,7 +29,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let Some(budget) = identity_key.budget() else {
+        let Some(total_budget) = identity_key.total_budget() else {
             return Ok(());
         };
 
@@ -74,7 +74,7 @@ impl Drive {
             PathKeyElement::<0>((
                 identity_key_budgets_path_vec(identity_id.as_slice()),
                 identity_key.id().encode_var_vec(),
-                Element::new_item(budget.to_be_bytes().to_vec()),
+                Element::new_item(total_budget.to_be_bytes().to_vec()),
             )),
             drive_operations,
             &platform_version.drive,

@@ -49,7 +49,7 @@ impl IdentityPublicKeyInCreation {
                         )
                         .into(),
                     )
-                } else if identity_public_key.budget() == Some(0) {
+                } else if identity_public_key.total_budget() == Some(0) {
                     Some(InvalidIdentityPublicKeyBudgetError::new(identity_public_key.id()).into())
                 } else {
                     None
@@ -87,7 +87,7 @@ mod tests {
             contract_bounds: None,
             read_only: false,
             data: BinaryData::new(vec![id as u8 + 2; 33]),
-            budget,
+            total_budget: budget,
             expires_at,
             signature: BinaryData::default(),
         }

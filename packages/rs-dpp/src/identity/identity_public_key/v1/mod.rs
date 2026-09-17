@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 /// An identity public key that may carry usage limits.
 ///
-/// The first eight fields are the `IdentityPublicKeyV0` fields in the same order. `budget` and
+/// The first eight fields are the `IdentityPublicKeyV0` fields in the same order. `total_budget` and
 /// `expires_at` exist from protocol version 14 and are only allowed on AUTHENTICATION keys below
 /// the MASTER security level. A key without limits keeps being written as V0.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
@@ -48,9 +48,10 @@ pub struct IdentityPublicKeyV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disabled_at: Option<TimestampMillis>,
     /// The total credits that state transitions signed with this key may take from the
-    /// identity. How much of it is left lives in Drive, not in the key.
+    /// identity over its lifetime. It never changes: how much of it is left lives in Drive,
+    /// not in the key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub budget: Option<Credits>,
+    pub total_budget: Option<Credits>,
     /// The block time, in milliseconds, from which the key can no longer sign.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<TimestampMillis>,
@@ -60,7 +61,7 @@ impl IdentityPublicKeyV1 {
     /// Adds usage limits to a V0 key.
     pub fn from_v0_with_limits(
         key: IdentityPublicKeyV0,
-        budget: Option<Credits>,
+        total_budget: Option<Credits>,
         expires_at: Option<TimestampMillis>,
     ) -> Self {
         let IdentityPublicKeyV0 {
@@ -82,7 +83,7 @@ impl IdentityPublicKeyV1 {
             read_only,
             data,
             disabled_at,
-            budget,
+            total_budget,
             expires_at,
         }
     }
@@ -99,7 +100,7 @@ impl From<&IdentityPublicKeyV1> for IdentityPublicKeyInCreationV1 {
             contract_bounds: key.contract_bounds.clone(),
             read_only: key.read_only,
             data: key.data.clone(),
-            budget: key.budget,
+            total_budget: key.total_budget,
             expires_at: key.expires_at,
             signature: BinaryData::default(),
         }
@@ -136,7 +137,7 @@ mod tests {
         let decoded = IdentityPublicKey::deserialize_from_bytes_untrusted(&bytes)
             .expect("expected to deserialize");
         assert_eq!(decoded, key);
-        assert_eq!(decoded.budget(), Some(5_000_000));
+        assert_eq!(decoded.total_budget(), Some(5_000_000));
         assert_eq!(decoded.expires_at(), Some(1_800_000));
     }
 
@@ -168,11 +169,11 @@ mod tests {
         assert!(matches!(limited, IdentityPublicKey::V1(_)));
         assert_eq!(limited.id(), key.id());
         assert_eq!(limited.data(), key.data());
-        assert_eq!(limited.budget(), Some(10));
+        assert_eq!(limited.total_budget(), Some(10));
         assert_eq!(limited.expires_at(), None);
 
         let relimited = limited.with_limits(None, Some(20));
-        assert_eq!(relimited.budget(), None);
+        assert_eq!(relimited.total_budget(), None);
         assert_eq!(relimited.expires_at(), Some(20));
     }
 
@@ -197,7 +198,7 @@ mod tests {
             IdentityPublicKeyV1::from_v0_with_limits(key_v0(), Some(5_000), Some(1_800_000)).into();
         let json = key.to_json().expect("to_json");
         assert_eq!(json["$formatVersion"], json!("1"));
-        assert_eq!(json["budget"], json!(5_000));
+        assert_eq!(json["totalBudget"], json!(5_000));
         assert_eq!(json["expiresAt"], json!(1_800_000));
         assert_eq!(IdentityPublicKey::from_json(json).expect("from_json"), key);
 
@@ -205,7 +206,7 @@ mod tests {
         let unlimited: IdentityPublicKey =
             IdentityPublicKeyV1::from_v0_with_limits(key_v0(), None, None).into();
         let json = unlimited.to_json().expect("to_json");
-        assert!(json.get("budget").is_none());
+        assert!(json.get("totalBudget").is_none());
         assert!(json.get("expiresAt").is_none());
         assert_eq!(
             IdentityPublicKey::from_json(json).expect("from_json"),

@@ -36,7 +36,7 @@ pub trait IdentityPublicKeyInCreationV0Getters {
 pub trait IdentityPublicKeyInCreationV1Getters {
     /// The total credits that state transitions signed with this key may take from the
     /// identity, `None` when the key has no budget.
-    fn budget(&self) -> Option<Credits>;
+    fn total_budget(&self) -> Option<Credits>;
 
     /// The block time, in milliseconds, from which the key can no longer sign, `None` when the
     /// key does not expire.
@@ -44,7 +44,7 @@ pub trait IdentityPublicKeyInCreationV1Getters {
 
     /// Does the key carry a budget or an expiry
     fn has_limits(&self) -> bool {
-        self.budget().is_some() || self.expires_at().is_some()
+        self.total_budget().is_some() || self.expires_at().is_some()
     }
 }
 
@@ -181,10 +181,10 @@ impl IdentityPublicKeyInCreationV0Getters for IdentityPublicKeyInCreation {
 }
 
 impl IdentityPublicKeyInCreationV1Getters for IdentityPublicKeyInCreation {
-    fn budget(&self) -> Option<Credits> {
+    fn total_budget(&self) -> Option<Credits> {
         match self {
             IdentityPublicKeyInCreation::V0(_) => None,
-            IdentityPublicKeyInCreation::V1(v1) => v1.budget,
+            IdentityPublicKeyInCreation::V1(v1) => v1.total_budget,
         }
     }
 

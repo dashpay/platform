@@ -50,7 +50,7 @@ mod tests {
             contract_bounds: None,
             read_only: false,
             data: BinaryData::new(vec![2; 33]),
-            budget: Some(10),
+            total_budget: Some(10),
             expires_at,
             signature: BinaryData::default(),
         }

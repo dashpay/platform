@@ -1178,7 +1178,7 @@ fn should_refuse_a_version_1_key_before_verifying_the_proof() {
     use dpp::state_transition::StateTransition;
 
     let version = PlatformVersion::latest();
-    let limited_key = |budget, expires_at| IdentityPublicKeyInCreationV1 {
+    let limited_key = |total_budget, expires_at| IdentityPublicKeyInCreationV1 {
         id: 1,
         key_type: KeyType::ECDSA_HASH160,
         purpose: Purpose::AUTHENTICATION,
@@ -1186,7 +1186,7 @@ fn should_refuse_a_version_1_key_before_verifying_the_proof() {
         contract_bounds: None,
         read_only: false,
         data: vec![0x72; 20].into(),
-        budget,
+        total_budget,
         expires_at,
         signature: Default::default(),
     };

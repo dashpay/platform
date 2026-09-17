@@ -2797,7 +2797,7 @@ mod tests {
         struct AddedKey {
             purpose: Purpose,
             security_level: SecurityLevel,
-            budget: Option<u64>,
+            total_budget: Option<u64>,
             expires_at: Option<TimestampMillis>,
         }
 
@@ -2830,7 +2830,7 @@ mod tests {
                 read_only: false,
                 data: new_key_pair.public_key().serialize().to_vec().into(),
                 contract_bounds: None,
-                budget: added_key.budget,
+                total_budget: added_key.total_budget,
                 expires_at: added_key.expires_at,
                 signature: Default::default(),
             };
@@ -2918,7 +2918,7 @@ mod tests {
             let (platform, identity_id, execution) = add_key(AddedKey {
                 purpose: Purpose::AUTHENTICATION,
                 security_level: SecurityLevel::HIGH,
-                budget: Some(5_000_000),
+                total_budget: Some(5_000_000),
                 expires_at: Some(BLOCK_TIME_MS + 1),
             })
             .await;
@@ -2928,7 +2928,7 @@ mod tests {
             );
 
             let key = stored_key(&platform, identity_id).expect("expected the new key");
-            assert_eq!(key.budget(), Some(5_000_000));
+            assert_eq!(key.total_budget(), Some(5_000_000));
             assert_eq!(key.expires_at(), Some(BLOCK_TIME_MS + 1));
             assert_eq!(
                 platform
@@ -2951,7 +2951,7 @@ mod tests {
             let (platform, identity_id, execution) = add_key(AddedKey {
                 purpose: Purpose::AUTHENTICATION,
                 security_level: SecurityLevel::HIGH,
-                budget: None,
+                total_budget: None,
                 expires_at: Some(BLOCK_TIME_MS),
             })
             .await;
@@ -2971,7 +2971,7 @@ mod tests {
                 let (platform, identity_id, execution) = add_key(AddedKey {
                     purpose,
                     security_level,
-                    budget: Some(5_000_000),
+                    total_budget: Some(5_000_000),
                     expires_at: None,
                 })
                 .await;
@@ -2988,7 +2988,7 @@ mod tests {
             let (_, _, execution) = add_key(AddedKey {
                 purpose: Purpose::AUTHENTICATION,
                 security_level: SecurityLevel::HIGH,
-                budget: Some(0),
+                total_budget: Some(0),
                 expires_at: None,
             })
             .await;

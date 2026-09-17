@@ -14,7 +14,7 @@ Limits live on a new version of the public key, `IdentityPublicKey::V1`
 
 | Field | Type | Meaning |
 |---|---|---|
-| `budget` | credits, optional | The total credits that state transitions signed with this key may take from the identity. |
+| `totalBudget` | credits, optional | The total credits that state transitions signed with this key may take from the identity over its lifetime. It never changes; what is left of it is tracked by Platform, not in the key. |
 | `expiresAt` | milliseconds, optional | The block time from which the key can no longer sign. Same unit and clock as `disabledAt`. |
 
 `IdentityPublicKeyInCreation::V1` mirrors it, and both fields are part of the signable bytes of
@@ -35,7 +35,7 @@ does.
 - The key has AUTHENTICATION purpose and a security level below MASTER. Anything else fails with
   `IdentityPublicKeyLimitsNotAllowedError` (10536). The master key is what replaces a spent or
   expired key, so it must not run out itself.
-- A `budget`, when present, is not zero (`InvalidIdentityPublicKeyBudgetError`, 10537).
+- A `totalBudget`, when present, is not zero (`InvalidIdentityPublicKeyBudgetError`, 10537).
 - An `expiresAt`, when present, is after the time of the block that registers the key
   (`IdentityPublicKeyAlreadyExpiredError`, 40219, a paid failure). A key that is dead on arrival
   would still use up its id and, for a unique key type, its public key hash. Passing seconds

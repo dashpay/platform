@@ -54,8 +54,8 @@ impl IdentityPublicKeyGettersV0 for IdentityPublicKeyV1 {
 }
 
 impl IdentityPublicKeyGettersV1 for IdentityPublicKeyV1 {
-    fn budget(&self) -> Option<Credits> {
-        self.budget
+    fn total_budget(&self) -> Option<Credits> {
+        self.total_budget
     }
 
     fn expires_at(&self) -> Option<TimestampMillis> {

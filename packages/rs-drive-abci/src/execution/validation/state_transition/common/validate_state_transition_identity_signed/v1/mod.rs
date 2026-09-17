@@ -72,7 +72,7 @@ impl ValidateStateTransitionIdentitySignatureV1 for StateTransition {
                 }
 
                 if key.has_limits() {
-                    let remaining_budget = if key.budget().is_some() {
+                    let remaining_budget = if key.total_budget().is_some() {
                         // Priced like the retrieval of one more key of the identity.
                         execution_context.add_operation(ValidationOperation::RetrieveIdentity(
                             RetrieveIdentityInfo::one_key(),

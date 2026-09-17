@@ -276,7 +276,10 @@ fn serialize_identity_public_key(key: &IdentityPublicKey) -> Result<Object, JsVa
     }
 
     // Set the usage limits (optional, version 1 keys), as decimal strings like `disabledAt`
-    for (name, limit) in [("budget", key.budget()), ("expiresAt", key.expires_at())] {
+    for (name, limit) in [
+        ("totalBudget", key.total_budget()),
+        ("expiresAt", key.expires_at()),
+    ] {
         let value = match limit {
             Some(limit) => JsValue::from_str(&limit.to_string()),
             None => JsValue::NULL,

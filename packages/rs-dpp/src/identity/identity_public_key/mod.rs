@@ -217,13 +217,17 @@ impl IdentityPublicKey {
 
     /// Returns the key with the given usage limits. Limits only exist from the V1 key format,
     /// so a V0 key becomes a V1 key; every other field is kept.
-    pub fn with_limits(self, budget: Option<Credits>, expires_at: Option<TimestampMillis>) -> Self {
+    pub fn with_limits(
+        self,
+        total_budget: Option<Credits>,
+        expires_at: Option<TimestampMillis>,
+    ) -> Self {
         match self {
             IdentityPublicKey::V0(v0) => {
-                IdentityPublicKeyV1::from_v0_with_limits(v0, budget, expires_at).into()
+                IdentityPublicKeyV1::from_v0_with_limits(v0, total_budget, expires_at).into()
             }
             IdentityPublicKey::V1(mut v1) => {
-                v1.budget = budget;
+                v1.total_budget = total_budget;
                 v1.expires_at = expires_at;
                 v1.into()
             }

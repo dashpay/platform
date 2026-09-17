@@ -50,7 +50,7 @@ pub struct IdentityPublicKeyInCreationV1 {
     pub data: BinaryData,
     /// The total credits that state transitions signed with this key may take from the identity
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub budget: Option<Credits>,
+    pub total_budget: Option<Credits>,
     /// The block time, in milliseconds, from which the key can no longer sign
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<TimestampMillis>,
@@ -64,7 +64,7 @@ impl IdentityPublicKeyInCreationV1 {
     /// covers the key: sign again after calling this.
     pub fn from_v0_with_limits(
         key: IdentityPublicKeyInCreationV0,
-        budget: Option<Credits>,
+        total_budget: Option<Credits>,
         expires_at: Option<TimestampMillis>,
     ) -> Self {
         let IdentityPublicKeyInCreationV0 {
@@ -85,7 +85,7 @@ impl IdentityPublicKeyInCreationV1 {
             contract_bounds,
             read_only,
             data,
-            budget,
+            total_budget,
             expires_at,
             signature,
         }
@@ -127,8 +127,8 @@ impl IdentityPublicKeyInCreationV0Getters for IdentityPublicKeyInCreationV1 {
 }
 
 impl IdentityPublicKeyInCreationV1Getters for IdentityPublicKeyInCreationV1 {
-    fn budget(&self) -> Option<Credits> {
-        self.budget
+    fn total_budget(&self) -> Option<Credits> {
+        self.total_budget
     }
 
     fn expires_at(&self) -> Option<TimestampMillis> {
@@ -187,7 +187,7 @@ impl From<IdentityPublicKeyInCreationV1> for IdentityPublicKey {
             read_only: val.read_only,
             data: val.data,
             disabled_at: None,
-            budget: val.budget,
+            total_budget: val.total_budget,
             expires_at: val.expires_at,
         }
         .into()
@@ -208,7 +208,7 @@ mod tests {
     use crate::serialization::Signable;
     use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 
-    fn key_in_creation(budget: Option<Credits>) -> IdentityPublicKeyInCreationV1 {
+    fn key_in_creation(total_budget: Option<Credits>) -> IdentityPublicKeyInCreationV1 {
         IdentityPublicKeyInCreationV1 {
             id: 4,
             key_type: KeyType::ECDSA_SECP256K1,
@@ -217,7 +217,7 @@ mod tests {
             contract_bounds: None,
             read_only: false,
             data: BinaryData::new(vec![2; 33]),
-            budget,
+            total_budget,
             expires_at: Some(9_000),
             signature: BinaryData::new(vec![1; 65]),
         }
@@ -229,12 +229,12 @@ mod tests {
         let key: IdentityPublicKey = (&in_creation).into();
         assert!(matches!(key, IdentityPublicKey::V1(_)));
         assert_eq!(key.id(), 4);
-        assert_eq!(key.budget(), Some(77));
+        assert_eq!(key.total_budget(), Some(77));
         assert_eq!(key.expires_at(), Some(9_000));
         assert_eq!(key.disabled_at(), None);
 
         let back: IdentityPublicKeyInCreation = (&key).into();
-        assert_eq!(back.budget(), Some(77));
+        assert_eq!(back.total_budget(), Some(77));
         assert_eq!(back.expires_at(), Some(9_000));
         // The signature is not part of the stored key.
         assert!(back.signature().is_empty());
