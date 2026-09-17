@@ -123,10 +123,6 @@ impl<C> Platform<C> {
             self.transition_to_version_14(block_info, transaction, platform_version)?;
         }
 
-        if previous_protocol_version < 17 && platform_version.protocol_version >= 17 {
-            self.transition_to_version_17_token_lifecycles(transaction, platform_version)?;
-        }
-
         Ok(())
     }
 
@@ -763,7 +759,7 @@ impl<C> Platform<C> {
     /// recorded as provisional in the issue, where recording the mismatch and refusing
     /// destruction for that issuer is the liveness-preserving alternative. Records are
     /// inserted if absent, so a retried block after a rejected proposal is identical.
-    fn transition_to_version_17_token_lifecycles(
+    pub(super) fn transition_to_version_17_token_lifecycles(
         &self,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
@@ -3171,8 +3167,9 @@ mod tests {
             .assert_token_rollups_consistent(None, platform_version_17);
     }
 
-    /// The dispatcher reaches the token lifecycle transition when crossing 17 and skips it
-    /// when the previous version is already 17.
+    /// The dispatcher selects generation 2 at protocol version 17, which runs the token
+    /// lifecycle transition when crossing 17 and skips it when the previous version is
+    /// already 17. A block at 16 selects generation 1, which does not know the ledger.
     #[test]
     fn test_transition_from_version_16_triggers_17_only_once() {
         use drive::drive::tokens::paths::TOKEN_CONTRACT_LIFECYCLES_KEY;
@@ -3193,7 +3190,7 @@ mod tests {
         };
 
         platform
-            .perform_events_on_first_block_of_protocol_change_v0(
+            .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
                 &block_info,
                 &transaction,
@@ -3221,7 +3218,7 @@ mod tests {
             .unwrap()
             .expect("expected a root hash");
         platform
-            .perform_events_on_first_block_of_protocol_change_v0(
+            .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
                 &block_info,
                 &transaction,
