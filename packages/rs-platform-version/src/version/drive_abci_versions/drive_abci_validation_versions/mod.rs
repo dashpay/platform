@@ -119,6 +119,8 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub max_asset_lock_usage_attempts: u16,
     pub identity_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
+    /// `IdentityKeyLimitsUpdate` (protocol version 14): every gate is `None` before V10.
+    pub identity_key_limits_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition_purpose_matches_requirements: FeatureVersion,

@@ -16,6 +16,9 @@ pub mod identity_top_up;
 /// Module for updating an existing identity entity.
 pub mod identity_update;
 
+/// Module for raising the limits of an identity key.
+pub mod identity_key_limits_update;
+
 /// Validation shared by the data contract create and update transitions.
 pub mod data_contract_common;
 

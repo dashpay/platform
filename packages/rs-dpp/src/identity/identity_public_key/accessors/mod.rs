@@ -3,11 +3,14 @@ use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
-use crate::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+use crate::identity::identity_public_key::accessors::v1::{
+    IdentityPublicKeyGettersV1, IdentityPublicKeySettersV1,
+};
 use crate::identity::KeyType;
 use crate::identity::Purpose;
 use crate::identity::SecurityLevel;
 use crate::identity::{IdentityPublicKey, KeyID, TimestampMillis};
+use crate::ProtocolError;
 use platform_value::BinaryData;
 
 pub mod v0;
@@ -97,6 +100,26 @@ impl IdentityPublicKeyGettersV1 for IdentityPublicKey {
         match self {
             IdentityPublicKey::V0(_) => None,
             IdentityPublicKey::V1(v1) => v1.expires_at(),
+        }
+    }
+}
+
+impl IdentityPublicKeySettersV1 for IdentityPublicKey {
+    fn set_total_budget(&mut self, total_budget: Option<Credits>) -> Result<(), ProtocolError> {
+        match self {
+            IdentityPublicKey::V0(_) => Err(ProtocolError::Generic(
+                "a version 0 identity public key has no total budget to set".to_string(),
+            )),
+            IdentityPublicKey::V1(v1) => v1.set_total_budget(total_budget),
+        }
+    }
+
+    fn set_expires_at(&mut self, expires_at: Option<TimestampMillis>) -> Result<(), ProtocolError> {
+        match self {
+            IdentityPublicKey::V0(_) => Err(ProtocolError::Generic(
+                "a version 0 identity public key has no expiry to set".to_string(),
+            )),
+            IdentityPublicKey::V1(v1) => v1.set_expires_at(expires_at),
         }
     }
 }

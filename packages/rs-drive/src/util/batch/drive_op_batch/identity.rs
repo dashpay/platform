@@ -3,7 +3,8 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::block::block_info::BlockInfo;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID};
+use dpp::fee::Credits;
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::{IdentityNonce, Revision};
 
 use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
@@ -60,6 +61,19 @@ pub enum IdentityOperationType {
         identity_id: [u8; 32],
         /// The keys to be added
         keys_ids: Vec<KeyID>,
+    },
+
+    /// Raises the limits of one identity key: the key is rewritten with the new total budget
+    /// and expiry, and its remaining budget grows by the amount the total budget grew
+    UpdateIdentityKeyLimits {
+        /// The identity id of the identity
+        identity_id: [u8; 32],
+        /// The key whose limits are raised
+        key_id: KeyID,
+        /// The new total budget, `None` to leave it as it is
+        total_budget: Option<Credits>,
+        /// The new expiry, `None` to leave it as it is
+        expires_at: Option<TimestampMillis>,
     },
 
     /// Re-Enable Identity Keys
@@ -173,6 +187,21 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 identity_id,
                 keys_ids,
                 block_info.time_ms,
+                &block_info.epoch,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            IdentityOperationType::UpdateIdentityKeyLimits {
+                identity_id,
+                key_id,
+                total_budget,
+                expires_at,
+            } => drive.update_identity_key_limits_operations(
+                identity_id,
+                key_id,
+                total_budget,
+                expires_at,
                 &block_info.epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,

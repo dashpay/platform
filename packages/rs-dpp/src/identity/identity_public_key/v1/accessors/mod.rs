@@ -3,12 +3,15 @@ use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
-use crate::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+use crate::identity::identity_public_key::accessors::v1::{
+    IdentityPublicKeyGettersV1, IdentityPublicKeySettersV1,
+};
 use crate::identity::identity_public_key::v1::IdentityPublicKeyV1;
 use crate::identity::KeyType;
 use crate::identity::Purpose;
 use crate::identity::SecurityLevel;
 use crate::identity::{KeyID, TimestampMillis};
+use crate::ProtocolError;
 use platform_value::BinaryData;
 
 impl IdentityPublicKeyGettersV0 for IdentityPublicKeyV1 {
@@ -94,5 +97,17 @@ impl IdentityPublicKeySettersV0 for IdentityPublicKeyV1 {
 
     fn remove_disabled_at(&mut self) {
         self.disabled_at = None;
+    }
+}
+
+impl IdentityPublicKeySettersV1 for IdentityPublicKeyV1 {
+    fn set_total_budget(&mut self, total_budget: Option<Credits>) -> Result<(), ProtocolError> {
+        self.total_budget = total_budget;
+        Ok(())
+    }
+
+    fn set_expires_at(&mut self, expires_at: Option<TimestampMillis>) -> Result<(), ProtocolError> {
+        self.expires_at = expires_at;
+        Ok(())
     }
 }

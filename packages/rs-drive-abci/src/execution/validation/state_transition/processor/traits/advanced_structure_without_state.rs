@@ -1,6 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::identity_key_limits_update::advanced_structure::v0::IdentityKeyLimitsUpdateStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::identity_update::advanced_structure::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
@@ -77,6 +78,32 @@ impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
             StateTransition::DataContractCreate(st) => {
                 st.validate_advanced_structure(identity, execution_context, platform_version)
             }
+            StateTransition::IdentityKeyLimitsUpdate(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_key_limits_update_state_transition
+                    .advanced_structure
+                {
+                    Some(0) => st.validate_advanced_structure_v0(identity),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method:
+                                "identity key limits update transition: validate_advanced_structure"
+                                    .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method:
+                            "identity key limits update transition: validate_advanced_structure"
+                                .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
             _ => Ok(ConsensusValidationResult::<StateTransitionAction>::new()),
         }
     }
@@ -84,7 +111,9 @@ impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
     fn has_advanced_structure_validation_without_state(&self) -> bool {
         matches!(
             self,
-            StateTransition::IdentityUpdate(_) | StateTransition::DataContractCreate(_)
+            StateTransition::IdentityUpdate(_)
+                | StateTransition::DataContractCreate(_)
+                | StateTransition::IdentityKeyLimitsUpdate(_)
         )
     }
 }

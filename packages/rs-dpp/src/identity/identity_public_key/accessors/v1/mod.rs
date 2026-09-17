@@ -1,5 +1,6 @@
 use crate::fee::Credits;
 use crate::identity::TimestampMillis;
+use crate::ProtocolError;
 
 /// Trait for the getters added with `IdentityPublicKeyV1`. A V0 key answers `None` to both.
 pub trait IdentityPublicKeyGettersV1 {
@@ -22,4 +23,14 @@ pub trait IdentityPublicKeyGettersV1 {
     fn has_limits(&self) -> bool {
         self.total_budget().is_some() || self.expires_at().is_some()
     }
+}
+
+/// Trait for the setters added with `IdentityPublicKeyV1`. A V0 key has no limits to set and
+/// answers with an error; the identity key limits update transition only ever reaches V1 keys.
+pub trait IdentityPublicKeySettersV1 {
+    /// Sets the total budget of the key
+    fn set_total_budget(&mut self, total_budget: Option<Credits>) -> Result<(), ProtocolError>;
+
+    /// Sets the expiry of the key
+    fn set_expires_at(&mut self, expires_at: Option<TimestampMillis>) -> Result<(), ProtocolError>;
 }

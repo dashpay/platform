@@ -25,6 +25,9 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 ///   key budgets subtree. Keys cannot carry a budget before v14, so both v0s never write it.
 /// * `keys.budget.*` `None -> Some(0)`: the key budgets subtree and the methods that write, read
 ///   and deduct from it. The subtree does not exist before v14, so V1 keeps the slots `None`.
+/// * `update.update_identity_key_limits` and `keys.budget.add_to_identity_key_budget`
+///   `None -> Some(0)`: the identity key limits update transition rewrites a key with a raised
+///   total budget or a later expiry and raises its remaining budget by the same amount.
 /// * `update.disable_identity_keys` 0 -> 1: fee estimation reads the stored keys so a
 ///   bound key's reference refreshes are priced; v0 estimated with an unbounded
 ///   stand-in key.
@@ -137,6 +140,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
                 add_estimation_costs_for_key_budgets: Some(0),
                 fetch_identity_keys_remaining_budgets: Some(0),
                 prove_identity_keys_remaining_budgets: Some(0),
+                add_to_identity_key_budget: Some(0),
             },
         },
         update: DriveIdentityUpdateMethodVersions {
@@ -156,6 +160,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
             apply_balance_change_from_fee_to_identity: 0,
             remove_from_identity_balance: 0,
             refresh_identity_key_reference_operations: 0,
+            update_identity_key_limits: Some(0),
         },
         insert: DriveIdentityInsertMethodVersions {
             add_new_identity: 0,

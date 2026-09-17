@@ -98,6 +98,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
                 add_estimation_costs_for_key_budgets: None,
                 fetch_identity_keys_remaining_budgets: None,
                 prove_identity_keys_remaining_budgets: None,
+                add_to_identity_key_budget: None,
             },
         },
         update: DriveIdentityUpdateMethodVersions {
@@ -117,6 +118,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
             apply_balance_change_from_fee_to_identity: 0,
             remove_from_identity_balance: 0,
             refresh_identity_key_reference_operations: 0,
+            update_identity_key_limits: None,
         },
         insert: DriveIdentityInsertMethodVersions {
             add_new_identity: 0,

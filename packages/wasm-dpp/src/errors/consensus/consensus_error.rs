@@ -98,12 +98,17 @@ use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupAction
 use dpp::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::consensus::basic::identity::{
-    IdentityPublicKeyLimitsNotAllowedError,
+    IdentityKeyLimitsUpdateEmptyError, IdentityPublicKeyLimitsNotAllowedError,
     IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError,
     InvalidIdentityPublicKeyBudgetError,
 };
-use dpp::consensus::signature::{PublicKeyBudgetExhaustedError, PublicKeyExpiredError};
+use dpp::consensus::signature::{
+    PublicKeyBudgetExhaustedError, PublicKeyExpiredError,
+    PublicKeyWithLimitsCannotUpdateKeyLimitsError,
+};
 use dpp::consensus::state::identity::identity_public_key_already_expired_error::IdentityPublicKeyAlreadyExpiredError;
+use dpp::consensus::state::identity::identity_public_key_limit_not_raised_error::IdentityPublicKeyLimitNotRaisedError;
+use dpp::consensus::state::identity::identity_public_key_limit_not_set_error::IdentityPublicKeyLimitNotSetError;
 use dpp::consensus::state::identity::identity_public_key_budget_exceeded_error::IdentityPublicKeyBudgetExceededError;
 use dpp::consensus::state::identity::identity_to_freeze_does_not_exist_error::IdentityToFreezeDoesNotExistError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
@@ -542,6 +547,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::IdentityPublicKeyAlreadyExpiredError(e) => {
             generic_consensus_error!(IdentityPublicKeyAlreadyExpiredError, e).into()
+        }
+        StateError::IdentityPublicKeyLimitNotSetError(e) => {
+            generic_consensus_error!(IdentityPublicKeyLimitNotSetError, e).into()
+        }
+        StateError::IdentityPublicKeyLimitNotRaisedError(e) => {
+            generic_consensus_error!(IdentityPublicKeyLimitNotRaisedError, e).into()
         }
     }
 }
@@ -1096,6 +1107,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             )
             .into()
         }
+        BasicError::IdentityKeyLimitsUpdateEmptyError(e) => {
+            generic_consensus_error!(IdentityKeyLimitsUpdateEmptyError, e).into()
+        }
     }
 }
 
@@ -1143,6 +1157,9 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         }
         SignatureError::PublicKeyExpiredError(e) => {
             generic_consensus_error!(PublicKeyExpiredError, e).into()
+        }
+        SignatureError::PublicKeyWithLimitsCannotUpdateKeyLimitsError(e) => {
+            generic_consensus_error!(PublicKeyWithLimitsCannotUpdateKeyLimitsError, e).into()
         }
     }
 }

@@ -6,7 +6,10 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::v0::ValidateStateTransitionIdentitySignatureV0;
-use dpp::consensus::signature::{ContractBoundedKeyNonBatchError, PublicKeyBudgetExhaustedError};
+use dpp::consensus::signature::{
+    ContractBoundedKeyNonBatchError, PublicKeyBudgetExhaustedError,
+    PublicKeyWithLimitsCannotUpdateKeyLimitsError,
+};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::{PartialIdentity, Purpose};
@@ -68,6 +71,14 @@ impl ValidateStateTransitionIdentitySignatureV1 for StateTransition {
                 {
                     return Ok(ConsensusValidationResult::new_with_error(
                         ContractBoundedKeyNonBatchError::new(key.id()).into(),
+                    ));
+                }
+
+                // Only a key without limits may raise the limits of a key, so a limited key can
+                // never top itself up. Refused before the remaining budget is read and billed.
+                if key.has_limits() && matches!(self, StateTransition::IdentityKeyLimitsUpdate(_)) {
+                    return Ok(ConsensusValidationResult::new_with_error(
+                        PublicKeyWithLimitsCannotUpdateKeyLimitsError::new(key.id()).into(),
                     ));
                 }
 

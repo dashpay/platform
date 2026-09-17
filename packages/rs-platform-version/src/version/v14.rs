@@ -300,6 +300,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// cover (only metered processing may overshoot); `execute_event` v1 deducts what was spent.
 /// Shielded-proof validation v1 refuses a key that carries a budget or an expiry in identity
 /// creation from the shielded pool, whose sighash preimage does not cover the limits.
+/// `IdentityKeyLimitsUpdate` (state transition type 23, gated by
+/// `IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION`) raises a key's total budget, and the
+/// remaining budget with it, or moves its expiry later; it only ever loosens limits. Signed by a
+/// MASTER key or by a CRITICAL key without limits (`DRIVE_ABCI_VALIDATION_VERSIONS_V10` turns
+/// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot

@@ -28,6 +28,7 @@ use dpp::state_transition::identity_create_transition::accessors::IdentityCreate
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
@@ -239,6 +240,12 @@ impl Drive {
                 Drive::identity_balance_query(&st.identity_id().to_buffer())
             }
             StateTransition::IdentityUpdate(st) => Drive::identity_all_keys_query(
+                &st.identity_id().to_buffer(),
+                &platform_version.drive.grove_version,
+            )?,
+            // The rewritten key and the revision are in the identity's key tree, as for an
+            // identity update.
+            StateTransition::IdentityKeyLimitsUpdate(st) => Drive::identity_all_keys_query(
                 &st.identity_id().to_buffer(),
                 &platform_version.drive.grove_version,
             )?,
