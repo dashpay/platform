@@ -175,6 +175,7 @@ const contracts = await client.getDataContractsByRange({ limit: 100 });
 // Check that contracts held locally are still current (versions only; the contracts themselves only with includeContracts)
 const versions = await client.getDataContractsLatestVersions({ contractIds: ['GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec'] });
 // Contract groups: a group's owner/admins/name, its members one kind at a time (page with nextStartAfter), and the groups a contract is in
+const contractGroupId = '8Y4NJ3bDgNvWm6tMMXAdEWQEvkqbCiCSwK9KpQTPMFZ2'; // a contract group id, not a contract id
 const groupInfo = await client.getContractGroupInfo(contractGroupId);
 const members = await client.getContractGroupMembers({ contractGroupId, kind: 'contracts', limit: 50 });
 const memberships = await client.getContractGroupsForContract('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');

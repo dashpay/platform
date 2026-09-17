@@ -20,21 +20,42 @@ pub use drive::drive::contract_groups::types::{
 };
 use std::collections::BTreeSet;
 
-fn identifier_from(bytes: &[u8], what: &str) -> Result<Identifier, Error> {
-    Identifier::from_bytes(bytes).map_err(|_| Error::RequestError {
-        error: format!(
+/// Where a malformed field came from, which decides the error it is reported as: a bad
+/// request field is the caller's mistake, a bad response field is the node's.
+#[derive(Clone, Copy)]
+enum Origin {
+    Request,
+    Response,
+}
+
+impl Origin {
+    fn error(self, error: String) -> Error {
+        match self {
+            Origin::Request => Error::RequestError { error },
+            Origin::Response => Error::ProtocolError { error },
+        }
+    }
+}
+
+fn identifier_from(bytes: &[u8], what: &str, origin: Origin) -> Result<Identifier, Error> {
+    Identifier::from_bytes(bytes).map_err(|_| {
+        origin.error(format!(
             "{what} must be a 32 byte identifier, got {} bytes",
             bytes.len()
-        ),
+        ))
     })
 }
 
-fn token_position_from(token_position: u32, what: &str) -> Result<TokenContractPosition, Error> {
-    TokenContractPosition::try_from(token_position).map_err(|_| Error::RequestError {
-        error: format!(
+fn token_position_from(
+    token_position: u32,
+    what: &str,
+    origin: Origin,
+) -> Result<TokenContractPosition, Error> {
+    TokenContractPosition::try_from(token_position).map_err(|_| {
+        origin.error(format!(
             "{what} {token_position} is out of bounds, it must be at most {}",
             TokenContractPosition::MAX
-        ),
+        ))
     })
 }
 
@@ -49,10 +70,10 @@ pub(crate) fn contract_group_info_from_proto(
         name,
         description,
     } = info;
-    let owner = identifier_from(&owner_id, "owner_id")?;
+    let owner = identifier_from(&owner_id, "owner_id", Origin::Response)?;
     let admins = admin_ids
         .iter()
-        .map(|admin| identifier_from(admin, "admin_ids entry"))
+        .map(|admin| identifier_from(admin, "admin_ids entry", Origin::Response))
         .collect::<Result<BTreeSet<Identifier>, Error>>()?;
     let owner = if admins.is_empty() {
         ContractGroupOwner::SingleOwner(owner)
@@ -77,7 +98,7 @@ pub(crate) fn members_query_from_request(
         Members::Contracts(query) => ContractGroupMembersQuery::Contracts {
             start_after: query
                 .start_after
-                .map(|contract_id| identifier_from(&contract_id, "start_after"))
+                .map(|contract_id| identifier_from(&contract_id, "start_after", Origin::Request))
                 .transpose()?,
         },
         Members::DocumentTypes(query) => ContractGroupMembersQuery::DocumentTypes {
@@ -89,7 +110,7 @@ pub(crate) fn members_query_from_request(
                         document_type_name,
                     } = cursor;
                     Ok::<_, Error>((
-                        identifier_from(&contract_id, "start_after.contract_id")?,
+                        identifier_from(&contract_id, "start_after.contract_id", Origin::Request)?,
                         document_type_name,
                     ))
                 })
@@ -104,8 +125,12 @@ pub(crate) fn members_query_from_request(
                         token_position,
                     } = cursor;
                     Ok::<_, Error>((
-                        identifier_from(&contract_id, "start_after.contract_id")?,
-                        token_position_from(token_position, "start_after.token_position")?,
+                        identifier_from(&contract_id, "start_after.contract_id", Origin::Request)?,
+                        token_position_from(
+                            token_position,
+                            "start_after.token_position",
+                            Origin::Request,
+                        )?,
                     ))
                 })
                 .transpose()?,
@@ -145,7 +170,9 @@ pub(crate) fn members_page_from_response(
             members
                 .contract_ids
                 .iter()
-                .map(|contract_id| identifier_from(contract_id, "contract_ids entry"))
+                .map(|contract_id| {
+                    identifier_from(contract_id, "contract_ids entry", Origin::Response)
+                })
                 .collect::<Result<Vec<_>, Error>>()?,
         ),
         MembersResult::DocumentTypes(members) => ContractGroupMembersPage::DocumentTypes(
@@ -154,7 +181,11 @@ pub(crate) fn members_page_from_response(
                 .into_iter()
                 .map(|member| {
                     Ok((
-                        identifier_from(&member.contract_id, "document type contract_id")?,
+                        identifier_from(
+                            &member.contract_id,
+                            "document type contract_id",
+                            Origin::Response,
+                        )?,
                         member.document_type_name,
                     ))
                 })
@@ -166,8 +197,16 @@ pub(crate) fn members_page_from_response(
                 .into_iter()
                 .map(|member| {
                     Ok((
-                        identifier_from(&member.contract_id, "token contract_id")?,
-                        token_position_from(member.token_position, "token_position")?,
+                        identifier_from(
+                            &member.contract_id,
+                            "token contract_id",
+                            Origin::Response,
+                        )?,
+                        token_position_from(
+                            member.token_position,
+                            "token_position",
+                            Origin::Response,
+                        )?,
                     ))
                 })
                 .collect::<Result<Vec<_>, Error>>()?,
@@ -205,7 +244,7 @@ pub(crate) fn memberships_from_response(
 ) -> Result<ContractGroupMembershipsForContract, Error> {
     let group_ids = |ids: &[Vec<u8>]| {
         ids.iter()
-            .map(|id| identifier_from(id, "contract_group_ids entry"))
+            .map(|id| identifier_from(id, "contract_group_ids entry", Origin::Response))
             .collect::<Result<BTreeSet<Identifier>, Error>>()
     };
     Ok(ContractGroupMembershipsForContract {
@@ -225,7 +264,7 @@ pub(crate) fn memberships_from_response(
             .into_iter()
             .map(|entry| {
                 Ok((
-                    token_position_from(entry.token_position, "token_position")?,
+                    token_position_from(entry.token_position, "token_position", Origin::Response)?,
                     group_ids(&entry.contract_group_ids)?,
                 ))
             })

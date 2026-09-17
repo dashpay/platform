@@ -487,10 +487,11 @@ impl WasmSdk {
         query: ContractGroupMembersQueryJs,
     ) -> Result<JsValue, WasmSdkError> {
         let query = parse_contract_group_members_query(query)?;
+        let empty_page = ContractGroupMembersPage::empty_for(&query.members);
 
         let page = ContractGroupMembersPage::fetch(self.as_ref(), query)
             .await?
-            .unwrap_or(ContractGroupMembersPage::Contracts(vec![]));
+            .unwrap_or(empty_page);
 
         members_page_to_js(page)
     }
@@ -505,11 +506,12 @@ impl WasmSdk {
         query: ContractGroupMembersQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let query = parse_contract_group_members_query(query)?;
+        let empty_page = ContractGroupMembersPage::empty_for(&query.members);
 
         let (page, metadata, proof) =
             ContractGroupMembersPage::fetch_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
-        let page = page.unwrap_or(ContractGroupMembersPage::Contracts(vec![]));
+        let page = page.unwrap_or(empty_page);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             members_page_to_js(page)?,

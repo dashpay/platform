@@ -1049,7 +1049,10 @@ mod contract_groups_tests {
             },
         ))))
         .unwrap_err();
-        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+        assert!(
+            matches!(err, Error::ProtocolError { .. }),
+            "a malformed response field is the node's error: {err:?}"
+        );
 
         let err = parse_info(info_response(Some(InfoResult::Proof(
             platform::Proof::default(),
