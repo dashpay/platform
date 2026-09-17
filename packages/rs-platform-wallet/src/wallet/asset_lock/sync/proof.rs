@@ -28,6 +28,22 @@ const LOCATE_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 /// One attempt makes two requests (the placement, then the block).
 const LOCATE_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// Longest a single SPV header read may hold the ChainLock-proof wait. Its own
+/// cap, not [`LOCATE_ATTEMPT_TIMEOUT`]: the lookup that produced the placement
+/// has already spent that budget, and the production header read takes three
+/// locks, so a stalled reader must not push the wait past its deadline.
+const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The outcome of a bounded SPV header read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeaderRead {
+    /// The store answered: the header's hash at that height, or `None` when it
+    /// holds no header there.
+    Answer(Option<BlockHash>),
+    /// The read did not finish within the budget it was given.
+    Stalled(Duration),
+}
+
 /// Mined-height lookup state for ONE ChainLock-proof wait: the throttle, the
 /// latest answer, and which conditions have already been logged.
 #[derive(Debug, Default)]
@@ -44,6 +60,9 @@ struct LocateState {
     logged_chain_lock_short: bool,
     logged_network_mismatch: bool,
     logged_placement_invalidated: bool,
+    logged_header_read_stalled: bool,
+    logged_record_header_mismatch: bool,
+    logged_record_header_missing: bool,
     /// The `Unavailable` reason last logged, so a repeat of the same failure
     /// stays quiet and a new one is logged.
     logged_unavailable_reason: Option<String>,
@@ -544,7 +563,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// 1. the record is `InChainLockedBlock`;
     /// 2. the record is `InBlock` at a height the wallet's applied ChainLock
     ///    already covers (the promotion event passed before the record was
-    ///    back in memory);
+    ///    back in memory) and the SPV header at that height is still the block
+    ///    the record names;
     /// 3. the record has no height, and the mined-height locator places the
     ///    transaction in a block the SPV header chain holds, at a height the
     ///    wallet's ChainLock covers.
@@ -599,27 +619,82 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 &mut read_state,
             );
             let record_height = record.as_ref().and_then(|r| r.height());
+            // A record with a height only needs the wallet's ChainLock to
+            // catch up, so a lookup could tell it nothing new — unless the SPV
+            // headers say the record's block is not the one at that height.
+            let mut record_height_usable = record_height.is_some();
             match (record.as_ref().map(|r| &r.context), record_height) {
                 (Some(TransactionContext::InChainLockedBlock(_)), Some(h)) => return Ok(h),
-                (Some(TransactionContext::InBlock(_)), Some(h)) => {
+                (Some(TransactionContext::InBlock(info)), Some(h)) => {
                     let (wallet_cl_height, networks_match) = self.wallet_chain_lock_state().await;
                     if networks_match && wallet_cl_height.is_some_and(|cl| cl >= h) {
-                        tracing::info!(
-                            "ChainLock wait for tx {} resolved from the wallet's applied \
-                             ChainLock (record InBlock at height={}, wallet_cl={})",
-                            out_point.txid,
-                            h,
-                            wallet_cl_height.unwrap_or(0),
-                        );
-                        return Ok(h);
+                        let recorded = info.block_hash();
+                        match self.header_hash_within(h, deadline).await {
+                            HeaderRead::Answer(Some(spv)) if spv != recorded => {
+                                if !locate_state.logged_record_header_mismatch {
+                                    locate_state.logged_record_header_mismatch = true;
+                                    tracing::warn!(
+                                        outpoint = %out_point,
+                                        height = h,
+                                        "ChainLock wait: the SPV header at the record's height is \
+                                         a different block than the record names; not building a \
+                                         proof from the record"
+                                    );
+                                }
+                                record_height_usable = false;
+                            }
+                            HeaderRead::Answer(Some(_)) => {
+                                tracing::info!(
+                                    "ChainLock wait for tx {} resolved from the wallet's applied \
+                                     ChainLock (record InBlock at height={}, wallet_cl={})",
+                                    out_point.txid,
+                                    h,
+                                    wallet_cl_height.unwrap_or(0),
+                                );
+                                return Ok(h);
+                            }
+                            // No stored header to check against — accept the
+                            // record as before, so hosts without an SPV header
+                            // store keep resolving.
+                            HeaderRead::Answer(None) => {
+                                if !locate_state.logged_record_header_missing {
+                                    locate_state.logged_record_header_missing = true;
+                                    tracing::info!(
+                                        outpoint = %out_point,
+                                        height = h,
+                                        "ChainLock wait: no SPV header stored at the record's \
+                                         height; accepting the record's own block"
+                                    );
+                                }
+                                tracing::info!(
+                                    "ChainLock wait for tx {} resolved from the wallet's applied \
+                                     ChainLock (record InBlock at height={}, wallet_cl={})",
+                                    out_point.txid,
+                                    h,
+                                    wallet_cl_height.unwrap_or(0),
+                                );
+                                return Ok(h);
+                            }
+                            // Nothing was established this round; re-check on
+                            // the next wake rather than act on an unread header.
+                            HeaderRead::Stalled(budget) => {
+                                if !locate_state.logged_header_read_stalled {
+                                    locate_state.logged_header_read_stalled = true;
+                                    tracing::warn!(
+                                        outpoint = %out_point,
+                                        "ChainLock wait: SPV header read at height {h} did not \
+                                         complete within {budget:?}; not using the record this \
+                                         round"
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
                 _ => {}
             }
 
-            // A record that has a height only needs the wallet's ChainLock to
-            // catch up; a lookup could not tell it anything new.
-            if record_height.is_none() {
+            if !record_height_usable {
                 if let Some(h) = self
                     .located_chain_proof_height(out_point, &mut locate_state, deadline)
                     .await
@@ -664,6 +739,29 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
     }
 
+    /// Read the SPV header hash at `height`, bounded by [`HEADER_READ_TIMEOUT`]
+    /// and by whatever is left of `deadline`.
+    ///
+    /// The wait is blind while this runs — it sees neither lock events nor its
+    /// own deadline — so the read gets a budget rather than however long the
+    /// header store takes.
+    async fn header_hash_within(
+        &self,
+        height: u32,
+        deadline: Option<tokio::time::Instant>,
+    ) -> HeaderRead {
+        let budget = deadline.map_or(HEADER_READ_TIMEOUT, |dl| {
+            HEADER_READ_TIMEOUT.min(dl.saturating_duration_since(tokio::time::Instant::now()))
+        });
+        if budget.is_zero() {
+            return HeaderRead::Stalled(budget);
+        }
+        match tokio::time::timeout(budget, self.mined_height_locator.header_hash_at(height)).await {
+            Ok(answer) => HeaderRead::Answer(answer),
+            Err(_) => HeaderRead::Stalled(budget),
+        }
+    }
+
     /// The wallet's applied ChainLock height, and whether the wallet's
     /// declared network matches the SDK's.
     ///
@@ -699,8 +797,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// or a missing header discards the placement. A reorg can still land
     /// between that read and the caller submitting the proof; Platform checks
     /// the transaction's height against its own Core view, and a rejection
-    /// sends the row back to its InstantSend proof (see
-    /// `revert_rejected_chain_proof`).
+    /// sends the row off that proof (see `invalidate_rejected_chain_proof`).
     async fn located_chain_proof_height(
         &self,
         out_point: &OutPoint,
@@ -736,12 +833,26 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             },
         ) = (height, &located)
         {
-            let now = self.mined_height_locator.header_hash_at(h).await;
-            if now != Some(*verified) {
-                state.invalidate_placement(out_point, h, *verified, now);
-                return None;
+            match self.header_hash_within(h, deadline).await {
+                HeaderRead::Answer(now) if now == Some(*verified) => return Some(h),
+                HeaderRead::Answer(now) => {
+                    state.invalidate_placement(out_point, h, *verified, now);
+                    return None;
+                }
+                // Keep the placement: a reader that did not answer says
+                // nothing about the header, and the next wake reads again.
+                HeaderRead::Stalled(budget) => {
+                    if !state.logged_header_read_stalled {
+                        state.logged_header_read_stalled = true;
+                        tracing::warn!(
+                            outpoint = %out_point,
+                            "ChainLock wait: SPV header read at height {h} did not complete \
+                             within {budget:?}; not using the placement this round"
+                        );
+                    }
+                    return None;
+                }
             }
-            return Some(h);
         }
         if let (None, Located::Mined { height: placed, .. }) = (height, &located) {
             if !networks_match && !state.logged_network_mismatch {
@@ -1549,7 +1660,7 @@ mod tests {
 #[cfg(test)]
 mod chain_lock_wait_tests {
     use std::collections::HashMap;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -1613,6 +1724,7 @@ mod chain_lock_wait_tests {
         script: Mutex<Vec<Located>>,
         calls: AtomicUsize,
         headers: Mutex<HashMap<u32, BlockHash>>,
+        stall_headers: AtomicBool,
     }
 
     impl ScriptedLocator {
@@ -1623,7 +1735,14 @@ mod chain_lock_wait_tests {
                 headers: Mutex::new(headers_for(&script)),
                 script: Mutex::new(script),
                 calls: AtomicUsize::new(0),
+                stall_headers: AtomicBool::new(false),
             })
+        }
+
+        /// Make header reads hang (`true`) or answer again (`false`). A read
+        /// already hanging stays hung; the next one sees the new setting.
+        fn stall_headers(&self, stalled: bool) {
+            self.stall_headers.store(stalled, Ordering::SeqCst);
         }
 
         /// Replace the remaining script, adding its `Mined` blocks to the headers.
@@ -1661,6 +1780,9 @@ mod chain_lock_wait_tests {
         }
 
         async fn header_hash_at(&self, height: u32) -> Option<BlockHash> {
+            if self.stall_headers.load(Ordering::SeqCst) {
+                std::future::pending::<()>().await;
+            }
             self.headers.lock().unwrap().get(&height).copied()
         }
     }
@@ -2040,10 +2162,15 @@ mod chain_lock_wait_tests {
     /// passed resolves from the wallet's applied ChainLock.
     #[tokio::test(start_paused = true)]
     async fn chain_lock_wait_accepts_in_block_record_covered_by_wallet_chain_lock() {
+        // The SPV header at that height is the block the record names.
+        let locator = ScriptedLocator::new(vec![Located::Mined {
+            height: 100,
+            block_hash: BlockHash::all_zeros(),
+        }]);
         let ctx = ctx(
             TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 0)),
             Network::Testnet,
-            None,
+            Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
         )
         .await;
         set_wallet_chain_lock(&ctx, 150).await;
@@ -2057,6 +2184,11 @@ mod chain_lock_wait_tests {
         .expect("resolves without waiting")
         .expect("proof");
         assert_eq!(chain_proof_height(proof), 100);
+        assert_eq!(
+            locator.calls(),
+            0,
+            "the record answered; no lookup was needed"
+        );
     }
 
     /// A record that already has a height never costs a DAPI lookup.
@@ -2078,62 +2210,6 @@ mod chain_lock_wait_tests {
             .expect_err("the wallet's ChainLock never reaches the block");
         assert!(matches!(err, PlatformWalletError::FinalityTimeout(_)));
         assert_eq!(locator.calls(), 0);
-    }
-
-    /// A rejected Chain proof puts the row back on its InstantSend proof.
-    #[cfg(feature = "shielded")]
-    #[tokio::test]
-    async fn rejected_chain_proof_restores_the_instant_proof() {
-        let ctx = ctx(instant_send_context(), Network::Testnet, None).await;
-        let chain_proof = AssetLockProof::Chain(ChainAssetLockProof {
-            core_chain_locked_height: 100,
-            out_point: ctx.out_point,
-        });
-        ctx.manager
-            .advance_asset_lock_status(
-                &ctx.out_point,
-                AssetLockStatus::ChainLocked,
-                Some(chain_proof),
-            )
-            .await
-            .expect("advance");
-
-        ctx.manager
-            .revert_rejected_chain_proof(&ctx.out_point, ctx.instant_proof.clone())
-            .await
-            .expect("revert");
-
-        let wm = ctx.wallet_manager.read().await;
-        let row = wm
-            .get_wallet_info(&ctx.wallet_id)
-            .expect("wallet")
-            .tracked_asset_locks
-            .get(&ctx.out_point)
-            .expect("row")
-            .clone();
-        assert_eq!(row.status, AssetLockStatus::InstantSendLocked);
-        assert!(matches!(row.proof, Some(AssetLockProof::Instant(_))));
-    }
-
-    /// The revert only touches a row that is still `ChainLocked`.
-    #[cfg(feature = "shielded")]
-    #[tokio::test]
-    async fn revert_leaves_a_row_that_moved_off_chain_locked() {
-        let ctx = ctx(instant_send_context(), Network::Testnet, None).await;
-        ctx.manager
-            .revert_rejected_chain_proof(&ctx.out_point, ctx.instant_proof.clone())
-            .await
-            .expect("revert");
-
-        let wm = ctx.wallet_manager.read().await;
-        let row = wm
-            .get_wallet_info(&ctx.wallet_id)
-            .expect("wallet")
-            .tracked_asset_locks
-            .get(&ctx.out_point)
-            .expect("row")
-            .clone();
-        assert_eq!(row.status, AssetLockStatus::InstantSendLocked);
     }
 
     /// The tx-height consensus error is told apart from the IS-signature one.
@@ -2446,5 +2522,365 @@ mod chain_lock_wait_tests {
         assert_eq!(state.logged_unavailable_reason.as_deref(), Some("a"));
         state.record(&out_point, Located::Unavailable("b".to_string()));
         assert_eq!(state.logged_unavailable_reason.as_deref(), Some("b"));
+    }
+
+    /// A stalled header read cannot push a bounded wait past its deadline.
+    #[tokio::test(start_paused = true)]
+    async fn stalled_header_read_does_not_extend_a_bounded_wait() {
+        let locator = ScriptedLocator::new(vec![Located::Mined {
+            height: 100,
+            block_hash: hash(7),
+        }]);
+        locator.stall_headers(true);
+        let ctx = ctx(
+            instant_send_context(),
+            Network::Testnet,
+            Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
+        )
+        .await;
+        set_wallet_chain_lock(&ctx, 150).await;
+
+        let started = tokio::time::Instant::now();
+        let err = ctx
+            .manager
+            .upgrade_to_chain_lock_proof(&ctx.out_point, Some(Duration::from_secs(5)))
+            .await
+            .expect_err("the header was never read");
+        assert!(matches!(err, PlatformWalletError::FinalityTimeout(_)));
+        assert_eq!(started.elapsed(), Duration::from_secs(5));
+    }
+
+    /// A stalled header read keeps the placement: once the store answers, the
+    /// same placement resolves the wait without a second lookup.
+    #[tokio::test(start_paused = true)]
+    async fn stalled_header_read_keeps_the_placement_and_resolves_when_headers_answer() {
+        let locator = ScriptedLocator::new(vec![Located::Mined {
+            height: 100,
+            block_hash: hash(7),
+        }]);
+        locator.stall_headers(true);
+        let ctx = ctx(
+            instant_send_context(),
+            Network::Testnet,
+            Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
+        )
+        .await;
+        set_wallet_chain_lock(&ctx, 150).await;
+
+        let manager = Arc::clone(&ctx.manager);
+        let out_point = ctx.out_point;
+        let wait =
+            tokio::spawn(
+                async move { manager.upgrade_to_chain_lock_proof(&out_point, None).await },
+            );
+        tokio::time::sleep(Duration::from_secs(70)).await;
+        assert!(
+            !wait.is_finished(),
+            "a header that never answers resolves nothing"
+        );
+        locator.stall_headers(false);
+
+        let proof = tokio::time::timeout(Duration::from_secs(600), wait)
+            .await
+            .expect("the next header read resolves the wait")
+            .expect("task")
+            .expect("proof");
+        assert_eq!(chain_proof_height(proof), 100);
+        assert_eq!(locator.calls(), 1, "the cached placement was reused");
+    }
+
+    /// A record promotion that lands during a stalled header read is seen as
+    /// soon as the read gives up.
+    #[tokio::test(start_paused = true)]
+    async fn stalled_header_read_cannot_starve_the_record_path() {
+        let locator = ScriptedLocator::new(vec![Located::Mined {
+            height: 100,
+            block_hash: hash(7),
+        }]);
+        locator.stall_headers(true);
+        let ctx = ctx(
+            instant_send_context(),
+            Network::Testnet,
+            Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
+        )
+        .await;
+        set_wallet_chain_lock(&ctx, 150).await;
+
+        let started = tokio::time::Instant::now();
+        let manager = Arc::clone(&ctx.manager);
+        let out_point = ctx.out_point;
+        let wait =
+            tokio::spawn(
+                async move { manager.upgrade_to_chain_lock_proof(&out_point, None).await },
+            );
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        set_record_context(
+            &ctx,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(120, BlockHash::all_zeros(), 0)),
+        )
+        .await;
+        ctx.notify.notify_waiters();
+
+        let proof = tokio::time::timeout(Duration::from_secs(10), wait)
+            .await
+            .expect("resolves once the stalled read is cut off")
+            .expect("task")
+            .expect("proof");
+        assert_eq!(chain_proof_height(proof), 120);
+        assert!(
+            started.elapsed() <= Duration::from_secs(6),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    /// A record whose block the SPV headers contradict is not used; the
+    /// lookup decides instead.
+    #[tokio::test(start_paused = true)]
+    async fn in_block_record_with_a_divergent_spv_header_is_not_used() {
+        let locator = ScriptedLocator::new(vec![Located::Mined {
+            height: 100,
+            block_hash: hash(2),
+        }]);
+        let ctx = ctx(
+            TransactionContext::InBlock(BlockInfo::new(100, hash(1), 0)),
+            Network::Testnet,
+            Some(Arc::clone(&locator) as Arc<dyn MinedHeightLocator>),
+        )
+        .await;
+        set_wallet_chain_lock(&ctx, 150).await;
+
+        let proof = tokio::time::timeout(
+            Duration::from_secs(1),
+            ctx.manager
+                .upgrade_to_chain_lock_proof(&ctx.out_point, None),
+        )
+        .await
+        .expect("the lookup resolves it")
+        .expect("proof");
+        assert_eq!(chain_proof_height(proof), 100);
+        assert_eq!(
+            locator.calls(),
+            1,
+            "the record was refused, so the lookup ran"
+        );
+    }
+
+    /// With no header stored at the record's height there is nothing to
+    /// contradict it, so the record still resolves the wait.
+    #[tokio::test(start_paused = true)]
+    async fn in_block_record_with_no_stored_header_still_resolves() {
+        let ctx = ctx(
+            TransactionContext::InBlock(BlockInfo::new(100, hash(1), 0)),
+            Network::Testnet,
+            None,
+        )
+        .await;
+        set_wallet_chain_lock(&ctx, 150).await;
+
+        let proof = tokio::time::timeout(
+            Duration::from_secs(1),
+            ctx.manager
+                .upgrade_to_chain_lock_proof(&ctx.out_point, None),
+        )
+        .await
+        .expect("resolves without waiting")
+        .expect("proof");
+        assert_eq!(chain_proof_height(proof), 100);
+    }
+
+    /// The tracked row as it stands.
+    #[cfg(feature = "shielded")]
+    async fn tracked_row(ctx: &Ctx) -> TrackedAssetLock {
+        ctx.wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&ctx.wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get(&ctx.out_point)
+            .expect("row")
+            .clone()
+    }
+
+    /// A ChainLock proof at `height` for the fixture's outpoint.
+    #[cfg(feature = "shielded")]
+    fn chain_proof_at(ctx: &Ctx, height: u32) -> AssetLockProof {
+        AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: height,
+            out_point: ctx.out_point,
+        })
+    }
+
+    /// Put the row on `proof` at `ChainLocked`, as a submit would have left it.
+    #[cfg(feature = "shielded")]
+    async fn persist_chain_proof(ctx: &Ctx, proof: AssetLockProof) {
+        ctx.manager
+            .advance_asset_lock_status(&ctx.out_point, AssetLockStatus::ChainLocked, Some(proof))
+            .await
+            .expect("advance");
+    }
+
+    /// Platform's "the tx is not at that height" rejection.
+    #[cfg(feature = "shielded")]
+    fn height_rejection() -> dash_sdk::Error {
+        use dpp::consensus::basic::identity::InvalidAssetLockProofTransactionHeightError;
+        use dpp::consensus::ConsensusError;
+
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            ConsensusError::from(InvalidAssetLockProofTransactionHeightError::new(100, None)),
+        )))
+    }
+
+    /// A rejection that says nothing about the proof's height.
+    #[cfg(feature = "shielded")]
+    fn unrelated_rejection() -> dash_sdk::Error {
+        use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
+        use dpp::consensus::ConsensusError;
+
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            ConsensusError::from(InvalidInstantAssetLockProofSignatureError::new()),
+        )))
+    }
+
+    /// A Chain proof rejected on the first submit — one loaded from the row,
+    /// not built by this attempt — falls back to the record's InstantSend proof.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn persisted_chain_proof_rejected_on_first_submit_falls_back_to_the_record_instant_proof()
+    {
+        let ctx = ctx(instant_send_context(), Network::Testnet, None).await;
+        let submitted = chain_proof_at(&ctx, 100);
+        persist_chain_proof(&ctx, submitted.clone()).await;
+
+        ctx.manager
+            .invalidate_rejected_chain_proof(&ctx.out_point, &submitted, &height_rejection())
+            .await;
+
+        let row = tracked_row(&ctx).await;
+        assert_eq!(row.status, AssetLockStatus::InstantSendLocked);
+        assert!(matches!(row.proof, Some(AssetLockProof::Instant(_))));
+    }
+
+    /// With no local finality to fall back on, the row drops to `Broadcast`
+    /// with no proof, which is the arm that rebuilds one.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn persisted_chain_proof_rejected_without_a_local_proof_reverts_to_broadcast() {
+        let ctx = ctx(TransactionContext::Mempool, Network::Testnet, None).await;
+        let submitted = chain_proof_at(&ctx, 100);
+        persist_chain_proof(&ctx, submitted.clone()).await;
+
+        ctx.manager
+            .invalidate_rejected_chain_proof(&ctx.out_point, &submitted, &height_rejection())
+            .await;
+
+        let row = tracked_row(&ctx).await;
+        assert_eq!(row.status, AssetLockStatus::Broadcast);
+        assert!(row.proof.is_none(), "the refused proof must not survive");
+    }
+
+    /// When the record supports a different Chain proof, that one replaces the
+    /// refused proof and the row stays `ChainLocked`.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn rejected_chain_proof_is_replaced_by_the_records_chain_proof() {
+        let ctx = ctx(
+            TransactionContext::InChainLockedBlock(BlockInfo::new(140, BlockHash::all_zeros(), 0)),
+            Network::Testnet,
+            None,
+        )
+        .await;
+        let submitted = chain_proof_at(&ctx, 100);
+        persist_chain_proof(&ctx, submitted.clone()).await;
+
+        ctx.manager
+            .invalidate_rejected_chain_proof(&ctx.out_point, &submitted, &height_rejection())
+            .await;
+
+        let row = tracked_row(&ctx).await;
+        assert_eq!(row.status, AssetLockStatus::ChainLocked);
+        assert_eq!(chain_proof_height(row.proof.expect("proof")), 140);
+    }
+
+    /// Only a Chain submission rejected for its height is invalidated.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn invalidation_ignores_instant_submissions_and_other_errors() {
+        let ctx = ctx(instant_send_context(), Network::Testnet, None).await;
+        let submitted = chain_proof_at(&ctx, 100);
+        persist_chain_proof(&ctx, submitted.clone()).await;
+
+        ctx.manager
+            .invalidate_rejected_chain_proof(
+                &ctx.out_point,
+                &ctx.instant_proof.clone(),
+                &height_rejection(),
+            )
+            .await;
+        assert_eq!(tracked_row(&ctx).await.status, AssetLockStatus::ChainLocked);
+
+        ctx.manager
+            .invalidate_rejected_chain_proof(&ctx.out_point, &submitted, &unrelated_rejection())
+            .await;
+        let row = tracked_row(&ctx).await;
+        assert_eq!(row.status, AssetLockStatus::ChainLocked);
+        assert_eq!(chain_proof_height(row.proof.expect("proof")), 100);
+    }
+
+    /// A row that has moved off `ChainLocked` is left alone.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn invalidation_leaves_a_row_that_moved_off_chain_locked() {
+        let ctx = ctx(instant_send_context(), Network::Testnet, None).await;
+        let submitted = chain_proof_at(&ctx, 100);
+
+        ctx.manager
+            .invalidate_rejected_chain_proof(&ctx.out_point, &submitted, &height_rejection())
+            .await;
+
+        let row = tracked_row(&ctx).await;
+        assert_eq!(row.status, AssetLockStatus::InstantSendLocked);
+        assert!(matches!(row.proof, Some(AssetLockProof::Instant(_))));
+    }
+
+    /// The predicate: a Chain submission plus a height rejection, nothing else.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn rejected_chain_proof_needs_invalidation_only_for_a_chain_height_rejection() {
+        type Manager = AssetLockManager<AlwaysRejectedBroadcaster>;
+
+        let chain = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 100,
+            out_point: OutPoint::new(Txid::from([0x5a; 32]), 0),
+        });
+        let instant = AssetLockProof::Instant(InstantAssetLockProof::new(
+            InstantLock::default(),
+            Transaction {
+                version: 1,
+                lock_time: 0,
+                input: vec![TxIn {
+                    previous_output: OutPoint::new(Txid::from([0x5a; 32]), 0),
+                    ..Default::default()
+                }],
+                output: Vec::new(),
+                special_transaction_payload: None,
+            },
+            0,
+        ));
+
+        assert!(Manager::rejected_chain_proof_needs_invalidation(
+            &chain,
+            &height_rejection()
+        ));
+        assert!(!Manager::rejected_chain_proof_needs_invalidation(
+            &instant,
+            &height_rejection()
+        ));
+        assert!(!Manager::rejected_chain_proof_needs_invalidation(
+            &chain,
+            &unrelated_rejection()
+        ));
     }
 }
