@@ -60,6 +60,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             &[KeyType::ECDSA_SECP256K1],
             false,
         )
+        .map_err(dash_sdk::Error::from)?
         .ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(format!(
                 "No AUTHENTICATION ECDSA_SECP256K1 key at CRITICAL security level \

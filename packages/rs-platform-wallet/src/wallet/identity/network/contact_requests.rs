@@ -615,6 +615,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             &[KeyType::ECDSA_SECP256K1],
             false,
         )
+        .map_err(dash_sdk::Error::from)?
         .cloned()
         .ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(

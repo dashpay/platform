@@ -26,7 +26,7 @@
 //!     stack-overflow avoidance `contract.rs` documents for the
 //!     post-broadcast GroveDB proof-verification recursion.
 
-use super::signing_key::available_signing_key;
+use super::signing_key::{available_signing_key, signing_key_unavailable};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -277,7 +277,7 @@ impl IdentityWallet {
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
             drop(wm);
-            available_signing_key(&identity, signer, Purpose::AUTHENTICATION, &allowed_levels, &[KeyType::ECDSA_SECP256K1], false)
+            available_signing_key(&identity, signer, Purpose::AUTHENTICATION, &allowed_levels, &[KeyType::ECDSA_SECP256K1], false).map_err(dash_sdk::Error::from)?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "No ECDSA authentication key at a security level satisfying \
@@ -448,9 +448,7 @@ impl IdentityWallet {
             )));
         }
         if !signer.can_sign_with(&key) {
-            return Err(PlatformWalletError::InvalidIdentityData(format!(
-                "Signing key {signing_key_id} on identity {owner_identity_id} is unavailable to signer"
-            )));
+            return Err(dash_sdk::Error::from(signing_key_unavailable(&key)).into());
         }
         Ok(key)
     }
@@ -854,8 +852,18 @@ mod signing_tests {
             .await
             .unwrap_err();
         assert!(
-            error.to_string().contains("unavailable to signer"),
-            "{error}"
+            matches!(error, PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(ref message)))
+                if message.starts_with(crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX)),
+            "{error:?}"
         );
+        let missing = wallet
+            .identity()
+            .resolve_authentication_signing_key(&Identifier::default(), 99, &signer)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            missing,
+            PlatformWalletError::InvalidIdentityData(_)
+        ));
     }
 }

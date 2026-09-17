@@ -174,6 +174,7 @@ impl IdentityWallet {
                 &[KeyType::ECDSA_SECP256K1],
                 false,
             )
+            .map_err(dash_sdk::Error::from)?
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
                     "No CRITICAL authentication key available to signer on owner identity \
@@ -399,6 +400,7 @@ impl IdentityWallet {
                 &[KeyType::ECDSA_SECP256K1],
                 false,
             )
+            .map_err(dash_sdk::Error::from)?
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
                     "No CRITICAL authentication key available to signer on owner identity \

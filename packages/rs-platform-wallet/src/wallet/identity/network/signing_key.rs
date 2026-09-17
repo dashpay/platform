@@ -1,13 +1,23 @@
 //! Signer-aware identity key selection shared by wallet operations.
 
+use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::ProtocolError;
 
+/// Preserve the signer's unavailable-key discriminator through SDK and FFI errors.
+pub(super) fn signing_key_unavailable(key: &IdentityPublicKey) -> ProtocolError {
+    ProtocolError::Generic(format!(
+        "{SIGNER_KEY_UNAVAILABLE_PREFIX}Signing key {} is unavailable to signer",
+        key.id()
+    ))
+}
+
 /// Select in key-ID order, preserving the operation's eligibility policy.
 /// Call with an identity snapshot, outside wallet manager guards.
+/// `Ok(None)` means no eligible key; `Err` means eligible keys are unavailable.
 pub(super) fn available_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
@@ -15,14 +25,24 @@ pub(super) fn available_signing_key<'a>(
     security_levels: &[SecurityLevel],
     key_types: &[KeyType],
     allow_disabled: bool,
-) -> Option<&'a IdentityPublicKey> {
-    identity.public_keys().values().find(|key| {
+) -> Result<Option<&'a IdentityPublicKey>, ProtocolError> {
+    let eligible = identity.public_keys().values().filter(|key| {
         key.purpose() == purpose
             && security_levels.contains(&key.security_level())
             && key_types.contains(&key.key_type())
             && (allow_disabled || !key.is_disabled())
-            && signer.can_sign_with(key)
-    })
+    });
+    let mut unavailable = None;
+    for key in eligible {
+        if signer.can_sign_with(key) {
+            return Ok(Some(key));
+        }
+        unavailable.get_or_insert(key);
+    }
+    match unavailable {
+        Some(key) => Err(signing_key_unavailable(key)),
+        None => Ok(None),
+    }
 }
 
 /// Respect explicit keys; automatic withdrawals exhaust TRANSFER before OWNER.
@@ -32,36 +52,38 @@ pub(super) fn credit_signing_key<'a>(
     signer: &impl Signer<IdentityPublicKey>,
     allow_owner: bool,
 ) -> Result<&'a IdentityPublicKey, ProtocolError> {
-    let key = match explicit {
-        Some(key) => signer.can_sign_with(key).then_some(key),
-        None => available_signing_key(
+    if let Some(key) = explicit {
+        return if signer.can_sign_with(key) {
+            Ok(key)
+        } else {
+            Err(signing_key_unavailable(key))
+        };
+    }
+    let mut unavailable = None;
+    for purpose in [Purpose::TRANSFER]
+        .into_iter()
+        .chain(allow_owner.then_some(Purpose::OWNER))
+    {
+        match available_signing_key(
             identity,
             signer,
-            Purpose::TRANSFER,
+            purpose,
             &SecurityLevel::full_range(),
             &KeyType::all_key_types(),
             true,
-        )
-        .or_else(|| {
-            allow_owner
-                .then(|| {
-                    available_signing_key(
-                        identity,
-                        signer,
-                        Purpose::OWNER,
-                        &SecurityLevel::full_range(),
-                        &KeyType::all_key_types(),
-                        true,
-                    )
-                })
-                .flatten()
-        }),
-    };
-    key.ok_or_else(|| {
+        ) {
+            Ok(Some(key)) => return Ok(key),
+            Ok(None) => {}
+            Err(error) => {
+                unavailable.get_or_insert(error);
+            }
+        }
+    }
+    Err(unavailable.unwrap_or_else(|| {
         ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
             "No requested credit signing key available to signer".to_string(),
         )
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -137,6 +159,7 @@ pub(super) mod tests {
                         &[key_type],
                         false
                     )
+                    .unwrap()
                     .map(|k| k.id()),
                     Some(2)
                 );
@@ -149,18 +172,21 @@ pub(super) mod tests {
                         &[key_type],
                         false
                     )
+                    .unwrap()
                     .map(|k| k.id()),
                     Some(1)
                 );
-                assert!(available_signing_key(
-                    &identity,
-                    &AvailableKeys(vec![]),
-                    purpose,
-                    &[level],
-                    &[key_type],
-                    false
-                )
-                .is_none());
+                assert_unavailable(
+                    available_signing_key(
+                        &identity,
+                        &AvailableKeys(vec![]),
+                        purpose,
+                        &[level],
+                        &[key_type],
+                        false,
+                    )
+                    .unwrap_err(),
+                );
             }
         }
     }
@@ -187,6 +213,7 @@ pub(super) mod tests {
                 &[KeyType::ECDSA_SECP256K1],
                 false
             )
+            .unwrap()
             .map(|k| k.id()),
             Some(2)
         );
@@ -215,6 +242,7 @@ pub(super) mod tests {
                 &[key_type],
                 false
             )
+            .unwrap()
             .is_none());
         }
     }
@@ -254,11 +282,83 @@ pub(super) mod tests {
         );
         let first = identity.public_keys().get(&1).unwrap();
         let second = identity.public_keys().get(&2).unwrap();
-        assert!(credit_signing_key(&identity, Some(first), &AvailableKeys(vec![2]), true).is_err());
+        assert_unavailable(
+            credit_signing_key(&identity, Some(first), &AvailableKeys(vec![2]), true).unwrap_err(),
+        );
         assert_eq!(
             credit_signing_key(&identity, Some(second), &AvailableKeys(vec![1, 2]), false).unwrap(),
             second
         );
+    }
+
+    fn assert_unavailable(error: ProtocolError) {
+        assert!(
+            matches!(error, ProtocolError::Generic(ref message)
+            if message.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn should_distinguish_unavailable_keys_from_ineligible_keys() {
+        for (purpose, level, allow_disabled) in [
+            (Purpose::AUTHENTICATION, SecurityLevel::HIGH, false),
+            (Purpose::AUTHENTICATION, SecurityLevel::CRITICAL, false),
+            (Purpose::AUTHENTICATION, SecurityLevel::MASTER, true),
+            (Purpose::TRANSFER, SecurityLevel::CRITICAL, true),
+            (Purpose::OWNER, SecurityLevel::CRITICAL, true),
+        ] {
+            for key_type in [
+                KeyType::ECDSA_SECP256K1,
+                KeyType::ECDSA_HASH160,
+                KeyType::BLS12_381,
+            ] {
+                let mut identity = identity(purpose, level, key_type);
+                // The signer can use the second key, but it has the wrong purpose.
+                identity
+                    .public_keys_mut()
+                    .get_mut(&2)
+                    .unwrap()
+                    .set_purpose(Purpose::ENCRYPTION);
+                let select = |identity: &Identity| {
+                    available_signing_key(
+                        identity,
+                        &AvailableKeys(vec![2]),
+                        purpose,
+                        &[level],
+                        &[key_type],
+                        allow_disabled,
+                    )
+                    .map(|key| key.map(|key| key.id()))
+                };
+                assert_unavailable(select(&identity).unwrap_err());
+                identity.public_keys_mut().remove(&1);
+                assert_eq!(select(&identity).unwrap(), None);
+            }
+        }
+    }
+
+    #[test]
+    fn should_distinguish_unavailable_credit_keys_from_missing_purposes() {
+        let mut identity = identity(
+            Purpose::OWNER,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_HASH160,
+        );
+        assert!(matches!(
+            credit_signing_key(&identity, None, &AvailableKeys(vec![1, 2]), false),
+            Err(ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(_))
+        ));
+        assert_unavailable(
+            credit_signing_key(&identity, None, &AvailableKeys(vec![]), true).unwrap_err(),
+        );
+        identity.public_keys_mut().clear();
+        for allow_owner in [false, true] {
+            assert!(matches!(
+                credit_signing_key(&identity, None, &AvailableKeys(vec![]), allow_owner),
+                Err(ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(_))
+            ));
+        }
     }
 
     #[test]

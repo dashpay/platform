@@ -11,6 +11,7 @@ use dpp::identity::SecurityLevel;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
+use dpp::ProtocolError;
 
 use super::signing_key::available_signing_key;
 use super::*;
@@ -23,7 +24,7 @@ use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
 fn profile_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
-) -> Option<&'a IdentityPublicKey> {
+) -> Result<Option<&'a IdentityPublicKey>, ProtocolError> {
     available_signing_key(
         identity,
         signer,
@@ -187,6 +188,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let identity = managed.identity.clone();
             drop(wm);
             profile_signing_key(&identity, signer)
+                .map_err(dash_sdk::Error::from)?
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
@@ -338,6 +340,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let identity = managed.identity.clone();
             drop(wm);
             profile_signing_key(&identity, signer)
+                .map_err(dash_sdk::Error::from)?
                 .cloned()
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
@@ -837,12 +840,12 @@ mod tests {
             second.id = 2;
             identity.add_public_key(second.into());
             assert_eq!(
-                profile_signing_key(&identity, &AvailableKeys(&[2])),
+                profile_signing_key(&identity, &AvailableKeys(&[2])).unwrap(),
                 identity.public_keys().get(&2),
                 "unavailable {first_type:?} must not shadow available {second_type:?}"
             );
             assert_eq!(
-                profile_signing_key(&identity, &AvailableKeys(&[1, 2])),
+                profile_signing_key(&identity, &AvailableKeys(&[1, 2])).unwrap(),
                 identity.public_keys().get(&1),
                 "select the first available eligible key"
             );
@@ -853,7 +856,7 @@ mod tests {
     fn should_reject_profile_keys_unavailable_to_signer() {
         for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
             let identity = identity_with_key(profile_key(key_type, SecurityLevel::HIGH));
-            assert!(profile_signing_key(&identity, &AvailableKeys(&[])).is_none());
+            assert!(profile_signing_key(&identity, &AvailableKeys(&[])).is_err());
         }
     }
 
@@ -880,7 +883,9 @@ mod tests {
             for level in [SecurityLevel::HIGH, SecurityLevel::CRITICAL] {
                 let identity = identity_with_key(profile_key(key_type, level));
                 assert!(
-                    profile_signing_key(&identity, &AvailableKeys(&[1])).is_some(),
+                    profile_signing_key(&identity, &AvailableKeys(&[1]))
+                        .unwrap()
+                        .is_some(),
                     "{key_type:?}/{level:?}"
                 );
             }
@@ -890,7 +895,9 @@ mod tests {
     #[test]
     fn should_reject_ineligible_profile_keys() {
         let empty = Identity::default_versioned(PlatformVersion::latest()).unwrap();
-        assert!(profile_signing_key(&empty, &AvailableKeys(&[1])).is_none());
+        assert!(profile_signing_key(&empty, &AvailableKeys(&[1]))
+            .unwrap()
+            .is_none());
         for key_type in [
             KeyType::BLS12_381,
             KeyType::BIP13_SCRIPT_HASH,
@@ -900,6 +907,7 @@ mod tests {
                 &identity_with_key(profile_key(key_type, SecurityLevel::HIGH)),
                 &AvailableKeys(&[1])
             )
+            .unwrap()
             .is_none());
         }
         for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
@@ -908,14 +916,23 @@ mod tests {
                     &identity_with_key(profile_key(key_type, level)),
                     &AvailableKeys(&[1])
                 )
+                .unwrap()
                 .is_none());
             }
             let mut key = profile_key(key_type, SecurityLevel::HIGH);
             key.disabled_at = Some(1);
-            assert!(profile_signing_key(&identity_with_key(key), &AvailableKeys(&[1])).is_none());
+            assert!(
+                profile_signing_key(&identity_with_key(key), &AvailableKeys(&[1]))
+                    .unwrap()
+                    .is_none()
+            );
             let mut key = profile_key(key_type, SecurityLevel::CRITICAL);
             key.purpose = Purpose::TRANSFER;
-            assert!(profile_signing_key(&identity_with_key(key), &AvailableKeys(&[1])).is_none());
+            assert!(
+                profile_signing_key(&identity_with_key(key), &AvailableKeys(&[1]))
+                    .unwrap()
+                    .is_none()
+            );
         }
     }
 
@@ -931,7 +948,7 @@ mod tests {
         transfer.purpose = Purpose::TRANSFER;
         identity.add_public_key(transfer.into());
         assert_eq!(
-            profile_signing_key(&identity, &AvailableKeys(&[1])),
+            profile_signing_key(&identity, &AvailableKeys(&[1])).unwrap(),
             identity.public_keys().get(&1)
         );
     }

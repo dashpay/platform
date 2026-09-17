@@ -2326,3 +2326,146 @@ mod tests {
             .into_owned()
     }
 }
+
+#[cfg(test)]
+mod signing_preflight_tests {
+    use super::*;
+    use async_trait::async_trait;
+    use dpp::address_funds::AddressWitness;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::signer::Signer;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::prelude::Identifier;
+    use dpp::version::PlatformVersion;
+    use dpp::ProtocolError;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use platform_wallet::events::{EventHandler, PlatformEventHandler};
+    use platform_wallet::wallet::persister::NoPlatformPersistence;
+    use platform_wallet::{PlatformWallet, PlatformWalletManager};
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct UnavailableSigner;
+
+    #[async_trait]
+    impl Signer<IdentityPublicKey> for UnavailableSigner {
+        async fn sign(&self, _: &IdentityPublicKey, _: &[u8]) -> Result<BinaryData, ProtocolError> {
+            panic!("unavailable preflight must not sign")
+        }
+        async fn sign_create_witness(
+            &self,
+            _: &IdentityPublicKey,
+            _: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            panic!("unavailable preflight must not create a witness")
+        }
+        fn can_sign_with(&self, _: &IdentityPublicKey) -> bool {
+            false
+        }
+    }
+
+    async fn wallet() -> Arc<PlatformWallet> {
+        struct Events;
+        impl EventHandler for Events {}
+        impl PlatformEventHandler for Events {}
+        PlatformWalletManager::new(
+            Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap()),
+            Arc::new(NoPlatformPersistence),
+            Arc::new(Events),
+        )
+        .create_wallet_from_seed_bytes(
+            key_wallet::Network::Testnet,
+            &[7; 64],
+            WalletAccountCreationOptions::None,
+            Some(0),
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn should_map_unavailable_credit_selection_to_ffi_code_31() {
+        let wallet = wallet().await;
+        let mut identity = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        identity.add_public_key(
+            IdentityPublicKeyV0 {
+                id: 1,
+                purpose: Purpose::TRANSFER,
+                security_level: SecurityLevel::CRITICAL,
+                key_type: KeyType::ECDSA_HASH160,
+                data: vec![1; 20].into(),
+                ..Default::default()
+            }
+            .into(),
+        );
+        for explicit in [None, identity.get_public_key_by_id(1)] {
+            let error = wallet
+                .identity()
+                .transfer_credits_with_signer(
+                    &identity,
+                    Identifier::from([2; 32]),
+                    1,
+                    explicit,
+                    UnavailableSigner,
+                    None,
+                )
+                .await
+                .unwrap_err();
+            let result: PlatformWalletFFIResult = PlatformWalletError::Sdk(error).into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+            );
+            let error = wallet
+                .identity()
+                .withdraw_credits_with_signer(&identity, None, 1, explicit, UnavailableSigner, None)
+                .await
+                .unwrap_err();
+            let result: PlatformWalletFFIResult = PlatformWalletError::Sdk(error).into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_not_map_missing_credit_keys_to_ffi_code_31() {
+        let wallet = wallet().await;
+        let identity = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        let errors = [
+            wallet
+                .identity()
+                .transfer_credits_with_signer(
+                    &identity,
+                    Identifier::from([2; 32]),
+                    1,
+                    None,
+                    UnavailableSigner,
+                    None,
+                )
+                .await
+                .unwrap_err(),
+            wallet
+                .identity()
+                .withdraw_credits_with_signer(&identity, None, 1, None, UnavailableSigner, None)
+                .await
+                .unwrap_err(),
+        ];
+        for error in errors {
+            assert!(matches!(
+                error,
+                dash_sdk::Error::Protocol(
+                    ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(_)
+                )
+            ));
+            let result: PlatformWalletFFIResult = PlatformWalletError::Sdk(error).into();
+            assert_ne!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+            );
+        }
+    }
+}

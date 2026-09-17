@@ -144,6 +144,7 @@ impl IdentityWallet {
             &[KeyType::ECDSA_SECP256K1],
             true,
         )
+        .map_err(dash_sdk::Error::from)?
         .map(|key| key.id())
         .ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(

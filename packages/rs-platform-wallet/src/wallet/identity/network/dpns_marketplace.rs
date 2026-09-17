@@ -936,6 +936,7 @@ impl IdentityWallet {
             &[KeyType::ECDSA_SECP256K1],
             false,
         )
+        .map_err(dash_sdk::Error::from)?
         .cloned()
         .ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(format!(
@@ -2228,7 +2229,12 @@ fn required_purchase_credits(expected_price: Credits) -> Result<Credits, Platfor
 
 #[cfg(test)]
 mod tests {
+    use super::super::signing_key::tests::LockCheckingSigner;
     use super::*;
+    use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
+    use dpp::identity::accessors::IdentitySettersV0;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{Identity, SecurityLevel};
 
     fn name_state_entry(
         document_id: Identifier,
@@ -3845,6 +3851,47 @@ mod tests {
             Arc::new(MirrorPersister::hydrated(Vec::new())),
             sdk_answering_dpns_domain_query(DEPARTED_LABEL, documents).await,
         )
+    }
+
+    #[tokio::test]
+    async fn should_preserve_unavailable_signer_when_setting_dpns_price() {
+        let owner = Identifier::from([0xB2; 32]);
+        let wallet = wallet_seeing_listing(Identifier::from([0xB1; 32]), owner, None).await;
+        let mut identity =
+            Identity::default_versioned(dpp::version::PlatformVersion::latest()).unwrap();
+        identity.set_id(owner);
+        identity.add_public_key(
+            IdentityPublicKeyV0 {
+                id: 1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::CRITICAL,
+                key_type: KeyType::ECDSA_SECP256K1,
+                data: vec![1; 33].into(),
+                ..Default::default()
+            }
+            .into(),
+        );
+        wallet
+            .wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet.wallet_id)
+            .unwrap()
+            .identity_manager
+            .add_identity(identity, 0, wallet.wallet_id, &wallet.persister)
+            .unwrap();
+
+        let error = wallet
+            .set_dpns_name_price(&owner, DEPARTED_LABEL, 1000, &LockCheckingSigner(&wallet))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error,
+                PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(ref message)))
+                    if message.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+            ),
+            "expected signer-unavailable error, got {error:?}"
+        );
     }
 
     /// The purchase pre-flight's rejection ORDER, as a pure decision.
