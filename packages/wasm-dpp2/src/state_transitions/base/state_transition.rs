@@ -18,7 +18,8 @@ use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable, Signable};
 use dpp::state_transition::StateTransition::{
     Batch, DataContractCreate, DataContractUpdate, IdentityCreditTransfer,
-    IdentityCreditWithdrawal, IdentityUpdate, MasternodeVote, ShieldFromIdentity,
+    IdentityCreditWithdrawal, IdentityKeyLimitsUpdate, IdentityUpdate, MasternodeVote,
+    ShieldFromIdentity,
 };
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
@@ -32,6 +33,7 @@ use dpp::state_transition::data_contract_update_transition::accessors::DataContr
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
@@ -194,6 +196,17 @@ impl StateTransitionWasm {
 
                 st.verify_public_key_is_enabled(&public_key.clone().into())?;
             }
+            IdentityKeyLimitsUpdate(st) => {
+                st.verify_public_key_level_and_purpose(
+                    &public_key.clone().into(),
+                    StateTransitionSigningOptions {
+                        allow_signing_with_any_security_level,
+                        allow_signing_with_any_purpose,
+                    },
+                )?;
+
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
+            }
             IdentityCreditTransfer(st) => {
                 st.verify_public_key_level_and_purpose(
                     &public_key.clone().into(),
@@ -328,6 +341,7 @@ impl StateTransitionWasm {
             IdentityCreateFromShieldedPool(_) => 20,
             ShieldFromIdentity(_) => 21,
             IdentityTopUpFromShieldedPool(_) => 22,
+            IdentityKeyLimitsUpdate(_) => 23,
         }
     }
 
@@ -404,6 +418,7 @@ impl StateTransitionWasm {
             IdentityTopUp(_) => None,
             IdentityCreditWithdrawal(_) => None,
             IdentityUpdate(_) => None,
+            IdentityKeyLimitsUpdate(_) => None,
             IdentityCreditTransfer(_) => None,
             MasternodeVote(_) => None,
             IdentityCreditTransferToAddresses(_)
@@ -434,6 +449,7 @@ impl StateTransitionWasm {
             IdentityTopUp(_) => None,
             IdentityCreditWithdrawal(withdrawal) => Some(withdrawal.nonce()),
             IdentityUpdate(identity_update) => Some(identity_update.nonce()),
+            IdentityKeyLimitsUpdate(st) => Some(st.nonce()),
             IdentityCreditTransfer(credit_transfer) => Some(credit_transfer.nonce()),
             MasternodeVote(mn_vote) => Some(mn_vote.nonce()),
             IdentityCreditTransferToAddresses(ct) => Some(ct.nonce()),
@@ -555,6 +571,11 @@ impl StateTransitionWasm {
 
                 self.0 = IdentityUpdate(identity_update);
             }
+            IdentityKeyLimitsUpdate(mut st) => {
+                st.set_identity_id(owner_id);
+
+                self.0 = IdentityKeyLimitsUpdate(st);
+            }
             IdentityCreditTransfer(mut credit_transfer) => {
                 credit_transfer.set_identity_id(owner_id);
 
@@ -650,6 +671,11 @@ impl StateTransitionWasm {
                     "Cannot set identity contract nonce for Identity Update",
                 ));
             }
+            IdentityKeyLimitsUpdate(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for Identity Key Limits Update",
+                ));
+            }
             IdentityCreditTransfer(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity contract nonce for Identity Credit Transfer",
@@ -736,6 +762,11 @@ impl StateTransitionWasm {
                 identity_update.set_nonce(nonce);
 
                 identity_update.into()
+            }
+            IdentityKeyLimitsUpdate(mut st) => {
+                st.set_nonce(nonce);
+
+                st.into()
             }
             IdentityCreditTransfer(mut credit_transfer) => {
                 credit_transfer.set_nonce(nonce);

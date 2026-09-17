@@ -43,6 +43,7 @@ describe('IdentitiesFacade', () => {
   let identityCreditTransferStub: SinonStub;
   let identityCreditWithdrawalStub: SinonStub;
   let identityUpdateStub: SinonStub;
+  let identityUpdateKeyLimitsStub: SinonStub;
 
   beforeEach(async function setup() {
     await init();
@@ -153,6 +154,7 @@ describe('IdentitiesFacade', () => {
     });
     identityCreditWithdrawalStub = this.sinon.stub(wasmSdk, 'identityCreditWithdrawal').resolves(BigInt(80000000));
     identityUpdateStub = this.sinon.stub(wasmSdk, 'identityUpdate').resolves();
+    identityUpdateKeyLimitsStub = this.sinon.stub(wasmSdk, 'identityUpdateKeyLimits').resolves();
   });
 
   describe('fetch()', () => {
@@ -514,6 +516,22 @@ describe('IdentitiesFacade', () => {
       await client.identities.update(options);
 
       expect(identityUpdateStub).to.be.calledOnceWithExactly(options);
+    });
+  });
+
+  describe('updateKeyLimits()', () => {
+    it('should raise the budget or the expiry of a key', async () => {
+      const options = {
+        identity,
+        keyId: 5,
+        addBudget: BigInt(100000000),
+        expiresAt: BigInt(1800000000000),
+        signer,
+      };
+
+      await client.identities.updateKeyLimits(options);
+
+      expect(identityUpdateKeyLimitsStub).to.be.calledOnceWithExactly(options);
     });
   });
 });

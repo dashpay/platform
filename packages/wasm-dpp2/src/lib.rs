@@ -52,10 +52,11 @@ pub use identifier::{
 };
 pub use identity::{
     IdentityCreateTransitionWasm, IdentityCreditTransferWasm,
-    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm,
-    IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm, IdentityTopUpTransitionWasm,
-    IdentityUpdateTransitionWasm, IdentityWasm, MasternodeVoteTransitionWasm, PartialIdentityWasm,
-    PublicKeyHashLikeJs, public_key_hash_from_js,
+    IdentityCreditWithdrawalTransitionWasm, IdentityKeyLimitsUpdateWasm,
+    IdentityPublicKeyInCreationWasm, IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm,
+    IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
+    MasternodeVoteTransitionWasm, PartialIdentityWasm, PublicKeyHashLikeJs,
+    public_key_hash_from_js,
 };
 pub use platform_address::transitions::{
     AddressCreditWithdrawalTransitionWasm, AddressFundingFromAssetLockTransitionWasm,

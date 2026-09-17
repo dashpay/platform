@@ -174,6 +174,53 @@ The refusal is about the limits, not about the format. A version 1 key *without*
 
 > **The general lesson.** `PlatformSignable` covers a new key field automatically. The shielded preimage does not. Any future field on the key must be checked against `packages/rs-dpp/src/shielded/sighash.rs` as well.
 
+## Raising Limits
+
+A spent key, or one about to expire, does not have to be replaced. `IdentityKeyLimitsUpdate` (state transition type 23) raises the limits of one key of the identity:
+
+```rust
+pub struct IdentityKeyLimitsUpdateTransitionV0 {
+    pub identity_id: Identifier,
+    pub revision: Revision,                   // the identity's revision plus one
+    pub nonce: IdentityNonce,
+    pub key_id: KeyID,
+    pub total_budget: Option<Credits>,        // the new total, None to leave it
+    pub expires_at: Option<TimestampMillis>,  // the new expiry, None to leave it
+    pub user_fee_increase: UserFeeIncrease,
+    pub signature_public_key_id: KeyID,
+    pub signature: BinaryData,
+}
+```
+
+**An update only ever loosens.** A budget can grow, an expiry can move later, and that is all: a limit cannot be lowered, and a key that has no budget or no expiry cannot be given one. Tightening is what disabling is for. This one rule keeps the transition small, and it is what makes the arithmetic safe: the remaining budget never exceeds the total, both grow by the same amount, so the addition cannot overflow.
+
+Both fields carry the **new absolute value**, not an amount to add. The client already holds a fresh copy of the identity, because the transition claims its next revision like an identity update does, so it knows the current total; "top up by X" is SDK sugar that adds X to it. What the wire carries is then exactly what a proof of the execution shows, and the proof binds it.
+
+**Who may sign.** A MASTER key, or a CRITICAL authentication key that carries no limits itself. A key with limits can never raise limits, so it can never top itself up; the identity signature validation refuses it before the remaining budget is even read.
+
+```mermaid
+flowchart TD
+    S["signer is MASTER,<br/>or CRITICAL without limits"] --> R{"revision is<br/>current + 1?"}
+    R -->|no| E1["<b>40203</b><br/>paid"]
+    R -->|yes| K{"key exists<br/>and is enabled?"}
+    K -->|no| E2["<b>40209</b> / <b>40208</b><br/>paid"]
+    K -->|yes| L{"has each limit<br/>being raised?"}
+    L -->|no| E3["<b>40220</b><br/>paid"]
+    L -->|yes| G{"each new value<br/>greater?"}
+    G -->|no| E4["<b>40221</b><br/>paid"]
+    G -->|yes| X{"not expired<br/>afterwards?"}
+    X -->|no| E5["<b>40219</b><br/>paid"]
+    X -->|yes| OK["key rewritten,<br/>remaining raised,<br/>revision bumped"]
+```
+
+The last check is the one with a twist. An expired key may be revived by moving its expiry past the block time, but it cannot be topped up while it stays expired: after the update the key must be usable, or the update was pointless. The two structural rules run unpaid before any of this: the transition must set at least one of the two fields (`IdentityKeyLimitsUpdateEmptyError` 10539), and a budget it sets is not zero (10537). A limited signer is refused unpaid with `PublicKeyWithLimitsCannotUpdateKeyLimitsError` 20017.
+
+**What Drive does.** `update_identity_key_limits` reads the stored key, sets the new limits, and rewrites it in place with `replace_key_in_storage_operations`, the same patch a disable uses; the rewrite is priced by the byte delta, since a bigger total is a bigger varint and an expiry that was absent is new bytes. The references to the key in the purpose and security level trees carry its value hash, so they are refreshed as a disable refreshes them. Then `add_to_identity_key_budget` raises the remaining budget by the difference between the new total and the old one: a same-size replace of the eight byte entry. The revision and the nonce are updated first, as for an identity update.
+
+**The proof.** The execution proof is the identity's key tree with its revision, as for an identity update. The verifier requires the revision the transition claimed, the key present, and the key holding exactly the total budget and the expiry the transition asked for. A revision can only be consumed once, and the values are exact, so the proof binds the execution: the SDKs wait for it with the strict wait.
+
+In the SDKs: `Identity::update_key_limits`, `top_up_key_budget` and `extend_key_expiry` (Rust, `UpdateIdentityKeyLimits`), `identityUpdateKeyLimits({ identity, keyId, addBudget, expiresAt, signer })` (wasm-sdk), `sdk.identities.updateKeyLimits` (js-evo-sdk). All resolve to the key as stored after the update.
+
 ## The Budget Rule
 
 A budget has one subtlety, and it is the same one identity balances have. Most of what a transition costs is known before it runs, but the metered processing fee is only known afterwards. A rule that demanded the whole fee fit up front would have to use the worst-case estimate, which can be fifty times the real processing cost, and would strand the tail of every budget. A rule that checked nothing up front would let a key spend without limit.
@@ -429,6 +476,10 @@ Everything is gated to protocol version 14. Tables that protocol version 14 alre
 | | `keys.budget.*` (six slots, two of them for the query) | new, `None` → `Some(0)` |
 | `DRIVE_ABCI_QUERY_VERSIONS_V0` and `_V1` | `identity_based_queries.keys_remaining_budgets` | new slot at 0; the Drive methods behind it are `None` before 14, which is what refuses the query there |
 | `DRIVE_VERIFY_METHOD_VERSIONS_V1` | `identity.verify_identity_keys_remaining_budgets` | new, 0 (verification is client side and not gated) |
+| `DRIVE_ABCI_VALIDATION_VERSIONS_V10` | `identity_key_limits_update_state_transition` | new slot; every gate `None` before V10, on from V10 (the transition is gated by `is_allowed` and `active_version_range` to 14 as well) |
+| `DRIVE_IDENTITY_METHOD_VERSIONS_V2` | `update.update_identity_key_limits`, `keys.budget.add_to_identity_key_budget` | new, `None` → `Some(0)` |
+| `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1` to `_V4` | `convert_to_high_level_operations.identity_key_limits_update_transition` | new, 0 |
+| `STATE_TRANSITION_SERIALIZATION_VERSIONS_V1` to `_V3` | `identity_key_limits_update_state_transition` | new, 0 |
 
 Two of these are worth a second look. Identity signature validation v1 and shielded proof validation v1 were introduced for protocol version 14 by the contract bounds work and had never shipped, so they were [extended in place](../contributing/coding-conventions.md#shipped-generations-are-frozen) rather than given a v2. `validate_fees_of_event` and `execute_event` had shipped, so they got new generations, and those generations delegate to v0 for every event they do not handle instead of copying it.
 
@@ -443,7 +494,7 @@ Signing with a budgeted key adds one fixed charge, the key retrieval that reads 
 This change is the consensus core. Known gaps, all deliberate:
 
 - **SDK surfaces.** Rust callers can use `with_limits` today. The wasm, JavaScript, Swift and Kotlin bindings do not expose the two fields for creation, and SDK key selection does not skip an expired or spent key before signing, although the [query above](#reading-what-is-left) gives it what it needs. Swift and Kotlin do not expose that query yet.
-- **Changing limits.** There is no top-up and no extension. Register a new key.
+- **Lowering limits.** An update only raises a budget or extends an expiry ([above](#raising-limits)). To take a key back, disable it.
 - **Limits on other purposes.** A TRANSFER key with a budget would cap transfers and withdrawals. The rule for it would differ (the amount moved is the point, not a side effect), so it was left out rather than half done.
 - **Limits in a shielded identity creation.** A key with a budget or an expiry is refused there, as explained above. Lifting that means a new generation of the sighash preimage.
 
@@ -452,6 +503,7 @@ This change is the consensus core. Known gaps, all deliberate:
 - **dpp** (`identity_public_key/v1`, `public_key_in_creation/v1`, `validate_identity_public_keys_structure/v1`, `state_transition/mod.rs`): the version 1 round trip; the version 0 encoding unchanged byte for byte; the JSON shape; the expiry boundary; limits surviving the conversions and being signed over; the structure rules; the protocol version 13 and 14 sides of the decode gate; frozen error discriminants.
 - **drive** (`drive/identity/key/budget`): the budget written on key add and on identity create; two budgeted keys in one batch; the deduction stopping at zero and never changing storage; estimated at least actual; protocol version 13 untouched.
 - **drive-abci** (`batch/tests/key_limits.rs`), end to end through `process_raw_state_transitions` and `check_tx`: the exact deduction; the rule pinned one credit either side of the storage fee; the user fee increase counted up front; the expiry boundary; both limits on one key; a paid failure spending from the budget; an invalid transition through an unusable key not being charged; mempool admission.
+- **drive-abci** (`identity_key_limits_update/tests.rs`), end to end: a spent key topped up and admitted again; an expired key revived by an extension and refused while it stays expired; each refusal pinned to its code, paid ones bumping the nonce; MASTER and unlimited CRITICAL signers accepted, a limited or HIGH one refused; the mempool; the execution proof; protocol version 13. **drive** (`update_identity_key_limits`): the total and the remaining budget growing by the same amount; the expiry alone; the estimate covering the rewrite; the whole database consistent after the reference refresh; the addition to the remaining budget; protocol version 13.
 - **drive-abci** (`identity_update` `key_limits`, `identity_create_from_shielded_pool/tests.rs`): registration storing a version 1 key with its whole budget left; an already expired key as a paid failure; limits on TRANSFER and MASTER keys and a zero budget as unpaid; the shielded creation refusing a key with either limit and accepting a version 1 key without any. The builder has the same pair of cases in `rs-dpp` (`shielded/builder/identity_create_from_shielded_pool.rs`).
 
 ```bash
@@ -459,6 +511,9 @@ cargo test -p dpp --all-features --lib -- identity_public_key public_key_in_crea
 cargo test -p drive --lib -- identity::key::budget
 cargo test -p drive-abci --lib -- key_limits validate_identity_public_keys_limits validate_fees_of_event
 cargo test -p drive-abci --lib -- should_refuse_a_key_with_limits
+cargo test -p dpp --all-features --lib -- identity_key_limits_update
+cargo test -p drive --lib -- update_identity_key_limits
+cargo test -p drive-abci --lib -- identity_key_limits_update
 ```
 
 ## Rules and Guidelines

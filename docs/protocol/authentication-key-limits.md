@@ -120,8 +120,33 @@ the last committed block, so it is an upper bound on what the next transition ca
 In the SDKs: `IdentityKeysRemainingBudgets::fetch` (Rust), `getIdentityKeysRemainingBudgets`
 (wasm-sdk), `sdk.identities.keysRemainingBudgets` (js-evo-sdk).
 
+## Raising limits
+
+`IdentityKeyLimitsUpdate` (state transition type 23, protocol version 14) raises the limits of one
+key of the identity. It carries the key id, the new `totalBudget` and the new `expiresAt` (each
+optional, at least one given, each the new absolute value), the identity's next `revision` and
+an identity nonce. An update only ever loosens a key: the new total must be greater than the
+current one, the new expiry later than the current one, and a limit the key does not have cannot
+be added. The remaining budget grows by the amount the total grew. After the update the key must
+not be expired, so an expired key can be revived by an extension but not topped up while it stays
+expired.
+
+It is signed by a MASTER key, or by a CRITICAL authentication key that carries no limits itself;
+a key with limits can never raise limits, its own included (`PublicKeyWithLimitsCannotUpdateKeyLimitsError`,
+20017, unpaid). The structural refusals are unpaid as well: nothing to change
+(`IdentityKeyLimitsUpdateEmptyError`, 10539) and a zero budget (10537). Every other refusal is
+paid for by bumping the identity nonce: a stale revision (40203), a missing (40209) or disabled
+(40208) key, a limit the key does not have (`IdentityPublicKeyLimitNotSetError`, 40220), a value
+that does not raise it (`IdentityPublicKeyLimitNotRaisedError`, 40221), and a key that would stay
+expired (40219).
+
+The proof of execution is the identity's keys with its revision; the key must hold exactly the
+values the transition asked for. In the SDKs: `Identity::update_key_limits`, `top_up_key_budget`,
+`extend_key_expiry` (Rust), `identityUpdateKeyLimits` (wasm-sdk), `sdk.identities.updateKeyLimits`
+(js-evo-sdk).
+
 ## Not included
 
-- Raising, lowering or resetting the limits of an existing key.
+- Lowering or removing the limits of an existing key: disable it instead.
 - SDK helpers for creating limited keys and for choosing a usable key when signing. These follow
   separately.
