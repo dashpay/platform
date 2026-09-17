@@ -15,6 +15,9 @@
     "getIdentityContractNonce": {
       "status": "implemented"
     },
+    "getIdentityKeysRemainingBudgets": {
+      "status": "implemented"
+    },
     "getIdentityBalance": {
       "status": "implemented"
     },
