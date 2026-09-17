@@ -236,6 +236,9 @@ impl MockDashPlatformSdk {
                 "GetTotalCreditsInPlatformRequest" => load_expectation::<
                     proto::GetTotalCreditsInPlatformRequest,
                 >(&mut dapi, filename)?,
+                "GetIdentityKeysRemainingBudgetsRequest" => load_expectation::<
+                    proto::GetIdentityKeysRemainingBudgetsRequest,
+                >(&mut dapi, filename)?,
                 "GetIdentityTokenBalancesRequest" => {
                     load_expectation::<proto::GetIdentityTokenBalancesRequest>(&mut dapi, filename)?
                 }

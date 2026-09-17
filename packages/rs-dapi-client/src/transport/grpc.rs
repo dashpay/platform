@@ -408,6 +408,14 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    platform_proto::GetIdentityKeysRemainingBudgetsRequest,
+    platform_proto::GetIdentityKeysRemainingBudgetsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_keys_remaining_budgets
+);
+
+impl_transport_request_grpc!(
     platform_proto::GetIdentityBalanceAndRevisionRequest,
     platform_proto::GetIdentityBalanceAndRevisionResponse,
     PlatformGrpcClient,

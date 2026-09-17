@@ -20,6 +20,7 @@ pub mod evonode_status;
 /// Groups
 pub mod groups;
 /// Identity token balance
+pub mod identity_keys_remaining_budgets;
 pub mod identity_token_balance;
 /// Token contract info
 pub mod token_contract_info;
