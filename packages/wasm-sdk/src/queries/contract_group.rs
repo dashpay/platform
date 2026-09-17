@@ -452,9 +452,12 @@ impl WasmSdk {
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let contract_group_id = parse_identifier(contract_group_id, "contract group ID")?;
 
-        let (info, metadata, proof) =
-            ContractGroupInfo::fetch_with_metadata_and_proof(self.as_ref(), contract_group_id, None)
-                .await?;
+        let (info, metadata, proof) = ContractGroupInfo::fetch_with_metadata_and_proof(
+            self.as_ref(),
+            contract_group_id,
+            None,
+        )
+        .await?;
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             info.map(|info| JsValue::from(ContractGroupInfoWasm::from(info)))
