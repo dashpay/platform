@@ -925,6 +925,40 @@ mod tests {
     }
 
     #[test]
+    fn decode_contract_bounds_kind_3_decodes_a_contract_group_and_rejects_null_id() {
+        let pk = [0x02u8; 33];
+        let contract_group_id = [0x47u8; 32];
+        let mut row = ffi_row(0, &pk);
+        row.contract_bounds_kind = 3;
+        row.contract_bounds_id = contract_group_id.as_ptr();
+
+        let bounds =
+            unsafe { decode_contract_bounds(&row, Purpose::AUTHENTICATION, 0, "identity_pubkeys") }
+                .expect("kind == 3 must decode");
+        assert_eq!(
+            bounds,
+            Some(ContractBounds::ContractGroup {
+                id: Identifier::from(contract_group_id),
+            })
+        );
+
+        row.contract_bounds_id = ptr::null();
+        let mut err =
+            unsafe { decode_contract_bounds(&row, Purpose::AUTHENTICATION, 0, "identity_pubkeys") }
+                .expect_err("kind == 3 must reject a null contract group id");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        unsafe { platform_wallet_ffi_result_free(&mut err) };
+
+        row.contract_bounds_kind = 4;
+        row.contract_bounds_id = contract_group_id.as_ptr();
+        let mut err =
+            unsafe { decode_contract_bounds(&row, Purpose::AUTHENTICATION, 0, "identity_pubkeys") }
+                .expect_err("kind == 4 names nothing");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        unsafe { platform_wallet_ffi_result_free(&mut err) };
+    }
+
+    #[test]
     fn decode_contract_bounds_kind_1_still_decodes_and_rejects_null_id() {
         let pk = [0x02u8; 33];
         let contract_id = [0x11u8; 32];

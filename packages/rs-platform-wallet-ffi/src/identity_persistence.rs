@@ -1242,6 +1242,37 @@ mod tests {
     }
 
     #[test]
+    fn test_identity_key_entry_ffi_contract_bounds_contract_group() {
+        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+        let contract_group_id = Identifier::from([0x47; 32]);
+        let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: Some(ContractBounds::ContractGroup {
+                id: contract_group_id,
+            }),
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0x01; 33]),
+            disabled_at: None,
+        });
+        let entry = IdentityKeyEntry {
+            identity_id: Identifier::from([1u8; 32]),
+            key_id: 1,
+            public_key,
+            public_key_hash: [0x11; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
+        assert_eq!(ffi.contract_bounds_kind, 3);
+        assert_eq!(ffi.contract_bounds_id, [0x47; 32]);
+        assert!(ffi.contract_bounds_document_type.is_null());
+        unsafe { free_identity_key_entry_ffi(&mut ffi) };
+    }
+
+    #[test]
     fn test_identity_key_entry_ffi_contract_bounds_single_contract() {
         use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
         let contract_id = Identifier::from([0xAB; 32]);

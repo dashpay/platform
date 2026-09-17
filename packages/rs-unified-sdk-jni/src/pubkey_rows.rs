@@ -540,10 +540,34 @@ mod tests {
     #[test]
     fn rejects_invalid_bounds_kind() {
         let mut rows = vec![base_master()];
-        rows[0].bounds = Some((3, [1u8; 32], None));
-        // encode() writes kind byte from bounds.0 = 3, then a 32-byte id.
+        // 3 is the contract group kind; 4 is the first kind that names nothing.
+        rows[0].bounds = Some((4, [1u8; 32], None));
+        // encode() writes kind byte from bounds.0 = 4, then a 32-byte id.
         let err = parse_pubkey_rows(&encode(&rows)).unwrap_err();
         assert!(err.contains("contractBoundsKind"), "{err}");
+    }
+
+    #[test]
+    fn round_trips_contract_group_bounds_kind() {
+        let contract_group_id = [0x47u8; 32];
+        let rows = vec![Row {
+            key_id: 2,
+            key_type: KEY_TYPE_ECDSA,
+            purpose: PURPOSE_AUTH,
+            security_level: SEC_HIGH,
+            read_only: 0,
+            pubkey: vec![4u8; 33],
+            bounds: Some((3, contract_group_id, None)),
+        }];
+        let decoded = parse_pubkey_rows(&encode(&rows)).expect("parse");
+        assert_eq!(decoded[0].contract_bounds_kind, 3);
+        assert_eq!(decoded[0].contract_bounds_id, Some(contract_group_id));
+        // A group bound carries an id and never a document type.
+        assert!(decoded[0].contract_bounds_document_type.is_none());
+        let ffi = decoded[0].to_ffi();
+        assert_eq!(ffi.contract_bounds_kind, 3);
+        assert!(!ffi.contract_bounds_id.is_null());
+        assert!(ffi.contract_bounds_document_type.is_null());
     }
 
     #[test]
