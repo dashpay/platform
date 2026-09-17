@@ -18,12 +18,17 @@ use crate::ProtocolError;
 ///    the contest fails inside the node.
 /// 2. Every index property is required. The contested tree cannot key a
 ///    null: an absent property reaches the walker as an empty key.
-/// 3. Every `fieldMatches` field names a property of the index. A match on
+/// 3. Every index property is stored, that is not `transient`. A transient
+///    property is stripped from the document before it is written, so the
+///    contest is classified and the vote poll keyed from the submitted value
+///    while the contested tree walker reads the stored document and finds
+///    nothing: the same empty key as an absent property, on every create.
+/// 4. Every `fieldMatches` field names a property of the index. A match on
 ///    another property lets two documents with equal index values take
 ///    different paths (one a contender, one an ordinary unique insert), and
 ///    the later award then collides in the unique index while the block
 ///    executes.
-/// 4. Every matched property is a string. A regex match on any other type
+/// 5. Every matched property is a string. A regex match on any other type
 ///    never matches, so the index silently degrades to a plain unique index
 ///    and the contest can never start.
 ///
@@ -69,6 +74,15 @@ pub(super) fn validate_contested_index_parameters_v0(
             return reject(format!(
                 "index property '{name}' is optional; contested index properties must be \
                  listed in required"
+            ));
+        }
+        if flattened_document_properties
+            .get(name)
+            .is_some_and(|property| property.transient)
+        {
+            return reject(format!(
+                "index property '{name}' is transient; contested index properties must be \
+                 stored with the document"
             ));
         }
     }
@@ -124,6 +138,15 @@ mod tests {
     /// identifier under `records`. `required` is the caller's, so a test can
     /// leave a property optional.
     fn parse(indices: Value, required: Value) -> Result<DocumentType, ProtocolError> {
+        parse_with_transient(indices, required, platform_value!([]))
+    }
+
+    /// [`parse`] with the caller's `transient` list as well.
+    fn parse_with_transient(
+        indices: Value,
+        required: Value,
+        transient: Value,
+    ) -> Result<DocumentType, ProtocolError> {
         let platform_version = PlatformVersion::latest();
         let schema = platform_value!({
             "type": "object",
@@ -152,6 +175,7 @@ mod tests {
             },
             "indices": indices,
             "required": required,
+            "transient": transient,
             "additionalProperties": false,
         });
         let config = DataContractConfig::default_for_version(platform_version)
@@ -280,6 +304,52 @@ mod tests {
             "index property 'normalizedLabel' is optional; contested index properties must be \
              listed in required"
         );
+    }
+
+    /// A required property may also be transient (DPNS's `preorderSalt` is both), and a
+    /// transient property is stripped before the document is stored, so `required` alone
+    /// does not prove the contested tree walker will find it.
+    #[test]
+    fn should_reject_a_transient_contested_index_property() {
+        let indices = platform_value!([{
+            "name": "parentNameAndLabel",
+            "properties": [{"normalizedParentDomainName": "asc"}, {"normalizedLabel": "asc"}],
+            "unique": true,
+            "contested": {
+                "fieldMatches": [{"field": "normalizedLabel", "regexPattern": "^[a-zA-Z01]{3,19}$"}],
+                "resolution": 0
+            }
+        }]);
+
+        let reason = rejection_reason(
+            parse_with_transient(
+                indices,
+                all_required(),
+                platform_value!(["normalizedLabel"]),
+            ),
+            "parentNameAndLabel",
+        );
+
+        assert_eq!(
+            reason,
+            "index property 'normalizedLabel' is transient; contested index properties must \
+             be stored with the document"
+        );
+    }
+
+    /// A transient property outside the contested index (the DPNS shape, where
+    /// `preorderSalt` is required and transient) is not the contest's concern.
+    #[test]
+    fn should_accept_a_transient_property_outside_the_contested_index() {
+        let indices = platform_value!([{
+            "name": "parentNameAndLabel",
+            "properties": [{"normalizedParentDomainName": "asc"}, {"normalizedLabel": "asc"}],
+            "unique": true,
+            "contested": {"resolution": 0}
+        }]);
+
+        parse_with_transient(indices, all_required(), platform_value!(["label"]))
+            .expect("a transient property the index does not use is supported");
     }
 
     #[test]

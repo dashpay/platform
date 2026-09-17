@@ -44,16 +44,24 @@ impl Drive {
     /// restriction or other document rule runs on the insert: the award is a native block
     /// event outside every ordinary-action rule scope.
     ///
-    /// Any call that does not describe a live, ended, queued poll on a contract in state is
-    /// rejected with `DriveError::ContestedAwardRejected` before anything is written, so a
-    /// caller cannot award early, award a poll that was already finalized, name an end date
-    /// the poll was never queued under, or name a contract that does not exist. The end-date queue entry is written once when the contest
-    /// starts and removed by the cleanup that follows a legitimate award, which is what makes
-    /// a second award of the same poll impossible after cleanup; between the award and that
-    /// cleanup, a second call fails on the primary storage existence check of the insert.
+    /// Every invalid call is rejected before anything is written. Two kinds of rejection
+    /// exist: a poll that does not resolve against state (a contract id that is not in state
+    /// is `DriveError::ContestedAwardRejected`; a document type or index the committed
+    /// contract does not define surfaces the resolver's own error, such as
+    /// `DriveError::ContestedIndexNotFound`), and a poll that resolves but fails an award
+    /// precondition (not a started contest, not ended, not queued at `end_date`), which is
+    /// always `DriveError::ContestedAwardRejected`. So a caller cannot award early, award a
+    /// poll that was already finalized, name an end date the poll was never queued under, or
+    /// route the award through a contract or index of its own. The end-date queue entry is
+    /// written once when the contest starts and removed by the cleanup that follows a
+    /// legitimate award, which is what makes a second award of the same poll impossible after
+    /// cleanup; between the award and that cleanup, a second call fails on the primary
+    /// storage existence check of the insert.
     ///
-    /// The operation is reachable only from the block executor's finalization event: no
-    /// state transition, batched action or Drive batch operation maps to it.
+    /// This is a public Drive method. Its production caller is the block executor's
+    /// finalization event, and no state transition, batched action or Drive batch operation
+    /// maps to it; that is not a caller restriction, and the checks above hold for any caller
+    /// that holds a `Drive`.
     ///
     /// # Parameters
     /// * `vote_poll`: The identity of the poll to award; its contract is fetched from state.
@@ -67,6 +75,9 @@ impl Drive {
     ///   winner the native rules selected and the contenders they considered.
     /// * `Err(DriveError::ContestedAwardRejected)` if the poll names a contract that is not in
     ///   state, is not a started contest, has not ended, or is not queued at `end_date`;
+    ///   nothing was applied.
+    /// * `Err(DriveError::ContestedIndexNotFound)` or the document type's own error if the
+    ///   committed contract does not define the index or document type the poll names;
     ///   nothing was applied.
     /// * `Err(DriveError::VersionNotActive)` if the platform version predates the operation.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known
