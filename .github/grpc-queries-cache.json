@@ -39,6 +39,15 @@
     "getDataContractsLatestVersions": {
       "status": "implemented"
     },
+    "getContractGroupInfo": {
+      "status": "implemented"
+    },
+    "getContractGroupMembers": {
+      "status": "implemented"
+    },
+    "getContractGroupsForContract": {
+      "status": "implemented"
+    },
     "getDataContracts": {
       "status": "implemented"
     },

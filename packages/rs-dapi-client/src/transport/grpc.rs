@@ -294,6 +294,33 @@ impl_transport_request_grpc!(
     get_data_contracts_latest_versions
 );
 
+// rpc getContractGroupInfo(GetContractGroupInfoRequest) returns (GetContractGroupInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractGroupInfoRequest,
+    platform_proto::GetContractGroupInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_group_info
+);
+
+// rpc getContractGroupMembers(GetContractGroupMembersRequest) returns (GetContractGroupMembersResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractGroupMembersRequest,
+    platform_proto::GetContractGroupMembersResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_group_members
+);
+
+// rpc getContractGroupsForContract(GetContractGroupsForContractRequest) returns (GetContractGroupsForContractResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractGroupsForContractRequest,
+    platform_proto::GetContractGroupsForContractResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_groups_for_contract
+);
+
 impl_transport_request_grpc!(
     platform_proto::GetConsensusParamsRequest,
     platform_proto::GetConsensusParamsResponse,

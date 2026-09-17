@@ -297,7 +297,15 @@ Two GroveDB behaviours shape this code and are worth knowing before you touch it
 - **A path query over a tree that does not exist is an error, not an empty result.** The fetches call `grove_has_raw` on the group's or contract's tree first and return `None` or an empty result when it is absent.
 - **GroveDB cannot build a proof inside an open transaction.** `prove_*` with `Some(&transaction)` fails with `NotSupported`. Tests commit first and prove with `None`.
 
-The DAPI queries and SDK `Fetch` implementations that will sit on top of these proofs are a separate change; see the section on what is not there yet. They will carry the same cursor and limit, so a client pages a large group the way it pages documents.
+### The DAPI Queries
+
+Three DAPI queries sit on top of these proofs, one per path query, so a client verifies exactly the elements a node read. Handlers live under `packages/rs-drive-abci/src/query/contract_group_queries/` and are versioned by `contract_group_queries` in the query version table.
+
+- `getContractGroupInfo(contractGroupId)` answers with the group's owner, admins (empty for a single owner), name and description, or with no result when no group has the id. The proved form proves the info item or its absence; `rs-drive-proof-verifier` verifies it into a `ContractGroupInfo`.
+- `getContractGroupMembers(contractGroupId, members, limit)` answers with one page of one kind. `members` is a `oneof` that names the kind and carries its cursor: `contracts { start_after: contract id }`, `document_types { start_after: contract id + name }` or `tokens { start_after: contract id + position }`. `limit` defaults to and is capped by `max_returned_elements` (100) on the node and in the verifier alike, because a client rebuilds the page query from the request it sent: an omitted limit has to mean the same page everywhere. The response is the page in the same kind, or a proof, verified into a `ContractGroupMembersPage`.
+- `getContractGroupsForContract(contractId)` answers with the contract's memberships as a whole, by document type name and by token position, empty lists when it belongs to no group. The proved form proves that too, verified into a `ContractGroupMembershipsForContract`.
+
+In `rs-sdk`, `ContractGroupInfo`, `ContractGroupMembersPage` and `ContractGroupMembershipsForContract` implement `Fetch` and `FetchUnproved` (`packages/rs-sdk/src/platform/contract_groups.rs`); a `ContractGroupMembersPageQuery` carries the group, kind, cursor and limit, and its `after(&page)` is the query for the next page. The wasm-sdk exposes `getContractGroupInfo`, `getContractGroupMembers` (a page object whose `nextStartAfter` is the next cursor) and `getContractGroupsForContract`, each with a `WithProofInfo` twin, and js-evo-sdk wraps them as `sdk.contractGroups`.
 
 ## Versioning Touchpoints
 
@@ -336,7 +344,7 @@ The first protocol version 14 change ships the consensus core only. Known gaps, 
 - **Updating or leaving.** Memberships are creation-only. A later `DataContractUpdateTransition` version would be needed to add members from an existing contract or to remove any.
 - **Relaxing redundancy.** A document type membership is refused when the whole contract already joins the same group. That could be allowed if a consumer wants the explicit entry.
 - **An owners index.** There is no `identity → groups it owns` tree. Finding the groups an identity owns means scanning `Groups`.
-- **Queries and SDKs.** `getContractGroupInfo`, a paged `getContractGroupMembers` and `getContractGroupsForContract` in DAPI, their `rs-drive-proof-verifier` types, `rs-sdk` `Fetch` impls and the wasm-sdk bindings follow separately, as do the creation surfaces in wasm-dpp and the JavaScript, Kotlin and Swift SDKs.
+- **Creation surfaces.** The DAPI queries and the Rust, wasm and JavaScript read bindings exist (see [The DAPI Queries](#the-dapi-queries)), but registering a group or joining one still needs a hand-built `DataContractCreateTransitionV1`: the wasm-dpp JSON fields and the JavaScript, Kotlin and Swift contract-create options follow separately.
 - **`ContractBounds::ContractGroup`.** Binding an identity key to every contract in a group is the consumer the `Members` layout was built for. The commented `MultipleContractsOfSameOwner` remnants in `packages/rs-dpp/src/identity/identity_public_key/contract_bounds/mod.rs` mark the spot.
 
 ## Tests
@@ -345,12 +353,16 @@ Coverage sits at the three layers the feature touches (see [Unit Tests](../testi
 
 - **dpp** (`contract_group/mod.rs`): the id derivation differs from the contract id and depends on both inputs; both owner kinds resolve membership; the stored info round-trips through bincode with the untrusted decoder.
 - **drive** (`drive/contract_groups/tests.rs`): the root tree exists in the initial structure at protocol version 14 and not before; a group can be registered and proved present or absent; memberships land on both sides and prove; members page through with a cursor, a limit of one still reaches every entry past a contract with nothing left, and a zero or over-the-maximum page size is refused on both the fetch and the proof side; estimation and apply build the same operations; registering an existing group is refused.
+- **drive-abci queries** (`query/contract_group_queries/*/v0/mod.rs`): each handler rejects a malformed id, cursor or limit; an absent group or a contract in no group answers empty, unproved and proved; members page through with a cursor and come back in the requested kind; every proof verifies through the `Drive::verify_*` twin.
+- **drive-proof-verifier** (`proof/contract_groups.rs`, `unproved.rs`): request parsing fails before verification on a missing version, a short id, a missing kind or an out-of-bounds limit; unproved responses decode both owner kinds, reject a page of another kind, and read memberships into sets.
 - **drive-abci** (`data_contract_create/contract_group_tests.rs`): end-to-end through `process_raw_state_transitions`, covering register-and-join in one transition, an owner adding a later contract by document type and token, joining a group the identity does not own as a paid failure, joining an unknown group, a group with admins accepting the owner and each admin and refusing outsiders, a registration naming an unknown admin rejected as a paid failure, a version 0 create still processed at the latest version, and the full set of malformed registrations and memberships rejected in basic structure. The protocol upgrade hook has its own test proving the trees exist and accept a registration after the 13 to 14 transition.
 
 ```bash
 cargo test -p dpp --all-features -- contract_group
 cargo test -p drive --lib -- contract_groups
 cargo test -p drive-abci -- contract_group data_contract_create
+cargo test -p drive-abci --lib -- query::contract_group_queries
+cargo test -p drive-proof-verifier --lib -- contract_groups
 ```
 
 ## Rules and Guidelines

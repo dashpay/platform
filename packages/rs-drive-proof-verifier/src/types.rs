@@ -9,6 +9,8 @@
 //! formats explicitly retain ordinary decoding for foreign Core types; network
 //! responses go through the proof verification and request conversion paths.
 
+/// Contract groups: a group's information, its members and the groups a contract is in
+pub mod contract_groups;
 /// Data contracts by range (the paginated contract enumeration)
 pub mod data_contracts_by_range;
 /// The current versions of data contracts
