@@ -53,6 +53,7 @@ pub trait DriveLowLevelOperationConverter {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -107,6 +108,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -118,6 +120,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
             DriveOperation::DataContractOperation(contract_operation_type) => {
                 contract_operation_type.into_low_level_drive_operations(
                     drive,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
@@ -127,6 +130,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
             DriveOperation::DocumentOperation(document_operation_type) => document_operation_type
                 .into_low_level_drive_operations(
                     drive,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
@@ -135,6 +139,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
             DriveOperation::WithdrawalOperation(withdrawal_operation_type) => {
                 withdrawal_operation_type.into_low_level_drive_operations(
                     drive,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
@@ -144,6 +149,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
             DriveOperation::IdentityOperation(identity_operation_type) => identity_operation_type
                 .into_low_level_drive_operations(
                     drive,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
@@ -153,6 +159,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                 prefunded_balance_operation_type,
             ) => prefunded_balance_operation_type.into_low_level_drive_operations(
                 drive,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 block_info,
                 transaction,
@@ -161,6 +168,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
             DriveOperation::SystemOperation(system_operation_type) => system_operation_type
                 .into_low_level_drive_operations(
                     drive,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
@@ -169,6 +177,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
             DriveOperation::ShieldedPoolOperation(shielded_pool_operation_type) => {
                 shielded_pool_operation_type.into_low_level_drive_operations(
                     drive,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
@@ -184,6 +193,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
             DriveOperation::TokenOperation(token_operation_type) => token_operation_type
                 .into_low_level_drive_operations(
                     drive,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
@@ -192,6 +202,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
             DriveOperation::GroupOperation(group_operation_type) => group_operation_type
                 .into_low_level_drive_operations(
                     drive,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
@@ -200,6 +211,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
             DriveOperation::AddressFundsOperation(address_funds_operation_type) => {
                 address_funds_operation_type.into_low_level_drive_operations(
                     drive,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,

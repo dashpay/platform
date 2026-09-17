@@ -8,8 +8,10 @@ use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
+    /// Generation 1: the same write as v0, with the batch accumulated so far handed to the
+    /// supply writer so the issuer's lifecycle record is written once per batch.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn token_burn_v0(
+    pub(super) fn token_burn_v1(
         &self,
         token_id: [u8; 32],
         identity_id: [u8; 32],
@@ -21,7 +23,7 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let mut drive_operations = vec![];
 
-        self.token_burn_add_to_operations_v0(
+        self.token_burn_add_to_operations_v1(
             token_id,
             identity_id,
             burn_amount,
@@ -43,7 +45,7 @@ impl Drive {
         Ok(fees)
     }
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn token_burn_add_to_operations_v0(
+    pub(super) fn token_burn_add_to_operations_v1(
         &self,
         token_id: [u8; 32],
         identity_id: [u8; 32],
@@ -56,10 +58,11 @@ impl Drive {
         let mut estimated_costs_only_with_layer_info =
             if apply { None } else { Some(HashMap::new()) };
 
-        let batch_operations = self.token_burn_operations_v0(
+        let batch_operations = self.token_burn_operations_v1(
             token_id,
             identity_id,
             burn_amount,
+            &mut None,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -74,11 +77,13 @@ impl Drive {
         )
     }
 
-    pub(super) fn token_burn_operations_v0(
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn token_burn_operations_v1(
         &self,
         token_id: [u8; 32],
         identity_id: [u8; 32],
         burn_amount: u64,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -99,7 +104,7 @@ impl Drive {
         drive_operations.extend(self.remove_from_token_total_supply_operations(
             token_id,
             burn_amount,
-            &mut None,
+            previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,
             platform_version,

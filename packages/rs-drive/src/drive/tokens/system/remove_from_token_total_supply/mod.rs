@@ -99,6 +99,7 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         amount: u64,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -122,6 +123,7 @@ impl Drive {
             1 => self.remove_from_token_total_supply_operations_v1(
                 token_id,
                 amount,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

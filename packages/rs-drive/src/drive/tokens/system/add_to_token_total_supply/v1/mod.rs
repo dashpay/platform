@@ -79,6 +79,7 @@ impl Drive {
             amount,
             allow_first_mint,
             allow_saturation,
+            &mut None,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -101,6 +102,7 @@ impl Drive {
         amount: u64,
         allow_first_mint: bool,
         allow_saturation: bool,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -186,6 +188,7 @@ impl Drive {
         drive_operations.extend(self.add_to_contract_issued_supply_operations(
             token_id,
             IssuedSupplyChange::Increase(added_amount),
+            previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -588,6 +591,7 @@ mod tests {
             .add_to_contract_issued_supply_operations(
                 token_id,
                 IssuedSupplyChange::Increase(7),
+                &mut None,
                 &mut None,
                 None,
                 platform_version,

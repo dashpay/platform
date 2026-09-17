@@ -97,4 +97,8 @@ pub struct DriveTokenUpdateMethodVersions {
     pub unfreeze: FeatureVersion,
     pub apply_status: FeatureVersion,
     pub perpetual_distribution_next_event_for_identity_id: FeatureVersion,
+    /// Generation of `token_set_direct_purchase_price_operations`. The dispatcher read the
+    /// `mint` slot before this field existed; the shipped tables carry 0 here, which is what
+    /// `mint` was on every one of them, so the selection is unchanged.
+    pub set_direct_purchase_price: FeatureVersion,
 }

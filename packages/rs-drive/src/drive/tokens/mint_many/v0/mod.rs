@@ -138,6 +138,7 @@ impl Drive {
                 total_mint_amount,
                 allow_first_mint,
                 false,
+                &mut None,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
@@ -169,8 +170,8 @@ mod tests {
     /// Helper that creates a drive with a fresh token contract containing a
     /// single token at position 0, and returns the drive + token id.
     fn setup_drive_with_token() -> (crate::drive::Drive, [u8; 32]) {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
         let contract = DataContract::V1(DataContractV1 {
             id: Default::default(),
@@ -225,7 +226,7 @@ mod tests {
 
     /// Inserts a fresh random identity and returns its id buffer.
     fn insert_identity(drive: &crate::drive::Drive, seed: u64) -> [u8; 32] {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let identity = Identity::random_identity(3, Some(seed), platform_version)
             .expect("expected a platform identity");
         let id = identity.id().to_buffer();
@@ -245,7 +246,7 @@ mod tests {
     #[test]
     fn should_mint_many_to_multiple_recipients_with_proportional_weights() {
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let id_a = insert_identity(&drive, 1);
         let id_b = insert_identity(&drive, 2);
@@ -305,7 +306,7 @@ mod tests {
     #[test]
     fn should_mint_many_to_single_recipient() {
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let id_a = insert_identity(&drive, 10);
         let recipients = vec![(Identifier::new(id_a), 100)];
@@ -339,7 +340,7 @@ mod tests {
     #[test]
     fn should_mint_many_when_some_recipients_have_weight_zero() {
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let id_a = insert_identity(&drive, 20);
         let id_b = insert_identity(&drive, 21);
@@ -391,7 +392,7 @@ mod tests {
     #[test]
     fn should_clamp_recipient_weight_above_u32_max_to_u32_max() {
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let id_a = insert_identity(&drive, 30);
         let id_b = insert_identity(&drive, 31);
@@ -439,7 +440,7 @@ mod tests {
     #[test]
     fn should_update_total_supply_across_multiple_mint_many_calls() {
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let id_a = insert_identity(&drive, 40);
         let id_b = insert_identity(&drive, 41);
@@ -508,7 +509,7 @@ mod tests {
         // Once the entry exists, mint_many with allow_first_mint=false must
         // still succeed because it's an "add to existing supply" call.
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let id_a = insert_identity(&drive, 50);
 
@@ -535,7 +536,7 @@ mod tests {
     #[test]
     fn should_mint_many_amount_zero_leaves_supply_and_balances_zero() {
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let id_a = insert_identity(&drive, 60);
         let id_b = insert_identity(&drive, 61);
@@ -578,7 +579,7 @@ mod tests {
         // identities — that check is higher up the stack. The raw operation
         // should still succeed and create the balance entry.
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let stranger = Identifier::new([0xAB; 32]);
 
@@ -607,7 +608,7 @@ mod tests {
         // Exercises the token_mint_many_add_to_operations_v0 entry point
         // directly (the v0 fn that takes an out-parameter for drive ops).
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let id_a = insert_identity(&drive, 70);
 
@@ -644,7 +645,7 @@ mod tests {
         // without applying them. With apply=false (None transaction) state
         // must remain unchanged until apply_batch is called.
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let id_a = insert_identity(&drive, 80);
 
@@ -699,7 +700,7 @@ mod tests {
         // the issuance amount (the last recipient takes the rounding
         // remainder).
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let ids: Vec<[u8; 32]> = (0..7).map(|i| insert_identity(&drive, 100 + i)).collect();
         let weights: Vec<u64> = vec![1, 2, 3, 4, 5, 6, 7];
@@ -747,7 +748,7 @@ mod tests {
     #[test]
     fn should_mint_many_with_equal_weights_distributes_evenly_with_last_absorbing_remainder() {
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let id_a = insert_identity(&drive, 200);
         let id_b = insert_identity(&drive, 201);
@@ -796,7 +797,7 @@ mod tests {
     fn should_mint_many_fee_result_is_non_zero_on_apply() {
         // Exercises the token_mint_many_v0 path that computes a FeeResult.
         let (drive, token_id) = setup_drive_with_token();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         let id_a = insert_identity(&drive, 300);
 

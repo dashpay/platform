@@ -8,12 +8,16 @@ use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
+    /// Generation 1: the same write as v0, with the batch accumulated so far handed to the
+    /// supply writer so the issuer's lifecycle record is written once per batch.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn token_burn_v0(
+    pub(super) fn token_mint_v1(
         &self,
         token_id: [u8; 32],
         identity_id: [u8; 32],
-        burn_amount: u64,
+        issuance_amount: u64,
+        allow_first_mint: bool,
+        allow_saturation: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -21,10 +25,12 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let mut drive_operations = vec![];
 
-        self.token_burn_add_to_operations_v0(
+        self.token_mint_add_to_operations_v1(
             token_id,
             identity_id,
-            burn_amount,
+            issuance_amount,
+            allow_first_mint,
+            allow_saturation,
             apply,
             transaction,
             &mut drive_operations,
@@ -42,12 +48,15 @@ impl Drive {
 
         Ok(fees)
     }
+
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn token_burn_add_to_operations_v0(
+    pub(super) fn token_mint_add_to_operations_v1(
         &self,
         token_id: [u8; 32],
         identity_id: [u8; 32],
-        burn_amount: u64,
+        issuance_amount: u64,
+        allow_first_mint: bool,
+        allow_saturation: bool,
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
@@ -56,10 +65,13 @@ impl Drive {
         let mut estimated_costs_only_with_layer_info =
             if apply { None } else { Some(HashMap::new()) };
 
-        let batch_operations = self.token_burn_operations_v0(
+        let batch_operations = self.token_mint_operations_v1(
             token_id,
             identity_id,
-            burn_amount,
+            issuance_amount,
+            allow_first_mint,
+            allow_saturation,
+            &mut None,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -74,11 +86,15 @@ impl Drive {
         )
     }
 
-    pub(super) fn token_burn_operations_v0(
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn token_mint_operations_v1(
         &self,
         token_id: [u8; 32],
         identity_id: [u8; 32],
-        burn_amount: u64,
+        issuance_amount: u64,
+        allow_first_mint: bool,
+        allow_saturation: bool,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -87,23 +103,31 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
 
-        drive_operations.extend(self.remove_from_identity_token_balance_operations(
+        let (add_to_supply_operations, actual_issuance_amount) = self
+            .add_to_token_total_supply_operations(
+                token_id,
+                issuance_amount,
+                allow_first_mint,
+                allow_saturation,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?;
+
+        // There is a chance that we can't add more to the supply because it would overflow, in that case we issue what can be issued if allow saturation is set to true
+
+        // Update identity balance
+        drive_operations.extend(self.add_to_identity_token_balance_operations(
             token_id,
             identity_id,
-            burn_amount,
+            actual_issuance_amount,
             estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
         )?);
 
-        drive_operations.extend(self.remove_from_token_total_supply_operations(
-            token_id,
-            burn_amount,
-            &mut None,
-            estimated_costs_only_with_layer_info,
-            transaction,
-            platform_version,
-        )?);
+        drive_operations.extend(add_to_supply_operations);
 
         Ok(drive_operations)
     }

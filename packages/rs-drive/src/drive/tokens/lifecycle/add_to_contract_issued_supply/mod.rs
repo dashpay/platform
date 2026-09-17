@@ -27,11 +27,20 @@ impl Drive {
     /// corrupted state: every path that changes supply is closed by validation before it
     /// reaches Drive, so reaching a wiped record here means a validator missed the check.
     ///
+    /// A batch lowers every operation before applying any, so two supply writes for tokens
+    /// of one issuer in the same batch would both read the stored record and emit two
+    /// replacements of the same key. When the caller hands in the batch accumulated so far,
+    /// a replacement of the issuer's record already pending in it is taken as the base and
+    /// rewritten in place, so one replacement per issuer leaves the batch whatever the number
+    /// of its tokens written.
+    ///
     /// # Parameters
     ///
     /// * `token_id` - The token whose supply changed.
     /// * `change` - The amount and direction of the change, as actually applied to the
     ///   supply leaf.
+    /// * `previous_batch_operations` - The operations accumulated by the batch so far, where
+    ///   a pending replacement of the issuer's record is folded into; `None` outside a batch.
     /// * `estimated_costs_only_with_layer_info` - `Some` to price the write without state.
     /// * `transaction` - The current transaction.
     /// * `platform_version` - The platform version to use.
@@ -40,10 +49,12 @@ impl Drive {
     ///
     /// * The batch operations, or `Err(DriveError::VersionNotActive)` on a platform version
     ///   without the ledger.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_to_contract_issued_supply_operations(
         &self,
         token_id: [u8; 32],
         change: IssuedSupplyChange,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -60,6 +71,7 @@ impl Drive {
             Some(0) => self.add_to_contract_issued_supply_operations_v0(
                 token_id,
                 change,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

@@ -41,6 +41,8 @@ An issuer's rollup can exceed `i64`: two tokens at the largest legal base supply
 
 Transfers change no rollup and read no record. The supply writers refuse a wiped issuer as corrupted state: every path that changes supply is closed by validation before it reaches Drive, so reaching a wiped record there means a validator missed the check.
 
+A Drive batch is lowered in full before any of it is applied, so two supply writes for tokens of one issuer in the same batch would both read the stored record and emit two replacements of the same key. `mint`, `burn` and `mint_many` v1 hand the batch accumulated so far down to the supply writers, and the rollup mover takes a replacement of the issuer's record already pending in that batch as its base and rewrites it in place. One replacement per issuer leaves the batch whatever the number of its tokens written; the `apply_drive_operations` tests cover distinct tokens of one issuer and two issuers in one batch.
+
 Both the genesis and the upgrade path build the ledger through the same sequential helper, for the same reason the shielded pool does: the ledger has two one-byte keys whose Merk placement depends on the insertion order, and a fresh genesis node and an upgraded node must hold a byte-identical subtree.
 
 ## Token conservation

@@ -3,19 +3,21 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
+    /// Generation 1: the same write as v0, with the batch accumulated so far handed to the
+    /// supply writer so the issuer's lifecycle record is written once per batch.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn token_mint_v0(
+    pub(super) fn token_mint_many_v1(
         &self,
-        token_id: [u8; 32],
-        identity_id: [u8; 32],
+        token_id: Identifier,
+        recipients: Vec<(Identifier, u64)>,
         issuance_amount: u64,
         allow_first_mint: bool,
-        allow_saturation: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -23,12 +25,11 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let mut drive_operations = vec![];
 
-        self.token_mint_add_to_operations_v0(
+        self.token_mint_many_add_to_operations_v1(
             token_id,
-            identity_id,
+            recipients,
             issuance_amount,
             allow_first_mint,
-            allow_saturation,
             apply,
             transaction,
             &mut drive_operations,
@@ -48,13 +49,12 @@ impl Drive {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn token_mint_add_to_operations_v0(
+    pub(super) fn token_mint_many_add_to_operations_v1(
         &self,
-        token_id: [u8; 32],
-        identity_id: [u8; 32],
+        token_id: Identifier,
+        recipients: Vec<(Identifier, u64)>,
         issuance_amount: u64,
         allow_first_mint: bool,
-        allow_saturation: bool,
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
@@ -63,12 +63,12 @@ impl Drive {
         let mut estimated_costs_only_with_layer_info =
             if apply { None } else { Some(HashMap::new()) };
 
-        let batch_operations = self.token_mint_operations_v0(
+        let batch_operations = self.token_mint_many_operations_v1(
             token_id,
-            identity_id,
+            recipients,
             issuance_amount,
             allow_first_mint,
-            allow_saturation,
+            &mut None,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -84,13 +84,13 @@ impl Drive {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn token_mint_operations_v0(
+    pub(super) fn token_mint_many_operations_v1(
         &self,
-        token_id: [u8; 32],
-        identity_id: [u8; 32],
-        issuance_amount: u64,
+        token_id: Identifier,
+        mut recipients: Vec<(Identifier, u64)>,
+        total_mint_amount: u64,
         allow_first_mint: bool,
-        allow_saturation: bool,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -99,31 +99,56 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
 
-        let (add_to_supply_operations, actual_issuance_amount) = self
-            .add_to_token_total_supply_operations(
-                token_id,
-                issuance_amount,
-                allow_first_mint,
-                allow_saturation,
-                &mut None,
+        let weight_sum = recipients
+            .iter_mut()
+            .map(|(_, weight)| {
+                // We do this so we can't overflow
+                if *weight > u32::MAX as u64 {
+                    *weight = u32::MAX as u64
+                }
+                *weight
+            })
+            .sum::<u64>();
+        let total_mint_amount_u128 = total_mint_amount as u128;
+
+        let mut balance_left = total_mint_amount;
+
+        for (i, (identity_id, weight)) in recipients.iter().enumerate() {
+            let amount = if i == recipients.len() - 1 {
+                balance_left
+            } else {
+                let amount = total_mint_amount_u128
+                    .saturating_mul(*weight as u128)
+                    .div_ceil(weight_sum as u128) as u64;
+                balance_left -= amount;
+                amount
+            };
+
+            drive_operations.extend(self.add_to_identity_token_balance_operations(
+                token_id.to_buffer(),
+                identity_id.to_buffer(),
+                amount,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
-            )?;
+            )?);
+        }
 
-        // There is a chance that we can't add more to the supply because it would overflow, in that case we issue what can be issued if allow saturation is set to true
+        // Update total supply
 
-        // Update identity balance
-        drive_operations.extend(self.add_to_identity_token_balance_operations(
-            token_id,
-            identity_id,
-            actual_issuance_amount,
-            estimated_costs_only_with_layer_info,
-            transaction,
-            platform_version,
-        )?);
-
-        drive_operations.extend(add_to_supply_operations);
+        drive_operations.extend(
+            self.add_to_token_total_supply_operations(
+                token_id.to_buffer(),
+                total_mint_amount,
+                allow_first_mint,
+                false,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?
+            .0,
+        );
 
         Ok(drive_operations)
     }

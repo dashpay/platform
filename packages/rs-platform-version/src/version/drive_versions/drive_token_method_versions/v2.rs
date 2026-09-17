@@ -13,6 +13,10 @@ use crate::version::drive_versions::drive_token_method_versions::{
 ///   0 -> 1 and `update.remove_from_token_total_supply` 0 -> 1: every native
 ///   supply write keeps the issuer's supply rollup current in the same batch
 ///   and refuses a wiped issuer.
+/// * `update.mint` 0 -> 1, `update.burn` 0 -> 1 and `update.mint_many` 0 -> 1:
+///   the batch accumulated so far is handed to the supply writer, so several
+///   supply writes for tokens of one issuer in one batch leave one replacement
+///   of the issuer's record instead of one per token.
 /// * `calculate_total_tokens_balance` 0 -> 1: the block end conservation check
 ///   reads the destroyed supply ledger and checks raw and active totals.
 /// * `lifecycle`: every slot turns on at generation 0.
@@ -51,9 +55,9 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V2: DriveTokenMethodVersions = DriveTokenM
     },
     update: DriveTokenUpdateMethodVersions {
         create_token_trees: 1, // changed in v2: creates the issuer's lifecycle record
-        burn: 0,
-        mint: 0,
-        mint_many: 0,
+        burn: 1, // changed in v2: hands the batch to the supply writer so the issuer record is written once
+        mint: 1, // changed in v2: hands the batch to the supply writer so the issuer record is written once
+        mint_many: 1, // changed in v2: hands the batch to the supply writer so the issuer record is written once
         transfer: 0,
         add_to_token_total_supply: 1, // changed in v2: moves the issuer rollup with the supply
         remove_from_token_total_supply: 1, // changed in v2: moves the issuer rollup with the supply
@@ -64,6 +68,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V2: DriveTokenMethodVersions = DriveTokenM
         unfreeze: 0,
         apply_status: 0,
         perpetual_distribution_next_event_for_identity_id: 0,
+        set_direct_purchase_price: 0,
     },
     calculate_total_tokens_balance: 1, // changed in v2: reads the destroyed supply ledger
     distribution: DriveTokenDistributionMethodVersions {

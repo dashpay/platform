@@ -110,7 +110,9 @@ impl Drive {
         }
     }
 
-    /// The operations needed to add to the token total supply
+    /// The operations needed to add to the token total supply. `previous_batch_operations`
+    /// is the batch accumulated so far, so a pending write of the issuer's lifecycle record
+    /// is folded rather than duplicated; `None` outside a batch.
     #[allow(clippy::too_many_arguments)]
     pub fn add_to_token_total_supply_operations(
         &self,
@@ -118,6 +120,7 @@ impl Drive {
         amount: TokenAmount,
         allow_first_mint: bool,
         allow_saturation: bool,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -145,6 +148,7 @@ impl Drive {
                 amount,
                 allow_first_mint,
                 allow_saturation,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

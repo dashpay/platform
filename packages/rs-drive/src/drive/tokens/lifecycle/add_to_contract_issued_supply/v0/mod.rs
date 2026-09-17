@@ -6,19 +6,22 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::prelude::Identifier;
-use dpp::serialization::PlatformSerializable;
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
+use dpp::tokens::contract_lifecycle::ContractTokenLifecycle;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::KeyInfoPath;
+use grovedb::batch::{GroveOp, KeyInfoPath};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_to_contract_issued_supply_operations_v0(
         &self,
         token_id: [u8; 32],
         change: IssuedSupplyChange,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -87,20 +90,53 @@ impl Drive {
             .contract_id()
             .to_buffer();
 
-        let mut record = self
-            .fetch_contract_token_lifecycle_operations(
-                contract_id,
-                true,
-                transaction,
-                &mut drive_operations,
-                platform_version,
-            )?
-            .ok_or_else(|| {
-                Error::Drive(DriveError::CorruptedDriveState(format!(
-                    "token issuer {} has no lifecycle record",
-                    Identifier::from(contract_id)
-                )))
-            })?;
+        // A replacement of this issuer's record already pending in the batch carries the
+        // rollup as the earlier writes of the batch left it; it is the base, and its slot is
+        // rewritten so the batch keeps one write per issuer. Otherwise the stored record is.
+        let lifecycles_path = token_contract_lifecycles_root_path_vec();
+        let pending_record_index = previous_batch_operations.as_deref().and_then(|operations| {
+            operations.iter().position(|operation| match operation {
+                LowLevelDriveOperation::GroveOperation(grove_op) => {
+                    matches!(grove_op.op, GroveOp::Replace { .. })
+                        && grove_op.path == lifecycles_path
+                        && grove_op.key == Some(KeyInfo::KnownKey(contract_id.to_vec()))
+                }
+                _ => false,
+            })
+        });
+        let mut record = match (pending_record_index, previous_batch_operations.as_deref()) {
+            (Some(index), Some(operations)) => match &operations[index] {
+                LowLevelDriveOperation::GroveOperation(grove_op) => match &grove_op.op {
+                    GroveOp::Replace {
+                        element: Element::Item(bytes, _),
+                    } => ContractTokenLifecycle::deserialize_from_bytes(bytes.as_slice())?,
+                    _ => {
+                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "a pending lifecycle record write is not an item replacement",
+                        )))
+                    }
+                },
+                _ => {
+                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "a pending lifecycle record write is not a grove operation",
+                    )))
+                }
+            },
+            _ => self
+                .fetch_contract_token_lifecycle_operations(
+                    contract_id,
+                    true,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?
+                .ok_or_else(|| {
+                    Error::Drive(DriveError::CorruptedDriveState(format!(
+                        "token issuer {} has no lifecycle record",
+                        Identifier::from(contract_id)
+                    )))
+                })?,
+        };
 
         if record.is_wiped() {
             return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
@@ -119,11 +155,18 @@ impl Drive {
             }
         }
 
-        drive_operations.push(LowLevelDriveOperation::replace_for_known_path_key_element(
-            token_contract_lifecycles_root_path_vec(),
+        let replacement = LowLevelDriveOperation::replace_for_known_path_key_element(
+            lifecycles_path,
             contract_id.to_vec(),
             Element::new_item(record.serialize_consume_to_bytes()?),
-        ));
+        );
+        match (
+            pending_record_index,
+            previous_batch_operations.as_deref_mut(),
+        ) {
+            (Some(index), Some(operations)) => operations[index] = replacement,
+            _ => drive_operations.push(replacement),
+        }
 
         Ok(drive_operations)
     }
@@ -165,6 +208,7 @@ mod tests {
         let operations = drive.add_to_contract_issued_supply_operations(
             token_id,
             change,
+            &mut None,
             &mut None,
             None,
             platform_version,
@@ -251,6 +295,86 @@ mod tests {
     }
 
     #[test]
+    fn should_fold_two_changes_of_one_issuer_into_one_pending_replacement() {
+        let (drive, contract_id, first_token) = drive_with_token();
+        let platform_version = PlatformVersion::latest();
+        let second_token = [2u8; 32];
+        drive
+            .create_token_trees(
+                contract_id,
+                1,
+                second_token,
+                false,
+                true,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create the second token");
+
+        let mut batch = drive
+            .add_to_contract_issued_supply_operations(
+                first_token,
+                IssuedSupplyChange::Increase(100),
+                &mut None,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the first change");
+        let second = drive
+            .add_to_contract_issued_supply_operations(
+                second_token,
+                IssuedSupplyChange::Increase(200),
+                &mut Some(&mut batch),
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the second change");
+        batch.extend(second);
+        let third = drive
+            .add_to_contract_issued_supply_operations(
+                first_token,
+                IssuedSupplyChange::Decrease(50),
+                &mut Some(&mut batch),
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the third change");
+        batch.extend(third);
+
+        let record_writes = batch
+            .iter()
+            .filter(|operation| match operation {
+                LowLevelDriveOperation::GroveOperation(grove_op) => {
+                    grove_op.path == token_contract_lifecycles_root_path_vec()
+                }
+                _ => false,
+            })
+            .count();
+        assert_eq!(record_writes, 1, "one replacement per issuer");
+
+        // The batch consistency check of the test drive would reject a second write.
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                batch,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the batch to apply");
+        let record = drive
+            .fetch_contract_token_lifecycle(contract_id.to_buffer(), None, platform_version)
+            .expect("expected to read")
+            .expect("expected a record");
+        assert_eq!(record.issued_supply(), 250);
+    }
+
+    #[test]
     fn should_price_the_write_without_state() {
         let (drive, contract_id, token_id) = drive_with_token();
         let platform_version = PlatformVersion::latest();
@@ -260,6 +384,7 @@ mod tests {
             .add_to_contract_issued_supply_operations(
                 token_id,
                 IssuedSupplyChange::Increase(1),
+                &mut None,
                 &mut estimated_costs,
                 None,
                 platform_version,

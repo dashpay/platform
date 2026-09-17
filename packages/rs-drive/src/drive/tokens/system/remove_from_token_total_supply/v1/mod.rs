@@ -66,6 +66,7 @@ impl Drive {
         let batch_operations = self.remove_from_token_total_supply_operations_v1(
             token_id,
             amount,
+            &mut None,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -84,6 +85,7 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         amount: u64,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -147,6 +149,7 @@ impl Drive {
         drive_operations.extend(self.add_to_contract_issued_supply_operations(
             token_id,
             IssuedSupplyChange::Decrease(amount),
+            previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
