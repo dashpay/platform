@@ -255,6 +255,191 @@ fn should_transfer_a_bucket_owned_item_to_an_identity_on_a_later_epoch_shrinking
     );
 }
 
+/// Replaces `KEY` under the typed generation with `payload_len` bytes and
+/// the given flags, returning the pushed operations.
+fn replace_item(
+    drive: &Drive,
+    payload_len: usize,
+    flags: &StorageFlags,
+    drive_version: &DriveVersion,
+) -> Result<Vec<LowLevelDriveOperation>, Error> {
+    let mut batch = GroveDbOpBatch::new();
+    batch.push(QualifiedGroveDbOp::replace_op(
+        misc_path_vec(),
+        KEY.to_vec(),
+        Element::new_item_with_flags(vec![7u8; payload_len], flags.to_some_element_flags()),
+    ));
+    let mut drive_operations = vec![];
+    drive.grove_apply_batch_with_add_costs(
+        batch,
+        false,
+        None,
+        &mut drive_operations,
+        drive_version,
+    )?;
+    Ok(drive_operations)
+}
+
+fn stored_flags(drive: &Drive, drive_version: &DriveVersion) -> StorageFlags {
+    let stored = drive
+        .grove
+        .get(
+            SubtreePath::from(misc_path_vec().as_slice()),
+            KEY,
+            None,
+            &drive_version.grove_version,
+        )
+        .unwrap()
+        .expect("item should exist");
+    StorageFlags::map_some_element_flags_ref(stored.get_flags())
+        .expect("flags should decode")
+        .expect("flags should be present")
+}
+
+/// GroveDB prices a replace with the old flags attached and asks the update
+/// closure whether the flags changed. A same-epoch replace across kinds
+/// leaves the proposed flags as they are but changes the header width (35
+/// bytes for an identity, 37 for a bucket), so the closure must report a
+/// change or GroveDB keeps a stale price and rejects the write.
+#[test]
+fn should_replace_across_kinds_in_the_same_epoch_when_the_header_width_changes() {
+    let typed = typed_drive_version();
+    let bucket = RefundOwner::ContractBucket {
+        contract_id: Identifier::from(CONTRACT_ID),
+        position: 7,
+    };
+    let identity = RefundOwner::Identity(Identifier::from(OWNER_ID));
+
+    // identity to bucket, payload one byte bigger
+    let drive = setup_drive_with_initial_state_structure(None);
+    insert_flagged_item(
+        &drive,
+        &StorageFlags::new_single_epoch_for_owner(1, Some(identity)),
+        &typed,
+    );
+    let ops = replace_item(
+        &drive,
+        201,
+        &StorageFlags::new_single_epoch_for_owner(1, Some(bucket)),
+        &typed,
+    )
+    .expect("identity to bucket replace should apply");
+    assert!(matches!(
+        ops.as_slice(),
+        [LowLevelDriveOperation::CalculatedCostOperationWithRefundOwners { .. }]
+    ));
+    assert_eq!(
+        stored_flags(&drive, &typed),
+        StorageFlags::SingleEpochContractBucket(1, CONTRACT_ID, 7)
+    );
+    let ops = delete_item(&drive, &typed).expect("v1 should delete");
+    let [LowLevelDriveOperation::CalculatedCostOperationWithRefundOwners { refund_owners, .. }] =
+        ops.as_slice()
+    else {
+        panic!("v1 should push one typed cost operation, got {:?}", ops);
+    };
+    assert_eq!(
+        *refund_owners,
+        RefundOwnersByIdentifier::from([(bucket.removal_key(), bucket)])
+    );
+
+    // bucket to identity, payload one byte bigger: priced with the old
+    // header it looks like growth, with the new header it is a one byte
+    // shrink, and the freed byte belongs to the bucket that paid for it
+    let drive = setup_drive_with_initial_state_structure(None);
+    insert_flagged_item(
+        &drive,
+        &StorageFlags::new_single_epoch_for_owner(1, Some(bucket)),
+        &typed,
+    );
+    let ops = replace_item(
+        &drive,
+        201,
+        &StorageFlags::new_single_epoch_for_owner(1, Some(identity)),
+        &typed,
+    )
+    .expect("bucket to identity replace should apply");
+    let [LowLevelDriveOperation::CalculatedCostOperationWithRefundOwners {
+        cost,
+        refund_owners,
+    }] = ops.as_slice()
+    else {
+        panic!("v1 should push one typed cost operation, got {:?}", ops);
+    };
+    let SectionedStorageRemoval(removal) = sectioned_removal(cost) else {
+        panic!("the one byte shrink is sectioned, got {:?}", cost);
+    };
+    assert_eq!(
+        removal.keys().copied().collect::<Vec<_>>(),
+        vec![bucket.removal_key()]
+    );
+    assert_eq!(
+        *refund_owners,
+        RefundOwnersByIdentifier::from([(bucket.removal_key(), bucket)])
+    );
+    assert_eq!(
+        stored_flags(&drive, &typed),
+        StorageFlags::SingleEpochOwned(1, OWNER_ID)
+    );
+}
+
+/// A later-epoch replace whose payload shrinks by exactly the header growth
+/// of the new owner kind nets to zero bytes. The first pricing pass sees a
+/// shrink and transfers ownership; the recalculated pass sees the same size
+/// and must resolve ownership the same way, or GroveDB's update loop
+/// alternates between the two answers and never converges.
+#[test]
+fn should_converge_when_a_later_epoch_replace_nets_to_the_same_size_across_kinds() {
+    let typed = typed_drive_version();
+    let bucket = RefundOwner::ContractBucket {
+        contract_id: Identifier::from(CONTRACT_ID),
+        position: 7,
+    };
+    let identity = RefundOwner::Identity(Identifier::from(OWNER_ID));
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    insert_flagged_item(
+        &drive,
+        &StorageFlags::new_single_epoch_for_owner(1, Some(identity)),
+        &typed,
+    );
+    let ops = replace_item(
+        &drive,
+        198,
+        &StorageFlags::new_single_epoch_for_owner(2, Some(bucket)),
+        &typed,
+    )
+    .expect("a net same size replace across kinds should apply");
+
+    let [LowLevelDriveOperation::CalculatedCostOperationWithRefundOwners { cost, .. }] =
+        ops.as_slice()
+    else {
+        panic!("v1 should push one typed cost operation, got {:?}", ops);
+    };
+    assert_eq!(cost.storage_cost.added_bytes, 0, "nothing was added on net");
+    assert_eq!(
+        *sectioned_removal(cost),
+        NoStorageRemoval,
+        "nothing was freed on net"
+    );
+    // the bytes keep their original epoch and move to the new owner
+    assert_eq!(
+        stored_flags(&drive, &typed),
+        StorageFlags::SingleEpochContractBucket(1, CONTRACT_ID, 7)
+    );
+
+    let ops = delete_item(&drive, &typed).expect("v1 should delete");
+    let [LowLevelDriveOperation::CalculatedCostOperationWithRefundOwners { refund_owners, .. }] =
+        ops.as_slice()
+    else {
+        panic!("v1 should push one typed cost operation, got {:?}", ops);
+    };
+    assert_eq!(
+        *refund_owners,
+        RefundOwnersByIdentifier::from([(bucket.removal_key(), bucket)])
+    );
+}
+
 #[test]
 fn should_fail_closed_when_a_bucket_owned_item_is_deleted_under_v0() {
     let shipped = PlatformVersion::latest().drive.clone();

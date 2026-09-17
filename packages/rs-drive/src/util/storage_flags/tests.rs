@@ -784,10 +784,73 @@ mod update {
             StorageFlags::update_element_flags_typed(&bigger(10), Some(old), &mut new_flags)
                 .expect("should update");
 
-        assert!(!changed, "new flags already name the new owner");
+        assert!(
+            changed,
+            "the owner already matches but the header grew from 35 to 37 bytes, so \
+             GroveDB has to price the element again"
+        );
         assert_eq!(
             StorageFlags::deserialize(&new_flags).expect("should decode"),
             Some(SingleEpochContractBucket(1, CONTRACT_ID, 7))
+        );
+
+        // the same owner kind on both sides keeps the width, so an unchanged
+        // merge is reported as unchanged
+        let old = SingleEpochOwned(1, OWNER_ID).to_element_flags();
+        let mut same_kind = SingleEpochOwned(1, OWNER_ID).to_element_flags();
+        let changed =
+            StorageFlags::update_element_flags_typed(&bigger(10), Some(old), &mut same_kind)
+                .expect("should update");
+        assert!(!changed);
+    }
+
+    /// GroveDB may price one replace as a shrink first and, once the flags
+    /// changed width, as same size. Both passes must name the same owner.
+    #[test]
+    fn should_resolve_a_same_size_update_the_same_way_as_a_shrink() {
+        let identity = RefundOwner::Identity(Identifier::from(OWNER_ID));
+        let old = SingleEpochOwned(1, OWNER_ID).to_element_flags();
+        let proposed = SingleEpochContractBucket(2, CONTRACT_ID, 7).to_element_flags();
+
+        let shrink = StorageCost {
+            added_bytes: 0,
+            replaced_bytes: 1,
+            removed_bytes: sectioned(identity.removal_key(), &[(1, 2)]),
+        };
+        let mut after_shrink = proposed.clone();
+        StorageFlags::update_element_flags_typed(&shrink, Some(old.clone()), &mut after_shrink)
+            .expect("should update");
+
+        let same_size = StorageCost {
+            added_bytes: 0,
+            replaced_bytes: 1,
+            removed_bytes: NoStorageRemoval,
+        };
+        let mut after_same_size = proposed;
+        let changed =
+            StorageFlags::update_element_flags_typed(&same_size, Some(old), &mut after_same_size)
+                .expect("should update");
+
+        assert!(changed);
+        assert_eq!(after_shrink, after_same_size);
+        assert_eq!(
+            StorageFlags::deserialize(&after_same_size).expect("should decode"),
+            Some(SingleEpochContractBucket(1, CONTRACT_ID, 7))
+        );
+
+        // a multi epoch element keeps its whole map on a same size update
+        let old = MultiEpochOwned(1, epochs(&[(2, 20)]), OWNER_ID).to_element_flags();
+        let mut new_flags = SingleEpochContractBucket(3, CONTRACT_ID, 7).to_element_flags();
+        StorageFlags::update_element_flags_typed(&same_size, Some(old), &mut new_flags)
+            .expect("should update");
+        assert_eq!(
+            StorageFlags::deserialize(&new_flags).expect("should decode"),
+            Some(MultiEpochContractBucket(
+                1,
+                epochs(&[(2, 20)]),
+                CONTRACT_ID,
+                7
+            ))
         );
     }
 
@@ -819,7 +882,7 @@ mod update {
     }
 
     #[test]
-    fn should_keep_old_flags_on_a_same_size_update_and_pass_through_inserts() {
+    fn should_keep_old_epochs_on_a_same_size_update_and_pass_through_inserts() {
         let old = SingleEpochContractBucket(9, CONTRACT_ID, 7).to_element_flags();
         let mut new_flags = SingleEpochContractBucket(1, CONTRACT_ID, 7).to_element_flags();
         let same_size = StorageCost {
