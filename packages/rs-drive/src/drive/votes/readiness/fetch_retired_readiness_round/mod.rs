@@ -7,6 +7,15 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
+/// One entry of the retired-round cleanup queue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetiredReadinessRound {
+    /// The retired round.
+    pub round_id: [u8; 32],
+    /// Its contract.
+    pub contract_id: [u8; 32],
+}
+
 impl Drive {
     /// Fetches the first retired round awaiting cleanup: its round id and contract id.
     ///
@@ -25,7 +34,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<([u8; 32], [u8; 32])>, Error> {
+    ) -> Result<Option<RetiredReadinessRound>, Error> {
         match platform_version
             .drive
             .methods
@@ -59,12 +68,12 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Ok(None)` when the queue is empty; otherwise the round id and its contract id.
+    /// * `Ok(None)` when the queue is empty.
     pub fn fetch_retired_readiness_round(
         &self,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<([u8; 32], [u8; 32])>, Error> {
+    ) -> Result<Option<RetiredReadinessRound>, Error> {
         self.fetch_retired_readiness_round_operations(transaction, &mut vec![], platform_version)
     }
 }

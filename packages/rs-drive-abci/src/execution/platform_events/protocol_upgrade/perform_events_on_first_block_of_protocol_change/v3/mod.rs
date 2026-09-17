@@ -46,9 +46,9 @@ impl<C> Platform<C> {
     /// `[Votes]` with its contracts, deadlines and retired-rounds children, and the
     /// readiness fund sum tree under `[PreFundedSpecializedBalances]`.
     ///
-    /// CONSENSUS-CRITICAL: the elements come from the shared
-    /// `Drive::add_readiness_structure_operations` helper that genesis (vote setup generation
-    /// 1) also calls, so a fresh genesis-v17 node and an in-place-upgraded v17 node hold
+    /// CONSENSUS-CRITICAL: the elements come from the shared helper
+    /// `Drive::add_readiness_structure_operations`, which genesis (vote setup generation 1)
+    /// also calls, so a fresh genesis-v17 node and an in-place-upgraded v17 node hold
     /// byte-identical subtrees. Every element is inserted only if absent, so a retried block
     /// after a rejected proposal, or a second run in the same transaction, is a no-op.
     pub(super) fn transition_to_version_17_compilation_readiness(
@@ -86,7 +86,6 @@ impl<C> Platform<C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::error::Error;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
@@ -570,8 +569,6 @@ mod tests {
                 .expect("totals")
                 .ok()
                 .expect("verdict"));
-            let result: Result<(), Error> = Ok(());
-            result.expect("born at {born_at}");
         }
     }
 }

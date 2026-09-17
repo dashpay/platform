@@ -1,4 +1,5 @@
 use crate::drive::votes::paths::readiness_retired_rounds_tree_path_vec;
+use crate::drive::votes::readiness::fetch_retired_readiness_round::RetiredReadinessRound;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -13,7 +14,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<([u8; 32], [u8; 32])>, Error> {
+    ) -> Result<Option<RetiredReadinessRound>, Error> {
         let mut query = Query::new_with_direction(true);
         query.insert_all();
         let path_query = PathQuery::new(
@@ -47,6 +48,9 @@ impl Drive {
                 )))
             }
         };
-        Ok(Some((round_id, contract_id)))
+        Ok(Some(RetiredReadinessRound {
+            round_id,
+            contract_id,
+        }))
     }
 }

@@ -62,6 +62,8 @@ pub use cleanup_retired_readiness_round_operations::ReadinessCleanupOutcome;
 #[cfg(feature = "server")]
 pub use fetch_readiness_rounds_due::ReadinessRoundDue;
 #[cfg(feature = "server")]
+pub use fetch_retired_readiness_round::RetiredReadinessRound;
+#[cfg(feature = "server")]
 pub use open_readiness_round_operations::ReadinessRoundFunding;
 #[cfg(feature = "server")]
 pub use retire_readiness_round_operations::ReadinessRetirement;

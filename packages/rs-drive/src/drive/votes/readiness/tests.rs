@@ -10,7 +10,9 @@ use crate::drive::votes::paths::{
     vote_root_path, READINESS_CURRENT_ROUND_POINTER_KEY, READINESS_ROUND_RECORD_KEY,
     READINESS_ROUND_REPORTS_TREE_KEY, READINESS_ROUND_SCAN_CURSOR_KEY, READINESS_TREE_KEY,
 };
-use crate::drive::votes::readiness::{ReadinessCleanupOutcome, ReadinessRoundFunding};
+use crate::drive::votes::readiness::{
+    ReadinessCleanupOutcome, ReadinessRoundFunding, RetiredReadinessRound,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -1090,7 +1092,10 @@ mod retirement {
             drive
                 .fetch_retired_readiness_round(None, platform_version)
                 .expect("retired"),
-            Some((first.round_id(), contract_id))
+            Some(RetiredReadinessRound {
+                round_id: first.round_id(),
+                contract_id
+            })
         );
         // The old deadline entry is gone.
         assert_eq!(
@@ -1251,7 +1256,10 @@ mod retirement {
             drive
                 .fetch_retired_readiness_round(None, platform_version)
                 .expect("retired"),
-            Some((round.round_id(), contract_id))
+            Some(RetiredReadinessRound {
+                round_id: round.round_id(),
+                contract_id
+            })
         );
         // The votes tree still has its four children.
         let grove_version = &platform_version.drive.grove_version;
@@ -1574,18 +1582,20 @@ mod cleanup {
         let (third, _) = open_round(&drive, contract_id, payer, 30, None);
 
         // Queue order is by round id (the key), so drain whichever comes first.
-        let (queued, _) = drive
+        let queued = drive
             .fetch_retired_readiness_round(None, platform_version)
             .expect("retired")
-            .expect("first entry");
+            .expect("first entry")
+            .round_id;
         assert!(queued == first.round_id() || queued == second.round_id());
 
         let (outcome, _) = cleanup_step(&drive, queued, contract_id, 512);
         assert!(outcome.finished);
-        let (queued_next, _) = drive
+        let queued_next = drive
             .fetch_retired_readiness_round(None, platform_version)
             .expect("retired")
-            .expect("second entry");
+            .expect("second entry")
+            .round_id;
         assert_ne!(queued_next, queued);
         let (outcome, _) = cleanup_step(&drive, queued_next, contract_id, 512);
         assert!(outcome.finished);
