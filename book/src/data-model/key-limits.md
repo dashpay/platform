@@ -113,10 +113,9 @@ fn active_version_range_for_keys_in_creation(
     keys: &[IdentityPublicKeyInCreation],
     otherwise: RangeInclusive<ProtocolVersion>,
 ) -> RangeInclusive<ProtocolVersion> {
-    if keys.iter().any(|key| {
-        matches!(key, IdentityPublicKeyInCreation::V1(_))
-            || matches!(key.contract_bounds(), Some(ContractBounds::ContractGroup { .. }))
-    }) {
+    if IdentityPublicKeyInCreation::first_bound_to_a_contract_group(keys).is_some()
+        || IdentityPublicKeyInCreation::first_in_version_1_format(keys).is_some()
+    {
         14..=LATEST_VERSION
     } else {
         otherwise
@@ -124,7 +123,7 @@ fn active_version_range_for_keys_in_creation(
 }
 ```
 
-The same helper gates keys bound to a contract group. The gate is on the *variant*, not on whether limits are present: an old binary fails on the variant either way. It must also be this gate and not a structure rule, because identity create validates key structure in a paid stage. Refusing there would charge the asset lock on a new binary while an old one fails to decode, which is a state divergence.
+The same function gates keys bound to a contract group. The predicates live on the key type (`public_key_in_creation/mod.rs`) so that every place that asks the question asks it the same way: `first_in_version_1_format` here, and `first_with_limits` for the shielded pool rule below, next to `first_bound_to_a_contract_group`. The gate is on the *variant*, not on whether limits are present: an old binary fails on the variant either way. It must also be this gate and not a structure rule, because identity create validates key structure in a paid stage. Refusing there would charge the asset lock on a new binary while an old one fails to decode, which is a state divergence.
 
 ## Registering a Limited Key
 
