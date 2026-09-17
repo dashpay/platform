@@ -226,7 +226,7 @@ fn parse_contract_group_members_query(
     let cursor_contract_id = input
         .start_after
         .as_ref()
-        .map(|cursor| Identifier::from(cursor.contract_id.clone()));
+        .map(|cursor| Identifier::from(cursor.contract_id));
     let members = match input.kind {
         ContractGroupMemberKindInput::Contracts => ContractGroupMembersQuery::Contracts {
             start_after: cursor_contract_id,
