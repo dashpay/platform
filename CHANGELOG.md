@@ -1,3 +1,100 @@
+## [4.2.0-beta.1](https://github.com/dashpay/platform/compare/v4.2.0-dev.11...v4.2.0-beta.1) (2026-09-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** allow authentication keys with a budget and an expiry (#4798)
+* **platform:** apply the review of contract group key bounds (#4801)
+* **platform:** allow authentication keys bound to a contract group (#4793)
+* **platform:** add contract groups (#4791)
+* **platform:** allow contract-bound authentication keys (#4780)
+* normalize withdrawal transaction accounting
+* **sdk:** keep Keystore's unlocked-device gate from bricking wallets and signing on defective OEM builds (#4643)
+* **dpp:** dashpay profile shielded address field (#4768)
+* **drive:** recreate the abstain and lock vote trees over orphaned storage when a resource is contested again (#4758)
+* **drive-abci:** reject contested document id collisions (#4662)
+
+### Features
+
+* **dpp:** dashpay profile shielded address field ([#4768](https://github.com/dashpay/platform/issues/4768))
+* **drive-abci:** ask Tenderdash for the next block right away when withdrawal work is queued ([#4741](https://github.com/dashpay/platform/issues/4741))
+* **drive-abci:** debug-only per-block phase timing ([#4573](https://github.com/dashpay/platform/issues/4573))
+* **drive-abci:** store platform state masternodes and validator sets as one aux entry each ([#4772](https://github.com/dashpay/platform/issues/4772))
+* **kotlin-sdk:** bind the ordered wallet bring-up (startWalletSubsystems) over JNI ([#4658](https://github.com/dashpay/platform/issues/4658))
+* **platform:** add contract groups ([#4791](https://github.com/dashpay/platform/issues/4791))
+* **platform:** add the contract group queries ([#4792](https://github.com/dashpay/platform/issues/4792))
+* **platform:** add the getIdentityKeysRemainingBudgets query ([#4802](https://github.com/dashpay/platform/issues/4802))
+* **platform:** allow authentication keys bound to a contract group ([#4793](https://github.com/dashpay/platform/issues/4793))
+* **platform:** allow authentication keys with a budget and an expiry ([#4798](https://github.com/dashpay/platform/issues/4798))
+* **platform:** allow contract-bound authentication keys ([#4780](https://github.com/dashpay/platform/issues/4780))
+* **sdk:** add an off-main data contract query
+
+
+### Bug Fixes
+
+* **dashmate:** use live Tenderdash app version for protocol status ([#4136](https://github.com/dashpay/platform/issues/4136))
+* **drive-abci:** reject contested document id collisions ([#4662](https://github.com/dashpay/platform/issues/4662))
+* **drive:** make the data contract cache transaction-aware ([#4755](https://github.com/dashpay/platform/issues/4755))
+* **drive:** recreate the abstain and lock vote trees over orphaned storage when a resource is contested again ([#4758](https://github.com/dashpay/platform/issues/4758))
+* **kotlin-sdk:** skip JReleaser's POM lint, which rejects Android's aar packaging ([#4759](https://github.com/dashpay/platform/issues/4759))
+* normalize withdrawal transaction accounting
+* **platform-wallet-storage:** drop the duplicated platform-wallet dev-dependency, closes [#4651](https://github.com/dashpay/platform/issues/4651)
+* **platform-wallet:** close the asset-lock resume broadcast race ([#4636](https://github.com/dashpay/platform/issues/4636))
+* **platform-wallet:** give an unconfirmed outgoing send an owner across a restart ([#4659](https://github.com/dashpay/platform/issues/4659))
+* **platform-wallet:** resolve a swept sent payment's verdict on the round that swept it ([#4651](https://github.com/dashpay/platform/issues/4651))
+* **platform-wallet:** support HASH160 DashPay profile signing keys ([#4653](https://github.com/dashpay/platform/issues/4653))
+* **platform:** apply the review of contract group key bounds ([#4801](https://github.com/dashpay/platform/issues/4801))
+* **platform:** load persisted protocol version votes before the epoch tally ([#4754](https://github.com/dashpay/platform/issues/4754))
+* **rs-sdk:** resolve DPNS names whose identity record is not an Identifier value ([#4769](https://github.com/dashpay/platform/issues/4769))
+* **sdk:** keep Keystore's unlocked-device gate from bricking wallets and signing on defective OEM builds ([#4643](https://github.com/dashpay/platform/issues/4643))
+* **sdk:** preserve the native error type in the off-main contract query
+
+
+### Performance Improvements
+
+* **drive-abci:** stop rewriting the whole platform state every block ([#4571](https://github.com/dashpay/platform/issues/4571))
+* **wasm-sdk:** fetch quorums concurrently and skip masternode discovery when addresses are given ([#4766](https://github.com/dashpay/platform/issues/4766))
+
+
+### Code Refactoring
+
+* **platform-wallet:** share provider-key account reconstruction ([#4587](https://github.com/dashpay/platform/issues/4587))
+
+
+### Build System
+
+* upgrade rs-tenderdash-abci and Tenderdash image to v1.8.0 ([#4661](https://github.com/dashpay/platform/issues/4661))
+
+
+### Documentation
+
+* **wasm-sdk:** clarify aggregate groupBy behavior ([#4576](https://github.com/dashpay/platform/issues/4576))
+
+
+### Tests
+
+* **swift-sdk:** make the French NFKD fixture actually decomposed
+* **swift-sdk:** pin non-English BIP-39 mnemonic support against the fixed FFI, closes [#980](https://github.com/dashpay/platform/issues/980) [#981](https://github.com/dashpay/platform/issues/981) [#4455](https://github.com/dashpay/platform/issues/4455)
+* withdraw above the protocol 14 minimum in the JS withdrawal tests ([#4781](https://github.com/dashpay/platform/issues/4781))
+
+
+### Miscellaneous Chores
+
+* **skills:** rename review-prs to prs ([#4787](https://github.com/dashpay/platform/issues/4787))
+
+
+### Continuous Integration
+
+* move the slowest unit tests to the nightly long-running job ([#4757](https://github.com/dashpay/platform/issues/4757))
+* re-pin PR Hygiene ([#4761](https://github.com/dashpay/platform/issues/4761))
+* re-pin PR Hygiene so its runs queue instead of cancelling ([#4773](https://github.com/dashpay/platform/issues/4773))
+* re-pin PR Hygiene so the sweep reaches every pull request ([#4770](https://github.com/dashpay/platform/issues/4770))
+* re-pin PR Hygiene to clone this repository only on its sweep ([#4785](https://github.com/dashpay/platform/issues/4785))
+* re-pin PR Hygiene to cut its GitHub request volume ([#4765](https://github.com/dashpay/platform/issues/4765))
+* re-pin PR Hygiene to read each pull request once ([#4778](https://github.com/dashpay/platform/issues/4778))
+* re-pin PR Hygiene to require a green build before asking a human ([#4795](https://github.com/dashpay/platform/issues/4795))
+* wake PR Hygiene only for a comment that can change the answer ([#4782](https://github.com/dashpay/platform/issues/4782))
+
 ## [4.2.0-dev.11](https://github.com/dashpay/platform/compare/v4.2.0-dev.10...v4.2.0-dev.11) (2026-09-14)
 
 
