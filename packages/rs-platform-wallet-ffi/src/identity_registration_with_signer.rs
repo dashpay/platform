@@ -215,11 +215,31 @@ pub(crate) unsafe fn decode_contract_bounds(
                 document_type_name: doc_type,
             }))
         }
+        3 => {
+            if row.contract_bounds_id.is_null() {
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorNullPointer,
+                    format!(
+                        "{field_label}[{row_index}].contract_bounds_id is null but kind == 3 \
+                         (ContractGroup)"
+                    ),
+                ));
+            }
+            let id_bytes: [u8; 32] =
+                match <[u8; 32]>::try_from(slice::from_raw_parts(row.contract_bounds_id, 32)) {
+                    Ok(b) => b,
+                    Err(_) => unreachable!("from_raw_parts(_, 32) always yields exactly 32 bytes"),
+                };
+            Ok(Some(ContractBounds::ContractGroup {
+                id: Identifier::from(id_bytes),
+            }))
+        }
         other => Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!(
                 "{field_label}[{row_index}].contract_bounds_kind = {other} is not a valid \
-                 discriminant (0=none, 1=SingleContract, 2=SingleContractDocumentType)"
+                 discriminant (0=none, 1=SingleContract, 2=SingleContractDocumentType, \
+                 3=ContractGroup)"
             ),
         )),
     }

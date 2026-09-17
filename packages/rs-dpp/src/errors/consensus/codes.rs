@@ -216,6 +216,7 @@ impl ErrorWithCode for BasicError {
             Self::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(_) => 10532,
             Self::InvalidKeyPurposeForContractBoundsError(_) => 10533,
             Self::IdentityAssetLockTransactionTooManyInputsError(_) => 10534,
+            Self::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError(_) => 10535,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,

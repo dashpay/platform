@@ -1,3 +1,4 @@
+pub use contract_group_bound_key_not_allowed_in_shielded_identity_creation_error::*;
 pub use data_contract_bounds_not_present_error::*;
 pub use disabling_key_id_also_being_added_in_same_transition_error::*;
 pub use duplicated_identity_public_key_basic_error::*;
@@ -42,6 +43,7 @@ mod identity_asset_lock_transaction_is_not_found_error;
 mod identity_asset_lock_transaction_out_point_already_consumed_error;
 mod identity_asset_lock_transaction_too_many_inputs_error;
 
+mod contract_group_bound_key_not_allowed_in_shielded_identity_creation_error;
 mod identity_asset_lock_state_transition_replay_error;
 mod identity_asset_lock_transaction_out_point_not_enough_balance_error;
 mod identity_asset_lock_transaction_output_not_found_error;

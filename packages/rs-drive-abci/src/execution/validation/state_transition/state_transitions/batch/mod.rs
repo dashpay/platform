@@ -19,6 +19,7 @@ use dpp::prelude::*;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::Drive;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 
@@ -166,6 +167,8 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
         network: Network,
         action: &StateTransitionAction,
         identity: Option<&PartialIdentity>,
+        drive: &Drive,
+        transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -200,6 +203,8 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
                         network,
                         documents_batch_transition_action,
                         identity,
+                        drive,
+                        transaction,
                         execution_context,
                         platform_version,
                     )

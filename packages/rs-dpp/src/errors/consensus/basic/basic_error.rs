@@ -56,6 +56,7 @@ use crate::consensus::basic::document::{
     MissingDocumentTransitionTypeError, MissingDocumentTypeError,
     MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
+use crate::consensus::basic::identity::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError;
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
@@ -744,6 +745,12 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidContractGroupDescriptionLengthError(InvalidContractGroupDescriptionLengthError),
+
+    // Contract group bounds on identity keys (protocol version 14).
+    #[error(transparent)]
+    ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError(
+        ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError,
+    ),
 }
 
 impl From<BasicError> for ConsensusError {

@@ -5,7 +5,10 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
-use dpp::consensus::basic::identity::InvalidIdentityPublicKeySecurityLevelError;
+use dpp::consensus::basic::identity::{
+    InvalidIdentityPublicKeySecurityLevelError, InvalidKeyPurposeForContractBoundsError,
+};
+use dpp::consensus::state::contract_group::ContractGroupNotFoundError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
 use dpp::identity::{Purpose, SecurityLevel};
@@ -19,7 +22,9 @@ use drive::{drive::Drive, grovedb::TransactionArg};
 /// v2 admits contract bounds on AUTHENTICATION keys: the bound contract (and document type)
 /// must exist and the key must not be a MASTER key. Any contract may be bound; there is no
 /// contract opt-in or uniqueness rule, unlike encryption and decryption keys, which keep the v1
-/// rules unchanged.
+/// rules unchanged. A contract group bound is admitted on AUTHENTICATION keys only: the group
+/// must exist (one billed read), and a group has no config to opt encryption or decryption keys
+/// in with, so those purposes are refused.
 #[allow(clippy::too_many_arguments)] // Keep explicit versioned validation inputs.
 pub(super) fn validate_identity_public_keys_contract_bounds_v2(
     identity_id: Identifier,
@@ -35,6 +40,30 @@ pub(super) fn validate_identity_public_keys_contract_bounds_v2(
         let Some(bounds) = key.contract_bounds() else {
             continue;
         };
+        if let Some(contract_group_id) = bounds.contract_group_id() {
+            if key.purpose() != Purpose::AUTHENTICATION {
+                result.add_error(InvalidKeyPurposeForContractBoundsError::new(
+                    key.purpose(),
+                    vec![Purpose::AUTHENTICATION],
+                ));
+                continue;
+            }
+            if key.security_level() == SecurityLevel::MASTER {
+                result.add_error(master_key_cannot_be_bound_error(key));
+                continue;
+            }
+            let (fee, info) = drive.fetch_contract_group_info_with_fee(
+                *contract_group_id,
+                epoch,
+                transaction,
+                version,
+            )?;
+            context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+            if info.is_none() {
+                result.add_error(ContractGroupNotFoundError::new(*contract_group_id));
+            }
+            continue;
+        }
         if key.purpose() != Purpose::AUTHENTICATION {
             result.add_errors(
                 super::v1::validate_identity_public_keys_contract_bounds_v1(
@@ -51,19 +80,13 @@ pub(super) fn validate_identity_public_keys_contract_bounds_v2(
             continue;
         }
         if key.security_level() == SecurityLevel::MASTER {
-            result.add_error(InvalidIdentityPublicKeySecurityLevelError::new(
-                key.id(),
-                key.purpose(),
-                key.security_level(),
-                Some(vec![
-                    SecurityLevel::CRITICAL,
-                    SecurityLevel::HIGH,
-                    SecurityLevel::MEDIUM,
-                ]),
-            ));
+            result.add_error(master_key_cannot_be_bound_error(key));
             continue;
         }
-        let contract_id = *bounds.identifier();
+        let Some(contract_id) = bounds.contract_id().copied() else {
+            // Contract group bounds were handled above.
+            continue;
+        };
         let outcome = drive.get_system_or_user_contract_with_fee(
             contract_id.to_buffer(),
             epoch,
@@ -84,4 +107,19 @@ pub(super) fn validate_identity_public_keys_contract_bounds_v2(
         }
     }
     Ok(result)
+}
+
+fn master_key_cannot_be_bound_error(
+    key: &IdentityPublicKeyInCreation,
+) -> InvalidIdentityPublicKeySecurityLevelError {
+    InvalidIdentityPublicKeySecurityLevelError::new(
+        key.id(),
+        key.purpose(),
+        key.security_level(),
+        Some(vec![
+            SecurityLevel::CRITICAL,
+            SecurityLevel::HIGH,
+            SecurityLevel::MEDIUM,
+        ]),
+    )
 }

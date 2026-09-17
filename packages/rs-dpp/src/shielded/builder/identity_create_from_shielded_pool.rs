@@ -3,12 +3,15 @@ use grovedb_commitment_tree::{Anchor, FullViewingKey, SpendAuthorizingKey};
 use crate::address_funds::OrchardAddress;
 use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
+use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
 use crate::serialization::Signable;
 use crate::shielded::compute_shielded_identity_create_fee;
-use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+use crate::state_transition::public_key_in_creation::accessors::{
+    IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
+};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::shielded::OrchardBundleParams;
 use crate::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::methods::IdentityCreateFromShieldedPoolTransitionMethodsV0;
@@ -182,6 +185,21 @@ where
     // nullifiers (dummies are indistinguishable by design). So derive the id inside the
     // post-build hook — after the action set is fixed, before the sighash is bound.
     let mut bound_identity_id: Option<Identifier> = None;
+    // Consensus refuses a key bound to a contract group in this transition (its Orchard sighash
+    // layout predates group bounds); refuse it here before a proof is generated.
+    if let Some(key) = in_creation_keys.iter().find(|key| {
+        matches!(
+            key.contract_bounds(),
+            Some(ContractBounds::ContractGroup { .. })
+        )
+    }) {
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "key {} is bound to a contract group, which an identity created from the shielded \
+             pool cannot register; add it with an identity update",
+            key.id()
+        )));
+    }
+
     let bundle = build_spend_bundle_with(
         spends,
         change_address,

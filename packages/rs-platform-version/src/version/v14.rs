@@ -285,6 +285,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// identity-signature validation v1 and batch advanced-structure v1. Identity creation
 /// validates key bounds (state v1) and identity-update state v1 retains the contract
 /// lookup fees; Drive identity methods v2 index and refresh the bound keys.
+/// Contract group bounds on authentication keys ride the same versions: contract-bounds
+/// validation v2 admits them, batch advanced-structure v1 reads the member contract's group
+/// memberships, and shielded-proof validation v1 refuses them in identity creation from the
+/// shielded pool, whose sighash preimage layout predates them.
+/// A transition carrying such a key is inactive before this version (`active_version_range`),
+/// so earlier protocol versions reject it without charging, as a binary that cannot decode it does.
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot

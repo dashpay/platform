@@ -55,7 +55,7 @@ Error codes are organized into ranges that correspond to error categories and su
 | 10360-10367 | Contract Groups | `ContractGroupMembershipsOverLimitError` (10360), `InvalidContractGroupAdminsError` (10364), `InvalidContractGroupDescriptionLengthError` (10367); 10365 unassigned |
 | 10400-10418 | Documents | `DataContractNotPresentError` (10400), `DuplicateDocumentTransitionsWithIdsError` (10401) |
 | 10450-10460 | Tokens | `InvalidTokenIdError` (10450), `TokenTransferToOurselfError` (10456) |
-| 10500-10533 | Identity | `DuplicatedIdentityPublicKeyBasicError` (10500), `InvalidIdentityPublicKeyDataError` (10511) |
+| 10500-10535 | Identity | `DuplicatedIdentityPublicKeyBasicError` (10500), `InvalidIdentityPublicKeyDataError` (10511) |
 | 10600-10603 | State Transition | `InvalidStateTransitionTypeError` (10600), `StateTransitionMaxSizeExceededError` (10602) |
 | 10700-10700 | General | `OverflowError` (10700) |
 | 10800-10818 | Address | `TransitionOverMaxInputsError` (10800), `WithdrawalBelowMinAmountError` (10818) |

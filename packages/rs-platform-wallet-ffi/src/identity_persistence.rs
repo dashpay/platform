@@ -699,6 +699,7 @@ impl IdentityKeyEntryFFI {
                     Ok(c) => (2u8, id.to_buffer(), c.into_raw() as *const c_char),
                     Err(_) => (1u8, id.to_buffer(), ptr::null()),
                 },
+                Some(ContractBounds::ContractGroup { id }) => (3u8, id.to_buffer(), ptr::null()),
                 None => (0u8, [0u8; 32], ptr::null()),
             };
 

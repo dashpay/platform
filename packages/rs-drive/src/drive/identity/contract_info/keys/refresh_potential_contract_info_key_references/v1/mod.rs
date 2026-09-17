@@ -89,23 +89,16 @@ impl Drive {
 
             // v1 fetches the contract in estimation mode as well. v0 priced the lookup with a
             // fixed 100-byte stand-in, which under-estimates a cold user contract; the apply
-            // path bills the real fetch, so the estimate must too.
-            let (fee, contract) = self.get_contract_with_fetch_info_and_fee(
-                root_id,
-                Some(epoch),
-                true,
+            // path bills the real fetch, so the estimate must too. A contract group bound
+            // resolves the group instead and yields no contract: its keys use the fixed
+            // multiple-reference-to-latest rule below.
+            let (fee, contract) = contract_info.fetch_bound_root_with_fee(
+                self,
+                epoch,
                 transaction,
                 platform_version,
             )?;
-
-            let fee = fee.ok_or(Error::Identity(
-                IdentityError::IdentityKeyDataContractNotFound,
-            ))?;
-            let contract = contract.ok_or(Error::Identity(
-                IdentityError::IdentityKeyDataContractNotFound,
-            ))?;
             drive_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(fee));
-            let contract = Some(contract);
 
             let (document_keys, contract_or_family_keys) = contract_info.keys();
 

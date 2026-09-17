@@ -119,6 +119,7 @@ fn encode_contract_bounds(
                 ),
             )),
         },
+        Some(ContractBounds::ContractGroup { id }) => Ok((3u8, id.to_buffer(), ptr::null_mut())),
         None => Ok((0u8, [0u8; 32], ptr::null_mut())),
     }
 }

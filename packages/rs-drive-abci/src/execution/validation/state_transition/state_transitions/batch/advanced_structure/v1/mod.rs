@@ -1,6 +1,10 @@
 use crate::error::Error;
 use dpp::consensus::signature::ContractBoundedKeyOutOfBoundsError;
+use dpp::contract_group::{ContractGroupMember, ContractGroupMembership};
+use dpp::identity::contract_bounds::BatchedTransitionBoundsCheck;
 use dpp::identity::Purpose;
+use drive::drive::Drive;
+use drive::grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
 use dpp::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
@@ -45,12 +49,15 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStructureValidationV1
 {
+    #[allow(clippy::too_many_arguments)] // Drive and the transaction serve the group read.
     fn validate_advanced_structure_from_state_v1(
         &self,
         block_info: &BlockInfo,
         network: Network,
         action: &BatchTransitionAction,
         identity: &PartialIdentity,
+        drive: &Drive,
+        transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -63,6 +70,8 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
         network: Network,
         action: &BatchTransitionAction,
         identity: &PartialIdentity,
+        drive: &Drive,
+        transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -97,13 +106,53 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
         }
 
         // A contract-bound AUTHENTICATION key may only act inside its contract (and document
-        // type). The signer is authenticated, so an out-of-bounds member is a paid failure.
+        // type), or inside the members of its contract group. The signer is authenticated, so
+        // an out-of-bounds member is a paid failure.
         if signing_key.purpose() == Purpose::AUTHENTICATION {
             if let Some(bounds) = signing_key.contract_bounds() {
-                if self
-                    .transitions_iter()
-                    .any(|member| !bounds.allows_batched_transition(member))
-                {
+                let mut out_of_bounds = false;
+                for member in self.transitions_iter() {
+                    match bounds.check_batched_transition(member) {
+                        BatchedTransitionBoundsCheck::Allowed => {}
+                        BatchedTransitionBoundsCheck::Denied => {
+                            out_of_bounds = true;
+                            break;
+                        }
+                        BatchedTransitionBoundsCheck::RequiresContractGroupMembership {
+                            contract_group_id,
+                            contract_id,
+                            member,
+                        } => {
+                            // One billed read of the member contract's memberships (at most
+                            // the per-contract cap of them). The whole contract or the exact
+                            // document type or token must belong to the key's group.
+                            let (fee, memberships) = drive
+                                .fetch_contract_group_memberships_for_contract_with_fee(
+                                    contract_id,
+                                    &block_info.epoch,
+                                    transaction,
+                                    platform_version,
+                                )?;
+                            execution_context
+                                .add_operation(ValidationOperation::PrecalculatedOperation(fee));
+                            let whole_contract = ContractGroupMembership {
+                                contract_group_id,
+                                member: ContractGroupMember::Contract,
+                            };
+                            let exact = ContractGroupMembership {
+                                contract_group_id,
+                                member,
+                            };
+                            if !memberships.contains(&whole_contract)
+                                && !memberships.contains(&exact)
+                            {
+                                out_of_bounds = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if out_of_bounds {
                     let first = self.first_transition().ok_or(Error::Execution(
                         ExecutionError::CorruptedCodeExecution("empty validated batch"),
                     ))?;

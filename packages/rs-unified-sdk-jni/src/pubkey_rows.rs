@@ -110,7 +110,8 @@ impl DecodedPubkeyRow {
 ///   u8   purpose           (DPP Purpose discriminant, 0 = AUTHENTICATION)
 ///   u8   security_level    (DPP SecurityLevel discriminant, 0 = MASTER)
 ///   u8   read_only         (0 / 1 — any other byte is rejected)
-///   u8   contract_bounds_kind (0 none, 1 SingleContract, 2 SingleContractDocumentType)
+///   u8   contract_bounds_kind (0 none, 1 SingleContract, 2 SingleContractDocumentType,
+///                             3 ContractGroup)
 ///   u16  pubkey_len
 ///   u8[pubkey_len]  pubkey_bytes  (compressed pubkey, or 20-byte HASH160)
 ///   if contract_bounds_kind != 0:
@@ -180,9 +181,9 @@ pub(crate) fn parse_pubkey_rows(bytes: &[u8]) -> Result<Vec<DecodedPubkeyRow>, S
             }
         };
         let contract_bounds_kind = fixed[8];
-        if contract_bounds_kind > 2 {
+        if contract_bounds_kind > 3 {
             return Err(format!(
-                "pubkey blob row {i} contractBoundsKind must be 0, 1 or 2, got {contract_bounds_kind}"
+                "pubkey blob row {i} contractBoundsKind must be 0, 1, 2 or 3, got {contract_bounds_kind}"
             ));
         }
         let pubkey_len = u16::from_be_bytes([fixed[9], fixed[10]]) as usize;

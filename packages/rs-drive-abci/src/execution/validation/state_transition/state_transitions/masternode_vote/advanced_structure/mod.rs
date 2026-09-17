@@ -9,6 +9,8 @@ use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::version::PlatformVersion;
+use drive::drive::Drive;
+use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 
 pub(crate) mod v0;
@@ -20,6 +22,8 @@ impl StateTransitionStructureKnownInStateValidationV0 for MasternodeVoteTransiti
         _network: Network,
         action: &StateTransitionAction,
         identity: Option<&PartialIdentity>,
+        _drive: &Drive,
+        _transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

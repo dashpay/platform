@@ -264,7 +264,7 @@ The backwards entries are GroveDB `Reference` elements of type `UpstreamRootHeig
 
 ### Why Members Is Keyed by Contract First
 
-The `Members` side is laid out so that "is document type `D` of contract `C` in group `G`" is one point lookup at `[124, 1, C, 1, D, G]`, and the forward side answers it at `[124, 0, G, 2, C || D]`. That is the shape a future `ContractBounds::ContractGroup` on identity keys will need: for every document in a batch, one existence check under the contract the document belongs to. The layout was chosen for that consumer before it exists.
+The `Members` side is laid out so that "is document type `D` of contract `C` in group `G`" is one point lookup at `[124, 1, C, 1, D, G]`, and the forward side answers it at `[124, 0, G, 2, C || D]`. That is the shape `ContractBounds::ContractGroup` on identity keys needs: for every member of a batch, one existence check under the contract the member belongs to. Today consensus reads the contract's whole `Members` entry (at most `max_contract_group_memberships_per_contract` entries) and checks it in memory, one billed read per batch member; the point lookup is there when a consumer wants it.
 
 ### Writing
 
@@ -336,6 +336,12 @@ Numbers go in `SystemLimits` and nowhere else, so validation reads them from `pl
 
 Nothing about contract groups has a special fee. Storage is charged at the standard rates for what is written: the info item and three empty subtrees for a registration, one empty item plus one reference per membership, plus whichever intermediate trees a new contract needs on the backwards side. State validation bills each group lookup as a precalculated operation. A transition that fails basic structure costs nothing; one that fails state validation pays for the lookups it caused and has its identity nonce bumped.
 
+## Keys Bound to a Group
+
+An AUTHENTICATION key can carry `ContractBounds::ContractGroup { id }` instead of a contract bound (protocol version 14; see `docs/protocol/contract-bound-authentication-keys.md` for the full rules). The key may then sign only batches, and a batch member on contract `C` is inside the bounds when `C`, the member's document type, or the member's token is a member of the group. Batch advanced-structure validation v1 fetches `C`'s memberships with `fetch_contract_group_memberships_for_contract_with_fee`, bills the read, and checks `contains` for the whole-contract membership and for the exact one; a miss is the same paid `ContractBoundedKeyOutOfBoundsError` a contract bound produces. Registration goes through contract-bounds validation v2, which requires AUTHENTICATION, a non-MASTER level and an existing group (one billed `fetch_contract_group_info_with_fee`); encryption and decryption keys cannot be group-bound, since their bounds are opt-in per contract and a group has nothing to opt in with. Below protocol version 14 a transition carrying a group-bound key is not active (`active_version_range`), so it is rejected at decode without a charge, the way a binary that cannot decode the variant rejects it.
+
+Drive keeps group-bound keys in the identity's contract-info level under the group id, next to contract ids, through the `ContractGroupBased` apply info and the `ContractGroupBoundKey` key request. Nothing new is written to the `ContractGroups` tree. Two consequences worth knowing: memberships are append-only, so a group-bound key's reach grows with the group; and `IdentityCreateFromShieldedPool` refuses group-bound keys (shielded-proof validation v1), because its sighash preimage layout predates them.
+
 ## What Is Not There Yet
 
 The first protocol version 14 change ships the consensus core only. Known gaps, all deliberate:
@@ -345,7 +351,6 @@ The first protocol version 14 change ships the consensus core only. Known gaps, 
 - **Relaxing redundancy.** A document type membership is refused when the whole contract already joins the same group. That could be allowed if a consumer wants the explicit entry.
 - **An owners index.** There is no `identity → groups it owns` tree. Finding the groups an identity owns means scanning `Groups`.
 - **Creation surfaces.** The DAPI queries and the Rust, wasm and JavaScript read bindings exist (see [The DAPI Queries](#the-dapi-queries)), but registering a group or joining one still needs a hand-built `DataContractCreateTransitionV1`: the wasm-dpp JSON fields and the JavaScript, Kotlin and Swift contract-create options follow separately.
-- **`ContractBounds::ContractGroup`.** Binding an identity key to every contract in a group is the consumer the `Members` layout was built for. The commented `MultipleContractsOfSameOwner` remnants in `packages/rs-dpp/src/identity/identity_public_key/contract_bounds/mod.rs` mark the spot.
 
 ## Tests
 
