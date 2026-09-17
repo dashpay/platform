@@ -5,8 +5,9 @@ use crate::drive::constants::STORAGE_FLAGS_SIZE;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 use crate::drive::document::{
-    document_reference_size_v1, make_document_reference_v1,
-    make_document_reference_with_sum_item_v1, read_document_sum_contribution,
+    document_reference_estimated_layer_sizes_v1, document_reference_estimated_value_size_v1,
+    make_document_reference_v1, make_document_reference_with_sum_item_v1,
+    read_document_sum_contribution,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -34,7 +35,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::{AllItems, AllReference};
+use grovedb::EstimatedLayerSizes::AllItems;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
@@ -198,10 +199,10 @@ impl Drive {
                     EstimatedLayerInformation {
                         tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
-                        estimated_layer_sizes: AllReference(
+                        estimated_layer_sizes: document_reference_estimated_layer_sizes_v1(
                             DEFAULT_HASH_SIZE_U8,
-                            document_reference_size_v1(),
                             storage_flags.map(|s| s.serialized_size()),
+                            sum_property_name.is_some(),
                         ),
                     },
                 );
@@ -324,12 +325,12 @@ impl Drive {
             } else {
                 BatchInsertApplyType::StatelessBatchInsert {
                     in_tree_type: reference_tree_type,
-                    target: QueryTargetValue(
-                        document_reference_size_v1()
-                            + storage_flags
-                                .map(|s| s.serialized_size())
-                                .unwrap_or_default(),
-                    ),
+                    target: QueryTargetValue(document_reference_estimated_value_size_v1(
+                        storage_flags
+                            .map(|s| s.serialized_size())
+                            .unwrap_or_default(),
+                        sum_property_name.is_some(),
+                    )),
                 }
             };
 
