@@ -52,9 +52,9 @@ impl StorageFlags {
         let theirs_owner = rhs.refund_owner();
         Self::reject_colliding_owners(ours_owner, theirs_owner)?;
         let combined = self
-            .to_crate_flags_keyed_by_removal_key()
+            .into_crate_flags_keyed_by_removal_key()
             .combine_added_bytes(
-                rhs.to_crate_flags_keyed_by_removal_key(),
+                rhs.into_crate_flags_keyed_by_removal_key(),
                 added_bytes,
                 merging_owners_strategy,
             )?;
@@ -82,13 +82,34 @@ impl StorageFlags {
             return Ok(Self::new_single_epoch_for_owner(*self.base_epoch(), owner));
         }
         let combined = self
-            .to_crate_flags_keyed_by_removal_key()
+            .into_crate_flags_keyed_by_removal_key()
             .combine_removed_bytes(
-                rhs.to_crate_flags_keyed_by_removal_key(),
+                rhs.into_crate_flags_keyed_by_removal_key(),
                 removed_bytes,
                 merging_owners_strategy,
             )?;
         Self::from_crate_combined(combined, ours_owner, theirs_owner)
+    }
+
+    /// Combine for a replace that moved no bytes: the epochs stay ours and
+    /// the owner follows the merging strategy.
+    ///
+    /// This is the branch GroveDB reaches when a replace nets to the same
+    /// size. It must resolve ownership exactly as the added and removed
+    /// branches do, because GroveDB may price one replace as a shrink first
+    /// and as same size after the flags changed width; two different answers
+    /// would never converge.
+    pub fn combine_same_size(
+        self,
+        rhs: Self,
+        merging_owners_strategy: MergingOwnersStrategy,
+    ) -> Result<Self, StorageFlagsError> {
+        let ours_owner = self.refund_owner();
+        let theirs_owner = rhs.refund_owner();
+        Self::reject_colliding_owners(ours_owner, theirs_owner)?;
+        let owner = Self::resolve_owner(ours_owner, theirs_owner, merging_owners_strategy)?;
+        let (base_epoch, epochs, _) = self.into_parts();
+        Ok(Self::from_parts(base_epoch, epochs, owner))
     }
 
     /// The crate's owner rule over typed owners: a side without an owner
@@ -150,27 +171,14 @@ impl StorageFlags {
                     "combined storage flags name an owner that neither side supplied".to_string(),
                 )
             })?;
-        match owner {
-            RefundOwner::Identity(_) => Ok(Self::from(combined)),
-            RefundOwner::ContractBucket {
-                contract_id,
-                position,
-            } => {
-                let base_epoch = *combined.base_epoch();
-                Ok(match combined.epoch_index_map() {
-                    None => StorageFlags::SingleEpochContractBucket(
-                        base_epoch,
-                        contract_id.to_buffer(),
-                        position,
-                    ),
-                    Some(epochs) => StorageFlags::MultiEpochContractBucket(
-                        base_epoch,
-                        epochs.clone(),
-                        contract_id.to_buffer(),
-                        position,
-                    ),
-                })
+        let (base_epoch, epochs) = match combined {
+            CrateStorageFlags::SingleEpoch(base_epoch)
+            | CrateStorageFlags::SingleEpochOwned(base_epoch, _) => (base_epoch, None),
+            CrateStorageFlags::MultiEpoch(base_epoch, epochs)
+            | CrateStorageFlags::MultiEpochOwned(base_epoch, epochs, _) => {
+                (base_epoch, Some(epochs))
             }
-        }
+        };
+        Ok(Self::from_parts(base_epoch, epochs, Some(owner)))
     }
 }

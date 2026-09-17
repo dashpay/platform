@@ -328,6 +328,76 @@ impl StorageFlags {
         Some(Cow::Owned(self))
     }
 
+    /// Builds the flags for a base epoch, an optional epoch map and an
+    /// optional typed owner. An empty epoch map gives a single epoch variant.
+    pub(super) fn from_parts(
+        base_epoch: BaseEpoch,
+        epochs: Option<BTreeMap<EpochIndex, BytesAddedInEpoch>>,
+        owner: Option<RefundOwner>,
+    ) -> Self {
+        let epochs = epochs.filter(|epochs| !epochs.is_empty());
+        match (owner, epochs) {
+            (None, None) => SingleEpoch(base_epoch),
+            (None, Some(epochs)) => MultiEpoch(base_epoch, epochs),
+            (Some(RefundOwner::Identity(identity_id)), None) => {
+                SingleEpochOwned(base_epoch, identity_id.to_buffer())
+            }
+            (Some(RefundOwner::Identity(identity_id)), Some(epochs)) => {
+                MultiEpochOwned(base_epoch, epochs, identity_id.to_buffer())
+            }
+            (
+                Some(RefundOwner::ContractBucket {
+                    contract_id,
+                    position,
+                }),
+                None,
+            ) => SingleEpochContractBucket(base_epoch, contract_id.to_buffer(), position),
+            (
+                Some(RefundOwner::ContractBucket {
+                    contract_id,
+                    position,
+                }),
+                Some(epochs),
+            ) => MultiEpochContractBucket(base_epoch, epochs, contract_id.to_buffer(), position),
+        }
+    }
+
+    /// Splits the flags into their base epoch, epoch map and typed owner,
+    /// moving the map out.
+    pub(super) fn into_parts(
+        self,
+    ) -> (
+        BaseEpoch,
+        Option<BTreeMap<EpochIndex, BytesAddedInEpoch>>,
+        Option<RefundOwner>,
+    ) {
+        let owner = self.refund_owner();
+        match self {
+            SingleEpoch(base_epoch)
+            | SingleEpochOwned(base_epoch, _)
+            | SingleEpochContractBucket(base_epoch, ..) => (base_epoch, None, owner),
+            MultiEpoch(base_epoch, epochs)
+            | MultiEpochOwned(base_epoch, epochs, _)
+            | MultiEpochContractBucket(base_epoch, epochs, ..) => (base_epoch, Some(epochs), owner),
+        }
+    }
+
+    /// The crate's value with every typed owner replaced by its removal key,
+    /// moving the epoch map instead of cloning it. See
+    /// [`Self::to_crate_flags_keyed_by_removal_key`] for why this is sound.
+    pub(super) fn into_crate_flags_keyed_by_removal_key(self) -> CrateStorageFlags {
+        let (base_epoch, epochs, owner) = self.into_parts();
+        let key = owner.map(|owner| owner.removal_key());
+        match (key, epochs) {
+            (None, None) => CrateStorageFlags::SingleEpoch(base_epoch),
+            (None, Some(epochs)) => CrateStorageFlags::MultiEpoch(base_epoch, epochs),
+            (Some(key), None) => CrateStorageFlags::SingleEpochOwned(base_epoch, key),
+            (Some(key), Some(epochs)) => {
+                CrateStorageFlags::MultiEpochOwned(base_epoch, epochs, key)
+            }
+        }
+    }
+
     /// The crate's value with every typed owner replaced by its removal key.
     ///
     /// This is what lets the crate's epoch arithmetic (split and combine) run

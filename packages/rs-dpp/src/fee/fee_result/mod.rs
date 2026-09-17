@@ -122,7 +122,12 @@ impl BalanceChangeForIdentity {
         &self.change
     }
 
-    /// Returns refund amount of credits for other identities
+    /// Returns refund amount of credits for other identities.
+    ///
+    /// Identity keyed view kept for the shipped balance consumer, which runs
+    /// only under generations that predate typed owners. A path that may
+    /// hold bucket owned refunds uses [`Self::other_typed_refunds`], or
+    /// checks `FeeRefunds::ensure_identity_owners_only` first.
     pub fn other_refunds(&self) -> BTreeMap<Identifier, Credits> {
         self.fee_result
             .fee_refunds

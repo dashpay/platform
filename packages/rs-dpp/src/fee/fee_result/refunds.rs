@@ -180,6 +180,33 @@ impl FeeRefunds {
         let Self(rhs_credits, rhs_owners) = rhs;
         // owners are checked before either map changes, so a rejected merge
         // leaves the accumulator exactly as it was
+        for identifier in rhs_credits.keys() {
+            let Some(owner) = rhs_owners.get(identifier) else {
+                return Err(ProtocolError::CorruptedCodeExecution(format!(
+                    "storage refund carrier key {} has no recorded refund owner",
+                    hex::encode(identifier)
+                )));
+            };
+            match self.1.get(identifier) {
+                Some(existing) if existing != owner => {
+                    return Err(ProtocolError::CorruptedCodeExecution(format!(
+                        "storage removal carrier key {} is recorded for two different refund owners: {:?} and {:?}",
+                        hex::encode(identifier),
+                        existing,
+                        owner
+                    )));
+                }
+                // credits already held without an owner must not acquire
+                // one from the other side
+                None if self.0.contains_key(identifier) => {
+                    return Err(ProtocolError::CorruptedCodeExecution(format!(
+                        "storage refund carrier key {} has no recorded refund owner",
+                        hex::encode(identifier)
+                    )));
+                }
+                _ => {}
+            }
+        }
         for (identifier, owner) in &rhs_owners {
             if let Some(existing) = self.1.get(identifier) {
                 if existing != owner {
@@ -271,7 +298,36 @@ impl FeeRefunds {
         summed_credits
     }
 
-    /// Calculates a refund amount of credits per identity excluding specified identity id
+    /// Checks that every recorded owner is an identity, so that the identity
+    /// keyed accessors below can be used without reading a bucket's carrier
+    /// key as an identity id. A carrier key without a recorded owner fails
+    /// the same way.
+    ///
+    /// The identity keyed accessors keep their historical signatures because
+    /// the shipped balance consumer calls them; that consumer runs only under
+    /// generations that predate typed owners, and Drive fails closed there on
+    /// a carrier key that has no identity balance. New callers check this
+    /// guard first or use the typed accessors.
+    pub fn ensure_identity_owners_only(&self) -> Result<(), ProtocolError> {
+        for entry in self.iter_typed() {
+            let (owner, identifier, _) = entry?;
+            if owner.as_identity().is_none() {
+                return Err(ProtocolError::CorruptedCodeExecution(format!(
+                    "storage refund carrier key {} belongs to {:?}, not to an identity",
+                    hex::encode(identifier),
+                    owner
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Calculates a refund amount of credits per identity excluding specified identity id.
+    ///
+    /// Identity keyed view: every carrier key is returned as an identity id.
+    /// Call [`Self::ensure_identity_owners_only`] first on a path that may
+    /// hold bucket owned refunds, or use
+    /// [`Self::calculate_all_refunds_except_owner`].
     pub fn calculate_all_refunds_except_identity(
         &self,
         identity_id: Identifier,
@@ -319,7 +375,11 @@ impl FeeRefunds {
         Ok(refunds_by_owner)
     }
 
-    /// Calculates a refund amount of credits for specified identity id
+    /// Calculates a refund amount of credits for specified identity id.
+    ///
+    /// Identity keyed view: looks the identity id up as a carrier key. An
+    /// identity id can never equal a bucket's carrier key except by a hash
+    /// preimage, so this stays exact for identity payers.
     pub fn calculate_refunds_amount_for_identity(
         &self,
         identity_id: Identifier,
@@ -547,6 +607,36 @@ mod tests {
             ));
             assert_eq!(refunds, before, "a rejected merge changes nothing");
         }
+
+        #[test]
+        fn should_reject_a_merge_that_would_give_unowned_credits_an_owner() {
+            let bucket = bucket_owner(2, 0);
+            let key = bucket.removal_key();
+            let unowned = FeeRefunds(
+                CreditsPerEpochByIdentifier::from_iter([(
+                    key,
+                    CreditsPerEpoch::from_iter([(0, 10)]),
+                )]),
+                RefundOwnersByIdentifier::new(),
+            );
+            let owned = refunds_for(bucket, 0, 1);
+
+            let mut left = unowned.clone();
+            let before = left.clone();
+            assert!(matches!(
+                left.checked_add_assign(owned.clone()),
+                Err(ProtocolError::CorruptedCodeExecution(_))
+            ));
+            assert_eq!(left, before, "a rejected merge changes nothing");
+
+            let mut right = owned;
+            let before = right.clone();
+            assert!(matches!(
+                right.checked_add_assign(unowned),
+                Err(ProtocolError::CorruptedCodeExecution(_))
+            ));
+            assert_eq!(right, before, "a rejected merge changes nothing");
+        }
     }
 
     mod typed_accessors {
@@ -608,6 +698,59 @@ mod tests {
             ));
             assert!(matches!(
                 refunds.calculate_all_refunds_except_owner(&bucket_owner(1, 1)),
+                Err(ProtocolError::CorruptedCodeExecution(_))
+            ));
+        }
+
+        #[test]
+        fn should_guard_the_identity_keyed_view_against_bucket_owned_refunds() {
+            let identity = RefundOwner::Identity(Identifier::from([1u8; 32]));
+            let bucket = bucket_owner(3, 4);
+            let owners = RefundOwnersByIdentifier::from_iter([
+                (identity.removal_key(), identity),
+                (bucket.removal_key(), bucket),
+            ]);
+            let removal = BytesPerEpochByIdentifier::from_iter([
+                (identity.removal_key(), IntMap::from_iter([(0, 100)])),
+                (bucket.removal_key(), IntMap::from_iter([(0, 200)])),
+            ]);
+            let typed = FeeRefunds::from_typed_storage_removal(
+                removal,
+                &owners,
+                3,
+                20,
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+            )
+            .expect("should create fee refunds");
+
+            assert!(matches!(
+                typed.ensure_identity_owners_only(),
+                Err(ProtocolError::CorruptedCodeExecution(_))
+            ));
+
+            let identities_only = FeeRefunds::from_storage_removal(
+                BytesPerEpochByIdentifier::from_iter([(
+                    identity.removal_key(),
+                    IntMap::from_iter([(0, 100)]),
+                )]),
+                3,
+                20,
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+            )
+            .expect("should create fee refunds");
+            identities_only
+                .ensure_identity_owners_only()
+                .expect("identity owners pass");
+
+            let unowned = FeeRefunds(
+                CreditsPerEpochByIdentifier::from_iter([(
+                    [4u8; 32],
+                    CreditsPerEpoch::from_iter([(0, 100)]),
+                )]),
+                RefundOwnersByIdentifier::new(),
+            );
+            assert!(matches!(
+                unowned.ensure_identity_owners_only(),
                 Err(ProtocolError::CorruptedCodeExecution(_))
             ));
         }

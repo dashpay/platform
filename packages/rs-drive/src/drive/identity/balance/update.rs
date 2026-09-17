@@ -530,6 +530,62 @@ mod tests {
         use nohash_hasher::IntMap;
         use std::collections::BTreeMap;
 
+        /// The shipped consumer reads refund carrier keys as identity ids.
+        /// A bucket owned refund can only reach it under a generation that
+        /// predates typed owners; it must halt there, never credit anyone.
+        #[test]
+        fn should_fail_closed_on_a_bucket_owned_refund() {
+            let drive = setup_drive_with_initial_state_structure(None);
+
+            let platform_version = PlatformVersion::latest();
+
+            let identity = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
+                .expect("expected to create an identity");
+            let bucket = RefundOwner::ContractBucket {
+                contract_id: [7; 32].into(),
+                position: 1,
+            };
+
+            // the payer's own refund keeps its balance change non-zero, so
+            // the consumer goes on to the other refunds instead of
+            // returning early
+            let refunds_per_epoch_by_identifier: CreditsPerEpochByIdentifier =
+                BTreeMap::from_iter([
+                    (
+                        identity.id().to_buffer(),
+                        IntMap::from_iter([(GENESIS_EPOCH_INDEX, 100000)]),
+                    ),
+                    (
+                        bucket.removal_key(),
+                        IntMap::from_iter([(GENESIS_EPOCH_INDEX, 200000)]),
+                    ),
+                ]);
+            let refund_owners = BTreeMap::from_iter([
+                (
+                    identity.id().to_buffer(),
+                    RefundOwner::Identity(identity.id()),
+                ),
+                (bucket.removal_key(), bucket),
+            ]);
+
+            let fee_result = FeeResult {
+                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier, refund_owners),
+                ..Default::default()
+            };
+            let fee_change = fee_result.into_balance_change(identity.id());
+
+            let result = drive.apply_balance_change_from_fee_to_identity_operations(
+                fee_change,
+                None,
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ));
+        }
+
         #[test]
         fn should_do_nothing_if_there_is_no_balance_change() {
             let drive = setup_drive_with_initial_state_structure(None);

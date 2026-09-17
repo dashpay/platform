@@ -14,7 +14,16 @@ impl StorageFlags {
     /// A replace merges the old flags into the new ones with `UseTheirs`, so
     /// new flags naming a different owner transfer the bytes to that owner.
     /// That holds across kinds: an identity can hand bytes to a contract
-    /// bucket and a bucket to an identity.
+    /// bucket and a bucket to an identity, and it holds for every replace
+    /// shape, including one that moves no bytes (the crate keeps the old
+    /// owner there; this generation transfers, so that a replace GroveDB
+    /// first priced as a shrink resolves the same way when it is priced
+    /// again as same size).
+    ///
+    /// GroveDB prices a replace with the old flags attached and re-prices
+    /// only when this closure reports a change, so a change of header width
+    /// (35 bytes for an identity owner, 37 for a bucket owner) is reported
+    /// even when the merged flags already equal the proposed ones.
     pub fn update_element_flags_typed(
         cost: &StorageCost,
         old_flags: Option<ElementFlags>,
@@ -45,7 +54,11 @@ impl StorageFlags {
                     cost.added_bytes,
                     MergingOwnersStrategy::UseTheirs,
                 )?;
-                Ok(Self::replace_if_changed(combined_storage_flags, new_flags))
+                Ok(Self::replace_and_report(
+                    &old_flags,
+                    combined_storage_flags,
+                    new_flags,
+                ))
             }
             OperationStorageTransitionType::OperationUpdateSmallerSize => {
                 let combined_storage_flags = old_storage_flags.combine_removed_bytes(
@@ -53,24 +66,39 @@ impl StorageFlags {
                     &cost.removed_bytes,
                     MergingOwnersStrategy::UseTheirs,
                 )?;
-                Ok(Self::replace_if_changed(combined_storage_flags, new_flags))
+                Ok(Self::replace_and_report(
+                    &old_flags,
+                    combined_storage_flags,
+                    new_flags,
+                ))
             }
             OperationStorageTransitionType::OperationUpdateSameSize => {
-                // a same-size update keeps the old flags
-                *new_flags = old_storage_flags.to_element_flags();
-                Ok(true)
+                let combined_storage_flags = old_storage_flags
+                    .combine_same_size(new_storage_flags, MergingOwnersStrategy::UseTheirs)?;
+                Ok(Self::replace_and_report(
+                    &old_flags,
+                    combined_storage_flags,
+                    new_flags,
+                ))
             }
             _ => Ok(false),
         }
     }
 
-    fn replace_if_changed(combined: StorageFlags, new_flags: &mut ElementFlags) -> bool {
+    /// Writes the combined flags over the proposed ones and reports whether
+    /// GroveDB has to price the element again: when the bytes changed, or
+    /// when the flags kept their bytes but differ in width from the old
+    /// flags the replace was priced with.
+    fn replace_and_report(
+        old_flags: &ElementFlags,
+        combined: StorageFlags,
+        new_flags: &mut ElementFlags,
+    ) -> bool {
         let combined_flags = combined.to_element_flags();
-        if combined_flags == *new_flags {
-            false
-        } else {
+        let changed = combined_flags != *new_flags;
+        if changed {
             *new_flags = combined_flags;
-            true
         }
+        changed || old_flags.len() != new_flags.len()
     }
 }
