@@ -97,18 +97,45 @@ export interface DataContractJSON {
 }
 
 /**
- * DataContract configuration.
+ * DataContract configuration, format version 0: the generation contracts
+ * registered before protocol version 11 carry. Mirrors the rs-dpp
+ * `DataContractConfig::V0` wire shape one to one.
+ *
+ * The key requirements are `StorageKeyRequirements` values (0 unique,
+ * 1 multiple, 2 multiple reference to latest). An absent requirement is
+ * `undefined` in object form (the `config` getter) and `null` in JSON form
+ * (`toJSON`).
  */
-export interface DataContractConfig {
+export interface DataContractConfigV0 {
+    $formatVersion: '0';
     canBeDeleted: boolean;
     readonly: boolean;
     keepsHistory: boolean;
     documentsKeepHistoryContractDefault: boolean;
     documentsMutableContractDefault: boolean;
     documentsCanBeDeletedContractDefault: boolean;
-    requiresIdentityEncryptionBoundedKey?: number;
-    requiresIdentityDecryptionBoundedKey?: number;
+    requiresIdentityEncryptionBoundedKey?: number | null;
+    requiresIdentityDecryptionBoundedKey?: number | null;
 }
+
+/**
+ * DataContract configuration, format version 1: the current generation.
+ * Adds `sizedIntegerTypes` to the V0 fields.
+ */
+export interface DataContractConfigV1 extends Omit<DataContractConfigV0, '$formatVersion'> {
+    $formatVersion: '1';
+    sizedIntegerTypes: boolean;
+}
+
+/**
+ * DataContract configuration as the runtime exposes it: the tagged union of
+ * the shipped generations. Contracts already in state may carry either tag.
+ *
+ * `setConfig(config, platformVersion)` selects the configuration generation
+ * from the platform version it is given, not from the `$formatVersion` in
+ * the input; the tag in the input is ignored.
+ */
+export type DataContractConfig = DataContractConfigV0 | DataContractConfigV1;
 "#;
 
 #[wasm_bindgen]
