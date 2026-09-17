@@ -1,0 +1,49 @@
+use crate::drive::votes::paths::{readiness_round_tree_path, READINESS_ROUND_REPORTS_TREE_KEY};
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::DirectQueryType;
+use dpp::version::PlatformVersion;
+use grovedb::{Element, TransactionArg};
+
+impl Drive {
+    pub(super) fn fetch_readiness_round_raw_count_operations_v0(
+        &self,
+        contract_id: [u8; 32],
+        round_id: [u8; 32],
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<u64, Error> {
+        let path = readiness_round_tree_path(&contract_id, &round_id);
+        let element = match self.grove_get_raw_optional(
+            (&path).into(),
+            &[READINESS_ROUND_REPORTS_TREE_KEY],
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            drive_operations,
+            &platform_version.drive,
+        ) {
+            Ok(element) => element,
+            Err(Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    grovedb::Error::PathParentLayerNotFound(_)
+                        | grovedb::Error::PathKeyNotFound(_)
+                        | grovedb::Error::InvalidParentLayerPath(_)
+                ) =>
+            {
+                None
+            }
+            Err(e) => return Err(e),
+        };
+        match element {
+            None => Ok(0),
+            Some(Element::CountTree(_, count, _)) => Ok(count),
+            Some(_) => Err(Error::Drive(DriveError::CorruptedElementType(
+                "readiness reports tree was present but was not a count tree",
+            ))),
+        }
+    }
+}

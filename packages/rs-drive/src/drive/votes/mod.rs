@@ -40,6 +40,10 @@ pub mod tree_path_storage_form;
 #[cfg(feature = "server")]
 mod fetch;
 
+/// Compilation readiness rounds, reports, cursors, deadlines and funds
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod readiness;
+
 /// A trait to convert the vote to a tree path usable in grovedb
 pub trait TreePath {
     /// The tree path function

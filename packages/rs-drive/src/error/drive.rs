@@ -218,4 +218,8 @@ pub enum DriveError {
     /// Checkpoint not found for specified block height
     #[error("checkpoint not found for block height: {0}")]
     CheckpointNotFound(u64),
+
+    /// A compilation readiness round the state names does not exist
+    #[error("readiness round missing: {0}")]
+    ReadinessRoundMissing(String),
 }

@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 
@@ -43,9 +44,10 @@ impl Drive {
             .add_initial_vote_tree_main_structure_operations
         {
             0 => Drive::add_initial_vote_tree_main_structure_operations_v0(batch),
+            1 => Drive::add_initial_vote_tree_main_structure_operations_v1(batch),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_initial_vote_tree_main_structure_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
