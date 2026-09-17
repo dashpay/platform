@@ -184,7 +184,12 @@ pub fn identity_top_up_from_shielded_extra_sighash_data_v0(
 ///   || for each key in supplied order: key_id (u32 LE) || purpose (u8) || security_level (u8)
 ///   || key_type (u8) || key_data_len (u16 LE) || key_data || read_only (u8)
 ///   || contract_bounds (tag u8: 0=None, 1=SingleContract id(32), 2=SingleContractDocumentType
-///   id(32) name_len(u16 LE) name)`.
+///   id(32) name_len(u16 LE) name, 3=ContractGroup id(32))`.
+///
+/// Tag 3 is never reached: `IdentityCreateFromShieldedPool` refuses a key bound to a contract
+/// group before this preimage is built (consensus in `validate_shielded_proof` v1, the builder
+/// up front). The arm only keeps the encoder total without a panic on a block-execution path,
+/// so the v0 bytes of every reachable input are unchanged.
 ///
 /// `IdentityCreateFromShieldedPool` carries NO platform identity signature: authorization is 100%
 /// the Orchard proof + per-action spend-auth signatures + binding signature over this sighash. The
@@ -277,6 +282,11 @@ pub fn identity_create_from_shielded_extra_sighash_data_v0(
                 let name = document_type_name.as_bytes();
                 data.extend_from_slice(&(name.len() as u16).to_le_bytes());
                 data.extend_from_slice(name);
+            }
+            Some(ContractBounds::ContractGroup { id }) => {
+                // Unreachable: refused before the preimage is built (see the layout doc).
+                data.push(3u8);
+                data.extend_from_slice(id.as_bytes());
             }
         }
     }
@@ -520,6 +530,26 @@ mod tests {
                 ),
                 "contract_bounds must be bound"
             );
+        }
+
+        #[test]
+        fn should_encode_the_reserved_contract_group_tag_at_the_end_of_the_key() {
+            use crate::identity::identity_public_key::contract_bounds::ContractBounds;
+            use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+            // Consensus and the builder refuse a group-bound key before this preimage is built;
+            // the arm exists so the encoder stays total. Pin what it writes.
+            let mut key = mk_key(0, 0xAA);
+            key.set_contract_bounds(Some(ContractBounds::ContractGroup {
+                id: platform_value::Identifier::new([0x44; 32]),
+            }));
+            let data = identity_create_from_shielded_extra_sighash_data(
+                &[0x11u8; 32],
+                10_000_000_000,
+                &PlatformAddress::P2pkh([0x01u8; 20]),
+                &[key],
+            );
+            assert_eq!(data[data.len() - 33], 3);
+            assert_eq!(&data[data.len() - 32..], &[0x44u8; 32]);
         }
     }
 }

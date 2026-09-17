@@ -20,6 +20,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
+use dpp::identity::PartialIdentity;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
 use dpp::serialization::Signable;
 use dpp::state_transition::StateTransition;
@@ -68,6 +69,67 @@ pub trait StateTransitionActionTransformer {
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+}
+
+/// Transforms a state transition into its action when the translation depends on who signed it.
+///
+/// The action is the state-based translation of the transition, and part of that state can hang
+/// on the signing key: a batch signed by an AUTHENTICATION key bound to a contract group needs
+/// the group memberships of the contracts it touches, and no other batch does. This trait hands
+/// the transformer the signer's already loaded identity, so that state is read only when it is
+/// needed. [`StateTransitionActionTransformer`] stays as it is, per its versioning note; every
+/// transition other than a batch is transformed through it.
+pub trait StateTransitionSignerAwareActionTransformer {
+    /// Like [`StateTransitionActionTransformer::transform_into_action`], with the identity the
+    /// signature was validated against, when the caller holds one.
+    #[allow(clippy::too_many_arguments)] // The unversioned trait's inputs plus the signer.
+    fn transform_into_action_for_signer<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
+        signer_identity: Option<&PartialIdentity>,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+}
+
+impl StateTransitionSignerAwareActionTransformer for StateTransition {
+    fn transform_into_action_for_signer<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
+        signer_identity: Option<&PartialIdentity>,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        match self {
+            StateTransition::Batch(st) => st.transform_into_action_for_signer(
+                platform,
+                block_info,
+                remaining_address_input_balances,
+                signer_identity,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+            _ => self.transform_into_action(
+                platform,
+                block_info,
+                remaining_address_input_balances,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+        }
+    }
 }
 
 impl StateTransitionActionTransformer for StateTransition {

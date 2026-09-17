@@ -45,7 +45,8 @@ pub struct ParsedIdentityUpdatePublicKeyFFI {
     pub read_only: bool,
     pub data_ptr: *mut u8,
     pub data_len: usize,
-    /// 0 = none, 1 = SingleContract, 2 = SingleContractDocumentType.
+    /// 0 = none, 1 = SingleContract, 2 = SingleContractDocumentType,
+    /// 3 = ContractGroup (the id is the contract group id).
     pub contract_bounds_kind: u8,
     pub contract_bounds_id: [u8; 32],
     pub contract_bounds_document_type: *mut c_char,
@@ -119,6 +120,7 @@ fn encode_contract_bounds(
                 ),
             )),
         },
+        Some(ContractBounds::ContractGroup { id }) => Ok((3u8, id.to_buffer(), ptr::null_mut())),
         None => Ok((0u8, [0u8; 32], ptr::null_mut())),
     }
 }

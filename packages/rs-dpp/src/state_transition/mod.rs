@@ -69,6 +69,9 @@ use crate::fee::Credits;
 ))]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(feature = "state-transition-signing")]
+use crate::identity::identity_public_key::contract_bounds::BatchedTransitionBoundsCheck;
+use crate::identity::identity_public_key::contract_bounds::ContractBounds;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::identity::Purpose;
@@ -112,12 +115,15 @@ use crate::state_transition::errors::WrongPublicKeyPurposeError;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
 };
+use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::{
     IdentityCreateFromAddressesTransition, IdentityCreateFromAddressesTransitionSignable,
 };
+use crate::state_transition::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_shielded_pool_transition::{
     IdentityCreateFromShieldedPoolTransition, IdentityCreateFromShieldedPoolTransitionSignable,
 };
+use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,
 };
@@ -140,11 +146,14 @@ use crate::state_transition::identity_topup_from_addresses_transition::{
 use crate::state_transition::identity_topup_transition::{
     IdentityTopUpTransition, IdentityTopUpTransitionSignable,
 };
+use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use crate::state_transition::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
+use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::shield_from_asset_lock_transition::{
     ShieldFromAssetLockTransition, ShieldFromAssetLockTransitionSignable,
 };
@@ -845,6 +854,24 @@ pub struct StateTransitionSigningOptions {
     pub allow_signing_with_any_purpose: bool,
 }
 
+/// The active range of a transition carrying `keys`: from protocol version 14 when one of them
+/// is bound to a contract group, `otherwise` when none is.
+fn active_version_range_for_keys_in_creation(
+    keys: &[IdentityPublicKeyInCreation],
+    otherwise: RangeInclusive<ProtocolVersion>,
+) -> RangeInclusive<ProtocolVersion> {
+    if keys.iter().any(|key| {
+        matches!(
+            key.contract_bounds(),
+            Some(ContractBounds::ContractGroup { .. })
+        )
+    }) {
+        14..=LATEST_VERSION
+    } else {
+        otherwise
+    }
+}
+
 impl StateTransition {
     #[allow(unused_variables)]
     pub fn deserialize_from_bytes_untrusted_in_version(
@@ -909,14 +936,26 @@ impl StateTransition {
                 BatchTransition::V0(_) => ALL_VERSIONS,
                 BatchTransition::V1(_) => 9..=LATEST_VERSION,
             },
-            StateTransition::IdentityCreate(_)
-            | StateTransition::IdentityTopUp(_)
+            // A key bound to a contract group exists from protocol version 14, so a transition
+            // carrying one is inactive before that: an earlier version rejects it without
+            // charging, exactly as a binary that cannot decode the variant does.
+            StateTransition::IdentityCreate(st) => {
+                active_version_range_for_keys_in_creation(st.public_keys(), ALL_VERSIONS)
+            }
+            StateTransition::IdentityUpdate(st) => {
+                active_version_range_for_keys_in_creation(st.public_keys_to_add(), ALL_VERSIONS)
+            }
+            StateTransition::IdentityCreateFromAddresses(st) => {
+                active_version_range_for_keys_in_creation(st.public_keys(), 11..=LATEST_VERSION)
+            }
+            StateTransition::IdentityCreateFromShieldedPool(st) => {
+                active_version_range_for_keys_in_creation(st.public_keys(), 12..=LATEST_VERSION)
+            }
+            StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
-            | StateTransition::IdentityUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_) => ALL_VERSIONS,
             StateTransition::IdentityCreditTransferToAddresses(_)
-            | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::AddressFundingFromAssetLock(_)
@@ -925,8 +964,7 @@ impl StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_)
-            | StateTransition::IdentityCreateFromShieldedPool(_) => 12..=LATEST_VERSION,
+            | StateTransition::ShieldedWithdrawal(_) => 12..=LATEST_VERSION,
             StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_) => 14..=LATEST_VERSION,
         }
@@ -1554,7 +1592,8 @@ impl StateTransition {
 
     /// A contract-bound AUTHENTICATION key may only sign a Batch whose members are all inside
     /// its bounds. Consensus enforces the same rule from the stored key; checking here saves the
-    /// round trip when the signing API is handed the key metadata.
+    /// round trip when the signing API is handed the key metadata. A contract group bound is
+    /// left to consensus, which reads the group's memberships.
     #[cfg(feature = "state-transition-signing")]
     fn verify_identity_key_bounds(
         &self,
@@ -1569,10 +1608,9 @@ impl StateTransition {
         match self {
             StateTransition::Batch(batch) => {
                 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-                if batch
-                    .transitions_iter()
-                    .all(|member| bounds.allows_batched_transition(member))
-                {
+                if batch.transitions_iter().all(|member| {
+                    bounds.check_batched_transition(member) != BatchedTransitionBoundsCheck::Denied
+                }) {
                     Ok(())
                 } else {
                     Err(ProtocolError::ConsensusError(Box::new(
@@ -3437,6 +3475,86 @@ mod tests {
     // A version 1 data contract create carries contract groups, which only exist from
     // protocol version 14. Below that a node must reject it rather than create the
     // contract and drop the group data.
+    #[test]
+    fn should_gate_identity_transitions_carrying_a_contract_group_bound_key_to_protocol_version_14()
+    {
+        use crate::identity::contract_bounds::ContractBounds;
+        use crate::identity::{KeyType, Purpose, SecurityLevel};
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::errors::StateTransitionError;
+        use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+        use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+
+        let key = |contract_bounds| {
+            IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+                id: 1,
+                key_type: KeyType::ECDSA_SECP256K1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds,
+                read_only: false,
+                data: BinaryData::new(vec![2u8; 33]),
+                signature: BinaryData::default(),
+            })
+        };
+        let contract_bound = Some(ContractBounds::SingleContract {
+            id: Identifier::from([9u8; 32]),
+        });
+        let group_bound = Some(ContractBounds::ContractGroup {
+            id: Identifier::from([9u8; 32]),
+        });
+        let create = |bounds| {
+            StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+                IdentityCreateTransitionV0 {
+                    identity_id: Identifier::from([3u8; 32]),
+                    public_keys: vec![key(bounds)],
+                    ..Default::default()
+                },
+            ))
+        };
+        let update = |bounds| {
+            let StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(mut v0)) =
+                sample_identity_update_st()
+            else {
+                panic!("expected a version 0 identity update");
+            };
+            v0.add_public_keys = vec![key(bounds)];
+            StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(v0))
+        };
+
+        assert_eq!(
+            create(contract_bound.clone()).active_version_range(),
+            ALL_VERSIONS
+        );
+        assert_eq!(
+            create(group_bound.clone()).active_version_range(),
+            14..=LATEST_VERSION
+        );
+        assert_eq!(update(contract_bound).active_version_range(), ALL_VERSIONS);
+        assert_eq!(
+            update(group_bound.clone()).active_version_range(),
+            14..=LATEST_VERSION
+        );
+
+        let bytes = PlatformSerializable::serialize_to_bytes(&update(group_bound))
+            .expect("serialize succeeds");
+        let version_13 = PlatformVersion::get(13).expect("platform version 13 exists");
+        let err = StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_13)
+            .expect_err("a contract group bound key is not active at protocol version 13");
+        assert!(
+            matches!(
+                err,
+                ProtocolError::StateTransitionError(
+                    StateTransitionError::StateTransitionIsNotActiveError { .. }
+                )
+            ),
+            "{err:?}"
+        );
+        let version_14 = PlatformVersion::get(14).expect("platform version 14 exists");
+        StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14)
+            .expect("a contract group bound key is active at protocol version 14");
+    }
+
     #[test]
     fn test_data_contract_create_v1_is_not_active_before_protocol_version_14() {
         use crate::serialization::PlatformSerializable;

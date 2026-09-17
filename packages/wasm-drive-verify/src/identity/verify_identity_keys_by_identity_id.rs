@@ -221,6 +221,13 @@ fn serialize_identity_public_key(key: &IdentityPublicKey) -> Result<Object, JsVa
                             Reflect::set(&bounds_obj, &JsValue::from_str("documentTypeName"), &JsValue::from_str(document_type_name))
                                 .map_err(|_| JsValue::from_str("Failed to set document type name"))?;
                         }
+                        dpp::identity::identity_public_key::contract_bounds::ContractBounds::ContractGroup { id } => {
+                            Reflect::set(&bounds_obj, &JsValue::from_str("type"), &JsValue::from_str("ContractGroup"))
+                                .map_err(|_| JsValue::from_str("Failed to set bounds type"))?;
+                            let id_array = Uint8Array::from(id.as_slice());
+                            Reflect::set(&bounds_obj, &JsValue::from_str("id"), &id_array)
+                                .map_err(|_| JsValue::from_str("Failed to set bounds id"))?;
+                        }
                     }
                     Reflect::set(&obj, &JsValue::from_str("contractBounds"), &bounds_obj)
                         .map_err(|_| JsValue::from_str("Failed to set contract bounds"))?;

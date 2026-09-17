@@ -1,5 +1,6 @@
 use super::signature::ContractBoundedKeyNonBatchErrorWasm;
 use super::signature::ContractBoundedKeyOutOfBoundsErrorWasm;
+use crate::errors::consensus::basic::identity::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationErrorWasm;
 use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm,
     InvalidSignaturePublicKeyPurposeErrorWasm, JsonSchemaErrorWasm,
@@ -36,6 +37,7 @@ use crate::errors::consensus::state::identity::{
 };
 use dpp::consensus::basic::decode::VersionError;
 use dpp::consensus::basic::BasicError::{
+    ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError,
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
@@ -682,6 +684,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         IdentityAssetLockTransactionTooManyInputsError(e) => {
             IdentityAssetLockTransactionTooManyInputsErrorWasm::from(e).into()
+        }
+        ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError(e) => {
+            ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationErrorWasm::from(e).into()
         }
         InvalidInstantAssetLockProofError(e) => {
             InvalidInstantAssetLockProofErrorWasm::from(e).into()

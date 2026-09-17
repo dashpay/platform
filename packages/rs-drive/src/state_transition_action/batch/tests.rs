@@ -2543,6 +2543,7 @@ fn make_batch_v0() -> BatchTransitionActionV0 {
         owner_id: Identifier::from([0x11; 32]),
         transitions: vec![],
         user_fee_increase: 10,
+        ..Default::default()
     }
 }
 

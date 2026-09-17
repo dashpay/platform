@@ -3363,7 +3363,7 @@ fn build_identity_key_restore(
     let read_only = env.get_field(holder, "readOnly", "Z")?.z()?;
     let data = read_bytes_field_vec(env, holder, "data")?;
     let contract_bounds_kind = env.get_field(holder, "contractBoundsKind", "B")?.b()? as u8;
-    // `contractBoundsId` is 32 bytes for kind 1/2, empty for kind 0 — the
+    // `contractBoundsId` is 32 bytes for kinds 1, 2 and 3, empty for kind 0 — the
     // optional-id reader maps the empty sentinel to the all-zero id.
     let contract_bounds_id = read_optional_id32_field(env, holder, "contractBoundsId")?;
     // Doc-type C-string only meaningful for kind 2; read as a nullable

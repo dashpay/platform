@@ -6429,6 +6429,9 @@ unsafe fn build_identity_public_keys(
                     }
                 }
             }
+            3 => Some(ContractBounds::ContractGroup {
+                id: row.contract_bounds_id.into(),
+            }),
             _ => None,
         };
 

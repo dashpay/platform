@@ -1121,3 +1121,47 @@ fn executed_transition_result_proof_roundtrips() {
         );
     }
 }
+
+/// `validate_shielded_proof` v1 refuses a key bound to a contract group before it verifies
+/// proofs of possession or the bundle, and before the Orchard sighash preimage is built.
+#[test]
+fn should_refuse_a_key_bound_to_a_contract_group_before_verifying_the_proof() {
+    use crate::execution::validation::state_transition::processor::traits::shielded_proof::StateTransitionShieldedProofValidationV0;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::prelude::Identifier;
+    use dpp::state_transition::StateTransition;
+
+    let version = PlatformVersion::latest();
+    let bound_key = IdentityPublicKeyInCreationV0 {
+        id: 1,
+        key_type: KeyType::ECDSA_HASH160,
+        purpose: Purpose::AUTHENTICATION,
+        security_level: SecurityLevel::HIGH,
+        contract_bounds: Some(ContractBounds::ContractGroup {
+            id: Identifier::from([0x73; 32]),
+        }),
+        data: vec![0x72; 20].into(),
+        read_only: false,
+        signature: Default::default(),
+    };
+    let st: StateTransition =
+        transition(vec![master_key(), bound_key.into()], vec![action(30)]).into();
+    let result = st
+        .validate_shielded_proof(version)
+        .expect("a refusal is a consensus error, not an internal one");
+    assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+    assert_eq!(result.errors[0].code(), 10535);
+
+    // Without the group bound the same transition gets past the refusal and fails later, on
+    // its placeholder proofs of possession.
+    let st: StateTransition = transition(vec![master_key()], vec![action(30)]).into();
+    let result = st
+        .validate_shielded_proof(version)
+        .expect("expected a consensus result");
+    assert!(
+        result.errors.iter().all(|error| error.code() != 10535),
+        "{:?}",
+        result.errors
+    );
+}

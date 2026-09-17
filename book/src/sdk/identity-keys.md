@@ -153,7 +153,8 @@ key.
 
 ## Contract Bounds
 
-A key can optionally be restricted to operations within a specific data contract:
+A key can optionally be restricted to one data contract, one document type of a
+contract, or every member of a contract group:
 
 ```rust
 pub enum ContractBounds {
@@ -165,17 +166,30 @@ pub enum ContractBounds {
         id: Identifier,
         document_type_name: String,
     },
+
+    /// Key can only be used within the members of a contract group (protocol version 14)
+    ContractGroup { id: Identifier },
 }
 ```
 
-When `contract_bounds` is set:
-- The key can only sign state transitions that target the specified contract.
-- With `SingleContractDocumentType`, it is further restricted to a specific document
-  type within that contract.
-- The key cannot be used for general-purpose operations outside the bound contract.
+What the bounds mean depends on the key's purpose:
+
+- ENCRYPTION and DECRYPTION keys: a hint to clients about which contract the key serves.
+  The bound contract, or document type, must opt in with
+  `requiresIdentityEncryptionBoundedKey` or `requiresIdentityDecryptionBoundedKey`, which
+  also fixes the storage rule (unique, multiple, or multiple with a pointer to the latest).
+  These keys cannot be bound to a group.
+- AUTHENTICATION keys (protocol version 14): a restriction consensus enforces. The key
+  may sign only batch transitions, and every member must be inside the bounds: on the
+  bound contract, of the bound document type, or, for a group bound, a member of the
+  group (the whole contract, the document type, or the token). Any contract or group may
+  be bound, the key cannot be MASTER, and a member outside the bounds is a paid failure.
+
+See `docs/protocol/contract-bound-authentication-keys.md` for the exact rules and errors.
 
 This enables fine-grained delegation: an identity owner can create a key that is only
-allowed to interact with one specific dApp, limiting exposure if that key is compromised.
+allowed to interact with one specific dApp, or with one project's set of contracts,
+limiting exposure if that key is compromised.
 
 ## Storage in GroveDB
 

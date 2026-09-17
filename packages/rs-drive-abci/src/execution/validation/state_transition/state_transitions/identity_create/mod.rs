@@ -663,6 +663,201 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_create_identity_with_an_authentication_key_bound_to_a_contract_group() {
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+        use dpp::consensus::codes::ErrorWithCode;
+        use dpp::contract_group::{ContractGroupInfo, ContractGroupRegistration};
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::prelude::Identifier;
+        for (protocol, group_exists) in [(13, false), (14, false), (14, true)] {
+            let platform_version = PlatformVersion::get(protocol).unwrap();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_initial_protocol_version(protocol)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let mut signer = SimpleSigner::default();
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let (master_key, master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key(
+                    0,
+                    Some(58),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+
+            signer.add_identity_public_key(master_key.clone(), master_private_key);
+
+            let (mut key, private_key) =
+                IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                    1,
+                    Some(999),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+
+            use dpp::identity::contract_bounds::ContractBounds;
+            let contract_group_id = Identifier::from([0x47; 32]);
+            if group_exists {
+                let info: ContractGroupInfo = (
+                    Identifier::from([0x46; 32]),
+                    ContractGroupRegistration {
+                        admins: Default::default(),
+                        name: None,
+                        description: None,
+                    },
+                )
+                    .into();
+                platform
+                    .drive
+                    .insert_contract_group(
+                        contract_group_id,
+                        &info,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to register the group");
+            }
+            let bounds = ContractBounds::ContractGroup {
+                id: contract_group_id,
+            };
+            let IdentityPublicKey::V0(ref mut key_v0) = key;
+            key_v0.contract_bounds = Some(bounds.clone());
+            signer.add_identity_public_key(key.clone(), private_key);
+
+            let (_, pk) = ECDSA_SECP256K1
+                .random_public_and_private_key_data(&mut rng, platform_version)
+                .unwrap();
+
+            let asset_lock_proof = instant_asset_lock_proof_fixture(
+                Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
+                None,
+            );
+
+            let identifier = asset_lock_proof
+                .create_identifier()
+                .expect("expected an identifier");
+
+            let identity: Identity = IdentityV0 {
+                id: identifier,
+                public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
+                balance: 1000000000,
+                revision: 0,
+            }
+            .into();
+
+            let identity_create_transition: StateTransition =
+                IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                    &identity,
+                    asset_lock_proof,
+                    pk.as_slice(),
+                    &signer,
+                    &NativeBlsModule,
+                    0,
+                    platform_version,
+                )
+                .await
+                .expect("expected an identity create transition");
+
+            let identity_create_serialized_transition = identity_create_transition
+                .serialize_to_bytes()
+                .expect("serialized state transition");
+
+            let before = platform
+                .drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .unwrap();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![identity_create_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            if protocol == 13 {
+                // A transition carrying a group-bound key is not active before protocol version
+                // 14: refused by the `active_version_range` check at decode, before any
+                // consensus validation, with nothing charged and nothing written.
+                assert_matches!(processing_result.execution_results().as_slice(), [StateTransitionExecutionResult::InternalError(message)] if message.contains("IdentityCreate") && message.contains("not active"));
+                assert_eq!(
+                    platform
+                        .drive
+                        .grove
+                        .root_hash(None, &platform_version.drive.grove_version)
+                        .unwrap()
+                        .unwrap(),
+                    before
+                );
+                continue;
+            }
+            if !group_exists {
+                // The group is read in state validation: a paid failure on the asset lock.
+                assert_matches!(processing_result.execution_results().as_slice(), [StateTransitionExecutionResult::PaidConsensusError { error, .. }] if error.code() == 41001);
+                continue;
+            }
+            assert_eq!(processing_result.valid_count(), 1);
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+
+            let identity_balance = platform
+                .drive
+                .fetch_identity_balance(identity.id().into_buffer(), None, platform_version)
+                .expect("expected to get identity balance")
+                .expect("expected there to be an identity balance for this identity");
+
+            assert!(identity_balance > 0);
+            use drive::drive::identity::key::fetch::IdentityKeysRequest;
+            let fetched = platform
+                .drive
+                .fetch_identity_keys_as_partial_identity(
+                    IdentityKeysRequest::new_specific_key_query(&identity.id().to_buffer(), 1),
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                fetched
+                    .loaded_public_keys
+                    .get(&1)
+                    .unwrap()
+                    .contract_bounds(),
+                Some(&bounds)
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn test_identity_create_asset_lock_reuse_after_issue_first_protocol_version() {
         let platform_version = PlatformVersion::first();
         let platform_config = PlatformConfig {
