@@ -37,7 +37,7 @@ impl DataContractCreateTransitionActionV1 {
         let contract_group = contract_group.map(|registration| {
             (
                 generate_contract_group_id(&data_contract.owner_id(), identity_nonce),
-                ContractGroupInfo::from(registration),
+                ContractGroupInfo::from((data_contract.owner_id(), registration)),
             )
         });
         Ok(DataContractCreateTransitionActionV1 {
@@ -68,7 +68,7 @@ impl DataContractCreateTransitionActionV1 {
         let contract_group = value.contract_group.as_ref().map(|registration| {
             (
                 generate_contract_group_id(&data_contract.owner_id(), value.identity_nonce),
-                ContractGroupInfo::from(registration),
+                ContractGroupInfo::from((data_contract.owner_id(), registration)),
             )
         });
         Ok(DataContractCreateTransitionActionV1 {

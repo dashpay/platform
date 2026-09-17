@@ -236,7 +236,7 @@ pub enum RootTree {
     /// Contract groups: identity-owned sets of contracts, contract document types and contract
     /// tokens, with a backwards index from each member contract to its groups (protocol
     /// version 14).
-    ContractGroups = 68,
+    ContractGroups = 124,
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -310,7 +310,7 @@ impl TryFrom<u8> for RootTree {
             120 => Ok(RootTree::Versions),
             112 => Ok(RootTree::Votes),
             88 => Ok(RootTree::GroupActions),
-            68 => Ok(RootTree::ContractGroups),
+            124 => Ok(RootTree::ContractGroups),
             _ => Err(Error::Drive(DriveError::NotSupported(
                 "unknown root tree item",
             ))),
@@ -339,7 +339,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::Versions => &[120],
             RootTree::Votes => &[112],
             RootTree::GroupActions => &[88],
-            RootTree::ContractGroups => &[68],
+            RootTree::ContractGroups => &[124],
         }
     }
 }

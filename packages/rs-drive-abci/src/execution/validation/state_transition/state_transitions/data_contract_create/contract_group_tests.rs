@@ -22,8 +22,11 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::IdentityNonce;
 use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV1;
+use dpp::state_transition::data_contract_create_transition::methods::{
+    DataContractCreateTransitionMethodsV0, DataContractCreateTransitionMethodsV1,
+};
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::tests::json_document::json_document_to_contract_with_ids;
 use drive::drive::contract_groups::types::{
@@ -68,9 +71,9 @@ fn membership(
     }
 }
 
-fn single_owner(owner_id: Identifier, name: &str) -> ContractGroupRegistration {
+fn single_owner(name: &str) -> ContractGroupRegistration {
     ContractGroupRegistration {
-        owner: ContractGroupOwner::SingleOwner(owner_id),
+        admins: BTreeSet::new(),
         name: Some(name.to_string()),
         description: None,
     }
@@ -180,7 +183,7 @@ async fn should_register_a_contract_group_and_join_it_in_the_same_create() {
         &key,
         contract,
         1,
-        Some(single_owner(owner_id, "dashpay")),
+        Some(single_owner("dashpay")),
         vec![membership(contract_group_id, ContractGroupMember::Contract)],
     )
     .await;
@@ -257,7 +260,7 @@ async fn should_let_an_owner_add_a_later_contract_by_document_type_and_token() {
         &key,
         fixture_contract(owner_id, 1),
         1,
-        Some(single_owner(owner_id, "suite")),
+        Some(single_owner("suite")),
         vec![],
     )
     .await;
@@ -403,7 +406,7 @@ async fn should_reject_joining_a_group_the_identity_does_not_own_as_a_paid_failu
         &alice_key,
         fixture_contract(alice.id(), 1),
         1,
-        Some(single_owner(alice.id(), "alice")),
+        Some(single_owner("alice")),
         vec![],
     )
     .await;
@@ -508,10 +511,7 @@ async fn should_let_the_owner_and_each_admin_add_members_and_refuse_outsiders() 
         fixture_contract(alice.id(), 1),
         1,
         Some(ContractGroupRegistration {
-            owner: ContractGroupOwner::OwnerAndAdmins {
-                owner: alice.id(),
-                admins: BTreeSet::from([bob.id()]),
-            },
+            admins: BTreeSet::from([bob.id()]),
             name: None,
             description: Some("owned by alice, administered by bob".to_string()),
         }),
@@ -582,54 +582,191 @@ async fn should_let_the_owner_and_each_admin_add_members_and_refuse_outsiders() 
 }
 
 #[tokio::test]
-async fn should_reject_a_registrant_who_is_not_the_owner_before_paying() {
+async fn should_reject_a_registration_naming_an_unknown_admin_as_a_paid_failure() {
+    let platform_version = PlatformVersion::latest();
     let mut platform = TestPlatformBuilder::new()
         .build_with_mock_rpc()
         .set_genesis_state();
     let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
-    let stranger = Identifier::from([9u8; 32]);
+    let contract_group_id = generate_contract_group_id(&identity.id(), 1);
+    let unknown_admin = Identifier::from([9u8; 32]);
 
     let transaction = platform.drive.grove.start_transaction();
     let nonce_before = identity_nonce(&platform, identity.id(), &transaction);
+    let bytes = create_transition_bytes(
+        &identity,
+        &signer,
+        &key,
+        fixture_contract(identity.id(), 1),
+        1,
+        Some(ContractGroupRegistration {
+            admins: BTreeSet::from([unknown_admin]),
+            name: None,
+            description: None,
+        }),
+        vec![],
+    )
+    .await;
+    assert_matches!(
+        process(&platform, bytes, &transaction),
+        StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::StateError(StateError::ContractGroupAdminNotFoundError(e)),
+            ..
+        } if *e.contract_group_id() == contract_group_id && *e.admin_id() == unknown_admin
+    );
+    assert_ne!(
+        identity_nonce(&platform, identity.id(), &transaction),
+        nonce_before,
+        "state failures are paid and bump the nonce"
+    );
+    assert!(platform
+        .drive
+        .fetch_contract_group_info(contract_group_id, Some(&transaction), platform_version)
+        .expect("expected to fetch the group info")
+        .is_none());
+}
 
-    // Being an admin is not enough: the registrant must be the owner.
-    for owner in [
-        ContractGroupOwner::SingleOwner(stranger),
-        ContractGroupOwner::OwnerAndAdmins {
-            owner: stranger,
-            admins: BTreeSet::from([identity.id()]),
-        },
-        ContractGroupOwner::OwnerAndAdmins {
-            owner: stranger,
-            admins: BTreeSet::from([Identifier::from([8u8; 32])]),
-        },
+/// Memberships are checked against what the contract already holds in state, so the rules
+/// keep holding if a later transition version lets a contract declare more. The state is
+/// prepared through Drive directly, since no transition can add to an existing contract yet.
+#[tokio::test]
+async fn should_reject_a_membership_the_contract_already_holds_as_a_paid_failure() {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = TestPlatformBuilder::new()
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+    let group_id = generate_contract_group_id(&identity.id(), 1);
+
+    let transaction = platform.drive.grove.start_transaction();
+    // The group exists, registered by an earlier create.
+    let bytes = create_transition_bytes(
+        &identity,
+        &signer,
+        &key,
+        fixture_contract(identity.id(), 1),
+        1,
+        Some(single_owner("existing")),
+        vec![],
+    )
+    .await;
+    assert_matches!(
+        process(&platform, bytes, &transaction),
+        StateTransitionExecutionResult::SuccessfulExecution { .. }
+    );
+
+    // Each case creates a different contract (the id follows the nonce), and each contract
+    // already holds a whole-contract membership of the group before its create arrives.
+    for (nonce, member, expected) in [
+        (2, ContractGroupMember::Contract, "duplicate"),
+        (
+            3,
+            ContractGroupMember::DocumentType(FIXTURE_DOCUMENT_TYPE.to_string()),
+            "redundant",
+        ),
     ] {
+        let contract = fixture_contract(identity.id(), nonce);
+        platform
+            .drive
+            .insert_contract_group_memberships(
+                contract.id(),
+                &[membership(group_id, ContractGroupMember::Contract)],
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to record the existing membership");
+
         let bytes = create_transition_bytes(
             &identity,
             &signer,
             &key,
-            fixture_contract(identity.id(), 1),
-            1,
-            Some(ContractGroupRegistration {
-                owner,
-                name: None,
-                description: None,
-            }),
-            vec![],
+            contract,
+            nonce,
+            None,
+            vec![membership(group_id, member)],
         )
         .await;
-        assert_matches!(
-            process(&platform, bytes, &transaction),
-            StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(
-                BasicError::ContractGroupRegistrantNotOwnerError(_)
-            ))
-        );
+        let result = process(&platform, bytes, &transaction);
+        match (expected, &result) {
+            (
+                "duplicate",
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error:
+                        ConsensusError::BasicError(BasicError::DuplicateContractGroupMembershipError(_)),
+                    ..
+                },
+            )
+            | (
+                "redundant",
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error:
+                        ConsensusError::BasicError(BasicError::RedundantContractGroupMembershipError(_)),
+                    ..
+                },
+            ) => {}
+            other => panic!("expected a paid {} failure, got {:?}", expected, other),
+        }
     }
-    assert_eq!(
-        identity_nonce(&platform, identity.id(), &transaction),
-        nonce_before,
-        "structure failures are not paid"
+}
+
+/// Version 0 stays valid at the latest version: a create without group data must still go
+/// through the whole pipeline, since clients built before protocol version 14 keep sending it.
+#[tokio::test]
+async fn should_still_process_a_version_0_create_at_the_latest_version() {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = TestPlatformBuilder::new()
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+    let contract = fixture_contract(identity.id(), 1);
+    let contract_id = contract.id();
+
+    let transaction = platform.drive.grove.start_transaction();
+    let transition = DataContractCreateTransition::new_from_data_contract(
+        contract,
+        1,
+        &identity.clone().into_partial_identity_info(),
+        key.id(),
+        &signer,
+        platform_version,
+        Some(0),
+    )
+    .await
+    .expect("expected to build a version 0 create transition");
+    assert_matches!(
+        transition,
+        StateTransition::DataContractCreate(DataContractCreateTransition::V0(_))
     );
+    let bytes = transition
+        .serialize_to_bytes()
+        .expect("expected to serialize the create transition");
+    assert_matches!(
+        process(&platform, bytes, &transaction),
+        StateTransitionExecutionResult::SuccessfulExecution { .. }
+    );
+    assert!(platform
+        .drive
+        .fetch_contract(
+            contract_id.to_buffer(),
+            None,
+            None,
+            Some(&transaction),
+            platform_version
+        )
+        .value
+        .expect("expected to fetch the contract")
+        .is_some());
+    assert!(platform
+        .drive
+        .fetch_contract_group_memberships_for_contract(
+            contract_id,
+            Some(&transaction),
+            platform_version,
+        )
+        .expect("expected to fetch the memberships")
+        .is_empty());
 }
 
 #[tokio::test]
@@ -648,10 +785,7 @@ async fn should_reject_malformed_registrations_and_memberships_in_basic_structur
     let registration_cases: Vec<(ContractGroupRegistration, fn(&BasicError) -> bool)> = vec![
         (
             ContractGroupRegistration {
-                owner: ContractGroupOwner::OwnerAndAdmins {
-                    owner: owner_id,
-                    admins: BTreeSet::new(),
-                },
+                admins: BTreeSet::from([owner_id]),
                 name: None,
                 description: None,
             },
@@ -659,10 +793,9 @@ async fn should_reject_malformed_registrations_and_memberships_in_basic_structur
         ),
         (
             ContractGroupRegistration {
-                owner: ContractGroupOwner::OwnerAndAdmins {
-                    owner: owner_id,
-                    admins: BTreeSet::from([owner_id]),
-                },
+                admins: (0..=limits.max_contract_group_admins)
+                    .map(|i| Identifier::from([i as u8 + 1; 32]))
+                    .collect(),
                 name: None,
                 description: None,
             },
@@ -670,20 +803,7 @@ async fn should_reject_malformed_registrations_and_memberships_in_basic_structur
         ),
         (
             ContractGroupRegistration {
-                owner: ContractGroupOwner::OwnerAndAdmins {
-                    owner: owner_id,
-                    admins: (0..=limits.max_contract_group_admins)
-                        .map(|i| Identifier::from([i as u8 + 1; 32]))
-                        .collect(),
-                },
-                name: None,
-                description: None,
-            },
-            |e| matches!(e, BasicError::InvalidContractGroupAdminsError(_)),
-        ),
-        (
-            ContractGroupRegistration {
-                owner: ContractGroupOwner::SingleOwner(owner_id),
+                admins: BTreeSet::new(),
                 name: Some(String::new()),
                 description: None,
             },
@@ -691,7 +811,7 @@ async fn should_reject_malformed_registrations_and_memberships_in_basic_structur
         ),
         (
             ContractGroupRegistration {
-                owner: ContractGroupOwner::SingleOwner(owner_id),
+                admins: BTreeSet::new(),
                 name: Some("n".repeat(limits.max_contract_group_name_length as usize + 1)),
                 description: None,
             },
@@ -699,7 +819,7 @@ async fn should_reject_malformed_registrations_and_memberships_in_basic_structur
         ),
         (
             ContractGroupRegistration {
-                owner: ContractGroupOwner::SingleOwner(owner_id),
+                admins: BTreeSet::new(),
                 name: None,
                 description: Some(
                     "d".repeat(limits.max_contract_group_description_length as usize + 1),
@@ -775,7 +895,7 @@ async fn should_reject_malformed_registrations_and_memberships_in_basic_structur
             &key,
             fixture_contract(owner_id, 1),
             1,
-            Some(single_owner(owner_id, "checks")),
+            Some(single_owner("checks")),
             memberships.clone(),
         )
         .await;

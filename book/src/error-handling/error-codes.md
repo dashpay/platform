@@ -52,7 +52,7 @@ Error codes are organized into ranges that correspond to error categories and su
 | 10100-10199 | Structure | `JsonSchemaCompilationError` (10100), `InvalidIdentifierError` (10102), `ValueError` (10103) |
 | 10200-10276 | Data Contract | `DataContractMaxDepthExceedError` (10200), `DuplicateIndexError` (10201), `InvalidDataContractIdError` (10204), `DataContractInvalidRequiredFieldsUpdateError` (10276) |
 | 10350-10359 | Groups | `GroupPositionDoesNotExistError` (10350), `GroupExceedsMaxMembersError` (10354) |
-| 10360-10367 | Contract Groups | `ContractGroupMembershipsOverLimitError` (10360), `ContractGroupRegistrantNotOwnerError` (10365), `InvalidContractGroupDescriptionLengthError` (10367) |
+| 10360-10367 | Contract Groups | `ContractGroupMembershipsOverLimitError` (10360), `InvalidContractGroupAdminsError` (10364), `InvalidContractGroupDescriptionLengthError` (10367); 10365 unassigned |
 | 10400-10418 | Documents | `DataContractNotPresentError` (10400), `DuplicateDocumentTransitionsWithIdsError` (10401) |
 | 10450-10460 | Tokens | `InvalidTokenIdError` (10450), `TokenTransferToOurselfError` (10456) |
 | 10500-10533 | Identity | `DuplicatedIdentityPublicKeyBasicError` (10500), `InvalidIdentityPublicKeyDataError` (10511) |
@@ -115,7 +115,7 @@ The fee category currently has a single code. The 30000 range is reserved for fu
 | 40700-40721 | Tokens | `IdentityDoesNotHaveEnoughTokenBalanceError` (40700), `UnauthorizedTokenActionError` (40701) |
 | 40800-40804 | Groups | `IdentityNotMemberOfGroupError` (40800), `GroupActionAlreadyCompletedError` (40802) |
 | 40900-40904 | Shielded | `InvalidAnchorError` (40900), `NullifierAlreadySpentError` (40901), `InsufficientShieldedFeeError` (40904) |
-| 41000-41002 | Contract Groups | `ContractGroupAlreadyExistsError` (41000), `ContractGroupNotFoundError` (41001), `IdentityNotContractGroupOwnerOrAdminError` (41002) |
+| 41000-41003 | Contract Groups | `ContractGroupAlreadyExistsError` (41000), `ContractGroupNotFoundError` (41001), `IdentityNotContractGroupOwnerOrAdminError` (41002), `ContractGroupAdminNotFoundError` (41003) |
 
 Notice how the `DataTriggerError` sub-enum has its own `ErrorWithCode` implementation that the `StateError` delegates to:
 

@@ -20,7 +20,7 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("Contract group declares {} admins: a group with admins needs at least 1 and at most {} distinct admins, none of them the owner", admins_count, max_admins)]
+#[error("Contract group declares {} admins: at most {} distinct admins are allowed, none of them the owner", admins_count, max_admins)]
 #[platform_serialize(unversioned)]
 pub struct InvalidContractGroupAdminsError {
     /*

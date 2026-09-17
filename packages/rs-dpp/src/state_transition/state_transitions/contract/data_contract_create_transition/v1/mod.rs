@@ -40,7 +40,9 @@ use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 pub struct DataContractCreateTransitionV1 {
     pub data_contract: DataContractInSerializationFormat,
     pub identity_nonce: IdentityNonce,
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub contract_group: Option<ContractGroupRegistration>,
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub contract_group_memberships: Vec<ContractGroupMembership>,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]

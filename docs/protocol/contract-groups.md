@@ -16,7 +16,7 @@ contract group is a set of contracts owned by identities.
 
 Version 1 of `DataContractCreateTransition` carries two new fields:
 
-- `contractGroup`: an optional registration `{ owner, name?, description? }`.
+- `contractGroup`: an optional registration `{ admins?, name?, description? }`.
 - `contractGroupMemberships`: a list of `{ contractGroupId, member }`.
 
 Version 0 stays valid and carries neither. Below protocol version 14 a version 1
@@ -32,17 +32,11 @@ contractGroupId = hash_double("contract_group" || ownerId || identityNonce (u64,
 The contract created by the same transition has id `hash_double(ownerId || identityNonce)`,
 so a client knows both ids before broadcasting and the two can never collide.
 
-`owner` is one of:
-
-- `singleOwner(identityId)`: one identity owns the group and is the only one who may add
-  members to it.
-- `ownerAndAdmins { owner: identityId, admins: [identityId, ...] }`: one identity owns the
-  group and the admins may add members alongside it. At least one admin, at most
-  `maxContractGroupAdmins` (16), none of them the owner. Admins act alone; there is no
-  threshold.
-
-The registering identity must be the owner in both forms; being an admin is not enough to
-register a group. `name` is 1 to 64 characters and
+The owner is the identity that signs the transition; it is not on the wire. `admins`, when
+present, names the identities that may add members alongside the owner: at most
+`maxContractGroupAdmins` (16), none of them the owner, every one an existing non-masternode
+identity. Admins act alone; there is no threshold. Stored, the ownership is `singleOwner` when
+no admin is named and `ownerAndAdmins { owner, admins }` otherwise. `name` is 1 to 64 characters and
 `description` 1 to 256 characters when present. A group may be registered empty.
 
 ## Joining a group
@@ -63,13 +57,16 @@ Memberships are recorded at creation only. There is no update path and no leavin
 
 ## Validation and fees
 
-- Structure (unpaid): owner rules, text lengths, member existence in the contract,
+- Structure (unpaid): admin count and the owner not among the admins, text lengths, member existence in the contract,
   duplicates, redundancy and the membership cap.
   Errors 10360 to 10367.
 - State (paid, identity nonce bumped): the registered group must not exist
   (`ContractGroupAlreadyExistsError`, 41000), every group joined must exist
   (`ContractGroupNotFoundError`, 41001) and have the signer as its owner or an admin
-  (`IdentityNotContractGroupOwnerOrAdminError`, 41002). Each group lookup is billed.
+  (`IdentityNotContractGroupOwnerOrAdminError`, 41002), and every admin named by a
+  registration must be an existing non-masternode identity
+  (`ContractGroupAdminNotFoundError`, 41003). Each lookup is billed, as is the group id
+  derivation.
 
 Storage is paid at the standard rate: the info item and three empty subtrees for a
 registration, one empty item plus one reference per membership, plus the trees a new
@@ -77,17 +74,18 @@ contract needs on the backwards side.
 
 ## Storage layout
 
-A new root tree, `ContractGroups` (key `68`), holds every group and a backwards index
+A new root tree, `ContractGroups` (key `124`, under the `Versions` node so no fee-bearing
+transition pays for the extra child), holds every group and a backwards index
 from each member contract:
 
 ```text
-[68] ContractGroups
+[124] ContractGroups
 ├── [0] Groups
 │   └── <contract group id>
 │       ├── [0] Info            -> Item(bincode ContractGroupInfo { owner, name?, description? })
 │       ├── [1] Contracts       -> <contract id> -> Item([])
-│       ├── [2] DocumentTypes   -> <contract id> -> <document type name> -> Item([])
-│       └── [3] Tokens          -> <contract id> -> <token position, u16 BE> -> Item([])
+│       ├── [2] DocumentTypes   -> <contract id || document type name> -> Item([])
+│       └── [3] Tokens          -> <contract id || token position, u16 BE> -> Item([])
 └── [1] Members
     └── <contract id>
         ├── [0] Groups          -> <contract group id> -> Reference to Groups/<group>/[1]/<contract id>

@@ -8,6 +8,8 @@ mod estimated_costs;
 mod fetch;
 #[cfg(feature = "server")]
 mod insert;
+#[cfg(feature = "server")]
+mod insert_contract_groups_structure;
 /// Paths of the `ContractGroups` root tree.
 pub mod paths;
 #[cfg(feature = "server")]

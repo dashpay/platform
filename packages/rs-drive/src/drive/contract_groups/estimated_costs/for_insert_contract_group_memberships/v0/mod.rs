@@ -3,10 +3,8 @@ use crate::drive::contract_groups::estimated_costs::{
     DOCUMENT_TYPE_NAME_ESTIMATED_KEY_SIZE,
 };
 use crate::drive::contract_groups::paths::{
-    contract_group_contracts_path, contract_group_document_types_for_contract_path,
-    contract_group_document_types_path, contract_group_path,
-    contract_group_tokens_for_contract_path, contract_group_tokens_path,
-    contract_groups_groups_path, contract_groups_members_path,
+    contract_group_contracts_path, contract_group_document_types_path, contract_group_path,
+    contract_group_tokens_path, contract_groups_groups_path, contract_groups_members_path,
     contract_memberships_document_type_path, contract_memberships_document_types_path,
     contract_memberships_groups_path, contract_memberships_path, contract_memberships_token_path,
     contract_memberships_tokens_path,
@@ -101,8 +99,8 @@ impl Drive {
                 }
                 ContractGroupMember::DocumentType(_) => {
                     has_document_type_members = true;
-                    // Document type members: one subtree per contract, then empty items keyed
-                    // by document type name.
+                    // Document type members: empty items keyed by the contract id followed by
+                    // the document type name.
                     estimated_costs_only_with_layer_info.insert(
                         KeyInfoPath::from_known_path(contract_group_document_types_path(
                             &contract_group_id,
@@ -110,25 +108,8 @@ impl Drive {
                         EstimatedLayerInformation {
                             tree_type: TreeType::NormalTree,
                             estimated_layer_count: EstimatedLevel(6, false),
-                            estimated_layer_sizes: AllSubtrees(
-                                DEFAULT_HASH_SIZE_U8,
-                                NoSumTrees,
-                                None,
-                            ),
-                        },
-                    );
-                    estimated_costs_only_with_layer_info.insert(
-                        KeyInfoPath::from_known_path(
-                            contract_group_document_types_for_contract_path(
-                                &contract_group_id,
-                                &contract_id,
-                            ),
-                        ),
-                        EstimatedLayerInformation {
-                            tree_type: TreeType::NormalTree,
-                            estimated_layer_count: EstimatedLevel(2, false),
                             estimated_layer_sizes: AllItems(
-                                DOCUMENT_TYPE_NAME_ESTIMATED_KEY_SIZE,
+                                DEFAULT_HASH_SIZE_U8 + DOCUMENT_TYPE_NAME_ESTIMATED_KEY_SIZE,
                                 0,
                                 None,
                             ),
@@ -137,8 +118,8 @@ impl Drive {
                 }
                 ContractGroupMember::Token(_) => {
                     has_token_members = true;
-                    // Token members: one subtree per contract, then empty items keyed by the
-                    // two byte token position.
+                    // Token members: empty items keyed by the contract id followed by the two
+                    // byte token position.
                     estimated_costs_only_with_layer_info.insert(
                         KeyInfoPath::from_known_path(contract_group_tokens_path(
                             &contract_group_id,
@@ -146,22 +127,7 @@ impl Drive {
                         EstimatedLayerInformation {
                             tree_type: TreeType::NormalTree,
                             estimated_layer_count: EstimatedLevel(6, false),
-                            estimated_layer_sizes: AllSubtrees(
-                                DEFAULT_HASH_SIZE_U8,
-                                NoSumTrees,
-                                None,
-                            ),
-                        },
-                    );
-                    estimated_costs_only_with_layer_info.insert(
-                        KeyInfoPath::from_known_path(contract_group_tokens_for_contract_path(
-                            &contract_group_id,
-                            &contract_id,
-                        )),
-                        EstimatedLayerInformation {
-                            tree_type: TreeType::NormalTree,
-                            estimated_layer_count: EstimatedLevel(2, false),
-                            estimated_layer_sizes: AllItems(2, 0, None),
+                            estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8 + 2, 0, None),
                         },
                     );
                 }

@@ -2,9 +2,6 @@
 //!
 //! Version 4: version 3 plus the `ContractGroups` root tree (protocol version 14).
 
-use crate::drive::contract_groups::paths::{
-    contract_groups_root_path, CONTRACT_GROUPS_GROUPS_KEY, CONTRACT_GROUPS_MEMBERS_KEY,
-};
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use dpp::version::PlatformVersion;
@@ -68,29 +65,9 @@ impl Drive {
 
         // ContractGroups root tree (introduced in protocol version 14): identity-owned sets of
         // contracts, contract document types and contract tokens, with a backwards index from
-        // each member contract. Both subtrees are created up front so a registration only
-        // writes under `Groups` and a membership only writes under `Groups` and `Members`.
-        // The upgrade path (`Platform::transition_to_version_14`) creates the same three trees.
-        self.grove_insert_empty_tree(
-            SubtreePath::empty(),
-            &[RootTree::ContractGroups as u8],
-            TreeType::NormalTree,
-            transaction,
-            None,
-            &mut vec![],
-            drive_version,
-        )?;
-        for subtree_key in [CONTRACT_GROUPS_GROUPS_KEY, CONTRACT_GROUPS_MEMBERS_KEY] {
-            self.grove_insert_empty_tree(
-                (&contract_groups_root_path()).into(),
-                subtree_key,
-                TreeType::NormalTree,
-                transaction,
-                None,
-                &mut vec![],
-                drive_version,
-            )?;
-        }
+        // each member contract. The upgrade path (`Platform::transition_to_version_14`) calls
+        // the same helper, so both node populations build a byte-identical subtree.
+        self.insert_contract_groups_structure(transaction, platform_version)?;
 
         // On lower layers we can use batching
 

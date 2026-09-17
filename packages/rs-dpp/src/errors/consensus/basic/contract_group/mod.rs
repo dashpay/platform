@@ -1,6 +1,5 @@
 mod contract_group_member_not_in_contract_error;
 mod contract_group_memberships_over_limit_error;
-mod contract_group_registrant_not_owner_error;
 mod duplicate_contract_group_membership_error;
 mod invalid_contract_group_admins_error;
 mod invalid_contract_group_description_length_error;
@@ -9,7 +8,6 @@ mod redundant_contract_group_membership_error;
 
 pub use contract_group_member_not_in_contract_error::*;
 pub use contract_group_memberships_over_limit_error::*;
-pub use contract_group_registrant_not_owner_error::*;
 pub use duplicate_contract_group_membership_error::*;
 pub use invalid_contract_group_admins_error::*;
 pub use invalid_contract_group_description_length_error::*;

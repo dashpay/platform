@@ -1,13 +1,13 @@
 use crate::error::Error;
 use dpp::consensus::basic::contract_group::{
     ContractGroupMemberNotInContractError, ContractGroupMembershipsOverLimitError,
-    ContractGroupRegistrantNotOwnerError, DuplicateContractGroupMembershipError,
-    InvalidContractGroupAdminsError, InvalidContractGroupDescriptionLengthError,
-    InvalidContractGroupNameLengthError, RedundantContractGroupMembershipError,
+    DuplicateContractGroupMembershipError, InvalidContractGroupAdminsError,
+    InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
+    RedundantContractGroupMembershipError,
 };
 use dpp::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError;
 use dpp::consensus::ConsensusError;
-use dpp::contract_group::{ContractGroupMember, ContractGroupOwner};
+use dpp::contract_group::ContractGroupMember;
 use dpp::dashcore::Network;
 use dpp::identifier::Identifier;
 use dpp::state_transition::data_contract_create_transition::accessors::{
@@ -121,32 +121,18 @@ fn contract_group_basic_structure_error(
         let owner_id = transition.owner_id();
 
         if let Some(registration) = transition.contract_group() {
-            match &registration.owner {
-                ContractGroupOwner::SingleOwner(single_owner_id) => {
-                    if *single_owner_id != owner_id {
-                        return Some(ContractGroupRegistrantNotOwnerError::new(owner_id).into());
-                    }
-                }
-                ContractGroupOwner::OwnerAndAdmins {
-                    owner: group_owner_id,
-                    admins,
-                } => {
-                    if *group_owner_id != owner_id {
-                        return Some(ContractGroupRegistrantNotOwnerError::new(owner_id).into());
-                    }
-                    if admins.is_empty()
-                        || admins.len() > limits.max_contract_group_admins as usize
-                        || admins.contains(group_owner_id)
-                    {
-                        return Some(
-                            InvalidContractGroupAdminsError::new(
-                                admins.len() as u32,
-                                limits.max_contract_group_admins,
-                            )
-                            .into(),
-                        );
-                    }
-                }
+            // The owner is the signer and never on the wire; only the admins need checking.
+            let admins = &registration.admins;
+            if admins.len() > limits.max_contract_group_admins as usize
+                || admins.contains(&owner_id)
+            {
+                return Some(
+                    InvalidContractGroupAdminsError::new(
+                        admins.len() as u32,
+                        limits.max_contract_group_admins,
+                    )
+                    .into(),
+                );
             }
             if let Some(name) = &registration.name {
                 let length = name.chars().count();

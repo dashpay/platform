@@ -3,6 +3,7 @@ use crate::drive::contract_groups::paths::{
     CONTRACT_MEMBERSHIPS_DOCUMENT_TYPES_KEY, CONTRACT_MEMBERSHIPS_GROUPS_KEY,
     CONTRACT_MEMBERSHIPS_TOKENS_KEY,
 };
+use dpp::contract_group::{ContractGroupMember, ContractGroupMembership};
 use dpp::data_contract::TokenContractPosition;
 use dpp::identifier::Identifier;
 use grovedb::Element;
@@ -97,7 +98,8 @@ impl ContractGroupMembersPage {
     /// Rebuilds a page from the path, key and element triples the
     /// [`Drive::contract_group_members_query`](crate::drive::Drive::contract_group_members_query)
     /// returns, whether from a raw query or from a verified proof. The elements carry no data;
-    /// every member is read from its path and key.
+    /// every member is read from its key: a contract id, followed for document types and
+    /// tokens by the name or the position.
     ///
     /// Returns `Err` with a description when a triple does not fit the kind's layout.
     pub fn from_path_key_elements<I>(
@@ -116,19 +118,15 @@ impl ContractGroupMembersPage {
                 {
                     entries.push(identifier_from(&key, "member contract id")?);
                 }
-                (Self::DocumentTypes(entries), 5, Some(kind))
+                (Self::DocumentTypes(entries), 4, Some(kind))
                     if kind == CONTRACT_GROUP_DOCUMENT_TYPES_KEY =>
                 {
-                    entries.push((
-                        identifier_from(&path[4], "member contract id")?,
-                        document_type_name_from(&key)?,
-                    ));
+                    let (contract_id, name) = split_member_key(&key)?;
+                    entries.push((contract_id, document_type_name_from(name)?));
                 }
-                (Self::Tokens(entries), 5, Some(kind)) if kind == CONTRACT_GROUP_TOKENS_KEY => {
-                    entries.push((
-                        identifier_from(&path[4], "member contract id")?,
-                        token_position_from(&key)?,
-                    ));
+                (Self::Tokens(entries), 4, Some(kind)) if kind == CONTRACT_GROUP_TOKENS_KEY => {
+                    let (contract_id, position) = split_member_key(&key)?;
+                    entries.push((contract_id, token_position_from(position)?));
                 }
                 _ => {
                     return Err(format!(
@@ -141,6 +139,19 @@ impl ContractGroupMembersPage {
         }
         Ok(page)
     }
+}
+
+/// Splits a document type or token member key into the member contract id and the rest: the
+/// document type name or the token position.
+fn split_member_key(key: &[u8]) -> Result<(Identifier, &[u8]), String> {
+    if key.len() <= 32 {
+        return Err(format!(
+            "member key is too short to hold a contract id and a member: {} bytes",
+            key.len()
+        ));
+    }
+    let (contract_id, member) = key.split_at(32);
+    Ok((identifier_from(contract_id, "member contract id")?, member))
 }
 
 fn identifier_from(bytes: &[u8], what: &str) -> Result<Identifier, String> {
@@ -182,6 +193,33 @@ impl ContractGroupMembershipsForContract {
     /// Whether the contract belongs to no group at all.
     pub fn is_empty(&self) -> bool {
         self.contract.is_empty() && self.document_types.is_empty() && self.tokens.is_empty()
+    }
+
+    /// The number of memberships recorded for the contract, one per group and kind.
+    pub fn len(&self) -> usize {
+        self.contract.len()
+            + self
+                .document_types
+                .values()
+                .map(BTreeSet::len)
+                .sum::<usize>()
+            + self.tokens.values().map(BTreeSet::len).sum::<usize>()
+    }
+
+    /// Whether the contract already holds the given membership.
+    pub fn contains(&self, membership: &ContractGroupMembership) -> bool {
+        let group_id = &membership.contract_group_id;
+        match &membership.member {
+            ContractGroupMember::Contract => self.contract.contains(group_id),
+            ContractGroupMember::DocumentType(name) => self
+                .document_types
+                .get(name)
+                .is_some_and(|groups| groups.contains(group_id)),
+            ContractGroupMember::Token(position) => self
+                .tokens
+                .get(position)
+                .is_some_and(|groups| groups.contains(group_id)),
+        }
     }
 
     /// Every group the contract belongs to in any way.

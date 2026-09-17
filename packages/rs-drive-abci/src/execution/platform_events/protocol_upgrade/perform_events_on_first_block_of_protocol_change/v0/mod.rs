@@ -15,9 +15,6 @@ use dpp::version::ProtocolVersion;
 use dpp::voting::vote_polls::VotePoll;
 use drive::drive::address_funds::queries::CLEAR_ADDRESS_POOL_U8;
 use drive::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
-use drive::drive::contract_groups::paths::{
-    contract_groups_root_path, CONTRACT_GROUPS_GROUPS_KEY, CONTRACT_GROUPS_MEMBERS_KEY,
-};
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
@@ -765,25 +762,9 @@ impl<C> Platform<C> {
 
         // ContractGroups root tree: identity-owned sets of contracts, contract document types
         // and contract tokens, with a backwards index from each member contract. Fresh chains
-        // get the same three trees from `create_initial_state_structure` v4.
-        self.drive.grove_insert_if_not_exists(
-            SubtreePath::empty(),
-            &[RootTree::ContractGroups as u8],
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-        for subtree_key in [CONTRACT_GROUPS_GROUPS_KEY, CONTRACT_GROUPS_MEMBERS_KEY] {
-            self.drive.grove_insert_if_not_exists(
-                contract_groups_root_path().as_slice().into(),
-                subtree_key,
-                Element::empty_tree(),
-                Some(transaction),
-                None,
-                &platform_version.drive,
-            )?;
-        }
+        // call the same helper from `create_initial_state_structure` v4.
+        self.drive
+            .insert_contract_groups_structure(Some(transaction), platform_version)?;
 
         Ok(())
     }
@@ -1598,6 +1579,100 @@ mod tests {
             checked >= 3,
             "expected the genesis system contracts to be checked"
         );
+    }
+
+    /// The only way a running network gets the `ContractGroups` root tree is this upgrade
+    /// hook, so it is checked here the way the shielded pool trees are for version 12: absent
+    /// at 13, present with both subtrees after the transition, and usable for a registration.
+    #[test]
+    fn test_transition_to_version_14_creates_contract_group_trees() {
+        use dpp::contract_group::{ContractGroupOwner, ContractGroupRegistration};
+        use dpp::identifier::Identifier;
+        use drive::drive::contract_groups::paths::{
+            contract_groups_root_path, CONTRACT_GROUPS_GROUPS_KEY, CONTRACT_GROUPS_MEMBERS_KEY,
+        };
+        use drive::util::grove_operations::DirectQueryType;
+        use std::collections::BTreeSet;
+
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let root_tree_exists = |transaction: &Transaction| {
+            platform
+                .drive
+                .grove_has_raw(
+                    SubtreePath::empty(),
+                    &[RootTree::ContractGroups as u8],
+                    DirectQueryType::StatefulDirectQuery,
+                    Some(transaction),
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to query the root tree")
+        };
+        assert!(
+            !root_tree_exists(&transaction),
+            "protocol version 13 has no ContractGroups root tree"
+        );
+
+        let block_info = BlockInfo::default();
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected version 14 transition to succeed");
+
+        assert!(root_tree_exists(&transaction));
+        for subtree_key in [CONTRACT_GROUPS_GROUPS_KEY, CONTRACT_GROUPS_MEMBERS_KEY] {
+            assert!(
+                platform
+                    .drive
+                    .grove_has_raw(
+                        (&contract_groups_root_path()).into(),
+                        subtree_key,
+                        DirectQueryType::StatefulDirectQuery,
+                        Some(&transaction),
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .expect("expected to query the subtree"),
+                "subtree {:?} must exist after the transition",
+                subtree_key
+            );
+        }
+
+        // The upgraded structure accepts a registration, as the genesis structure does.
+        let owner_id = Identifier::from([1u8; 32]);
+        let contract_group_id = Identifier::from([2u8; 32]);
+        let info = (
+            owner_id,
+            ContractGroupRegistration {
+                admins: BTreeSet::new(),
+                name: Some("upgraded".to_string()),
+                description: None,
+            },
+        )
+            .into();
+        platform
+            .drive
+            .insert_contract_group(
+                contract_group_id,
+                &info,
+                &block_info,
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to register a group after the transition");
+        let stored = platform
+            .drive
+            .fetch_contract_group_info(contract_group_id, Some(&transaction), platform_version)
+            .expect("expected to fetch the group info")
+            .expect("expected the group to be stored");
+        assert_eq!(stored.owner(), &ContractGroupOwner::SingleOwner(owner_id));
     }
 
     #[test]

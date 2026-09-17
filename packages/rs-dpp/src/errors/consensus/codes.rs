@@ -140,7 +140,8 @@ impl ErrorWithCode for BasicError {
             Self::RedundantContractGroupMembershipError(_) => 10362,
             Self::ContractGroupMemberNotInContractError(_) => 10363,
             Self::InvalidContractGroupAdminsError(_) => 10364,
-            Self::ContractGroupRegistrantNotOwnerError(_) => 10365,
+            // 10365 is unassigned: the registrant-not-owner rule became inexpressible when the
+            // owner left the wire, before protocol version 14 shipped.
             Self::InvalidContractGroupNameLengthError(_) => 10366,
             Self::InvalidContractGroupDescriptionLengthError(_) => 10367,
 
@@ -417,6 +418,7 @@ impl ErrorWithCode for StateError {
             Self::ContractGroupAlreadyExistsError(_) => 41000,
             Self::ContractGroupNotFoundError(_) => 41001,
             Self::IdentityNotContractGroupOwnerOrAdminError(_) => 41002,
+            Self::ContractGroupAdminNotFoundError(_) => 41003,
         }
     }
 }

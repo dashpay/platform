@@ -154,8 +154,8 @@ pub struct ContractGroupMembership {
 
 /// The registration of a new contract group, carried by a data contract create transition.
 ///
-/// The id is not on the wire: it is derived from the transition's owner and identity nonce with
-/// [`generate_contract_group_id`].
+/// The owner is the identity that signs the transition and is not on the wire; the group id is
+/// derived from it and the identity nonce with [`generate_contract_group_id`].
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -163,8 +163,11 @@ pub struct ContractGroupMembership {
     serde(rename_all = "camelCase")
 )]
 pub struct ContractGroupRegistration {
-    /// The owner of the group, alone or with admins. The registering identity must be the owner.
-    pub owner: ContractGroupOwner,
+    /// The identities that may add members alongside the owner. Empty for a group with a single
+    /// owner; otherwise at most `SystemLimits::max_contract_group_admins` distinct identities,
+    /// none of them the owner.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub admins: BTreeSet<Identifier>,
     /// An optional human readable name, bounded by `SystemLimits::max_contract_group_name_length`.
     pub name: Option<String>,
     /// An optional description, bounded by
@@ -237,13 +240,22 @@ impl ContractGroupInfo {
     }
 }
 
-impl From<ContractGroupRegistration> for ContractGroupInfo {
-    fn from(registration: ContractGroupRegistration) -> Self {
+impl From<(Identifier, ContractGroupRegistration)> for ContractGroupInfo {
+    /// Builds the stored information of a group registered by `owner_id`.
+    fn from((owner_id, registration): (Identifier, ContractGroupRegistration)) -> Self {
         let ContractGroupRegistration {
-            owner,
+            admins,
             name,
             description,
         } = registration;
+        let owner = if admins.is_empty() {
+            ContractGroupOwner::SingleOwner(owner_id)
+        } else {
+            ContractGroupOwner::OwnerAndAdmins {
+                owner: owner_id,
+                admins,
+            }
+        };
         ContractGroupInfo::V0(ContractGroupInfoV0 {
             owner,
             name,
@@ -252,9 +264,9 @@ impl From<ContractGroupRegistration> for ContractGroupInfo {
     }
 }
 
-impl From<&ContractGroupRegistration> for ContractGroupInfo {
-    fn from(registration: &ContractGroupRegistration) -> Self {
-        registration.clone().into()
+impl From<(Identifier, &ContractGroupRegistration)> for ContractGroupInfo {
+    fn from((owner_id, registration): (Identifier, &ContractGroupRegistration)) -> Self {
+        (owner_id, registration.clone()).into()
     }
 }
 
@@ -304,18 +316,33 @@ mod tests {
     }
 
     #[test]
+    fn should_store_a_single_owner_when_the_registration_names_no_admins() {
+        let owner_id = Identifier::from([1u8; 32]);
+        let info: ContractGroupInfo = (
+            owner_id,
+            ContractGroupRegistration {
+                admins: BTreeSet::new(),
+                name: None,
+                description: None,
+            },
+        )
+            .into();
+        assert_eq!(info.owner(), &ContractGroupOwner::SingleOwner(owner_id));
+    }
+
+    #[test]
     fn should_round_trip_the_stored_info_through_bincode() {
         use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 
-        let info: ContractGroupInfo = ContractGroupRegistration {
-            owner: ContractGroupOwner::OwnerAndAdmins {
-                owner: Identifier::from([1u8; 32]),
+        let info: ContractGroupInfo = (
+            Identifier::from([1u8; 32]),
+            ContractGroupRegistration {
                 admins: BTreeSet::from([Identifier::from([2u8; 32])]),
+                name: Some("cardgame".to_string()),
+                description: None,
             },
-            name: Some("cardgame".to_string()),
-            description: None,
-        }
-        .into();
+        )
+            .into();
 
         let bytes = info.serialize_to_bytes().expect("serialize");
         let decoded = ContractGroupInfo::deserialize_from_bytes_untrusted(&bytes)

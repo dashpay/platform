@@ -1,19 +1,25 @@
 //! Paths of the `ContractGroups` root tree.
 //!
 //! ```text
-//! [68] ContractGroups
+//! [124] ContractGroups
 //! ├── [0] Groups
 //! │   └── <contract group id>
 //! │       ├── [0] Info            -> Item(bincode ContractGroupInfo)
 //! │       ├── [1] Contracts       -> <contract id> -> Item([])
-//! │       ├── [2] DocumentTypes   -> <contract id> -> <document type name> -> Item([])
-//! │       └── [3] Tokens          -> <contract id> -> <token position, u16 BE> -> Item([])
+//! │       ├── [2] DocumentTypes   -> <contract id || document type name> -> Item([])
+//! │       └── [3] Tokens          -> <contract id || token position, u16 BE> -> Item([])
 //! └── [1] Members
 //!     └── <contract id>
 //!         ├── [0] Groups          -> <contract group id> -> Reference to Groups/<group>/[1]/<contract id>
 //!         ├── [1] DocumentTypes   -> <document type name> -> <contract group id> -> Reference
 //!         └── [2] Tokens          -> <token position> -> <contract group id> -> Reference
 //! ```
+//!
+//! Document type and token members of a group sit on one level under a composite key, the
+//! 32 byte contract id followed by the name or the position, rather than under a subtree per
+//! contract. Keys sort by contract first either way, and a flat level pages with a plain range
+//! after the cursor key: a subtree per contract would make a continuation page descend into the
+//! cursor's contract, and GroveDB charges an empty descent against the page limit.
 //!
 //! The `Members` side holds plain GroveDB references back to the forward entries. Memberships
 //! are append-only and contracts are never deleted, so a reference can never dangle.
@@ -29,9 +35,9 @@ pub const CONTRACT_GROUPS_MEMBERS_KEY: &[u8; 1] = &[1];
 pub const CONTRACT_GROUP_INFO_KEY: &[u8; 1] = &[0];
 /// Inside a group: the whole-contract members, keyed by contract id.
 pub const CONTRACT_GROUP_CONTRACTS_KEY: &[u8; 1] = &[1];
-/// Inside a group: the document type members, keyed by contract id then document type name.
+/// Inside a group: the document type members, keyed by contract id followed by document type name.
 pub const CONTRACT_GROUP_DOCUMENT_TYPES_KEY: &[u8; 1] = &[2];
-/// Inside a group: the token members, keyed by contract id then token position.
+/// Inside a group: the token members, keyed by contract id followed by token position.
 pub const CONTRACT_GROUP_TOKENS_KEY: &[u8; 1] = &[3];
 
 /// Inside a member contract's backwards index: the groups the whole contract belongs to.
@@ -129,32 +135,25 @@ pub fn contract_group_document_types_path_vec(contract_group_id: &[u8]) -> Vec<V
     ]
 }
 
-/// `[ContractGroups, Groups, <group id>, DocumentTypes, <contract id>]`
-pub fn contract_group_document_types_for_contract_path<'a>(
-    contract_group_id: &'a [u8],
-    contract_id: &'a [u8],
-) -> [&'a [u8]; 5] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::ContractGroups),
-        CONTRACT_GROUPS_GROUPS_KEY,
-        contract_group_id,
-        CONTRACT_GROUP_DOCUMENT_TYPES_KEY,
-        contract_id,
-    ]
+/// The key of a document type member inside a group's `DocumentTypes` level: the contract id
+/// followed by the document type name.
+pub fn contract_group_document_type_member_key(
+    contract_id: &[u8; 32],
+    document_type_name: &str,
+) -> Vec<u8> {
+    let mut key = Vec::with_capacity(32 + document_type_name.len());
+    key.extend_from_slice(contract_id);
+    key.extend_from_slice(document_type_name.as_bytes());
+    key
 }
 
-/// `[ContractGroups, Groups, <group id>, DocumentTypes, <contract id>]`
-pub fn contract_group_document_types_for_contract_path_vec(
-    contract_group_id: &[u8],
-    contract_id: &[u8],
-) -> Vec<Vec<u8>> {
-    vec![
-        vec![RootTree::ContractGroups as u8],
-        CONTRACT_GROUPS_GROUPS_KEY.to_vec(),
-        contract_group_id.to_vec(),
-        CONTRACT_GROUP_DOCUMENT_TYPES_KEY.to_vec(),
-        contract_id.to_vec(),
-    ]
+/// The key of a token member inside a group's `Tokens` level: the contract id followed by the
+/// token position, big endian.
+pub fn contract_group_token_member_key(contract_id: &[u8; 32], token_position: u16) -> Vec<u8> {
+    let mut key = Vec::with_capacity(34);
+    key.extend_from_slice(contract_id);
+    key.extend_from_slice(&token_position.to_be_bytes());
+    key
 }
 
 /// `[ContractGroups, Groups, <group id>, Tokens]`
@@ -174,34 +173,6 @@ pub fn contract_group_tokens_path_vec(contract_group_id: &[u8]) -> Vec<Vec<u8>> 
         CONTRACT_GROUPS_GROUPS_KEY.to_vec(),
         contract_group_id.to_vec(),
         CONTRACT_GROUP_TOKENS_KEY.to_vec(),
-    ]
-}
-
-/// `[ContractGroups, Groups, <group id>, Tokens, <contract id>]`
-pub fn contract_group_tokens_for_contract_path<'a>(
-    contract_group_id: &'a [u8],
-    contract_id: &'a [u8],
-) -> [&'a [u8]; 5] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::ContractGroups),
-        CONTRACT_GROUPS_GROUPS_KEY,
-        contract_group_id,
-        CONTRACT_GROUP_TOKENS_KEY,
-        contract_id,
-    ]
-}
-
-/// `[ContractGroups, Groups, <group id>, Tokens, <contract id>]`
-pub fn contract_group_tokens_for_contract_path_vec(
-    contract_group_id: &[u8],
-    contract_id: &[u8],
-) -> Vec<Vec<u8>> {
-    vec![
-        vec![RootTree::ContractGroups as u8],
-        CONTRACT_GROUPS_GROUPS_KEY.to_vec(),
-        contract_group_id.to_vec(),
-        CONTRACT_GROUP_TOKENS_KEY.to_vec(),
-        contract_id.to_vec(),
     ]
 }
 

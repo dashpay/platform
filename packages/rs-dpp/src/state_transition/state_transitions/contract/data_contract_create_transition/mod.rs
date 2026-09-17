@@ -363,11 +363,17 @@ mod test {
 ))]
 pub(crate) mod json_convertible_tests {
     use super::*;
+    use crate::contract_group::{
+        ContractGroupMember, ContractGroupMembership, ContractGroupRegistration,
+    };
     use crate::state_transition::data_contract_create_transition::v0::DataContractCreateTransitionV0;
+    use crate::state_transition::data_contract_create_transition::v1::DataContractCreateTransitionV1;
     use crate::tests::fixtures::get_data_contract_fixture;
     use platform_value::BinaryData;
+    use platform_value::Identifier;
     use platform_version::version::PlatformVersion;
     use platform_version::TryFromPlatformVersioned;
+    use std::collections::BTreeSet;
 
     pub(crate) fn fixture() -> DataContractCreateTransition {
         let pv = PlatformVersion::latest();
@@ -380,6 +386,78 @@ pub(crate) mod json_convertible_tests {
         v0.signature_public_key_id = 1;
         v0.signature = BinaryData::new(vec![0xab; 65]);
         DataContractCreateTransition::V0(v0)
+    }
+
+    fn fixture_v1() -> DataContractCreateTransition {
+        let pv = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, pv.protocol_version);
+        let data_contract = created.data_contract().clone();
+        let mut v1 = DataContractCreateTransitionV1::try_from_platform_versioned(data_contract, pv)
+            .expect("v1 from contract");
+        v1.identity_nonce = 5;
+        v1.contract_group = Some(ContractGroupRegistration {
+            admins: BTreeSet::from([Identifier::from([9u8; 32])]),
+            name: Some("cardgame".to_string()),
+            description: None,
+        });
+        v1.contract_group_memberships = vec![
+            ContractGroupMembership {
+                contract_group_id: Identifier::from([7u8; 32]),
+                member: ContractGroupMember::DocumentType("niceDocument".to_string()),
+            },
+            ContractGroupMembership {
+                contract_group_id: Identifier::from([8u8; 32]),
+                member: ContractGroupMember::Token(0),
+            },
+        ];
+        v1.user_fee_increase = 3;
+        v1.signature_public_key_id = 1;
+        v1.signature = BinaryData::new(vec![0xab; 65]);
+        DataContractCreateTransition::V1(v1)
+    }
+
+    #[test]
+    fn json_round_trip_v1_keeps_contract_group_fields() {
+        use crate::serialization::{JsonConvertible, ValueConvertible};
+        use crate::tests::utils::normalize_integer_variants_for_json_round_trip;
+        let original = fixture_v1();
+        let json = JsonConvertible::to_json(&original).expect("to_json");
+        assert_eq!(json["$formatVersion"], "1");
+        let recovered =
+            <DataContractCreateTransition as JsonConvertible>::from_json(json).expect("from_json");
+        let mut original_canon = ValueConvertible::to_object(&original).expect("to_object");
+        let mut recovered_canon = ValueConvertible::to_object(&recovered).expect("to_object");
+        normalize_integer_variants_for_json_round_trip(&mut original_canon);
+        normalize_integer_variants_for_json_round_trip(&mut recovered_canon);
+        assert_eq!(original_canon, recovered_canon);
+        let DataContractCreateTransition::V1(rec) = recovered else {
+            panic!("expected a V1 transition");
+        };
+        assert_eq!(
+            rec.contract_group.as_ref().and_then(|r| r.name.as_deref()),
+            Some("cardgame")
+        );
+        assert_eq!(rec.contract_group_memberships.len(), 2);
+    }
+
+    #[test]
+    fn v1_object_without_contract_group_fields_decodes_as_a_plain_creation() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::Value;
+        let mut value = ValueConvertible::to_object(&fixture_v1()).expect("to_object");
+        let Value::Map(entries) = &mut value else {
+            panic!("value is not a Map");
+        };
+        entries.retain(|(key, _)| {
+            !matches!(key, Value::Text(name) if name == "contractGroup" || name == "contractGroupMemberships")
+        });
+        let recovered = <DataContractCreateTransition as ValueConvertible>::from_object(value)
+            .expect("from_object");
+        let DataContractCreateTransition::V1(rec) = recovered else {
+            panic!("expected a V1 transition");
+        };
+        assert!(rec.contract_group.is_none());
+        assert!(rec.contract_group_memberships.is_empty());
     }
 
     fn assert_v0_fields(t: &DataContractCreateTransition) {

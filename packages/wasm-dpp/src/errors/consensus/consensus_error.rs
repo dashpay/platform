@@ -84,12 +84,12 @@ use dpp::consensus::state::document::document_incorrect_purchase_price_error::Do
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::consensus::basic::contract_group::{
     ContractGroupMemberNotInContractError, ContractGroupMembershipsOverLimitError,
-    ContractGroupRegistrantNotOwnerError, DuplicateContractGroupMembershipError,
+    DuplicateContractGroupMembershipError,
     InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
     InvalidContractGroupAdminsError, RedundantContractGroupMembershipError,
 };
 use dpp::consensus::state::contract_group::{
-    ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
+    ContractGroupAdminNotFoundError, ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
     IdentityNotContractGroupOwnerOrAdminError,
 };
 use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
@@ -523,6 +523,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::IdentityNotContractGroupOwnerOrAdminError(e) => {
             generic_consensus_error!(IdentityNotContractGroupOwnerOrAdminError, e).into()
+        }
+        StateError::ContractGroupAdminNotFoundError(e) => {
+            generic_consensus_error!(ContractGroupAdminNotFoundError, e).into()
         }
     }
 }
@@ -1054,9 +1057,6 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::InvalidContractGroupAdminsError(e) => {
             generic_consensus_error!(InvalidContractGroupAdminsError, e).into()
-        }
-        BasicError::ContractGroupRegistrantNotOwnerError(e) => {
-            generic_consensus_error!(ContractGroupRegistrantNotOwnerError, e).into()
         }
         BasicError::InvalidContractGroupNameLengthError(e) => {
             generic_consensus_error!(InvalidContractGroupNameLengthError, e).into()

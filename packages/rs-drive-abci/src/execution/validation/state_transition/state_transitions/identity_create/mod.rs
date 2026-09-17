@@ -348,17 +348,17 @@ mod tests {
     async fn test_identity_create_validation_latest_protocol_version() {
         run_test_identity_create_validation_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            1921020,
-            99913865980,
+            1919540,
+            99913867460,
         )
         .await;
     }
 
-    /// PROTOCOL_VERSION_13: fee before v14 added the `ContractGroups` root tree (key 68),
-    /// which lands under the `SpentAssetLockTransactions` (72) node of the root Merk. Every
-    /// asset lock outpoint write in v14 loads and rewrites that node with one more child
-    /// link, 1480 credits more; v13 has no such tree. Pinned so v13 chain history stays
-    /// bit-for-bit reproducible.
+    /// PROTOCOL_VERSION_13: the same fee as at the latest version. v14 adds the
+    /// `ContractGroups` root tree at key 124, under the `Versions` node that no fee-bearing
+    /// transition rewrites, so the asset lock outpoint write costs the same on both sides of
+    /// the boundary; this pin is what fails if a root tree ever lands under the asset lock
+    /// path. Pinned so v13 chain history stays bit-for-bit reproducible.
     #[tokio::test]
     async fn test_identity_create_validation_protocol_version_13() {
         run_test_identity_create_validation_at_protocol_version(13, 1919540, 99913867460).await;
@@ -891,17 +891,17 @@ mod tests {
     async fn test_identity_create_asset_lock_reuse_after_issue_latest_protocol_version() {
         run_test_identity_create_asset_lock_reuse_after_issue_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            2196680,
-            99909260620,
+            2195200,
+            99909262100,
         )
         .await;
     }
 
-    /// PROTOCOL_VERSION_13: fee before v14 added the `ContractGroups` root tree (key 68),
-    /// which lands under the `SpentAssetLockTransactions` (72) node of the root Merk. Every
-    /// asset lock outpoint write in v14 loads and rewrites that node with one more child
-    /// link, 1480 credits more; v13 has no such tree. Pinned so v13 chain history stays
-    /// bit-for-bit reproducible.
+    /// PROTOCOL_VERSION_13: the same fee as at the latest version. v14 adds the
+    /// `ContractGroups` root tree at key 124, under the `Versions` node that no fee-bearing
+    /// transition rewrites, so the asset lock outpoint write costs the same on both sides of
+    /// the boundary; this pin is what fails if a root tree ever lands under the asset lock
+    /// path. Pinned so v13 chain history stays bit-for-bit reproducible.
     #[tokio::test]
     async fn test_identity_create_asset_lock_reuse_after_issue_protocol_version_13() {
         run_test_identity_create_asset_lock_reuse_after_issue_at_protocol_version(
@@ -1866,17 +1866,17 @@ mod tests {
     async fn test_identity_create_asset_lock_replay_attack_latest_protocol_version() {
         run_test_identity_create_asset_lock_replay_attack_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            2196680,
-            99909260620,
+            2195200,
+            99909262100,
         )
         .await;
     }
 
-    /// PROTOCOL_VERSION_13: fee before v14 added the `ContractGroups` root tree (key 68),
-    /// which lands under the `SpentAssetLockTransactions` (72) node of the root Merk. Every
-    /// asset lock outpoint write in v14 loads and rewrites that node with one more child
-    /// link, 1480 credits more; v13 has no such tree. Pinned so v13 chain history stays
-    /// bit-for-bit reproducible.
+    /// PROTOCOL_VERSION_13: the same fee as at the latest version. v14 adds the
+    /// `ContractGroups` root tree at key 124, under the `Versions` node that no fee-bearing
+    /// transition rewrites, so the asset lock outpoint write costs the same on both sides of
+    /// the boundary; this pin is what fails if a root tree ever lands under the asset lock
+    /// path. Pinned so v13 chain history stays bit-for-bit reproducible.
     #[tokio::test]
     async fn test_identity_create_asset_lock_replay_attack_protocol_version_13() {
         run_test_identity_create_asset_lock_replay_attack_at_protocol_version(

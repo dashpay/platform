@@ -10,7 +10,7 @@ use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_sta
 use dpp::block::block_info::BlockInfo;
 use dpp::contract_group::{
     generate_contract_group_id, ContractGroupInfo, ContractGroupMember, ContractGroupMembership,
-    ContractGroupOwner, ContractGroupRegistration,
+    ContractGroupRegistration,
 };
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
@@ -22,12 +22,15 @@ fn identity(seed: u8) -> Identifier {
 }
 
 fn single_owner_info(owner: Identifier, name: &str) -> ContractGroupInfo {
-    ContractGroupRegistration {
-        owner: ContractGroupOwner::SingleOwner(owner),
-        name: Some(name.to_string()),
-        description: Some(format!("{} group", name)),
-    }
-    .into()
+    (
+        owner,
+        ContractGroupRegistration {
+            admins: BTreeSet::new(),
+            name: Some(name.to_string()),
+            description: Some(format!("{} group", name)),
+        },
+    )
+        .into()
 }
 
 fn membership(
@@ -645,4 +648,68 @@ fn should_page_through_members_with_a_cursor_and_bound_the_limit() {
             .prove_contract_group_members(group_id, &query, limit, None, platform_version)
             .is_err());
     }
+}
+
+/// A continuation cursor often sits on the last entry a contract has in the group. Descending
+/// into that contract finds nothing, and GroveDB would charge that empty descent against the
+/// limit unless told otherwise, which with a limit of one ended pagination before the next
+/// contract. The fetch and the proof both keep the limit, so a limit of one reaches everything.
+#[test]
+fn should_page_document_types_past_a_contract_with_no_entries_left() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let owner = identity(1);
+    let group_id = generate_contract_group_id(&owner, 6);
+    drive
+        .insert_contract_group(
+            group_id,
+            &single_owner_info(owner, "sparse"),
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to register the group");
+
+    // Four contracts with one document type each: every cursor lands on a contract's last entry.
+    let expected: Vec<(Identifier, String)> = [(30, "t1"), (31, "t2"), (32, "t3"), (33, "t4")]
+        .into_iter()
+        .map(|(seed, name)| (identity(seed), name.to_string()))
+        .collect();
+    for (contract_id, name) in &expected {
+        drive
+            .insert_contract_group_memberships(
+                *contract_id,
+                &[membership(
+                    group_id,
+                    ContractGroupMember::DocumentType(name.clone()),
+                )],
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to record the membership");
+    }
+
+    let mut query = ContractGroupMembersQuery::DocumentTypes { start_after: None };
+    let mut collected = vec![];
+    loop {
+        let page = drive
+            .fetch_contract_group_members(group_id, &query, 1, None, platform_version)
+            .expect("expected to fetch a page");
+        assert_members_page(&drive, group_id, &query, 1, &page, platform_version);
+        let ContractGroupMembersPage::DocumentTypes(entries) = &page else {
+            panic!("expected a document types page");
+        };
+        collected.extend(entries.iter().cloned());
+        match page.next_query() {
+            Some(next) => query = next,
+            None => break,
+        }
+    }
+    assert_eq!(
+        collected, expected,
+        "a limit of one must still reach every entry"
+    );
 }

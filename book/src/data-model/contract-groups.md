@@ -10,7 +10,7 @@ A **contract group** is the answer. It is an identity-owned set of contracts, co
 
 Three facts define a contract group:
 
-1. **One identity owns it.** The owner is the identity that registered the group. It can stand alone (`SingleOwner`) or name up to sixteen admins (`OwnerAndAdmins`), identities other than itself that may add members alongside it. Admins act alone: there is no threshold and no vote.
+1. **One identity owns it.** The owner is the identity that signed the registering transition, and it is never on the wire. It can stand alone or name up to sixteen admins in the registration, existing identities other than itself that may add members alongside it. Admins act alone: there is no threshold and no vote.
 2. **Its members are parts of contracts.** A member is a whole contract, one document type of a contract, or one token of a contract. A contract can only enrol itself. Memberships are declared by the create transition of the contract that joins, never by a third party and never for someone else's contract.
 3. **It is append-only.** Memberships are recorded when the member contract is created. There is no update path and no leaving. Contracts are never deleted either. Together these two facts are what let the storage layout use plain references safely, as the storage section explains.
 
@@ -63,17 +63,19 @@ pub struct ContractGroupMembership {
     pub member: ContractGroupMember,
 }
 
-/// The registration of a new contract group.
+/// The registration of a new contract group. The owner is the signer and is not on the wire.
 pub struct ContractGroupRegistration {
-    pub owner: ContractGroupOwner,
+    pub admins: BTreeSet<Identifier>,
     pub name: Option<String>,
     pub description: Option<String>,
 }
 ```
 
-`ContractGroupOwner` has the helpers validation needs: `owner_id()`, `admin_ids()`, `admin_count()` and `may_add_members(&identity_id)`, which is true for the owner and for every admin. The admins are a `BTreeSet`, so a duplicate admin cannot be expressed and the encoding is canonical.
+The owner is deliberately absent from the registration: the only valid value would be the transition's signer, so carrying it would add thirty-two signed bytes and an error for the one mistake that field could express. The admins are a `BTreeSet`, so a duplicate admin cannot be expressed and the encoding is canonical.
 
-The stored type is the registration with a version envelope, because it is persisted and must remain decodable forever:
+`ContractGroupOwner` is the stored form of ownership, built from the signer and the registration when the transition becomes an action: an empty admin set stores `SingleOwner`, anything else `OwnerAndAdmins`. It has the helpers validation needs: `owner_id()`, `admin_ids()`, `admin_count()` and `may_add_members(&identity_id)`, which is true for the owner and for every admin.
+
+The stored type wraps the owner with a version envelope, because it is persisted and must remain decodable forever:
 
 ```rust
 #[platform_serialize(unversioned)]
@@ -120,7 +122,7 @@ In JSON the transition looks like this (identifiers abbreviated):
   "dataContract": { "...": "..." },
   "identityNonce": 7,
   "contractGroup": {
-    "owner": { "singleOwner": "GWRSAVFM…S31Ec" },
+    "admins": ["GWRSAVFM…S31Ec"],
     "name": "cardgame",
     "description": "Rules, marketplace and token contracts of the card game"
   },
@@ -135,7 +137,7 @@ In JSON the transition looks like this (identifiers abbreviated):
 }
 ```
 
-The first membership joins the group this very transition registers, by its derived id. The other two join a group registered earlier, one the signer owns or administers. An owner with admins is written as `{ "ownerAndAdmins": { "owner": "…", "admins": ["…"] } }`.
+The first membership joins the group this very transition registers, by its derived id. The other two join a group registered earlier, one the signer owns or administers. A group with a single owner leaves `admins` out or empty; the owner never appears, since it is the signer. Both group fields may be omitted from a version 1 object, which then reads as a plain creation.
 
 ### Version Bounds
 
@@ -149,7 +151,7 @@ contract_create_state_transition: FeatureVersionBounds {
 },
 ```
 
-Below protocol version 14 the maximum is 0, so a version 1 transition is rejected by the ordinary version bounds check, like any unknown version. At protocol version 14 the default moves to 1, which is why the factory test in `packages/rs-dpp/src/data_contract/factory/v0/mod.rs` compares the version of the transition it builds against `default_current_version` rather than a literal.
+Below protocol version 14 a version 1 transition has to be refused before anything looks inside it, and the bounds table above does not do that on a node: only client-side code consults it. The gate is `StateTransition::active_version_range`, which answers 14 to the latest version for a version 1 create, so `deserialize_from_bytes_untrusted_in_version` fails with `StateTransitionIsNotActiveError` on a protocol version 13 node. Without that arm an upgraded node would create the contract, charge the fee and silently drop the group data while a pre-upgrade binary rejected the same bytes. At protocol version 14 the default moves to 1, which is why the factory test in `packages/rs-dpp/src/data_contract/factory/v0/mod.rs` compares the version of the transition it builds against `default_current_version` rather than a literal.
 
 ### Accessors
 
@@ -173,13 +175,12 @@ Contract group checks slot into the existing [validation pipeline](../state-tran
 
 `contract_group_basic_structure_error` in `packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/data_contract_create/basic_structure/v2/mod.rs` runs after the existing contract checks and returns the first violation it finds, in this order:
 
-1. If the transition registers a group, the signer must be its owner, whichever form the owner takes. Being named as an admin is not enough to register.
-2. `OwnerAndAdmins` must name between 1 and `max_contract_group_admins` (16) admins, and the owner may not be among them.
-3. `name`, when present, must be 1 to `max_contract_group_name_length` (64) characters. `description`, when present, 1 to `max_contract_group_description_length` (256). Lengths count characters, not bytes.
-4. The membership list must hold at most `max_contract_group_memberships_per_contract` (16) entries.
-5. For each membership: a `DocumentType` member must name a document type of the created contract, and a `Token` member must name a token position the contract defines.
-6. No `(group id, member)` pair may repeat.
-7. A document type or token membership is redundant, and rejected, when the whole contract joins the same group in the same transition.
+1. If the transition registers a group, its `admins`, when any, must number at most `max_contract_group_admins` (16) and must not include the signer, who is the owner.
+2. `name`, when present, must be 1 to `max_contract_group_name_length` (64) characters. `description`, when present, 1 to `max_contract_group_description_length` (256). Lengths count characters, not bytes.
+3. The membership list must hold at most `max_contract_group_memberships_per_contract` (16) entries.
+4. For each membership: a `DocumentType` member must name a document type of the created contract, and a `Token` member must name a token position the contract defines.
+5. No `(group id, member)` pair may repeat.
+6. A document type or token membership is redundant, and rejected, when the whole contract joins the same group in the same transition.
 
 It is a free function rather than a method on the transition because drive-abci cannot add inherent methods to a type defined in dpp; the orphan rule forbids it.
 
@@ -187,8 +188,9 @@ It is a free function rather than a method on the transition because drive-abci 
 
 `validate_contract_groups_against_state` in `.../data_contract_create/state/v1/mod.rs` runs after the version 0 state checks (the contract must not already exist) and after the `refersTo` reference validation. It bills every lookup on the execution context and stops at the first failure:
 
-1. The group the transition registers must not exist yet.
-2. Every group a membership names must exist and must have the signer as its owner or one of its admins. The group registered by this same transition is skipped, since the signer owns it by construction, and each other group is fetched once however many memberships name it.
+1. The group the transition registers must not exist yet. Its id was derived when the transition became an action, and that double hash is billed here, as the contract id derivation is.
+2. Every admin the registration names must be an existing non-masternode identity, the check change-control group members get; a missing one fails with `ContractGroupAdminNotFoundError`. Memberships are creation-only, so a mistyped admin could never be replaced.
+3. Every group a membership names must exist and must have the signer as its owner or one of its admins. The group registered by this same transition is skipped, since the signer owns it by construction, and each other group is fetched once however many memberships name it.
 
 A failure here returns a `BumpIdentityNonceAction` carrying the errors: the identity pays for the lookups and its nonce advances, exactly as for any other paid validation failure.
 
@@ -201,14 +203,14 @@ A failure here returns a `BumpIdentityNonceAction` carrying the errors: the iden
 | 10362 | `RedundantContractGroupMembershipError` | structure |
 | 10363 | `ContractGroupMemberNotInContractError` | structure |
 | 10364 | `InvalidContractGroupAdminsError` | structure |
-| 10365 | `ContractGroupRegistrantNotOwnerError` | structure |
 | 10366 | `InvalidContractGroupNameLengthError` | structure |
 | 10367 | `InvalidContractGroupDescriptionLengthError` | structure |
 | 41000 | `ContractGroupAlreadyExistsError` | state |
 | 41001 | `ContractGroupNotFoundError` | state |
 | 41002 | `IdentityNotContractGroupOwnerOrAdminError` | state |
+| 41003 | `ContractGroupAdminNotFoundError` | state |
 
-The basic errors live in `packages/rs-dpp/src/errors/consensus/basic/contract_group/` and the state errors in `.../consensus/state/contract_group/`. Both sets were appended at the tail of their enums; `StateError` has a frozen-discriminant test that would catch an insertion in the middle. The basic codes follow the change-control group range as their own block, and the state codes open a new hundred, 41000 to 41099, rather than borrowing from the identity range. See [Error Codes](../error-handling/error-codes.md) for the code ranges.
+The basic errors live in `packages/rs-dpp/src/errors/consensus/basic/contract_group/` and the state errors in `.../consensus/state/contract_group/`. Both sets were appended at the tail of their enums; `StateError` has a frozen-discriminant test that pins the four new variants, so an insertion before them fails it. Code 10365 is unassigned: the registrant-not-owner rule it served became inexpressible once the owner left the wire. The basic codes follow the change-control group range as their own block, and the state codes open a new hundred, 41000 to 41099, rather than borrowing from the identity range. See [Error Codes](../error-handling/error-codes.md) for the code ranges.
 
 ## From Transition to Action to Operations
 
@@ -224,7 +226,7 @@ pub struct DataContractCreateTransitionActionV1 {
 }
 ```
 
-Two things happen in the transformer (`packages/rs-drive/src/state_transition_action/contract/data_contract_create/v1/transformer.rs`). The registration becomes a `ContractGroupInfo`, the stored form, and the group id is derived once and carried alongside it, so nothing after this point needs the transition's owner and nonce. The `BumpIdentityNonceAction` transformer gained matching version 1 arms so a paid failure can still be turned into a nonce bump.
+Two things happen in the transformer (`packages/rs-drive/src/state_transition_action/contract/data_contract_create/v1/transformer.rs`). The registration becomes a `ContractGroupInfo`, the stored form, with the signer as owner, and the group id is derived once and carried alongside it, so nothing after this point needs the transition's owner and nonce; state validation reads the id from the action rather than hashing again. The `BumpIdentityNonceAction` transformer gained matching version 1 arms so a paid failure can still be turned into a nonce bump.
 
 Converting the action into [Drive operations](../state-transitions/drive-operations.md) is where ordering matters. The version 1 arm of `into_high_level_drive_operations` emits, in this order:
 
@@ -237,16 +239,16 @@ The contract is applied before anything touches the group trees, and the registr
 
 ## Storage
 
-Contract groups get their own root tree, `RootTree::ContractGroups`, at key `68`. The number was chosen from the free slots of the root tree; the four conversion impls in `packages/rs-drive/src/drive/mod.rs` and the `KnownPath` mapping in the batch module were extended for it. Path helpers and the single-byte subtree keys live in `packages/rs-drive/src/drive/contract_groups/paths.rs`.
+Contract groups get their own root tree, `RootTree::ContractGroups`, at key `124`. The number matters: a root key becomes a child of some existing node in the root Merk, and every write under that node's subtree then rewrites a slightly larger node. Key 124 attaches under `Versions` (120), which only the block-level app-version update writes, so no fee-bearing transition pays for it. A lower free key such as 68 would have attached under the asset-lock outpoints node and raised every identity create and top-up fee by 1480 credits for the life of the chain; the four conversion impls in `packages/rs-drive/src/drive/mod.rs` and the `KnownPath` mapping in the batch module were extended for it. Path helpers and the single-byte subtree keys live in `packages/rs-drive/src/drive/contract_groups/paths.rs`.
 
 ```text
-[68] ContractGroups
+[124] ContractGroups
 ├── [0] Groups
 │   └── <contract group id>
 │       ├── [0] Info            -> Item(bincode ContractGroupInfo { owner, name?, description? })
 │       ├── [1] Contracts       -> <contract id> -> Item([])
-│       ├── [2] DocumentTypes   -> <contract id> -> <document type name> -> Item([])
-│       └── [3] Tokens          -> <contract id> -> <token position, u16 BE> -> Item([])
+│       ├── [2] DocumentTypes   -> <contract id || document type name> -> Item([])
+│       └── [3] Tokens          -> <contract id || token position, u16 BE> -> Item([])
 └── [1] Members
     └── <contract id>
         ├── [0] Groups          -> <contract group id> -> Reference to Groups/<group>/[1]/<contract id>
@@ -254,7 +256,7 @@ Contract groups get their own root tree, `RootTree::ContractGroups`, at key `68`
         └── [2] Tokens          -> <token position> -> <contract group id> -> Reference
 ```
 
-`Groups` is the forward store: everything about one group under its id. `Members` is the backwards index: everything one contract belongs to, under the contract id. Every leaf on the forward side is an empty item; the key carries all the information. Token positions are two big-endian bytes and document type names are their UTF-8 bytes, which keeps the trees ordered and lets the decoders rebuild typed values from keys alone.
+`Groups` is the forward store: everything about one group under its id. `Members` is the backwards index: everything one contract belongs to, under the contract id. Every leaf on the forward side is an empty item; the key carries all the information. Document type and token members sit on one level under a composite key, the contract id followed by the UTF-8 name or the two big-endian position bytes, rather than under a subtree per contract. The keys still sort by contract, and a flat level pages with a plain range after the cursor key. A subtree per contract would have forced a continuation page to descend into the cursor's contract, and GroveDB charges an empty descent against the page limit, which shortened every continuation page and ended a limit-one walk early. The decoders rebuild typed values from keys alone.
 
 ### Why Plain References
 
@@ -262,13 +264,13 @@ The backwards entries are GroveDB `Reference` elements of type `UpstreamRootHeig
 
 ### Why Members Is Keyed by Contract First
 
-The `Members` side is laid out so that "is document type `D` of contract `C` in group `G`" is one point lookup at `[68, 1, C, 1, D, G]`. That is the shape a future `ContractBounds::ContractGroup` on identity keys will need: for every document in a batch, one existence check under the contract the document belongs to. The layout was chosen for that consumer before it exists.
+The `Members` side is laid out so that "is document type `D` of contract `C` in group `G`" is one point lookup at `[124, 1, C, 1, D, G]`, and the forward side answers it at `[124, 0, G, 2, C || D]`. That is the shape a future `ContractBounds::ContractGroup` on identity keys will need: for every document in a batch, one existence check under the contract the document belongs to. The layout was chosen for that consumer before it exists.
 
 ### Writing
 
 Registration (`insert_contract_group_operations_v0`) inserts the group's tree under `Groups` with `batch_insert_empty_tree_if_not_exists`, and if the tree was already there returns `CorruptedDriveState`. State validation guarantees the group is new, so hitting that branch means the two disagree, which is exactly what a corrupted-state error is for. It then writes the `Info` item and the three empty member subtrees.
 
-Memberships (`insert_contract_group_memberships_operations_v0`) write one empty item on the forward side and one reference on the backwards side per membership, creating the intermediate trees on both sides as needed. Two memberships often need the same parent tree, for instance two document types of the same contract joining the same group both need `Groups/<G>/DocumentTypes/<C>`. GroveDB rejects a batch that operates twice on one slot under batching consistency verification, so the inserter keeps a `HashSet` of tree paths it has already created in this batch and inserts each parent once.
+Memberships (`insert_contract_group_memberships_operations_v0`) write one empty item on the forward side and one reference on the backwards side per membership, creating the intermediate trees on both sides as needed, each with an if-not-exists insert so a tree left by an earlier declaration of the same contract is kept rather than overwritten once memberships can be added after creation. Two memberships often need the same parent tree, for instance two document types of the same contract joining the same group both need `Groups/<G>/DocumentTypes/<C>`. GroveDB rejects a batch that operates twice on one slot under batching consistency verification, so the inserter keeps a `HashSet` of tree paths it has already created in this batch and inserts each parent once.
 
 ### Cost Estimation
 
@@ -276,7 +278,7 @@ Both inserts have an estimation twin under `estimated_costs/` that declares `Est
 
 ### Creating the Trees
 
-A fresh chain creates the root tree and its two subtrees in `create_initial_state_structure_v4` (`packages/rs-drive/src/drive/initialization/v4/mod.rs`), which `DRIVE_VERSION_V9` selects. A chain upgrading to protocol version 14 creates the same three trees in `transition_to_version_14`, the migration hook the [Versioned Dispatch](../versioning/versioned-dispatch.md) chapter describes. Both subtrees are created up front so a registration only ever writes under `Groups` and a membership only under `Groups` and `Members`; no write path has to check whether the top of the tree exists.
+One helper, `Drive::insert_contract_groups_structure`, creates the root tree and its two subtrees. A fresh chain calls it from `create_initial_state_structure_v4` (`packages/rs-drive/src/drive/initialization/v4/mod.rs`), which `DRIVE_VERSION_V9` selects; a chain upgrading to protocol version 14 calls it from `transition_to_version_14`, the migration hook the [Versioned Dispatch](../versioning/versioned-dispatch.md) chapter describes. Sharing the helper is what keeps a node started at 14 and a node upgraded to it byte-identical under this key, the same reason the shielded pool has `insert_shielded_pool_structure`. Both subtrees are created up front so a registration only ever writes under `Groups` and a membership only under `Groups` and `Members`; no write path has to check whether the top of the tree exists.
 
 ## Reading and Proving
 
@@ -286,7 +288,7 @@ A group can be joined by any number of contracts, so nothing reads or proves a w
 - `fetch_contract_group_members(group_id, &query, limit)` returns one `ContractGroupMembersPage` of one kind. The `ContractGroupMembersQuery` names the kind, `Contracts`, `DocumentTypes` or `Tokens`, and carries a `start_after` cursor: a contract id alone, or a contract id with a document type name or a token position. Entries come back in key order, at most `limit` of them, and `page.next_query()` is the query for the page after it, `None` once a page is empty. `limit` must lie between 1 and the node's `max_query_limit`, on the fetch side and on the proof side, so no page and no proof grows with the size of the group. `prove_contract_group_members` and `verify_contract_group_members` take the same query and limit.
 - `fetch_contract_group_memberships_for_contract(contract_id)` returns a `ContractGroupMembershipsForContract`: the groups the whole contract joined, the groups each document type joined and the groups each token joined. It needs no limit: memberships are recorded at creation only and capped per transition, so a contract belongs to at most sixteen. `prove_contract_group_memberships_for_contract` and `verify_contract_group_memberships_for_contract` are its proof pair.
 
-Three path queries in `packages/rs-drive/src/drive/contract_groups/queries.rs` drive all of them. `contract_group_info_query` asks for the one info key under the group's tree. `contract_group_members_query` reads one kind's subtree: a range after the cursor for `Contracts`; for `DocumentTypes` and `Tokens`, a range from the cursor's contract onward with a range-full default subquery, plus a conditional subquery on the cursor's contract itself that starts after the cursor's name or position, so a page can end in the middle of one contract's entries and the next page resumes exactly there. `contract_group_memberships_for_contract_query` reads a contract's `Members` entry with a conditional subquery per kind. The same `PathQuery` is used to fetch and to prove, so what a node reads locally and what a client verifies are the same set of elements.
+Three path queries in `packages/rs-drive/src/drive/contract_groups/queries.rs` drive all of them. `contract_group_info_query` asks for the one info key under the group's tree. `contract_group_members_query` reads one kind's level: the whole level on a first page, or a range after the cursor's key on a continuation, where the key is the contract id for `Contracts` and the contract id followed by the name or position for the other two kinds. There is no subquery to descend into, so a page can end anywhere and the next page resumes exactly after it. `contract_group_memberships_for_contract_query` reads a contract's `Members` entry with a conditional subquery per kind. The same `PathQuery` is used to fetch and to prove, so what a node reads locally and what a client verifies are the same set of elements.
 
 Verification lives in `packages/rs-drive/src/verify/contract_groups/`. Each verify function rebuilds its result from the proved `(path, key, element)` triples with the same decoders the fetches use, in `types.rs`. Member pages carry no data in their elements: every entry is read from its path and key. The info item is the one thing that decodes bytes, and the verifier uses the untrusted `ContractGroupInfo` decoder because proof bytes came from someone else, where the fetch uses the trusted one.
 
@@ -342,8 +344,8 @@ The first protocol version 14 change ships the consensus core only. Known gaps, 
 Coverage sits at the three layers the feature touches (see [Unit Tests](../testing/unit-tests.md)):
 
 - **dpp** (`contract_group/mod.rs`): the id derivation differs from the contract id and depends on both inputs; both owner kinds resolve membership; the stored info round-trips through bincode with the untrusted decoder.
-- **drive** (`drive/contract_groups/tests.rs`): the root tree exists in the initial structure at protocol version 14 and not before; a group can be registered and proved present or absent; memberships land on both sides and prove; members page through with a cursor, and a zero or over-the-maximum page size is refused on both the fetch and the proof side; estimation and apply build the same operations; registering an existing group is refused.
-- **drive-abci** (`data_contract_create/contract_group_tests.rs`): end-to-end through `process_raw_state_transitions`, covering register-and-join in one transition, an owner adding a later contract by document type and token, joining a group the identity does not own as a paid failure, joining an unknown group, a group with admins accepting the owner and each admin and refusing outsiders, a registrant who is not the owner (even when named as an admin) rejected before paying, and the full set of malformed registrations and memberships rejected in basic structure.
+- **drive** (`drive/contract_groups/tests.rs`): the root tree exists in the initial structure at protocol version 14 and not before; a group can be registered and proved present or absent; memberships land on both sides and prove; members page through with a cursor, a limit of one still reaches every entry past a contract with nothing left, and a zero or over-the-maximum page size is refused on both the fetch and the proof side; estimation and apply build the same operations; registering an existing group is refused.
+- **drive-abci** (`data_contract_create/contract_group_tests.rs`): end-to-end through `process_raw_state_transitions`, covering register-and-join in one transition, an owner adding a later contract by document type and token, joining a group the identity does not own as a paid failure, joining an unknown group, a group with admins accepting the owner and each admin and refusing outsiders, a registration naming an unknown admin rejected as a paid failure, a version 0 create still processed at the latest version, and the full set of malformed registrations and memberships rejected in basic structure. The protocol upgrade hook has its own test proving the trees exist and accept a registration after the 13 to 14 transition.
 
 ```bash
 cargo test -p dpp --all-features -- contract_group

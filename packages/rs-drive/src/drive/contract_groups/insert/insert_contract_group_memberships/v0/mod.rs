@@ -1,7 +1,7 @@
 use crate::drive::contract_groups::paths::{
-    contract_group_contracts_path_vec, contract_group_document_types_for_contract_path_vec,
-    contract_group_document_types_path, contract_group_tokens_for_contract_path_vec,
-    contract_group_tokens_path, contract_groups_members_path,
+    contract_group_contracts_path_vec, contract_group_document_type_member_key,
+    contract_group_document_types_path_vec, contract_group_token_member_key,
+    contract_group_tokens_path_vec, contract_groups_members_path,
     contract_memberships_document_type_path_vec, contract_memberships_document_types_path,
     contract_memberships_groups_path_vec, contract_memberships_path,
     contract_memberships_token_path_vec, contract_memberships_tokens_path,
@@ -13,8 +13,9 @@ use crate::drive::contract_groups::paths::{
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::object_size_info::DriveKeyInfo;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
+use crate::util::object_size_info::PathKeyInfo;
 use dpp::block::block_info::BlockInfo;
 use dpp::contract_group::{ContractGroupMember, ContractGroupMembership};
 use dpp::fee::fee_result::FeeResult;
@@ -22,7 +23,7 @@ use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::{HashMap, HashSet};
 
 /// A backwards reference from a member contract's index to the forward entry `forward_path`
@@ -82,13 +83,18 @@ impl Drive {
         )
     }
 
-    /// Inserts an empty tree at `path/key` once per call: a second membership needing the same
-    /// tree reuses the first insertion, so one batch never carries two operations on one slot.
+    /// Inserts an empty tree at `path/key` once per call and only when it does not exist yet: a
+    /// second membership needing the same tree reuses the first insertion, so one batch never
+    /// carries two operations on one slot, and a tree left by an earlier declaration of the same
+    /// contract (once memberships can be added after creation) is kept rather than overwritten.
+    #[allow(clippy::too_many_arguments)]
     fn insert_contract_group_tree_once(
         &self,
         created_trees: &mut HashSet<Vec<Vec<u8>>>,
         path: Vec<Vec<u8>>,
         key: &[u8],
+        apply_type: BatchInsertTreeApplyType,
+        transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -97,13 +103,17 @@ impl Drive {
         if !created_trees.insert(tree_path) {
             return Ok(());
         }
-        self.batch_insert_empty_tree(
-            path.iter().map(Vec::as_slice),
-            DriveKeyInfo::KeyRef(key),
+        self.batch_insert_empty_tree_if_not_exists(
+            PathKeyInfo::<0>::PathKey((path, key.to_vec())),
+            TreeType::NormalTree,
             None,
+            apply_type,
+            transaction,
+            &mut None,
             batch_operations,
             &platform_version.drive,
-        )
+        )?;
+        Ok(())
     }
 
     pub(super) fn insert_contract_group_memberships_operations_v0(
@@ -113,12 +123,22 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        _transaction: TransactionArg,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         if memberships.is_empty() {
             return Ok(vec![]);
         }
+
+        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+            BatchInsertTreeApplyType::StatefulBatchInsertTree
+        } else {
+            BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                in_tree_type: TreeType::NormalTree,
+                tree_type: TreeType::NormalTree,
+                flags_len: 0,
+            }
+        };
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Drive::add_estimation_costs_for_insert_contract_group_memberships(
@@ -142,6 +162,8 @@ impl Drive {
                 .map(|segment| segment.to_vec())
                 .collect(),
             &contract_id_bytes,
+            apply_type,
+            transaction,
             &mut batch_operations,
             platform_version,
         )?;
@@ -169,6 +191,8 @@ impl Drive {
                             .map(|segment| segment.to_vec())
                             .collect(),
                         CONTRACT_MEMBERSHIPS_GROUPS_KEY,
+                        apply_type,
+                        transaction,
                         &mut batch_operations,
                         platform_version,
                     )?;
@@ -192,24 +216,15 @@ impl Drive {
                 ContractGroupMember::DocumentType(document_type_name) => {
                     let name_bytes = document_type_name.as_bytes();
 
-                    // Forward: [.., <group>, DocumentTypes, <contract id>] / <name>
-                    self.insert_contract_group_tree_once(
-                        &mut created_trees,
-                        contract_group_document_types_path(&contract_group_id)
-                            .iter()
-                            .map(|segment| segment.to_vec())
-                            .collect(),
+                    // Forward: [.., <group>, DocumentTypes] / <contract id || name>
+                    let member_key = contract_group_document_type_member_key(
                         &contract_id_bytes,
-                        &mut batch_operations,
-                        platform_version,
-                    )?;
+                        document_type_name,
+                    );
                     self.batch_insert(
                         PathKeyElement::<0>((
-                            contract_group_document_types_for_contract_path_vec(
-                                &contract_group_id,
-                                &contract_id_bytes,
-                            ),
-                            name_bytes.to_vec(),
+                            contract_group_document_types_path_vec(&contract_group_id),
+                            member_key.clone(),
                             Element::new_item(vec![]),
                         )),
                         &mut batch_operations,
@@ -224,6 +239,8 @@ impl Drive {
                             .map(|segment| segment.to_vec())
                             .collect(),
                         CONTRACT_MEMBERSHIPS_DOCUMENT_TYPES_KEY,
+                        apply_type,
+                        transaction,
                         &mut batch_operations,
                         platform_version,
                     )?;
@@ -234,6 +251,8 @@ impl Drive {
                             .map(|segment| segment.to_vec())
                             .collect(),
                         name_bytes,
+                        apply_type,
+                        transaction,
                         &mut batch_operations,
                         platform_version,
                     )?;
@@ -249,9 +268,8 @@ impl Drive {
                                     CONTRACT_GROUPS_GROUPS_KEY.to_vec(),
                                     contract_group_id.to_vec(),
                                     CONTRACT_GROUP_DOCUMENT_TYPES_KEY.to_vec(),
-                                    contract_id_bytes.to_vec(),
                                 ],
-                                name_bytes,
+                                &member_key,
                             ),
                         )),
                         &mut batch_operations,
@@ -261,24 +279,13 @@ impl Drive {
                 ContractGroupMember::Token(token_position) => {
                     let position_bytes = token_position.to_be_bytes();
 
-                    // Forward: [.., <group>, Tokens, <contract id>] / <position>
-                    self.insert_contract_group_tree_once(
-                        &mut created_trees,
-                        contract_group_tokens_path(&contract_group_id)
-                            .iter()
-                            .map(|segment| segment.to_vec())
-                            .collect(),
-                        &contract_id_bytes,
-                        &mut batch_operations,
-                        platform_version,
-                    )?;
+                    // Forward: [.., <group>, Tokens] / <contract id || position>
+                    let member_key =
+                        contract_group_token_member_key(&contract_id_bytes, *token_position);
                     self.batch_insert(
                         PathKeyElement::<0>((
-                            contract_group_tokens_for_contract_path_vec(
-                                &contract_group_id,
-                                &contract_id_bytes,
-                            ),
-                            position_bytes.to_vec(),
+                            contract_group_tokens_path_vec(&contract_group_id),
+                            member_key.clone(),
                             Element::new_item(vec![]),
                         )),
                         &mut batch_operations,
@@ -293,6 +300,8 @@ impl Drive {
                             .map(|segment| segment.to_vec())
                             .collect(),
                         CONTRACT_MEMBERSHIPS_TOKENS_KEY,
+                        apply_type,
+                        transaction,
                         &mut batch_operations,
                         platform_version,
                     )?;
@@ -303,6 +312,8 @@ impl Drive {
                             .map(|segment| segment.to_vec())
                             .collect(),
                         &position_bytes,
+                        apply_type,
+                        transaction,
                         &mut batch_operations,
                         platform_version,
                     )?;
@@ -318,9 +329,8 @@ impl Drive {
                                     CONTRACT_GROUPS_GROUPS_KEY.to_vec(),
                                     contract_group_id.to_vec(),
                                     CONTRACT_GROUP_TOKENS_KEY.to_vec(),
-                                    contract_id_bytes.to_vec(),
                                 ],
-                                &position_bytes,
+                                &member_key,
                             ),
                         )),
                         &mut batch_operations,
