@@ -280,6 +280,10 @@ pub struct IdentityKeyEntryFFI {
     //     both the `id` and the heap-allocated UTF-8 doc-type
     //     C-string are meaningful. Doc-type string is released by
     //     [`free_identity_key_entry_ffi`].
+    //   * `contract_bounds_kind == 3`: `ContractGroup`; the 32-byte
+    //     `id` is the contract group id, doc-type pointer is null.
+    //     The client must persist the kind itself: an id without a
+    //     doc-type name is otherwise indistinguishable from kind 1.
     //
     // Keeping the kind tag inline (vs. always nulling fields) lets
     // the Swift side switch on a single discriminant without

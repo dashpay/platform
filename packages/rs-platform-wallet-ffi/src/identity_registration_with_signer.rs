@@ -108,6 +108,9 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 ///     `contract_bounds_id` is the 32-byte contract id;
 ///     `contract_bounds_document_type` is a NUL-terminated UTF-8
 ///     document type name. Both must be non-null.
+///   - `contract_bounds_kind == 3` → `ContractGroup` (authentication
+///     keys only). `contract_bounds_id` is the 32-byte contract group
+///     id; the `contract_bounds_document_type` pointer is ignored.
 ///
 /// All pointers are borrowed for the call duration only — the
 /// FFI does not retain or free them.
