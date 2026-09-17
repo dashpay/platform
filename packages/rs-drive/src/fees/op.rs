@@ -28,7 +28,9 @@ use dpp::block::epoch::Epoch;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::refunds::{FeeRefunds, RefundOwnersByIdentifier};
 use dpp::fee::fee_result::FeeResult;
+use dpp::fee::refund_owner::{RefundOwner, SYSTEM_REFUND_CARRIER_KEY};
 use dpp::fee::Credits;
+use dpp::identifier::Identifier as PlatformIdentifier;
 use platform_version::version::fee::FeeVersion;
 
 /// Base ops
@@ -371,10 +373,16 @@ impl LowLevelDriveOperation {
     }
 
     /// Sums the plain and typed calculated costs of a list of operations,
-    /// keeping the recorded refund owners of the typed ones.
+    /// establishing the refund owner of every sectioned removal key.
     ///
-    /// Owner maps merge by carrier key; one key recorded for two different
-    /// owners is a collision and is reported, never resolved by picking one.
+    /// Each input attributes its own removal keys before anything merges: a
+    /// plain cost's sectioned keys are identities, as the identity-only flags
+    /// that produced them say; a typed cost must carry a recorded owner for
+    /// every sectioned key of its own, and an unrecorded key is an invariant
+    /// failure rather than something to guess at. The system key is never an
+    /// owner. Owners then merge by carrier key, and one key attributed to two
+    /// different owners, within an input or across inputs, is reported and
+    /// never resolved by picking one.
     pub fn combine_cost_operations_with_refund_owners(
         operations: &[LowLevelDriveOperation],
     ) -> Result<(OperationCost, RefundOwnersByIdentifier), Error> {
@@ -382,24 +390,45 @@ impl LowLevelDriveOperation {
         let mut owners = RefundOwnersByIdentifier::new();
         for op in operations {
             match op {
-                CalculatedCostOperation(operation_cost) => cost += operation_cost.clone(),
+                CalculatedCostOperation(operation_cost) => {
+                    if let SectionedStorageRemoval(removal) =
+                        &operation_cost.storage_cost.removed_bytes
+                    {
+                        for key in removal.keys() {
+                            if *key == SYSTEM_REFUND_CARRIER_KEY {
+                                continue;
+                            }
+                            Self::record_refund_owner(
+                                &mut owners,
+                                *key,
+                                RefundOwner::Identity(PlatformIdentifier::from(*key)),
+                            )?;
+                        }
+                    }
+                    cost += operation_cost.clone();
+                }
                 CalculatedCostOperationWithRefundOwners {
                     cost: operation_cost,
                     refund_owners,
                 } => {
-                    for (key, owner) in refund_owners {
-                        match owners.get(key) {
-                            Some(existing) if existing != owner => {
-                                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                                    "two different refund owners share one storage removal \
-                                     carrier key across combined cost operations",
-                                )));
+                    if let SectionedStorageRemoval(removal) =
+                        &operation_cost.storage_cost.removed_bytes
+                    {
+                        for key in removal.keys() {
+                            if *key == SYSTEM_REFUND_CARRIER_KEY {
+                                continue;
                             }
-                            Some(_) => {}
-                            None => {
-                                owners.insert(*key, *owner);
-                            }
+                            let owner = refund_owners.get(key).ok_or(Error::Drive(
+                                DriveError::CorruptedCodeExecution(
+                                    "a typed cost operation sections removed bytes under a \
+                                     carrier key it recorded no refund owner for",
+                                ),
+                            ))?;
+                            Self::record_refund_owner(&mut owners, *key, *owner)?;
                         }
+                    }
+                    for (key, owner) in refund_owners {
+                        Self::record_refund_owner(&mut owners, *key, *owner)?;
                     }
                     cost += operation_cost.clone();
                 }
@@ -407,6 +436,26 @@ impl LowLevelDriveOperation {
             }
         }
         Ok((cost, owners))
+    }
+
+    fn record_refund_owner(
+        owners: &mut RefundOwnersByIdentifier,
+        key: [u8; 32],
+        owner: RefundOwner,
+    ) -> Result<(), Error> {
+        match owners.get(&key) {
+            Some(existing) if *existing != owner => {
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "two different refund owners share one storage removal carrier key across \
+                     combined cost operations",
+                )))
+            }
+            Some(_) => Ok(()),
+            None => {
+                owners.insert(key, owner);
+                Ok(())
+            }
+        }
     }
 
     /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
@@ -1713,7 +1762,6 @@ impl DriveCost for OperationCost {
 #[allow(clippy::identity_op)]
 mod tests {
     use super::*;
-    use dpp::fee::refund_owner::RefundOwner;
     use dpp::identifier::Identifier;
     use grovedb_costs::storage_cost::removal::{
         StorageRemovalPerEpochByIdentifier, StorageRemovedBytes,
@@ -2175,36 +2223,45 @@ mod tests {
         assert_eq!(combined, cost, "only the plain cost is folded");
     }
 
-    #[test]
-    fn should_sum_typed_cost_operations_and_merge_their_owners() {
-        let cost = OperationCost {
-            seek_count: 4,
+    fn sectioned_cost(entries: &[([u8; 32], u32)]) -> OperationCost {
+        let mut removal = StorageRemovalPerEpochByIdentifier::new();
+        for (key, bytes) in entries {
+            removal.insert(*key, IntMap::from_iter([(0u16, *bytes)]));
+        }
+        OperationCost {
+            seek_count: 1,
             storage_cost: StorageCost {
-                added_bytes: 7,
-                replaced_bytes: 3,
-                removed_bytes: StorageRemovedBytes::NoStorageRemoval,
+                added_bytes: 0,
+                replaced_bytes: 0,
+                removed_bytes: SectionedStorageRemoval(removal),
             },
-            storage_loaded_bytes: 11,
-            hash_node_calls: 2,
+            storage_loaded_bytes: 0,
+            hash_node_calls: 0,
             sinsemilla_hash_calls: 0,
-        };
+        }
+    }
+
+    #[test]
+    fn should_attribute_every_sectioned_key_when_combining_plain_and_typed_costs() {
         let identity = RefundOwner::Identity(Identifier::from([5u8; 32]));
         let bucket = RefundOwner::ContractBucket {
             contract_id: Identifier::from([6u8; 32]),
             position: 1,
         };
         let operations = vec![
-            CalculatedCostOperation(cost.clone()),
+            // a plain cost from identity-only flags: its keys are identities
+            CalculatedCostOperation(sectioned_cost(&[
+                (identity.removal_key(), 100),
+                (SYSTEM_REFUND_CARRIER_KEY, 7),
+            ])),
             CalculatedCostOperationWithRefundOwners {
-                cost: cost.clone(),
-                refund_owners: BTreeMap::from([(identity.removal_key(), identity)]),
+                cost: sectioned_cost(&[(bucket.removal_key(), 40), (SYSTEM_REFUND_CARRIER_KEY, 3)]),
+                refund_owners: BTreeMap::from([(bucket.removal_key(), bucket)]),
             },
+            // the same identity again through a typed cost merges cleanly
             CalculatedCostOperationWithRefundOwners {
-                cost: cost.clone(),
-                refund_owners: BTreeMap::from([
-                    (identity.removal_key(), identity),
-                    (bucket.removal_key(), bucket),
-                ]),
+                cost: sectioned_cost(&[(identity.removal_key(), 20)]),
+                refund_owners: BTreeMap::from([(identity.removal_key(), identity)]),
             },
             FunctionOperation(FunctionOp::new_with_round_count(HashFunction::Sha256, 1)),
         ];
@@ -2213,11 +2270,13 @@ mod tests {
             LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&operations)
                 .expect("should combine");
 
-        assert_eq!(combined.seek_count, 12);
-        assert_eq!(combined.storage_cost.added_bytes, 21);
-        assert_eq!(combined.storage_cost.replaced_bytes, 9);
-        assert_eq!(combined.storage_loaded_bytes, 33);
-        assert_eq!(combined.hash_node_calls, 6);
+        assert_eq!(combined.seek_count, 3);
+        let SectionedStorageRemoval(removal) = &combined.storage_cost.removed_bytes else {
+            panic!("sectioned removals stay sectioned");
+        };
+        assert_eq!(removal[&identity.removal_key()].get(0u16), Some(&120));
+        assert_eq!(removal[&bucket.removal_key()].get(0u16), Some(&40));
+        assert_eq!(removal[&SYSTEM_REFUND_CARRIER_KEY].get(0u16), Some(&10));
         assert_eq!(
             owners,
             BTreeMap::from([
@@ -2225,12 +2284,75 @@ mod tests {
                 (bucket.removal_key(), bucket),
             ])
         );
+        assert!(
+            !owners.contains_key(&SYSTEM_REFUND_CARRIER_KEY),
+            "the system key is never an owner"
+        );
+
+        // the aggregate prices as a whole through the typed constructor
+        let mut priced_removal = removal.clone();
+        priced_removal.remove(&SYSTEM_REFUND_CARRIER_KEY);
+        FeeRefunds::from_typed_storage_removal(
+            priced_removal,
+            &owners,
+            3,
+            20,
+            &BTreeMap::from([(0, FeeVersion::first())]),
+        )
+        .expect("every key has an owner");
+    }
+
+    #[test]
+    fn should_reject_a_typed_cost_that_sections_bytes_under_an_unrecorded_key() {
+        let bucket = RefundOwner::ContractBucket {
+            contract_id: Identifier::from([6u8; 32]),
+            position: 1,
+        };
+        // 100 unattributed bytes plus 40 attributed bytes under one key must
+        // not become 140 bucket owned bytes
+        let operations = vec![
+            CalculatedCostOperationWithRefundOwners {
+                cost: sectioned_cost(&[(bucket.removal_key(), 100)]),
+                refund_owners: BTreeMap::new(),
+            },
+            CalculatedCostOperationWithRefundOwners {
+                cost: sectioned_cost(&[(bucket.removal_key(), 40)]),
+                refund_owners: BTreeMap::from([(bucket.removal_key(), bucket)]),
+            },
+        ];
+
+        let result =
+            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&operations);
+
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+        ));
     }
 
     #[test]
     fn should_reject_one_carrier_key_with_two_owners_across_combined_cost_operations() {
-        let key = [9u8; 32];
-        let operations = vec![
+        let bucket = RefundOwner::ContractBucket {
+            contract_id: Identifier::from([1u8; 32]),
+            position: 0,
+        };
+        let key = bucket.removal_key();
+
+        // a plain identity removal whose key equals the bucket carrier key
+        let plain_then_typed = vec![
+            CalculatedCostOperation(sectioned_cost(&[(key, 10)])),
+            CalculatedCostOperationWithRefundOwners {
+                cost: sectioned_cost(&[(key, 1)]),
+                refund_owners: BTreeMap::from([(key, bucket)]),
+            },
+        ];
+        assert!(matches!(
+            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&plain_then_typed),
+            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+        ));
+
+        // two typed records naming different owners for one key
+        let typed_conflict = vec![
             CalculatedCostOperationWithRefundOwners {
                 cost: OperationCost::default(),
                 refund_owners: BTreeMap::from([(
@@ -2240,21 +2362,11 @@ mod tests {
             },
             CalculatedCostOperationWithRefundOwners {
                 cost: OperationCost::default(),
-                refund_owners: BTreeMap::from([(
-                    key,
-                    RefundOwner::ContractBucket {
-                        contract_id: Identifier::from([1u8; 32]),
-                        position: 0,
-                    },
-                )]),
+                refund_owners: BTreeMap::from([(key, bucket)]),
             },
         ];
-
-        let result =
-            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&operations);
-
         assert!(matches!(
-            result,
+            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&typed_conflict),
             Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
         ));
     }
