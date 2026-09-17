@@ -43,6 +43,59 @@ fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
     .expect("reopen persister")
 }
 
+#[test]
+fn should_reject_instant_lock_with_mismatched_row_txid() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let wallet_id = wid(0xE9);
+    ensure_wallet_meta(&persister, &wallet_id);
+    let txid = Txid::from_byte_array([0xEA; 32]);
+    let other = Txid::from_byte_array([0xEB; 32]);
+    let lock = dashcore::InstantLock {
+        txid,
+        ..Default::default()
+    };
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    instant_locks_for_non_final_records: [(txid, lock.clone())].into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let conn = persister.lock_conn_for_test();
+    let (loaded, _, _) = core_state::load_state(
+        &conn,
+        &wallet_id,
+        key_wallet::Network::Testnet,
+        &LoadCtx::strict(),
+    )
+    .unwrap();
+    assert_eq!(
+        loaded.instant_locks_for_non_final_records.get(&txid),
+        Some(&lock)
+    );
+    assert_eq!(
+        conn.execute(
+            "UPDATE core_instant_locks SET txid = ?1 WHERE wallet_id = ?2",
+            rusqlite::params![other.as_byte_array().as_slice(), wallet_id.as_slice()],
+        )
+        .unwrap(),
+        1
+    );
+    let error = core_state::load_state(
+        &conn,
+        &wallet_id,
+        key_wallet::Network::Testnet,
+        &LoadCtx::strict(),
+    )
+    .expect_err("Strict load must reject a lock whose blob txid differs from its row key");
+    assert!(matches!(error, WalletStorageError::BlobDecode { .. }));
+}
+
 #[tokio::test]
 async fn should_restore_coinbase_maturity_from_funding_record() {
     use dashcore::{BlockHash, ScriptBuf, Transaction, TxIn, Witness};

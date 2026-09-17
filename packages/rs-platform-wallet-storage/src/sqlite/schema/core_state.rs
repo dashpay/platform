@@ -1164,6 +1164,11 @@ pub fn load_state(
             let txid = dashcore::Txid::from_slice(&txid_bytes)?;
             let islock: dashcore::ephemerealdata::instant_lock::InstantLock =
                 blob::decode(&blob_bytes)?;
+            if islock.txid != txid {
+                return Err(WalletStorageError::blob_decode(
+                    "core_instant_locks.txid disagrees with the decoded InstantLock's txid",
+                ));
+            }
             cs.instant_locks_for_non_final_records.insert(txid, islock);
         }
     }
