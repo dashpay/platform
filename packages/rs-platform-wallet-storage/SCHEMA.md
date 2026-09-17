@@ -91,7 +91,7 @@ erDiagram
         INTEGER is_sweep_placeholder "1 until funding arrives"
         INTEGER spent "0 | 1"
         BLOB spent_in_txid "set by apply_sweep for an unresolved held input; else NULL"
-        INTEGER winner_mined_height "V007: sweep winner's mined height; NULL when unstamped or materialised"
+        INTEGER winner_mined_height "block-spend evidence; NULL when no mined spend is known"
     }
 
     CORE_INSTANT_LOCKS {
@@ -397,7 +397,8 @@ row.
 restart restoration. Partial updates merge by account and preserve sibling
 slices. Legacy rows retain a NULL blob and are reconstructed from owned input
 and output addresses after the account pools are restored; ambiguous ownership
-fails the wallet load.
+fails the wallet load. Payload-only key-account involvement is recovered through
+the transaction matcher, including provider records retained after finality.
 
 - PK: `(wallet_id, txid)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
@@ -426,18 +427,18 @@ network-final spender of a coin it knows is wallet-relevant, so its view of
 link. A delivery through `spent_utxos` onto a placeholder materialises it
 the same way instead of marking it in place.
 
-`winner_mined_height` (V007) stamps that claim with the mined height of the
-winner named in `spent_in_txid`, and decides the placeholder's lifetime
-rather than its existence. A block-context sweep stamps the winner's own
+`winner_mined_height` (V007) retains block-spend evidence, including an observed
+spend with no transaction record or `spent_in_txid`. A block-context sweep stamps the winner's own
 height and `collect_finalized_tombstones` evicts the row once
 `min(chainlock_height, synced_height)` reaches it — upstream's
 `prune_finalized_observed_spends` boundary verbatim. An InstantSend-locked
 winner that is not yet mined leaves it NULL: the lock alone settles the
 input, but it carries no height to key a lifetime on, so the row resolves
 only through proof (the funding upsert materialising it, a later
-block-context sweep re-stamping it, or a release). The funding upsert
-clears the stamp, because a materialised row is the wallet's own coin held
-spent and is permanently outside the collector's reach.
+block-context sweep re-stamping it, or a release). Funding materialisation
+preserves the stamp while the coin remains spent, so restoration retains the
+block-spend evidence. Materialised rows are outside the collector's reach.
+A release clears the stamp together with the spent flag.
 
 - PK: `(wallet_id, outpoint)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.

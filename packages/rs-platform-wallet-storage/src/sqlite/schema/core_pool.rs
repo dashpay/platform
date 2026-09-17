@@ -294,6 +294,40 @@ pub fn load_typed_pool_entries(
     Ok(out)
 }
 
+/// Read legacy pool rows whose addresses can be verified from an account xpub.
+pub(crate) fn load_untyped_pool_entries(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    account_type: &key_wallet::account::AccountType,
+    pool_type: AddressPoolType,
+) -> Result<Vec<(u32, Vec<u8>, bool)>, WalletStorageError> {
+    let (user_id, friend_id) = accounts::account_dashpay_ids(account_type);
+    let mut stmt = conn.prepare(
+        "SELECT address_index, length(script), script, used FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+           AND user_identity_id = ?4 AND friend_identity_id = ?5 AND pool_type = ?6 \
+           AND public_key IS NULL AND key_type IS NULL ORDER BY address_index",
+    )?;
+    let mut rows = stmt.query(params![
+        wallet_id.as_slice(),
+        accounts::account_type_db_label(account_type),
+        i64::from(accounts::account_index(account_type)),
+        user_id.as_slice(),
+        friend_id.as_slice(),
+        pool_type_to_i64(pool_type),
+    ])?;
+    let mut entries = Vec::new();
+    while let Some(row) = rows.next()? {
+        let index = crate::sqlite::util::safe_cast::i64_to_u32(
+            "core_address_pool.address_index",
+            row.get(0)?,
+        )?;
+        blob::check_size(row.get(1)?)?;
+        entries.push((index, row.get(2)?, row.get(3)?));
+    }
+    Ok(entries)
+}
+
 /// Identity of the funds account that owns an address, matched against a
 /// `core_address_pool` row. Enough to select one account among funding accounts
 /// that share a numeric `account_index` (Standard BIP44/BIP32 and CoinJoin can

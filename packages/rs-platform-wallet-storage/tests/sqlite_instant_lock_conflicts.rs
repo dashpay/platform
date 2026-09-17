@@ -17,8 +17,7 @@ use platform_wallet::changeset::{
 use platform_wallet_storage::sqlite::{rehydrate::apply_persisted_core_state, schema::core_state};
 use platform_wallet_storage::{LoadCtx, SqlitePersister, SqlitePersisterConfig};
 
-#[tokio::test]
-async fn should_match_live_balance_after_separate_instant_lock_sweeps_conflict() {
+async fn separate_lock_round_trip(with_descendant: bool) {
     let (persister, _tmp, path) = fresh_persister();
     let mut wallet = Wallet::from_seed_bytes(
         [0xC8; 64],
@@ -70,8 +69,34 @@ async fn should_match_live_balance_after_separate_instant_lock_sweeps_conflict()
             .await;
         records.extend(result.new_records);
     }
+    let descendant = with_descendant.then(|| Transaction {
+        input: vec![TxIn {
+            previous_output: OutPoint::new(loser.txid(), 0),
+            ..Default::default()
+        }],
+        output: vec![TxOut {
+            value: 6_000,
+            script_pubkey: address.script_pubkey(),
+        }],
+        ..loser.clone()
+    });
+    if let Some(descendant) = &descendant {
+        let result = live
+            .check_core_transaction(
+                descendant,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await;
+        records.extend(result.new_records);
+    }
     live.update_balance();
-    assert_eq!(live.balance.total(), 12_000);
+    assert_eq!(
+        live.balance.total(),
+        if with_descendant { 11_000 } else { 12_000 }
+    );
     let coins: Vec<_> = live
         .accounts
         .all_funding_accounts()
@@ -176,4 +201,21 @@ async fn should_match_live_balance_after_separate_instant_lock_sweeps_conflict()
         .unwrap()
         .transactions()
         .contains_key(&loser.txid()));
+    if let Some(descendant) = descendant {
+        assert!(!restored
+            .first_bip44_managed_account()
+            .unwrap()
+            .transactions()
+            .contains_key(&descendant.txid()));
+    }
+}
+
+#[tokio::test]
+async fn should_match_live_balance_after_separate_instant_lock_sweeps_conflict() {
+    separate_lock_round_trip(false).await;
+}
+
+#[tokio::test]
+async fn should_remove_conflicting_descendants_after_separate_instant_lock() {
+    separate_lock_round_trip(true).await;
 }

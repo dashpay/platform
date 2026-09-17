@@ -20,7 +20,8 @@ use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchr
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
 use crate::sqlite::rehydrate::{
-    apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
+    apply_persisted_core_state, build_wallet, restore_provider_key_pools,
+    restore_provider_platform_node_pool,
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
@@ -1514,7 +1515,12 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// # }
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        let conn = self.conn().map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
+        // All tables and checkpoints must describe one committed state, including with external writers.
+        let conn = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)
+            .map_err(WalletStorageError::from)
+            .map_err(PersistenceError::from)?;
         let ctx = LoadCtx::new(self.config.load_policy);
         // Cleared up front so a failed load never leaves the previous load's
         // snapshot behind, masquerading as this one's verdict.
@@ -1590,6 +1596,9 @@ impl PlatformWalletPersistence for SqlitePersister {
         ctx.add_unimplemented_rows(
             count_unimplemented_rows(&conn).map_err(PersistenceError::from)?,
         );
+        conn.commit()
+            .map_err(WalletStorageError::from)
+            .map_err(PersistenceError::from)?;
         let degradation = ctx.degradation();
         tracing::info!(
             wallets_seen,
@@ -1821,16 +1830,8 @@ fn load_one_wallet(
     // Provider key-material accounts hold no funds, so only the ECDSA
     // half feeds the UTXO/balance projection here. The platform-node
     // pre-derived-key pool is restored separately below.
-    apply_persisted_core_state(
-        &mut wallet_info,
-        &account_manifest.ecdsa,
-        &core_state,
-        &utxo_accounts,
-        &used_core_addresses,
-        &restored_spends,
-        ctx,
-    )
-    .map_err(PersistenceError::from)?;
+    restore_provider_key_pools(&mut wallet_info, conn, &wallet_id, &account_manifest)
+        .map_err(PersistenceError::from)?;
     if account_manifest
         .provider
         .iter()
@@ -1844,6 +1845,16 @@ fn load_one_wallet(
                 ))
             })?;
     }
+    apply_persisted_core_state(
+        &mut wallet_info,
+        &account_manifest.ecdsa,
+        &core_state,
+        &utxo_accounts,
+        &used_core_addresses,
+        &restored_spends,
+        ctx,
+    )
+    .map_err(PersistenceError::from)?;
     Ok(platform_wallet::changeset::ClientWalletStartState {
         wallet,
         wallet_info,

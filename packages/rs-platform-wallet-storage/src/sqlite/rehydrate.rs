@@ -7,6 +7,7 @@
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::managed_account_ref::ManagedAccountRefMut;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::transaction_record::{
     OutputRole, TransactionDirection, TransactionRecord,
@@ -19,7 +20,9 @@ use key_wallet::Network;
 use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
-use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+use platform_wallet::changeset::{
+    AccountRegistrationEntry, CoreChangeSet, ProviderKeyExtendedPubKey,
+};
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
@@ -168,6 +171,97 @@ pub(crate) fn restore_provider_platform_node_pool(
                 WalletStorageError::AccountRecordInvalid { e: source }
             }
         })?;
+    }
+    Ok(())
+}
+
+/// Restore verified provider public key pools before matching legacy payload-only records.
+pub(crate) fn restore_provider_key_pools(
+    wallet_info: &mut ManagedWalletInfo,
+    conn: &rusqlite::Connection,
+    wallet_id: &[u8; 32],
+    manifest: &AccountManifest,
+) -> Result<(), WalletStorageError> {
+    use key_wallet::managed_account::address_pool::KeySource;
+
+    for account in wallet_info.accounts.all_accounts_mut() {
+        let ManagedAccountRefMut::Keys(account) = account else {
+            continue;
+        };
+        let account_type = account.managed_account_type().to_account_type();
+        if !matches!(
+            account_type,
+            AccountType::ProviderOwnerKeys
+                | AccountType::ProviderVotingKeys
+                | AccountType::ProviderOperatorKeys
+        ) {
+            continue;
+        }
+        let source = manifest
+            .ecdsa
+            .iter()
+            .find(|entry| entry.account_type == account_type)
+            .map(|entry| KeySource::Public(entry.account_xpub))
+            .or_else(|| {
+                manifest.provider.iter().find_map(|entry| {
+                    if entry.account_type != account_type {
+                        return None;
+                    }
+                    match &entry.extended_public_key {
+                        ProviderKeyExtendedPubKey::Bls(key) => {
+                            Some(KeySource::BLSPublic(key.clone()))
+                        }
+                        ProviderKeyExtendedPubKey::EdDSA(_) => None,
+                    }
+                })
+            });
+        let Some(source) = source else { continue };
+        for pool in account.managed_account_type_mut().address_pools_mut() {
+            let mut entries: Vec<_> =
+                core_pool::load_typed_pool_entries(conn, wallet_id, &account_type, pool.pool_type)?
+                    .into_iter()
+                    .map(|(index, script, key, used)| (index, script, Some(key), used))
+                    .collect();
+            entries.extend(
+                core_pool::load_untyped_pool_entries(
+                    conn,
+                    wallet_id,
+                    &account_type,
+                    pool.pool_type,
+                )?
+                .into_iter()
+                .map(|(index, script, used)| (index, script, None, used)),
+            );
+            for (index, script, public_key, used) in entries {
+                if index > MAX_REHYDRATION_DERIVATION_INDEX {
+                    return Err(WalletStorageError::blob_decode(
+                        "persisted key-account pool exceeds the restoration derivation limit",
+                    ));
+                }
+                let address = ensure_derived(pool, &source, index).ok_or_else(|| {
+                    WalletStorageError::blob_decode(
+                        "persisted key-account address cannot be derived",
+                    )
+                })?;
+                let info = pool.address_info(&address).ok_or_else(|| {
+                    WalletStorageError::blob_decode(
+                        "derived key-account address is missing from its pool",
+                    )
+                })?;
+                if info.script_pubkey.as_bytes() != script
+                    || public_key
+                        .as_ref()
+                        .is_some_and(|key| info.public_key.as_ref() != Some(key))
+                {
+                    return Err(WalletStorageError::blob_decode(
+                        "persisted key-account address disagrees with its account key",
+                    ));
+                }
+                if used {
+                    pool.mark_used(&address);
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -465,6 +559,18 @@ fn restore_core_state(
 
     wallet_info.restore_persisted_state(persisted)?;
 
+    // Restored lock tracking makes mark_instant_send_utxos skip its live sweep.
+    for record in &core.records {
+        if let Some(lock) = core.instant_locks_for_non_final_records.get(&record.txid) {
+            wallet_info.sweep_conflicts(
+                &record.transaction,
+                &TransactionContext::InstantSend(lock.clone()),
+            );
+        } else if matches!(record.context, TransactionContext::InstantSend(_)) {
+            wallet_info.sweep_conflicts(&record.transaction, &record.context);
+        }
+    }
+
     // Replay lock metadata after restoring records. Coins are already marked
     // above because records with InstantSend context pre-register the txid and
     // make this method return early.
@@ -486,6 +592,7 @@ fn reconstruct_legacy_account_records(
     wallet_info: &ManagedWalletInfo,
     record: &TransactionRecord,
 ) -> Result<Vec<TransactionRecord>, WalletStorageError> {
+    use key_wallet::transaction_checking::transaction_router::AccountTypeToCheck;
     use key_wallet::wallet::managed_wallet_info::RestoreError;
 
     let accounts = wallet_info.accounts.all_funding_accounts();
@@ -568,6 +675,38 @@ fn reconstruct_legacy_account_records(
             || (detail.role == OutputRole::Sent && matches > 0)
     }) {
         return Err(RestoreError::InvalidRecord(record.txid).into());
+    }
+    let mut key_types = Vec::new();
+    for account in wallet_info.accounts.all_accounts() {
+        if account.as_keys().is_some() {
+            if let Ok(kind) =
+                AccountTypeToCheck::try_from(account.managed_account_type().to_account_type())
+            {
+                if !key_types.contains(&kind) {
+                    key_types.push(kind);
+                }
+            }
+        }
+    }
+    let matched = wallet_info
+        .accounts
+        .check_transaction(&record.transaction, &key_types);
+    for involved in matched.affected_accounts {
+        let Some(account) = wallet_info
+            .accounts
+            .get_by_account_type_match(&involved.account_type_match)
+        else {
+            continue;
+        };
+        let mut slice = record.clone();
+        slice.account_type = account.managed_account_type().to_account_type();
+        slice.input_details.clear();
+        slice.output_details.clear();
+        slice.net_amount = i64::try_from(i128::from(involved.received) - i128::from(involved.sent))
+            .map_err(|_| RestoreError::InvalidRecord(record.txid))?;
+        slice.direction = TransactionDirection::Internal;
+        slice.fee = None;
+        slices.push(slice);
     }
     if slices.is_empty() {
         slices.push(record.clone());

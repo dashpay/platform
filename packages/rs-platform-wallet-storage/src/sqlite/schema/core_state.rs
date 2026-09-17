@@ -359,10 +359,8 @@ pub fn apply(
     // reporting its own amnesia — honouring it flips the materialized UTXO
     // to `spent = 0` and hands a provably consumed coin back as spendable
     // after the next load, a guaranteed double spend. The same applies
-    // after a restart for every NETWORK-FINAL record (IS-locked, in-block,
-    // chainlocked): hydration rebuilds the in-memory wallet without its
-    // transaction history, so every settled claim the store holds is one
-    // upstream can no longer see. Bare mempool rows are deliberately not
+    // after a restart for finalized records compacted during restoration.
+    // Bare mempool rows are deliberately not
     // part of the veto — see `surviving_stored_input_claims` for why a
     // stale one must not strand a legitimately released coin.
     //
@@ -485,9 +483,9 @@ pub fn apply(
 /// the one context that can go stale forever: an evicted or abandoned
 /// mempool transaction has no removal path in this store other than a later
 /// sweep (upstream's abandon path emits no events —
-/// dashpay/rust-dashcore#976), and restoration deliberately does not
-/// repopulate ordinary transaction history, so nothing ever re-asserts or
-/// retracts the row. Letting it veto an authoritative release would leave
+/// dashpay/rust-dashcore#976). Restoration rebuilds pending history from
+/// these rows but cannot determine whether the network still retains them.
+/// Letting a stale row veto an authoritative release would leave
 /// the coin attributed to an unrelated winner and durably spent — the
 /// mirror image of the wrong-release bug this guard exists to stop. This is
 /// also exactly the mobile stores' rule: their link guard protects a
@@ -495,11 +493,8 @@ pub fn apply(
 /// mempool claim loses nothing here: in-session upstream holds the record
 /// and never names its inputs released, and within the round
 /// `claimed_by_survivors` carries the changeset's own mempool records. The
-/// one accepted trade: after a restart a still-alive mempool claimant on
-/// disk no longer vetoes, so the release wins and the coin may be
-/// transiently re-offered while that pending spend races — self-resolving
-/// when the pending spend confirms or dies, and strictly better than a
-/// permanent strand.
+/// stored mempool row therefore adds no independent veto; a restored live
+/// claim is protected by the engine's release calculation.
 ///
 /// Fails CLOSED. This scan is the final guard against re-crediting a
 /// consumed coin, so a malformed stored key must fail the round rather than

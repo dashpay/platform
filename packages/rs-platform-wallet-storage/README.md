@@ -84,6 +84,11 @@ unspent coin whose address cannot be verified against its restored account
 instead fails wallet restoration. Restore a missing derivation range before
 retrying; the loader cannot report an exact balance while ownership is unknown.
 
+`load()` reads all wallets, records, coins, and sync checkpoints from one SQLite
+snapshot, so another connection's commits cannot mix different wallet states.
+Legacy provider records are matched after restoring provider key pools, and
+saved InstantSend locks remove conflicting transactions and their descendants.
+
 `LoadDegradation` also reports `unimplemented_rows`: rows sitting in tables
 `load()` has no reader for. Those are intact, merely unread, so they never
 set the `degraded` flag.

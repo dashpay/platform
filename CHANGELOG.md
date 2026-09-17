@@ -3,6 +3,7 @@
 ### Fixed
 
 - Restore wallet records and coins consistently after separately persisted InstantSend locks, accept legacy outgoing contact payments, and apply saved ChainLock finality when opening a wallet.
+- Preserve legacy provider-account history, reconcile InstantSend conflicts on reopen, and read wallet storage from a consistent SQLite snapshot during concurrent writes.
 
 ## [4.2.0-dev.11](https://github.com/dashpay/platform/compare/v4.2.0-dev.10...v4.2.0-dev.11) (2026-09-14)
 
