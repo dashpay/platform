@@ -21,9 +21,9 @@ pub struct BatchTransitionActionV0 {
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
     /// The contract group memberships of every contract the batch touches, keyed by contract
-    /// id, as the transformer read them from state (protocol version 14). They let a key bound
-    /// to a contract group be judged from the action alone. Empty under transformer versions
-    /// that do not resolve them.
+    /// id, as the transformer read them from state (protocol version 14). Resolved only when
+    /// the batch is signed by a key bound to a contract group, so that key can be judged from
+    /// the action alone; empty for every other batch and under earlier transformer versions.
     pub contract_group_memberships: BTreeMap<Identifier, ResolvedContractGroupMemberships>,
 }
 

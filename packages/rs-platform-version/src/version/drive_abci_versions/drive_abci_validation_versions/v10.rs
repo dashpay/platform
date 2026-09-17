@@ -142,9 +142,10 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 //   * T3 — DashPay data trigger recipient identity-balance
                 //     fetch cost (switched to `fetch_identity_balance_with_costs`).
                 //   * T4 — withdrawals data trigger `query_documents` cost.
-                // `transform_into_action: 2` (protocol version 14) also resolves the
-                // contract group memberships of the batch's contracts into the action,
-                // unbilled unless a key bound to a contract group uses them.
+                // `transform_into_action: 2` (protocol version 14): when the batch is
+                // signed by a key bound to a contract group, it also resolves the
+                // contract group memberships of the batch's contracts into the action.
+                // Any other batch is transformed exactly as under 1.
                 transform_into_action: 2,
                 // PROTOCOL_VERSION_12 (v3.1 hard fork): per-transition
                 // failure paths in `transform_document_transition` now emit

@@ -429,3 +429,148 @@ async fn should_reject_non_batch_use_of_a_key_bound_to_a_contract_group() {
         Some(identity.balance())
     );
 }
+
+/// The transformer reads a contract's group memberships only when the batch is signed by a key
+/// bound to a contract group. Any other batch is transformed exactly as before, with no extra
+/// read, and a transformer that is not told who signed resolves nothing.
+#[tokio::test]
+async fn should_resolve_contract_group_memberships_only_for_a_group_bound_signing_key() {
+    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+    use crate::execution::validation::state_transition::transformer::{
+        StateTransitionActionTransformer, StateTransitionSignerAwareActionTransformer,
+    };
+    use crate::execution::validation::state_transition::ValidationMode;
+    use crate::platform_types::platform::PlatformRef;
+    use dpp::version::DefaultForPlatformVersion;
+    use drive::state_transition_action::StateTransitionAction;
+
+    for group_bound in [false, true] {
+        let version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (mut identity, signer, signing_key) =
+            setup_identity_without_adding_it(958, dash_to_credits!(0.1));
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(version)
+            .unwrap();
+        register_contract_group(&platform, KEY_GROUP, version);
+        join_contract_group(
+            &platform,
+            dashpay.id(),
+            KEY_GROUP,
+            ContractGroupMember::Contract,
+            version,
+        );
+        if group_bound {
+            let mut stored_key = signing_key.clone();
+            let IdentityPublicKey::V0(ref mut key) = stored_key;
+            key.contract_bounds = Some(ContractBounds::ContractGroup {
+                id: Identifier::from(KEY_GROUP),
+            });
+            identity.add_public_key(stored_key);
+        }
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                version,
+            )
+            .unwrap();
+        let profile = dashpay.document_type_for_name("profile").unwrap();
+        let mut rng = StdRng::seed_from_u64(433);
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut document = profile
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                version,
+            )
+            .unwrap();
+        set_valid_profile_payment_addresses(&mut document, profile);
+        document.set("avatarUrl", "http://test.com/bob.jpg".into());
+        let batch = BatchTransition::new_document_creation_transition_from_document(
+            document,
+            profile,
+            entropy.0,
+            &signing_key,
+            2,
+            0,
+            None,
+            &signer,
+            version,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+        let signer_identity = identity.clone().into_partial_identity_info();
+        let resolved_for = |signer: Option<&dpp::identity::PartialIdentity>| {
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(version).unwrap();
+            let result = match signer {
+                Some(signer) => batch.transform_into_action_for_signer(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    &None,
+                    Some(signer),
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                ),
+                None => batch.transform_into_action(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    &None,
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                ),
+            }
+            .expect("expected to transform the batch");
+            let StateTransitionAction::BatchAction(action) =
+                result.into_data().expect("expected an action")
+            else {
+                panic!("expected a batch action");
+            };
+            action
+                .contract_group_memberships(&dashpay.id())
+                .map(|resolved| resolved.memberships.clone())
+        };
+
+        let with_signer = resolved_for(Some(&signer_identity));
+        assert_eq!(
+            with_signer.is_some(),
+            group_bound,
+            "group_bound={group_bound}"
+        );
+        if let Some(memberships) = with_signer {
+            assert!(memberships.contains(&ContractGroupMembership {
+                contract_group_id: Identifier::from(KEY_GROUP),
+                member: ContractGroupMember::Contract,
+            }));
+        }
+        assert!(
+            resolved_for(None).is_none(),
+            "a transformer that is not told who signed resolves nothing"
+        );
+    }
+}

@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
+use crate::execution::validation::state_transition::transformer::StateTransitionSignerAwareActionTransformer;
 use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
 use crate::execution::validation::state_transition::shield_from_identity::StateTransitionShieldFromIdentityTransitionActionTransformer;
 use crate::platform_types::platform::PlatformRef;
@@ -37,12 +37,14 @@ use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::identity::PartialIdentity;
 use dpp::prelude::AddressNonce;
 
 fn transform_into_action_for_check_tx<C: CoreRPCLike>(
     state_transition: &StateTransition,
     platform: &PlatformRef<C>,
     remaining_address_balances: &Option<BTreeMap<PlatformAddress, (AddressNonce, Credits)>>,
+    signer_identity: Option<&PartialIdentity>,
     validation_mode: ValidationMode,
     execution_context: &mut StateTransitionExecutionContext,
     proof_verifier: &CheckTxProofVerifier,
@@ -69,10 +71,11 @@ fn transform_into_action_for_check_tx<C: CoreRPCLike>(
                 Some(proof_verifier),
                 None,
             ),
-        _ => state_transition.transform_into_action(
+        _ => state_transition.transform_into_action_for_signer(
             platform,
             platform.state.last_block_info(),
             remaining_address_balances,
+            signer_identity,
             validation_mode,
             execution_context,
             None,
@@ -297,6 +300,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     state_transition,
                     platform,
                     &remaining_address_balances,
+                    maybe_identity.as_ref(),
                     ValidationMode::CheckTx,
                     &mut state_transition_execution_context,
                     proof_verifier,
@@ -362,6 +366,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     state_transition,
                     platform,
                     &remaining_address_balances,
+                    maybe_identity.as_ref(),
                     ValidationMode::CheckTx,
                     &mut state_transition_execution_context,
                     proof_verifier,
@@ -485,6 +490,9 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     state_transition,
                     platform,
                     &remaining_address_balances,
+                    // A recheck does not run advanced structure validation, the only consumer
+                    // of what the transformer resolves for the signer, and loads no signer keys.
+                    None,
                     ValidationMode::RecheckTx,
                     &mut state_transition_execution_context,
                     proof_verifier,

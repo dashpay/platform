@@ -21,7 +21,7 @@ use crate::execution::validation::state_transition::processor::traits::shielded_
     StateTransitionHasShieldedProofValidationV0, StateTransitionShieldedMinimumFeeValidationV0,
     StateTransitionShieldedProofValidationV0,
 };
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
+use crate::execution::validation::state_transition::transformer::StateTransitionSignerAwareActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -271,10 +271,11 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     // Identity create, documents batch and masternode vote all have advanced structure validation with state
     let action = if state_transition.has_advanced_structure_validation_with_state() {
         // Currently used for identity create and documents batch
-        let state_transition_action_result = state_transition.transform_into_action(
+        let state_transition_action_result = state_transition.transform_into_action_for_signer(
             platform,
             block_info,
             &remaining_address_balances,
+            maybe_identity.as_ref(),
             ValidationMode::Validator,
             &mut state_transition_execution_context,
             transaction,
@@ -332,10 +333,11 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     } else if let Some(action) = action {
         ConsensusValidationResult::new_with_data(action)
     } else {
-        state_transition.transform_into_action(
+        state_transition.transform_into_action_for_signer(
             platform,
             block_info,
             &remaining_address_balances,
+            maybe_identity.as_ref(),
             ValidationMode::Validator,
             &mut state_transition_execution_context,
             transaction,

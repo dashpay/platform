@@ -40,7 +40,9 @@ use crate::execution::validation::state_transition::processor::advanced_structur
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::identity_nonces::StateTransitionIdentityNonceValidationV0;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
+use crate::execution::validation::state_transition::transformer::{
+    StateTransitionActionTransformer, StateTransitionSignerAwareActionTransformer,
+};
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
@@ -61,9 +63,36 @@ impl StateTransitionActionTransformer for BatchTransition {
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
+        remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        // No signer: nothing that depends on the signing key is resolved. Block processing and
+        // CheckTx go through `transform_into_action_for_signer`.
+        self.transform_into_action_for_signer(
+            platform,
+            block_info,
+            remaining_address_input_balances,
+            None,
+            validation_mode,
+            execution_context,
+            tx,
+        )
+    }
+}
+
+impl StateTransitionSignerAwareActionTransformer for BatchTransition {
+    fn transform_into_action_for_signer<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         _remaining_address_input_balances: &Option<
             BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         >,
+        signer_identity: Option<&PartialIdentity>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -92,12 +121,14 @@ impl StateTransitionActionTransformer for BatchTransition {
                 execution_context,
                 tx,
             ),
-            // PROTOCOL_VERSION_14+: `_v2` also resolves the contract group
-            // memberships of the batch's contracts into the action, so a key
-            // bound to a contract group is judged from the action.
+            // PROTOCOL_VERSION_14+: when the signing key is bound to a contract
+            // group, `_v2` also resolves the contract group memberships of the
+            // batch's contracts into the action, so the key is judged from the
+            // action.
             2 => self.transform_into_action_v2(
                 &platform.into(),
                 block_info,
+                signer_identity,
                 validation_mode,
                 execution_context,
                 tx,

@@ -125,7 +125,7 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                             // must belong to the key's group.
                             let resolved = action.contract_group_memberships(&contract_id).ok_or(
                                 Error::Execution(ExecutionError::CorruptedCodeExecution(
-                                    "the batch transformer must resolve the contract group memberships of every contract in the batch",
+                                    "the batch transformer must resolve contract group memberships for a batch signed by a group-bound key",
                                 )),
                             )?;
                             if billed_contracts.insert(contract_id) {
