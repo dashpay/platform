@@ -3,7 +3,6 @@ use grovedb_commitment_tree::{Anchor, FullViewingKey, SpendAuthorizingKey};
 use crate::address_funds::OrchardAddress;
 use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
-use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
@@ -187,12 +186,9 @@ where
     let mut bound_identity_id: Option<Identifier> = None;
     // Consensus refuses a key bound to a contract group in this transition (its Orchard sighash
     // layout predates group bounds); refuse it here before a proof is generated.
-    if let Some(key) = in_creation_keys.iter().find(|key| {
-        matches!(
-            key.contract_bounds(),
-            Some(ContractBounds::ContractGroup { .. })
-        )
-    }) {
+    if let Some(key) =
+        IdentityPublicKeyInCreation::first_bound_to_a_contract_group(&in_creation_keys)
+    {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "key {} is bound to a contract group, which an identity created from the shielded \
              pool cannot register; add it with an identity update",

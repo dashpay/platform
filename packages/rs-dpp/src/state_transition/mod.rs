@@ -70,7 +70,6 @@ use crate::fee::Credits;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::contract_bounds::BatchedTransitionBoundsCheck;
-use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
@@ -152,7 +151,6 @@ use crate::state_transition::identity_update_transition::{
 };
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
-use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::shield_from_asset_lock_transition::{
     ShieldFromAssetLockTransition, ShieldFromAssetLockTransitionSignable,
@@ -860,12 +858,7 @@ fn active_version_range_for_keys_in_creation(
     keys: &[IdentityPublicKeyInCreation],
     otherwise: RangeInclusive<ProtocolVersion>,
 ) -> RangeInclusive<ProtocolVersion> {
-    if keys.iter().any(|key| {
-        matches!(
-            key.contract_bounds(),
-            Some(ContractBounds::ContractGroup { .. })
-        )
-    }) {
+    if IdentityPublicKeyInCreation::first_bound_to_a_contract_group(keys).is_some() {
         14..=LATEST_VERSION
     } else {
         otherwise
@@ -3476,6 +3469,38 @@ mod tests {
     // protocol version 14. Below that a node must reject it rather than create the
     // contract and drop the group data.
     #[test]
+    fn test_data_contract_create_v1_is_not_active_before_protocol_version_14() {
+        use crate::serialization::PlatformSerializable;
+
+        let original = sample_data_contract_create_v1_st();
+        assert_eq!(original.active_version_range(), 14..=LATEST_VERSION);
+
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&original).expect("serialize succeeds");
+
+        let version_13 = PlatformVersion::get(13).expect("platform version 13 exists");
+        let err = StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_13)
+            .expect_err("expected StateTransitionIsNotActiveError at protocol version 13");
+        match err {
+            ProtocolError::StateTransitionError(
+                crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError {
+                    active_version_range,
+                    current_protocol_version,
+                    ..
+                },
+            ) => {
+                assert_eq!(current_protocol_version, 13);
+                assert_eq!(*active_version_range.start(), 14);
+            }
+            other => panic!("expected StateTransitionIsNotActiveError, got {other:?}"),
+        }
+
+        let version_14 = PlatformVersion::get(14).expect("platform version 14 exists");
+        StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14)
+            .expect("a version 1 create is active at protocol version 14");
+    }
+
+    #[test]
     fn should_gate_identity_transitions_carrying_a_contract_group_bound_key_to_protocol_version_14()
     {
         use crate::identity::contract_bounds::ContractBounds;
@@ -3553,38 +3578,6 @@ mod tests {
         let version_14 = PlatformVersion::get(14).expect("platform version 14 exists");
         StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14)
             .expect("a contract group bound key is active at protocol version 14");
-    }
-
-    #[test]
-    fn test_data_contract_create_v1_is_not_active_before_protocol_version_14() {
-        use crate::serialization::PlatformSerializable;
-
-        let original = sample_data_contract_create_v1_st();
-        assert_eq!(original.active_version_range(), 14..=LATEST_VERSION);
-
-        let bytes =
-            PlatformSerializable::serialize_to_bytes(&original).expect("serialize succeeds");
-
-        let version_13 = PlatformVersion::get(13).expect("platform version 13 exists");
-        let err = StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_13)
-            .expect_err("expected StateTransitionIsNotActiveError at protocol version 13");
-        match err {
-            ProtocolError::StateTransitionError(
-                crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError {
-                    active_version_range,
-                    current_protocol_version,
-                    ..
-                },
-            ) => {
-                assert_eq!(current_protocol_version, 13);
-                assert_eq!(*active_version_range.start(), 14);
-            }
-            other => panic!("expected StateTransitionIsNotActiveError, got {other:?}"),
-        }
-
-        let version_14 = PlatformVersion::get(14).expect("platform version 14 exists");
-        StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14)
-            .expect("a version 1 create is active at protocol version 14");
     }
 
     // -----------------------------------------------------------------------

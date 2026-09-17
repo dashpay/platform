@@ -1,8 +1,10 @@
+use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
+use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0Signable;
 use crate::ProtocolError;
@@ -53,6 +55,17 @@ impl IdentityPublicKeyInCreation {
                 received: version,
             }),
         }
+    }
+
+    /// The first of `keys` bound to a contract group, if any. A transition carrying such a key
+    /// is active from protocol version 14, and an identity created from the shielded pool
+    /// cannot register one.
+    pub fn first_bound_to_a_contract_group(keys: &[Self]) -> Option<&Self> {
+        keys.iter().find(|key| {
+            key.contract_bounds()
+                .and_then(ContractBounds::contract_group_id)
+                .is_some()
+        })
     }
 }
 
