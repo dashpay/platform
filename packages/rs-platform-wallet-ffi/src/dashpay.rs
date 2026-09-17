@@ -612,21 +612,35 @@ pub unsafe extern "C" fn platform_wallet_reserve_dashpay_payment_address(
     let from_id = unwrap_result_or_return!(read_identifier(from_identity_id));
     let to_id = unwrap_result_or_return!(read_identifier(to_contact_identity_id));
     let signer_addr = core_signer_handle as usize;
+    // Look the identity up under the registry guard, but wait outside it:
+    // the reservation waits on the manager write lock, the contact-payment
+    // gate, and the host store + flush, and a registry read guard held
+    // across those would stall `platform_wallet_destroy` and, through
+    // parking_lot's writer preference, every other registry reader.
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        let provider = resolver_contact_crypto_provider(
-            signer_addr as *mut MnemonicResolverHandle,
+        (
+            wallet.identity().clone(),
             wallet.wallet_id(),
             wallet.network(),
-        );
-        block_on_worker(async move {
-            identity
-                .dashpay()
-                .reserve_payment_address(&from_id, &to_id, &provider)
-                .await
-        })
+        )
     });
-    let result = unwrap_option_or_return!(option);
+    let (identity, wallet_id, network) = unwrap_option_or_return!(option);
+    // SAFETY: `signer_addr` came from `core_signer_handle`, which the caller
+    // pins alive for the duration of this synchronous call; the provider is
+    // dropped when the worker task completes, before this call returns.
+    let provider = unsafe {
+        resolver_contact_crypto_provider(
+            signer_addr as *mut MnemonicResolverHandle,
+            wallet_id,
+            network,
+        )
+    };
+    let result = block_on_worker(async move {
+        identity
+            .dashpay()
+            .reserve_payment_address(&from_id, &to_id, &provider)
+            .await
+    });
     let address = match result {
         Ok(address) => address,
         Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
