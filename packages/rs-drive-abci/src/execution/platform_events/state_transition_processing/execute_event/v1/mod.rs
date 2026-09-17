@@ -157,6 +157,16 @@ where
                 platform_version,
             )?;
 
+            // Only an executed event moved anything. No transition a limited key may sign has
+            // address outputs today, so this records nothing; it must not start to for an event
+            // that was refused.
+            self.record_added_balance_outputs(
+                address_balances_in_update,
+                added_to_balance_outputs,
+                AddedBalanceOutputsOrigin::Transparent,
+                platform_version,
+            )?;
+
             if consensus_errors.is_empty() {
                 SuccessfulPaidExecution(
                     Some(fee_validation_result.into_data()?),
@@ -173,13 +183,6 @@ where
             consensus_errors.append(&mut fee_validation_result.errors);
             UnpaidConsensusExecutionError(consensus_errors)
         };
-
-        self.record_added_balance_outputs(
-            address_balances_in_update,
-            added_to_balance_outputs,
-            AddedBalanceOutputsOrigin::Transparent,
-            platform_version,
-        )?;
 
         Ok(result)
     }

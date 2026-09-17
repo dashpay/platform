@@ -21,6 +21,9 @@ use crate::drive::RootTree;
 /// The size of an encoded remaining budget
 pub(crate) const KEY_BUDGET_SIZE: u32 = 8;
 
+/// The most bytes a key id takes as the key of a budget entry: a `u32` as a varint
+pub(crate) const KEY_ID_MAX_ENCODED_SIZE: u8 = 5;
+
 /// The path to the key budgets subtree of an identity
 pub(crate) fn identity_key_budgets_path(identity_id: &[u8]) -> [&[u8]; 3] {
     [

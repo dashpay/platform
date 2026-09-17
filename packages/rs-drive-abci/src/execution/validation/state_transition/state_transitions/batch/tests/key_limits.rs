@@ -342,8 +342,10 @@ async fn should_enforce_both_limits_on_a_key_that_has_both() {
         setup.process(&setup.profile_creation(433, 0).await, BLOCK_TIME_MS, &tx),
         StateTransitionExecutionResult::SuccessfulExecution { .. }
     );
-    let remaining = setup.remaining_budget(&tx);
-    assert!(remaining < Some(dash_to_credits!(0.5)));
+    let remaining = setup
+        .remaining_budget(&tx)
+        .expect("expected a remaining budget");
+    assert!(remaining < dash_to_credits!(0.5));
 
     // Budget left, but the key has expired by the next block.
     let balance = setup.balance(&tx);
@@ -353,7 +355,7 @@ async fn should_enforce_both_limits_on_a_key_that_has_both() {
         &tx,
     );
     assert_unpaid_with_code(&execution, PUBLIC_KEY_EXPIRED);
-    assert_eq!(setup.remaining_budget(&tx), remaining);
+    assert_eq!(setup.remaining_budget(&tx), Some(remaining));
     assert_eq!(setup.balance(&tx), balance);
 }
 
@@ -376,11 +378,15 @@ async fn should_not_charge_an_invalid_transition_through_a_key_that_may_not_pay_
         BLOCK_TIME_MS + 10,
         &tx,
     );
-    assert_matches!(
-        execution,
-        StateTransitionExecutionResult::InternalError(_)
-            | StateTransitionExecutionResult::UnpaidConsensusError(_)
-    );
+    // Not `UnpaidConsensusError(PublicKeyExpired)`: an invalid transition whose penalty cannot
+    // be charged is reported the way it always was for an identity that cannot afford it, as an
+    // internal error carrying the original failure (the shipped block loop leaves the payment
+    // failure out of the message). Require exactly that, so that no other internal failure can
+    // pass for it; the balance and nonce checks below show nothing was charged.
+    let StateTransitionExecutionResult::InternalError(message) = &execution else {
+        panic!("expected the transition to be dropped as unpayable, got {execution:?}");
+    };
+    assert!(message.contains("duplicate unique properties"), "{message}");
     assert_eq!(setup.balance(&tx), balance);
     let dashpay_id = setup
         .platform

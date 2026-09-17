@@ -1,4 +1,6 @@
-use crate::drive::identity::key::budget::{identity_key_budgets_path_vec, KEY_BUDGET_SIZE};
+use crate::drive::identity::key::budget::{
+    identity_key_budgets_path_vec, KEY_BUDGET_SIZE, KEY_ID_MAX_ENCODED_SIZE,
+};
 use crate::drive::Drive;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
@@ -19,7 +21,9 @@ impl Drive {
                 tree_type: TreeType::NormalTree,
                 // Budgeted keys are handed to applications; a handful per identity is typical.
                 estimated_layer_count: ApproximateElements(8),
-                estimated_layer_sizes: AllItems(1, KEY_BUDGET_SIZE, None),
+                // Entries are keyed by the varint key id. Estimate with the widest one, so that
+                // an identity with large key ids is never estimated below what it costs.
+                estimated_layer_sizes: AllItems(KEY_ID_MAX_ENCODED_SIZE, KEY_BUDGET_SIZE, None),
             },
         );
     }
