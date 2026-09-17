@@ -121,6 +121,15 @@ type PlatformgetDataContractHistory = {
   readonly responseType: typeof platform_pb.GetDataContractHistoryResponse;
 };
 
+type PlatformgetDataContractsLatestVersions = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetDataContractsLatestVersionsRequest;
+  readonly responseType: typeof platform_pb.GetDataContractsLatestVersionsResponse;
+};
+
 type PlatformgetDataContracts = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -128,6 +137,42 @@ type PlatformgetDataContracts = {
   readonly responseStream: false;
   readonly requestType: typeof platform_pb.GetDataContractsRequest;
   readonly responseType: typeof platform_pb.GetDataContractsResponse;
+};
+
+type PlatformgetDataContractsByRange = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetDataContractsByRangeRequest;
+  readonly responseType: typeof platform_pb.GetDataContractsResponse;
+};
+
+type PlatformgetContractGroupInfo = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractGroupInfoRequest;
+  readonly responseType: typeof platform_pb.GetContractGroupInfoResponse;
+};
+
+type PlatformgetContractGroupMembers = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractGroupMembersRequest;
+  readonly responseType: typeof platform_pb.GetContractGroupMembersResponse;
+};
+
+type PlatformgetContractGroupsForContract = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractGroupsForContractRequest;
+  readonly responseType: typeof platform_pb.GetContractGroupsForContractResponse;
 };
 
 type PlatformgetDocumentHistory = {
@@ -559,7 +604,12 @@ export class Platform {
   static readonly getEvonodesProposedEpochBlocksByRange: PlatformgetEvonodesProposedEpochBlocksByRange;
   static readonly getDataContract: PlatformgetDataContract;
   static readonly getDataContractHistory: PlatformgetDataContractHistory;
+  static readonly getDataContractsLatestVersions: PlatformgetDataContractsLatestVersions;
   static readonly getDataContracts: PlatformgetDataContracts;
+  static readonly getDataContractsByRange: PlatformgetDataContractsByRange;
+  static readonly getContractGroupInfo: PlatformgetContractGroupInfo;
+  static readonly getContractGroupMembers: PlatformgetContractGroupMembers;
+  static readonly getContractGroupsForContract: PlatformgetContractGroupsForContract;
   static readonly getDocumentHistory: PlatformgetDocumentHistory;
   static readonly getDocuments: PlatformgetDocuments;
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
@@ -757,6 +807,15 @@ export class PlatformClient {
     requestMessage: platform_pb.GetDataContractHistoryRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractHistoryResponse|null) => void
   ): UnaryResponse;
+  getDataContractsLatestVersions(
+    requestMessage: platform_pb.GetDataContractsLatestVersionsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractsLatestVersionsResponse|null) => void
+  ): UnaryResponse;
+  getDataContractsLatestVersions(
+    requestMessage: platform_pb.GetDataContractsLatestVersionsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractsLatestVersionsResponse|null) => void
+  ): UnaryResponse;
   getDataContracts(
     requestMessage: platform_pb.GetDataContractsRequest,
     metadata: grpc.Metadata,
@@ -765,6 +824,42 @@ export class PlatformClient {
   getDataContracts(
     requestMessage: platform_pb.GetDataContractsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractsResponse|null) => void
+  ): UnaryResponse;
+  getDataContractsByRange(
+    requestMessage: platform_pb.GetDataContractsByRangeRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractsResponse|null) => void
+  ): UnaryResponse;
+  getDataContractsByRange(
+    requestMessage: platform_pb.GetDataContractsByRangeRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractsResponse|null) => void
+  ): UnaryResponse;
+  getContractGroupInfo(
+    requestMessage: platform_pb.GetContractGroupInfoRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupInfoResponse|null) => void
+  ): UnaryResponse;
+  getContractGroupInfo(
+    requestMessage: platform_pb.GetContractGroupInfoRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupInfoResponse|null) => void
+  ): UnaryResponse;
+  getContractGroupMembers(
+    requestMessage: platform_pb.GetContractGroupMembersRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupMembersResponse|null) => void
+  ): UnaryResponse;
+  getContractGroupMembers(
+    requestMessage: platform_pb.GetContractGroupMembersRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupMembersResponse|null) => void
+  ): UnaryResponse;
+  getContractGroupsForContract(
+    requestMessage: platform_pb.GetContractGroupsForContractRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupsForContractResponse|null) => void
+  ): UnaryResponse;
+  getContractGroupsForContract(
+    requestMessage: platform_pb.GetContractGroupsForContractRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupsForContractResponse|null) => void
   ): UnaryResponse;
   getDocumentHistory(
     requestMessage: platform_pb.GetDocumentHistoryRequest,
