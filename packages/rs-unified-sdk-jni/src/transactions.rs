@@ -41,7 +41,7 @@
 use crate::pubkey_rows::decode_update_pubkeys_blob;
 use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jint, jlong, jstring};
+use jni::sys::{jboolean, jint, jlong, jstring};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
@@ -159,6 +159,11 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
 ///     u8[32] contract_bounds_id
 ///   if contract_bounds_kind == 2:
 ///     u16 doc_type_len, u8[doc_type_len] doc_type (UTF-8)
+///   u8   limits_flags       (bit 0: total_budget follows, bit 1: expires_at follows)
+///   if limits_flags & 1:
+///     u64 total_budget      (credits the key may spend over its lifetime)
+///   if limits_flags & 2:
+///     u64 expires_at        (block time in ms from which the key can no longer sign)
 /// ```
 ///
 /// `disablePublicKeyIds` is a JVM `int[]` of key ids to disable (may be
@@ -253,6 +258,72 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
         };
         // `decoded` / `ffi_rows` / `disable_ids` own the buffers the pointers
         // reference; they stay in scope through the FFI call above.
+        take_pwffi_error(env, result);
+    })
+}
+
+/// Raise the limits of one of the identity's keys through
+/// `platform_wallet_update_identity_key_limits_with_signer`: add
+/// `addBudget` credits to its total budget (and to what is left of it) when
+/// `hasAddBudget`, and move its expiry to `expiresAt` (block time in
+/// milliseconds) when `hasExpiresAt`. At least one must be set. The signer
+/// holds the identity's MASTER key or a CRITICAL authentication key without
+/// limits and without contract bounds. Room learns of the raised limits
+/// through the persistence changeset, as it does for an added key.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_updateIdentityKeyLimits(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+    key_id: jint,
+    has_add_budget: jboolean,
+    add_budget: jlong,
+    has_expires_at: jboolean,
+    expires_at: jlong,
+    signer_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return;
+        };
+        if key_id < 0 {
+            throw_sdk_exception(env, 1, "keyId must be non-negative");
+            return;
+        }
+        let has_add_budget = has_add_budget != 0;
+        let has_expires_at = has_expires_at != 0;
+        if !has_add_budget && !has_expires_at {
+            throw_sdk_exception(
+                env,
+                1,
+                "updateIdentityKeyLimits needs a budget to add or a new expiry",
+            );
+            return;
+        }
+        // `writeLong` is signed on the Kotlin side: a set sign bit is a bug, not a huge value.
+        if has_add_budget && add_budget < 0 {
+            throw_sdk_exception(env, 1, "addBudget must be non-negative");
+            return;
+        }
+        if has_expires_at && expires_at < 0 {
+            throw_sdk_exception(env, 1, "expiresAt must be non-negative");
+            return;
+        }
+
+        let result = unsafe {
+            platform_wallet_ffi::identity_key_limits::platform_wallet_update_identity_key_limits_with_signer(
+                wallet_handle as Handle,
+                id.as_ptr(),
+                key_id as u32,
+                has_add_budget,
+                add_budget as u64,
+                has_expires_at,
+                expires_at as u64,
+                signer_handle as *mut SignerHandle,
+            )
+        };
         take_pwffi_error(env, result);
     })
 }

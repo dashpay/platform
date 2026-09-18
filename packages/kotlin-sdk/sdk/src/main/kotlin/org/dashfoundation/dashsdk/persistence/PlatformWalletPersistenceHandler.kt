@@ -1863,6 +1863,10 @@ class PlatformWalletPersistenceHandler(
         contractBoundsKind: Byte,
         contractBoundsId: ByteArray,
         contractBoundsDocumentType: String?,
+        totalBudgetIsSome: Boolean,
+        totalBudget: Long,
+        expiresAtIsSome: Boolean,
+        expiresAt: Long,
     ): Int = guarded {
         // Item 1 — private-key persistence (the CLAUDE.md "one allowed
         // exception" shape). The `IdentityKeyEntryFFI` payload carries only
@@ -1990,6 +1994,10 @@ class PlatformWalletPersistenceHandler(
                 keyType = (keyType.toInt() and 0xFF).toString(),
                 readOnly = readOnly,
                 disabledAt = if (disabledAtIsSome) disabledAt else null,
+                // Usage limits (protocol version 14); a key limits update
+                // upserts the same key id with the raised values.
+                totalBudget = if (totalBudgetIsSome) totalBudget else null,
+                expiresAt = if (expiresAtIsSome) expiresAt else null,
                 publicKeyData = publicKeyData,
                 contractBoundsData = boundsData,
                 contractBoundsDocumentTypeName = docTypeName,
@@ -2872,6 +2880,10 @@ class PlatformWalletPersistenceHandler(
                         contractBoundsId = id,
                         contractBoundsDocumentType =
                             if (kind.toInt() == 2) pk.contractBoundsDocumentTypeName else null,
+                        totalBudgetIsSome = pk.totalBudget != null,
+                        totalBudget = pk.totalBudget ?: 0L,
+                        expiresAtIsSome = pk.expiresAt != null,
+                        expiresAt = pk.expiresAt ?: 0L,
                     )
                 }.toTypedArray()
             // DashPay contact rows — pending + established requests with

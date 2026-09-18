@@ -81,7 +81,7 @@ class RegistrationKeysTest {
      */
     @Test
     fun `encoder output matches the cross-language golden fixture`() {
-        val golden = javaClass.getResourceAsStream("/golden/registration_pubkeys_v1.bin")
+        val golden = javaClass.getResourceAsStream("/golden/registration_pubkeys_v2.bin")
             .use { requireNotNull(it) { "golden fixture resource missing" }.readBytes() }
 
         val rows = RegistrationKeys.buildRegistrationRows(fixturePubkeys(6), includeDashPayKeys = true)

@@ -201,6 +201,15 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// `nil` is valid for every purpose, including Encryption /
         /// Decryption keys.
         public let contractBounds: ContractBounds?
+        /// Optional usage limit (protocol version 14): the credits this
+        /// key may take from the identity over its whole lifetime. Only
+        /// AUTHENTICATION keys below MASTER may carry one. `nil` leaves
+        /// the key unbudgeted.
+        public let totalBudget: UInt64?
+        /// Optional usage limit (protocol version 14): the block time in
+        /// milliseconds from which this key can no longer sign. `nil`
+        /// leaves the key without an expiry.
+        public let expiresAt: UInt64?
 
         public init(
             keyId: UInt32,
@@ -209,7 +218,9 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             securityLevel: SecurityLevel,
             pubkeyBytes: Data,
             readOnly: Bool = false,
-            contractBounds: ContractBounds? = nil
+            contractBounds: ContractBounds? = nil,
+            totalBudget: UInt64? = nil,
+            expiresAt: UInt64? = nil
         ) {
             self.keyId = keyId
             self.keyType = keyType
@@ -218,6 +229,8 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             self.pubkeyBytes = pubkeyBytes
             self.readOnly = readOnly
             self.contractBounds = contractBounds
+            self.totalBudget = totalBudget
+            self.expiresAt = expiresAt
         }
     }
 
@@ -703,7 +716,11 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                         read_only: pk.readOnly,
                         contract_bounds_kind: kind,
                         contract_bounds_id: idPtr,
-                        contract_bounds_document_type: docTypePtr
+                        contract_bounds_document_type: docTypePtr,
+                        has_total_budget: pk.totalBudget != nil,
+                        total_budget: pk.totalBudget ?? 0,
+                        has_expires_at: pk.expiresAt != nil,
+                        expires_at: pk.expiresAt ?? 0
                     )
                 )
                 return pinNext(index + 1, &rows, pubkeys, buffers, body)
@@ -3273,6 +3290,61 @@ extension ManagedPlatformWallet {
                         )
                     }
                 }
+            }
+            try result.check()
+        }.value
+    }
+
+    /// Raise the usage limits of one of an identity's keys (protocol
+    /// version 14), signing the resulting `IdentityKeyLimitsUpdate` with
+    /// the identity's MASTER key (or a CRITICAL authentication key that
+    /// carries no limits and no contract bounds) via the supplied
+    /// `KeychainSigner`.
+    ///
+    /// Limits only ever go up. `addBudget` is added to the key's total
+    /// budget AND to what is left of it, in credits; `expiresAt` moves the
+    /// key's expiry to that block time in milliseconds and must be later
+    /// than the one the key carries. At least one of the two must be given.
+    /// A limit the key does not already have, a zero top-up and an expiry
+    /// that is not later are refused before anything is signed, because
+    /// Platform would refuse them and charge for it.
+    ///
+    /// No identity revision is claimed or bumped. The cached key and its
+    /// `PersistentPublicKey` row follow through the persist-identity-keys
+    /// callback, the same way an added key does.
+    public func updateIdentityKeyLimits(
+        identityId: Identifier,
+        keyId: UInt32,
+        addBudget: UInt64? = nil,
+        expiresAt: UInt64? = nil,
+        signer: KeychainSigner
+    ) async throws {
+        guard addBudget != nil || expiresAt != nil else {
+            throw PlatformWalletError.walletOperation(
+                "updateIdentityKeyLimits needs a budget to add or a new expiry"
+            )
+        }
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let budgetToAdd = addBudget
+        let newExpiresAt = expiresAt
+        try await Task.detached(priority: .userInitiated) {
+            _ = signer
+            let result = idBytes.withUnsafeBufferPointer {
+                idBp -> PlatformWalletFFIResult in
+                platform_wallet_update_identity_key_limits_with_signer(
+                    handle,
+                    idBp.baseAddress!,
+                    keyId,
+                    budgetToAdd != nil,
+                    budgetToAdd ?? 0,
+                    newExpiresAt != nil,
+                    newExpiresAt ?? 0,
+                    signerHandle
+                )
             }
             try result.check()
         }.value

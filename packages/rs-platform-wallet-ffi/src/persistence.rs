@@ -6557,6 +6557,14 @@ unsafe fn build_identity_public_keys(
             data: BinaryData::new(bytes),
             disabled_at: None,
         });
+        // A limited key restores as limited: either limit makes it a version 1 key
+        let pk = match (
+            row.total_budget_is_some.then_some(row.total_budget),
+            row.expires_at_is_some.then_some(row.expires_at),
+        ) {
+            (None, None) => pk,
+            (total_budget, expires_at) => pk.with_limits(total_budget, expires_at),
+        };
         map.insert(row.key_id, pk);
     }
     map

@@ -97,6 +97,11 @@ sealed class ContractBounds {
  *
  * @property pubkeyBytes the on-chain public payload — the 33-byte compressed
  *   pubkey, or the 20-byte HASH160 for an [KeyType.ECDSA_HASH160] key.
+ * @property totalBudget usage limit (protocol version 14): the credits the key may
+ *   take from the identity over its lifetime. Only AUTHENTICATION keys below
+ *   MASTER may carry limits; either limit registers a version 1 key.
+ * @property expiresAt usage limit (protocol version 14): the block time in
+ *   milliseconds from which the key can no longer sign.
  */
 data class IdentityPubkey(
     val keyId: Int,
@@ -106,10 +111,21 @@ data class IdentityPubkey(
     val pubkeyBytes: ByteArray,
     val readOnly: Boolean = false,
     val contractBounds: ContractBounds? = null,
+    val totalBudget: Long? = null,
+    val expiresAt: Long? = null,
 ) {
     init {
         require(keyId >= 0) { "keyId must be non-negative, got $keyId" }
+        require(totalBudget == null || totalBudget >= 0) {
+            "totalBudget must be non-negative, got $totalBudget"
+        }
+        require(expiresAt == null || expiresAt >= 0) {
+            "expiresAt must be non-negative, got $expiresAt"
+        }
     }
+
+    /** Whether the key carries a budget or an expiry (a version 1 key). */
+    val hasLimits: Boolean get() = totalBudget != null || expiresAt != null
 
     override fun equals(other: Any?): Boolean =
         other is IdentityPubkey &&
@@ -119,7 +135,9 @@ data class IdentityPubkey(
             securityLevel == other.securityLevel &&
             pubkeyBytes.contentEquals(other.pubkeyBytes) &&
             readOnly == other.readOnly &&
-            contractBounds == other.contractBounds
+            contractBounds == other.contractBounds &&
+            totalBudget == other.totalBudget &&
+            expiresAt == other.expiresAt
 
     override fun hashCode(): Int {
         var result = keyId
@@ -129,6 +147,8 @@ data class IdentityPubkey(
         result = 31 * result + pubkeyBytes.contentHashCode()
         result = 31 * result + readOnly.hashCode()
         result = 31 * result + (contractBounds?.hashCode() ?: 0)
+        result = 31 * result + (totalBudget?.hashCode() ?: 0)
+        result = 31 * result + (expiresAt?.hashCode() ?: 0)
         return result
     }
 }
@@ -193,6 +213,53 @@ class IdentityUpdates internal constructor(
                 identityId,
                 IdentityPubkeyCodec.encode(addPublicKeys),
                 disablePublicKeyIds.toIntArray(),
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Raise the limits of key [keyId] of [identityId] (protocol version 14):
+     * add [addBudget] credits to its total budget (and to what is left of
+     * it), and/or move its expiry to [expiresAt] (block time in
+     * milliseconds). At least one must be given. Bridges
+     * `platform_wallet_update_identity_key_limits_with_signer`, signed via
+     * [signerHandle] with the identity's MASTER key or a CRITICAL
+     * authentication key without limits and without contract bounds. A
+     * limit the key does not have, a zero top-up and an expiry that is not
+     * later are refused before anything is signed. Room learns of the raised
+     * limits through the persistence changeset, as it does for an added key.
+     */
+    suspend fun updateKeyLimits(
+        walletHandle: Long,
+        identityId: ByteArray,
+        keyId: Int,
+        addBudget: Long? = null,
+        expiresAt: Long? = null,
+        signerHandle: Long,
+    ) = gate.op {
+        require(identityId.size == 32) {
+            "identityId must be 32 bytes, got ${identityId.size}"
+        }
+        require(keyId >= 0) { "keyId must be non-negative, got $keyId" }
+        require(addBudget != null || expiresAt != null) {
+            "updateKeyLimits needs a budget to add or a new expiry"
+        }
+        require(addBudget == null || addBudget > 0) {
+            "addBudget must be positive, got $addBudget"
+        }
+        require(expiresAt == null || expiresAt >= 0) {
+            "expiresAt must be non-negative, got $expiresAt"
+        }
+        mapNativeErrors {
+            TransactionsNative.updateIdentityKeyLimits(
+                walletHandle,
+                identityId,
+                keyId,
+                addBudget != null,
+                addBudget ?: 0L,
+                expiresAt != null,
+                expiresAt ?: 0L,
                 signerHandle,
             )
         }
