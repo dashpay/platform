@@ -171,10 +171,11 @@ pub fn is_referenced_system_agreement_property(name: &str) -> bool {
 /// write gate: consensus refuses a create or replace unless the writer's id
 /// equals the referenced side, so the referenced document's owner (or its
 /// creator, or a named identifier) is the only identity that may write
-/// referring documents. Like every agreement it is checked when the
-/// referring document is written; a later transfer of either document is
-/// not re-checked, so on a transferable referring type the gate governs
-/// minting, not holding. The writer's id lives on the transition rather
+/// referring documents. It is checked on every create and on EVERY replace
+/// of the referring document, not only when the reference changes, since
+/// either document may have been transferred in between; a transfer itself
+/// is not re-checked, so on a transferable referring type the gate governs
+/// writing, not holding. The writer's id lives on the transition rather
 /// than in the document data, which is why it is threaded into write-time
 /// validation separately.
 pub const REFERRING_SYSTEM_AGREEMENT_PROPERTIES: [&str; 1] = [OWNER_ID];

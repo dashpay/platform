@@ -432,7 +432,8 @@ mod system_agreement_tests {
     }
 
     /// Submits a `message` on `note_id` owned (and signed) by `owner` under
-    /// the writer-gated contract, whose message carries no author fields.
+    /// the writer-gated contract, whose message carries no author fields,
+    /// and returns the document as submitted for a later replace.
     #[allow(clippy::too_many_arguments)]
     async fn submit_gated_message<S: Signer<IdentityPublicKey>>(
         platform: &TempPlatform<MockCoreRPCLike>,
@@ -445,7 +446,7 @@ mod system_agreement_tests {
         signer: &S,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> StateTransitionsProcessingResult {
+    ) -> (StateTransitionsProcessingResult, Document) {
         let message_type = contract
             .document_type_for_name("message")
             .expect("message doctype exists");
@@ -462,7 +463,7 @@ mod system_agreement_tests {
             .expect("expected a random message");
         message.set("noteId", Value::Identifier(note_id.to_buffer()));
         let create = BatchTransition::new_document_creation_transition_from_document(
-            message,
+            message.clone(),
             message_type,
             entropy.0,
             key,
@@ -475,7 +476,47 @@ mod system_agreement_tests {
         )
         .await
         .expect("expected the message create transition");
-        process_and_commit(platform, platform_state, &create, platform_version)
+        (
+            process_and_commit(platform, platform_state, &create, platform_version),
+            message,
+        )
+    }
+
+    /// Replaces ONLY the `content` of a gated message, leaving its `noteId`
+    /// untouched, signed by `key`'s identity.
+    #[allow(clippy::too_many_arguments)]
+    async fn replace_gated_message_content<S: Signer<IdentityPublicKey>>(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        contract: &DataContract,
+        message: &mut Document,
+        content: &str,
+        key: &IdentityPublicKey,
+        nonce: u64,
+        signer: &S,
+        platform_version: &PlatformVersion,
+    ) -> StateTransitionsProcessingResult {
+        let message_type = contract
+            .document_type_for_name("message")
+            .expect("message doctype exists");
+        message.set("content", content.into());
+        message
+            .increment_revision()
+            .expect("expected the revision to increment");
+        let replace = BatchTransition::new_document_replacement_transition_from_document(
+            message.clone(),
+            message_type,
+            key,
+            nonce,
+            0,
+            None,
+            signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the message replace transition");
+        process_and_commit(platform, platform_state, &replace, platform_version)
     }
 
     /// `{ "$ownerId": "$ownerId" }` is a write gate: only the note's current
@@ -515,7 +556,7 @@ mod system_agreement_tests {
         .await;
 
         // The note's owner may write; anyone else may not.
-        let result = submit_gated_message(
+        let (result, _) = submit_gated_message(
             &platform,
             &platform_state,
             &contract,
@@ -535,7 +576,7 @@ mod system_agreement_tests {
             result.execution_results()
         );
 
-        let result = submit_gated_message(
+        let (result, _) = submit_gated_message(
             &platform,
             &platform_state,
             &contract,
@@ -567,7 +608,7 @@ mod system_agreement_tests {
         .await;
 
         // The gate follows the note to its new owner.
-        let result = submit_gated_message(
+        let (result, _) = submit_gated_message(
             &platform,
             &platform_state,
             &contract,
@@ -587,7 +628,7 @@ mod system_agreement_tests {
             result.execution_results()
         );
 
-        let result = submit_gated_message(
+        let (result, _) = submit_gated_message(
             &platform,
             &platform_state,
             &contract,
@@ -603,6 +644,114 @@ mod system_agreement_tests {
         assert_mismatch(
             &result,
             "the previous owner no longer passes the writer gate",
+        );
+    }
+
+    /// The writer gate holds on EVERY replace, not only when the reference
+    /// changes: `$ownerId` is transition metadata that never appears among
+    /// the changed fields. Once the note has moved, its previous owner may
+    /// no longer touch a message they wrote on it, even an unrelated field.
+    #[tokio::test]
+    async fn test_writer_owner_agreement_holds_on_every_replace() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let mut rng = StdRng::seed_from_u64(4248);
+
+        let (alice, alice_signer, alice_key) =
+            setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+        let (bob, _, _) = setup_identity(&mut platform, 450, dash_to_credits!(1.0));
+        let contract = register_contract(
+            &platform,
+            WRITER_CONTRACT_PATH,
+            alice.id(),
+            platform_version,
+        );
+
+        let note = create_note(
+            &platform,
+            &platform_state,
+            &contract,
+            alice.id(),
+            &alice_key,
+            2,
+            &alice_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        let (result, mut message) = submit_gated_message(
+            &platform,
+            &platform_state,
+            &contract,
+            alice.id(),
+            note.id(),
+            &alice_key,
+            3,
+            &alice_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        assert_eq!(
+            result.valid_count(),
+            1,
+            "the note's owner must pass the writer gate: {:?}",
+            result.execution_results()
+        );
+
+        // While Alice still owns the note she may edit an unrelated field.
+        let result = replace_gated_message_content(
+            &platform,
+            &platform_state,
+            &contract,
+            &mut message,
+            "first edit",
+            &alice_key,
+            4,
+            &alice_signer,
+            platform_version,
+        )
+        .await;
+        assert_eq!(
+            result.valid_count(),
+            1,
+            "the note's owner must pass the writer gate on replace: {:?}",
+            result.execution_results()
+        );
+
+        transfer_note(
+            &platform,
+            &platform_state,
+            &contract,
+            &note,
+            bob.id(),
+            &alice_key,
+            5,
+            &alice_signer,
+            platform_version,
+        )
+        .await;
+
+        // The same edit, with the reference untouched, is now refused: the
+        // gate is re-checked although no changed field is bound to it.
+        let result = replace_gated_message_content(
+            &platform,
+            &platform_state,
+            &contract,
+            &mut message,
+            "second edit",
+            &alice_key,
+            6,
+            &alice_signer,
+            platform_version,
+        )
+        .await;
+        assert_mismatch(
+            &result,
+            "the previous owner must fail the writer gate on a replace of an unrelated field",
         );
     }
 }

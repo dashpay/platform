@@ -189,9 +189,10 @@ sentinel disappears (see the absence-aware `propertyAgreement` below).
   The referring side may in turn be the like's own `$ownerId`, the writer:
   `{ "$ownerId": "$ownerId" }` lets only the post's current owner create
   or replace a like on it, `{ "$ownerId": "$creatorId" }` only its
-  original creator. That is a write gate, checked at create and replace
-  like every agreement; a later transfer of either document is not
-  re-checked, so on a transferable referring type it governs minting, not
+  original creator. That is a write gate, checked on create and on every
+  replace of the like, not only when its reference changes, since the post
+  may have been transferred in between; a transfer itself is not
+  re-checked, so on a transferable referring type it governs writing, not
   holding. A writer gate does not make an owner-prefixed index
   preallocatable.
 - **Delete** is its own transition kind,

@@ -9,7 +9,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
+    is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
+    DocumentPropertyType, DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
@@ -132,12 +133,18 @@ fn validate_document_type_references_v0(
             // - an identityPublicKey reference binds the key id property,
             //   since the referenced key is the (identity id, key id) pair
             //   and a freshly written key id must exist and not be disabled.
+            // A writer gate (an agreement keyed by `$ownerId`) is re-checked
+            // on EVERY replace: the writer is transition metadata that never
+            // appears among the changed fields, and either document may have
+            // been transferred since the last write, so a replace of an
+            // unrelated field by a now-unauthorized owner must still fail.
             let bound_property_changed = match reference_target {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     property_agreement, ..
-                } => property_agreement
-                    .keys()
-                    .any(|referring_property| is_changed_field(changed, referring_property)),
+                } => property_agreement.keys().any(|referring_property| {
+                    is_referring_system_agreement_property(referring_property)
+                        || is_changed_field(changed, referring_property)
+                }),
                 DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
                     is_changed_field(changed, key_id_property)
                 }

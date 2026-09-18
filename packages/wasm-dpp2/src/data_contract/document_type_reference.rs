@@ -62,8 +62,8 @@ export type DocumentPropertyReferenceTarget =
        * document's current owner or original creator, against an
        * identifier property on the referring side. The referring side may
        * be the writer's own `$ownerId`, which makes the pair a write gate:
-       * only an identity equal to the referenced side may create or
-       * replace the document. Absent — not
+       * only an identity equal to the referenced side may create the
+       * document, and every replace re-checks it. Absent — not
        * `{}`-valued — when the declaration carries none.
        */
       propertyAgreement?: Record<string, string>;
