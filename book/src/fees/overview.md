@@ -207,6 +207,18 @@ its v1 asks a batch that requests sponsorship for its principal only
 (purchases, contest collateral) and leaves the gas to fee validation, so an
 identity without credits can act on tokens it was given.
 
+### Optional token costs
+
+A token cost may declare `optional: true` (v3 meta-schema, protocol version
+14). A transition on such an action may leave `$tokenPaymentInfo` out: it then
+pays no token, its signer pays the gas in credits as on an action without a
+token cost, and no sponsorship applies. With `$tokenPaymentInfo` present the
+token is charged exactly as for a required cost, sponsorship included, and an
+insufficient token balance is a rejection rather than a fallback to credits:
+the client chooses between token and credits before signing. Together with
+contract-owner gas this is the "free usage" pattern: an app hands out tokens,
+a user posts for free while they last, and keeps posting on credits after.
+
 ## FeeResult
 
 All fee calculations produce a `FeeResult`:

@@ -475,6 +475,10 @@
             2
           ],
           "description": "Who the contract owner offers to have pay the gas (storage and processing fee) of this token-paid action: 0 - DocumentOwner (default, the contract owner never pays), 1 - ContractOwner (pays, and accepts every request), 2 - PreferContractOwner (pays when their balance covers the fee, but refuses a transition that insists on them). The transition asks with the same values in $tokenPaymentInfo.gasFeesPaidBy: DocumentOwner always pays itself, PreferContractOwner is accepted by every offer, and ContractOwner is accepted only by offer 1, else the transition is rejected (GasFeesPaidByNotAllowedError, code 40129). Acted on from protocol version 14; a failed transition is always paid for by its signer."
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "True if a transition may leave $tokenPaymentInfo out for this action and pay no token, in which case its signer pays the gas in credits as for an action without a token cost and no gas sponsorship applies; with $tokenPaymentInfo present the token is charged exactly as for a required cost, and an insufficient token balance is a rejection, never a fallback to credits. Default false: the token payment is required (RequiredTokenPaymentInfoNotSetError, code 40115). Available from protocol version 14."
         }
       },
       "required": [

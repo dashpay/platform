@@ -42,6 +42,7 @@ mod gas_sponsorship_tests {
     const GAS_SPONSOR_INSUFFICIENT_BALANCE: u32 = 40222;
     const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
     const IDENTITY_DOES_NOT_HAVE_ENOUGH_TOKEN_BALANCE: u32 = 40700;
+    const REQUIRED_TOKEN_PAYMENT_INFO_NOT_SET: u32 = 40115;
 
     /// Creating a card costs 10 gold, transferred to the contract owner.
     const CARD_COST: TokenAmount = 10;
@@ -61,6 +62,27 @@ mod gas_sponsorship_tests {
         /// with `owner_credits`, and a user with `user_credits` and `user_gold` gold.
         fn new(
             offered: GasFeesPaidBy,
+            owner_credits: Credits,
+            user_credits: Credits,
+            user_gold: TokenAmount,
+        ) -> Self {
+            Self::build(offered, false, owner_credits, user_credits, user_gold)
+        }
+
+        /// The same game with an optional creation cost: a transition may leave the token
+        /// payment out and pay credits instead
+        fn with_optional_cost(
+            offered: GasFeesPaidBy,
+            owner_credits: Credits,
+            user_credits: Credits,
+            user_gold: TokenAmount,
+        ) -> Self {
+            Self::build(offered, true, owner_credits, user_credits, user_gold)
+        }
+
+        fn build(
+            offered: GasFeesPaidBy,
+            optional: bool,
             owner_credits: Credits,
             user_credits: Credits,
             user_gold: TokenAmount,
@@ -95,6 +117,7 @@ mod gas_sponsorship_tests {
                         token_amount: CARD_COST,
                         effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                         gas_fees_paid_by: offered,
+                        optional,
                     }));
                     let offered_int: u8 = offered.into();
                     let schema = document_type.schema_mut();
@@ -109,6 +132,11 @@ mod gas_sponsorship_tests {
                     creation_token_cost
                         .set_value("gasFeesPaidBy", offered_int.into())
                         .expect("expected to set who pays the gas");
+                    if optional {
+                        creation_token_cost
+                            .set_value("optional", true.into())
+                            .expect("expected to mark the cost optional");
+                    }
                 }),
                 None,
                 Some(platform_version),
@@ -132,6 +160,15 @@ mod gas_sponsorship_tests {
 
         /// The user's card creation, asking `requested` for the gas
         async fn card_creation(&self, requested: GasFeesPaidBy) -> StateTransition {
+            self.card_creation_paying(Some(requested)).await
+        }
+
+        /// The user's card creation without any token payment info
+        async fn card_creation_without_token_payment(&self) -> StateTransition {
+            self.card_creation_paying(None).await
+        }
+
+        async fn card_creation_paying(&self, requested: Option<GasFeesPaidBy>) -> StateTransition {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(433);
             let card_document_type = self
@@ -159,13 +196,15 @@ mod gas_sponsorship_tests {
                 &self.user_key,
                 2,
                 0,
-                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
-                    payment_token_contract_id: None,
-                    token_contract_position: 0,
-                    minimum_token_cost: None,
-                    maximum_token_cost: Some(CARD_COST),
-                    gas_fees_paid_by: requested,
-                })),
+                requested.map(|gas_fees_paid_by| {
+                    TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                        payment_token_contract_id: None,
+                        token_contract_position: 0,
+                        minimum_token_cost: None,
+                        maximum_token_cost: Some(CARD_COST),
+                        gas_fees_paid_by,
+                    })
+                }),
                 &self.user_signer,
                 platform_version,
                 None,
@@ -429,6 +468,112 @@ mod gas_sponsorship_tests {
         let fee = total_fee(&result);
         assert!(fee > 0);
         assert_eq!(setup.credits(&setup.user, &tx), dash_to_credits!(0.1) - fee);
+        assert_eq!(
+            setup.credits(&setup.contract_owner, &tx),
+            dash_to_credits!(0.1)
+        );
+    }
+
+    // ---------- Optional token costs ----------
+
+    #[tokio::test]
+    async fn should_let_a_user_skip_an_optional_token_payment_and_pay_credits() {
+        // No gold at all: the user leaves the token payment out and pays the gas in credits, as
+        // on an action without a token cost. The offer of sponsorship does not apply.
+        let setup = Sponsorship::with_optional_cost(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            0,
+        );
+        let transition = setup.card_creation_without_token_payment().await;
+        assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+
+        let tx = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&transition, &tx);
+
+        assert_matches!(result, SuccessfulExecution { .. });
+        let fee = total_fee(&result);
+        assert!(fee > 0);
+        assert_eq!(setup.credits(&setup.user, &tx), dash_to_credits!(0.1) - fee);
+        assert_eq!(
+            setup.credits(&setup.contract_owner, &tx),
+            dash_to_credits!(0.1)
+        );
+        assert_eq!(
+            setup.gold(&setup.contract_owner, &tx),
+            0,
+            "no token was paid"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_charge_the_token_and_sponsor_the_gas_when_an_optional_payment_is_supplied() {
+        let setup = Sponsorship::with_optional_cost(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            0,
+            15,
+        );
+        let transition = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        let tx = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&transition, &tx);
+
+        assert_matches!(result, SuccessfulExecution { .. });
+        let fee = total_fee(&result);
+        assert_eq!(
+            setup.credits(&setup.contract_owner, &tx),
+            dash_to_credits!(0.1) - fee
+        );
+        assert_eq!(setup.credits(&setup.user, &tx), 0);
+        assert_eq!(setup.gold(&setup.user, &tx), 15 - CARD_COST);
+        assert_eq!(setup.gold(&setup.contract_owner, &tx), CARD_COST);
+    }
+
+    #[tokio::test]
+    async fn should_still_require_the_token_payment_on_a_required_cost() {
+        let setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+        );
+        let transition = setup.card_creation_without_token_payment().await;
+        assert_eq!(
+            setup.check_tx(&transition),
+            vec![REQUIRED_TOKEN_PAYMENT_INFO_NOT_SET]
+        );
+
+        let tx = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&transition, &tx);
+        assert_matches!(
+            &result,
+            PaidConsensusError { error, .. } if error.code() == REQUIRED_TOKEN_PAYMENT_INFO_NOT_SET
+        );
+        assert_eq!(setup.gold(&setup.user, &tx), 15);
+    }
+
+    #[tokio::test]
+    async fn should_not_fall_back_to_credits_when_a_supplied_optional_payment_cannot_be_covered() {
+        // The client decides between token and credits before signing: a payment it supplied
+        // but cannot cover is a rejection, never a silent switch to credits.
+        let setup = Sponsorship::with_optional_cost(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            CARD_COST - 1,
+        );
+        let transition = setup
+            .card_creation(GasFeesPaidBy::PreferContractOwner)
+            .await;
+        let tx = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&transition, &tx);
+
+        assert_matches!(
+            &result,
+            PaidConsensusError { error, .. } if error.code() == IDENTITY_DOES_NOT_HAVE_ENOUGH_TOKEN_BALANCE
+        );
+        assert_eq!(setup.gold(&setup.user, &tx), CARD_COST - 1);
         assert_eq!(
             setup.credits(&setup.contract_owner, &tx),
             dash_to_credits!(0.1)

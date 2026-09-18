@@ -866,6 +866,71 @@ mod tests {
             );
         }
 
+        // ---------- Token cost: optional flag ----------
+        #[test]
+        fn token_cost_optional_flag_parses_and_defaults_to_required() {
+            use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+            use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+            use crate::data_contract::document_type::accessors::DocumentTypeV1Getters;
+            use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
+            use crate::version::PlatformVersion;
+
+            // The flag is admitted by the v3 document meta-schema (protocol version 14).
+            let platform_version = PlatformVersion::latest();
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                },
+                "tokenCost": {
+                    "create": {
+                        "tokenPosition": 0_u64,
+                        "amount": 3_u64,
+                        "gasFeesPaidBy": 1_u64,
+                        "optional": true,
+                    },
+                    "delete": {
+                        "tokenPosition": 0_u64,
+                        "amount": 1_u64,
+                    }
+                },
+                "additionalProperties": false,
+            });
+            let token_configurations = BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]);
+
+            let document_type = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &token_configurations,
+                &default_config(),
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected the document type to parse");
+
+            let create = document_type
+                .document_creation_token_cost()
+                .expect("expected a creation token cost");
+            assert!(create.optional);
+            assert_eq!(create.gas_fees_paid_by, GasFeesPaidBy::ContractOwner);
+            assert_eq!(create.token_amount, 3);
+            let delete = document_type
+                .document_deletion_token_cost()
+                .expect("expected a deletion token cost");
+            assert!(
+                !delete.optional,
+                "a token cost is required unless it says otherwise"
+            );
+        }
+
         // ---------- Token cost: InvalidTokenPositionError ----------
         #[test]
         fn token_cost_with_unknown_position_and_no_contract_id_errors() {

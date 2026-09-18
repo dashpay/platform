@@ -272,6 +272,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`identity_minimum_balance_pre_check`) asks no more of a batch that
 ///     requests sponsorship. A failed batch is never sponsored.
 ///
+/// 12. **Optional token costs**: a document type's token cost may declare
+///     `optional: true` (v3 meta-schema). A transition that leaves
+///     `$tokenPaymentInfo` out then pays no token and its signer pays the gas
+///     in credits, as on an action without a token cost (the base action
+///     transformer waives the cost, and no sponsorship applies). With the
+///     payment info present the token is charged exactly as for a required
+///     cost, and too small a token balance stays a rejection. Contracts up to
+///     v13 cannot carry the flag, so the waiver is inert before this version.
+///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
 ///   `is_allowed`, and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` is the first
