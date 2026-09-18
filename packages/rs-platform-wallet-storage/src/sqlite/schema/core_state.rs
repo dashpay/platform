@@ -86,6 +86,10 @@ pub fn apply(
     cs: &CoreChangeSet,
 ) -> Result<(), WalletStorageError> {
     if !cs.records.is_empty() {
+        let mut slices_by_txid: HashMap<_, Vec<&TransactionRecord>> = HashMap::new();
+        for slice in &cs.account_records {
+            slices_by_txid.entry(slice.txid).or_default().push(slice);
+        }
         let mut prior_slices_stmt = tx.prepare_cached(
             "SELECT length(account_records_blob), account_records_blob, record_blob IS NOT NULL \
              FROM core_transactions \
@@ -127,11 +131,7 @@ pub fn apply(
                 }
                 _ => Vec::new(),
             };
-            for slice in cs
-                .account_records
-                .iter()
-                .filter(|slice| slice.txid == record.txid)
-            {
+            for &slice in slices_by_txid.get(&record.txid).into_iter().flatten() {
                 if let Some(old) = account_slices
                     .iter_mut()
                     .find(|old| old.account_type == slice.account_type)
@@ -964,16 +964,14 @@ pub type LoadedCoreState = (
 /// [`CoreChangeSet::new_utxos`] cannot carry each UTXO's owning account (it is a
 /// bare `Vec<Utxo>`), so the returned map surfaces, per materialized outpoint, the
 /// funds account that owns it — resolved by matching the UTXO's script against
-/// `core_address_pool`. [`apply_persisted_core_state`](crate::sqlite::rehydrate::apply_persisted_core_state)
-/// consumes it to route each UTXO to its true account. An outpoint whose script
-/// matches no pool row is absent from the map and falls back to the first funds
-/// account as a candidate. Installation still verifies that account owns the
-/// address and fails if it cannot establish ownership.
+/// `core_address_pool`. An outpoint whose script matches no pool row is absent
+/// from the ownership map. This projection is not used to initialize the live
+/// Core engine: wallet loading uses a complete snapshot or starts a legacy rescan.
 ///
 /// The third return value carries spent outpoints independently of account
 /// attribution; a height is present only when storage has block-spend evidence.
 ///
-/// # Reconstructed (safety-critical-correct)
+/// # Reconstructed projection
 ///
 /// - **Materialized UTXOs**: `spent = 0` rows enter `new_utxos` as the balance
 ///   source. All spent rows, including placeholders, supply separate evidence.

@@ -3,6 +3,7 @@
 use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
 use key_wallet::managed_account::ManagedCoreKeysAccount;
+use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::{AddressPool, DerivationPath, Network};
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -93,6 +94,17 @@ fn validate(
         return Err(WalletStorageError::blob_decode(
             "Core snapshot network differs from its wallet",
         ));
+    }
+    for account in snapshot.accounts.all_accounts() {
+        for record in account.transactions().values() {
+            if let TransactionContext::InstantSend(lock) = &record.context {
+                if lock.txid != record.txid {
+                    return Err(WalletStorageError::blob_decode(
+                        "Core snapshot InstantLock belongs to another transaction",
+                    ));
+                }
+            }
+        }
     }
     Ok(())
 }

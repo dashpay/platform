@@ -3,7 +3,8 @@
 mod common;
 
 use dashcore::hashes::Hash;
-use dashcore::{BlockHash, ChainLock, OutPoint, Transaction, TxIn, TxOut};
+use dashcore::{BlockHash, ChainLock, InstantLock, OutPoint, Transaction, TxIn, TxOut, Txid};
+use key_wallet::account::ManagedAccountTrait;
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext, WalletTransactionChecker};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
@@ -192,6 +193,55 @@ fn should_reject_corrupted_or_future_snapshot_without_legacy_fallback() {
         p.lock_conn_for_test().execute_batch(corruption).unwrap();
         assert!(p.load().is_err());
     }
+}
+
+async fn snapshot_with_mismatched_lock() -> (Wallet, ManagedWalletInfo) {
+    let (mut wallet, mut info, funding) = wallet();
+    info.check_core_transaction(&funding, block(120), &mut wallet, true, true)
+        .await;
+    let record = info
+        .first_bip44_managed_account_mut()
+        .unwrap()
+        .transactions_mut()
+        .get_mut(&funding.txid())
+        .unwrap();
+    record.context = TransactionContext::InstantSend(InstantLock {
+        txid: Txid::from_byte_array([91; 32]),
+        ..Default::default()
+    });
+    (wallet, info)
+}
+
+#[tokio::test]
+async fn should_reject_snapshot_write_with_mismatched_embedded_lock() {
+    let (p, _tmp, _) = common::fresh_persister();
+    let (wallet, info) = snapshot_with_mismatched_lock().await;
+    register(&p, &wallet);
+    assert!(p
+        .store(
+            wallet.wallet_id,
+            PlatformWalletChangeSet {
+                core_wallet_snapshot: Some(info),
+                ..Default::default()
+            },
+        )
+        .is_err());
+}
+
+#[tokio::test]
+async fn should_reject_snapshot_load_with_mismatched_embedded_lock() {
+    let (p, _tmp, _) = common::fresh_persister();
+    let (wallet, info) = snapshot_with_mismatched_lock().await;
+    register(&p, &wallet);
+    save(&p, &ManagedWalletInfo::from_wallet(&wallet, 10));
+    let bytes = bincode::serde::encode_to_vec(&info, bincode::config::standard()).unwrap();
+    p.lock_conn_for_test()
+        .execute(
+            "UPDATE core_wallet_snapshots SET snapshot_blob = ?1",
+            [bytes],
+        )
+        .unwrap();
+    assert!(p.load().is_err());
 }
 
 #[test]

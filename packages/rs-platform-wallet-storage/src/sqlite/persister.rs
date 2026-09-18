@@ -1458,9 +1458,8 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// instead, and the persister is read-only for the rest of its life.
     ///
     /// A used address whose owner is not a funds account is counted as
-    /// degraded in either policy. A restored unspent coin whose address
-    /// cannot be verified against its account fails wallet restoration;
-    /// restore the missing derivation range before retrying.
+    /// degraded in either policy. Invalid Core snapshots and address-pool rows
+    /// that disagree with their account keys fail wallet restoration.
     ///
     /// **Query budget.** Platform addresses load via grouped bulk scans
     /// (constant), but the keyless per-wallet payload is a fan-out: one

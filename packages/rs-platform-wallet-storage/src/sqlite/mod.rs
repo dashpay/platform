@@ -32,9 +32,7 @@ pub mod schema;
 #[cfg(not(any(test, feature = "__test-helpers")))]
 pub(crate) mod schema;
 
-// `LoadCtx` is the policy input every core-state reader takes, and
-// `rehydrate::apply_persisted_core_state` — the crate's public rehydration
-// entry point — takes one too, so it is public unconditionally.
+// Load diagnostics are exposed alongside the persister's public reports.
 pub mod load_ctx;
 
 pub use config::{
@@ -42,11 +40,6 @@ pub use config::{
 };
 pub use error::{AutoBackupOperation, WalletStorageError};
 pub use load_ctx::{LoadCtx, LoadDegradation, LoadSite};
-// `OwningAccount` names two of `rehydrate::apply_persisted_core_state`'s
-// parameters, and `schema` is `pub(crate)` unless `__test-helpers` is on — a
-// feature downstream MUST NOT enable. Re-exported for the same reason
-// `load_ctx` is public: a public entry point whose parameter types cannot be
-// named from a default build is not callable from one.
 pub use persister::{prune_backups_in, PruneReport, RetentionPolicy, SqlitePersister};
 pub use reports::{CommitReport, DeleteWalletReport};
 #[doc(inline)]

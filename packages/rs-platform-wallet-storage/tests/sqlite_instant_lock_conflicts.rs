@@ -4,9 +4,9 @@ mod common;
 
 use common::{ensure_wallet_meta, fresh_persister};
 use dashcore::hashes::Hash;
-use dashcore::{InstantLock, OutPoint, Transaction, TxIn, TxOut, Txid};
+use dashcore::{BlockHash, InstantLock, OutPoint, Transaction, TxIn, TxOut, Txid};
 use key_wallet::account::ManagedAccountTrait;
-use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
+use key_wallet::transaction_checking::{BlockInfo, TransactionContext, WalletTransactionChecker};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -100,7 +100,13 @@ async fn separate_lock_round_trip(with_descendant: bool) {
         }],
         special_transaction_payload: None,
     };
-    let loser = transaction(7_000);
+    let late_funding = Transaction::dummy(&address, 0..1, &[3_000]);
+    let late_outpoint = OutPoint::new(late_funding.txid(), 0);
+    let mut loser = transaction(7_000);
+    loser.input.push(TxIn {
+        previous_output: late_outpoint,
+        ..Default::default()
+    });
     let winner = transaction(5_000);
     let mut records = Vec::new();
     for transaction in [&loser, &winner] {
@@ -200,7 +206,7 @@ async fn separate_lock_round_trip(with_descendant: bool) {
     drop(persister);
 
     let reopened = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
-    let restored = reopened
+    let mut restored = reopened
         .load()
         .unwrap()
         .wallets
@@ -224,6 +230,48 @@ async fn separate_lock_round_trip(with_descendant: bool) {
             .transactions()
             .contains_key(&descendant.txid()));
     }
+
+    let context = TransactionContext::InBlock(BlockInfo::new(120, BlockHash::all_zeros(), 1_000));
+    live.check_core_transaction(&late_funding, context.clone(), &mut wallet, true, true)
+        .await;
+    let result = restored
+        .check_core_transaction(&late_funding, context, &mut wallet, true, true)
+        .await;
+    assert_eq!(restored.balance, live.balance);
+    assert_eq!(restored.balance.total(), 8_000);
+    let late_coin = restored
+        .first_bip44_managed_account()
+        .unwrap()
+        .utxos
+        .get(&late_outpoint)
+        .unwrap()
+        .clone();
+    assert_eq!(late_coin.value(), 3_000);
+    reopened
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                core_wallet_snapshot: Some(restored),
+                core: Some(CoreChangeSet {
+                    records: result.new_records.clone(),
+                    account_records: result.new_records,
+                    new_utxos: vec![late_coin],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(reopened);
+    let reopened = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let restored = reopened.load().unwrap().wallets.remove(&wallet_id).unwrap();
+    assert_eq!(restored.wallet_info.balance, live.balance);
+    assert!(restored
+        .wallet_info
+        .first_bip44_managed_account()
+        .unwrap()
+        .utxos
+        .contains_key(&late_outpoint));
 }
 
 #[tokio::test]
