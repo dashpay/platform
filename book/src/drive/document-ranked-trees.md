@@ -109,7 +109,7 @@ Every rule is **sugar-aware**, and the `not` clause above is what makes it so. J
 
 Up to `4.2.0-beta.1`, meta-schema v3 demanded the literal key instead: this index failed registration with `"rangeCountable" is a required property`, and adding `rangeCountable` then pulled in a literal `countable` through the presence row, so the only accepted spellings carried keys the sugar already implied. v3 is editable until 4.2 is live on mainnet, so the rule was corrected in place rather than carried into a v4.
 
-Both layers run only under `full_validation`, and only the structural one is always compiled: the JSON-schema half sits behind rs-dpp's `validation` feature, which `wasm-dpp2` (and so `@dashevo/evo-sdk`) does not enable. An SDK-side `DataContract.fromJSON(json, true, pv)` therefore sees the parser's verdict alone, which is why the two layers agreeing on every spelling matters: it is what keeps an offline acceptance from turning into a registration refusal.
+The two layers are not gated alike. The structural parser runs on every parse, `full_validation` or not, and is compiled into every build. The JSON-schema layer runs only under `full_validation`, and only in builds with rs-dpp's `validation` feature, which `wasm-dpp2` (and so `@dashevo/evo-sdk`) does not enable. An SDK-side `DataContract.fromJSON(json, true, pv)` therefore sees the parser's verdict alone, which is why the two layers agreeing on every spelling matters: it is what keeps an offline acceptance from turning into a registration refusal.
 
 ### Shape Restrictions
 
