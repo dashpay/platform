@@ -1,4 +1,4 @@
-//! Legacy account involvement and a coherent snapshot across concurrent SQLite writes.
+//! Provider pools, full lifecycle snapshots, and concurrent SQLite read consistency.
 
 mod common;
 
@@ -20,10 +20,32 @@ use platform_wallet_storage::sqlite::schema::core_state;
 use platform_wallet_storage::SqlitePersister;
 
 fn register(persister: &SqlitePersister, wallet: &Wallet) {
+    let mut providers = Vec::new();
+    if let Some(account) = wallet
+        .accounts
+        .bls_account_of_type(AccountType::ProviderOperatorKeys)
+    {
+        providers.push(ProviderKeyAccountEntry {
+            account_type: AccountType::ProviderOperatorKeys,
+            extended_public_key: ProviderKeyExtendedPubKey::Bls(account.bls_public_key.clone()),
+        });
+    }
+    if let Some(account) = wallet
+        .accounts
+        .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+    {
+        providers.push(ProviderKeyAccountEntry {
+            account_type: AccountType::ProviderPlatformKeys,
+            extended_public_key: ProviderKeyExtendedPubKey::EdDSA(
+                account.ed25519_public_key.clone(),
+            ),
+        });
+    }
     persister
         .store(
             wallet.wallet_id,
             PlatformWalletChangeSet {
+                provider_key_account_registrations: providers,
                 wallet_metadata: Some(WalletMetadataEntry {
                     network: key_wallet::Network::Testnet,
                     wallet_group_id: [0; 32],
@@ -48,7 +70,7 @@ fn block(height: u32) -> TransactionContext {
     TransactionContext::InBlock(BlockInfo::new(height, BlockHash::all_zeros(), 0))
 }
 
-async fn legacy_provider_round_trip(with_funding: bool, untyped_ecdsa: bool) {
+async fn provider_round_trip(with_funding: bool, untyped_ecdsa: bool, with_snapshot: bool) {
     use dashcore::blockdata::transaction::special_transaction::provider_registration::{
         ProviderMasternodeType, ProviderRegistrationPayload,
     };
@@ -104,25 +126,6 @@ async fn legacy_provider_round_trip(with_funding: bool, untyped_ecdsa: bool) {
         key_wallet::Network::Testnet,
     )
     .unwrap();
-    persister
-        .store(
-            wallet.wallet_id,
-            PlatformWalletChangeSet {
-                provider_key_account_registrations: vec![ProviderKeyAccountEntry {
-                    account_type: AccountType::ProviderPlatformKeys,
-                    extended_public_key: ProviderKeyExtendedPubKey::EdDSA(
-                        wallet
-                            .accounts
-                            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
-                            .unwrap()
-                            .ed25519_public_key
-                            .clone(),
-                    ),
-                }],
-                ..Default::default()
-            },
-        )
-        .unwrap();
     let payout = if with_funding {
         live.accounts.standard_bip44_accounts[&0].all_addresses()[0].clone()
     } else {
@@ -195,10 +198,14 @@ async fn legacy_provider_round_trip(with_funding: bool, untyped_ecdsa: bool) {
         block_hash: BlockHash::all_zeros(),
         signature: [0; 96].into(),
     };
+    live.update_last_processed_height(100);
+    live.update_synced_height(100);
+    live.apply_chain_lock(chain_lock.clone());
     persister
         .store(
             wallet.wallet_id,
             PlatformWalletChangeSet {
+                core_wallet_snapshot: with_snapshot.then(|| live.clone()),
                 account_address_pools: [
                     &live.accounts.provider_owner_keys,
                     &live.accounts.provider_voting_keys,
@@ -236,7 +243,6 @@ async fn legacy_provider_round_trip(with_funding: bool, untyped_ecdsa: bool) {
             },
         )
         .unwrap();
-    live.apply_chain_lock(chain_lock);
     if untyped_ecdsa {
         persister.lock_conn_for_test().execute(
             "UPDATE core_address_pool SET public_key = NULL, key_type = NULL WHERE key_type = 0",
@@ -263,14 +269,34 @@ async fn legacy_provider_round_trip(with_funding: bool, untyped_ecdsa: bool) {
         let after = after.as_ref().unwrap();
         assert_eq!(
             after.tx_count(),
-            before.tx_count(),
-            "legacy provider account involvement survives load"
+            if with_snapshot { before.tx_count() } else { 0 },
+            "only full snapshots restore provider transaction history"
         );
-        assert!(
+        assert_eq!(
             after.transactions().contains_key(&transaction.txid()),
-            "provider payload must survive saved ChainLock finality"
+            with_snapshot,
+            "a full snapshot preserves provider payloads across ChainLock finality"
         );
+        for pool in before.managed_account_type().address_pools() {
+            for info in pool.addresses.values() {
+                let restored_address = after.get_address_info(&info.address).unwrap();
+                assert_eq!(restored_address.public_key, info.public_key);
+                assert_eq!(restored_address.is_used(), info.is_used());
+            }
+        }
     }
+    assert_eq!(
+        restored.balance.total(),
+        if with_snapshot {
+            live.balance.total()
+        } else {
+            0
+        }
+    );
+    assert_eq!(
+        restored.metadata.synced_height,
+        if with_snapshot { 100 } else { 0 }
+    );
     if untyped_ecdsa {
         persister.lock_conn_for_test().execute(
             "UPDATE core_address_pool SET script = ?1 WHERE account_type = ?2 AND address_index = 35",
@@ -284,18 +310,23 @@ async fn legacy_provider_round_trip(with_funding: bool, untyped_ecdsa: bool) {
 }
 
 #[tokio::test]
-async fn should_restore_legacy_provider_records_with_funding() {
-    legacy_provider_round_trip(true, false).await;
+async fn should_restore_provider_snapshot_with_funding() {
+    provider_round_trip(true, false, true).await;
 }
 
 #[tokio::test]
-async fn should_restore_legacy_provider_records_without_funding() {
-    legacy_provider_round_trip(false, false).await;
+async fn should_restore_provider_snapshot_without_funding() {
+    provider_round_trip(false, false, true).await;
 }
 
 #[tokio::test]
-async fn should_restore_legacy_provider_records_from_untyped_sparse_pool() {
-    legacy_provider_round_trip(true, true).await;
+async fn should_rescan_legacy_core_without_losing_untyped_provider_pools() {
+    provider_round_trip(true, true, false).await;
+}
+
+#[tokio::test]
+async fn should_verify_untyped_provider_pool_rows_over_a_full_snapshot() {
+    provider_round_trip(true, true, true).await;
 }
 
 #[tokio::test]
@@ -333,10 +364,13 @@ async fn should_load_one_snapshot_while_another_connection_commits_a_spend() {
         .next()
         .unwrap()
         .clone();
+    live.update_last_processed_height(100);
+    live.update_synced_height(100);
     persister
         .store(
             wallet.wallet_id,
             PlatformWalletChangeSet {
+                core_wallet_snapshot: Some(live.clone()),
                 core: Some(CoreChangeSet {
                     records: result.new_records.clone(),
                     account_records: result.new_records,
@@ -365,6 +399,10 @@ async fn should_load_one_snapshot_while_another_connection_commits_a_spend() {
     let result = live
         .check_core_transaction(&spend, block(101), &mut wallet, true, true)
         .await;
+    live.update_last_processed_height(101);
+    live.update_synced_height(101);
+    let spending_snapshot =
+        bincode::serde::encode_to_vec(&live, bincode::config::standard()).unwrap();
     let spending = CoreChangeSet {
         records: result.new_records.clone(),
         account_records: result.new_records,
@@ -383,13 +421,18 @@ async fn should_load_one_snapshot_while_another_connection_commits_a_spend() {
             if matches!(
                 ctx.action,
                 AuthAction::Read {
-                    table_name: "core_utxos",
-                    column_name: "value"
+                    table_name: "core_wallet_snapshots",
+                    column_name: "snapshot_blob"
                 }
             ) && !callback_fired.swap(true, Ordering::SeqCst)
             {
                 let tx = writer.transaction().unwrap();
                 core_state::apply(&tx, &wallet_id, &spending).unwrap();
+                tx.execute(
+                    "UPDATE core_wallet_snapshots SET snapshot_blob = ?1 WHERE wallet_id = ?2",
+                    rusqlite::params![&spending_snapshot, wallet_id.as_slice()],
+                )
+                .unwrap();
                 tx.commit().unwrap();
             }
             Authorization::Allow
@@ -398,7 +441,7 @@ async fn should_load_one_snapshot_while_another_connection_commits_a_spend() {
     let loaded = persister.load().unwrap();
     assert!(
         fired.load(Ordering::SeqCst),
-        "second connection committed between the record and coin reads"
+        "second connection committed after the load transaction began but before its Core snapshot read"
     );
     let restored = &loaded.wallets[&wallet_id].wallet_info;
     assert_eq!(

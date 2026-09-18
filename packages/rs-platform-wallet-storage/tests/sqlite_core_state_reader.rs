@@ -775,14 +775,9 @@ fn b4_empty_core_state_is_ok() {
     assert_eq!(core.last_processed_height, None);
 }
 
-/// `last_applied_chain_lock` persists through flush → reopen → `load_state`
-/// and through the higher-level `PlatformWalletPersistence::load()` path.
-///
-/// Adversarial confirmation: the assertion at the end fails if the reader
-/// `load_state` does NOT populate `cs.last_applied_chain_lock` (i.e. if
-/// the old code path "left None" is still in place).
+/// Legacy ChainLocks remain queryable but do not advance a fresh Core rescan.
 #[test]
-fn b5_last_applied_chain_lock_round_trips() {
+fn b5_legacy_chain_lock_remains_archived_while_core_rescans() {
     use dashcore::ephemerealdata::chain_lock::ChainLock;
     use dashcore::hashes::Hash;
     use dashcore::BlockHash;
@@ -828,24 +823,18 @@ fn b5_last_applied_chain_lock_round_trips() {
     }
     drop(p2);
 
-    // Adversarial path: `PlatformWalletPersistence::load()` must also surface
-    // the chain lock through the assembled `core_wallet_info` metadata.
     let p3 = reopen(&path);
     let start_state = PlatformWalletPersistence::load(&p3).expect("load must succeed");
     let wallet_start = start_state
         .wallets
         .get(&w)
         .expect("wallet must be in load output");
-    assert_eq!(
-        wallet_start
-            .wallet_info
-            .metadata
-            .last_applied_chain_lock
-            .as_ref(),
-        Some(&cl),
-        "PlatformWalletPersistence::load must carry last_applied_chain_lock \
-         into the assembled core_wallet_info metadata"
-    );
+    assert!(wallet_start
+        .wallet_info
+        .metadata
+        .last_applied_chain_lock
+        .is_none());
+    assert_eq!(wallet_start.wallet_info.metadata.synced_height, 0);
 }
 
 /// A lower-height chain lock arriving AFTER a higher one must not regress the
