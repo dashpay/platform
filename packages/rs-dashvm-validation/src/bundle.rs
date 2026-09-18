@@ -347,6 +347,9 @@ impl PreparedBundle {
             .filter(|binding| &binding.importer == name)
             .map(|binding| binding.target.clone())
             .collect();
+        // The bindings are sorted when the bundle is prepared, but the fields are public, so
+        // the sort is repeated on this small list rather than relied on.
+        targets.sort();
         targets.dedup();
         targets
     }

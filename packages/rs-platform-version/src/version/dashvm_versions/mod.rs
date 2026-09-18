@@ -107,7 +107,8 @@ pub struct DashVmLimits {
     pub max_argument_bytes: u32,
     /// Most bytes one entry invocation or host call may return.
     pub max_return_bytes: u32,
-    /// Most bytes of active data segments one module may initialise its memory with.
+    /// Most bytes of data segments, active and passive together, one module may carry. Passive
+    /// segments are counted because `memory.init` copies them into memory at run time.
     pub max_data_segment_bytes_per_module: u32,
     /// Most active contract frames one outer invocation may open, the root included.
     pub max_nested_contract_frames: u8,

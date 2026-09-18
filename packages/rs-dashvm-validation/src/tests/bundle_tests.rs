@@ -594,3 +594,54 @@ fn should_diagnose_a_late_binding_mismatch_in_large_lists_without_quadratic_scan
         BundleError::BindingsMismatch { detail } if detail.contains("m199999") && detail.contains("not declared")
     ));
 }
+
+/// `dependencies_of` does not rely on the binding list being sorted: a bundle whose public
+/// fields were filled with unsorted bindings still reports each target once.
+#[test]
+fn should_list_each_dependency_once_whatever_the_binding_order() {
+    let profile = latest_profile();
+    let app = consumer("lib", "(param i32) (result i32)");
+    let lib = provider();
+    let mut bundle = validate_and_prepare_bundle(
+        &[
+            BundleInput {
+                name: "app",
+                canonical_bytes: &app,
+            },
+            BundleInput {
+                name: "lib",
+                canonical_bytes: &lib,
+            },
+        ],
+        &[DeclaredBinding {
+            importer: "app",
+            target: "lib",
+            export: "helper",
+        }],
+        &[("app", "run")],
+        &profile,
+    )
+    .expect("prepared");
+    let signature = FuncSignature::new(vec![ValueType::I32], vec![ValueType::I32]);
+    // Interleave a second target so equal targets are not adjacent.
+    let other = |export: &str| BundleBinding {
+        importer: name("app"),
+        target: name("zzz"),
+        export: export.to_owned(),
+        signature: signature.clone(),
+    };
+    let lib_binding = bundle.bindings[0].clone();
+    bundle.bindings = vec![
+        lib_binding.clone(),
+        other("a"),
+        BundleBinding {
+            export: "helper2".to_owned(),
+            ..lib_binding
+        },
+        other("b"),
+    ];
+    assert_eq!(
+        bundle.dependencies_of(&name("app")),
+        vec![name("lib"), name("zzz")]
+    );
+}
