@@ -43,7 +43,11 @@ use crate::util::grove_operations::DirectQueryType;
 #[cfg(feature = "server")]
 use dpp::version::drive_versions::DriveVersion;
 #[cfg(feature = "server")]
-use grovedb::TransactionArg;
+use grovedb::batch::key_info::KeyInfo;
+#[cfg(feature = "server")]
+use grovedb::batch::GroveOp;
+#[cfg(feature = "server")]
+use grovedb::{Element, TransactionArg};
 
 /// Byte length of the destroyed supply scalar: a `u128` in big endian.
 pub const TOKEN_DESTROYED_SUPPLY_SIZE: usize = 16;
@@ -57,6 +61,62 @@ pub fn encode_destroyed_supply(value: u128) -> Vec<u8> {
 pub fn decode_destroyed_supply(bytes: &[u8]) -> Option<u128> {
     let bytes: [u8; TOKEN_DESTROYED_SUPPLY_SIZE] = bytes.try_into().ok()?;
     Some(u128::from_be_bytes(bytes))
+}
+
+#[cfg(feature = "server")]
+/// An item write of the lifecycle ledger already pending in the batch lowered so far: its
+/// slot, its bytes and whether it inserts (a record the batch created) or replaces.
+pub(crate) struct PendingLedgerWrite {
+    /// The slot of the write in the batch.
+    pub(crate) index: usize,
+    /// The item bytes the write carries.
+    pub(crate) bytes: Vec<u8>,
+    /// Whether the write inserts (a key the batch creates) rather than replaces.
+    pub(crate) inserts: bool,
+}
+
+#[cfg(feature = "server")]
+/// Finds the pending write of `key` under the lifecycle ledger in the batch lowered so far.
+/// Any other kind of write of that key is a coding error, so it is refused rather than
+/// silently overwritten.
+pub(crate) fn pending_ledger_write(
+    previous_batch_operations: Option<&Vec<LowLevelDriveOperation>>,
+    lifecycles_path: &[Vec<u8>],
+    key: &[u8],
+) -> Result<Option<PendingLedgerWrite>, Error> {
+    let Some(operations) = previous_batch_operations else {
+        return Ok(None);
+    };
+    for (index, operation) in operations.iter().enumerate() {
+        let LowLevelDriveOperation::GroveOperation(grove_op) = operation else {
+            continue;
+        };
+        if grove_op.path.to_path() != lifecycles_path
+            || grove_op.key != Some(KeyInfo::KnownKey(key.to_vec()))
+        {
+            continue;
+        }
+        return match &grove_op.op {
+            GroveOp::Replace {
+                element: Element::Item(bytes, _),
+            } => Ok(Some(PendingLedgerWrite {
+                index,
+                bytes: bytes.clone(),
+                inserts: false,
+            })),
+            GroveOp::InsertOrReplace {
+                element: Element::Item(bytes, _),
+            } => Ok(Some(PendingLedgerWrite {
+                index,
+                bytes: bytes.clone(),
+                inserts: true,
+            })),
+            _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a pending token lifecycle ledger write is not an item insert or replacement",
+            ))),
+        };
+    }
+    Ok(None)
 }
 
 #[cfg(feature = "server")]

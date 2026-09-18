@@ -1,6 +1,7 @@
 use crate::drive::tokens::lifecycle::estimated_costs::ESTIMATED_TOKEN_CONTRACT_LIFECYCLE_SIZE_BYTES;
 use crate::drive::tokens::lifecycle::{
-    decode_destroyed_supply, encode_destroyed_supply, TOKEN_DESTROYED_SUPPLY_SIZE,
+    decode_destroyed_supply, encode_destroyed_supply, pending_ledger_write,
+    TOKEN_DESTROYED_SUPPLY_SIZE,
 };
 use crate::drive::tokens::paths::{
     token_contract_lifecycles_root_path_vec, TOKEN_DESTROYED_SUPPLY_KEY,
@@ -20,60 +21,9 @@ use dpp::tokens::contract_lifecycle::v0::ContractTokenLifecycleV0Accessors;
 use dpp::tokens::contract_lifecycle::{ContractTokenLifecycle, ContractWipe};
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::{GroveOp, KeyInfoPath};
+use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
-
-/// An item write of the lifecycle ledger already pending in the batch lowered so far: its
-/// slot, its bytes and whether it inserts (a record the batch created) or replaces.
-struct PendingLedgerWrite {
-    index: usize,
-    bytes: Vec<u8>,
-    inserts: bool,
-}
-
-/// Finds the pending write of `key` under the lifecycle ledger in the batch lowered so far.
-/// Any other kind of write of that key is a coding error, so it is refused rather than
-/// silently overwritten.
-fn pending_ledger_write(
-    previous_batch_operations: Option<&Vec<LowLevelDriveOperation>>,
-    lifecycles_path: &[Vec<u8>],
-    key: &[u8],
-) -> Result<Option<PendingLedgerWrite>, Error> {
-    let Some(operations) = previous_batch_operations else {
-        return Ok(None);
-    };
-    for (index, operation) in operations.iter().enumerate() {
-        let LowLevelDriveOperation::GroveOperation(grove_op) = operation else {
-            continue;
-        };
-        if grove_op.path.to_path() != lifecycles_path
-            || grove_op.key != Some(KeyInfo::KnownKey(key.to_vec()))
-        {
-            continue;
-        }
-        return match &grove_op.op {
-            GroveOp::Replace {
-                element: Element::Item(bytes, _),
-            } => Ok(Some(PendingLedgerWrite {
-                index,
-                bytes: bytes.clone(),
-                inserts: false,
-            })),
-            GroveOp::InsertOrReplace {
-                element: Element::Item(bytes, _),
-            } => Ok(Some(PendingLedgerWrite {
-                index,
-                bytes: bytes.clone(),
-                inserts: true,
-            })),
-            _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "a pending token lifecycle ledger write is not an item insert or replacement",
-            ))),
-        };
-    }
-    Ok(None)
-}
 
 impl Drive {
     pub(super) fn destroy_token_issuer_v0(

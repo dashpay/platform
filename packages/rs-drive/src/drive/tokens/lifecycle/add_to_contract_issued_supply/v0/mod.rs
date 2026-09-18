@@ -1,5 +1,6 @@
 use crate::drive::tokens::lifecycle::add_to_contract_issued_supply::IssuedSupplyChange;
 use crate::drive::tokens::lifecycle::estimated_costs::ESTIMATED_TOKEN_CONTRACT_LIFECYCLE_SIZE_BYTES;
+use crate::drive::tokens::lifecycle::pending_ledger_write;
 use crate::drive::tokens::paths::token_contract_lifecycles_root_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -11,7 +12,7 @@ use dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
 use dpp::tokens::contract_lifecycle::ContractTokenLifecycle;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::{GroveOp, KeyInfoPath};
+use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
@@ -90,39 +91,21 @@ impl Drive {
             .contract_id()
             .to_buffer();
 
-        // A replacement of this issuer's record already pending in the batch carries the
+        // A write of this issuer's record already pending in the batch (a replacement by an
+        // earlier supply write, or the insert of a record the batch creates) carries the
         // rollup as the earlier writes of the batch left it; it is the base, and its slot is
         // rewritten so the batch keeps one write per issuer. Otherwise the stored record is.
         let lifecycles_path = token_contract_lifecycles_root_path_vec();
-        let pending_record_index = previous_batch_operations.as_deref().and_then(|operations| {
-            operations.iter().position(|operation| match operation {
-                LowLevelDriveOperation::GroveOperation(grove_op) => {
-                    matches!(grove_op.op, GroveOp::Replace { .. })
-                        && grove_op.path == lifecycles_path
-                        && grove_op.key == Some(KeyInfo::KnownKey(contract_id.to_vec()))
-                }
-                _ => false,
-            })
-        });
-        let mut record = match (pending_record_index, previous_batch_operations.as_deref()) {
-            (Some(index), Some(operations)) => match &operations[index] {
-                LowLevelDriveOperation::GroveOperation(grove_op) => match &grove_op.op {
-                    GroveOp::Replace {
-                        element: Element::Item(bytes, _),
-                    } => ContractTokenLifecycle::deserialize_from_bytes(bytes.as_slice())?,
-                    _ => {
-                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "a pending lifecycle record write is not an item replacement",
-                        )))
-                    }
-                },
-                _ => {
-                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                        "a pending lifecycle record write is not a grove operation",
-                    )))
-                }
-            },
-            _ => self
+        let pending_record = pending_ledger_write(
+            previous_batch_operations.as_deref(),
+            &lifecycles_path,
+            &contract_id,
+        )?;
+        let mut record = match &pending_record {
+            Some(pending) => {
+                ContractTokenLifecycle::deserialize_from_bytes(pending.bytes.as_slice())?
+            }
+            None => self
                 .fetch_contract_token_lifecycle_operations(
                     contract_id,
                     true,
@@ -155,17 +138,30 @@ impl Drive {
             }
         }
 
-        let replacement = LowLevelDriveOperation::replace_for_known_path_key_element(
-            lifecycles_path,
-            contract_id.to_vec(),
-            Element::new_item(record.serialize_consume_to_bytes()?),
-        );
-        match (
-            pending_record_index,
-            previous_batch_operations.as_deref_mut(),
-        ) {
-            (Some(index), Some(operations)) => operations[index] = replacement,
-            _ => drive_operations.push(replacement),
+        let record_element = Element::new_item(record.serialize_consume_to_bytes()?);
+        match (pending_record, previous_batch_operations.as_deref_mut()) {
+            // The rewrite keeps the kind of the pending write: a record the batch creates is
+            // not stored yet, so its rewrite stays an insert.
+            (Some(pending), Some(operations)) => {
+                operations[pending.index] = if pending.inserts {
+                    LowLevelDriveOperation::insert_for_known_path_key_element(
+                        lifecycles_path,
+                        contract_id.to_vec(),
+                        record_element,
+                    )
+                } else {
+                    LowLevelDriveOperation::replace_for_known_path_key_element(
+                        lifecycles_path,
+                        contract_id.to_vec(),
+                        record_element,
+                    )
+                }
+            }
+            _ => drive_operations.push(LowLevelDriveOperation::replace_for_known_path_key_element(
+                lifecycles_path,
+                contract_id.to_vec(),
+                record_element,
+            )),
         }
 
         Ok(drive_operations)
@@ -179,6 +175,7 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::tokens::contract_lifecycle::v0::ContractTokenLifecycleV0Accessors;
+    use grovedb::batch::GroveOp;
 
     fn drive_with_token() -> (Drive, Identifier, [u8; 32]) {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -372,6 +369,97 @@ mod tests {
             .expect("expected to read")
             .expect("expected a record");
         assert_eq!(record.issued_supply(), 250);
+    }
+
+    #[test]
+    fn should_fold_onto_a_pending_insert_of_the_record_and_keep_it_an_insert() {
+        let (drive, contract_id, token_id) = drive_with_token();
+        let platform_version = PlatformVersion::latest();
+
+        // A record the batch creates: its write is an insert, and the rewrite has to stay
+        // one, because a replacement of a key the batch has not stored yet is refused when
+        // the batch applies. (A supply write cannot follow the token creation itself in one
+        // batch, since the issuer is resolved through the contract info leaf the creation
+        // also inserts; the insert is built by hand here.)
+        let mut batch = vec![LowLevelDriveOperation::insert_for_known_path_key_element(
+            token_contract_lifecycles_root_path_vec(),
+            contract_id.to_vec(),
+            Element::new_item(
+                ContractTokenLifecycle::new(10, platform_version)
+                    .expect("expected a record")
+                    .serialize_consume_to_bytes()
+                    .expect("expected to serialize"),
+            ),
+        )];
+        let supply_change = drive
+            .add_to_contract_issued_supply_operations(
+                token_id,
+                IssuedSupplyChange::Increase(40),
+                &mut Some(&mut batch),
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the rollup move to fold onto the pending insert");
+        // The pending insert was rewritten in place, not followed by a second write.
+        assert!(supply_change
+            .iter()
+            .all(|operation| !matches!(operation, LowLevelDriveOperation::GroveOperation(_))));
+        assert_eq!(batch.len(), 1);
+        assert!(matches!(
+            &batch[0],
+            LowLevelDriveOperation::GroveOperation(grove_op)
+                if matches!(grove_op.op, GroveOp::InsertOrReplace { .. })
+        ));
+        batch.extend(supply_change);
+
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                batch,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the batch to apply");
+        let record = drive
+            .fetch_contract_token_lifecycle(contract_id.to_buffer(), None, platform_version)
+            .expect("expected to read")
+            .expect("expected a record");
+        assert_eq!(record.issued_supply(), 50);
+    }
+
+    #[test]
+    fn should_refuse_a_move_for_an_issuer_destroyed_in_the_same_batch() {
+        let (drive, contract_id, token_id) = drive_with_token();
+        let platform_version = PlatformVersion::latest();
+
+        let mut batch = drive
+            .destroy_token_issuer_operations(
+                contract_id.to_buffer(),
+                &BlockInfo::default(),
+                &mut None,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the destruction operations");
+        let result = drive.add_to_contract_issued_supply_operations(
+            token_id,
+            IssuedSupplyChange::Increase(1),
+            &mut Some(&mut batch),
+            &mut None,
+            None,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedDriveState(ref message))) if message.contains("destroyed issuer")
+            ),
+            "expected the wiped issuer refusal, got {result:?}"
+        );
     }
 
     #[test]
