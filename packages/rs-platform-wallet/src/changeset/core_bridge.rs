@@ -3797,6 +3797,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn core_snapshot_releases_manager_before_sweep_reconstruction() {
+        use dashcore::hashes::Hash;
+        let (manager, wallet_id) = snapshot_test_manager(12);
+        let (tx, rx) = unbounded_channel();
+        tx.send(WalletEvent::TransactionsSwept {
+            wallet_id,
+            txids: vec![dashcore::Txid::all_zeros()],
+            superseded_by: dashcore::Txid::from_byte_array([1; 32]),
+            winner_mined_height: None,
+            released_outpoints: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        })
+        .unwrap();
+        drop(tx);
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_WALLET_SNAPSHOTS
+                .union(crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL),
+        ));
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            run_wallet_event_adapter(
+                manager,
+                Arc::downgrade(&persister),
+                rx,
+                Arc::clone(&sync_fault),
+                CancellationToken::new(),
+            ),
+        )
+        .await
+        .expect("snapshot capture must release the read lock before sweep reconstruction");
+        assert_eq!(obs_rx.try_recv().unwrap().snapshot_height, Some(12));
+        assert!(!sync_fault.load(Ordering::Relaxed));
+    }
+
+    #[tokio::test]
     async fn core_snapshot_includes_events_emitted_while_waiting_for_manager() {
         let (manager, wallet_id) = snapshot_test_manager(1);
         let mut writer = manager.write().await;
