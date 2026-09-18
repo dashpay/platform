@@ -502,7 +502,13 @@ abstract class NativePersistenceBridge {
 
     // ── Identity keys ─────────────────────────────────────────────────
 
-    /** One `IdentityKeyEntryFFI` upsert. Descriptor `([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;)I`. */
+    /**
+     * One `IdentityKeyEntryFFI` upsert. Descriptor
+     * `([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ)I`. The last four
+     * arguments are the key's usage limits (protocol version 14): the credits it
+     * may spend over its lifetime when [totalBudgetIsSome], and the block time in
+     * milliseconds from which it can no longer sign when [expiresAtIsSome].
+     */
     @Suppress("LongParameterList")
     open fun onPersistIdentityKeyUpsert(
         walletId: ByteArray,
@@ -524,6 +530,10 @@ abstract class NativePersistenceBridge {
         contractBoundsKind: Byte,
         contractBoundsId: ByteArray,
         contractBoundsDocumentType: String?,
+        totalBudgetIsSome: Boolean = false,
+        totalBudget: Long = 0L,
+        expiresAtIsSome: Boolean = false,
+        expiresAt: Long = 0L,
     ): Int = 0
 
     /** One `(identityId, keyId)` removal. Descriptor `([B[BI)I`. */
@@ -1256,6 +1266,9 @@ class ContactRequestRestoreData(
  * `contractBoundsKind`: 0 none, 1 SingleContract, 2 SingleContractDocumentType;
  * `contractBoundsId` is 32 bytes (or empty for kind 0);
  * `contractBoundsDocumentType` is non-null only for kind 2.
+ * `totalBudget` / `expiresAt` are the key's usage limits (protocol version 14),
+ * meaningful only when the matching `*IsSome` flag is set; a limited key must
+ * restore as limited, or it would come back unlimited on cold restart.
  */
 class IdentityKeyRestoreData(
     @JvmField val keyId: Int,
@@ -1267,6 +1280,10 @@ class IdentityKeyRestoreData(
     @JvmField val contractBoundsKind: Byte,
     @JvmField val contractBoundsId: ByteArray,
     @JvmField val contractBoundsDocumentType: String?,
+    @JvmField val totalBudgetIsSome: Boolean = false,
+    @JvmField val totalBudget: Long = 0L,
+    @JvmField val expiresAtIsSome: Boolean = false,
+    @JvmField val expiresAt: Long = 0L,
 )
 
 /** Mirror of `ShieldedNoteRestoreFFI`. */
