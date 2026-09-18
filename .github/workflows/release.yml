@@ -509,7 +509,15 @@ jobs:
   release-dashmate-packages:
     name: Release Dashmate packages
     needs: build-dashmate-packages
-    if: github.event_name == 'release'
+    # `needs` on a matrix job waits for every leg and reports failure if any
+    # one leg failed, which by default would skip all four release legs. Each
+    # leg below needs only its own package type's artifact, so run whenever
+    # the build matrix ran at all: a leg whose build failed then fails at its
+    # own download step, and the other package types still ship.
+    if: >-
+      !cancelled()
+      && github.event_name == 'release'
+      && needs.build-dashmate-packages.result != 'skipped'
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
