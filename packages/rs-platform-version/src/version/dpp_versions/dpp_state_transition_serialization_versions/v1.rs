@@ -98,7 +98,7 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V1: DPPStateTransitionSerializ
         },
         // The indexOnly delete kind joins the wire at PV14.
         document_index_only_delete_state_transition: None,
-        // The erase kind joins the wire at PV14.
+        // The erase kind joins the wire at protocol version 15.
         document_erase_state_transition: None,
         document_transfer_state_transition: DocumentFeatureVersionBounds {
             bounds: FeatureVersionBounds {

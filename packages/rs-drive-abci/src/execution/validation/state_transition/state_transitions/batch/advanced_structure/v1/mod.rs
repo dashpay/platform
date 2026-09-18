@@ -43,7 +43,7 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::action_validation::token::token_base_transition_action::TokenBaseTransitionActionValidation;
 
 /// Generation 1 validates the structure of batch action format 1, which is
-/// what a batch of any wire format becomes for protocol version 14 and later,
+/// what a batch of any wire format becomes for protocol version 15 and later,
 /// including the erase of a keep-history document.
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStructureValidationV1
 {

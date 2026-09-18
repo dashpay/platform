@@ -54,10 +54,11 @@ impl<'a> Iterator for DocumentBatchIterator<'a> {
 /// [`BatchedTransitionRef`] cannot represent, so a format 2 batch has no view
 /// here: every accessor reports an empty batch for it. Code that must see every
 /// format uses [`DocumentsBatchTransitionAccessorsV1`]. The generations that
-/// still read this view are the ones selected for protocol versions that reject
-/// a format 2 batch by its wire version before any of them runs, and the first
-/// of them rejects an empty batch, so the empty view fails closed rather than
-/// silently dropping transitions.
+/// still read this view (structure, nonce, admission and state validation
+/// alike) are the ones selected for protocol versions that reject a format 2
+/// batch by its wire version while decoding it, before any of them runs; and
+/// the structure generation among them rejects an empty batch, so the empty
+/// view fails closed rather than silently dropping transitions.
 impl DocumentsBatchTransitionAccessorsV0 for BatchTransition {
     type IterType<'a>
         = DocumentBatchIterator<'a>

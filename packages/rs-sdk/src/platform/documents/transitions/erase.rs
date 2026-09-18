@@ -167,7 +167,7 @@ impl DocumentEraseTransitionBuilder {
 
     /// Refuses, before any nonce is reserved, an erase the platform version
     /// cannot construct: the transition kind joined the wire at protocol
-    /// version 14, and the batch may only be built at a version it knows.
+    /// version 15, and the batch may only be built at a version it knows.
     ///
     /// The same rejection happens inside the transition constructor, but by
     /// then the SDK has already advanced its cached contract nonce for a
@@ -446,15 +446,15 @@ mod tests {
     /// that cannot construct an erase is refused without reserving a nonce.
     #[test]
     fn should_refuse_an_erase_the_platform_version_cannot_construct() {
-        let too_old = PlatformVersion::get(13).unwrap();
+        let too_old = PlatformVersion::get(14).unwrap();
         let error = DocumentEraseTransitionBuilder::check_erase_is_constructible(None, too_old)
-            .expect_err("protocol 13 has no erase transition");
+            .expect_err("protocol 14 has no erase transition");
         assert!(error
             .to_string()
             .contains("erase transitions do not exist at this platform version"));
         let current = PlatformVersion::latest();
         DocumentEraseTransitionBuilder::check_erase_is_constructible(None, current)
-            .expect("protocol 14 constructs erases");
+            .expect("protocol 15 constructs erases");
         for unsupported in [0, 1] {
             let options = StateTransitionCreationOptions {
                 batch_feature_version: Some(unsupported),

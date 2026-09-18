@@ -63,9 +63,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
         prove: DriveProveMethodVersions {
             prove_elements: 0,
             prove_multiple_state_transition_results: 0,
-            // Generation 1 proves a batch of any wire format, including
-            // format 2, whose document shell carries the erase kind.
-            prove_state_transition: 1,
+            prove_state_transition: 0,
         },
         balances: DriveBalancesMethodVersions {
             add_to_system_credits: 0,

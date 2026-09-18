@@ -640,7 +640,7 @@ fn should_halt_migration_when_an_inventoried_index_reference_was_not_rewritten()
 }
 
 /// A keep-history type with a contested index could be registered before
-/// protocol 14. Activation loads every stored contract through the structural
+/// protocol 15. Activation loads every stored contract through the structural
 /// parse, which must keep reading that combination, or the migration would
 /// abort on the first such contract before touching any history.
 #[test]
@@ -649,8 +649,8 @@ fn should_migrate_a_legacy_contested_keep_history_contract() {
     use dpp::document::document_factory::DocumentFactory;
     use dpp::platform_value::platform_value;
 
-    let old = PlatformVersion::get(13).unwrap();
-    let new = PlatformVersion::get(14).unwrap();
+    let old = PlatformVersion::get(14).unwrap();
+    let new = PlatformVersion::get(15).unwrap();
     let schema = platform_value!({
         "type": "object",
         "documentsKeepHistory": true,
@@ -671,7 +671,7 @@ fn should_migrate_a_legacy_contested_keep_history_contract() {
             },
         }],
     });
-    let contract = DataContractFactory::new(13)
+    let contract = DataContractFactory::new(14)
         .unwrap()
         .create_with_value_config(
             [7; 32].into(),
@@ -680,14 +680,14 @@ fn should_migrate_a_legacy_contested_keep_history_contract() {
             None,
             None,
         )
-        .expect("protocol 13 admits a contested keep-history type")
+        .expect("protocol 14 admits a contested keep-history type")
         .data_contract_owned();
     let drive = setup_drive_with_initial_state_structure(None);
     drive
         .apply_contract(&contract, BlockInfo::default(), true, None, None, old)
         .unwrap();
     let document_type = contract.document_type_for_name("name").unwrap();
-    let mut document = DocumentFactory::new(13)
+    let mut document = DocumentFactory::new(14)
         .unwrap()
         .create_document(
             &contract,

@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -56,13 +57,11 @@ impl<C> Platform<C> {
                         self.query_document_history_v1(request, platform_state, platform_version)?
                     }
                     processing_version => {
-                        return Err(Error::Execution(
-                            crate::error::execution::ExecutionError::UnknownVersionMismatch {
-                                method: "query_document_history".to_string(),
-                                known_versions: vec![0, 1],
-                                received: processing_version,
-                            },
-                        ));
+                        return Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "query_document_history".to_string(),
+                            known_versions: vec![0, 1],
+                            received: processing_version,
+                        }));
                     }
                 };
                 Ok(result.map(|response| GetDocumentHistoryResponse {

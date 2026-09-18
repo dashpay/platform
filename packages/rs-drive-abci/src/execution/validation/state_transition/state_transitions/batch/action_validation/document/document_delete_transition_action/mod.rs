@@ -11,10 +11,12 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::state_v1::DocumentDeleteTransitionActionStateValidationV1;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::advanced_structure_v0::DocumentDeleteTransitionActionStructureValidationV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::advanced_structure_v1::DocumentDeleteTransitionActionStructureValidationV1;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::advanced_structure_v2::DocumentDeleteTransitionActionStructureValidationV2;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod advanced_structure_v0;
 mod advanced_structure_v1;
+mod advanced_structure_v2;
 mod state_v0;
 mod state_v1;
 
@@ -49,9 +51,10 @@ impl DocumentDeleteTransitionActionValidation for DocumentDeleteTransitionAction
         {
             0 => self.validate_structure_v0(),
             1 => self.validate_structure_v1(),
+            2 => self.validate_structure_v2(),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentDeleteTransitionAction::validate_structure".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

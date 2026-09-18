@@ -9,7 +9,7 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 
-/// Generation 2 of the batch transformation, selected for protocol version 14
+/// Generation 2 of the batch transformation, selected for protocol version 15
 /// and later: like generation 1 it threads the caller's execution context into
 /// the transformer, and it runs transformer generation 1, which sees every batch
 /// wire format and produces batch action format 1.

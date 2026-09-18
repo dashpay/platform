@@ -1,4 +1,4 @@
-// Generation 1 of the batch transformer, selected for protocol version 14 and
+// Generation 1 of the batch transformer, selected for protocol version 15 and
 // later. It views the batch through the shell that sees every batch wire
 // format, so a format 2 batch carrying an erase of a keep-history document is
 // transformed like any other, and it produces batch action format 1, whose
@@ -44,6 +44,7 @@ use dpp::state_transition::batch_transition::batched_transition::{
 };
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use dpp::state_transition::{StateTransitionHasUserFeeIncrease, StateTransitionOwned};
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
@@ -185,10 +186,9 @@ trait BatchTransitionInternalTransformerV1 {
         original_document: &Document,
     ) -> SimpleConsensusValidationResult;
     fn failed_per_transition_action(
-        base_transition: &dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition,
+        base_transition: &DocumentBaseTransition,
         owner_id: Identifier,
         errors: Vec<ConsensusError>,
-        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionActionV1>, Error>;
 }
 
@@ -733,7 +733,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                             "document value depth {actual_depth} exceeds system maximum {max_depth}"
                         )),
                     ))],
-                    platform_version,
                 );
             }
         }
@@ -785,7 +784,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                         document_replace_transition.base(),
                         owner_id,
                         validation_result.errors,
-                        platform_version,
                     );
                 }
 
@@ -804,7 +802,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                             document_replace_transition.base(),
                             owner_id,
                             validation_result.errors,
-                            platform_version,
                         );
                     }
                 }
@@ -863,7 +860,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                         document_transfer_transition.base(),
                         owner_id,
                         validation_result.errors,
-                        platform_version,
                     );
                 }
 
@@ -880,7 +876,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                         document_transfer_transition.base(),
                         owner_id,
                         validation_result.errors,
-                        platform_version,
                     );
                 }
 
@@ -899,7 +894,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                             document_transfer_transition.base(),
                             owner_id,
                             validation_result.errors,
-                            platform_version,
                         );
                     }
                 }
@@ -928,7 +922,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                         document_update_price_transition.base(),
                         owner_id,
                         validation_result.errors,
-                        platform_version,
                     );
                 }
 
@@ -945,7 +938,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                         document_update_price_transition.base(),
                         owner_id,
                         validation_result.errors,
-                        platform_version,
                     );
                 }
 
@@ -964,7 +956,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                             document_update_price_transition.base(),
                             owner_id,
                             validation_result.errors,
-                            platform_version,
                         );
                     }
                 }
@@ -993,7 +984,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                         document_purchase_transition.base(),
                         owner_id,
                         validation_result.errors,
-                        platform_version,
                     );
                 }
 
@@ -1012,7 +1002,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                             ))
                             .into(),
                         ],
-                        platform_version,
                     );
                 };
 
@@ -1028,7 +1017,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                             ),
                         )
                         .into()],
-                        platform_version,
                     );
                 }
 
@@ -1047,7 +1035,6 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                             document_purchase_transition.base(),
                             owner_id,
                             validation_result.errors,
-                            platform_version,
                         );
                     }
                 }
@@ -1141,10 +1128,9 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
     }
 
     fn failed_per_transition_action(
-        base_transition: &dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition,
+        base_transition: &DocumentBaseTransition,
         owner_id: Identifier,
         errors: Vec<ConsensusError>,
-        _platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionActionV1>, Error> {
         let bump_action =
             BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(

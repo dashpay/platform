@@ -527,7 +527,7 @@ fn should_derive_deleted_and_erasing_lifecycle_from_the_proof() {
     let chunk = version
         .system_limits
         .max_document_revisions_erased_per_transition
-        .expect("protocol 14 bounds the erase chunk") as u64;
+        .expect("protocol 15 bounds the erase chunk") as u64;
     for revision in 1..=chunk + 2 {
         document.set_revision(Some(revision));
         platform

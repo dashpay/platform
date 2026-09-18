@@ -36,6 +36,7 @@ use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
 use crate::data_contract::document_type::token_costs::TokenCosts;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
+use crate::data_contract::document_type::v3::DocumentTypeV3;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
@@ -89,7 +90,7 @@ use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValid
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::{
     DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1, DOCUMENT_META_SCHEMA_V2,
-    DOCUMENT_META_SCHEMA_V3,
+    DOCUMENT_META_SCHEMA_V3, DOCUMENT_META_SCHEMA_V4,
 };
 #[cfg(feature = "validation")]
 use jsonschema::JSONSchema;
@@ -290,10 +291,11 @@ pub(super) fn select_document_meta_schema(
         1 => &*DOCUMENT_META_SCHEMA_V1,
         2 => &*DOCUMENT_META_SCHEMA_V2,
         3 => &*DOCUMENT_META_SCHEMA_V3,
+        4 => &*DOCUMENT_META_SCHEMA_V4,
         version => {
             return Err(ProtocolError::UnknownVersionMismatch {
                 method: method_name.to_string(),
-                known_versions: vec![0, 1, 2, 3],
+                known_versions: vec![0, 1, 2, 3, 4],
                 received: version,
             })
         }
@@ -1946,7 +1948,7 @@ pub(super) fn apply_doctype_aggregates(
 ///
 /// Runs before the core parse for the same reason as
 /// [`parse_index_only_keyword`]: the core takes `schema` by value. Only the
-/// generation-3 driver calls this; earlier generations have no such keyword
+/// generation-4 driver calls this; earlier generations have no such keyword
 /// and their meta-schemas reject it under `full_validation`.
 pub(super) fn parse_can_be_erased_keyword(schema: &Value) -> Result<bool, ProtocolError> {
     let schema_map_opt = schema.to_map().ok();
@@ -1976,7 +1978,7 @@ pub(super) fn parse_can_be_erased_keyword(schema: &Value) -> Result<bool, Protoc
 /// governs an irreversible operation, so a stored contract must never come
 /// back out of the parser with the flag set on a type that cannot support it.
 pub(super) fn apply_can_be_erased(
-    document_type: &mut DocumentTypeV2,
+    document_type: &mut DocumentTypeV3,
     can_be_erased: bool,
     name: &str,
 ) -> Result<(), ProtocolError> {
@@ -2023,7 +2025,7 @@ pub(super) fn apply_can_be_erased(
 /// needs changes to the contested machinery itself, so until then the two are
 /// kept apart at contract registration.
 pub(super) fn reject_contested_keep_history(
-    document_type: &DocumentTypeV2,
+    document_type: &DocumentTypeV3,
     name: &str,
 ) -> Result<(), ProtocolError> {
     if !document_type.documents_keep_history {

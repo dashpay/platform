@@ -117,10 +117,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             data_contract_reference_validation: 0,
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 basic_structure: 0,
-                advanced_structure: 1,
-                state: 1,
-                // Generation 1 reads the nonces of a batch of any wire format.
-                revision: 1,
+                advanced_structure: 0,
+                state: 0,
+                revision: 0,
                 // PROTOCOL_VERSION_12 (v3.1 hard fork): batch state transition
                 // fee accounting fixes. This single field gates multiple
                 // related billing changes so they all activate together at
@@ -144,7 +143,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 //   * T3 — DashPay data trigger recipient identity-balance
                 //     fetch cost (switched to `fetch_identity_balance_with_costs`).
                 //   * T4 — withdrawals data trigger `query_documents` cost.
-                transform_into_action: 2,
+                transform_into_action: 1,
                 // PROTOCOL_VERSION_12 (v3.1 hard fork): per-transition
                 // failure paths in `transform_document_transition` now emit
                 // a `BumpIdentityDataContractNonce` action so the user pays
@@ -157,9 +156,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 // their query_documents calls. v0 stays for PV11 chain
                 // replay (the v0 helpers pass epoch=None and never call
                 // add_operation — byte-identical to pre-PR behavior).
-                // Generation 2 keeps generation 1's billing and reads the
-                // transitions of any batch wire format.
-                fetch_documents_for_transitions_knowing_contract_and_document_type: 2,
+                fetch_documents_for_transitions_knowing_contract_and_document_type: 1,
+                fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type:
+                    None,
                 fetch_document_with_id: 1,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     // PROTOCOL_VERSION_14: v2 adds DashPay `profile`
@@ -186,29 +185,23 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                         reject_data_trigger: 0,
                     },
                 },
-                // Generation 1 reads a batch of any wire format.
-                is_allowed: 1,
+                is_allowed: 0,
                 document_create_transition_structure_validation: 1,
-                // Keep-history types take part in the document lifecycle: a delete
-                // removes the current pointer and its index references while the
-                // retained revisions stay readable. Protocols through 13 retain the
-                // original internal-error outcome.
+                // Reject deletes on legacy keep-history types as paid consensus errors.
+                // Protocols through 13 retain the original internal-error outcome.
                 document_delete_transition_structure_validation: 1,
                 document_index_only_delete_transition_structure_validation: 0,
-                document_erase_transition_structure_validation: Some(0),
+                document_erase_transition_structure_validation: None,
                 document_replace_transition_structure_validation: 0,
                 document_transfer_transition_structure_validation: 0,
                 document_purchase_transition_structure_validation: 0,
                 document_update_price_transition_structure_validation: 0,
                 document_base_transition_state_validation: 0,
                 document_create_transition_state_validation: 2,
-                // Consults the keep-history lifecycle before deleting, so a delete
-                // of an already deleted or erasing document is a paid consensus
-                // error rather than a second removal.
-                document_delete_transition_state_validation: 1,
+                document_delete_transition_state_validation: 0,
                 document_index_only_delete_transition_state_validation: 0,
-                document_erase_transition_state_validation: Some(0),
-                fetch_keep_history_document_lifecycle: Some(0),
+                document_erase_transition_state_validation: None,
+                fetch_keep_history_document_lifecycle: None,
                 document_replace_transition_state_validation: 1,
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,

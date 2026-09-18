@@ -23,9 +23,7 @@
 use crate::consensus::basic::data_contract::{
     DataContractInvalidIndexDefinitionUpdateError, DataContractInvalidRequiredFieldsUpdateError,
 };
-use crate::data_contract::document_type::accessors::{
-    DocumentTypeV0Getters, DocumentTypeV2Getters,
-};
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -41,20 +39,14 @@ impl DocumentTypeRef<'_> {
         new_contract_version: u32,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        // A keep-history type may withdraw deletion, and only in that
-        // direction: turning delete back on would hand an operation over
-        // already-stored documents to a type registered without it. The
-        // narrowing is refused while the type is erasable, because erase
-        // applies to deleted documents only and erasability is itself
-        // immutable, so such a type could never reach a state erase acts on
-        // again. Every other config and schema check still runs, and v0 stays
-        // immutable.
+        // Legacy keep-history types advertised deletes that Drive never allowed.
+        // Permit only true -> false for that flag while keeping history enabled.
+        // Every other config and schema check still runs, and v0 stays immutable.
         let options = UpdateValidationOptions {
             allow_history_delete_repair: self.documents_keep_history()
                 && new_document_type.documents_keep_history()
                 && self.documents_can_be_deleted()
-                && !new_document_type.documents_can_be_deleted()
-                && !self.documents_can_be_erased(),
+                && !new_document_type.documents_can_be_deleted(),
         };
         let result = self.validate_config_with_options(new_document_type, &options);
 
@@ -101,7 +93,7 @@ impl DocumentTypeRef<'_> {
     /// existing properties stay frozen by the schema compatibility differ;
     /// this check judges the top-level `required` key, which is stripped
     /// from the diff exactly like `indices`.
-    fn validate_required_fields_update(
+    pub(super) fn validate_required_fields_update(
         &self,
         new_document_type: DocumentTypeRef,
         new_contract_version: u32,
@@ -179,7 +171,7 @@ impl DocumentTypeRef<'_> {
     /// on-disk subtrees. Compare the definitions by index name — the
     /// comparison must not depend on where a changed index's name sorts
     /// relative to the document type's other indexes.
-    fn validate_index_definitions_unchanged(
+    pub(super) fn validate_index_definitions_unchanged(
         &self,
         new_document_type: DocumentTypeRef,
     ) -> SimpleConsensusValidationResult {

@@ -44,7 +44,7 @@ fn chunk_size() -> u64 {
     latest()
         .system_limits
         .max_document_revisions_erased_per_transition
-        .expect("protocol 14 bounds the erase chunk") as u64
+        .expect("protocol 15 bounds the erase chunk") as u64
 }
 
 /// Applies the family contract and writes `revisions` revisions of one person,
@@ -1042,7 +1042,7 @@ fn should_reject_an_unsupported_erase_estimation_version() {
             .delete
             .add_estimation_costs_for_erase_document,
         Some(0),
-        "protocol 14 selects the only implementation there is"
+        "protocol 15 selects the only implementation there is"
     );
     version
         .drive
@@ -1663,14 +1663,14 @@ fn should_read_revisions_by_position_after_a_partial_erasure() {
     );
 }
 
-/// A history that protocol 13 left gapped keeps refusing by-revision reads
-/// after the document is deleted: a revision no longer maps onto a position,
-/// and an empty page for a revision that exists would otherwise verify as an
-/// authenticated absence.
+/// A history that the legacy layout left gapped keeps refusing by-revision
+/// reads after the document is deleted: a revision no longer maps onto a
+/// position, and an empty page for a revision that exists would otherwise
+/// verify as an authenticated absence.
 #[test]
 fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
-    let old = PlatformVersion::get(13).unwrap();
-    let new = PlatformVersion::get(14).unwrap();
+    let old = PlatformVersion::get(14).unwrap();
+    let new = PlatformVersion::get(15).unwrap();
     let drive = setup_drive_with_initial_state_structure(None);
     let contract = json_document_to_contract(
         "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
@@ -1690,7 +1690,7 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
         old,
     )
     .unwrap();
-    // Two writes in one block under protocol 13 overwrite each other's
+    // Two writes in one block under the legacy layout overwrite each other's
     // revision, so revision 2 is lost and the retained history is [1, 3].
     for (revision, time) in [(1, 1_000), (2, 2_000), (3, 2_000)] {
         document.set_revision(Some(revision));
@@ -1792,7 +1792,7 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
         .expect("time pagination still reads a deleted gapped history");
     let lifecycle = page
         .lifecycle
-        .expect("protocol 14 authenticates lifecycle metadata");
+        .expect("protocol 15 authenticates lifecycle metadata");
     assert_eq!(lifecycle.state, DocumentHistoryState::Deleted);
     assert_eq!(lifecycle.remaining_revisions, 2);
     assert_eq!(
@@ -1838,7 +1838,7 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
             .expect("an unused id reads as an authenticated absence");
         assert_eq!(
             page.lifecycle
-                .expect("protocol 14 authenticates lifecycle metadata")
+                .expect("protocol 15 authenticates lifecycle metadata")
                 .state,
             DocumentHistoryState::Absent
         );

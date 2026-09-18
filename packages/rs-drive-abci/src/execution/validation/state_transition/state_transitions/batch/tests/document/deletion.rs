@@ -391,12 +391,39 @@ mod deletion_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
     }
 
-    /// Protocol 14 carries the delete out: the document leaves every ordinary
-    /// read and its retained revisions stay readable.
+    /// What a delete of a keep-history document does at each protocol version.
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum KeepHistoryDeleteOutcome {
+        /// The released generations before protocol 14 hit the storage guard,
+        /// an internal error the block loop reports as such.
+        InternalError,
+        /// Protocol 14 refuses the delete as a paid consensus error.
+        PaidRejection,
+        /// Protocol 15 carries the delete out: the document leaves every
+        /// ordinary read and its retained revisions stay readable.
+        Deleted,
+    }
+
     #[tokio::test]
-    async fn test_document_delete_on_document_type_that_keeps_history_succeeds_protocol_version_14()
+    async fn test_document_delete_on_document_type_that_keeps_history_succeeds_protocol_version_15()
     {
-        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(14, true).await;
+        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(
+            15,
+            KeepHistoryDeleteOutcome::Deleted,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_14 rejects deletes against keep-history document types
+    /// as invalid-paid consensus errors and must keep doing so for replay.
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_keeps_history_is_rejected_protocol_version_14(
+    ) {
+        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(
+            14,
+            KeepHistoryDeleteOutcome::PaidRejection,
+        )
+        .await;
     }
 
     /// PROTOCOL_VERSION_12 preserves the historical InternalError result for
@@ -404,23 +431,30 @@ mod deletion_tests {
     #[tokio::test]
     async fn test_document_delete_on_document_type_that_keeps_history_replays_protocol_version_12()
     {
-        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(12, false)
-            .await;
+        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(
+            12,
+            KeepHistoryDeleteOutcome::InternalError,
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn test_document_delete_on_document_type_that_keeps_history_replays_protocol_version_13()
     {
-        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(13, false)
-            .await;
+        run_document_delete_on_document_type_that_keeps_history_at_protocol_version(
+            13,
+            KeepHistoryDeleteOutcome::InternalError,
+        )
+        .await;
     }
 
-    /// Exercises an already-deployed keep-history contract at both sides of the
-    /// v14 validation-version boundary. Loading with `full_validation: false`
-    /// is intentional: reparsing deployed contracts must remain allowed.
+    /// Exercises an already-deployed keep-history contract on every side of the
+    /// v14 and v15 validation-version boundaries. Loading with
+    /// `full_validation: false` is intentional: reparsing deployed contracts
+    /// must remain allowed.
     async fn run_document_delete_on_document_type_that_keeps_history_at_protocol_version(
         protocol_version: dpp::version::ProtocolVersion,
-        expect_success: bool,
+        expected_outcome: KeepHistoryDeleteOutcome,
     ) {
         let platform_version = PlatformVersion::get(protocol_version)
             .expect("expected platform version for the requested protocol_version");
@@ -529,8 +563,6 @@ mod deletion_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        // V14 deletes; v12 and v13 retain the historical InternalError
-        // classification for replay.
         let documents_batch_deletion_transition =
             BatchTransition::new_document_deletion_transition_from_document(
                 altered_document,
@@ -572,11 +604,15 @@ mod deletion_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 0);
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
         assert_eq!(
+            processing_result.invalid_paid_count(),
+            usize::from(expected_outcome == KeepHistoryDeleteOutcome::PaidRejection),
+            "unexpected invalid-paid classification at protocol version {protocol_version}"
+        );
+        assert_eq!(
             processing_result.valid_count(),
-            usize::from(expect_success),
+            usize::from(expected_outcome == KeepHistoryDeleteOutcome::Deleted),
             "unexpected success classification at protocol version {protocol_version}"
         );
         let internal_error_count = processing_result
@@ -586,11 +622,23 @@ mod deletion_tests {
             .count();
         assert_eq!(
             internal_error_count,
-            usize::from(!expect_success),
+            usize::from(expected_outcome == KeepHistoryDeleteOutcome::InternalError),
             "unexpected InternalError classification at protocol version {protocol_version}"
         );
 
-        if expect_success {
+        if expected_outcome == KeepHistoryDeleteOutcome::PaidRejection {
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(
+                        dpp::consensus::basic::BasicError::InvalidDocumentTransitionActionError(error)
+                    ),
+                    ..
+                }] if error.action() == "documents of type note can not be deleted"
+            );
+        }
+
+        if expected_outcome == KeepHistoryDeleteOutcome::Deleted {
             // The document is gone from ordinary reads, and its retained
             // revisions are not.
             let documents = platform

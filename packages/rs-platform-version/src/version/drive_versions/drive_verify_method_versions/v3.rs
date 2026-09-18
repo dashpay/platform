@@ -5,7 +5,8 @@ use super::{
 };
 
 /// Verification of composite document history and its independent metadata proof,
-/// and the cursor lookup of a proved page in the protocol 15 keep-history layout.
+/// the cursor lookup of a proved page in the protocol 15 keep-history layout, and
+/// state transition execution proofs for batch wire format 2.
 pub const DRIVE_VERIFY_METHOD_VERSIONS_V3: DriveVerifyMethodVersions = DriveVerifyMethodVersions {
     document: DriveVerifyDocumentMethodVersions {
         verify_document_history: 1,

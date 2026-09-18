@@ -1,15 +1,9 @@
-//! V3 (PV14): identical to V2 except for two new kinds, both `Some` with V0
-//! bounds only.
-//!
-//! `document_index_only_delete_state_transition` is the indexOnly
-//! delete-by-values transition (`DocumentIndexOnlyDeleteTransition`).
-//! `document_erase_state_transition` is the erase transition
-//! (`DocumentEraseTransition`), which purges the retained revisions of a
-//! deleted keep-history document.
-//!
-//! Each is its own kind, not a version of the delete transition:
-//! `document_delete_state_transition` keeps V2's bounds and keeps evolving
-//! independently for stored types.
+//! V3 (PV14): identical to V2 except the new
+//! `document_index_only_delete_state_transition` kind exists (`Some`, V0
+//! only) — the indexOnly delete-by-values transition
+//! (`DocumentIndexOnlyDeleteTransition`). It is its own kind, not a
+//! version of the delete transition: `document_delete_state_transition`
+//! keeps V2's bounds and keeps evolving independently for stored types.
 
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::{
     DPPStateTransitionSerializationVersions, DocumentFeatureVersionBounds,
@@ -80,8 +74,8 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
         },
         batch_state_transition: FeatureVersionBounds {
             min_version: 0,
-            max_version: 2,
-            default_current_version: 2,
+            max_version: 1,
+            default_current_version: 1,
         },
         document_base_state_transition: FeatureVersionBounds {
             min_version: 0,
@@ -116,13 +110,8 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
                 default_current_version: 0,
             },
         }),
-        document_erase_state_transition: Some(DocumentFeatureVersionBounds {
-            bounds: FeatureVersionBounds {
-                min_version: 0,
-                max_version: 0,
-                default_current_version: 0,
-            },
-        }),
+        // The erase kind joins the wire at protocol version 15.
+        document_erase_state_transition: None,
         document_transfer_state_transition: DocumentFeatureVersionBounds {
             bounds: FeatureVersionBounds {
                 min_version: 0,

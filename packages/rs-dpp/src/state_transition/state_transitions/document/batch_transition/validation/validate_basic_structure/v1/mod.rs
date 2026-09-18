@@ -423,6 +423,43 @@ mod tests {
         ));
     }
 
+    /// A format 2 batch never reaches the released structure generation in
+    /// production, because decoding rejects it by wire version first. Should
+    /// one arrive anyway, the shell that generation reads through cannot see
+    /// an erase and must report the batch as empty, so the batch is refused
+    /// rather than passed on with its transitions dropped.
+    #[test]
+    fn should_fail_closed_on_a_format_2_batch_through_the_released_structure_generation() {
+        let batch = make_batch_v2(vec![make_erase(1, 1)]);
+
+        let released = PlatformVersion::get(14).expect("protocol version 14 exists");
+        assert_eq!(
+            released
+                .dpp
+                .state_transitions
+                .documents
+                .documents_batch_transition
+                .validation
+                .validate_base_structure,
+            0,
+            "protocol version 14 selects the released structure generation"
+        );
+        let result = batch
+            .validate_base_structure(released)
+            .expect("no protocol err");
+        assert!(matches!(
+            result.errors.first(),
+            Some(ConsensusError::BasicError(
+                BasicError::DocumentTransitionsAreAbsentError(_)
+            ))
+        ));
+
+        let result = batch
+            .validate_base_structure(PlatformVersion::latest())
+            .expect("no protocol err");
+        assert!(result.is_valid(), "expected valid, got {:?}", result.errors);
+    }
+
     #[test]
     fn should_bound_the_nonce_of_an_erase_in_a_format_2_batch() {
         let result = make_batch_v2(vec![make_erase(1, u64::MAX)])

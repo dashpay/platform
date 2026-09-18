@@ -40,7 +40,7 @@ pub struct DriveDocumentQueryMethodVersions {
     pub primary_key_path_query: FeatureVersion,
     /// Reads the lifecycle record of one keep-history document and, when the
     /// record says the document is deleted, its newest retained revision.
-    /// Absent before protocol version 14, which introduces the lifecycle tree.
+    /// Absent before protocol version 15, which introduces the lifecycle tree.
     pub fetch_document_lifecycle: OptionalFeatureVersion,
     /// Mode-detection routing table for `SELECT COUNT` queries.
     /// Versioned because the routing table is consensus-relevant on
@@ -161,7 +161,7 @@ pub struct DriveDocumentDeleteMethodVersions {
     pub delete_index_only_document_for_contract: FeatureVersion,
     /// Removes a bounded chunk of the retained revisions of a deleted
     /// keep-history document, dropping the history subtree and the lifecycle
-    /// record with the terminal chunk. Absent before protocol version 14.
+    /// record with the terminal chunk. Absent before protocol version 15.
     pub erase_document_for_contract_operations: OptionalFeatureVersion,
     /// Estimation layers for the erase chunk. Same dormancy as
     /// `erase_document_for_contract_operations`.

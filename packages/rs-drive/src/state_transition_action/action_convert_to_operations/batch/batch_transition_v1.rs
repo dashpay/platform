@@ -124,7 +124,7 @@ mod tests {
 
         let result = action.into_high_level_drive_operations(
             &epoch,
-            PlatformVersion::get(13).expect("protocol 13"),
+            PlatformVersion::get(14).expect("protocol 14"),
         );
 
         assert!(matches!(

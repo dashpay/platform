@@ -9,7 +9,7 @@ use super::*;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
 use dpp::consensus::basic::BasicError;
-use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV3Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
@@ -71,7 +71,7 @@ fn assert_successful(result: &StateTransitionExecutionResult, context: &str) {
     );
 }
 
-/// A platform at protocol 14 with the erasable note contract applied, one
+/// A platform at protocol 15 with the erasable note contract applied, one
 /// identity owning a `note` document, and a second identity that owns nothing.
 struct Fixture {
     platform: TempPlatform<MockCoreRPCLike>,
@@ -92,12 +92,12 @@ impl Fixture {
     async fn new(document_type_name: &str) -> Self {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
-            .with_initial_protocol_version(14)
+            .with_initial_protocol_version(15)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
         let contract = json_document_to_contract(ERASABLE_CONTRACT, true, platform_version)
-            .expect("the erasable note contract must pass full validation at protocol 14");
+            .expect("the erasable note contract must pass full validation at protocol 15");
         platform
             .drive
             .apply_contract(
@@ -672,7 +672,7 @@ async fn should_let_any_identity_finish_an_erasure_its_owner_started() {
     let chunk = PlatformVersion::latest()
         .system_limits
         .max_document_revisions_erased_per_transition
-        .expect("protocol 14 bounds the chunk") as u64;
+        .expect("protocol 15 bounds the chunk") as u64;
 
     let mut fixture = Fixture::new("note").await;
     fixture.retain_revisions("note", chunk + 1);
@@ -712,7 +712,7 @@ async fn should_reject_a_delete_of_a_document_whose_erasure_has_begun() {
     let chunk = PlatformVersion::latest()
         .system_limits
         .max_document_revisions_erased_per_transition
-        .expect("protocol 14 bounds the chunk") as u64;
+        .expect("protocol 15 bounds the chunk") as u64;
 
     let mut fixture = Fixture::new("note").await;
     fixture.retain_revisions("note", chunk + 1);
@@ -737,7 +737,7 @@ async fn should_finish_an_erasure_across_two_transitions_in_one_block() {
     let chunk = PlatformVersion::latest()
         .system_limits
         .max_document_revisions_erased_per_transition
-        .expect("protocol 14 bounds the chunk") as u64;
+        .expect("protocol 15 bounds the chunk") as u64;
 
     let mut fixture = Fixture::new("note").await;
     fixture.retain_revisions("note", chunk + 1);

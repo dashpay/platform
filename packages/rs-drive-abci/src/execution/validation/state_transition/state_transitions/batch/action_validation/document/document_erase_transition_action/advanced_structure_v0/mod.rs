@@ -3,7 +3,7 @@ use dpp::consensus::basic::document::{
     InvalidDocumentTransitionActionError, InvalidDocumentTypeError,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV3Getters};
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::v0::DocumentEraseTransitionActionAccessorsV0;
@@ -52,7 +52,7 @@ impl DocumentEraseTransitionActionStructureValidationV0 for DocumentEraseTransit
             ));
         }
 
-        // Defensive, for a contract stored before protocol 14: the parser keeps
+        // Defensive, for a contract stored before protocol 15: the parser keeps
         // the two apart for every contract registered since.
         if document_type
             .indexes()

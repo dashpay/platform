@@ -151,6 +151,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V9: DriveAbciValidationVersions =
                 // replay (the v0 helpers pass epoch=None and never call
                 // add_operation — byte-identical to pre-PR behavior).
                 fetch_documents_for_transitions_knowing_contract_and_document_type: 1,
+                fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type:
+                    None,
                 fetch_document_with_id: 1,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     // PROTOCOL_VERSION_13: v1 drops the reject bindings for

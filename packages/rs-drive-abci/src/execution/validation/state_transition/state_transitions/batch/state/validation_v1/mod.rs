@@ -38,7 +38,7 @@ use crate::execution::validation::state_transition::batch::data_triggers::{data_
 use crate::platform_types::platform::PlatformStateRef;
 
 /// Generation 1 validates batch action format 1 against state, which is what a
-/// batch of any wire format becomes for protocol version 14 and later,
+/// batch of any wire format becomes for protocol version 15 and later,
 /// including the erase of a keep-history document.
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionValidationV1
 {
@@ -290,34 +290,9 @@ impl DocumentsBatchStateTransitionValidationV1 for BatchTransition {
                     BatchedTransitionAction::DocumentAction(document_transition),
                 ) = &transition
                 {
-                    // Pre-PR this site allocated a default-initialized local
-                    // `StateTransitionExecutionContext` and passed `&local` to
-                    // the trigger context. The local was dropped on return and
-                    // all of its add_operation calls were silently discarded.
-                    // `_v1` triggers need to actually bill (call add_operation),
-                    // so the trigger context now references the OUTER mutable
-                    // execution_context that the processor threaded in.
-                    //
-                    // PROTOCOL_VERSION_11 consensus-safety: on PV11 the
-                    // per-trigger version fields stay at 0, so wrappers
-                    // dispatch to `_v0` triggers whose bodies are
-                    // byte-identical to v3.1-dev (only their param signature
-                    // gained `&mut`, the body never mutates). _v0 triggers
-                    // do not call `add_operation`, so the outer
-                    // execution_context is read-only from the trigger's
-                    // perspective on PV11 — same chain state as pre-PR.
-                    //
-                    // Non-consensus side-effect on PV11 mempool: the trigger
-                    // now sees the outer ctx's real `dry_run` flag instead of
-                    // the previous-default `false`. During CheckTx with
-                    // `dry_run: true`, _v0 triggers short-circuit their
-                    // `query_documents` (via `query_documents_v0`'s internal
-                    // dry-run guard) and skip the post-query validation.
-                    // Doesn't affect block validation (Validator mode is
-                    // always `dry_run: false`), so chain replay matches
-                    // pre-PR byte-for-byte. Pre-PR also did the query but
-                    // ignored its result during dry-run validation, so the
-                    // net mempool outcome is the same.
+                    // The trigger context borrows the outer execution
+                    // context so the triggers' billing and the real `dry_run`
+                    // flag reach the processor.
                     let owner_id_value = self.owner_id();
                     let mut data_trigger_execution_context = DataTriggerExecutionContext {
                         platform,

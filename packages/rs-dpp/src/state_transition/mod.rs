@@ -897,7 +897,7 @@ impl StateTransition {
             StateTransition::Batch(batch_transition) => match batch_transition {
                 BatchTransition::V0(_) => ALL_VERSIONS,
                 BatchTransition::V1(_) => 9..=LATEST_VERSION,
-                BatchTransition::V2(_) => 14..=LATEST_VERSION,
+                BatchTransition::V2(_) => 15..=LATEST_VERSION,
             },
             StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
@@ -3306,6 +3306,118 @@ mod tests {
             }
             other => panic!("expected StateTransitionIsNotActiveError, got {other:?}"),
         }
+    }
+
+    // --- Batch wire formats. Format 2 is the first shell that can carry an
+    // erase, so it becomes active with the erase kind at protocol version 15
+    // while formats 0 and 1 keep the ranges they shipped with. A format 2
+    // batch must therefore never decode under a released protocol version,
+    // whatever it carries. ---
+    fn sample_batch_v2_st_with_erase() -> StateTransition {
+        use crate::state_transition::batch_transition::batched_transition::document_erase_transition::DocumentEraseTransitionV0;
+        use crate::state_transition::batch_transition::batched_transition::{
+            BatchedTransitionV1, DocumentEraseTransition, DocumentTransitionV1,
+        };
+        use crate::state_transition::batch_transition::BatchTransitionV2;
+
+        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Identifier::from([1u8; 32]),
+            identity_contract_nonce: 3,
+            document_type_name: "note".to_string(),
+            data_contract_id: Identifier::from([2u8; 32]),
+        });
+        let erase =
+            DocumentTransitionV1::Erase(DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
+                base,
+            }));
+        StateTransition::Batch(BatchTransition::V2(BatchTransitionV2 {
+            owner_id: Identifier::from([8u8; 32]),
+            transitions: vec![BatchedTransitionV1::Document(erase)],
+            user_fee_increase: 2,
+            signature_public_key_id: 7,
+            signature: BinaryData::new(vec![0xEE; 65]),
+        }))
+    }
+
+    #[test]
+    fn test_active_version_range_batch_wire_formats() {
+        use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use crate::state_transition::batch_transition::BatchTransitionV1;
+
+        assert_eq!(
+            sample_batch_st_with_delete().active_version_range(),
+            ALL_VERSIONS,
+            "format 0 predates protocol version ranges"
+        );
+
+        let StateTransition::Batch(BatchTransition::V0(format_0)) = sample_batch_st_with_delete()
+        else {
+            unreachable!("the sample is a format 0 batch")
+        };
+        let format_1 = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: format_0.owner_id,
+            transitions: format_0
+                .transitions
+                .into_iter()
+                .map(BatchedTransition::Document)
+                .collect(),
+            user_fee_increase: format_0.user_fee_increase,
+            signature_public_key_id: format_0.signature_public_key_id,
+            signature: format_0.signature,
+        }));
+        assert_eq!(
+            format_1.active_version_range(),
+            9..=LATEST_VERSION,
+            "format 1 arrived with tokens at protocol version 9"
+        );
+
+        assert_eq!(
+            sample_batch_v2_st_with_erase().active_version_range(),
+            15..=LATEST_VERSION,
+            "format 2 arrived with the erase kind at protocol version 15"
+        );
+    }
+
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[test]
+    fn test_deserialize_format_2_batch_in_version_rejects_released_protocols() {
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+
+        let bytes = PlatformSerializable::serialize_to_bytes(&sample_batch_v2_st_with_erase())
+            .expect("serialize succeeds");
+
+        let released = PlatformVersion::get(14).expect("protocol version 14 exists");
+        let err = StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, released)
+            .expect_err("a format 2 batch must not decode under protocol version 14");
+        match err {
+            ProtocolError::StateTransitionError(StateTransitionIsNotActiveError {
+                state_transition_type,
+                active_version_range,
+                current_protocol_version,
+            }) => {
+                assert_eq!(state_transition_type, "DocumentsBatch([Erase])");
+                assert_eq!(active_version_range, 15..=LATEST_VERSION);
+                assert_eq!(current_protocol_version, 14);
+            }
+            other => panic!("expected StateTransitionIsNotActiveError, got {other:?}"),
+        }
+
+        let decoded = StateTransition::deserialize_from_bytes_untrusted_in_version(
+            &bytes,
+            PlatformVersion::latest(),
+        )
+        .expect("a format 2 batch decodes under the latest protocol version");
+        let StateTransition::Batch(batch) = decoded else {
+            panic!("expected a batch, got {decoded:?}");
+        };
+        assert!(matches!(batch, BatchTransition::V2(_)));
+        assert_eq!(batch.transitions_len_v1(), 1);
+        assert_eq!(
+            batch.transitions_len(),
+            0,
+            "the shell of formats 0 and 1 cannot see an erase and reports the batch as empty"
+        );
     }
 
     // -----------------------------------------------------------------------

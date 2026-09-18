@@ -1263,17 +1263,17 @@ mod tests {
         );
     }
 
-    /// Protocol 13 refuses the delete outright, and protocol 14 carries it out:
+    /// Protocol 14 refuses the delete outright, and protocol 15 carries it out:
     /// the document leaves every ordinary read while its revisions stay where
     /// they are.
     #[test]
-    fn test_delete_document_keeps_history_returns_error_at_protocol_13() {
-        run_keep_history_delete_at_protocol_version(13);
+    fn test_delete_document_keeps_history_returns_error_at_protocol_14() {
+        run_keep_history_delete_at_protocol_version(14);
     }
 
     #[test]
-    fn should_delete_a_keep_history_document_without_touching_its_revisions_at_protocol_14() {
-        run_keep_history_delete_at_protocol_version(14);
+    fn should_delete_a_keep_history_document_without_touching_its_revisions_at_protocol_15() {
+        run_keep_history_delete_at_protocol_version(15);
     }
 
     fn run_keep_history_delete_at_protocol_version(protocol_version: u32) {
@@ -1356,7 +1356,7 @@ mod tests {
             Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
         );
 
-        if protocol_version < 14 {
+        if protocol_version < 15 {
             assert!(matches!(
                 outcome.expect_err("expected deleting a history-keeping document to fail"),
                 Error::Drive(DriveError::InvalidDeletionOfDocumentThatKeepsHistory(_))

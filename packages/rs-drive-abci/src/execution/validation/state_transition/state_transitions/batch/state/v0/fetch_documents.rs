@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
@@ -213,9 +214,9 @@ fn fetch_documents_for_transitions_knowing_contract_and_document_type_v1(
 /// Like [`fetch_documents_for_transitions_knowing_contract_and_document_type`],
 /// for transitions viewed through the shell that sees every batch wire format.
 ///
-/// Generation 2 of the method is the first one reachable through this view;
-/// generations 0 and 1 only see the shell of batch formats 0 and 1 and are
-/// reached through the sibling function.
+/// The helper has its own version slot, which is dormant at the protocol
+/// versions whose batches only exist in wire formats 0 and 1; those reach the
+/// sibling function.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type(
     drive: &Drive,
@@ -232,33 +233,40 @@ pub(crate) fn fetch_documents_for_transitions_of_any_format_knowing_contract_and
         .validation_and_processing
         .state_transitions
         .batch_state_transition
-        .fetch_documents_for_transitions_knowing_contract_and_document_type
+        .fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type
     {
-        2 => fetch_documents_for_transitions_knowing_contract_and_document_type_v2(
-            drive,
-            contract,
-            document_type,
-            transitions,
-            epoch,
-            execution_context,
-            transaction,
-            platform_version,
-        ),
-        version => Err(Error::Execution(
-            crate::error::execution::ExecutionError::UnknownVersionMismatch {
-                method: "fetch_documents_for_transitions_knowing_contract_and_document_type"
+        Some(0) => {
+            fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type_v0(
+                drive,
+                contract,
+                document_type,
+                transitions,
+                epoch,
+                execution_context,
+                transaction,
+                platform_version,
+            )
+        }
+        Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            method:
+                "fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type"
                     .to_string(),
-                known_versions: vec![2],
-                received: version,
-            },
-        )),
+            known_versions: vec![0],
+            received: version,
+        })),
+        None => Err(Error::Execution(ExecutionError::VersionNotActive {
+            method:
+                "fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type"
+                    .to_string(),
+            known_versions: vec![0],
+        })),
     }
 }
 
-/// Generation 2: the billing of generation 1, for transitions of any batch
+/// Bills like generation 1 of the sibling helper, for transitions of any batch
 /// wire format.
 #[allow(clippy::too_many_arguments)]
-fn fetch_documents_for_transitions_knowing_contract_and_document_type_v2(
+fn fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type_v0(
     drive: &Drive,
     contract: &DataContract,
     document_type: DocumentTypeRef,

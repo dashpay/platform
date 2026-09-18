@@ -7,6 +7,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 
@@ -99,6 +100,17 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            // This signature carries only the block time. Generation 1 records
+            // a lifecycle entry for a keep-history document with the block and
+            // deleter that authored the delete, which only
+            // `delete_document_for_contract_operations_with_lifecycle` receives,
+            // so it serves the types that keep no history and refuses the rest
+            // instead of recording a fabricated block.
+            1 if document_type.documents_keep_history() => {
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "deleting a keep-history document needs the block and deleter that authored it",
+                )))
+            }
             1 => self.delete_document_for_contract_operations_v1(
                 document_id,
                 contract,
@@ -260,6 +272,13 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            // As above: without the authoring block and deleter, generation 1
+            // serves only the types that keep no history.
+            1 if document_type.documents_keep_history() => {
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "deleting a keep-history document needs the block and deleter that authored it",
+                )))
+            }
             1 => self.force_delete_document_for_contract_operations_v1(
                 document_id,
                 contract,

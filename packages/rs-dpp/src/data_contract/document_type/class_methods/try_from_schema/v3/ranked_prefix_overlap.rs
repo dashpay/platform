@@ -65,7 +65,7 @@ fn shares_leading_levels(ranked: &Index, other: &Index, depth: usize) -> bool {
         })
 }
 
-pub(super) fn validate_no_ranked_prefix_overlap(
+pub(in crate::data_contract::document_type::class_methods::try_from_schema) fn validate_no_ranked_prefix_overlap(
     indices: &BTreeMap<String, Index>,
 ) -> Result<(), ProtocolError> {
     for ranked in indices.values() {

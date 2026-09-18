@@ -3,6 +3,7 @@ use versioned_feature_core::FeatureVersionBounds;
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPStateTransitionSerializationVersions {
@@ -29,7 +30,7 @@ pub struct DPPStateTransitionSerializationVersions {
     /// gate rejects the variant wherever this is `None`.
     pub document_index_only_delete_state_transition: Option<DocumentFeatureVersionBounds>,
     /// The erase kind, which purges the retained revisions of a deleted
-    /// keep-history document. `None` below protocol version 14 — the kind does
+    /// keep-history document. `None` below protocol version 15 — the kind does
     /// not exist on the wire there, and the batch basic-structure wire gate
     /// rejects the variant wherever this is `None`.
     pub document_erase_state_transition: Option<DocumentFeatureVersionBounds>,

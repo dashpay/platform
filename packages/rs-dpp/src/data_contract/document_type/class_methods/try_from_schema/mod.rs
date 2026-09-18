@@ -22,6 +22,7 @@ mod v0;
 mod v1;
 mod v2;
 mod v3;
+mod v4;
 
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
@@ -104,9 +105,22 @@ impl DocumentType {
                 validation_operations,
                 platform_version,
             ),
+            4 => DocumentType::try_from_schema_v4(
+                data_contract_id,
+                data_contract_system_version,
+                contract_config_version,
+                name,
+                schema,
+                schema_defs,
+                token_configurations,
+                data_contact_config,
+                full_validation,
+                validation_operations,
+                platform_version,
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "try_from_schema".to_string(),
-                known_versions: vec![0, 1, 2, 3],
+                known_versions: vec![0, 1, 2, 3, 4],
                 received: version,
             }),
         }

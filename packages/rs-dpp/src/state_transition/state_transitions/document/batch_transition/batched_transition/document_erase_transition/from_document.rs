@@ -20,7 +20,7 @@ impl DocumentEraseTransition {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // `None` bounds mean the kind does not exist at this platform version
-        // (it joined the wire at protocol version 14) — constructing one there
+        // (it joined the wire at protocol version 15) — constructing one there
         // could only ever produce a transition the network refuses.
         let bounds = platform_version
             .dpp

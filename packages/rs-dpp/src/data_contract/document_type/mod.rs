@@ -21,6 +21,7 @@ pub(crate) use validate_required_since_within_contract_version::validate_require
 pub mod v0;
 pub mod v1;
 pub mod v2;
+pub mod v3;
 #[cfg(feature = "validation")]
 pub(crate) mod validator;
 
@@ -30,6 +31,7 @@ use crate::data_contract::document_type::methods::{
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
+use crate::data_contract::document_type::v3::DocumentTypeV3;
 use crate::document::Document;
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
@@ -129,8 +131,8 @@ pub(crate) mod property_names {
     /// Doctype-level flag declaring that a deleted document of this type may
     /// have its retained revisions purged by an erase transition. Requires
     /// `documentsKeepHistory: true` and `canBeDeleted: true`, defaults to
-    /// false, and is immutable across contract updates. Meta-schema v3+
-    /// (protocol version 14).
+    /// false, and is immutable across contract updates. Meta-schema v4+
+    /// (protocol version 15).
     pub const CAN_BE_ERASED: &str = "canBeErased";
 }
 
@@ -139,6 +141,7 @@ pub enum DocumentTypeRef<'a> {
     V0(&'a DocumentTypeV0),
     V1(&'a DocumentTypeV1),
     V2(&'a DocumentTypeV2),
+    V3(&'a DocumentTypeV3),
 }
 
 #[derive(Debug)]
@@ -146,6 +149,7 @@ pub enum DocumentTypeMutRef<'a> {
     V0(&'a mut DocumentTypeV0),
     V1(&'a mut DocumentTypeV1),
     V2(&'a mut DocumentTypeV2),
+    V3(&'a mut DocumentTypeV3),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -154,6 +158,7 @@ pub enum DocumentType {
     V0(DocumentTypeV0),
     V1(DocumentTypeV1),
     V2(DocumentTypeV2),
+    V3(DocumentTypeV3),
 }
 
 impl DocumentType {
@@ -162,6 +167,7 @@ impl DocumentType {
             DocumentType::V0(v0) => DocumentTypeRef::V0(v0),
             DocumentType::V1(v1) => DocumentTypeRef::V1(v1),
             DocumentType::V2(v2) => DocumentTypeRef::V2(v2),
+            DocumentType::V3(v3) => DocumentTypeRef::V3(v3),
         }
     }
 
@@ -170,6 +176,7 @@ impl DocumentType {
             DocumentType::V0(v0) => DocumentTypeMutRef::V0(v0),
             DocumentType::V1(v1) => DocumentTypeMutRef::V1(v1),
             DocumentType::V2(v2) => DocumentTypeMutRef::V2(v2),
+            DocumentType::V3(v3) => DocumentTypeMutRef::V3(v3),
         }
     }
 
@@ -188,6 +195,9 @@ impl DocumentType {
             DocumentType::V2(v2) => {
                 v2.prefunded_voting_balance_for_document(document, platform_version)
             }
+            DocumentType::V3(v3) => {
+                v3.prefunded_voting_balance_for_document(document, platform_version)
+            }
         }
     }
 }
@@ -198,6 +208,7 @@ impl DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => DocumentType::V0((*v0).to_owned()),
             DocumentTypeRef::V1(v1) => DocumentType::V1((*v1).to_owned()),
             DocumentTypeRef::V2(v2) => DocumentType::V2((*v2).to_owned()),
+            DocumentTypeRef::V3(v3) => DocumentType::V3((*v3).to_owned()),
         }
     }
 }

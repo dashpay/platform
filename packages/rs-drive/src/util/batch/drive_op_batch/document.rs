@@ -278,9 +278,10 @@ impl DocumentOperationType<'_> {
                 Ok(())
             }
             // These write to system contracts, which have no TTL indexes.
-            Self::AddWithdrawalDocument { .. }
-            | Self::DocumentHistory { .. }
-            | Self::EraseDocument { .. } => Ok(()),
+            Self::AddWithdrawalDocument { .. } | Self::DocumentHistory { .. } => Ok(()),
+            // An erase acts on a document whose delete already removed every
+            // index reference, so there is nothing left to drain.
+            Self::EraseDocument { .. } => Ok(()),
         }
     }
 

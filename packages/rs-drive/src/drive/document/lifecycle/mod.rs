@@ -108,7 +108,7 @@ impl DocumentLifecycleRecord {
     /// deleted revision without a gap, which is what lets a by-revision read
     /// map a revision onto a position in the history.
     ///
-    /// A gap can only come from a history written before protocol 14, where
+    /// A gap can only come from a history written before protocol 15, where
     /// two writes in one block overwrote each other's revision; an erase
     /// removes the newest revisions first and so never opens one.
     pub fn revisions_are_contiguous(&self) -> bool {

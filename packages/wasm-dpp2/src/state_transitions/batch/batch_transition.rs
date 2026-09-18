@@ -119,7 +119,7 @@ impl BatchTransitionWasm {
         let owner_id = owner_id.try_into()?;
 
         // Batch format 1 carries every transition but an erase; an erase needs
-        // format 2, which only protocol version 14 and later accept.
+        // format 2, which only protocol version 15 and later accept.
         let batch = match downcast_batched_transitions(transitions) {
             Ok(transitions) => BatchTransition::V1(BatchTransitionV1 {
                 owner_id,

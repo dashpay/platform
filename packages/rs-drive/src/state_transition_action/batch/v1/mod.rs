@@ -18,6 +18,9 @@ use dpp::identity::SecurityLevel;
 use dpp::prelude::UserFeeIncrease;
 use dpp::ProtocolError;
 
+#[cfg(test)]
+mod tests;
+
 /// One item of a batch action in format 1.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, From)]

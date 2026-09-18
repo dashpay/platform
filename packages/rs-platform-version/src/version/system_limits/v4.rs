@@ -66,5 +66,5 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_time_range_ttl_seconds: Some(604_800), // one week
     min_time_range_ttl_drop_operations_per_write: Some(32),
     minimum_grovedb_proof_envelope_version: 1, // clients reject legacy V0 GroveDB proof envelopes from v14
-    max_document_revisions_erased_per_transition: Some(100),
+    max_document_revisions_erased_per_transition: None,
 };
