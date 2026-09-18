@@ -479,3 +479,54 @@ fn should_accept_the_injected_globals_only_in_the_prepared_stage() {
         }
     ));
 }
+
+/// Re-encodes the prepared bytes with one extra defined global appended.
+fn with_extra_defined_global(prepared: &[u8]) -> Vec<u8> {
+    struct AddGlobal;
+    impl wasm_encoder::reencode::Reencode for AddGlobal {
+        type Error = std::convert::Infallible;
+        fn parse_global_section(
+            &mut self,
+            globals: &mut wasm_encoder::GlobalSection,
+            section: wasmparser::GlobalSectionReader<'_>,
+        ) -> Result<(), wasm_encoder::reencode::Error<Self::Error>> {
+            wasm_encoder::reencode::utils::parse_global_section(self, globals, section)?;
+            globals.global(
+                wasm_encoder::GlobalType {
+                    val_type: wasm_encoder::ValType::I32,
+                    mutable: false,
+                    shared: false,
+                },
+                &wasm_encoder::ConstExpr::i32_const(0),
+            );
+            Ok(())
+        }
+    }
+    let mut module = wasm_encoder::Module::new();
+    wasm_encoder::reencode::utils::parse_core_module(
+        &mut AddGlobal,
+        &mut module,
+        wasmparser::Parser::new(0),
+        prepared,
+    )
+    .expect("re-encodes");
+    module.finish()
+}
+
+/// The instrumenter defines no global of its own, so a defined global appearing in the output
+/// is drift the provenance check must catch.
+#[test]
+fn should_fail_provenance_when_a_defined_global_appears_in_the_output() {
+    let profile = latest_profile();
+    let bytes = wasm(THREE_FUNCTIONS);
+    let submitted = validate_submitted(&bytes, &profile).expect("admitted");
+    let (prepared, report) =
+        instrument(&bytes, &submitted.facts, &submitted.plan).expect("instrumented");
+    let facts = validate_prepared(&prepared, &profile, &submitted, &report).expect("provenance");
+    assert_eq!(facts.structure.globals, 1, "the fixture defines one global");
+    let drifted = with_extra_defined_global(&prepared);
+    assert!(matches!(
+        validate_prepared(&drifted, &profile, &submitted, &report).expect_err("caught"),
+        ModuleError::Internal(message) if message.contains("defines 2 globals")
+    ));
+}

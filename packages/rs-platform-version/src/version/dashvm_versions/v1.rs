@@ -18,6 +18,10 @@ pub const DASHVM_VERSION_V1: DashVmVersion = DashVmVersion {
         max_types_per_module: 10_000,
         max_params_per_function: 128,
         max_locals_per_function: 1_024,
+        // Not in the register's starting values; provisional, sized like the export cap and
+        // far above what a Rust guest emits (a handful: the shadow stack pointer and the
+        // data and heap bases).
+        max_globals_per_module: 1_024,
         max_exports_per_module: 1_024,
         max_operators_per_module: 2_000_000,
         max_operators_per_function: 100_000,

@@ -850,3 +850,77 @@ fn should_refuse_a_submitted_global_import_at_the_first_entry_without_recording_
         }
     );
 }
+
+/// Hand-encodes a module with one type, one function of that type (no code section) and one
+/// active element segment listing `count` distinct function indices `0..count` into a table
+/// of size 1, so almost every index is past the module's single function.
+fn module_referencing_functions(count: u32) -> Vec<u8> {
+    let mut bytes = b"\0asm\x01\0\0\0".to_vec();
+    bytes.extend_from_slice(&[1, 4, 1, 0x60, 0, 0]);
+    // Function section: one function of type 0.
+    bytes.extend_from_slice(&[3, 2, 1, 0]);
+    // Table section: one funcref table with limits 1..=1.
+    bytes.extend_from_slice(&[4, 5, 1, 0x70, 1, 1, 1]);
+    // Element section: one active segment, table 0, offset i32.const 0, `count` indices.
+    let mut segment = vec![0, 0x41, 0, 0x0b];
+    leb128_u32(&mut segment, count);
+    for index in 0..count {
+        leb128_u32(&mut segment, index);
+    }
+    let mut body = vec![1];
+    body.extend_from_slice(&segment);
+    bytes.push(9);
+    leb128_u32(&mut bytes, body.len() as u32);
+    bytes.extend_from_slice(&body);
+    bytes
+}
+
+/// A function reference past the declared functions is refused where it appears, so the set of
+/// distinct references can never outgrow the function cap: an element segment naming 200,000
+/// distinct indices against a module with one function is refused at the second index, before
+/// the pinned validator (which runs after the section is read) would have seen it.
+#[test]
+fn should_refuse_an_out_of_range_function_reference_before_recording_the_segment() {
+    let profile = latest_profile();
+    let error = reject_bytes(&module_referencing_functions(200_000), &profile);
+    assert!(
+        matches!(&error, ModuleError::Invalid { message, .. } if message == "unknown function 1: func index out of bounds"),
+        "{error:?}"
+    );
+    // The same rule covers `ref.func` in a body and in a constant expression.
+    let in_body = module_with("(table 1 1 funcref) (func (drop (ref.func 7)))");
+    assert!(matches!(
+        reject(&in_body, &profile),
+        ModuleError::Invalid { message, .. } if message == "unknown function 7: func index out of bounds"
+    ));
+    let in_global = module_with("(global funcref (ref.func 9))");
+    assert!(matches!(
+        reject(&in_global, &profile),
+        ModuleError::Invalid { message, .. } if message == "unknown function 9: func index out of bounds"
+    ));
+    // In-range references keep working, including a forward reference to a later function.
+    let fine = module_with("(table 1 1 funcref) (elem (i32.const 0) $later) (func $later)");
+    validate_submitted(&wasm(&fine), &profile).expect("admitted");
+}
+
+#[test]
+fn should_enforce_the_global_cap_at_cap_and_cap_plus_one() {
+    let profile = profile_with(|limits| limits.max_globals_per_module = 2);
+    let submitted = validate_submitted(
+        &wasm(&module_with(
+            "(global i32 (i32.const 1)) (global (mut i64) (i64.const 2))",
+        )),
+        &profile,
+    )
+    .expect("at cap");
+    assert_eq!(submitted.facts.structure.globals, 2);
+    assert_eq!(
+        cap_of(reject(
+            &module_with(
+                "(global i32 (i32.const 1)) (global i32 (i32.const 2)) (global i32 (i32.const 3))"
+            ),
+            &profile
+        )),
+        (StructuralCap::Globals, 3, 2)
+    );
+}

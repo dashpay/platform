@@ -242,9 +242,16 @@ pub(crate) fn validate_prepared(
         }
     }
 
-    // Memory, table, segments, start and custom sections.
+    // Memory, table, globals, segments, start and custom sections. The instrumenter defines
+    // no global of its own: its two counters are imports, so the defined count is unchanged.
     if prepared.memory != original.memory || prepared.table != original.table {
         return Err(internal("the memory or table shape drifted"));
+    }
+    if prepared.structure.globals != original.structure.globals {
+        return Err(internal(format!(
+            "prepared module defines {} globals, expected {}",
+            prepared.structure.globals, original.structure.globals
+        )));
     }
     if prepared.element_segments != original.element_segments
         || prepared.data_segments != original.data_segments

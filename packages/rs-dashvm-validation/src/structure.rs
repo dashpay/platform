@@ -220,6 +220,7 @@ pub(crate) fn measure(
                 imported_functions: 0,
                 defined_functions: 0,
                 types: 0,
+                globals: 0,
                 exports: 0,
                 operators: 0,
                 max_operators_per_function: 0,
@@ -553,6 +554,24 @@ impl Pass<'_> {
         Ok(())
     }
 
+    /// Records a function reference (a table element or a `ref.func`) after bounding it by
+    /// the functions the module has declared. The function section precedes every section a
+    /// reference can appear in, so the count is complete here; an index past it is what the
+    /// validator would refuse anyway, refused now so the set of distinct references can never
+    /// grow past the function cap however many entries a segment carries.
+    fn reference_function(&mut self, index: u32, offset: usize) -> Result<(), ModuleError> {
+        let declared = u64::from(self.facts.structure.imported_functions)
+            + u64::from(self.facts.structure.defined_functions);
+        if u64::from(index) >= declared {
+            return Err(ModuleError::Invalid {
+                offset,
+                message: format!("unknown function {index}: func index out of bounds"),
+            });
+        }
+        self.facts.referenced_functions.insert(index);
+        Ok(())
+    }
+
     fn const_expr(&mut self, expr: &ConstExpr<'_>, offset: usize) -> Result<(), ModuleError> {
         let mut reader = expr.get_operators_reader();
         while !reader.is_end_then_eof() {
@@ -561,7 +580,7 @@ impl Pass<'_> {
                 return Err(forbidden(feature, offset));
             }
             if let Operator::RefFunc { function_index } = op {
-                self.facts.referenced_functions.insert(function_index);
+                self.reference_function(function_index, offset)?;
             }
         }
         Ok(())
@@ -573,6 +592,16 @@ impl Pass<'_> {
     ) -> Result<(), ModuleError> {
         for global in section.into_iter_with_offsets() {
             let (offset, global) = global.map_err(invalid)?;
+            // Running count and cap on every entry, so a section of tiny global definitions
+            // is refused at the cap rather than admitted in the millions.
+            self.facts.structure.globals += 1;
+            if self.enforce_caps() {
+                cap(
+                    StructuralCap::Globals,
+                    u64::from(self.facts.structure.globals),
+                    u64::from(self.limits.max_globals_per_module),
+                )?;
+            }
             classify_global_type(&global.ty).map_err(|feature| forbidden(feature, offset))?;
             self.const_expr(&global.init_expr, offset)?;
         }
@@ -624,7 +653,7 @@ impl Pass<'_> {
                     let mut count = 0u64;
                     for function in functions {
                         let function = function.map_err(invalid)?;
-                        self.facts.referenced_functions.insert(function);
+                        self.reference_function(function, offset)?;
                         count += 1;
                     }
                     count
@@ -778,7 +807,7 @@ impl Pass<'_> {
                     }
                 }
                 Operator::RefFunc { function_index } => {
-                    self.facts.referenced_functions.insert(*function_index);
+                    self.reference_function(*function_index, offset)?;
                 }
                 _ => {}
             }

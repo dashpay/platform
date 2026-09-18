@@ -86,6 +86,8 @@ pub enum StructuralCap {
     Results,
     /// `max_locals_per_function`.
     Locals,
+    /// `max_globals_per_module`.
+    Globals,
     /// `max_exports_per_module`.
     Exports,
     /// `max_operators_per_module`.

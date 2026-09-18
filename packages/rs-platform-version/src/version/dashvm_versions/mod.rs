@@ -68,6 +68,9 @@ pub struct DashVmLimits {
     pub max_params_per_function: u32,
     /// Most declared locals of one function body (parameters excluded).
     pub max_locals_per_function: u32,
+    /// Most globals one module may define. Globals are instance state initialised before any
+    /// entry runs, so their count bounds instantiation work the memory and data caps do not.
+    pub max_globals_per_module: u32,
     /// Most exports of one module.
     pub max_exports_per_module: u32,
     /// Most decoded operators across every function body of one module.
@@ -196,6 +199,7 @@ mod tests {
                 u64::from(limits.max_types_per_module),
                 u64::from(limits.max_params_per_function),
                 u64::from(limits.max_locals_per_function),
+                u64::from(limits.max_globals_per_module),
                 u64::from(limits.max_exports_per_module),
                 u64::from(limits.max_operators_per_module),
                 u64::from(limits.max_operators_per_function),

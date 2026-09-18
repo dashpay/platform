@@ -228,6 +228,8 @@ pub struct StructuralMeasurements {
     pub defined_functions: u32,
     /// Types in the canonical module.
     pub types: u32,
+    /// Globals the canonical module defines (imported globals are refused).
+    pub globals: u32,
     /// Exports.
     pub exports: u32,
     /// Decoded operators across every canonical function body.
