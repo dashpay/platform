@@ -13,6 +13,7 @@ use crate::changeset::{
     ClientStartState, DpnsNameStateEntry, PersistenceCapabilities, PersistenceError,
     PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::WalletId;
 use dpp::prelude::Identifier;
 
@@ -64,6 +65,12 @@ impl WalletPersister {
 
     pub(crate) fn store(&self, changeset: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
         self.inner.store(self.wallet_id, changeset)
+    }
+
+    /// Preserve backend failure kinds, granting retry only when the backend
+    /// guarantees a failed store retained and committed nothing.
+    pub(crate) fn classify_store_failure(&self, error: PersistenceError) -> PlatformWalletError {
+        PlatformWalletError::from_store_failure(self.inner.as_ref(), error)
     }
 
     pub(crate) fn flush(&self) -> Result<(), PersistenceError> {

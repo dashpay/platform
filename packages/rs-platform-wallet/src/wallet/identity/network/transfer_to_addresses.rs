@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 
 use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
-use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::BinaryData;
@@ -132,7 +131,7 @@ impl IdentityWallet {
                 .identity_manager
                 .managed_identity_mut(identity_id)
             {
-                managed.identity.set_balance(new_balance);
+                managed.set_confirmed_balance(new_balance, proof_height);
                 if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
                     tracing::error!(
                         identity = %identity_id,

@@ -257,6 +257,25 @@ pub type PersistWalletChangesetUtxoVerdictsFn = unsafe extern "C" fn(
     verdicts_count: usize,
 ) -> i32;
 
+/// Persist one identity's optional balance freshness stamp in the same
+/// transaction as its legacy identity row. A null stamp means no watermark.
+pub type PersistIdentityBalanceBlockTimeFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    identity_id: *const u8,
+    block_time: *const crate::types::BlockTime,
+) -> i32;
+
+/// Load the stamp without allocating a host-owned array. `out_found` separates
+/// an absent legacy stamp from a valid all-zero block time.
+pub type LoadIdentityBalanceBlockTimeFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    identity_id: *const u8,
+    out_found: *mut bool,
+    out_block_time: *mut crate::types::BlockTime,
+) -> i32;
+
 /// Size- and version-tagged additive persistence callbacks.
 ///
 /// `context` is the context in the accompanying [`PersistenceCallbacks`]
@@ -368,6 +387,25 @@ pub struct PersistenceCallbacksExtension {
             verdicts_count: usize,
         ) -> i32,
     >,
+    /// Additive sidecar: never change the stride of `IdentityEntryFFI` or
+    /// `IdentityRestoreEntryFFI`, which old hosts still allocate unchanged.
+    pub on_persist_identity_balance_block_time_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            identity_id: *const u8,
+            block_time: *const crate::types::BlockTime,
+        ) -> i32,
+    >,
+    pub on_load_identity_balance_block_time_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            identity_id: *const u8,
+            out_found: *mut bool,
+            out_block_time: *mut crate::types::BlockTime,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -383,6 +421,8 @@ impl Default for PersistenceCallbacksExtension {
             on_persist_wallet_changeset_sweeps_fn: None,
             on_persist_wallet_changeset_chain_lock_height_fn: None,
             on_persist_wallet_changeset_utxo_verdicts_fn: None,
+            on_persist_identity_balance_block_time_fn: None,
+            on_load_identity_balance_block_time_fn: None,
         }
     }
 }
@@ -399,6 +439,8 @@ pub struct PersistenceExtensionCallbacks {
     pub wallet_changeset_sweeps: Option<PersistWalletChangesetSweepsFn>,
     pub wallet_changeset_chain_lock_height: Option<PersistWalletChangesetChainLockHeightFn>,
     pub wallet_changeset_utxo_verdicts: Option<PersistWalletChangesetUtxoVerdictsFn>,
+    pub persist_identity_balance_block_time: Option<PersistIdentityBalanceBlockTimeFn>,
+    pub load_identity_balance_block_time: Option<LoadIdentityBalanceBlockTimeFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1333,6 +1375,8 @@ pub struct FFIPersister {
     /// Additive tracked-masternode persistence trio (persist / load /
     /// free), likewise extension-negotiated.
     tracked_masternodes_callbacks: PersistenceExtensionCallbacks,
+    persist_identity_balance_block_time_callback: Option<PersistIdentityBalanceBlockTimeFn>,
+    load_identity_balance_block_time_callback: Option<LoadIdentityBalanceBlockTimeFn>,
     /// Semantic capability declaration supplied separately from the callback
     /// vtable by the additive manager-create API. Keeping this out of
     /// `PersistenceCallbacks` preserves that established C struct's size.
@@ -1453,6 +1497,9 @@ impl FFIPersister {
                 .wallet_changeset_chain_lock_height,
             wallet_changeset_utxo_verdicts_callback: extensions.wallet_changeset_utxo_verdicts,
             tracked_masternodes_callbacks: extensions,
+            persist_identity_balance_block_time_callback: extensions
+                .persist_identity_balance_block_time,
+            load_identity_balance_block_time_callback: extensions.load_identity_balance_block_time,
             declared_capabilities,
             round_lock: Mutex::new(RoundGuardState::default()),
         }
@@ -2171,6 +2218,43 @@ impl PlatformWalletPersistence for FFIPersister {
                         result
                     );
                     outcome.record(result);
+                }
+            }
+        }
+
+        // Stamp sidecars share the begin/end transaction with identity scalars.
+        // Run after the legacy callback has staged any new identity rows.
+        if let (Some(id_cs), Some(cb)) = (
+            changeset.identities.as_ref(),
+            self.persist_identity_balance_block_time_callback,
+        ) {
+            for entry in id_cs.identities.values() {
+                let stamp = entry
+                    .last_updated_balance_block_time
+                    .map(crate::types::BlockTime::from);
+                let rc = unsafe {
+                    cb(
+                        self.callbacks.context,
+                        wallet_id.as_ptr(),
+                        entry.id.as_bytes().as_ptr(),
+                        stamp.as_ref().map_or(std::ptr::null(), |stamp| stamp),
+                    )
+                };
+                if rc != 0 {
+                    outcome.record(rc);
+                }
+            }
+            for identity_id in &id_cs.removed {
+                let rc = unsafe {
+                    cb(
+                        self.callbacks.context,
+                        wallet_id.as_ptr(),
+                        identity_id.as_bytes().as_ptr(),
+                        std::ptr::null(),
+                    )
+                };
+                if rc != 0 {
+                    outcome.record(rc);
                 }
             }
         }
@@ -3108,7 +3192,35 @@ impl PlatformWalletPersistence for FFIPersister {
         // fires before we leave this function.
         let entries = unsafe { slice::from_raw_parts(entries_ptr, count) };
         for entry in entries {
-            let (wallet_state, platform_address_state) = build_wallet_start_state(entry)?;
+            let (mut wallet_state, platform_address_state) = build_wallet_start_state(entry)?;
+            if let Some(cb) = self.load_identity_balance_block_time_callback {
+                for identities in wallet_state.identity_manager.wallet_identities.values_mut() {
+                    for managed in identities.values_mut() {
+                        let mut found = false;
+                        let mut stamp = crate::types::BlockTime {
+                            height: 0,
+                            core_height: 0,
+                            timestamp: 0,
+                        };
+                        let rc = unsafe {
+                            cb(
+                                self.callbacks.context,
+                                entry.wallet_id.as_ptr(),
+                                managed.id().as_bytes().as_ptr(),
+                                &mut found,
+                                &mut stamp,
+                            )
+                        };
+                        if rc != 0 {
+                            return Err(persist_callback_error(
+                                rc,
+                                "Loading identity balance block time failed".to_string(),
+                            ));
+                        }
+                        managed.last_updated_balance_block_time = found.then(|| stamp.into());
+                    }
+                }
+            }
             out.wallets.insert(entry.wallet_id, wallet_state);
             if let Some(platform_address_state) = platform_address_state {
                 out.platform_addresses
@@ -7070,6 +7182,174 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn should_restore_identity_balance_watermark_without_changing_legacy_rows() {
+        unsafe extern "C" fn load_wallet(
+            _: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            // The legacy restore row contains only integers and raw pointers.
+            let mut identity: IdentityRestoreEntryFFI = std::mem::zeroed();
+            identity.identity_id = [7; 32];
+            identity.balance = 123;
+            *entries = Box::into_raw(Box::new(WalletRestoreEntryFFI {
+                wallet_id: [42; 32],
+                identities: Box::into_raw(Box::new(identity)),
+                identities_count: 1,
+                ..Default::default()
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_wallet(
+            _: *mut c_void,
+            entries: *const WalletRestoreEntryFFI,
+            _: usize,
+        ) {
+            let row = Box::from_raw(entries.cast_mut());
+            drop(Box::from_raw(row.identities.cast_mut()));
+        }
+        unsafe extern "C" fn load_stamp(
+            ctx: *mut c_void,
+            wallet: *const u8,
+            identity: *const u8,
+            found: *mut bool,
+            stamp: *mut crate::types::BlockTime,
+        ) -> i32 {
+            assert_eq!(std::slice::from_raw_parts(wallet, 32), &[42; 32]);
+            assert_eq!(std::slice::from_raw_parts(identity, 32), &[7; 32]);
+            let mode = *(ctx as *const u8);
+            if mode == 2 {
+                return -1;
+            }
+            *found = mode == 1;
+            // Known all-zero metadata must remain Some, not collapse to None.
+            *stamp = crate::types::BlockTime {
+                height: 0,
+                core_height: 0,
+                timestamp: 0,
+            };
+            0
+        }
+        for mode in [0_u8, 1, 2] {
+            let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: (&mode as *const u8).cast_mut().cast(),
+                    on_load_wallet_list_fn: Some(load_wallet),
+                    on_load_wallet_list_free_fn: Some(free_wallet),
+                    ..Default::default()
+                },
+                PersistenceCapabilities::NONE,
+                PersistenceExtensionCallbacks {
+                    load_identity_balance_block_time: Some(load_stamp),
+                    ..Default::default()
+                },
+            );
+            let result = persister.load();
+            if mode == 2 {
+                assert!(result.is_err());
+                continue;
+            }
+            let restored = result.expect("restore watermark");
+            let managed = &restored.wallets[&[42; 32]]
+                .identity_manager
+                .wallet_identities[&[42; 32]][&0];
+            assert_eq!(managed.last_updated_balance_block_time.is_some(), mode == 1);
+            assert_eq!(
+                dpp::identity::accessors::IdentityGettersV0::balance(&managed.identity),
+                123
+            );
+        }
+        let legacy = FFIPersister::new(PersistenceCallbacks {
+            on_load_wallet_list_fn: Some(load_wallet),
+            on_load_wallet_list_free_fn: Some(free_wallet),
+            ..Default::default()
+        })
+        .load()
+        .expect("old hosts still restore");
+        assert!(
+            legacy.wallets[&[42; 32]].identity_manager.wallet_identities[&[42; 32]][&0]
+                .last_updated_balance_block_time
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn should_roll_back_failed_identity_balance_watermark_store_and_clear_on_removal() {
+        use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+        use std::sync::Mutex;
+        #[derive(Default)]
+        struct Host {
+            events: Mutex<Vec<(bool, bool)>>,
+            fail: bool,
+        }
+        unsafe extern "C" fn persist(
+            ctx: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            stamp: *const crate::types::BlockTime,
+        ) -> i32 {
+            let host = &*(ctx as *const Host);
+            host.events.lock().unwrap().push((true, stamp.is_null()));
+            if host.fail {
+                -1
+            } else {
+                0
+            }
+        }
+        unsafe extern "C" fn end(ctx: *mut c_void, _: *const u8, success: bool) -> i32 {
+            let host = &*(ctx as *const Host);
+            host.events.lock().unwrap().push((false, success));
+            0
+        }
+        for fail in [false, true] {
+            let host = Host {
+                fail,
+                ..Default::default()
+            };
+            let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: (&host as *const Host).cast_mut().cast(),
+                    on_changeset_begin_fn: Some(noop_begin),
+                    on_changeset_end_fn: Some(end),
+                    ..Default::default()
+                },
+                PersistenceCapabilities::ATOMIC_CHANGESETS,
+                PersistenceExtensionCallbacks {
+                    persist_identity_balance_block_time: Some(persist),
+                    ..Default::default()
+                },
+            );
+            let mut managed = platform_wallet::ManagedIdentity::new(
+                dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default()),
+                0,
+            );
+            managed.last_updated_balance_block_time = Some(platform_wallet::BlockTime {
+                height: 42,
+                core_height: 7,
+                timestamp: 99,
+            });
+            let mut identities = IdentityChangeSet::default();
+            identities
+                .identities
+                .insert(managed.id(), IdentityEntry::from_managed(&managed));
+            identities.removed.insert([9; 32].into());
+            let result = persister.store(
+                [42; 32],
+                PlatformWalletChangeSet {
+                    identities: Some(identities),
+                    ..Default::default()
+                },
+            );
+            assert_eq!(result.is_err(), fail);
+            assert_eq!(
+                *host.events.lock().unwrap(),
+                vec![(true, false), (true, true), (false, !fail)]
+            );
+        }
+    }
+
     // --- persists_durably: the fail-closed durability attestation ---
 
     unsafe extern "C" fn noop_begin(_ctx: *mut c_void, _wallet_id: *const u8) -> i32 {
@@ -8341,6 +8621,26 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_persist_wallet_changeset_utxo_verdicts_fn
             ) + std::mem::size_of::<Option<PersistWalletChangesetUtxoVerdictsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_identity_balance_block_time_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_identity_balance_block_time_fn
+            ) + std::mem::size_of::<Option<PersistIdentityBalanceBlockTimeFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_identity_balance_block_time_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_identity_balance_block_time_fn
+            ) + std::mem::size_of::<Option<LoadIdentityBalanceBlockTimeFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(

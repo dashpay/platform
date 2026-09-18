@@ -69,6 +69,9 @@ final class DashModelMigrationTests: XCTestCase {
         Fixture(
             name: "dash-v4", version: DashSchemaV4.self,
             hasTrackedMasternode: true, assetLockRecipientIsExternal: true),
+        Fixture(
+            name: "dash-v5", version: DashSchemaV5.self,
+            hasTrackedMasternode: true, assetLockRecipientIsExternal: true),
     ]
 
     /// Every schema version that has ever shipped, oldest first, as
@@ -80,7 +83,7 @@ final class DashModelMigrationTests: XCTestCase {
     /// give it a fixture store in `fixtures`, written by that build with
     /// `testWriteTheLiveSchemaFixtureStore`. Every entry has a fixture,
     /// the live one included.
-    private static let shippedVersions = ["1.0.0", "2.0.0", "3.0.0", "4.0.0"]
+    private static let shippedVersions = ["1.0.0", "2.0.0", "3.0.0", "4.0.0", "5.0.0"]
 
     private static let fixtureWalletId = Data(repeating: 0x31, count: 32)
     private static let fixtureSpendTxid = Data(repeating: 0x32, count: 32)

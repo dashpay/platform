@@ -85,19 +85,10 @@ public enum DashModelContainer {
             + [DashSchemaV2.PersistentTrackedMasternode.self]
     }
 
-    /// All persistent model types in the current Dash SDK schema (V4).
-    /// Unlike the released versions above this list tracks the LIVE models,
-    /// so it moves whenever a model gains a property — which is exactly why
-    /// the released versions must not. When the next property lands: freeze
-    /// every model here into the version being retired
-    /// (`scripts/freeze_schema_models.py`), add a version, add a stage, and
-    /// commit a store written by this build for the new version under the
-    /// test fixtures (`DashModelMigrationTests.testWriteTheLiveSchemaFixtureStore`).
-    /// `DashModelMigrationTests` proves a version's shape (what the entity
-    /// hash covers, plus its indexes) only against such a store, for the
-    /// live version too: changing a model here before the version ships
-    /// means rewriting the live fixture on purpose in the same change.
-    public static var modelTypes: [any PersistentModel.Type] {
+    /// V4's model graph is unchanged by V5, which adds an independent entity.
+    /// Any future shape changes to these entities must freeze the complete
+    /// relationship graph before changing the live models.
+    fileprivate static var v4ModelTypes: [any PersistentModel.Type] {
         [
             PersistentIdentity.self,
             PersistentDPNSName.self,
@@ -137,9 +128,22 @@ public enum DashModelContainer {
         ]
     }
 
+    /// All persistent model types in the current Dash SDK schema (V5).
+    /// This list tracks the live models. Before changing a model property,
+    /// freeze the complete relationship graph into the version being retired
+    /// (`scripts/freeze_schema_models.py`), add a version and migration stage,
+    /// and commit a store written by this build under the test fixtures via
+    /// `DashModelMigrationTests.testWriteTheLiveSchemaFixtureStore`.
+    /// Migration tests pin each version's entity hashes and indexes against
+    /// a store written by that build. Even a live shape change before release
+    /// requires explicitly regenerating that version's fixture.
+    public static var modelTypes: [any PersistentModel.Type] {
+        v4ModelTypes + [PersistentIdentityBalanceMetadata.self]
+    }
+
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV4.self)
+        Schema(versionedSchema: DashSchemaV5.self)
     }
 
     /// Create a persistent model container for storing data
@@ -206,14 +210,15 @@ public enum DashModelContainer {
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self]
+        [DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self, DashSchemaV5.self]
     }
 
     public static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self),
             .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self),
-            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)
+            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),
+            .lightweight(fromVersion: DashSchemaV4.self, toVersion: DashSchemaV5.self)
         ]
     }
 }
@@ -417,6 +422,13 @@ public enum DashSchemaV4: VersionedSchema {
     }
 
     public static var models: [any PersistentModel.Type] {
-        DashModelContainer.modelTypes
+        DashModelContainer.v4ModelTypes
     }
+}
+
+/// V5 adds an independent balance-freshness sidecar; existing balances have no
+/// stamp until a proven network read. No existing entity or relationship changes.
+public enum DashSchemaV5: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
+    public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }
 }

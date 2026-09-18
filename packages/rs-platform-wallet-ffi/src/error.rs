@@ -594,6 +594,10 @@ pub enum PlatformWalletFFIResultCode {
     /// Incompatible keys and damaged ciphertext can produce the same symptom.
     ErrorShieldedRecoveryKeysRequired = 57,
 
+    /// Platform returned no balance for a managed identity. Retrying this read
+    /// is safe; this does not imply missing ownership or require registration.
+    ErrorIdentityBalanceUnavailable = 58,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -775,6 +779,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
         // assigned a dedicated code yet — those still carry the
         // typed Display rendering as the message.
         let code = match &error {
+            PlatformWalletError::IdentityBalanceUnavailable(_) => {
+                PlatformWalletFFIResultCode::ErrorIdentityBalanceUnavailable
+            }
             PlatformWalletError::NoSpendableInputs { .. }
             | PlatformWalletError::OnlyOutputAddressesFunded { .. }
             | PlatformWalletError::OnlyDustInputs { .. } => {
@@ -2326,5 +2333,22 @@ mod tests {
         unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()
             .into_owned()
+    }
+}
+
+#[cfg(test)]
+mod identity_balance_error_tests {
+    use super::*;
+    #[test]
+    fn should_distinguish_unavailable_network_balance_with_a_retryable_read_code() {
+        let result = PlatformWalletFFIResult::from(
+            PlatformWalletError::IdentityBalanceUnavailable([7; 32].into()),
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityBalanceUnavailable
+        );
+        assert_eq!(result.code as u32, 58);
+        assert!(!result.message.is_null());
     }
 }

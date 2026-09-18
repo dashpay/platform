@@ -34,6 +34,23 @@ pub trait WithdrawFromIdentity {
     ) -> Result<u64, Error>;
 }
 
+/// Balance operations that also expose the committed proof height.
+#[async_trait::async_trait]
+pub trait WithdrawFromIdentityWithHeight {
+    /// Returns the confirmed balance result and its proof block height.
+    #[allow(clippy::too_many_arguments)]
+    async fn withdraw_with_height<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        address: Option<Address>,
+        amount: u64,
+        core_fee_per_byte: Option<u32>,
+        signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<(u64, u64), Error>;
+}
+
 #[async_trait::async_trait]
 impl WithdrawFromIdentity for Identity {
     async fn withdraw<S: Signer<IdentityPublicKey> + Send>(
@@ -46,6 +63,33 @@ impl WithdrawFromIdentity for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
+        self.withdraw_with_height(
+            sdk,
+            address,
+            amount,
+            core_fee_per_byte,
+            signing_withdrawal_key_to_use,
+            signer,
+            settings,
+        )
+        .await
+        .map(|(balance, _)| balance)
+    }
+}
+
+#[async_trait::async_trait]
+impl WithdrawFromIdentityWithHeight for Identity {
+    #[allow(clippy::too_many_arguments)]
+    async fn withdraw_with_height<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        address: Option<Address>,
+        amount: u64,
+        core_fee_per_byte: Option<u32>,
+        signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<(u64, u64), Error> {
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let script = address.map(|address| CoreScript::new(address.script_pubkey()));
         let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
@@ -66,16 +110,17 @@ impl WithdrawFromIdentity for Identity {
         .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-        let result = state_transition
-            .broadcast_and_wait_for_affected_state(sdk, settings)
+        let (result, metadata) = state_transition
+            .broadcast_and_wait_for_affected_state_with_metadata(sdk, settings)
             .await?;
 
         match result {
-            StateTransitionProofResult::VerifiedPartialIdentity(identity) => {
-                identity.balance.ok_or(Error::Generic(
+            StateTransitionProofResult::VerifiedPartialIdentity(identity) => identity
+                .balance
+                .ok_or(Error::Generic(
                     "expected an identity balance after withdrawal".to_string(),
                 ))
-            }
+                .map(|balance| (balance, metadata.height)),
             _ => Err(Error::Generic("proved a non identity".to_string())),
         }
     }

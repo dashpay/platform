@@ -3,7 +3,6 @@
 use async_trait::async_trait;
 use dashcore::Address as DashAddress;
 use dpp::address_funds::AddressWitness;
-use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::Purpose;
@@ -14,7 +13,9 @@ use dpp::ProtocolError;
 use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
+use dash_sdk::platform::transition::withdraw_from_identity::{
+    WithdrawFromIdentity, WithdrawFromIdentityWithHeight,
+};
 
 use crate::error::PlatformWalletError;
 
@@ -93,8 +94,8 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 
-        let new_balance = identity
-            .withdraw(
+        let (new_balance, proof_height) = identity
+            .withdraw_with_height(
                 &self.sdk,
                 Some(to_address.clone()),
                 amount,
@@ -124,7 +125,7 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info_guard.identity_manager.identity_mut(identity_id) {
-                managed.identity.set_balance(new_balance);
+                managed.set_confirmed_balance(new_balance, proof_height);
                 if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
                     tracing::error!(
                         identity = %identity_id,

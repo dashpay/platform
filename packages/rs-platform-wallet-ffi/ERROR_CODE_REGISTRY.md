@@ -114,12 +114,13 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 58** — 27–57 are all claimed (27, 29, 31, 34–42
+**Next allocatable integer: 59** — 27–58 are all claimed (27, 29, 31, 34–42
 and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47 and
 48 proposed by active #4356 (47 renumbered from 42, 48 from 43 — see their
 rows below); 49–54 proposed by active #4586 (the persister
 operation × kind block); 55–57 proposed by #4715 for pending identity-funded
-shield debits and durable recovery errors; 28, 30,
+shield debits and durable recovery errors; 58 proposed by #4799 for an unavailable
+identity balance response; 28, 30,
 32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
 reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
@@ -170,6 +171,7 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | 55 | `ErrorShieldedIdentityDebitPending` | #4715 | Proposed — an earlier identity-funded shield is unresolved. This request was not built or broadcast; wait for shielded sync to reconcile the original debit. Rust's blanket and shielded-operation mappers preserve the code and message; Swift and Kotlin expose matching typed errors |
 | 56 | `ErrorShieldedRecoveryCorrupted` | #4715 | Proposed — durable shielded recovery data is malformed or invalid; preserved for diagnosis. Rust, Swift and Kotlin preserve this typed error |
 | 57 | `ErrorShieldedRecoveryKeysRequired` | #4715 | Proposed — recovery needs the account and compatible keys; ciphertext damage can produce the same symptom. Rust, Swift and Kotlin preserve this typed error |
+| 58 | `ErrorIdentityBalanceUnavailable` | #4799 | Proposed — Platform returned no balance for a managed identity. Retrying the read is safe; this is distinct from missing wallet ownership and must not trigger registration or funding |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged
