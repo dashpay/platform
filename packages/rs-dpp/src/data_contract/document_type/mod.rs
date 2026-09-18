@@ -75,6 +75,11 @@ pub(crate) mod property_names {
     /// (protocol version 14). See `apply_immutable_fields` in
     /// `try_from_schema::common` for the structural rules.
     pub const IMMUTABLE: &str = "immutable";
+    /// Doctype-level array naming the [`IMMUTABLE`] properties a replace may
+    /// still set when the stored document has no value for them. Once set
+    /// they are frozen like the rest of the list. Every entry must also be in
+    /// [`IMMUTABLE`]. Meta-schema v3+ (protocol version 14).
+    pub const IMMUTABLE_ALLOW_SETTING: &str = "immutableAllowSetting";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";
     pub const CREATED_AT: &str = "$createdAt";

@@ -234,6 +234,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
     fn immutable_fields(&self) -> &BTreeSet<String> {
         &self.immutable_fields
     }
+
+    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+        &self.immutable_fields_allow_setting
+    }
 }
 
 impl DocumentTypeV2Setters for DocumentTypeV2 {

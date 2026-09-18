@@ -993,6 +993,14 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V2(v2) => v2.immutable_fields(),
         }
     }
+
+    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentType::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentType::V2(v2) => v2.immutable_fields_allow_setting(),
+        }
+    }
 }
 
 impl DocumentTypeV2Setters for DocumentType {
@@ -1077,6 +1085,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V2(v2) => v2.immutable_fields(),
         }
     }
+
+    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeRef::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeRef::V2(v2) => v2.immutable_fields_allow_setting(),
+        }
+    }
 }
 
 impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
@@ -1125,6 +1141,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELDS,
             DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELDS,
             DocumentTypeMutRef::V2(v2) => v2.immutable_fields(),
+        }
+    }
+
+    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeMutRef::V2(v2) => v2.immutable_fields_allow_setting(),
         }
     }
 }

@@ -939,7 +939,15 @@
         "type": "string"
       },
       "uniqueItems": true,
-      "description": "Names of top-level properties whose values are frozen at document creation on a mutable document type: a replace that changes, adds or removes any of them is rejected (DocumentImmutablePropertyChangedError, code 40128). Only allowed when documentsMutable is true (the default), where the other properties stay replaceable; on an immutable document type every property is already frozen. Every entry must name a declared top-level property: system properties ($-prefixed) are excluded because the platform manages them, and nested paths are not accepted (list the containing object to freeze it whole). On contract update the list may gain entries but never lose one. Available from protocol version 14."
+      "description": "Names of top-level properties whose values are frozen at document creation on a mutable document type: a replace that changes, adds or removes any of them is rejected (DocumentImmutablePropertyChangedError, code 40128), unless the property is listed under immutableAllowSetting and the stored document has no value for it yet. Only allowed when documentsMutable is true (the default), where the other properties stay replaceable; on an immutable document type every property is already frozen. Every entry must name a declared top-level property: system properties ($-prefixed) are excluded because the platform manages them, and nested paths are not accepted (list the containing object to freeze it whole). On contract update the list may gain entries but never lose one. Available from protocol version 14."
+    },
+    "immutableAllowSetting": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "The subset of the immutable properties a replace may still set while the stored document has no value for them: a first-time set is accepted, after which the property is frozen like the rest of the immutable list (it can neither change nor be removed). Every entry must also appear in immutable; it is only meaningful for optional properties, since a required one always has a value from creation. On contract update an entry may be dropped (tightening) at any time, but may only be added for a property that becomes immutable in the same update: an already-immutable property cannot start allowing a set. Available from protocol version 14."
     },
     "additionalProperties": {
       "type": "boolean",

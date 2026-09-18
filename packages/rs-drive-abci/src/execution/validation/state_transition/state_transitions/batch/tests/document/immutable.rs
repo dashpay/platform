@@ -29,8 +29,8 @@ mod immutable_tests {
 
     /// A mutable `post` type: `author` and `body` required, `mood` an
     /// optional string, `meta` an optional nested object, and the given
-    /// `immutable` list.
-    fn post_schema(immutable: Value) -> Value {
+    /// `immutable` and `immutableAllowSetting` lists.
+    fn post_schema(immutable: Value, allow_setting: Value) -> Value {
         platform_value!({
             "type": "object",
             "documentsMutable": true,
@@ -49,6 +49,7 @@ mod immutable_tests {
             },
             "required": ["author", "body"],
             "immutable": immutable,
+            "immutableAllowSetting": allow_setting,
             "additionalProperties": false
         })
     }
@@ -72,6 +73,14 @@ mod immutable_tests {
 
     impl PostFixture {
         async fn new(immutable: Value, fill: impl FnOnce(&mut Document)) -> Self {
+            Self::new_with_lists(immutable, platform_value!([]), fill).await
+        }
+
+        async fn new_with_lists(
+            immutable: Value,
+            allow_setting: Value,
+            fill: impl FnOnce(&mut Document),
+        ) -> Self {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -88,7 +97,7 @@ mod immutable_tests {
             contract
                 .set_document_schema(
                     "post",
-                    post_schema(immutable),
+                    post_schema(immutable, allow_setting),
                     true,
                     &mut Vec::new(),
                     platform_version,
@@ -239,13 +248,23 @@ mod immutable_tests {
             &mut self,
             immutable: Value,
         ) -> StateTransitionExecutionResult {
+            self.update_lists(immutable, platform_value!([])).await
+        }
+
+        /// Like `update_immutable_list`, replacing the `immutableAllowSetting`
+        /// list as well.
+        async fn update_lists(
+            &mut self,
+            immutable: Value,
+            allow_setting: Value,
+        ) -> StateTransitionExecutionResult {
             let platform_version = PlatformVersion::latest();
             let mut updated = self.contract.clone();
             updated.set_version(self.contract.version() + 1);
             updated
                 .set_document_schema(
                     "post",
-                    post_schema(immutable),
+                    post_schema(immutable, allow_setting),
                     true,
                     &mut Vec::new(),
                     platform_version,
@@ -502,5 +521,171 @@ mod immutable_tests {
             fixture.stored_post().properties().get("mood"),
             Some(&text("curious"))
         );
+    }
+
+    // ── immutableAllowSetting ───────────────────────────────────────────
+
+    #[tokio::test]
+    async fn should_allow_setting_an_absent_allow_setting_property_once() {
+        // `mood` is immutable but may be set while absent; created without it.
+        let mut fixture = PostFixture::new_with_lists(
+            platform_value!(["author", "mood"]),
+            platform_value!(["mood"]),
+            |_| {},
+        )
+        .await;
+
+        // The first-time set is accepted and stored.
+        let result = fixture
+            .replace(|post| post.set("mood", "cheerful".into()))
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "setting an absent allow-setting property must succeed"
+        );
+        assert_eq!(
+            fixture.stored_post().properties().get("mood"),
+            Some(&text("cheerful"))
+        );
+
+        // From here on it is frozen: neither a change nor a removal passes.
+        let result = fixture
+            .replace(|post| post.set("mood", "gloomy".into()))
+            .await;
+        expect_immutable_property_error(result, "mood", &fixture);
+
+        let result = fixture
+            .replace(|post| {
+                post.remove("mood");
+            })
+            .await;
+        expect_immutable_property_error(result, "mood", &fixture);
+
+        // The rest of the document stays editable throughout.
+        let result = fixture
+            .replace(|post| post.set("body", "second draft".into()))
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(
+            fixture.stored_post().properties().get("mood"),
+            Some(&text("cheerful"))
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_an_allow_setting_property_frozen_when_set_at_creation() {
+        // Created WITH `mood`: the allowance never applies because the stored
+        // document always had a value.
+        let mut fixture = PostFixture::new_with_lists(
+            platform_value!(["mood"]),
+            platform_value!(["mood"]),
+            |post| post.set("mood", "cheerful".into()),
+        )
+        .await;
+
+        let result = fixture
+            .replace(|post| post.set("mood", "gloomy".into()))
+            .await;
+        expect_immutable_property_error(result, "mood", &fixture);
+
+        let result = fixture
+            .replace(|post| {
+                post.remove("mood");
+            })
+            .await;
+        expect_immutable_property_error(result, "mood", &fixture);
+    }
+
+    #[tokio::test]
+    async fn should_not_let_allow_setting_relax_a_different_immutable_property() {
+        // Only `mood` may be set late; `author` is fully frozen, and an absent
+        // immutable property outside the allowance (`meta`) still cannot be
+        // added.
+        let mut fixture = PostFixture::new_with_lists(
+            platform_value!(["author", "mood", "meta"]),
+            platform_value!(["mood"]),
+            |_| {},
+        )
+        .await;
+
+        let result = fixture
+            .replace(|post| post.set("author", "mallory".into()))
+            .await;
+        expect_immutable_property_error(result, "author", &fixture);
+
+        let result = fixture
+            .replace(|post| post.set("meta", platform_value!({"tag": "intro"})))
+            .await;
+        expect_immutable_property_error(result, "meta", &fixture);
+    }
+
+    #[tokio::test]
+    async fn should_reject_a_contract_update_that_allows_setting_an_already_immutable_property() {
+        let mut fixture = PostFixture::new(platform_value!(["author", "mood"]), |_| {}).await;
+
+        let result = fixture
+            .update_lists(
+                platform_value!(["author", "mood"]),
+                platform_value!(["mood"]),
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DocumentTypeUpdateError(_)),
+                ..
+            },
+            "an already-immutable property must not start allowing a set"
+        );
+
+        // Still fully frozen.
+        let result = fixture
+            .replace(|post| post.set("mood", "cheerful".into()))
+            .await;
+        expect_immutable_property_error(result, "mood", &fixture);
+    }
+
+    #[tokio::test]
+    async fn should_accept_a_contract_update_adding_a_newly_immutable_property_that_allows_setting()
+    {
+        let mut fixture = PostFixture::new(platform_value!(["author"]), |_| {}).await;
+
+        let result = fixture
+            .update_lists(
+                platform_value!(["author", "mood"]),
+                platform_value!(["mood"]),
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "a newly immutable property may arrive with the allowance"
+        );
+        let expected: BTreeSet<String> = ["mood"].into_iter().map(String::from).collect();
+        assert_eq!(
+            fixture
+                .contract
+                .document_type_for_name("post")
+                .expect("expected the post document type")
+                .immutable_fields_allow_setting(),
+            &expected
+        );
+
+        // Set once, then frozen.
+        let result = fixture
+            .replace(|post| post.set("mood", "cheerful".into()))
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let result = fixture
+            .replace(|post| post.set("mood", "gloomy".into()))
+            .await;
+        expect_immutable_property_error(result, "mood", &fixture);
     }
 }

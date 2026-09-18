@@ -268,15 +268,23 @@ A document type either allows replaces (`documentsMutable: true`, the default) o
 }
 ```
 
-The parser (generation 3, meta-schema v3) checks the list when a contract enters the chain:
+A second list, `immutableAllowSetting`, relaxes the first for optional properties that are not known at creation: a property listed there may still be set by a replace while the stored document has no value for it, and is frozen from then on (it can neither change nor be removed). Every entry must also be in `immutable`.
 
-- Every entry names a declared top-level property. System properties (`$`-prefixed) are refused because the platform manages them, and nested paths are refused: list the containing object to freeze it whole, nested values included.
-- The list is only allowed when `documentsMutable` is true. On an immutable document type every property is already frozen.
-- On contract update the list may gain entries but never lose one (`DocumentTypeUpdateError`). Adding an entry invalidates no stored document; removing one would break the promise documents were created under. The schema compatibility differ strips the key, like `indices` and `required`, so `validate_update` v1 is the single judge.
+```json
+"immutable": ["author", "mood"],
+"immutableAllowSetting": ["mood"]
+```
 
-Enforcement lives in the replace action's state validation (generation 1). The action already records which top-level properties differ from the stored document in `changed_data_fields` (the same set that scopes `refersTo` re-validation), and any of them in the type's `immutable_fields()` fails the replace with `DocumentImmutablePropertyChangedError` (state code 40128). "Differ" covers a changed value, a property the stored document lacked, and a property the replace dropped. Transfers, price updates and purchases carry no property data and are unaffected.
+The parser (generation 3, meta-schema v3) checks both lists when a contract enters the chain:
 
-In Rust the list is `DocumentTypeV2Getters::immutable_fields()`. Earlier document type generations return an empty set.
+- Every `immutable` entry names a declared top-level property. System properties (`$`-prefixed) are refused because the platform manages them, and nested paths are refused: list the containing object to freeze it whole, nested values included.
+- The lists are only allowed when `documentsMutable` is true. On an immutable document type every property is already frozen.
+- Every `immutableAllowSetting` entry is also in `immutable`; on its own the allowance means nothing.
+- On contract update `immutable` may gain entries but never lose one, and `immutableAllowSetting` may lose entries but only gain one for a property that becomes immutable in the same update (`DocumentTypeUpdateError` otherwise). Each rule keeps the promise documents were created under: nothing frozen becomes editable, and nothing already frozen starts accepting a late set. The schema compatibility differ strips both keys, like `indices` and `required`, so `validate_update` v1 is the single judge.
+
+Enforcement lives in the replace action's state validation (generation 1). The action already records which top-level properties differ from the stored document in `changed_data_fields` (the same set that scopes `refersTo` re-validation), and alongside it which of those the stored document had no value for (`added_data_fields`). A changed property in the type's `immutable_fields()` fails the replace with `DocumentImmutablePropertyChangedError` (state code 40128) unless it is in `immutable_fields_allow_setting()` and was absent before. "Differ" covers a changed value, a property the stored document lacked, and a property the replace dropped. Transfers, price updates and purchases carry no property data and are unaffected.
+
+In Rust the lists are `DocumentTypeV2Getters::immutable_fields()` and `immutable_fields_allow_setting()`. Earlier document type generations return empty sets.
 
 ## Rules and Guidelines
 

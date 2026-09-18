@@ -65,11 +65,13 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
 /// dedicated checks in `validate_update` v1 instead of the JSON diff:
 /// `indices` (index definitions compared by name), `required`
 /// (`validate_required_fields_update`, which admits new-property additions
-/// annotated with `requiredSince`) and `immutable`
-/// (`validate_immutable_fields_update`, which admits additions only). The
-/// differ has no rule for `indices` or `immutable` at all and would
+/// annotated with `requiredSince`), and `immutable` together with
+/// `immutableAllowSetting` (`validate_immutable_fields_update`: the first may
+/// only grow, the second may only shrink except for newly immutable
+/// properties). The differ has no rule for the last three at all and would
 /// hard-error on any change to them.
-const TOP_LEVEL_VALIDATED_KEYS: [&str; 3] = ["indices", "required", "immutable"];
+const TOP_LEVEL_VALIDATED_KEYS: [&str; 4] =
+    ["indices", "required", "immutable", "immutableAllowSetting"];
 
 /// Strips [`TOP_LEVEL_VALIDATED_KEYS`] from a document type schema before it
 /// is diffed. Only the document type's own top-level keys are removed; a
@@ -203,6 +205,7 @@ mod tests {
                 "b": {"type": "string", "position": 1},
             },
             "immutable": ["a", "b"],
+            "immutableAllowSetting": ["b"],
             "additionalProperties": false,
         });
 

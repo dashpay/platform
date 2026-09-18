@@ -304,3 +304,110 @@ fn immutable_list_survives_the_dispatcher_at_latest() {
         .expect("post schema parses through the dispatcher at PV14");
     assert_eq!(document_type.immutable_fields(), &names(&["author"]));
 }
+
+// ── immutableAllowSetting ───────────────────────────────────────────────
+
+/// `post_schema` with `meta` frozen as well and allowed to be set once.
+fn post_schema_allowing_meta_once() -> Value {
+    let mut schema = post_schema_with("immutable", platform_value!(["author", "meta"]));
+    schema
+        .set_value("immutableAllowSetting", platform_value!(["meta"]))
+        .expect("doctype key applies");
+    schema
+}
+
+#[test]
+fn allow_setting_list_parses_on_both_validation_modes() {
+    let platform_version = PlatformVersion::latest();
+
+    for full_validation in [false, true] {
+        let document_type = parse_with(
+            post_schema_allowing_meta_once(),
+            platform_version,
+            full_validation,
+        )
+        .unwrap_or_else(|error| {
+            panic!(
+                "allow-setting schema should parse (full_validation: {full_validation}): \
+                         {error}"
+            )
+        });
+
+        assert_eq!(
+            document_type.immutable_fields(),
+            &names(&["author", "meta"])
+        );
+        assert_eq!(
+            document_type.immutable_fields_allow_setting(),
+            &names(&["meta"])
+        );
+    }
+}
+
+#[test]
+fn omitted_allow_setting_keyword_means_nothing_may_be_set_late() {
+    let document_type =
+        parse_with(post_schema(), PlatformVersion::latest(), true).expect("schema parses");
+
+    assert!(document_type.immutable_fields_allow_setting().is_empty());
+}
+
+#[test]
+fn rejects_an_allow_setting_entry_that_is_not_immutable() {
+    // `body` is a real property, but not in `immutable`.
+    let schema = post_schema_with("immutableAllowSetting", platform_value!(["body"]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), true),
+        "\"body\" in `immutableAllowSetting`, but it is not in `immutable`",
+    );
+}
+
+#[test]
+fn rejects_an_allow_setting_entry_naming_an_unknown_property() {
+    // Unknown to the type, so also absent from `immutable`.
+    let schema = post_schema_with("immutableAllowSetting", platform_value!(["nope"]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), true),
+        "\"nope\" in `immutableAllowSetting`, but it is not in `immutable`",
+    );
+}
+
+#[test]
+fn rejects_a_non_string_allow_setting_entry_on_both_modes() {
+    for full_validation in [false, true] {
+        let schema = post_schema_with("immutableAllowSetting", platform_value!(["author", 7]));
+        expect_structure_error(
+            parse_with(schema, PlatformVersion::latest(), full_validation),
+            "every `immutableAllowSetting` entry must be a property name",
+        );
+    }
+}
+
+#[test]
+fn non_validating_parse_records_the_allow_setting_list_as_declared() {
+    // Not in `immutable`; the lint is validation-only.
+    let schema = post_schema_with("immutableAllowSetting", platform_value!(["body"]));
+
+    let document_type = parse_with(schema, PlatformVersion::latest(), false)
+        .expect("the non-validating path records the declaration without judging it");
+
+    assert_eq!(
+        document_type.immutable_fields_allow_setting(),
+        &names(&["body"])
+    );
+}
+
+#[test]
+fn allow_setting_keyword_is_inert_below_generation_3_without_validation() {
+    let platform_version_13 = PlatformVersion::get(13).expect("PV13 exists");
+
+    let document_type =
+        parse_dispatched(post_schema_allowing_meta_once(), platform_version_13, false)
+            .expect("generation 2 ignores unknown doctype-level keywords when not validating");
+    assert!(document_type.immutable_fields_allow_setting().is_empty());
+
+    assert!(
+        parse_dispatched(post_schema_allowing_meta_once(), platform_version_13, true).is_err(),
+        "meta-schema v2 must reject the immutableAllowSetting keyword"
+    );
+}
