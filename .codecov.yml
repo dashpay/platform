@@ -52,6 +52,7 @@ ignore:
   - "packages/data-contracts/src/**"
   - "packages/dpns-contract/src/**"
   - "packages/keyword-search-contract/src/**"
+  - "packages/app-connect-contract/src/**"
   - "packages/masternode-reward-shares-contract/src/**"
   - "packages/token-history-contract/src/**"
   - "packages/wallet-utils-contract/src/**"

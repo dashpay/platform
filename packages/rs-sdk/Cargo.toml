@@ -143,6 +143,7 @@ wallet-utils-contract = ["dpp/wallet-utils-contract"]
 token-history-contract = ["dpp/token-history-contract"]
 keywords-contract = ["dpp/keywords-contract"]
 document-history-contract = ["dpp/document-history-contract"]
+app-connect-contract = ["dpp/app-connect-contract"]
 
 token_reward_explanations = ["dpp/token-reward-explanations"]
 

@@ -22,6 +22,12 @@ keyword-search-contract: &keyword-search-contract
   - packages/keyword-search-contract/schema/**
   - packages/keyword-search-contract/Cargo.toml
 
+app-connect-contract: &app-connect-contract
+  - .github/workflows/tests*
+  - packages/app-connect-contract/src/**
+  - packages/app-connect-contract/schema/**
+  - packages/app-connect-contract/Cargo.toml
+
 dashpay-contract: &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/src/**
@@ -61,6 +67,7 @@ data-contracts: &data-contracts
   - *token-history-contract
   - *keyword-search-contract
   - *document-history-contract
+  - *app-connect-contract
 
 dpp: &dpp
   - .github/workflows/tests*

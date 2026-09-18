@@ -15,6 +15,7 @@
     "test:dpns-contract": "ultra -r --filter \"packages/@(dpns-contract|js-dash-sdk|js-drive|js-dapi-client|wasm-dpp|wallet-lib|dapi|platform-test-suite)\" test",
     "test:token-history-contract": "ultra -r --filter \"packages/@(token-history-contract|js-dash-sdk|js-drive|js-dapi-client|wasm-dpp|wallet-lib|dapi|platform-test-suite)\" test",
     "test:document-history-contract": "ultra -r --filter \"packages/@(document-history-contract|js-dash-sdk|js-drive|js-dapi-client|wasm-dpp|wallet-lib|dapi|platform-test-suite)\" test",
+    "test:app-connect-contract": "ultra -r --filter \"packages/@(app-connect-contract|js-dash-sdk|js-drive|js-dapi-client|wasm-dpp|wallet-lib|dapi|platform-test-suite)\" test",
     "test:dapi-client": "ultra -r --filter \"packages/@(js-dapi-client|wallet-lib|js-dash-sdk|platform-test-suite)\" test",
     "test:sdk": "ultra -r --filter \"packages/@(js-dash-sdk|platform-test-suite)\" test",
     "test:spv": "ultra -r --filter \"packages/@(dash-spv|js-dapi-client)\" test",
@@ -77,6 +78,7 @@
     "packages/token-history-contract",
     "packages/document-history-contract",
     "packages/keyword-search-contract",
+    "packages/app-connect-contract",
     "packages/wasm-drive-verify",
     "packages/wasm-sdk",
     "packages/js-evo-sdk"

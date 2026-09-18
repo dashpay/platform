@@ -695,8 +695,10 @@ impl<C> Platform<C> {
 
     /// When transitioning to version 14 we re-store the DashPay contract whose
     /// v2 schema adds the optional public payment address fields to the
-    /// `profile` document type (DIP-33), and the withdrawals contract whose v2
-    /// schema admits the terminal FAILED value of the `status` property.
+    /// `profile` document type (DIP-33), the withdrawals contract whose v2
+    /// schema admits the terminal FAILED value of the `status` property, and
+    /// register the app-connect contract that carries the wallet-to-app login
+    /// handshake.
     fn transition_to_version_14(
         &self,
         block_info: &BlockInfo,
@@ -726,6 +728,20 @@ impl<C> Platform<C> {
             *block_info,
             true,
             None,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        // App-connect contract: the wallet's encrypted login key response and the app's
+        // manifest get one system contract id on every network from this version. Fresh
+        // chains register it at genesis (`create_genesis_state` v1).
+        let app_connect_contract =
+            load_system_data_contract(SystemDataContract::AppConnect, platform_version)?;
+
+        self.drive.insert_contract(
+            &app_connect_contract,
+            *block_info,
+            true,
             Some(transaction),
             platform_version,
         )?;
@@ -1210,6 +1226,105 @@ mod tests {
             "profile must carry platformPaymentAddress after transition_to_version_14"
         );
         assert!(profile.iter().any(|p| p == "shieldedAddress"));
+    }
+
+    #[test]
+    fn test_transition_to_version_14_inserts_app_connect_contract() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
+        // A chain born at protocol version 13 has no app-connect contract: it
+        // is neither in that genesis state nor active for the system contract
+        // cache.
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version_13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let platform_version = PlatformVersion::get(14).expect("expected platform version 14");
+        let app_connect_id = SystemDataContract::AppConnect.id();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        assert!(
+            platform
+                .drive
+                .fetch_contract(
+                    app_connect_id.to_buffer(),
+                    None,
+                    None,
+                    Some(&transaction),
+                    platform_version_13,
+                )
+                .value
+                .expect("expected to query the app-connect contract")
+                .is_none(),
+            "the app-connect contract must not exist before transition_to_version_14"
+        );
+        assert!(platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(app_connect_id, platform_version_13)
+            .expect("expected the pre-activation lookup to succeed")
+            .is_none());
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let stored = platform
+            .drive
+            .fetch_contract(
+                app_connect_id.to_buffer(),
+                None,
+                None,
+                Some(&transaction),
+                platform_version,
+            )
+            .value
+            .expect("expected to fetch the app-connect contract")
+            .expect("the app-connect contract must exist after transition_to_version_14");
+
+        assert_eq!(stored.contract.id(), app_connect_id);
+        assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
+        assert!(stored
+            .contract
+            .document_type_for_name("loginKeyResponse")
+            .is_ok());
+        assert!(stored
+            .contract
+            .document_type_for_name("appManifest")
+            .is_ok());
+
+        // Stored beside its version item, like every contract from this version on.
+        assert_eq!(
+            platform
+                .drive
+                .fetch_contract_version(
+                    app_connect_id.to_buffer(),
+                    Some(&transaction),
+                    platform_version
+                )
+                .expect("expected to read the version item"),
+            Some(stored.contract.version()),
+            "the app-connect contract has its version item after the transition"
+        );
+
+        assert!(platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(app_connect_id, platform_version)
+            .expect("expected the post-activation lookup to succeed")
+            .is_some());
     }
 
     /// Reads the `status` enum of the stored withdrawals contract's `withdrawal` document

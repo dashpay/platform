@@ -30,6 +30,7 @@ run:
   - packages/token-history-contract/**
   - packages/document-history-contract/**
   - packages/keyword-search-contract/**
+  - packages/app-connect-contract/**
   - packages/wallet-utils-contract/**
   # Local network scripts and action
   - .github/actions/local-network/**

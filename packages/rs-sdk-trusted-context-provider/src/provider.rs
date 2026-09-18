@@ -18,6 +18,7 @@ use dpp::data_contract::TokenConfiguration;
     feature = "token-history-contract",
     feature = "keywords-contract",
     feature = "document-history-contract",
+    feature = "app-connect-contract",
     feature = "all-system-contracts"
 ))]
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -781,6 +782,7 @@ impl ContextProvider for TrustedHttpContextProvider {
             feature = "token-history-contract",
             feature = "keywords-contract",
             feature = "document-history-contract",
+            feature = "app-connect-contract",
             feature = "all-system-contracts"
         ))]
         {
@@ -885,6 +887,18 @@ impl ContextProvider for TrustedHttpContextProvider {
                         e
                     ))
                 });
+            }
+
+            #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::AppConnect.id() {
+                return load_system_data_contract(SystemDataContract::AppConnect, platform_version)
+                    .map(|contract| Some(Arc::new(contract)))
+                    .map_err(|e| {
+                        ContextProviderError::Generic(format!(
+                            "Failed to load AppConnect contract: {}",
+                            e
+                        ))
+                    });
             }
         }
 
