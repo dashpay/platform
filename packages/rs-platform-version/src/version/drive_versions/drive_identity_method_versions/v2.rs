@@ -19,7 +19,11 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 /// * `contract_info.add_potential_contract_info_for_contract_bounded_key` 0 -> 1 and
 ///   `contract_info.refresh_potential_contract_info_key_references` 0 -> 1:
 ///   write and refresh contract-bound authentication-key references. Both v0s preserve the
-///   historical rejection of authentication keys with contract bounds before v14.
+///   historical rejection of authentication keys with contract bounds before v14. Both v1s also
+///   store the current-key alias of a contract-level encryption or decryption key bound under
+///   `MultipleReferenceToLatest` in the key's purpose subtree, where the current-key query reads
+///   it; both v0s wrote it one level up, where the sibling reference could not resolve, so such
+///   keys could never be registered before v14 (nothing is stored at the v0 path on any network).
 /// * `keys.insert.insert_new_unique_key` 0 -> 1 and `keys.insert.insert_new_non_unique_key`
 ///   0 -> 1: a key that carries a budget also gets its remaining budget written to the identity's
 ///   key budgets subtree. Keys cannot carry a budget before v14, so both v0s never write it.

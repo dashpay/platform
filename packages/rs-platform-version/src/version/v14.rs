@@ -284,7 +284,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// Contract-bound authentication keys activate through contract-bounds validation v2,
 /// identity-signature validation v1 and batch advanced-structure v1. Identity creation
 /// validates key bounds (state v1) and identity-update state v1 retains the contract
-/// lookup fees; Drive identity methods v2 index and refresh the bound keys.
+/// lookup fees; Drive identity methods v2 index and refresh the bound keys. The same v1
+/// contract-info methods also store the current-key alias of a contract-level encryption or
+/// decryption key bound under `MultipleReferenceToLatest` in its purpose subtree, where the
+/// current-key query reads it; v0 wrote it one level up, where its sibling reference could
+/// not resolve, so registering such a key failed inside Drive on every earlier version.
 /// Contract group bounds on authentication keys ride the same versions: contract-bounds
 /// validation v2 admits them, batch transform v2 resolves the member contract's group
 /// memberships into the action (only for a group-bound signing key) for advanced-structure v1 to judge, and shielded-proof validation v1 refuses them in identity creation from the

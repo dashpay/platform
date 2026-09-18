@@ -299,18 +299,17 @@ impl Drive {
                 if storage_key_requirements == StorageKeyRequirements::MultipleReferenceToLatest {
                     // we also insert a sibling reference so we can query the current key
 
+                    // The alias is a sibling reference, so it must live in the purpose
+                    // subtree beside the key id it names, which is also where the
+                    // current-key query reads it (`CurrentKeyOfKindRequest`). v0 wrote it
+                    // one level up for encryption and decryption keys, where the sibling
+                    // could not resolve, so such keys could never be registered.
                     let sibling_ref_type_path = SiblingReference(key_id_bytes);
-                    let sibling_path = if purpose == Purpose::AUTHENTICATION {
-                        // A bound authentication key's current-key reference belongs beside
-                        // its key IDs, under the purpose subtree. Keep legacy paths frozen.
-                        identity_contract_info_group_path_key_purpose_vec(
-                            &identity_id,
-                            &root_id,
-                            purpose,
-                        )
-                    } else {
-                        identity_contract_info_group_keys_path_vec(&identity_id, &root_id)
-                    };
+                    let sibling_path = identity_contract_info_group_path_key_purpose_vec(
+                        &identity_id,
+                        &root_id,
+                        purpose,
+                    );
 
                     self.batch_insert(
                         PathKeyElementInfo::<0>::PathKeyElement((

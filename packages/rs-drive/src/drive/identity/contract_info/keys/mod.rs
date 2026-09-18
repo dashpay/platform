@@ -77,8 +77,10 @@ pub(crate) fn coalesce_current_key_alias_operations(operations: &mut Vec<LowLeve
 /// at, or refreshed at, the empty key of an AUTHENTICATION contract-info purpose subtree. Returns
 /// the subtree path and, for an insertion, the key id the alias names.
 ///
-/// Only that subtree is recognized. Encryption and decryption bounds keep their frozen v0 layout,
-/// with the alias one level up at the keys level, and are never coalesced.
+/// Only that subtree is recognized. Encryption and decryption keys bound under
+/// `MultipleReferenceToLatest` keep their alias at the same slot of their own purpose subtree,
+/// but their writes are not coalesced: two writes to one such slot in a batch keep the
+/// last-write-wins semantics they have always had.
 fn current_key_alias_write(
     operation: &LowLevelDriveOperation,
 ) -> Option<(&KeyInfoPath, Option<KeyID>)> {
@@ -362,10 +364,12 @@ mod tests {
             &document_type_group,
             Purpose::AUTHENTICATION,
         );
-        // Legacy encryption and decryption bounds alias the current key at the keys level.
-        let legacy_alias_path =
+        // The keys level holds the purpose subtrees; v1 never writes an alias there (v0 did,
+        // for encryption and decryption keys, where it could not resolve). A sibling reference
+        // at its empty key is not a slot and must not be recognized.
+        let keys_level_path =
             identity_contract_info_group_keys_path_vec(&identity_id, &contract_id);
-        // A purpose-level alias for another purpose must not be recognized either.
+        // The alias slot of another purpose is not coalesced either.
         let encryption_purpose_path = identity_contract_info_group_path_key_purpose_vec(
             &identity_id,
             &contract_id,
@@ -375,10 +379,10 @@ mod tests {
         let mut operations = vec![
             alias_refresh(contract_auth_path.clone(), 1),
             alias_insert(contract_auth_path.clone(), 2),
-            alias_insert(legacy_alias_path.clone(), 5),
+            alias_insert(keys_level_path.clone(), 5),
             alias_insert(document_type_auth_path.clone(), 9),
             alias_insert(contract_auth_path.clone(), 3),
-            alias_insert(legacy_alias_path.clone(), 6),
+            alias_insert(keys_level_path.clone(), 6),
             alias_refresh(encryption_purpose_path.clone(), 7),
             alias_insert(encryption_purpose_path.clone(), 8),
             alias_insert(document_type_auth_path.clone(), 10),
@@ -390,15 +394,15 @@ mod tests {
         assert_eq!(
             operations,
             vec![
-                alias_insert(legacy_alias_path.clone(), 5),
+                alias_insert(keys_level_path.clone(), 5),
                 alias_insert(contract_auth_path, 3),
-                alias_insert(legacy_alias_path, 6),
+                alias_insert(keys_level_path, 6),
                 alias_refresh(encryption_purpose_path.clone(), 7),
                 alias_insert(encryption_purpose_path, 8),
                 alias_insert(document_type_auth_path, 10),
             ],
             "each AUTHENTICATION slot keeps the insertion naming its highest key id, in place; \
-             legacy and other-purpose aliases are untouched"
+             keys-level and other-purpose writes are untouched"
         );
     }
 
