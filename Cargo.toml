@@ -146,5 +146,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "4.2.0-beta.1"
+version = "4.2.0-beta.2"
 rust-version = "1.98"
