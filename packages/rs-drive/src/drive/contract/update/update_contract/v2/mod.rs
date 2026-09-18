@@ -14,6 +14,7 @@ use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use crate::error::contract::DataContractError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -45,7 +46,7 @@ impl Drive {
     ///
     /// This function returns an error if the contract update or fee calculation fails.
     #[inline(always)]
-    pub(super) fn update_contract_v1(
+    pub(super) fn update_contract_v2(
         &self,
         contract: &DataContract,
         block_info: BlockInfo,
@@ -98,7 +99,7 @@ impl Drive {
             )));
         }
 
-        self.update_contract_element_v1(
+        self.update_contract_element_v2(
             contract_element,
             contract,
             &original_contract_fetch_info.contract,
@@ -138,7 +139,7 @@ impl Drive {
     /// Updates a contract.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn update_contract_element_v1(
+    pub(super) fn update_contract_element_v2(
         &self,
         contract_element: Element,
         contract: &DataContract,
@@ -150,7 +151,7 @@ impl Drive {
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info =
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>;
-        let batch_operations = self.update_contract_operations_v1(
+        let batch_operations = self.update_contract_operations_v2(
             contract_element,
             contract,
             original_contract,
@@ -171,7 +172,7 @@ impl Drive {
     /// Updates a contract.
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    pub(super) fn update_contract_add_operations_v1(
+    pub(super) fn update_contract_add_operations_v2(
         &self,
         contract_element: Element,
         contract: &DataContract,
@@ -184,7 +185,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let batch_operations = self.update_contract_operations_v1(
+        let batch_operations = self.update_contract_operations_v2(
             contract_element,
             contract,
             original_contract,
@@ -198,8 +199,16 @@ impl Drive {
     }
 
     /// operations for updating a contract.
+    ///
+    /// Differs from v1 in one way: a token the update adds also gets its
+    /// perpetual and pre-programmed distribution storage, the same storage
+    /// `insert_contract` v1 creates for a token present at registration. v1
+    /// created only the token's balance, identity info, status, contract info
+    /// and supply entries, so the first claim on such a token wrote its
+    /// last-claim record under a tree that did not exist and failed as an
+    /// internal error, leaving the distribution unclaimable.
     #[allow(clippy::too_many_arguments)]
-    fn update_contract_operations_v1(
+    fn update_contract_operations_v2(
         &self,
         contract_element: Element,
         contract: &DataContract,
@@ -241,6 +250,44 @@ impl Drive {
                 transaction,
                 platform_version,
             )?);
+
+            // Only a token absent from the original contract is new to state.
+            // A token the contract already had keeps the distribution storage
+            // it has, and both helpers error when the token's tree already
+            // exists. That covers a token config update too, which reaches
+            // this method with its token present in the original contract.
+            if original_contract.tokens().contains_key(token_pos) {
+                continue;
+            }
+
+            if let Some(perpetual_distribution) =
+                configuration.distribution_rules().perpetual_distribution()
+            {
+                self.add_perpetual_distribution(
+                    token_id.to_buffer(),
+                    perpetual_distribution,
+                    estimated_costs_only_with_layer_info,
+                    &mut batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+
+            if let Some(pre_programmed_distribution) = configuration
+                .distribution_rules()
+                .pre_programmed_distribution()
+            {
+                self.add_pre_programmed_distributions(
+                    token_id.to_buffer(),
+                    contract.owner_id().to_buffer(),
+                    pre_programmed_distribution,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    &mut batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
         }
 
         if !contract.groups().is_empty() {
@@ -299,36 +346,43 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::Drive;
+    use crate::error::Error;
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-    use dpp::data_contract::accessors::v1::DataContractV1Setters;
+    use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::data_contract::config::v0::DataContractConfigSettersV0;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;
-    use dpp::prelude::Identifier;
+    use dpp::prelude::{DataContract, Identifier};
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::get_dashpay_contract_fixture;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
-    /// v1 is frozen: protocol version 13 is the last one that selects it.
-    fn frozen_platform_version() -> &'static PlatformVersion {
-        PlatformVersion::get(13).expect("expected protocol version 13")
-    }
-
-    /// Exercises `update_contract_operations_v1` when the updated contract
+    /// Exercises `update_contract_operations_v2` when the updated contract
     /// gains tokens that weren't in the original. This covers the loop that
     /// calls `create_token_trees_operations` for each token.
     /// PR #3516 inserts contracts with tokens but does not exercise an
     /// UPDATE that adds tokens.
     #[test]
-    fn test_update_contract_v1_adds_tokens_creates_token_trees() {
+    fn test_update_contract_v2_adds_tokens_creates_token_trees() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = frozen_platform_version();
+        let platform_version = PlatformVersion::latest();
 
         // Original: no tokens.
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
@@ -347,7 +401,7 @@ mod tests {
             .expect("insert initial contract without tokens");
 
         // Updated: add a token configuration. The update path exercises the
-        // `create_token_trees_operations` call in update_contract_operations_v1.
+        // `create_token_trees_operations` call in update_contract_operations_v2.
         let token_config = TokenConfiguration::V0(
             TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
         );
@@ -366,14 +420,14 @@ mod tests {
             .expect("update adding tokens should succeed");
     }
 
-    /// Exercises `update_contract_operations_v1` where the updated contract
+    /// Exercises `update_contract_operations_v2` where the updated contract
     /// gains groups that weren't in the original. This covers the
     /// `if !contract.groups().is_empty()` true branch inside
-    /// `update_contract_operations_v1`, invoking `add_new_groups_operations`.
+    /// `update_contract_operations_v2`, invoking `add_new_groups_operations`.
     #[test]
-    fn test_update_contract_v1_adds_groups() {
+    fn test_update_contract_v2_adds_groups() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = frozen_platform_version();
+        let platform_version = PlatformVersion::latest();
 
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
@@ -410,19 +464,19 @@ mod tests {
             .expect("update adding groups should succeed");
     }
 
-    /// Exercises `update_contract_operations_v1`'s keyword-update branch:
+    /// Exercises `update_contract_operations_v2`'s keyword-update branch:
     /// update a contract that starts with some keywords to a new set of
-    /// keywords (different set), routed through the full `update_contract_v1`
+    /// keywords (different set), routed through the full `update_contract_v2`
     /// path rather than the dedicated `update_contract_keywords` API.
     /// PR #3516 covers the dedicated API but not the embedded path invoked
     /// via `update_contract`.
     #[test]
-    fn test_update_contract_v1_keyword_delta_via_update_contract() {
+    fn test_update_contract_v2_keyword_delta_via_update_contract() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = frozen_platform_version();
+        let platform_version = PlatformVersion::latest();
 
         // Insert the keyword_search system contract first (required because
-        // update_contract_v1 calls update_contract_keywords_operations).
+        // update_contract_v2 calls update_contract_keywords_operations).
         let keyword_search =
             load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
                 .expect("load keyword_search");
@@ -536,7 +590,7 @@ mod tests {
     #[test]
     fn clearing_a_contracts_keywords_leaves_the_old_ones_indexed() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = frozen_platform_version();
+        let platform_version = PlatformVersion::latest();
 
         let keyword_search =
             load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
@@ -593,15 +647,15 @@ mod tests {
         );
     }
 
-    /// Exercises `update_contract_operations_v1`'s description-update branch:
+    /// Exercises `update_contract_operations_v2`'s description-update branch:
     /// changing contract description routes through
     /// `update_contract_description_operations`. Covers the `if let Some(description)`
-    /// true branch specifically from the v1 update path (not the dedicated update
+    /// true branch specifically from the v2 update path (not the dedicated update
     /// description API).
     #[test]
-    fn test_update_contract_v1_description_via_update_contract() {
+    fn test_update_contract_v2_description_via_update_contract() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = frozen_platform_version();
+        let platform_version = PlatformVersion::latest();
 
         let keyword_search =
             load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
@@ -650,5 +704,258 @@ mod tests {
                 None,
             )
             .expect("update description via update_contract should succeed");
+    }
+
+    const DISTRIBUTION_RECIPIENT: [u8; 32] = [7; 32];
+
+    fn block_based_distribution_type() -> RewardDistributionType {
+        RewardDistributionType::BlockBasedDistribution {
+            interval: 10,
+            function: DistributionFunction::FixedAmount { amount: 50 },
+        }
+    }
+
+    /// A token paying `DISTRIBUTION_RECIPIENT` 50 tokens every 10 blocks and,
+    /// once, 445 tokens at time 100.
+    fn token_with_both_distributions() -> TokenConfiguration {
+        let mut configuration = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+        );
+        let recipient = Identifier::from(DISTRIBUTION_RECIPIENT);
+        configuration
+            .distribution_rules_mut()
+            .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                TokenPerpetualDistributionV0 {
+                    distribution_type: block_based_distribution_type(),
+                    distribution_recipient: TokenDistributionRecipient::Identity(recipient),
+                },
+            )));
+        configuration
+            .distribution_rules_mut()
+            .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                TokenPreProgrammedDistributionV0 {
+                    distributions: BTreeMap::from([(100, BTreeMap::from([(recipient, 445)]))]),
+                },
+            )));
+        configuration
+    }
+
+    /// Registers a contract without tokens, then adds
+    /// `token_with_both_distributions` at position 0 through `update_contract`.
+    /// Returns the updated contract and the id of the added token.
+    fn add_token_with_distributions_by_update(
+        drive: &Drive,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, [u8; 32]) {
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract without tokens");
+
+        contract.set_tokens(BTreeMap::from([(0, token_with_both_distributions())]));
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update adding the token should succeed");
+
+        let token_id = contract
+            .token_id(0)
+            .expect("expected the token added at position 0")
+            .to_buffer();
+
+        (contract, token_id)
+    }
+
+    /// Writes what a perpetual claim at block 40 writes.
+    fn record_perpetual_claim(
+        drive: &Drive,
+        token_id: [u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let operations = drive.mark_perpetual_release_as_distributed_operations(
+            token_id,
+            DISTRIBUTION_RECIPIENT,
+            RewardDistributionMoment::BlockBasedMoment(40),
+            &mut None,
+            platform_version,
+        )?;
+        drive.apply_batch_low_level_drive_operations(
+            None,
+            None,
+            operations,
+            &mut vec![],
+            &platform_version.drive,
+        )
+    }
+
+    /// Writes what a claim of the pre-programmed release at time 100 writes.
+    fn record_pre_programmed_claim(
+        drive: &Drive,
+        token_id: [u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let operations = drive.mark_pre_programmed_release_as_distributed_operations(
+            token_id,
+            DISTRIBUTION_RECIPIENT,
+            100,
+            &BlockInfo::default(),
+            &mut None,
+            None,
+            platform_version,
+        )?;
+        drive.apply_batch_low_level_drive_operations(
+            None,
+            None,
+            operations,
+            &mut vec![],
+            &platform_version.drive,
+        )
+    }
+
+    #[test]
+    fn should_create_perpetual_distribution_storage_for_token_added_by_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let (_, token_id) = add_token_with_distributions_by_update(&drive, platform_version);
+
+        record_perpetual_claim(&drive, token_id, platform_version)
+            .expect("a perpetual claim on the added token should be recordable");
+
+        let last_paid_moment = drive
+            .fetch_perpetual_distribution_last_paid_moment(
+                token_id,
+                Identifier::from(DISTRIBUTION_RECIPIENT),
+                &block_based_distribution_type(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the last paid moment");
+        assert_eq!(
+            last_paid_moment,
+            Some(RewardDistributionMoment::BlockBasedMoment(40))
+        );
+    }
+
+    #[test]
+    fn should_create_pre_programmed_distribution_storage_for_token_added_by_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let (_, token_id) = add_token_with_distributions_by_update(&drive, platform_version);
+
+        let distributions = drive
+            .fetch_token_pre_programmed_distributions(token_id, None, None, None, platform_version)
+            .expect("expected to fetch the pre-programmed distributions");
+        assert_eq!(
+            distributions,
+            BTreeMap::from([(
+                100,
+                BTreeMap::from([(Identifier::from(DISTRIBUTION_RECIPIENT), 445)])
+            )])
+        );
+
+        record_pre_programmed_claim(&drive, token_id, platform_version)
+            .expect("a pre-programmed claim on the added token should be recordable");
+
+        let last_paid_time = drive
+            .fetch_pre_programmed_distribution_last_paid_time_ms(
+                token_id,
+                Identifier::from(DISTRIBUTION_RECIPIENT),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the last paid time");
+        assert_eq!(last_paid_time, Some(100));
+    }
+
+    /// The frozen side of the gate, through the same dispatcher: protocol
+    /// version 13 selects v1, which never creates the distribution storage, so
+    /// neither claim can be recorded there.
+    #[test]
+    fn should_leave_token_added_by_update_without_distribution_storage_on_protocol_version_13() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+
+        let (_, token_id) = add_token_with_distributions_by_update(&drive, platform_version);
+
+        record_perpetual_claim(&drive, token_id, platform_version)
+            .expect_err("v1 creates no perpetual distribution tree to record the claim under");
+        record_pre_programmed_claim(&drive, token_id, platform_version)
+            .expect_err("v1 creates no pre-programmed distribution tree to record the claim under");
+    }
+
+    /// The distribution storage helpers error when a token's tree already
+    /// exists, so an update must leave the tokens it did not add alone, whether
+    /// they came from the registration or from an earlier update.
+    #[test]
+    fn should_not_recreate_distribution_storage_of_tokens_the_contract_already_had() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+        contract.set_tokens(BTreeMap::from([(0, token_with_both_distributions())]));
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract with a token");
+
+        // The first update adds a second token next to the registered one, the
+        // second update changes nothing about either of them.
+        let mut tokens = contract.tokens().clone();
+        tokens.insert(1, token_with_both_distributions());
+        contract.set_tokens(tokens);
+
+        for _ in 0..2 {
+            contract.increment_version();
+            drive
+                .update_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("update keeping existing tokens should succeed");
+        }
+
+        for position in [0, 1] {
+            let token_id = contract
+                .token_id(position)
+                .expect("expected both tokens")
+                .to_buffer();
+            record_perpetual_claim(&drive, token_id, platform_version)
+                .expect("a perpetual claim should be recordable on both tokens");
+            record_pre_programmed_claim(&drive, token_id, platform_version)
+                .expect("a pre-programmed claim should be recordable on both tokens");
+        }
     }
 }

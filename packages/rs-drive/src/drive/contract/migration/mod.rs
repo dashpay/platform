@@ -1,2 +1,3 @@
+mod add_missing_token_distribution_storage_to_all_contracts;
 mod add_version_items_to_all_contracts;
 mod strip_unknown_document_schema_properties;

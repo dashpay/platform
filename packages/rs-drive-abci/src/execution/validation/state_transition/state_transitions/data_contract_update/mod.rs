@@ -1543,7 +1543,17 @@ mod tests {
     mod token_tests {
         use super::*;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::UnpaidConsensusError;
+        use crate::platform_types::platform_state::PlatformState;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
+        use dpp::balances::credits::TokenAmount;
+        use dpp::block::epoch::Epoch;
         use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+        use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+        use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+        use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::util::deserializer::ProtocolVersion;
         use dpp::data_contract::associated_token::token_configuration::accessors::v0::{TokenConfigurationV0Getters, TokenConfigurationV0Setters};
         use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
         use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
@@ -2687,6 +2697,346 @@ mod tests {
                 .commit_transaction(transaction)
                 .unwrap()
                 .expect("expected to commit transaction");
+        }
+
+        /// Registers a contract without tokens and adds a token at position 0
+        /// through a data contract update, both under `update_protocol_version`.
+        /// Then has the contract owner claim from that token at block height
+        /// 41 / time 200 under `claim_protocol_version`, running the first-block
+        /// protocol change events in between when the two differ. Returns the
+        /// claim's processing result and the owner's resulting token balance.
+        async fn claim_from_token_added_by_update(
+            update_protocol_version: ProtocolVersion,
+            claim_protocol_version: ProtocolVersion,
+            distribution_type: TokenDistributionType,
+            configure_distribution: impl FnOnce(&mut TokenConfiguration, Identifier),
+        ) -> (StateTransitionsProcessingResult, Option<TokenAmount>) {
+            let platform_version = PlatformVersion::get(update_protocol_version)
+                .expect("expected a known protocol version");
+            // Genesis state: a claim writes a token history document, so the
+            // token history system contract has to be registered.
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(update_protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            let platform_state = platform.state.load();
+
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity.id());
+            // A perpetual distribution pays from the contract's creation moment.
+            data_contract.set_created_at(Some(0));
+            data_contract.set_created_at_block_height(Some(0));
+            data_contract.set_created_at_epoch(Some(0));
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            let mut token_configuration =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            token_configuration.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "credit".to_string(),
+                            plural_form: "credits".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+            configure_distribution(&mut token_configuration, identity.id());
+            updated_data_contract.add_token(0, token_configuration);
+
+            let token_id = updated_data_contract
+                .token_id(0)
+                .expect("expected the token added at position 0");
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract.clone(),
+                    &identity.clone().into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract update transition");
+
+            let update_bytes = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[update_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "the update adding the token must succeed on every protocol version"
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let claim_block_info = BlockInfo {
+                time_ms: 200,
+                height: 41,
+                core_height: 42,
+                epoch: Epoch::new(0).unwrap(),
+            };
+
+            let mut platform_state = PlatformState::clone(&platform_state);
+            if claim_protocol_version != update_protocol_version {
+                let upgraded_platform_version = PlatformVersion::get(claim_protocol_version)
+                    .expect("expected a known protocol version");
+                let transaction = platform.drive.grove.start_transaction();
+                platform
+                    .perform_events_on_first_block_of_protocol_change(
+                        &platform_state,
+                        &claim_block_info,
+                        &transaction,
+                        update_protocol_version,
+                        upgraded_platform_version,
+                    )
+                    .expect("expected the protocol change events to succeed");
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit the upgrade");
+                platform_state.set_current_protocol_version_in_consensus(claim_protocol_version);
+            }
+            let platform_version = PlatformVersion::get(claim_protocol_version)
+                .expect("expected a known protocol version");
+
+            let claim_transition = BatchTransition::new_token_claim_transition(
+                token_id,
+                identity.id(),
+                data_contract.id(),
+                0,
+                distribution_type,
+                None,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create the claim transition");
+
+            let claim_bytes = claim_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[claim_bytes],
+                    &platform_state,
+                    &claim_block_info,
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    identity.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch token balance");
+
+            (processing_result, token_balance)
+        }
+
+        /// Pays the claimant 50 tokens every 10 blocks.
+        fn set_block_based_perpetual_distribution(
+            token_configuration: &mut TokenConfiguration,
+            recipient: Identifier,
+        ) {
+            token_configuration
+                .distribution_rules_mut()
+                .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                    TokenPerpetualDistributionV0 {
+                        distribution_type: RewardDistributionType::BlockBasedDistribution {
+                            interval: 10,
+                            function: DistributionFunction::FixedAmount { amount: 50 },
+                        },
+                        distribution_recipient: TokenDistributionRecipient::Identity(recipient),
+                    },
+                )));
+        }
+
+        /// Pays the claimant 445 tokens at time 100.
+        fn set_pre_programmed_distribution(
+            token_configuration: &mut TokenConfiguration,
+            recipient: Identifier,
+        ) {
+            token_configuration
+                .distribution_rules_mut()
+                .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                    TokenPreProgrammedDistributionV0 {
+                        distributions: BTreeMap::from([(100, BTreeMap::from([(recipient, 445)]))]),
+                    },
+                )));
+        }
+
+        #[tokio::test]
+        async fn should_claim_perpetual_distribution_of_token_added_by_update() {
+            let latest = PlatformVersion::latest().protocol_version;
+            let (processing_result, token_balance) = claim_from_token_added_by_update(
+                latest,
+                latest,
+                TokenDistributionType::Perpetual,
+                set_block_based_perpetual_distribution,
+            )
+            .await;
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            // Four full 10-block cycles have passed at height 41.
+            assert_eq!(token_balance, Some(200));
+        }
+
+        #[tokio::test]
+        async fn should_claim_pre_programmed_distribution_of_token_added_by_update() {
+            let latest = PlatformVersion::latest().protocol_version;
+            let (processing_result, token_balance) = claim_from_token_added_by_update(
+                latest,
+                latest,
+                TokenDistributionType::PreProgrammed,
+                set_pre_programmed_distribution,
+            )
+            .await;
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            assert_eq!(token_balance, Some(445));
+        }
+
+        /// The frozen side of the gate. Protocol version 13 creates no
+        /// distribution storage for a token added by update, so the claim has
+        /// nowhere to record itself and fails as an internal error: never a
+        /// consensus error, never paid for, and stripped from every proposal.
+        #[tokio::test]
+        async fn should_fail_to_claim_distributions_of_token_added_by_update_on_protocol_version_13(
+        ) {
+            for (distribution_type, configure_distribution) in [
+                (
+                    TokenDistributionType::Perpetual,
+                    set_block_based_perpetual_distribution
+                        as fn(&mut TokenConfiguration, Identifier),
+                ),
+                (
+                    TokenDistributionType::PreProgrammed,
+                    set_pre_programmed_distribution,
+                ),
+            ] {
+                let (processing_result, token_balance) = claim_from_token_added_by_update(
+                    13,
+                    13,
+                    distribution_type,
+                    configure_distribution,
+                )
+                .await;
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::InternalError(_)]
+                );
+                assert_eq!(token_balance, None);
+            }
+        }
+
+        /// A token added by update before protocol version 14 gets its
+        /// distribution storage on the first block of version 14, so it is
+        /// claimable from then on.
+        #[tokio::test]
+        async fn should_claim_distributions_of_token_added_by_update_before_the_upgrade() {
+            for (distribution_type, configure_distribution, expected_balance) in [
+                (
+                    TokenDistributionType::Perpetual,
+                    set_block_based_perpetual_distribution
+                        as fn(&mut TokenConfiguration, Identifier),
+                    200,
+                ),
+                (
+                    TokenDistributionType::PreProgrammed,
+                    set_pre_programmed_distribution,
+                    445,
+                ),
+            ] {
+                let (processing_result, token_balance) = claim_from_token_added_by_update(
+                    13,
+                    14,
+                    distribution_type,
+                    configure_distribution,
+                )
+                .await;
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                );
+                assert_eq!(token_balance, Some(expected_balance));
+            }
         }
     }
 
