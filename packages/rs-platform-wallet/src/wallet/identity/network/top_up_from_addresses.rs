@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::signer::Signer;
 use dpp::prelude::Identifier;
 
@@ -97,7 +96,7 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                managed.identity.set_balance(new_balance);
+                managed.set_confirmed_balance(new_balance, proof_height);
                 if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
                     tracing::error!(
                         identity = %identity_id,

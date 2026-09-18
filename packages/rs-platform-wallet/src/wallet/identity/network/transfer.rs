@@ -2,7 +2,6 @@
 
 use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
-use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::BinaryData;
@@ -12,7 +11,7 @@ use dpp::ProtocolError;
 use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::transfer::TransferToIdentity;
+use dash_sdk::platform::transition::transfer::{TransferToIdentity, TransferToIdentityWithHeight};
 
 use crate::error::PlatformWalletError;
 
@@ -96,8 +95,8 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*from_id))?
         };
 
-        let (sender_balance, _receiver_balance) = identity
-            .transfer_credits(
+        let ((sender_balance, _receiver_balance), proof_height) = identity
+            .transfer_credits_with_height(
                 &self.sdk,
                 *to_id,
                 amount,
@@ -128,7 +127,7 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(from_id) {
-                managed.identity.set_balance(sender_balance);
+                managed.set_confirmed_balance(sender_balance, proof_height);
                 if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
                     tracing::error!(
                         identity = %from_id,

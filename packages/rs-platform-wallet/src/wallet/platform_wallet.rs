@@ -35,7 +35,6 @@ use crate::error::PlatformWalletError;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
@@ -1467,18 +1466,19 @@ impl PlatformWallet {
         let _shield_guard = self.shield_guard.lock().await;
 
         let keyset = self.derive_spend_keyset(seed, account).await?;
-        let proven_balance = super::shielded::operations::identity_top_up_from_pool(
-            &self.sdk,
-            coordinator.store(),
-            Some(&self.persister),
-            self.wallet_id,
-            &keyset,
-            account,
-            *identity_id,
-            amount,
-            &prover,
-        )
-        .await?;
+        let (proven_balance, proof_height) =
+            super::shielded::operations::identity_top_up_from_pool_with_height(
+                &self.sdk,
+                coordinator.store(),
+                Some(&self.persister),
+                self.wallet_id,
+                &keyset,
+                account,
+                *identity_id,
+                amount,
+                &prover,
+            )
+            .await?;
 
         // The target may be one of this wallet's identities. Apply the proof-attested
         // balance rather than adding `amount` locally: the fee is carved from the
@@ -1490,7 +1490,7 @@ impl PlatformWallet {
                 .get_wallet_info_mut(&self.wallet_id)
                 .and_then(|info| info.identity_manager.managed_identity_mut(identity_id));
             if let Some(managed) = managed {
-                managed.identity.set_balance(balance);
+                managed.set_confirmed_balance(balance, proof_height);
                 if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
                     tracing::error!(
                         identity = %identity_id,
@@ -2078,7 +2078,7 @@ impl PlatformWallet {
                 })?
                 .clone()
         };
-        let new_balance = super::shielded::operations::shield_from_identity_to(
+        let (new_balance, proof_height) = super::shielded::operations::shield_from_identity_to(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
@@ -2104,7 +2104,7 @@ impl PlatformWallet {
                 .get_wallet_info_mut(&self.wallet_id)
                 .and_then(|info| info.identity_manager.managed_identity_mut(identity_id));
             if let Some(managed) = managed {
-                managed.identity.set_balance(new_balance);
+                managed.set_confirmed_balance(new_balance, proof_height);
                 if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
                     // Broadcast already happened. Returning a transaction error
                     // could prompt a second payment; it cannot undo the debit.
