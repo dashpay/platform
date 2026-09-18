@@ -56,6 +56,32 @@ describe('TokenDistributionRules', () => {
 
       expect(distributionRules).to.be.an.instanceof(wasm.TokenDistributionRules);
       expect(changeRules).to.be.an.instanceof(wasm.ChangeControlRules);
+      expect(distributionRules.oncePerIdentityDistribution).to.be.undefined;
+    });
+
+    it('should create instance with a once-per-identity distribution', () => {
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
+
+      const changeRules = createChangeControlRules(noOne, noOne);
+
+      const oncePerIdentityDistribution = new wasm.TokenOncePerIdentityDistribution(BigInt(1000));
+
+      const distributionRules = new wasm.TokenDistributionRules({
+        perpetualDistribution: undefined,
+        perpetualDistributionRules: changeRules,
+        preProgrammedDistribution: undefined,
+        newTokensDestinationIdentity: undefined,
+        newTokensDestinationIdentityRules: changeRules,
+        mintingAllowChoosingDestination: true,
+        mintingAllowChoosingDestinationRules: changeRules,
+        changeDirectPurchasePricingRules: changeRules,
+        oncePerIdentityDistribution,
+      });
+
+      expect(distributionRules.oncePerIdentityDistribution).to.be.an.instanceof(
+        wasm.TokenOncePerIdentityDistribution,
+      );
+      expect(distributionRules.oncePerIdentityDistribution?.amount).to.equal(BigInt(1000));
     });
 
     it('should create instance without undefined values', () => {

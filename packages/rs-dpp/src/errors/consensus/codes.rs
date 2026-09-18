@@ -261,6 +261,7 @@ impl ErrorWithCode for BasicError {
             Self::ShieldedImplicitFeeCapExceededError(_) => 10826,
             Self::ShieldedInvalidDenominationError(_) => 10827,
             Self::InvalidTokenDistributionEpochIntervalTooShortError(_) => 10828,
+            Self::InvalidTokenOncePerIdentityDistributionAmountError(_) => 10829,
         }
     }
 }
@@ -412,6 +413,7 @@ impl ErrorWithCode for StateError {
             Self::TokenDirectPurchaseUserPriceTooLow(_) => 40719,
             Self::TokenAmountUnderMinimumSaleAmount(_) => 40720,
             Self::TokenNotForDirectSale(_) => 40721,
+            Self::TokenOncePerIdentityDistributionAlreadyClaimedError(_) => 40722,
 
             // Group errors: 40800-40899
             Self::IdentityNotMemberOfGroupError(_) => 40800,

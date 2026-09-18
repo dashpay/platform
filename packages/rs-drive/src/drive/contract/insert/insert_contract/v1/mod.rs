@@ -20,6 +20,7 @@ use crate::util::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::status::TokenStatus;
@@ -287,6 +288,20 @@ impl Drive {
                     contract.owner_id().to_buffer(),
                     pre_programmed_distribution,
                     block_info,
+                    estimated_costs_only_with_layer_info,
+                    &mut batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+
+            if token_config
+                .distribution_rules()
+                .once_per_identity_distribution()
+                .is_some()
+            {
+                self.add_once_per_identity_distribution(
+                    token_id.to_buffer(),
                     estimated_costs_only_with_layer_info,
                     &mut batch_operations,
                     transaction,

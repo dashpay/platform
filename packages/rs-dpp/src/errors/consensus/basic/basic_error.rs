@@ -116,7 +116,8 @@ use crate::consensus::basic::token::{
     InvalidTokenDistributionEpochIntervalTooShortError,
     InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
     InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenIdError,
-    InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError,
+    InvalidTokenNoteTooBigError, InvalidTokenOncePerIdentityDistributionAmountError,
+    InvalidTokenPositionError, MissingDefaultLocalizationError,
     TokenNoteOnlyAllowedWhenProposerError, TokenPricingScheduleEmptyError,
     TokenTransferToOurselfError,
 };
@@ -620,6 +621,11 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidTokenDistributionEpochIntervalTooShortError(
         InvalidTokenDistributionEpochIntervalTooShortError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenOncePerIdentityDistributionAmountError(
+        InvalidTokenOncePerIdentityDistributionAmountError,
     ),
     #[error(transparent)]
     RedundantDocumentPaidForByTokenWithContractId(RedundantDocumentPaidForByTokenWithContractId),

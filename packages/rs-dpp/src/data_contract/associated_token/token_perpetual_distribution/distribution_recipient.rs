@@ -177,6 +177,11 @@ impl TokenDistributionRecipient {
                     ))
                 }
             },
+            // A once-per-identity distribution has no configured recipient: the claimant is
+            // whoever submits the claim.
+            TokenDistributionType::OncePerIdentity => Ok(
+                TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(owner_id),
+            ),
         }
     }
 }

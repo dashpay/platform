@@ -53,7 +53,8 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
                     | TokenDistributionInfo::Perpetual(
                         _,
                         TokenDistributionResolvedRecipient::Evonode(identity),
-                    ) => {
+                    )
+                    | TokenDistributionInfo::OncePerIdentity(_, identity) => {
                         ops.push(TokenOperation(TokenOperationType::TokenMint {
                             token_id: self.token_id(),
                             identity_balance_holder_id: *identity,
@@ -80,6 +81,15 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
                                 token_id: self.token_id(),
                                 recipient_id: owner_id,
                                 cycle_start_moment: *claim_moment,
+                            },
+                        ));
+                    }
+                    TokenDistributionInfo::OncePerIdentity(claimed_at_ms, _) => {
+                        ops.push(TokenOperation(
+                            TokenOperationType::TokenMarkOncePerIdentityReleaseAsDistributed {
+                                token_id: self.token_id(),
+                                recipient_id: owner_id,
+                                claimed_at_ms: *claimed_at_ms,
                             },
                         ));
                     }

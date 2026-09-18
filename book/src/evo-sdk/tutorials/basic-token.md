@@ -100,6 +100,44 @@ const tokenConfig = new TokenConfiguration({
 });
 ```
 
+### Optional: let every identity claim a fixed amount once
+
+A once-per-identity distribution turns the token into an open airdrop: any identity can
+claim the configured amount exactly once, and the total paid out is bounded only by
+`maxSupply`. The distribution is fixed at registration; there is no change control rule
+for it, and no configuration update changes it. Setting it makes the distribution rules
+serialize as format version 1, which needs protocol version 14.
+
+```typescript
+import { TokenOncePerIdentityDistribution } from '@dashevo/evo-sdk';
+
+distributionRules: new TokenDistributionRules({
+  perpetualDistributionRules: noOne,
+  newTokensDestinationIdentityRules: noOne,
+  mintingAllowChoosingDestination: true,
+  mintingAllowChoosingDestinationRules: noOne,
+  changeDirectPurchasePricingRules: noOne,
+  oncePerIdentityDistribution: new TokenOncePerIdentityDistribution(100_00n), // 100.00 tokens
+}),
+```
+
+Any identity then claims with a token claim of distribution type `oncePerIdentity`:
+
+```typescript
+await sdk.tokens.claim({
+  dataContractId: contract.id,
+  tokenPosition: 0,
+  identityId: claimantId,
+  distributionType: 'oncePerIdentity',
+  identityKey,
+  signer,
+});
+```
+
+A second claim by the same identity is rejected with `TokenOncePerIdentityDistributionAlreadyClaimedError`
+(code 40722), and a claim that would push the supply past `maxSupply` is rejected with
+`TokenMintPastMaxSupplyError`.
+
 ## Step 2: Publish the contract
 
 ```typescript

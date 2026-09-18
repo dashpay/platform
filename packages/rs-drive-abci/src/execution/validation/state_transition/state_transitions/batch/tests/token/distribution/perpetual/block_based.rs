@@ -2598,7 +2598,6 @@ mod test_suite {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
-    use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
     use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Setters;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
@@ -3178,7 +3177,7 @@ mod test_suite {
     ) -> Result<(), String> {
         let TokenConfiguration::V0(token_config) = token_configuration;
 
-        let TokenDistributionRules::V0(dist_rules) = token_config.distribution_rules();
+        let dist_rules = token_config.distribution_rules();
 
         let TokenPerpetualDistribution::V0(perpetual_distribution) = dist_rules
             .perpetual_distribution()
