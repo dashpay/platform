@@ -1,5 +1,7 @@
 use crate::drive::document::paths::contract_document_type_path_vec;
-use crate::query::primary_key_path_query_uses_current_document;
+use crate::query::primary_key_path_query::{
+    primary_key_path_query_target, PrimaryKeyPathQueryTarget,
+};
 use crate::util::common::encode::encode_u64;
 
 use crate::drive::votes;
@@ -66,7 +68,8 @@ impl SingleDocumentDriveQuery {
     ) -> Result<PathQuery, Error> {
         if self.document_type_keeps_history
             && self.block_time_ms.is_some()
-            && primary_key_path_query_uses_current_document(platform_version)?
+            && primary_key_path_query_target(platform_version)?
+                == PrimaryKeyPathQueryTarget::CurrentDocument
         {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "point-in-time reads are unavailable for history-keeping document types"
@@ -99,7 +102,8 @@ impl SingleDocumentDriveQuery {
         with_limit_1: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let uses_current_document = primary_key_path_query_uses_current_document(platform_version)?;
+        let uses_current_document = primary_key_path_query_target(platform_version)?
+            == PrimaryKeyPathQueryTarget::CurrentDocument;
         // First we should get the overall document_type_path
         let mut path =
             contract_document_type_path_vec(&self.contract_id, self.document_type_name.as_str());
@@ -173,7 +177,7 @@ mod tests {
     fn should_select_keep_history_primary_path_by_query_version() {
         let query = keep_history_query(None);
         let legacy = query
-            .construct_path_query(PlatformVersion::get(13).expect("protocol 13"))
+            .construct_path_query(PlatformVersion::get(14).expect("protocol 14"))
             .expect("legacy query");
         assert_eq!(
             legacy.query.query.default_subquery_branch.subquery_path,
@@ -181,15 +185,15 @@ mod tests {
         );
 
         let current = query
-            .construct_path_query(PlatformVersion::get(14).expect("protocol 14"))
-            .expect("protocol 14 query");
+            .construct_path_query(PlatformVersion::get(15).expect("protocol 15"))
+            .expect("protocol 15 query");
         assert_eq!(
             current.query.query.default_subquery_branch.subquery_path,
             None
         );
 
         let legacy_point_in_time = keep_history_query(Some(1000))
-            .construct_path_query(PlatformVersion::get(13).expect("protocol 13"))
+            .construct_path_query(PlatformVersion::get(14).expect("protocol 14"))
             .expect("legacy point-in-time query");
         assert!(legacy_point_in_time
             .query
@@ -199,7 +203,7 @@ mod tests {
             .is_some());
         assert!(matches!(
             keep_history_query(Some(1000))
-                .construct_path_query(PlatformVersion::get(14).expect("protocol 14")),
+                .construct_path_query(PlatformVersion::get(15).expect("protocol 15")),
             Err(Error::Query(QuerySyntaxError::Unsupported(message)))
                 if message == "point-in-time reads are unavailable for history-keeping document types"
         ));

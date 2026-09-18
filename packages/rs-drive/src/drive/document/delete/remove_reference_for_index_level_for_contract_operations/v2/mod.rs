@@ -2,7 +2,7 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
+use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
 
 use dpp::data_contract::document_type::IndexLevelTypeInfo;
@@ -11,7 +11,7 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
-use crate::drive::document::document_reference_size;
+use crate::drive::document::document_reference_estimated_layer_sizes_v1;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::error::drive::DriveError;
 use crate::util::storage_flags::StorageFlags;
@@ -29,6 +29,11 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Removes the terminal reference.
     ///
+    /// v2 (protocol version 15) is v1 with the reference shape written by
+    /// the protocol 15 document writers: estimated costs describe a
+    /// reference to the primary-key entry, with a sum item on summable
+    /// indexes. The pruning behaviour below is unchanged from v1.
+    ///
     /// v1 (protocol version 14) differs from v0 in exactly one place: on a
     /// `preallocated` indexOnly index, the empty-tree pruning climb stops at
     /// the member level, keeping the preallocated apparatus the referenced
@@ -37,7 +42,7 @@ impl Drive {
     /// drained groups exactly as v0 does.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn remove_reference_for_index_level_for_contract_operations_v1(
+    pub(super) fn remove_reference_for_index_level_for_contract_operations_v2(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
@@ -243,7 +248,7 @@ impl Drive {
 
             // Delete-side sum-decrement is implicit: under a summable
             // index, the existing reference at `[..., 0, doc_id]` is an
-            // `Element::ItemWithSumItem(doc_id, amount_i64, flags)`
+            // `Element::ReferenceWithSumItem(path, max_hops, amount_i64, flags)`
             // (written by the insert path). The contribution is
             // recovered from the reference element itself — Drive
             // never re-reads the source document at delete time
@@ -271,10 +276,10 @@ impl Drive {
             }
 
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
-                AllReference(
+                document_reference_estimated_layer_sizes_v1(
                     DEFAULT_HASH_SIZE_U8,
-                    document_reference_size(document_type),
                     storage_flags.map(|s| s.serialized_size()),
+                    index_type.summable.is_some(),
                 ),
                 &key_info_path,
                 // we know we are not deleting a tree
@@ -300,10 +305,10 @@ impl Drive {
             )?;
         } else {
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
-                AllReference(
+                document_reference_estimated_layer_sizes_v1(
                     1,
-                    document_reference_size(document_type),
                     storage_flags.map(|s| s.serialized_size()),
+                    index_type.summable.is_some(),
                 ),
                 &key_info_path,
                 // we know we are not deleting a tree

@@ -23,9 +23,9 @@ impl<C> Platform<C> {
         )?;
         // Any migration error deliberately halts this activation block for every
         // validator; the shared transaction prevents a partial migration from
-        // committing. Its corruption checks are unreachable for valid pre-14
+        // committing. Its corruption checks are unreachable for valid pre-15
         // state and must never be downgraded to best-effort recovery.
-        if previous_protocol_version < 14 && platform_version.protocol_version >= 14 {
+        if previous_protocol_version < 15 && platform_version.protocol_version >= 15 {
             let stats = self
                 .drive
                 .migrate_document_history_storage(transaction, platform_version)?;
@@ -41,10 +41,10 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
 
     #[test]
-    fn should_not_migrate_history_before_protocol_14() {
-        let platform_version = PlatformVersion::get(13).expect("protocol version 13 should exist");
+    fn should_not_migrate_history_before_protocol_15() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14 should exist");
         let platform = TestPlatformBuilder::new()
-            .with_initial_protocol_version(13)
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
         let transaction = platform.drive.grove.start_transaction();
@@ -55,9 +55,9 @@ mod tests {
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
-                13,
+                14,
                 platform_version,
             )
-            .expect("a protocol 13 transition must not run the protocol 14 migration");
+            .expect("a protocol 14 transition must not run the protocol 15 migration");
     }
 }

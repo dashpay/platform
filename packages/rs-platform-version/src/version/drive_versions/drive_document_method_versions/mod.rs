@@ -4,6 +4,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
@@ -34,7 +35,7 @@ pub struct DriveDocumentQueryMethodVersions {
     pub fetch_document_history: FeatureVersion,
     pub prove_document_history: FeatureVersion,
     /// Construction of document queries that address the primary-key tree.
-    /// Version 1 selects the protocol-14 keep-history layout, where the
+    /// Version 1 selects the protocol-15 keep-history layout, where the
     /// primary-key entry is the current document rather than a history tree.
     pub primary_key_path_query: FeatureVersion,
     /// Mode-detection routing table for `SELECT COUNT` queries.

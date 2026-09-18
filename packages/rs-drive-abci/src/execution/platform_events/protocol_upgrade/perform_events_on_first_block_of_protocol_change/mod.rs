@@ -41,6 +41,8 @@ impl<C> Platform<C> {
     ///   which contains the logic for version `0`.
     /// - If the version is `1`, it calls `perform_events_on_first_block_of_protocol_change_v1`, which runs
     ///   the same transitions and then refreshes the cached definitions of the contracts they rewrote.
+    /// - If the version is `2`, it calls `perform_events_on_first_block_of_protocol_change_v2`, which runs
+    ///   version `1` and then migrates retained document histories when crossing into protocol 15.
     /// - If no version is specified (`None`), the function does nothing and returns `Ok(())`.
     /// - If a different version is specified, it returns an error indicating an unknown version mismatch.
     ///

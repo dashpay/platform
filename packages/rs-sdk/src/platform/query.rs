@@ -1459,7 +1459,7 @@ mod history_query_tests {
             DocumentHistory, DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
         };
         let mut sdk = crate::SdkBuilder::default()
-            .with_version(PlatformVersion::get(14).unwrap())
+            .with_version(PlatformVersion::get(15).unwrap())
             .build()
             .unwrap();
         let query = DocumentHistoryQuery {
@@ -1499,7 +1499,7 @@ mod history_query_tests {
         let request_settings = Default::default();
         let settings = QuerySettings {
             request_settings: &request_settings,
-            protocol_version: PlatformVersion::get(14).unwrap(),
+            protocol_version: PlatformVersion::get(15).unwrap(),
             prove: true,
         };
         for limit in [u16::MAX as u32 + 1, u32::MAX] {
@@ -1522,7 +1522,7 @@ mod history_query_tests {
         let request_settings = Default::default();
         let settings = QuerySettings {
             request_settings: &request_settings,
-            protocol_version: PlatformVersion::get(14).unwrap(),
+            protocol_version: PlatformVersion::get(15).unwrap(),
             prove: false,
         };
         let query = DocumentHistoryQuery {
@@ -1543,7 +1543,7 @@ mod history_query_tests {
         let request_settings = Default::default();
         let settings = QuerySettings {
             request_settings: &request_settings,
-            protocol_version: PlatformVersion::get(14).unwrap(),
+            protocol_version: PlatformVersion::get(15).unwrap(),
             prove: true,
         };
         let mut query = DocumentHistoryQuery {
@@ -1563,7 +1563,7 @@ mod history_query_tests {
         };
         let Some(proto::get_document_history_request::get_document_history_request_v0::Filter::StartAfter(cursor)) = request.filter else { panic!("expected composite cursor"); };
         assert_eq!((cursor.time_ms, cursor.revision), (1000, 22));
-        for protocol in [12, 13] {
+        for protocol in [12, 13, 14] {
             assert!(query
                 .query(&QuerySettings {
                     protocol_version: PlatformVersion::get(protocol).unwrap(),

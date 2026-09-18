@@ -152,32 +152,15 @@ use crate::util::common::encode::encode_u64;
 #[cfg(feature = "server")]
 use crate::util::grove_operations::QueryType::StatefulQuery;
 
-#[cfg(any(feature = "server", feature = "verify"))]
-pub(in crate::query) fn primary_key_path_query_uses_current_document(
-    platform_version: &PlatformVersion,
-) -> Result<bool, Error> {
-    match platform_version
-        .drive
-        .methods
-        .document
-        .query
-        .primary_key_path_query
-    {
-        0 => Ok(false),
-        1 => Ok(true),
-        received => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-            method: "primary_key_path_query".to_string(),
-            known_versions: vec![0, 1],
-            received,
-        })),
-    }
-}
-
 // Module declarations that are conditional on either "server" or "verify" features
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod canonicalize;
 #[cfg(any(feature = "server", feature = "verify"))]
+mod primary_key_path_query;
+#[cfg(any(feature = "server", feature = "verify"))]
 pub use canonicalize::validate_and_canonicalize_where_clauses;
+#[cfg(any(feature = "server", feature = "verify"))]
+use primary_key_path_query::{primary_key_path_query_target, PrimaryKeyPathQueryTarget};
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod conditions;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -1904,7 +1887,7 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
-    /// The cursor lookup for the protocol 14 layout, where a keep-history
+    /// The cursor lookup for the protocol 15 layout, where a keep-history
     /// document's primary key tree entry points at its current revision: the
     /// cursor is always the document id in the primary key tree.
     pub fn start_at_document_path_and_key_v1(
@@ -1981,7 +1964,8 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<PathQuery, Error> {
         if self.document_type.documents_keep_history()
             && self.block_time_ms.is_some()
-            && primary_key_path_query_uses_current_document(platform_version)?
+            && primary_key_path_query_target(platform_version)?
+                == PrimaryKeyPathQueryTarget::CurrentDocument
         {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "point-in-time reads are unavailable for history-keeping document types"
@@ -2043,7 +2027,9 @@ impl<'a> DriveDocumentQuery<'a> {
                 // from the backing store
 
                 let (start_at_document_path, start_at_document_key) =
-                    if primary_key_path_query_uses_current_document(platform_version)? {
+                    if primary_key_path_query_target(platform_version)?
+                        == PrimaryKeyPathQueryTarget::CurrentDocument
+                    {
                         self.start_at_document_path_and_key_v1(starts_at)
                     } else {
                         self.start_at_document_path_and_key(starts_at)
@@ -2211,7 +2197,8 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<PathQuery, Error> {
         if self.document_type.documents_keep_history()
             && self.block_time_ms.is_some()
-            && primary_key_path_query_uses_current_document(platform_version)?
+            && primary_key_path_query_target(platform_version)?
+                == PrimaryKeyPathQueryTarget::CurrentDocument
         {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "point-in-time reads are unavailable for history-keeping document types"
@@ -2431,7 +2418,8 @@ impl<'a> DriveDocumentQuery<'a> {
         starts_at_document: Option<(Document, bool)>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let uses_current_document = primary_key_path_query_uses_current_document(platform_version)?;
+        let uses_current_document = primary_key_path_query_target(platform_version)?
+            == PrimaryKeyPathQueryTarget::CurrentDocument;
         let mut path = document_type_path;
 
         // Add primary key ($id) subtree
@@ -3333,7 +3321,7 @@ mod tests {
         let contract = keep_history_contract();
         let query = keep_history_primary_query(&contract);
         let legacy = query
-            .construct_path_query(None, PlatformVersion::get(13).expect("protocol 13"))
+            .construct_path_query(None, PlatformVersion::get(14).expect("protocol 14"))
             .expect("legacy query");
         assert_eq!(
             legacy.query.query.default_subquery_branch.subquery_path,
@@ -3341,8 +3329,8 @@ mod tests {
         );
 
         let current = query
-            .construct_path_query(None, PlatformVersion::get(14).expect("protocol 14"))
-            .expect("protocol 14 query");
+            .construct_path_query(None, PlatformVersion::get(15).expect("protocol 15"))
+            .expect("protocol 15 query");
         assert_eq!(
             current.query.query.default_subquery_branch.subquery_path,
             None

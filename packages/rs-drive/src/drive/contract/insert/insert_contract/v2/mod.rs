@@ -1,4 +1,4 @@
-// Protocol 14 generation: keep-history document types get their per-type
+// Protocol 15 generation: keep-history document types get their per-type
 // history tree at contract insertion; everything else matches v1.
 use crate::drive::votes::paths::{
     CONTESTED_DOCUMENT_INDEXES_TREE_KEY, CONTESTED_DOCUMENT_STORAGE_TREE_KEY,
@@ -928,18 +928,18 @@ mod tests {
         );
     }
 
-    /// The per-type history tree is a protocol 14 fact: the same keep-history
-    /// contract inserted through the dispatcher gets the tree at 14 and does
-    /// not at 13, where the shipped generation still runs.
+    /// The per-type history tree is a protocol 15 fact: the same keep-history
+    /// contract inserted through the dispatcher gets the tree at 15 and does
+    /// not at 14, where the shipped generation still runs.
     #[test]
-    fn should_create_the_history_tree_only_from_protocol_14() {
+    fn should_create_the_history_tree_only_from_protocol_15() {
         use crate::drive::document::paths::{
             contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY,
         };
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::tests::json_document::json_document_to_contract;
 
-        for (protocol, expected) in [(13, false), (14, true)] {
+        for (protocol, expected) in [(14, false), (15, true)] {
             let version = PlatformVersion::get(protocol).expect("protocol version");
             let drive = setup_drive_with_initial_state_structure(Some(version));
             let contract = json_document_to_contract(

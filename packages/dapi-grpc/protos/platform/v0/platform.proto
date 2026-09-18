@@ -1810,7 +1810,8 @@ message GetDocumentsResponse {
 
 message GetDocumentHistoryRequest {
   // Reads the retained revisions of a historical document (a type with
-  // documentsKeepHistory). Served from protocol version 14 on.
+  // documentsKeepHistory). This 4.3 V0 shape intentionally replaces the
+  // earlier SDK surface.
   message GetDocumentHistoryRequestV0 {
     // Exclusive cursor returned with a page. Several revisions can share a
     // block time, so resuming needs the revision as well as the time.
@@ -1831,8 +1832,8 @@ message GetDocumentHistoryRequest {
     }
   }
   // This shape replaces the timestamp-keyed request that earlier releases
-  // served under the same version: no released network stores such history,
-  // and the protocol 14 storage migration leaves nothing for it to read.
+  // served under the same version. Compatibility with those SDKs is not
+  // retained by the 4.3 API.
   oneof version {
     GetDocumentHistoryRequestV0 v0 = 1;
   }

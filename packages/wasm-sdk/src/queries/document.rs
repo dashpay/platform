@@ -1401,7 +1401,7 @@ mod tests {
         };
 
         let result = DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note")
-            .expect("protocol 13 history has no lifecycle metadata");
+            .expect("the legacy history layout has no lifecycle metadata");
 
         assert!(result.lifecycle.is_none());
     }

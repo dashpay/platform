@@ -81,7 +81,7 @@ mod tests {
             1_000,
             Some(3),
             Some(2),
-            PlatformVersion::get(14).expect("protocol 14"),
+            PlatformVersion::get(15).expect("protocol 15"),
         )
         .expect("the legacy-shaped query is supported by the new layout");
 

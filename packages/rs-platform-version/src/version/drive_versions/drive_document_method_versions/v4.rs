@@ -5,7 +5,7 @@ use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
 };
 
-/// V4 is protocol version 14's document-method table. It hosts five
+/// V4 is protocol version 14's document-method table. It hosts four
 /// independent changes that all gate at v14 (ranked aggregates, the
 /// shared-prefix aggregate index fix, the reworked non-primary-key
 /// query lowering via `query.non_primary_key_path_query: 1` — multiple
@@ -13,9 +13,6 @@ use crate::version::drive_versions::drive_document_method_versions::{
 /// multi-branch levels, and order-by-aware left-over directions; v13
 /// and earlier keep the v0 lowering, which rejects more than one `In`
 /// clause and bakes the cursor's start keys into every sibling branch —
-/// the keep-history primary-key reader via
-/// `query.primary_key_path_query: 1`, paired with the v1 writer so the
-/// current document is addressed directly in the primary-key tree —
 /// and `insert_contested.add_contested_vote_subtree_for_non_identities_operations: 1`,
 /// which lets a resource be contested again over the storage of an
 /// abstain or lock vote tree an earlier poll's cleanup left orphaned: the
@@ -81,10 +78,10 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             query_contested_documents: 0,
             query_contested_documents_vote_state: 0,
             query_documents_with_flags: 0,
-            fetch_document_history_query: 1,
-            fetch_document_history: 1,
-            prove_document_history: 1,
-            primary_key_path_query: 1,
+            fetch_document_history_query: 0,
+            fetch_document_history: 0,
+            prove_document_history: 0,
+            primary_key_path_query: 0,
             detect_count_mode: 0,
             detect_sum_mode: 0,
             detect_ranked_mode: 0,
@@ -123,10 +120,10 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             // together: the delete-side no-prune rule is what makes the
             // preallocated trees permanent structure.
             add_document_for_contract_operations: 1,
-            add_document_to_primary_storage: 1,
+            add_document_to_primary_storage: 0,
             add_indices_for_index_level_for_contract_operations: 2,
             add_indices_for_top_index_level_for_contract_operations: 2,
-            add_reference_for_index_level_for_contract_operations: 1, // index references for keep-history types point at the primary key tree entry
+            add_reference_for_index_level_for_contract_operations: 0,
         },
         insert_contested: DriveDocumentInsertContestedMethodVersions {
             add_contested_document: 0,
@@ -153,7 +150,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             update_serialized_document_for_contract: 0,
         },
         estimation_costs: DriveDocumentEstimationCostsMethodVersions {
-            add_estimation_costs_for_add_document_to_primary_storage: 1,
+            add_estimation_costs_for_add_document_to_primary_storage: 0,
             add_estimation_costs_for_add_contested_document_to_primary_storage: 0,
             stateless_delete_of_non_tree_for_costs: 0,
         },

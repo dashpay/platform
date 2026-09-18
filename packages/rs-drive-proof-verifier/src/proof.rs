@@ -1454,7 +1454,7 @@ fn verify_document_history_response_v0(
             error: error.to_string(),
         })?;
     // The proof arrives in the layout the protocol version stores: one GroveDB
-    // proof before protocol version 14, and from then on one proof object
+    // proof before protocol version 15, and from then on one proof object
     // carrying two. Drive checks the envelope floor on each GroveDB proof, so
     // only the signature over the authenticated root is checked here.
     let (root, history) = Drive::verify_document_history(

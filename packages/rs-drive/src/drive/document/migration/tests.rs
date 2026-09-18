@@ -12,8 +12,8 @@ fn migrate_summable_history(revision_count: u64) -> DocumentHistoryMigrationStat
     use dpp::platform_value::platform_value;
     use std::borrow::Cow;
 
-    let old = PlatformVersion::get(13).unwrap();
-    let new = PlatformVersion::get(14).unwrap();
+    let old = PlatformVersion::get(14).unwrap();
+    let new = PlatformVersion::get(15).unwrap();
     let schema = platform_value!({
         "type": "object", "documentsKeepHistory": true, "canBeDeleted": false,
         "documentsCountable": true, "documentsSummable": "amount",
@@ -21,7 +21,7 @@ fn migrate_summable_history(revision_count: u64) -> DocumentHistoryMigrationStat
         "required": ["amount"], "additionalProperties": false,
         "indices": [{"name": "amount", "properties": [{"amount": "asc"}]}]
     });
-    let contract = DataContractFactory::new(13)
+    let contract = DataContractFactory::new(14)
         .unwrap()
         .create_with_value_config(
             [7; 32].into(),
@@ -54,7 +54,7 @@ fn migrate_summable_history(revision_count: u64) -> DocumentHistoryMigrationStat
         )
         .unwrap();
     let document_type = contract.document_type_for_name("tip").unwrap();
-    let mut document = DocumentFactory::new(13)
+    let mut document = DocumentFactory::new(14)
         .unwrap()
         .create_document(
             &contract,
@@ -241,8 +241,8 @@ fn should_measure_history_depth_instead_of_only_document_count() {
 #[test]
 fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions() {
     let drive = setup_drive_with_initial_state_structure(None);
-    let old = PlatformVersion::get(13).unwrap();
-    let new = PlatformVersion::get(14).unwrap();
+    let old = PlatformVersion::get(14).unwrap();
+    let new = PlatformVersion::get(15).unwrap();
     let contract = json_document_to_contract(
         "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
         false,
@@ -512,8 +512,8 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
 
 #[test]
 fn should_reject_unrecognised_type_children_during_migration_inventory() {
-    let old = PlatformVersion::get(13).unwrap();
-    let new = PlatformVersion::get(14).unwrap();
+    let old = PlatformVersion::get(14).unwrap();
+    let new = PlatformVersion::get(15).unwrap();
     for (key, element) in [
         (vec![0, 9], Element::empty_tree()),
         (b"unknown".to_vec(), Element::empty_tree()),
@@ -554,8 +554,8 @@ fn should_reject_unrecognised_type_children_during_migration_inventory() {
 
 #[test]
 fn should_halt_migration_when_an_inventoried_index_reference_was_not_rewritten() {
-    let old = PlatformVersion::get(13).unwrap();
-    let new = PlatformVersion::get(14).unwrap();
+    let old = PlatformVersion::get(14).unwrap();
+    let new = PlatformVersion::get(15).unwrap();
     let drive = setup_drive_with_initial_state_structure(Some(old));
     let contract = json_document_to_contract(
         "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",

@@ -1,4 +1,4 @@
-//! Cost estimation for the protocol 14 keep-history layout.
+//! Cost estimation for the protocol 15 keep-history layout.
 //!
 //! What changed from v0: a keep-history document no longer occupies a subtree
 //! of the primary key tree with one item per revision. The primary key tree

@@ -73,7 +73,7 @@ mod legacy_tests {
 
     fn setup_history_document() -> (Drive, dpp::prelude::DataContract, dpp::document::Document) {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
             false,
@@ -111,7 +111,7 @@ mod legacy_tests {
         document: &dpp::document::Document,
         time_ms: u64,
     ) {
-        let platform_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
         let document_type = contract
             .document_type_for_name(DOCUMENT_TYPE_NAME)
             .expect("profile document type");
@@ -160,7 +160,7 @@ mod legacy_tests {
     #[test]
     fn should_fetch_document_history_in_time_order_with_pagination() {
         let (drive, contract, mut document) = setup_history_document();
-        let platform_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
         let document_type = contract
             .document_type_for_name(DOCUMENT_TYPE_NAME)
             .expect("profile document type");
@@ -180,7 +180,7 @@ mod legacy_tests {
             )
             .expect("fetch history");
         assert_eq!(times(&history), vec![1000, 2000, 3000]);
-        // The layout before protocol 14 keeps no lifecycle record.
+        // The layout before protocol 15 keeps no lifecycle record.
         assert_eq!(history.lifecycle, None);
 
         let page = drive
@@ -207,7 +207,7 @@ mod legacy_tests {
     #[test]
     fn should_prove_and_verify_document_history() {
         let (drive, contract, mut document) = setup_history_document();
-        let platform_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
         let document_type = contract
             .document_type_for_name(DOCUMENT_TYPE_NAME)
             .expect("profile document type");
@@ -240,10 +240,10 @@ mod legacy_tests {
         assert!(empty_history.entries.is_empty());
     }
 
-    /// The layout before protocol 14 is keyed by block time only, so a
+    /// The layout before protocol 15 is keyed by block time only, so a
     /// revision filter cannot be served from it.
     #[test]
-    fn should_refuse_revision_filters_before_protocol_14() {
+    fn should_refuse_revision_filters_before_protocol_15() {
         let (drive, contract, document) = setup_history_document();
         let document_type = contract
             .document_type_for_name(DOCUMENT_TYPE_NAME)
@@ -255,12 +255,12 @@ mod legacy_tests {
                 &query,
                 document_type,
                 None,
-                PlatformVersion::get(13).expect("protocol 13"),
+                PlatformVersion::get(14).expect("protocol 14"),
             )
-            .expect_err("revision filters need the protocol 14 layout");
+            .expect_err("revision filters need the protocol 15 layout");
         assert!(error
             .to_string()
-            .contains("need the protocol version 14 history layout"));
+            .contains("need the protocol version 15 history layout"));
     }
 }
 

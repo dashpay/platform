@@ -268,7 +268,7 @@ fn test_proved_primary_key_cursor_pages_over_history_in_both_directions() {
     use dpp::prelude::Identifier;
     use drive::query::DriveDocumentQuery;
 
-    for protocol in [13, 14] {
+    for protocol in [14, 15] {
         let platform_version = PlatformVersion::get(protocol).expect("known protocol version");
         let (drive, contract) = setup(10, None, 73509, platform_version);
         let person_document_type = contract
@@ -1752,8 +1752,8 @@ fn test_query_historical_first_platform_version() {
 
 #[cfg(feature = "server")]
 #[test]
-fn test_query_historical_protocol_13() {
-    let platform_version = PlatformVersion::get(13).unwrap();
+fn test_query_historical_protocol_14() {
+    let platform_version = PlatformVersion::get(14).unwrap();
     let (drive, contract) = setup(10, None, 73509, platform_version);
 
     let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
@@ -1771,8 +1771,8 @@ fn test_query_historical_protocol_13() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            161, 240, 182, 38, 13, 26, 246, 165, 76, 67, 252, 39, 203, 128, 225, 233, 70, 76, 30,
-            228, 64, 40, 59, 240, 240, 135, 215, 135, 146, 2, 128, 65,
+            54, 181, 217, 82, 201, 205, 230, 125, 186, 252, 4, 136, 247, 204, 234, 159, 14, 239,
+            59, 72, 69, 192, 182, 54, 122, 100, 192, 158, 183, 88, 31, 255,
         ]
     );
 
@@ -3149,22 +3149,22 @@ fn test_query_historical_protocol_13() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            82, 200, 76, 76, 113, 4, 94, 39, 105, 206, 63, 185, 209, 222, 13, 161, 194, 209, 156,
-            251, 133, 192, 38, 65, 93, 196, 214, 198, 52, 196, 37, 208,
+            74, 167, 180, 31, 0, 73, 101, 156, 93, 253, 230, 154, 157, 52, 205, 74, 148, 69, 143,
+            223, 85, 165, 216, 188, 121, 29, 94, 15, 126, 126, 39, 199,
         ]
     );
 }
 
 #[cfg(feature = "server")]
 #[test]
-fn test_query_historical_protocol_14_uses_composite_history() {
+fn test_query_historical_protocol_15_uses_composite_history() {
     use drive::drive::RootTree;
     use drive::grovedb::Element;
     use drive::query::document_history_drive_query::{
         DocumentHistoryDriveQuery, DocumentHistoryFilter,
     };
 
-    let version = PlatformVersion::get(14).unwrap();
+    let version = PlatformVersion::get(15).unwrap();
     let (drive, contract) = setup(10, None, 73509, version);
     let document_type = contract.document_type_for_name("person").unwrap();
     let root = drive
@@ -3188,7 +3188,7 @@ fn test_query_historical_protocol_14_uses_composite_history() {
             &query_cbor,
             None,
             None,
-            Some(14),
+            Some(15),
         )
         .unwrap();
     assert_eq!(documents.len(), 10);
@@ -3269,7 +3269,7 @@ fn test_query_historical_protocol_14_uses_composite_history() {
         &query_cbor,
         None,
         None,
-        Some(14),
+        Some(15),
     );
     assert!(
         matches!(result, Err(Error::Query(QuerySyntaxError::Unsupported(message)))

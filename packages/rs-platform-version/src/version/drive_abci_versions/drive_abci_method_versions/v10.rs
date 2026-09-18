@@ -19,7 +19,6 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
 /// expired entries of the credit inflows sum tree the net daily withdrawal limit reads, and
 /// bumps `rebroadcast_expired_withdrawal_documents` to 2 so an expired withdrawal whose
 /// payout is below Core's dust threshold is marked FAILED instead of re-signed forever.
-/// The protocol-change hook also migrates retained document histories after refreshing contracts.
 /// Everything else matches `DRIVE_ABCI_METHOD_VERSIONS_V9`.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
@@ -57,7 +56,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
     protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
         check_for_desired_protocol_upgrade: 1,
         upgrade_protocol_version_on_epoch_change: 0,
-        perform_events_on_first_block_of_protocol_change: Some(2),
+        perform_events_on_first_block_of_protocol_change: Some(1),
         protocol_version_upgrade_percentage_needed: 67,
     },
     block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {

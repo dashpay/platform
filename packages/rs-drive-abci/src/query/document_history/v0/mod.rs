@@ -98,7 +98,7 @@ impl<C> Platform<C> {
                 Err(error) => return Err(error.into()),
             };
             // The proof travels in the layout the protocol version stores,
-            // signed once; from protocol version 14 that is one proof object
+            // signed once; from protocol version 15 that is one proof object
             // carrying both GroveDB proofs.
             let proof = self
                 .response_proof_v0(platform_state, proof, GroveDBToUse::Current)?

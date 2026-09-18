@@ -254,13 +254,13 @@ fn should_reject_point_in_time_history_reads_only_after_activation() {
         block_time_ms: Some(1000),
         contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
     };
-    for protocol in [12, 13] {
+    for protocol in [12, 13, 14] {
         assert!(query
             .construct_path_query(PlatformVersion::get(protocol).unwrap())
             .is_ok());
     }
     assert!(query
-        .construct_path_query(PlatformVersion::get(14).unwrap())
+        .construct_path_query(PlatformVersion::get(15).unwrap())
         .is_err());
 }
 
@@ -290,13 +290,13 @@ fn should_reject_invalid_selectors_and_unsupported_protocols() {
     query.limit = Some(2);
     assert!(query.validate().is_err());
     query.limit = Some(1);
-    for protocol in [12, 13] {
+    for protocol in [12, 13, 14] {
         assert!(query
             .construct_path_query(PlatformVersion::get(protocol).unwrap())
             .is_err());
     }
     assert!(query
-        .construct_path_query(PlatformVersion::get(14).unwrap())
+        .construct_path_query(PlatformVersion::get(15).unwrap())
         .is_ok());
 }
 
@@ -305,9 +305,9 @@ fn should_use_sequence_one_for_an_immutable_document_without_a_revision() {
     use dpp::data_contract::DataContractFactory;
     use dpp::document::document_factory::DocumentFactory;
     use dpp::platform_value::platform_value;
-    let version = PlatformVersion::get(14).unwrap();
+    let version = PlatformVersion::get(15).unwrap();
     let drive = setup_drive_with_initial_state_structure(Some(version));
-    let contract = DataContractFactory::new(14).unwrap().create_with_value_config([7; 32].into(), 0, platform_value!({
+    let contract = DataContractFactory::new(15).unwrap().create_with_value_config([7; 32].into(), 0, platform_value!({
         "note": {"type": "object", "documentsMutable": false, "documentsKeepHistory": true, "canBeDeleted": false,
         "properties": {"message": {"type": "string", "maxLength": 256, "position": 0}}, "required": ["message"], "additionalProperties": false}
     }), None, None).unwrap().data_contract_owned();
@@ -315,7 +315,7 @@ fn should_use_sequence_one_for_an_immutable_document_without_a_revision() {
         .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
         .unwrap();
     let document_type = contract.document_type_for_name("note").unwrap();
-    let document = DocumentFactory::new(14)
+    let document = DocumentFactory::new(15)
         .unwrap()
         .create_document(
             &contract,
@@ -365,7 +365,7 @@ fn should_bound_estimates_for_deep_plain_and_summable_histories() {
     use dpp::document::document_factory::DocumentFactory;
     use dpp::platform_value::platform_value;
     use std::borrow::Cow;
-    let version = PlatformVersion::get(14).unwrap();
+    let version = PlatformVersion::get(15).unwrap();
     for summable in [false, true] {
         let drive = setup_drive_with_initial_state_structure(Some(version));
         let mut schema = platform_value!({
@@ -379,7 +379,7 @@ fn should_bound_estimates_for_deep_plain_and_summable_histories() {
                 .insert("documentsSummable".into(), "amount".into())
                 .unwrap();
         }
-        let contract = DataContractFactory::new(14)
+        let contract = DataContractFactory::new(15)
             .unwrap()
             .create_with_value_config(
                 [7; 32].into(),
@@ -394,7 +394,7 @@ fn should_bound_estimates_for_deep_plain_and_summable_histories() {
             .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
             .unwrap();
         let document_type = contract.document_type_for_name("note").unwrap();
-        let mut document = DocumentFactory::new(14)
+        let mut document = DocumentFactory::new(15)
             .unwrap()
             .create_document(
                 &contract,
@@ -454,7 +454,7 @@ fn should_bound_estimates_for_deep_plain_and_summable_histories() {
 fn should_include_reference_hops_in_history_pointer_size_estimates() {
     use crate::drive::constants::DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE;
     use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
-    let version = PlatformVersion::get(14).unwrap();
+    let version = PlatformVersion::get(15).unwrap();
     for flags in [
         None,
         Some(vec![1; 35]),
@@ -506,7 +506,7 @@ fn should_charge_count_tree_overhead_when_propagating_history_roots() {
     use grovedb::batch::KeyInfoPath;
     use grovedb::{EstimatedLayerCount, EstimatedLayerSizes, EstimatedSumTrees};
     use std::collections::HashMap;
-    let version = PlatformVersion::get(14).unwrap();
+    let version = PlatformVersion::get(15).unwrap();
     let contract = json_document_to_contract(
         "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
         false,
@@ -575,7 +575,7 @@ fn should_charge_count_tree_overhead_when_propagating_history_roots() {
 
 #[test]
 fn should_reject_history_keys_that_are_not_sixteen_bytes() {
-    let version = PlatformVersion::get(14).unwrap();
+    let version = PlatformVersion::get(15).unwrap();
     let contract = json_document_to_contract(
         "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
         false,

@@ -123,7 +123,7 @@ pub use drive::query::document_history_drive_query::{
 pub struct DocumentHistory {
     /// Entries retain their complete cursor, including edits sharing a timestamp.
     pub entries: Vec<DocumentHistoryEntry>,
-    /// Absent for the legacy protocol-13 layout and authenticated by protocol-14 proofs.
+    /// Absent for the legacy layout through protocol 14 and authenticated by protocol-15 proofs.
     pub lifecycle: Option<DocumentHistoryLifecycle>,
 }
 /// Verified history with the complete wire response needed for independent verification.

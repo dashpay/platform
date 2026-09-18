@@ -1,4 +1,4 @@
-// Protocol 14 generation: keep-history document types a contract update adds
+// Protocol 15 generation: keep-history document types a contract update adds
 // get their per-type history tree; everything else matches v1.
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -1011,14 +1011,14 @@ mod tests {
     }
 
     /// A keep-history type introduced by a contract update uses the legacy
-    /// layout at protocol 13 and the per-type history tree from protocol 14.
+    /// layout at protocol 14 and the per-type history tree from protocol 15.
     #[test]
-    fn should_create_history_tree_for_a_new_type_only_from_protocol_14() {
+    fn should_create_history_tree_for_a_new_type_only_from_protocol_15() {
         use crate::drive::document::paths::{
             contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY,
         };
 
-        for (protocol, expected) in [(13, false), (14, true)] {
+        for (protocol, expected) in [(14, false), (15, true)] {
             let version = PlatformVersion::get(protocol).expect("protocol version");
             let drive = setup_drive_with_initial_state_structure(Some(version));
             let mut contract = get_dashpay_contract_fixture(None, 0, version.protocol_version)

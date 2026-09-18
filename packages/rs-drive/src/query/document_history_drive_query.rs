@@ -87,14 +87,14 @@ pub struct DocumentHistoryDriveQueryExecutionResult {
     /// Ordered retained revisions in this page.
     pub entries: Vec<DocumentHistoryEntry>,
     /// Metadata for the whole history, including empty pages. Absent when
-    /// the page was read from the layout that predates protocol version 14,
+    /// the page was read from the layout that predates protocol version 15,
     /// which keeps no lifecycle record.
     pub lifecycle: Option<DocumentHistoryLifecycle>,
 }
 
 impl DocumentHistoryDriveQueryExecutionResult {
     /// Builds a page from revisions read from the per-document history
-    /// subtree used before protocol version 14, keyed by block time.
+    /// subtree used before protocol version 15, keyed by block time.
     pub(crate) fn from_legacy(revisions: BTreeMap<u64, Document>) -> Result<Self, Error> {
         let entries = revisions
             .into_iter()
@@ -188,7 +188,7 @@ impl DocumentHistoryDriveQuery {
     }
 
     /// Maps the query onto the per-document subtree used before protocol
-    /// version 14, which is keyed by block time only: a time filter and a
+    /// version 15, which is keyed by block time only: a time filter and a
     /// page length. Revision and cursor filters need the history tree.
     pub(crate) fn legacy_read(&self) -> Result<(u64, Option<u16>), Error> {
         self.validate()?;
@@ -197,7 +197,7 @@ impl DocumentHistoryDriveQuery {
             DocumentHistoryFilter::StartAfter { .. }
             | DocumentHistoryFilter::StartAtRevision(_)
             | DocumentHistoryFilter::Revision(_) => Err(invalid(
-                "revision and cursor filters need the protocol version 14 history layout",
+                "revision and cursor filters need the protocol version 15 history layout",
             )),
         }
     }

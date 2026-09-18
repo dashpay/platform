@@ -474,6 +474,93 @@ fn history_api_proof_round_trip(gapped: bool) {
     }
 }
 
+/// Before protocol 15 the handler serves the request shape from the legacy
+/// per-document layout: the inclusive time bound works, revision and
+/// cursor filters are refused as invalid arguments.
+#[test]
+fn should_serve_time_filters_and_refuse_revision_filters_at_protocol_14() {
+    let (platform, state, version) = setup_platform(None, Network::Testnet, Some(14));
+    assert_eq!(version.protocol_version, 14);
+    let contract = json_document_to_contract(concat!(env!("CARGO_MANIFEST_DIR"), "/../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json"), false, version).unwrap();
+    platform
+        .drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .unwrap();
+    let document_type = contract.document_type_for_name("profile").unwrap();
+    let mut document = json_document_to_document(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../rs-drive/tests/supporting_files/contract/dashpay/profile0.json"
+        ),
+        Some([8; 32].into()),
+        document_type,
+        version,
+    )
+    .unwrap();
+    for (revision, time_ms) in [(1, 1000), (2, 2000)] {
+        document.set_revision(Some(revision));
+        platform
+            .drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                true,
+                BlockInfo::default_with_time(time_ms),
+                true,
+                None,
+                version,
+                None,
+            )
+            .unwrap();
+    }
+    let request = |filter| GetDocumentHistoryRequestV0 {
+        data_contract_id: contract.id().to_vec(),
+        document_type_name: "profile".into(),
+        document_id: document.id().to_vec(),
+        filter: Some(filter),
+        limit: None,
+        prove: false,
+    };
+
+    let plain = platform
+        .query_document_history_v0(request(Filter::StartAtMs(2000)), &state, version)
+        .unwrap()
+        .into_data()
+        .unwrap();
+    let Some(ResponseResult::History(history)) = plain.result else {
+        panic!("an unproved history query answers with the history");
+    };
+    assert_eq!(
+        history
+            .entries
+            .iter()
+            .map(|entry| (entry.time_ms, entry.revision))
+            .collect::<Vec<_>>(),
+        [(2000, 2)]
+    );
+    assert!(history.lifecycle.is_none());
+
+    for filter in [
+        Filter::Revision(1),
+        Filter::StartAtRevision(1),
+        Filter::StartAfter(Cursor {
+            time_ms: 1000,
+            revision: 1,
+        }),
+    ] {
+        let result = platform
+            .query_document_history_v0(request(filter), &state, version)
+            .unwrap();
+        assert!(!result.is_valid(), "{result:?}");
+    }
+}
+
 #[test]
 fn should_reject_missing_selectors_before_reading_state() {
     let (platform, state, version) = setup_platform(None, Network::Testnet, None);

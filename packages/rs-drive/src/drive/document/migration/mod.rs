@@ -2,7 +2,7 @@
 //!
 //! Any error deliberately halts the activation block for every validator. All
 //! batches belong to the activation transaction; no partial migration may commit.
-//! Every `corrupt()` path is unreachable for valid pre-14 state: legacy writers
+//! Every `corrupt()` path is unreachable for valid pre-15 state: legacy writers
 //! and contract-update validation preserve the storage invariants checked here.
 
 use crate::drive::document::paths::{contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY};

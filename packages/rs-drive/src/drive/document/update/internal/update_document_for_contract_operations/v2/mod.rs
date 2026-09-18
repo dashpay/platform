@@ -4,7 +4,8 @@ use crate::drive::document::index_level_tree_types::{
 };
 use crate::drive::document::time_range_ttl::{entry_key_bucket_start, live_time_range_entry_keys};
 use crate::drive::document::{
-    make_document_reference, make_document_reference_with_sum_item, read_document_sum_contribution,
+    make_document_reference_v1, make_document_reference_with_sum_item_v1,
+    read_document_sum_contribution,
 };
 
 use crate::drive::Drive;
@@ -31,9 +32,7 @@ use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 
 use crate::drive::document::paths::{
-    contract_document_type_path,
-    contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_primary_key_path,
+    contract_document_type_path, contract_documents_primary_key_path,
 };
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{
@@ -52,7 +51,7 @@ use std::collections::{HashMap, HashSet};
 /// new-document side (a null or missing indexed property reads back as an
 /// empty key). `KeySize` never reaches the stateful update path (worst-case
 /// cost estimation is redirected to the insert walker at the top of
-/// `update_document_for_contract_operations_v1`), so it is treated as
+/// `update_document_for_contract_operations_v2`), so it is treated as
 /// non-null.
 fn drive_key_info_is_empty(key_info: &DriveKeyInfo) -> bool {
     match key_info {
@@ -99,6 +98,12 @@ fn reference_tree_type_for_index(
 impl Drive {
     /// Gathers operations for updating a document.
     ///
+    /// v2 (platform v15+) is v1 with the keep-history primary layout of
+    /// protocol 15: the old document is read from the primary-key entry
+    /// itself instead of the per-document history subtree, and index
+    /// references are built by the v1 reference builders, which point at
+    /// that entry. Everything below describes the v1 behaviour it keeps.
+    ///
     /// v1 (platform v14+) applies the shared-prefix aggregate fix to the
     /// branches a key-changing update materializes, keeping them
     /// bit-identical to what the v2 insert walkers would have written:
@@ -142,7 +147,7 @@ impl Drive {
     ///
     /// The `[0]` reference-bucket tree-type dispatch and everything
     /// else match v0.
-    pub(in crate::drive::document::update) fn update_document_for_contract_operations_v1(
+    pub(in crate::drive::document::update) fn update_document_for_contract_operations_v2(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
@@ -210,7 +215,7 @@ impl Drive {
         // indexes use `Element::Reference`. The non-sum reference is
         // computed once here for reuse on all non-summable indexes;
         // summable indexes build their own variant inside the loop.
-        let document_reference = make_document_reference(
+        let document_reference = make_document_reference_v1(
             document,
             document_and_contract_info.document_type,
             storage_flags,
@@ -218,17 +223,9 @@ impl Drive {
 
         // next we need to get the old document from storage
         let old_document_element = if document_type.documents_keep_history() {
-            let contract_documents_keeping_history_primary_key_path_for_document_id =
-                contract_documents_keeping_history_primary_key_path_for_document_id(
-                    contract.id_ref().as_bytes(),
-                    document_type.name().as_str(),
-                    document.id_ref().as_slice(),
-                );
-            // When keeping document history the 0 is a reference that points to the current value
-            // O is just on one byte, so we have at most one hop of size 1 (1 byte)
             self.grove_get(
-                (&contract_documents_keeping_history_primary_key_path_for_document_id).into(),
-                &[0],
+                (&contract_documents_primary_key_path).into(),
+                document.id().as_slice(),
                 QueryType::StatefulQuery,
                 transaction,
                 &mut batch_operations,
@@ -363,7 +360,7 @@ impl Drive {
             // bug an attacker could trigger with any benign no-op update).
             let index_document_reference = if let Some(sum_property_name) = &index.summable {
                 let sum_value = read_document_sum_contribution(document, sum_property_name)?;
-                make_document_reference_with_sum_item(
+                make_document_reference_with_sum_item_v1(
                     document,
                     document_and_contract_info.document_type,
                     sum_value,
@@ -401,7 +398,7 @@ impl Drive {
                 } else {
                     storage_flags
                 };
-                self.update_time_range_index_for_contract_operations_v1(
+                self.update_time_range_index_for_contract_operations_v2(
                     index,
                     transform,
                     document,
@@ -941,7 +938,7 @@ impl Drive {
     /// method — it delegates to the insert path, which has its own bucket
     /// fan-out.
     #[allow(clippy::too_many_arguments)]
-    fn update_time_range_index_for_contract_operations_v1(
+    fn update_time_range_index_for_contract_operations_v2(
         &self,
         index: &Index,
         transform: &TimeRangeTransform,

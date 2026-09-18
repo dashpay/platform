@@ -1,4 +1,4 @@
-//! Primary storage writer for the protocol 14 keep-history layout.
+//! Primary storage writer for the protocol 15 keep-history layout.
 //!
 //! What changed from v0: a keep-history document's revisions are no longer
 //! items in the document's own subtree of the primary key tree, keyed by

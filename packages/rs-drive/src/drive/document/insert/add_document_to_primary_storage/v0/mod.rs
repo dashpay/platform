@@ -870,7 +870,7 @@ mod keep_history_summable_e2e {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
-                PlatformVersion::get(13).expect("protocol 13"),
+                PlatformVersion::get(14).expect("protocol 14"),
             )
             .expect("apply contract");
     }
@@ -896,14 +896,14 @@ mod keep_history_summable_e2e {
                 BlockInfo::default(),
                 true,
                 None,
-                PlatformVersion::get(13).expect("protocol 13"),
+                PlatformVersion::get(14).expect("protocol 14"),
                 None,
             )
             .expect("insert doc");
     }
 
     fn read_element_at(drive: &Drive, path: &[Vec<u8>], key: &[u8]) -> Element {
-        let pv = PlatformVersion::get(13).expect("protocol 13");
+        let pv = PlatformVersion::get(14).expect("protocol 14");
         let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
         drive
             .grove_get_raw(
@@ -1059,7 +1059,7 @@ mod keep_history_summable_e2e {
                 true,
                 Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
                 None,
-                PlatformVersion::get(13).expect("protocol 13"),
+                PlatformVersion::get(14).expect("protocol 14"),
                 None,
             )
             .expect("update doc to v2");

@@ -40,26 +40,29 @@ fn process_and_commit(
     result.into_execution_results().remove(0)
 }
 
-/// A persisted v13 contract and document survive the v14 boundary, a repair,
-/// and a subsequent ordinary contract update. Both writes use signed raw
-/// transitions so parser validation, config compatibility and Drive all run.
+/// A contract registered while protocol 13 still accepted keep-history
+/// types that can be deleted, and a document written under v14, survive the
+/// v15 boundary, a repair, and a subsequent ordinary contract update. Both
+/// writes use signed raw transitions so parser validation, config
+/// compatibility and Drive all run.
 #[tokio::test]
 async fn should_repair_legacy_keep_history_contract_after_upgrade() {
-    let old_version = PlatformVersion::get(13).unwrap();
-    let new_version = PlatformVersion::get(14).unwrap();
+    let registered_version = PlatformVersion::get(13).unwrap();
+    let old_version = PlatformVersion::get(14).unwrap();
+    let new_version = PlatformVersion::get(15).unwrap();
     let mut platform = TestPlatformBuilder::new()
-        .with_initial_protocol_version(13)
+        .with_initial_protocol_version(14)
         .build_with_mock_rpc()
         .set_initial_state_structure();
     let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
     let mut contract = json_document_to_contract(
         "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json",
         true,
-        old_version,
+        registered_version,
     )
     .expect("released protocol 13 accepts the legacy schema with full validation");
     contract.set_owner_id(identity.id());
-    contract.set_config(DataContractConfig::default_for_version(old_version).unwrap());
+    contract.set_config(DataContractConfig::default_for_version(registered_version).unwrap());
     platform
         .drive
         .apply_contract(
@@ -116,22 +119,22 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     .unwrap();
     let documents_before = platform
         .drive
-        .query_documents(query, None, false, None, Some(13))
+        .query_documents(query, None, false, None, Some(14))
         .unwrap()
         .documents()
         .to_vec();
     assert_eq!(documents_before.len(), 1);
 
     let mut upgraded_state = platform.state.load().as_ref().clone();
-    upgraded_state.set_current_protocol_version_in_consensus(14);
-    upgraded_state.set_next_epoch_protocol_version(14);
+    upgraded_state.set_current_protocol_version_in_consensus(15);
+    upgraded_state.set_next_epoch_protocol_version(15);
     let migration = platform.drive.grove.start_transaction();
     platform
         .perform_events_on_first_block_of_protocol_change(
             &upgraded_state,
             &BlockInfo::default(),
             &migration,
-            13,
+            14,
             new_version,
         )
         .unwrap();
@@ -143,7 +146,7 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
         .unwrap();
     platform.state.store(std::sync::Arc::new(upgraded_state));
 
-    // Re-reading the actual stored contract at v14 must bypass the parser's
+    // Re-reading the actual stored contract at v15 must bypass the parser's
     // creation-time rule; do not rely only on the pre-upgrade cached object.
     let fetched = platform
         .drive
@@ -252,7 +255,7 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     .unwrap();
     let documents_after = platform
         .drive
-        .query_documents(query, None, false, None, Some(14))
+        .query_documents(query, None, false, None, Some(15))
         .unwrap()
         .documents()
         .to_vec();
@@ -260,6 +263,218 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
         documents_before, documents_after,
         "repair must preserve existing documents"
     );
+}
+
+/// A validator that skips protocol 14 crosses both rungs in one block:
+/// the v14 transition (contract version items) and the v15 history
+/// migration, dispatched through the public hook.
+#[test]
+fn should_migrate_history_when_skipping_from_protocol_13_to_15() {
+    use dpp::data_contract::DataContractFactory;
+    use dpp::system_data_contracts::SystemDataContract;
+    use drive::drive::document::paths::document_history_path;
+    use drive::query::document_history_drive_query::{
+        DocumentHistoryDriveQuery, DocumentHistoryFilter, DocumentHistoryState,
+    };
+    use drive::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
+
+    let registered_version = PlatformVersion::get(13).unwrap();
+    let new_version = PlatformVersion::get(15).unwrap();
+    let platform = TestPlatformBuilder::new()
+        .with_initial_protocol_version(13)
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let contract = DataContractFactory::new(registered_version.protocol_version)
+        .unwrap()
+        .create_with_value_config(
+            [7; 32].into(),
+            0,
+            platform_value!({
+                "note": {
+                    "type": "object", "documentsKeepHistory": true, "documentsMutable": true,
+                    "canBeDeleted": false,
+                    "properties": { "message": { "type": "string", "maxLength": 256, "position": 0 } },
+                    "required": ["message"], "additionalProperties": false,
+                    "indices": [{"name": "owner", "properties": [{"$ownerId": "asc"}]}]
+                }
+            }),
+            None,
+            None,
+        )
+        .unwrap()
+        .data_contract_owned();
+    platform
+        .drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            None,
+            registered_version,
+        )
+        .unwrap();
+    let document_type = contract.document_type_for_name("note").unwrap();
+    let mut document = document_type
+        .random_document_with_identifier_and_entropy(
+            &mut StdRng::seed_from_u64(61),
+            [9; 32].into(),
+            Bytes32([3; 32]),
+            DocumentFieldFillType::FillIfNotRequired,
+            DocumentFieldFillSize::AnyDocumentFillSize,
+            registered_version,
+        )
+        .unwrap();
+    document.set_revision(Some(1));
+    platform
+        .drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default_with_time(1000),
+            true,
+            None,
+            registered_version,
+            None,
+        )
+        .unwrap();
+    document.set_revision(Some(2));
+    document.set("message", "edited".into());
+    platform
+        .drive
+        .update_document_for_contract(
+            &document,
+            &contract,
+            document_type,
+            None,
+            BlockInfo::default_with_time(2000),
+            true,
+            None,
+            None,
+            registered_version,
+            None,
+        )
+        .unwrap();
+    let dpns_id = SystemDataContract::DPNS.id().to_buffer();
+    assert_eq!(
+        platform
+            .drive
+            .fetch_contract_version(dpns_id, None, new_version)
+            .unwrap(),
+        None,
+        "a protocol 13 state has no contract version items"
+    );
+
+    let mut upgraded_state = platform.state.load().as_ref().clone();
+    upgraded_state.set_current_protocol_version_in_consensus(15);
+    upgraded_state.set_next_epoch_protocol_version(15);
+    let transaction = platform.drive.grove.start_transaction();
+    platform
+        .perform_events_on_first_block_of_protocol_change(
+            &upgraded_state,
+            &BlockInfo::default_with_time(3000),
+            &transaction,
+            13,
+            new_version,
+        )
+        .expect("a 13 to 15 crossing runs the 14 rung and the 15 migration");
+    platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .value
+        .unwrap();
+
+    // The 14 rung ran: every registered system contract carries its version item.
+    assert!(platform
+        .drive
+        .fetch_contract_version(dpns_id, None, new_version)
+        .unwrap()
+        .is_some());
+    // The 15 rung ran: both retained revisions moved to the history tree and
+    // the primary-key entry now points at the current document.
+    let history_path =
+        document_history_path(contract.id().as_slice(), "note", document.id().as_slice());
+    let mut query = drive::grovedb::Query::new();
+    query.insert_all();
+    let entries = platform
+        .drive
+        .grove
+        .query_raw(
+            &drive::grovedb::PathQuery::new(
+                history_path,
+                drive::grovedb::SizedQuery::new(query, None, None),
+            ),
+            false,
+            true,
+            true,
+            drive::query::QueryResultType::QueryKeyElementPairResultType,
+            None,
+            &new_version.drive.grove_version,
+        )
+        .value
+        .unwrap()
+        .0
+        .to_key_elements();
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().all(|(key, _)| key.len() == 16));
+    let primary_path = vec![
+        vec![drive::drive::RootTree::DataContractDocuments as u8],
+        contract.id().to_vec(),
+        vec![1],
+        b"note".to_vec(),
+        vec![0],
+    ];
+    let primary_entry = platform
+        .drive
+        .grove
+        .get_raw(
+            primary_path.as_slice().into(),
+            document.id().as_slice(),
+            None,
+            &new_version.drive.grove_version,
+        )
+        .value
+        .unwrap();
+    assert!(
+        matches!(primary_entry, drive::grovedb::Element::Reference(..)),
+        "{primary_entry:?}"
+    );
+    let history = platform
+        .drive
+        .fetch_document_history(
+            &DocumentHistoryDriveQuery {
+                contract_id: contract.id().to_buffer(),
+                document_type_name: "note".into(),
+                document_id: document.id().to_buffer(),
+                filter: DocumentHistoryFilter::StartAtTime(0),
+                limit: None,
+            },
+            document_type,
+            None,
+            new_version,
+        )
+        .unwrap();
+    assert_eq!(
+        history
+            .entries
+            .iter()
+            .map(|entry| (entry.time_ms, entry.revision))
+            .collect::<Vec<_>>(),
+        [(1000, 1), (2000, 2)]
+    );
+    let lifecycle = history
+        .lifecycle
+        .expect("the history tree carries a lifecycle");
+    assert_eq!(lifecycle.state, DocumentHistoryState::Active);
+    assert_eq!(lifecycle.remaining_revisions, 2);
 }
 
 #[tokio::test]
@@ -281,8 +496,8 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
     use drive::query::document_history_drive_query::{
         DocumentHistoryDriveQuery, DocumentHistoryFilter,
     };
-    let version = PlatformVersion::get(14).unwrap();
-    let initial_version = PlatformVersion::get(if migrated { 13 } else { 14 }).unwrap();
+    let version = PlatformVersion::get(15).unwrap();
+    let initial_version = PlatformVersion::get(if migrated { 14 } else { 15 }).unwrap();
     let mut platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(initial_version.protocol_version)
         .build_with_mock_rpc()
@@ -458,15 +673,15 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
             assert_eq!(verified_legacy, legacy_history);
 
             let mut upgraded = platform.state.load().as_ref().clone();
-            upgraded.set_current_protocol_version_in_consensus(14);
-            upgraded.set_next_epoch_protocol_version(14);
+            upgraded.set_current_protocol_version_in_consensus(15);
+            upgraded.set_next_epoch_protocol_version(15);
             let transaction = platform.drive.grove.start_transaction();
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &upgraded,
                     &BlockInfo::default(),
                     &transaction,
-                    13,
+                    14,
                     version,
                 )
                 .unwrap();

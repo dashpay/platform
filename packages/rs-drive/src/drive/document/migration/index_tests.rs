@@ -17,9 +17,9 @@ fn should_read_and_prove_fresh_and_migrated_history_through_every_index_kind() {
 }
 
 fn read_and_prove_index_matrix(countable: bool) {
-    let new = PlatformVersion::get(14).unwrap();
+    let new = PlatformVersion::get(15).unwrap();
     for migrated in [false, true] {
-        let old = PlatformVersion::get(if migrated { 13 } else { 14 }).unwrap();
+        let old = PlatformVersion::get(if migrated { 14 } else { 15 }).unwrap();
         let directory = tempfile::TempDir::new().unwrap();
         let (drive, _) = Drive::open(directory.path(), None).unwrap();
         drive.create_initial_state_structure(None, old).unwrap();
@@ -33,11 +33,14 @@ fn read_and_prove_index_matrix(countable: bool) {
                     "recipient":{"type":"string", "maxLength":10, "position":2},
                     "amount":{"type":"integer", "minimum":0, "maximum":4294967295i64, "position":3}
                 },
-                "required":["slug","group","recipient","amount"], "additionalProperties":false,
+                "required":["slug","group","recipient","amount","$createdAt"], "additionalProperties":false,
                 "indices":[
                     {"name":"slug","properties":[{"slug":"asc"}],"unique":true},
-                    {"name":"group","properties":[{"group":"asc"}]},
-                    {"name":"recipient","properties":[{"recipient":"asc"}],"summable":"amount"}
+                    {"name":"groupAggregate","properties":[{"group":"asc"}],"countable":"countable","summable":"amount"},
+                    {"name":"groupAmount","properties":[{"group":"asc"},{"amount":"asc"}]},
+                    {"name":"recipientAmount","properties":[{"recipient":"asc"},{"amount":"asc"}],"countable":"countable","rangeCountable":true,"rankedCountable":{"at":"recipient"}},
+                    {"name":"recipientSlugAmount","properties":[{"recipient":"asc"},{"slug":"asc"},{"amount":"asc"}]},
+                    {"name":"trending","properties":[{"$createdAt":"asc"},{"group":"asc"},{"slug":"asc"}],"countable":"countable","timeRange":{"on":"$createdAt","range":3600,"step":900}}
                 ]
             }
         }), None, None).unwrap().data_contract_owned();
@@ -67,6 +70,7 @@ fn read_and_prove_index_matrix(countable: bool) {
                 .unwrap();
             document.set_id([id; 32].into());
             document.set_revision(Some(1));
+            document.set_created_at(Some(7_200_000));
             drive
                 .add_document_for_contract(
                     DocumentAndContractInfo {
@@ -110,21 +114,30 @@ fn read_and_prove_index_matrix(countable: bool) {
         let transaction = drive.grove.start_transaction();
         let mut stats = DocumentHistoryMigrationStats::default();
         let mut before = BTreeMap::new();
-        for name in ["slug", "group", "recipient"] {
+        for name in document_type.index_structure().sub_levels().keys() {
             let mut path = type_path.clone();
             path.push(name.as_bytes().to_vec());
             drive
                 .history_migration_index_entries(path, &transaction, &mut stats, &mut before, old)
                 .unwrap();
         }
-        assert_eq!(stats.index_entries, 6);
+        // Per document: one reference under each of the five plain indexes
+        // (unique slug, shared-prefix group aggregate, group/amount,
+        // ranked recipient/amount, recipient/slug/amount) and one under
+        // each of the four windows the 3600/900 time-range index opens.
+        let expected_index_entries = 2 * (5 + 4);
+        assert_eq!(
+            before.values().map(Vec::len).sum::<usize>() as u64,
+            expected_index_entries
+        );
+        assert_eq!(stats.index_entries, expected_index_entries);
         if migrated {
             let stats = drive
                 .migrate_document_history_storage(&transaction, new)
                 .unwrap();
             assert_eq!(stats.documents, 2);
-            assert_eq!(stats.index_entries, 6);
-            assert_eq!(stats.rewritten_index_entries, 6);
+            assert_eq!(stats.index_entries, expected_index_entries);
+            assert_eq!(stats.rewritten_index_entries, expected_index_entries);
         }
         drive.grove.commit_transaction(transaction).value.unwrap();
         drop(drive);
@@ -165,13 +178,25 @@ fn read_and_prove_index_matrix(countable: bool) {
             ),
             ("select * from tip where group = 'all'", documents.clone()),
             (
+                "select * from tip where group = 'all' and amount > 30 order by amount asc",
+                vec![documents[0].clone()],
+            ),
+            (
                 "select * from tip where recipient = 'bob'",
                 documents.clone(),
+            ),
+            (
+                "select * from tip where recipient = 'bob' and amount < 30 order by amount asc",
+                vec![documents[1].clone()],
+            ),
+            (
+                "select * from tip where recipient = 'bob' and slug = 'a'",
+                vec![documents[0].clone()],
             ),
         ] {
             let query = DriveDocumentQuery::from_sql_expr(sql, &contract, None, new).unwrap();
             let mut fetched = drive
-                .query_documents(query.clone(), None, false, None, Some(14))
+                .query_documents(query.clone(), None, false, None, Some(15))
                 .unwrap()
                 .documents()
                 .to_vec();
@@ -203,16 +228,35 @@ fn read_and_prove_index_matrix(countable: bool) {
         } else {
             assert!(matches!(primary, Element::SumTree(_, 60, _)), "{primary:?}");
         }
+        // Aggregates survive migration: the count-sum value tree of the
+        // shared-prefix index keeps both documents and their amounts, and the
+        // count tree of the ranked index keeps its document count.
+        let value_tree = |index: &[u8]| {
+            let mut path = type_path.clone();
+            path.push(index.to_vec());
+            let values = drive
+                .history_migration_entries(&path, &drive.grove.start_transaction(), new)
+                .unwrap();
+            assert_eq!(values.len(), 1, "{values:?}");
+            values.into_iter().next().unwrap().1
+        };
+        let group = value_tree(b"group");
+        assert!(
+            matches!(group, Element::CountSumTree(_, 2, 60, _)),
+            "{group:?}"
+        );
+        let recipient = value_tree(b"recipient");
+        assert!(
+            matches!(recipient, Element::CountTree(_, 2, _)),
+            "{recipient:?}"
+        );
+        // The time-range index keeps its four windows, each still a tree.
         let mut path = type_path.clone();
-        path.push(b"recipient".to_vec());
-        let values = drive
+        path.push(b"$createdAt#3600#900".to_vec());
+        let windows = drive
             .history_migration_entries(&path, &drive.grove.start_transaction(), new)
             .unwrap();
-        assert_eq!(values.len(), 1);
-        assert!(
-            matches!(values[0].1, Element::SumTree(_, 60, _)),
-            "{:?}",
-            values[0]
-        );
+        assert_eq!(windows.len(), 4, "{windows:?}");
+        assert!(windows.iter().all(|(_, element)| element.is_any_tree()));
     }
 }

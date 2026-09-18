@@ -1,4 +1,4 @@
-// Protocol 14 generation: the cursor document is looked up in the primary
+// Protocol 15 generation: the cursor document is looked up in the primary
 // key tree, where a keep-history document's entry points at its current
 // revision; everything else matches v0.
 use crate::verify::RootHash;

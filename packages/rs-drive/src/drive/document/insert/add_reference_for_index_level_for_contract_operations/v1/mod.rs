@@ -1,4 +1,4 @@
-// Protocol 14 generation: index references point at the primary key tree
+// Protocol 15 generation: index references point at the primary key tree
 // entry for every document type, including keep-history types whose entry
 // is itself a reference into the history tree; everything else matches v0.
 use crate::drive::constants::STORAGE_FLAGS_SIZE;

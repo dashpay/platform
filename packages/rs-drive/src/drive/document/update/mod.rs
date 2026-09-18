@@ -1327,7 +1327,7 @@ mod tests {
             using_history,
             using_transaction,
             if using_history {
-                PlatformVersion::get(13).unwrap()
+                PlatformVersion::get(14).unwrap()
             } else {
                 PlatformVersion::latest()
             },
@@ -1432,7 +1432,7 @@ mod tests {
             //Explanation for 1237
 
             //todo
-            if platform_version.protocol_version == 14 {
+            if platform_version.protocol_version >= 15 {
                 1457
             } else {
                 1238
@@ -1643,7 +1643,7 @@ mod tests {
             );
 
         let expected_added_bytes = if using_history {
-            if platform_version.protocol_version == 14 {
+            if platform_version.protocol_version >= 15 {
                 345
             } else {
                 313
@@ -1659,7 +1659,7 @@ mod tests {
             using_history,
             using_transaction,
             if using_history {
-                PlatformVersion::get(13).unwrap()
+                PlatformVersion::get(14).unwrap()
             } else {
                 PlatformVersion::latest()
             },
@@ -1744,7 +1744,7 @@ mod tests {
                 StorageDiskUsageCreditPerByte,
             );
         let expected_added_bytes = if using_history {
-            if platform_version.protocol_version == 14 {
+            if platform_version.protocol_version >= 15 {
                 1457
             } else {
                 1238
@@ -1827,14 +1827,14 @@ mod tests {
             .unwrap();
 
         // We added one byte, and since it is an index, and keys are doubled it's 2 extra bytes
-        let expected_added_bytes = if using_history && platform_version.protocol_version < 14 {
+        let expected_added_bytes = if using_history && platform_version.protocol_version < 15 {
             607
         } else {
             605
         };
         assert_eq!(added_bytes, expected_added_bytes);
 
-        let expected_removed_credits = if using_history && platform_version.protocol_version < 14 {
+        let expected_removed_credits = if using_history && platform_version.protocol_version < 15 {
             16286655
         } else {
             16232643
@@ -1847,7 +1847,7 @@ mod tests {
             );
 
         assert!(expected_added_bytes > refund_equivalent_bytes);
-        let expected_remove_bytes = if using_history && platform_version.protocol_version < 14 {
+        let expected_remove_bytes = if using_history && platform_version.protocol_version < 15 {
             603
         } else {
             601
@@ -1900,7 +1900,7 @@ mod tests {
             using_history,
             using_transaction,
             if using_history {
-                PlatformVersion::get(13).unwrap()
+                PlatformVersion::get(14).unwrap()
             } else {
                 PlatformVersion::latest()
             },
@@ -1988,7 +1988,7 @@ mod tests {
             //Explanation for 1237
 
             //todo
-            if platform_version.protocol_version == 14 {
+            if platform_version.protocol_version >= 15 {
                 1448
             } else {
                 1238
@@ -2150,7 +2150,7 @@ mod tests {
             );
 
         let expected_added_bytes = if using_history {
-            if platform_version.protocol_version == 14 {
+            if platform_version.protocol_version >= 15 {
                 1449
             } else {
                 1239
@@ -3612,32 +3612,32 @@ mod tests {
         }
     }
     #[test]
-    fn should_pin_protocol14_history_replacement_fees() {
+    fn should_pin_protocol15_history_replacement_fees() {
         for transaction in [false, true] {
             test_fees_for_update_document_at_version(
                 true,
                 transaction,
-                PlatformVersion::get(14).unwrap(),
+                PlatformVersion::get(15).unwrap(),
             );
         }
     }
     #[test]
-    fn should_pin_protocol14_history_index_replacement_fees() {
+    fn should_pin_protocol15_history_index_replacement_fees() {
         for transaction in [false, true] {
             test_fees_for_update_document_on_index_at_version(
                 true,
                 transaction,
-                PlatformVersion::get(14).unwrap(),
+                PlatformVersion::get(15).unwrap(),
             );
         }
     }
     #[test]
-    fn should_pin_protocol14_history_estimated_replacement_fees() {
+    fn should_pin_protocol15_history_estimated_replacement_fees() {
         for transaction in [false, true] {
             test_estimated_fees_for_update_document_at_version(
                 true,
                 transaction,
-                PlatformVersion::get(14).unwrap(),
+                PlatformVersion::get(15).unwrap(),
             );
         }
     }
