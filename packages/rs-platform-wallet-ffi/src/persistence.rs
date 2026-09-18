@@ -4549,6 +4549,7 @@ unsafe fn restore_core_address_pools(
     pool_entries: &[AccountAddressPoolFFI],
     network: Network,
     wallet_id: &[u8; 32],
+    signing_wallet: Option<&Wallet>,
 ) -> Result<PoolRestoreStats, PersistenceError> {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     let mut pools_routed = 0usize;
@@ -4735,11 +4736,111 @@ unsafe fn restore_core_address_pools(
                 }
             }
         }
+        // Resolve the pool's key source BEFORE taking the mutable pool
+        // borrow, for the hole-repair pass below. Degrades to NoKeySource
+        // for anything unresolvable (no signing wallet handle, an account
+        // this wallet does not carry, a pool with no public derivation at
+        // all) — repair is then skipped.
+        //
+        // The concrete account comes first, because it is the only source
+        // that covers DashPay. `key_source_for_account_type` routes through
+        // `extended_public_key_for_account_type`, which has no arm for
+        // either DashPay variant and so answers NoKeySource for both — yet
+        // `DashpayReceivingFunds` is wallet-owned, funds-bearing, and its
+        // account carries exactly the xpub the missing addresses derive
+        // from. Skipping its repair leaves a contact's payments to us
+        // unrecognizable in the same rescan-proof way the repair exists to
+        // prevent. The helper stays as the fallback for the account types
+        // `account_of_type` deliberately does not return: the BLS provider
+        // operator account, whose key source is a BLS public key rather
+        // than an xpub, and the Ed25519 platform-node account.
+        let key_source = signing_wallet
+            .and_then(|wallet| {
+                wallet
+                    .accounts
+                    .account_of_type(account_type)
+                    .map(|account| key_wallet::KeySource::Public(account.account_xpub))
+                    .or_else(|| {
+                        key_wallet::transaction_checking::transaction_router::AccountTypeToCheck::try_from(
+                            &*managed_type,
+                        )
+                        .ok()
+                        .map(|check_type| {
+                            let account_index = match &account_type {
+                                AccountType::Standard { index, .. }
+                                | AccountType::CoinJoin { index }
+                                | AccountType::DashpayReceivingFunds { index, .. }
+                                | AccountType::DashpayExternalAccount { index, .. } => Some(*index),
+                                AccountType::IdentityTopUp { registration_index } => {
+                                    Some(*registration_index)
+                                }
+                                _ => None,
+                            };
+                            wallet.key_source_for_account_type(&check_type, account_index)
+                        })
+                    })
+            })
+            .unwrap_or(key_wallet::KeySource::NoKeySource);
+
         let mut managed_pools = managed_type.address_pools_mut();
         match managed_pools.iter_mut().find(|p| p.pool_type == pool_type) {
             Some(pool) => {
                 pools_routed += infos.len();
                 restore_address_pool(pool, infos);
+                // Hole repair: mirrors have been observed dropping address
+                // rows (2026-08-19 field wallet: BIP44-change rows 875..=890
+                // absent between surviving rows), and ingesting the sparse
+                // list as-is makes outputs paying the missing addresses
+                // permanently unrecognizable — a rescan-proof fund loss —
+                // while the row-derived `highest_generated` suppresses the
+                // gap-limit re-derivation that would repair it. Derivation
+                // is pure key arithmetic, so re-derive every missing index
+                // up to the persisted watermark. Never fatal: a failed
+                // repair restores exactly what the rows carried (the
+                // pre-repair behavior).
+                let repairable = !matches!(key_source, key_wallet::KeySource::NoKeySource)
+                    && !matches!(pool_type, AddressPoolType::AbsentHardened);
+                if !repairable {
+                    // Announce the skip instead of silently claiming full
+                    // coverage. What lands here now is a pool with no public
+                    // derivation at all: a hardened pool, the Ed25519
+                    // platform-node account, or an account this wallet does
+                    // not carry (a watch-only load with no signing wallet
+                    // handle). DashPay pools no longer land here — they
+                    // resolve through their own account's xpub above.
+                    tracing::debug!(
+                        wallet_id = %hex::encode(wallet_id),
+                        ?account_type,
+                        ?pool_type,
+                        "load: address-pool hole repair skipped (no public key source); \
+                         pool restored as persisted"
+                    );
+                } else if let Some(max_idx) = pool.highest_generated {
+                    match pool.ensure_contiguous_to(max_idx, &key_source) {
+                        Ok(0) => {}
+                        Ok(filled) => {
+                            tracing::warn!(
+                                wallet_id = %hex::encode(wallet_id),
+                                ?account_type,
+                                ?pool_type,
+                                filled,
+                                "load: repaired address-pool holes left by dropped \
+                                 persisted rows; outputs paying these addresses are \
+                                 recognizable again"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                wallet_id = %hex::encode(wallet_id),
+                                ?account_type,
+                                ?pool_type,
+                                error = %e,
+                                "load: address-pool hole repair failed; pool restored \
+                                 as persisted (sparse)"
+                            );
+                        }
+                    }
+                }
             }
             None => {
                 pools_dropped += 1;
@@ -5219,7 +5320,13 @@ fn build_wallet_start_state(
         // SAFETY: `pool_entries` is a valid slice (checked above) and each
         // row's `addresses_ptr` follows the load-callback contract.
         unsafe {
-            restore_core_address_pools(&mut wallet_info, pool_entries, network, &entry.wallet_id)?;
+            restore_core_address_pools(
+                &mut wallet_info,
+                pool_entries,
+                network,
+                &entry.wallet_id,
+                Some(&wallet),
+            )?;
         }
     }
 
@@ -8642,6 +8749,165 @@ mod tests {
         ManagedWalletInfo::from_wallet(&wallet, 0)
     }
 
+    /// A wallet carrying exactly one account of `account_type`, returned
+    /// alongside its managed view so a test can hand the SIGNING wallet to
+    /// [`restore_core_address_pools`] — the handle the hole repair resolves
+    /// a key source from.
+    fn test_wallet_and_info_with_account(account_type: AccountType) -> (ManagedWalletInfo, Wallet) {
+        let mnemonic = Mnemonic::from_phrase(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        )
+        .expect("static BIP-39 vector must parse");
+        let seed = mnemonic.to_seed("");
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
+            .expect("master derivation must succeed");
+        let secp = Secp256k1::new();
+        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let account = Account::from_xpub(None, account_type, xpub, Network::Testnet)
+            .expect("Account::from_xpub on a valid xpub must succeed");
+        let mut accounts = key_wallet::AccountCollection::new();
+        accounts
+            .insert(account)
+            .expect("inserting the single account must succeed");
+        let wallet = Wallet::new_external_signable(Network::Testnet, [0u8; 32], accounts);
+        let info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        (info, wallet)
+    }
+
+    /// The hole repair must cover DashPay receiving pools.
+    ///
+    /// `Wallet::key_source_for_account_type` answers `NoKeySource` for both
+    /// DashPay variants — it routes through
+    /// `extended_public_key_for_account_type`, which has no DashPay arm — so
+    /// resolving the key source through that helper alone skipped the repair
+    /// on exactly the account type that needs it most: a receiving account is
+    /// wallet-owned and funds-bearing, and an unrepaired hole makes a
+    /// contact's payments to us unrecognizable in a way no rescan fixes. The
+    /// concrete account carries the xpub the missing addresses derive from,
+    /// so the resolver consults `accounts.account_of_type` first.
+    ///
+    /// Shape: a persisted row at index 50 lifts `highest_generated` far past
+    /// the pre-derived gap window, leaving every index between as a hole.
+    #[test]
+    fn dashpay_receiving_pool_holes_are_repaired_from_the_account_xpub() {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use std::ffi::CString;
+
+        let account_type = AccountType::DashpayReceivingFunds {
+            index: 2,
+            user_identity_id: [0x11u8; 32],
+            friend_identity_id: [0x22u8; 32],
+        };
+        let (mut wallet_info, wallet) = test_wallet_and_info_with_account(account_type);
+
+        let dashpay_key = key_wallet::account::account_collection::DashpayAccountKey {
+            index: 2,
+            user_identity_id: [0x11u8; 32],
+            friend_identity_id: [0x22u8; 32],
+        };
+        let pool_type = wallet_info
+            .accounts
+            .dashpay_receival_accounts
+            .get_mut(&dashpay_key)
+            .expect("managed DashPay receiving account must exist")
+            .managed_account_type_mut()
+            .address_pools_mut()[0]
+            .pool_type;
+        let pool_type_tag: u8 = match pool_type {
+            AddressPoolType::External => 0,
+            AddressPoolType::Internal => 1,
+            AddressPoolType::Absent => 2,
+            AddressPoolType::AbsentHardened => 3,
+        };
+
+        const RESTORED_INDEX: u32 = 50;
+        // The gap window the fresh account pre-derived. Everything above it
+        // and below the restored row is a hole the persisted rows do not
+        // carry.
+        let pre_derived_top = {
+            let account = wallet_info
+                .accounts
+                .dashpay_receival_accounts
+                .get_mut(&dashpay_key)
+                .expect("managed DashPay receiving account must exist");
+            let mut pools = account.managed_account_type_mut().address_pools_mut();
+            let pool = pools
+                .iter_mut()
+                .find(|p| p.pool_type == pool_type)
+                .expect("the DashPay receiving pool must exist");
+            pool.highest_generated
+                .expect("a fresh pool pre-derives its gap window")
+        };
+        assert!(
+            pre_derived_top < RESTORED_INDEX - 1,
+            "the fixture only means something if the restored row leaves holes \
+             (pre-derived to {pre_derived_top}, restoring {RESTORED_INDEX})"
+        );
+
+        let addr_c = CString::new("yMqShkrgjTRuReBGFpQr7FozEF1QcNBBYA").unwrap();
+        let path_c = CString::new("m/9'/1'/15'/50").unwrap();
+        let row = CoreAddressEntryFFI {
+            public_key: [0u8; 48],
+            public_key_len: 0,
+            key_type_tag: 0,
+            pool_type_tag,
+            address_index: RESTORED_INDEX,
+            is_used: true,
+            balance: 0,
+            address_base58: addr_c.as_ptr(),
+            derivation_path: path_c.as_ptr(),
+        };
+        let no_xpub: &[u8] = &[];
+        let pools = [AccountAddressPoolFFI {
+            account: build_account_spec_ffi(&account_type, no_xpub),
+            pool_type_tag,
+            addresses_ptr: &row,
+            addresses_count: 1,
+        }];
+
+        // SAFETY: `row` / `addr_c` / `path_c` outlive the call below.
+        let stats = unsafe {
+            restore_core_address_pools(
+                &mut wallet_info,
+                &pools,
+                Network::Testnet,
+                &[0u8; 32],
+                Some(&wallet),
+            )
+        }
+        .expect("restore must succeed for a well-formed DashPay pool");
+        assert_eq!(
+            stats,
+            PoolRestoreStats {
+                routed: 1,
+                dropped: 0
+            },
+            "the DashPay row must route into the managed pool, not drop"
+        );
+
+        let account = wallet_info
+            .accounts
+            .dashpay_receival_accounts
+            .get_mut(&dashpay_key)
+            .expect("managed DashPay receiving account must exist");
+        let mut pools_mut = account.managed_account_type_mut().address_pools_mut();
+        let restored = pools_mut
+            .iter_mut()
+            .find(|p| p.pool_type == pool_type)
+            .expect("the DashPay receiving pool must exist");
+        assert!(
+            restored.used_indices.contains(&RESTORED_INDEX),
+            "the used index must be restored into the pool"
+        );
+        let holes: Vec<u32> = (0..=RESTORED_INDEX)
+            .filter(|i| !restored.addresses.contains_key(i))
+            .collect();
+        assert!(
+            holes.is_empty(),
+            "every index up to the watermark must be derivable again; holes left: {holes:?}"
+        );
+    }
+
     /// Restore-arm coverage (PR #4120): a persisted core-address-pool row
     /// targeting a PROVIDER account (`ProviderOwnerKeys`) must rehydrate
     /// its used-flag + beyond-gap index into
@@ -8698,7 +8964,7 @@ mod tests {
 
         // SAFETY: `row` / `addr_c` / `path_c` outlive the call below.
         let stats = unsafe {
-            restore_core_address_pools(&mut wallet_info, &pools, Network::Testnet, &[0u8; 32])
+            restore_core_address_pools(&mut wallet_info, &pools, Network::Testnet, &[0u8; 32], None)
         }
         .expect("restore must succeed for a well-formed provider pool");
         assert_eq!(
