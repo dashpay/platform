@@ -106,7 +106,8 @@ A once-per-identity distribution turns the token into an open airdrop: any ident
 claim the configured amount exactly once, and the total paid out is bounded only by
 `maxSupply`. The distribution is fixed at registration; there is no change control rule
 for it, and no configuration update changes it. Setting it makes the distribution rules
-serialize as format version 1, which needs protocol version 14.
+serialize as format version 1, which needs protocol version 14, and adds 0.1 Dash to the
+contract's registration fee, like a perpetual or pre-programmed distribution does.
 
 ```typescript
 import { TokenOncePerIdentityDistribution } from '@dashevo/evo-sdk';
