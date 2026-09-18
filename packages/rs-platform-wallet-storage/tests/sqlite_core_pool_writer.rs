@@ -1206,3 +1206,43 @@ fn typed_pool_key_at_fresh_index_succeeds() {
         fresh.public_key
     );
 }
+
+#[test]
+fn typed_pool_reads_are_scoped_to_the_full_account_identity() {
+    use platform_wallet_storage::sqlite::schema::core_pool::load_typed_pool_entries;
+    let (persister, _tmp, _path) = fresh_persister();
+    let wallet_id = wid(0xE3);
+    ensure_wallet_meta(&persister, &wallet_id);
+    let address = external_infos(0xE3).remove(0);
+    let account = |index| AccountType::Standard {
+        index,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![
+                    pool_entry(account(0), AddressPoolType::External, vec![address.clone()]),
+                    pool_entry(account(1), AddressPoolType::External, vec![address]),
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let conn = persister.lock_conn_for_test();
+    for index in [0, 1] {
+        let rows = load_typed_pool_entries(
+            &conn,
+            &wallet_id,
+            &account(index),
+            AddressPoolType::External,
+        )
+        .unwrap();
+        assert_eq!(
+            rows.len(),
+            1,
+            "a sibling account must not contribute pool rows"
+        );
+    }
+}

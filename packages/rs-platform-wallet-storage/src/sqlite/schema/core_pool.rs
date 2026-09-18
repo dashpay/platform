@@ -201,8 +201,6 @@ pub fn apply_pools(
     Ok(())
 }
 
-// TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
-// restoring it requires widening `provider_accounts::insert_platform_node_pool_entry`.
 /// One restored typed-pool row: `(address_index, script_bytes, public_key, used)`.
 pub type TypedPoolEntry = (u32, Vec<u8>, PublicKeyType, bool);
 
@@ -217,13 +215,26 @@ pub fn load_typed_pool_entries(
     account_type: &key_wallet::account::AccountType,
     pool_type: AddressPoolType,
 ) -> Result<Vec<TypedPoolEntry>, WalletStorageError> {
+    let account_index = i64::from(accounts::account_index(account_type));
+    let key_class = i64::from(accounts::account_key_class(account_type));
+    let (user_id, friend_id) = accounts::account_dashpay_ids(account_type);
     let account_type = accounts::account_type_db_label(account_type);
     let pool_type = pool_type_to_i64(pool_type);
     let (max_script_len, max_public_key_len): (Option<i64>, Option<i64>) = conn.query_row(
         "SELECT MAX(length(script)), MAX(length(public_key)) FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND pool_type = ?3 \
+           AND account_index = ?4 AND key_class = ?5 \
+           AND user_identity_id = ?6 AND friend_identity_id = ?7 \
            AND (public_key IS NOT NULL OR key_type IS NOT NULL)",
-        params![wallet_id.as_slice(), account_type, pool_type],
+        params![
+            wallet_id.as_slice(),
+            account_type,
+            pool_type,
+            account_index,
+            key_class,
+            user_id.as_slice(),
+            friend_id.as_slice()
+        ],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
     if let Some(len) = max_script_len {
@@ -237,10 +248,20 @@ pub fn load_typed_pool_entries(
         "SELECT address_index, length(script), script, length(public_key), public_key, \
                 key_type, used FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND pool_type = ?3 \
+           AND account_index = ?4 AND key_class = ?5 \
+           AND user_identity_id = ?6 AND friend_identity_id = ?7 \
            AND (public_key IS NOT NULL OR key_type IS NOT NULL) \
          ORDER BY address_index",
     )?;
-    let mut rows = stmt.query(params![wallet_id.as_slice(), account_type, pool_type,])?;
+    let mut rows = stmt.query(params![
+        wallet_id.as_slice(),
+        account_type,
+        pool_type,
+        account_index,
+        key_class,
+        user_id.as_slice(),
+        friend_id.as_slice()
+    ])?;
     let mut out = Vec::new();
     while let Some(row) = rows.next()? {
         let address_index = crate::sqlite::util::safe_cast::i64_to_u32(
@@ -306,12 +327,48 @@ pub(crate) fn load_untyped_pool_entries(
         "SELECT address_index, length(script), script, used FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
            AND user_identity_id = ?4 AND friend_identity_id = ?5 AND pool_type = ?6 \
-           AND public_key IS NULL AND key_type IS NULL ORDER BY address_index",
+           AND key_class = ?7 AND public_key IS NULL AND key_type IS NULL ORDER BY address_index",
     )?;
     let mut rows = stmt.query(params![
         wallet_id.as_slice(),
         accounts::account_type_db_label(account_type),
         i64::from(accounts::account_index(account_type)),
+        user_id.as_slice(),
+        friend_id.as_slice(),
+        pool_type_to_i64(pool_type),
+        i64::from(accounts::account_key_class(account_type)),
+    ])?;
+    let mut entries = Vec::new();
+    while let Some(row) = rows.next()? {
+        let index = crate::sqlite::util::safe_cast::i64_to_u32(
+            "core_address_pool.address_index",
+            row.get(0)?,
+        )?;
+        blob::check_size(row.get(1)?)?;
+        entries.push((index, row.get(2)?, row.get(3)?));
+    }
+    Ok(entries)
+}
+
+/// Load address reservations with the same account scope as the pool writer.
+pub(crate) fn load_pool_reservations(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    account_type: &key_wallet::account::AccountType,
+    pool_type: AddressPoolType,
+) -> Result<Vec<(u32, u64)>, WalletStorageError> {
+    let (user_id, friend_id) = accounts::account_dashpay_ids(account_type);
+    let mut stmt = conn.prepare(
+        "SELECT address_index, reserved_at FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+           AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+           AND pool_type = ?7 AND used = 0 AND reserved_at IS NOT NULL",
+    )?;
+    let mut rows = stmt.query(params![
+        wallet_id.as_slice(),
+        accounts::account_type_db_label(account_type),
+        i64::from(accounts::account_index(account_type)),
+        i64::from(accounts::account_key_class(account_type)),
         user_id.as_slice(),
         friend_id.as_slice(),
         pool_type_to_i64(pool_type),
@@ -322,8 +379,11 @@ pub(crate) fn load_untyped_pool_entries(
             "core_address_pool.address_index",
             row.get(0)?,
         )?;
-        blob::check_size(row.get(1)?)?;
-        entries.push((index, row.get(2)?, row.get(3)?));
+        let reserved_at = crate::sqlite::util::safe_cast::i64_to_u64(
+            "core_address_pool.reserved_at",
+            row.get(1)?,
+        )?;
+        entries.push((index, reserved_at));
     }
     Ok(entries)
 }
