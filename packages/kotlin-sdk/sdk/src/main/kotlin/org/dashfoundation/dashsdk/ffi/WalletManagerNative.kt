@@ -145,6 +145,75 @@ internal object WalletManagerNative {
         gapLimit: Int,
     )
 
+    /**
+     * One bounded page of the engine's UTXO inventory for one wallet,
+     * across every funds account, as JSON
+     * `{"utxos":[...],"cursor":<string|null>,"hasMore":<bool>}` — the
+     * source of truth the TXO-store reconciler
+     * ([PlatformWalletManager.reconcileTxoStore]) diffs against the Room
+     * `txos` mirror. A serialization shim over one Rust call
+     * (`platform_wallet_wallet_utxos_page`): account ordering, cursor
+     * semantics, the page bound and the address rendering all live in
+     * `platform-wallet`, so the Swift host walks the identical inventory.
+     *
+     * Paged, not swept whole: a wallet's UTXO count is chain-controlled
+     * (anyone who knows a watched address can keep sending dust to it), so
+     * a full-inventory read would let a remote party decide how much this
+     * process allocates on every SYNCED transition and every 30-minute
+     * pass. Pass [cursor] `null` to start, then hand back the returned
+     * `cursor` verbatim while `hasMore` is true — a cursor this export did
+     * not produce throws. [limit] caps the rows in one page; non-positive
+     * asks for the engine's own default, and the engine clamps its own
+     * maximum, so no bound is mirrored on this side.
+     *
+     * Contact watch-only chains (`DashpayExternalAccount`) are absent by
+     * construction — those coins are the contact's money, not this
+     * wallet's — so the inventory never offers one to heal.
+     *
+     * Each `utxos` row is a
+     * [org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler.EngineUtxoRow]:
+     * the owning account tuple, the txid hex in the same byte order the
+     * changeset path hands the handler (so hex→bytes reproduces the
+     * `txos.txid` blob), vout, amount (duffs), the engine's own
+     * Base58Check address (empty when the script has no address form),
+     * scriptHex, height, and the engine's own `isConfirmed` /
+     * `isInstantLocked` / `isCoinbase` / `isLocked` flags.
+     */
+    external fun walletManagerUtxosPageJson(
+        managerHandle: Long,
+        walletId: ByteArray,
+        cursor: String?,
+        limit: Int,
+    ): String?
+
+    /**
+     * Classify a batch of store rows against the engine's live state: the
+     * reverse half of the reconcile transport, and the reason the paged
+     * inventory above carries no spent-outpoint list. The caller pages its
+     * OWN mirror rows and asks about them a batch at a time, so neither
+     * side ever builds a set over the whole engine inventory.
+     *
+     * [queriesJson] is a JSON array of
+     * [org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler.OutpointQuery]:
+     * for each row, the account tuple the STORE files the coin under, its
+     * txid hex, vout, and the scriptHex the store recorded. The account
+     * and script are the store's claim — the engine checks both against
+     * its own pools rather than trusting them, which is why a bare
+     * outpoint is not enough to ask the question.
+     *
+     * Returns one verdict byte per query, positionally — see
+     * `OUTPOINT_CLASS_*` on
+     * [org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler]:
+     * 0 unknown, 1 unspent, 2 known-uncredited, 3 not-owned. A query whose
+     * account tag this build cannot map keeps `unknown`; the rest are
+     * still answered.
+     */
+    external fun walletManagerClassifyOutpoints(
+        managerHandle: Long,
+        walletId: ByteArray,
+        queriesJson: String,
+    ): ByteArray?
+
     // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─
     //
     // Each step is a thin extern (one export = one FFI call, per
