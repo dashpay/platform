@@ -250,11 +250,14 @@ jobs:
 
       # Only npm itself is needed here. Do not install dependencies or restore
       # executable caches shared with the persistent builder in this OIDC job.
+      # No registry-url: with it, setup-node@v4 writes an _authToken line to
+      # .npmrc and exports a placeholder NODE_AUTH_TOKEN, so `npm publish` can
+      # attempt token auth instead of the trusted-publishing OIDC exchange.
+      # npm's default registry is already registry.npmjs.org.
       - name: Setup Node.JS
         uses: actions/setup-node@v4
         with:
           node-version: '24.14.1'
-          registry-url: https://registry.npmjs.org
 
       - name: Download built package artifacts
         uses: actions/download-artifact@v4
@@ -305,6 +308,9 @@ jobs:
                 throw new Error(`Builder-supplied publishConfig is not allowed in ${file}`);
               }
             }
+            // A partial artifact would otherwise publish an incomplete release.
+            const missing = [...trusted.keys()].filter(name => !seen.has(name));
+            if (missing.length) throw new Error(`Missing NPM tarballs: ${missing.join(', ')}`);
           })().catch(error => { console.error(error.message); process.exitCode = 1; });
           NODE
 
