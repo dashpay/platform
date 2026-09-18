@@ -190,10 +190,17 @@ impl DocumentHistoryDriveQuery {
     /// Maps the query onto the per-document subtree used before protocol
     /// version 15, which is keyed by block time only: a time filter and a
     /// page length. Revision and cursor filters need the history tree.
+    ///
+    /// That layout's reader takes an exclusive time bound, so the inclusive
+    /// `StartAtTime` bound is lowered by one millisecond to keep the filter's
+    /// meaning the same on both sides of activation. A revision stored at
+    /// block time zero stays unreachable through it, as it always was.
     pub(crate) fn legacy_read(&self) -> Result<(u64, Option<u16>), Error> {
         self.validate()?;
         match self.filter {
-            DocumentHistoryFilter::StartAtTime(time_ms) => Ok((time_ms, self.limit)),
+            DocumentHistoryFilter::StartAtTime(time_ms) => {
+                Ok((time_ms.saturating_sub(1), self.limit))
+            }
             DocumentHistoryFilter::StartAfter { .. }
             | DocumentHistoryFilter::StartAtRevision(_)
             | DocumentHistoryFilter::Revision(_) => Err(invalid(

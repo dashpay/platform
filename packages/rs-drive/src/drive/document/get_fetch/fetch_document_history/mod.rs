@@ -183,9 +183,11 @@ mod legacy_tests {
         // The layout before protocol 15 keeps no lifecycle record.
         assert_eq!(history.lifecycle, None);
 
+        // The time bound is inclusive on this layout too, although its reader
+        // takes an exclusive one.
         let page = drive
             .fetch_document_history(
-                &time_query(&contract, &document, 1000, Some(1)),
+                &time_query(&contract, &document, 2000, Some(1)),
                 document_type,
                 None,
                 platform_version,
@@ -193,9 +195,19 @@ mod legacy_tests {
             .expect("fetch page");
         assert_eq!(times(&page), vec![2000]);
 
-        let empty_page = drive
+        let last_page = drive
             .fetch_document_history(
                 &time_query(&contract, &document, 3000, Some(10)),
+                document_type,
+                None,
+                platform_version,
+            )
+            .expect("fetch last page");
+        assert_eq!(times(&last_page), vec![3000]);
+
+        let empty_page = drive
+            .fetch_document_history(
+                &time_query(&contract, &document, 3001, Some(10)),
                 document_type,
                 None,
                 platform_version,
@@ -227,6 +239,19 @@ mod legacy_tests {
         assert_eq!(history.lifecycle, None);
 
         let query = time_query(&contract, &document, 2000, Some(10));
+        let last_page_proof = drive
+            .prove_document_history(&query, document_type, None, platform_version)
+            .expect("prove last page");
+        let (_root_hash, last_page) = Drive::verify_document_history(
+            &query,
+            &last_page_proof,
+            document_type,
+            platform_version,
+        )
+        .expect("verify last history page");
+        assert_eq!(times(&last_page), vec![2000]);
+
+        let query = time_query(&contract, &document, 2001, Some(10));
         let empty_page_proof = drive
             .prove_document_history(&query, document_type, None, platform_version)
             .expect("prove empty page");
