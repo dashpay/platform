@@ -1,8 +1,8 @@
 //! Changeset types for delta-based wallet persistence.
 //!
 //! Every wallet mutation produces a [`PlatformWalletChangeSet`] delta that
-//! is applied to in-memory state and persisted atomically. No full-state
-//! snapshots — only deltas.
+//! is applied to in-memory state and persisted atomically. Opted-in backends
+//! also receive complete Core wallet snapshots at coherent event boundaries.
 //!
 //! # Shape
 //!
@@ -32,6 +32,7 @@ use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
 use crate::changeset::identity_scan_state::IdentityScanStateEntry;
@@ -2086,6 +2087,13 @@ pub struct PlatformWalletChangeSet {
     /// transaction records, UTXO add/remove, height checkpoints, IS-lock
     /// updates for non-final records.
     pub core: Option<CoreChangeSet>,
+    /// Complete Core wallet state captured together with this batch's events.
+    /// Newer snapshots replace older ones; subsequent Core deltas or account
+    /// registrations without a snapshot invalidate it. Pool-only changes are
+    /// applied over the snapshot by the backend. Stored separately from the
+    /// changeset's wire representation by snapshot-capable backends.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub core_wallet_snapshot: Option<ManagedWalletInfo>,
     /// Identity changes (registered, updated).
     pub identities: Option<IdentityChangeSet>,
     /// Identity key changes (public keys + private-key storage) keyed
@@ -2242,6 +2250,13 @@ impl From<DpnsNameStateChangeSet> for PlatformWalletChangeSet {
 
 impl Merge for PlatformWalletChangeSet {
     fn merge(&mut self, other: Self) {
+        if other.core_wallet_snapshot.is_some()
+            || !other.core.is_empty()
+            || !other.account_registrations.is_empty()
+            || !other.provider_key_account_registrations.is_empty()
+        {
+            self.core_wallet_snapshot = other.core_wallet_snapshot;
+        }
         // `CoreChangeSet` implements `Merge`; delegate via the
         // `Option<T>: Merge` blanket impl from this crate's merge module.
         self.core.merge(other.core);
@@ -2306,6 +2321,7 @@ impl Merge for PlatformWalletChangeSet {
 
     fn is_empty(&self) -> bool {
         let core_empty = self.core.is_empty()
+            && self.core_wallet_snapshot.is_none()
             && self.identities.is_empty()
             && self.identity_keys.is_empty()
             && self.contacts.is_empty()
@@ -2327,6 +2343,85 @@ impl Merge for PlatformWalletChangeSet {
             && self.pending_contact_crypto_added.is_empty()
             && self.pending_contact_crypto_cleared.is_empty();
         core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())
+    }
+}
+
+#[cfg(test)]
+mod core_snapshot_tests {
+    use super::*;
+    use key_wallet::wallet::ManagedWalletInfo;
+
+    fn snapshot(height: u32) -> PlatformWalletChangeSet {
+        let mut info = ManagedWalletInfo::new(Network::Testnet, [7; 32]);
+        info.metadata.synced_height = height;
+        PlatformWalletChangeSet {
+            core_wallet_snapshot: Some(info),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn core_snapshot_merge_replaces_and_invalidates_only_for_core_deltas() {
+        let mut changes = snapshot(10);
+        assert!(!changes.is_empty(), "a snapshot alone must reach storage");
+        changes.merge(snapshot(20));
+        changes.merge(PlatformWalletChangeSet {
+            account_address_pools: vec![AccountAddressPoolEntry {
+                account_type: AccountType::Standard {
+                    index: 0,
+                    standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+                },
+                pool_type: AddressPoolType::External,
+                addresses: vec![],
+            }],
+            ..Default::default()
+        });
+        changes.merge(PlatformWalletChangeSet {
+            core: Some(CoreChangeSet::default()),
+            ..Default::default()
+        });
+        assert_eq!(
+            changes
+                .core_wallet_snapshot
+                .as_ref()
+                .unwrap()
+                .metadata
+                .synced_height,
+            20
+        );
+        changes.merge(PlatformWalletChangeSet {
+            core: Some(CoreChangeSet {
+                synced_height: Some(30),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        assert!(
+            changes.core_wallet_snapshot.is_none(),
+            "a later Core delta cannot retain an older snapshot"
+        );
+        changes.merge(snapshot(40));
+        assert_eq!(
+            changes.core_wallet_snapshot.unwrap().metadata.synced_height,
+            40
+        );
+    }
+
+    #[test]
+    fn core_snapshot_merge_invalidates_when_an_account_is_registered() {
+        let mut changes = snapshot(10);
+        let ctx = key_wallet::test_utils::TestWalletContext::new_random();
+        changes.merge(PlatformWalletChangeSet {
+            account_registrations: vec![AccountRegistrationEntry {
+                account_type: AccountType::Standard {
+                    index: 0,
+                    standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+                },
+                account_xpub: ctx.xpub,
+            }],
+            ..Default::default()
+        });
+        assert!(changes.core_wallet_snapshot.is_none());
     }
 }
 

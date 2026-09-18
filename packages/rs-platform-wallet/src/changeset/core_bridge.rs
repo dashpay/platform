@@ -42,6 +42,7 @@ use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, Ad
 use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRecord};
 use key_wallet::transaction_checking::transaction_router::AccountTypeToCheck;
 use key_wallet::transaction_checking::{DerivedAddressInfo, TransactionContext};
+use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::Utxo;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
 use tokio::sync::mpsc;
@@ -98,7 +99,8 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 ///
 /// The cap bounds the worst-case size of a single merged changeset (and
 /// hence one Room transaction), and keeps a saturated producer from
-/// starving the cancellation branch of the select below.
+/// starving the cancellation branch of the select below. Snapshot-capable
+/// backends drain a complete manager-locked boundary instead of using this cap.
 const ADAPTER_STORE_BATCH_LIMIT: usize = 512;
 
 /// Session fault state for the durable-watermark guard.
@@ -409,43 +411,55 @@ async fn run_wallet_event_adapter<P>(
             },
         };
 
-        let mut batch: BTreeMap<WalletId, WalletBatch> = BTreeMap::new();
+        let snapshots_enabled = persister_for_commit
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::CORE_WALLET_SNAPSHOTS);
+        // No producer can mutate Core or enqueue its events while this guard
+        // is held. A capped prefix would leave the snapshot ahead of its rows.
+        let guard = if snapshots_enabled {
+            Some(wallet_manager.read().await)
+        } else {
+            None
+        };
+        let mut events = vec![event];
         let mut closed = false;
-        {
-            let wallet_id = event.wallet_id();
-            // For events that need to consult per-wallet state (today only
-            // `TransactionInstantLocked`, which checks finality before
-            // recording the IS lock), `build_core_changeset` takes a brief
-            // read lock on the manager.
-            let core = build_core_changeset(&wallet_manager, &event).await;
-            let asset_locks = reconstruct_asset_locks_for_event(&wallet_manager, &event).await;
-            let entry = batch.entry(wallet_id).or_default();
-            entry.core.merge(core);
-            entry.asset_locks.merge(asset_locks);
-        }
-
-        // Fold in whatever else is already buffered. `try_recv` never waits,
-        // so this drains the backlog at projection speed and stops as soon as
-        // the channel is empty.
-        let mut folded = 1usize;
-        while folded < ADAPTER_STORE_BATCH_LIMIT {
+        while snapshots_enabled || events.len() < ADAPTER_STORE_BATCH_LIMIT {
             match receiver.try_recv() {
-                Ok(event) => {
-                    let wallet_id = event.wallet_id();
-                    let core = build_core_changeset(&wallet_manager, &event).await;
-                    let asset_locks =
-                        reconstruct_asset_locks_for_event(&wallet_manager, &event).await;
-                    let entry = batch.entry(wallet_id).or_default();
-                    entry.core.merge(core);
-                    entry.asset_locks.merge(asset_locks);
-                    folded += 1;
-                }
+                Ok(event) => events.push(event),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     closed = true;
                     break;
                 }
             }
+        }
+        let mut batch: BTreeMap<WalletId, WalletBatch> = BTreeMap::new();
+        if let Some(guard) = guard.as_ref() {
+            for event in &events {
+                batch
+                    .entry(event.wallet_id())
+                    .or_insert_with(|| WalletBatch {
+                        core_wallet_snapshot: guard
+                            .get_wallet_info(&event.wallet_id())
+                            .map(|info| info.core_wallet.clone()),
+                        ..Default::default()
+                    });
+            }
+        }
+        // Asset-lock reconstruction needs a manager write guard.
+        drop(guard);
+        let folded = events.len();
+        for event in events {
+            let entry = batch.entry(event.wallet_id()).or_default();
+            let core = if snapshots_enabled {
+                project_core_changeset(&event, entry.core_wallet_snapshot.as_ref())
+            } else {
+                build_core_changeset(&wallet_manager, &event).await
+            };
+            entry.core.merge(core);
+            entry
+                .asset_locks
+                .merge(reconstruct_asset_locks_for_event(&wallet_manager, &event).await);
         }
 
         // Commit the folded batch. The channel is lossless, so a watermark is
@@ -493,6 +507,7 @@ async fn run_wallet_event_adapter<P>(
             .filter(|(_, wallet_batch)| {
                 !wallet_batch.core.is_empty_no_records()
                     || !Merge::is_empty(&wallet_batch.asset_locks)
+                    || wallet_batch.core_wallet_snapshot.is_some()
             })
             .map(|(wallet_id, _)| *wallet_id)
             .collect();
@@ -709,6 +724,7 @@ fn commit_wallet<P>(
     let WalletBatch {
         mut core,
         asset_locks,
+        mut core_wallet_snapshot,
     } = wallet_batch;
     {
         // Hold this wallet's durable watermark at the last fully persisted
@@ -724,11 +740,15 @@ fn commit_wallet<P>(
         let proposed_height = core.synced_height;
         freeze_synced_height_if_faulted(&mut core, is_faulted);
         if is_faulted {
+            core_wallet_snapshot = None;
             if let Some(h) = proposed_height {
                 diag.record_frozen(h);
             }
         }
-        if core.is_empty_no_records() && Merge::is_empty(&asset_locks) {
+        if core.is_empty_no_records()
+            && Merge::is_empty(&asset_locks)
+            && core_wallet_snapshot.is_none()
+        {
             // SyncHeightAdvanced for an unknown wallet, empty BlockProcessed, a
             // watermark-only batch stripped by the fault guard above, etc. —
             // nothing to persist. Skip the round-trip.
@@ -773,10 +793,12 @@ fn commit_wallet<P>(
             // the adapter's own progress marker and holding it back would
             // re-drive work without making anything safer.
             core.synced_height = None;
+            core_wallet_snapshot = None;
         }
 
         let cs = PlatformWalletChangeSet {
             core: Some(core),
+            core_wallet_snapshot,
             // Tracked-asset-lock rows reconstructed from this drain's
             // records (see `reconstruct_asset_locks_for_event`) ride the
             // same store round-trip so the row and the record that
@@ -942,13 +964,13 @@ fn freeze_synced_height_if_faulted(core: &mut CoreChangeSet, persistence_faulted
     }
 }
 
-/// Per-wallet fold of one drain: the projected core rows plus any
-/// tracked-asset-lock entries reconstructed from the same events. Both
-/// sub-changesets are committed in a single `store()` per wallet.
+/// One wallet's event projections and optional complete Core snapshot,
+/// committed in a single `store()` call.
 #[derive(Default)]
 struct WalletBatch {
     core: CoreChangeSet,
     asset_locks: AssetLockChangeSet,
+    core_wallet_snapshot: Option<ManagedWalletInfo>,
 }
 
 /// Rebuild missing tracked asset locks from the records an event
@@ -1045,9 +1067,22 @@ async fn build_core_changeset(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     event: &WalletEvent,
 ) -> CoreChangeSet {
+    let guard = wallet_manager.read().await;
+    project_core_changeset(
+        event,
+        guard
+            .get_wallet_info(&event.wallet_id())
+            .map(|info| &info.core_wallet),
+    )
+}
+
+/// Project against the same Core state that accompanies the captured events.
+fn project_core_changeset(
+    event: &WalletEvent,
+    core_wallet: Option<&ManagedWalletInfo>,
+) -> CoreChangeSet {
     match event {
         WalletEvent::TransactionDetected {
-            wallet_id,
             record,
             addresses_derived,
             ..
@@ -1089,8 +1124,8 @@ async fn build_core_changeset(
             let (slices, utxo_credit_verdicts): (
                 Vec<TransactionRecord>,
                 BTreeMap<OutPoint, UtxoCreditVerdict>,
-            ) = match wallet_slices_and_verdicts_for_txid(wallet_manager, wallet_id, &record.txid)
-                .await
+            ) = match core_wallet
+                .map(|wallet| wallet_slices_and_verdicts_for_txid(wallet, &record.txid))
             {
                 Some(read) => read,
                 None => (vec![(**record).clone()], BTreeMap::new()),
@@ -1106,7 +1141,7 @@ async fn build_core_changeset(
                 .cloned()
                 .collect();
             let (addresses_marked_used, account_highest_used) =
-                collect_usage_deltas(wallet_manager, wallet_id, vec![&**record]).await;
+                collect_usage_deltas(core_wallet, &[&**record]);
             let mut folded = owned.clone();
             crate::changeset::changeset::fold_same_txid_records(&mut folded);
             CoreChangeSet {
@@ -1132,15 +1167,12 @@ async fn build_core_changeset(
             }
         }
         WalletEvent::TransactionInstantLocked {
-            wallet_id,
-            txid,
-            instant_lock,
-            ..
+            txid, instant_lock, ..
         } => {
             // IS-lock is informative only for non-final records. If the
             // wallet has already chain-locked this txid, drop the lock —
             // chain-lock supersedes IS finality.
-            if is_chain_locked(wallet_manager, wallet_id, txid).await {
+            if core_wallet.is_some_and(|wallet| is_chain_locked(wallet, txid)) {
                 return CoreChangeSet::default();
             }
             let mut cs = CoreChangeSet::default();
@@ -1149,7 +1181,6 @@ async fn build_core_changeset(
             cs
         }
         WalletEvent::BlockProcessed {
-            wallet_id,
             height,
             inserted,
             updated,
@@ -1207,7 +1238,7 @@ async fn build_core_changeset(
                 .chain(matured.iter())
                 .collect();
             let (addresses_marked_used, account_highest_used) =
-                collect_usage_deltas(wallet_manager, wallet_id, records).await;
+                collect_usage_deltas(core_wallet, &records);
             cs.addresses_marked_used = addresses_marked_used;
             cs.account_highest_used = account_highest_used;
             // The engine's verdict on the outputs the persister is about to
@@ -1215,12 +1246,14 @@ async fn build_core_changeset(
             // `CoreChangeSet::utxo_credit_verdicts`. Over the owned slices
             // only (`account_records` is already filtered): a contact's
             // watch-only chain never defines the wallet's TXOs.
-            cs.utxo_credit_verdicts = utxo_credit_verdicts(
-                wallet_manager,
-                wallet_id,
-                &cs.account_records.iter().collect::<Vec<_>>(),
-            )
-            .await;
+            cs.utxo_credit_verdicts = core_wallet
+                .map(|wallet| {
+                    utxo_credit_verdicts_from_wallet(
+                        wallet,
+                        &cs.account_records.iter().collect::<Vec<_>>(),
+                    )
+                })
+                .unwrap_or_default();
             cs
         }
         WalletEvent::TransactionsSwept {
@@ -1322,10 +1355,9 @@ async fn build_core_changeset(
 /// Returns empty deltas when the wallet is unknown (raced a removal)
 /// — the next sync round re-emits. See
 /// [`collect_usage_deltas_from_accounts`] for the derivation itself.
-async fn collect_usage_deltas(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
-    records: Vec<&TransactionRecord>,
+fn collect_usage_deltas(
+    core_wallet: Option<&ManagedWalletInfo>,
+    records: &[&TransactionRecord],
 ) -> (
     Vec<DerivedAddressInfo>,
     BTreeMap<AccountType, HighestUsedIndexes>,
@@ -1333,42 +1365,16 @@ async fn collect_usage_deltas(
     if records.is_empty() {
         return (Vec::new(), BTreeMap::new());
     }
-    let guard = wallet_manager.read().await;
-    let Some(info) = guard.get_wallet_info(wallet_id) else {
+    let Some(info) = core_wallet else {
         return (Vec::new(), BTreeMap::new());
     };
-    collect_usage_deltas_from_accounts(&info.core_wallet.accounts, &records)
+    collect_usage_deltas_from_accounts(&info.accounts, records)
 }
 
 /// The engine's credit verdict for every `Received` / `Change` output of
 /// `records` that the owning account does NOT hold — see
 /// [`CoreChangeSet::utxo_credit_verdicts`] for what a persister does with
-/// it. Empty when every output is credited, when the wallet is unknown
-/// (raced a removal — the next round re-emits), or when `records` is empty.
-///
-/// One read of the wallet lock per event, like [`collect_usage_deltas`];
-/// the walk itself is [`utxo_credit_verdicts_from_wallet`], factored so
-/// tests can drive it against a bare `ManagedWalletInfo`. `BlockProcessed`
-/// uses this over the event's own records (block records carry their
-/// block context and cannot read `Doomed`); `TransactionDetected` reads
-/// its slices and their verdicts under one guard through
-/// [`wallet_slices_and_verdicts_for_txid`].
-async fn utxo_credit_verdicts(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
-    records: &[&TransactionRecord],
-) -> BTreeMap<OutPoint, UtxoCreditVerdict> {
-    if records.is_empty() {
-        return BTreeMap::new();
-    }
-    let guard = wallet_manager.read().await;
-    let Some(info) = guard.get_wallet_info(wallet_id) else {
-        return BTreeMap::new();
-    };
-    utxo_credit_verdicts_from_wallet(&info.core_wallet, records)
-}
-
-/// Synchronous core of [`utxo_credit_verdicts`].
+/// it. Empty when every output is credited or `records` is empty.
 ///
 /// For each record (a contact's watch-only slice excluded — its outputs
 /// are the contact's coins and never become this wallet's TXOs) and each
@@ -1605,22 +1611,14 @@ fn collect_usage_deltas_from_accounts(
 
 /// Returns `true` when the wallet's stored record for `txid` is in a
 /// chain-locked block. Used to gate IS-lock projection.
-async fn is_chain_locked(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
-    txid: &dashcore::Txid,
-) -> bool {
-    let guard = wallet_manager.read().await;
-    let Some(info) = guard.get_wallet_info(wallet_id) else {
-        return false;
-    };
+fn is_chain_locked(core_wallet: &ManagedWalletInfo, txid: &dashcore::Txid) -> bool {
     // Walk every account; if any holds an in-memory record for this
     // txid, the chain-lock determination falls out of its
     // `TransactionContext`. With `keep-finalized-transactions` off
     // (the default) `transactions()` returns an empty map regardless
     // of state — chain-lock delivery is event-driven in that mode, and
     // this helper just reports "no record locally" by returning false.
-    for account in info.core_wallet.accounts.all_accounts() {
+    for account in core_wallet.accounts.all_accounts() {
         if let Some(record) = account.transactions().get(txid) {
             return matches!(record.context, TransactionContext::InChainLockedBlock(_));
         }
@@ -1628,28 +1626,17 @@ async fn is_chain_locked(
     false
 }
 
-/// Every account slice the manager currently holds for `txid` in
-/// `wallet_id` — the authoritative "all accounts matched so far"
-/// snapshot behind the wallet-level fold (see the `TransactionDetected`
-/// arm of [`build_core_changeset`]) — together with the credit verdicts
-/// of the owned slices' outputs ([`utxo_credit_verdicts_from_wallet`]),
-/// both read under ONE wallet read guard, so the records a verdict is
-/// judged on and the wallet state it is judged against are the same
-/// snapshot. Returns `None` when the manager doesn't know the wallet at
-/// all, `Some((vec![], empty))` when it does but no account holds a record
-/// for the txid (e.g. pruned at chain-lock).
-async fn wallet_slices_and_verdicts_for_txid(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
+/// Account slices and their credit verdicts from one captured Core state.
+/// Empty when no account holds the txid (e.g. pruned at chain-lock).
+fn wallet_slices_and_verdicts_for_txid(
+    core_wallet: &ManagedWalletInfo,
     txid: &dashcore::Txid,
-) -> Option<(
+) -> (
     Vec<TransactionRecord>,
     BTreeMap<OutPoint, UtxoCreditVerdict>,
-)> {
-    let guard = wallet_manager.read().await;
-    let info = guard.get_wallet_info(wallet_id)?;
+) {
     let mut slices = Vec::new();
-    for account in info.core_wallet.accounts.all_accounts() {
+    for account in core_wallet.accounts.all_accounts() {
         if let Some(record) = account.transactions().get(txid) {
             slices.push(record.clone());
         }
@@ -1658,8 +1645,8 @@ async fn wallet_slices_and_verdicts_for_txid(
         .iter()
         .filter(|r| !is_contact_watch_only(r))
         .collect();
-    let verdicts = utxo_credit_verdicts_from_wallet(&info.core_wallet, &owned);
-    Some((slices, verdicts))
+    let verdicts = utxo_credit_verdicts_from_wallet(core_wallet, &owned);
+    (slices, verdicts)
 }
 
 /// Is this record owned by a contact's watch-only DashPay chain?
@@ -3091,9 +3078,15 @@ mod contact_watch_only_projection_tests {
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
         let manager = Arc::new(RwLock::new(wm));
 
-        let (slices, _) = wallet_slices_and_verdicts_for_txid(&manager, &wallet_id, &spend.txid())
-            .await
-            .expect("manager knows the wallet");
+        let (slices, _) = wallet_slices_and_verdicts_for_txid(
+            &manager
+                .read()
+                .await
+                .get_wallet_info(&wallet_id)
+                .expect("manager knows the wallet")
+                .core_wallet,
+            &spend.txid(),
+        );
         assert_eq!(slices.len(), 2, "both funding accounts hold a slice");
         let lone_slice = slices
             .iter()
@@ -3602,6 +3595,7 @@ mod tests {
         n_asset_locks: usize,
         n_asset_locks_removed: usize,
         rejected: bool,
+        snapshot_height: Option<u32>,
     }
 
     /// Test persister: records every `store()` (over an unbounded tokio
@@ -3702,6 +3696,10 @@ mod tests {
                     .map(|a| a.removed.len())
                     .unwrap_or(0),
                 rejected,
+                snapshot_height: changeset
+                    .core_wallet_snapshot
+                    .as_ref()
+                    .map(|s| s.metadata.synced_height),
             });
             if rejected {
                 Err(PersistenceError::backend("probe: forced store rejection"))
@@ -3723,6 +3721,213 @@ mod tests {
         Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
             dashcore::Network::Testnet,
         )))
+    }
+
+    fn snapshot_test_manager(
+        height: u32,
+    ) -> (Arc<RwLock<WalletManager<PlatformWalletInfo>>>, WalletId) {
+        let ctx = key_wallet::test_utils::TestWalletContext::new_random();
+        let mut core_wallet = ctx.managed_wallet;
+        core_wallet.metadata.synced_height = height;
+        let info = PlatformWalletInfo {
+            core_wallet,
+            generation: Arc::new(crate::wallet::core::WalletGeneration::new()),
+            identity_manager: crate::wallet::identity::IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
+        };
+        let mut manager = WalletManager::new(dashcore::Network::Testnet);
+        let id = manager.insert_wallet(ctx.wallet, info).unwrap();
+        (Arc::new(RwLock::new(manager)), id)
+    }
+
+    #[tokio::test]
+    async fn core_snapshot_covers_the_entire_queued_boundary() {
+        let height = ADAPTER_STORE_BATCH_LIMIT as u32 + 17;
+        let (manager, wallet_id) = snapshot_test_manager(height);
+        let (tx, rx) = unbounded_channel();
+        for h in 1..=height {
+            tx.send(sync_height_event(wallet_id, h)).unwrap();
+        }
+        drop(tx);
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_WALLET_SNAPSHOTS,
+        ));
+        run_wallet_event_adapter(
+            manager,
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            CancellationToken::new(),
+        )
+        .await;
+        let observed = obs_rx.try_recv().unwrap();
+        assert_eq!(observed.snapshot_height, Some(height));
+        assert_eq!(
+            observed.synced_height,
+            Some(height),
+            "snapshot cannot outrun a capped event prefix"
+        );
+        assert!(
+            obs_rx.try_recv().is_err(),
+            "one complete boundary, one atomic store"
+        );
+    }
+
+    #[tokio::test]
+    async fn core_snapshot_requires_backend_opt_in() {
+        let (manager, wallet_id) = snapshot_test_manager(12);
+        let (tx, rx) = unbounded_channel();
+        tx.send(sync_height_event(wallet_id, 12)).unwrap();
+        drop(tx);
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        run_wallet_event_adapter(
+            manager,
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            CancellationToken::new(),
+        )
+        .await;
+        assert!(obs_rx.try_recv().unwrap().snapshot_height.is_none());
+    }
+
+    #[tokio::test]
+    async fn core_snapshot_includes_events_emitted_while_waiting_for_manager() {
+        let (manager, wallet_id) = snapshot_test_manager(1);
+        let mut writer = manager.write().await;
+        let (tx, rx) = unbounded_channel();
+        tx.send(sync_height_event(wallet_id, 1)).unwrap();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_WALLET_SNAPSHOTS,
+        ));
+        let task = tokio::spawn(run_wallet_event_adapter(
+            Arc::clone(&manager),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            CancellationToken::new(),
+        ));
+        tokio::task::yield_now().await;
+        writer
+            .get_wallet_info_mut(&wallet_id)
+            .unwrap()
+            .core_wallet
+            .metadata
+            .synced_height = 2;
+        tx.send(sync_height_event(wallet_id, 2)).unwrap();
+        drop(tx);
+        drop(writer);
+        tokio::time::timeout(std::time::Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap();
+        let observed = obs_rx.try_recv().unwrap();
+        assert_eq!(observed.snapshot_height, Some(2));
+        assert_eq!(observed.synced_height, Some(2));
+        assert!(obs_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn core_snapshot_cannot_bypass_a_faulted_checkpoint() {
+        let wallet_id = [7; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_WALLET_SNAPSHOTS,
+        );
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        fault.fault_wallet(wallet_id, &sync_fault);
+        let mut batch = one_wallet_batch(wallet_id, watermark_with_rows(20, 20));
+        let mut snapshot =
+            key_wallet::wallet::ManagedWalletInfo::new(dashcore::Network::Testnet, wallet_id);
+        snapshot.metadata.synced_height = 20;
+        batch.get_mut(&wallet_id).unwrap().core_wallet_snapshot = Some(snapshot);
+        commit_batch(
+            &persister,
+            batch,
+            1,
+            &mut fault,
+            &sync_fault,
+            &AtomicBool::new(false),
+            &mut Vec::new(),
+        );
+        let observed = obs_rx.try_recv().unwrap();
+        assert_eq!(observed.last_processed_height, Some(20));
+        assert!(observed.synced_height.is_none());
+        assert!(
+            observed.snapshot_height.is_none(),
+            "snapshot metadata must not bypass the checkpoint guard"
+        );
+    }
+
+    #[test]
+    fn core_snapshot_cannot_bypass_unsupported_sweep_guard() {
+        use dashcore::hashes::Hash;
+        let wallet_id = [7; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_WALLET_SNAPSHOTS,
+        );
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let mut batch = one_wallet_batch(wallet_id, watermark_with_rows(20, 20));
+        let entry = batch.get_mut(&wallet_id).unwrap();
+        entry.core_wallet_snapshot = Some(key_wallet::wallet::ManagedWalletInfo::new(
+            dashcore::Network::Testnet,
+            wallet_id,
+        ));
+        entry.core.sweeps.push(SweepBatch {
+            txids: vec![dashcore::Txid::all_zeros()],
+            superseded_by: dashcore::Txid::from_byte_array([1; 32]),
+            winner_mined_height: None,
+            released_outpoints: vec![],
+        });
+        commit_batch(
+            &persister,
+            batch,
+            1,
+            &mut fault,
+            &sync_fault,
+            &AtomicBool::new(false),
+            &mut Vec::new(),
+        );
+        let observed = obs_rx.try_recv().unwrap();
+        assert!(observed.synced_height.is_none());
+        assert!(observed.snapshot_height.is_none());
+        assert!(sync_fault.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn core_snapshot_only_batch_reaches_storage() {
+        let wallet_id = [7; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_WALLET_SNAPSHOTS,
+        );
+        let mut batch = one_wallet_batch(wallet_id, CoreChangeSet::default());
+        batch.get_mut(&wallet_id).unwrap().core_wallet_snapshot = Some(
+            key_wallet::wallet::ManagedWalletInfo::new(dashcore::Network::Testnet, wallet_id),
+        );
+        commit_batch(
+            &persister,
+            batch,
+            1,
+            &mut AdapterFaultState::default(),
+            &AtomicBool::new(false),
+            &AtomicBool::new(false),
+            &mut Vec::new(),
+        );
+        assert_eq!(obs_rx.try_recv().unwrap().snapshot_height, Some(0));
     }
 
     /// A bare watermark event — the ONLY event whose height reaches the
@@ -5392,6 +5597,7 @@ mod tests {
             super::WalletBatch {
                 core: CoreChangeSet::default(),
                 asset_locks,
+                ..Default::default()
             },
         );
         commit_batch(
@@ -5451,6 +5657,7 @@ mod tests {
             WalletBatch {
                 core,
                 asset_locks: AssetLockChangeSet::default(),
+                ..Default::default()
             },
         );
         batch
