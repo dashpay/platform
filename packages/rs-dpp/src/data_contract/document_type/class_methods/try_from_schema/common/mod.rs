@@ -217,6 +217,11 @@ pub(super) struct ParserGeneration {
     /// (conditional-participation indexOnly indexes). Forwarded to
     /// [`Index::try_from_value_map`] exactly like the admissions above.
     pub admit_index_skip_if_absent: bool,
+    /// Whether `rangeCountable: true` promotes an omitted `countable` to
+    /// `"countable"` (generation 3 and later), as the doctype-level
+    /// `rangeCountable` has always implied `documentsCountable`. Forwarded to
+    /// [`Index::try_from_value_map`] exactly like the admissions above.
+    pub admit_range_countable_implies_countable: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -858,6 +863,9 @@ fn parse_indices(
                             terminal: ctx.generation.admit_index_terminal,
                             preallocated: ctx.generation.admit_index_preallocated,
                             skip_if_absent: ctx.generation.admit_index_skip_if_absent,
+                            range_countable_implies_countable: ctx
+                                .generation
+                                .admit_range_countable_implies_countable,
                         },
                     )
                     .map_err(consensus_or_protocol_data_contract_error)?;

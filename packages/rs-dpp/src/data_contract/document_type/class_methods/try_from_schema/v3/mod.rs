@@ -299,6 +299,13 @@ fn try_from_schema_generation_3(
             // same shared mapping.
             admit_index_skip_if_absent: IndexGrammarAdmissions::for_schema_generation(3)
                 .skip_if_absent,
+            // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 desugaring rule
+            // rather than a keyword, read from the same shared mapping so the
+            // registration-cost re-parse and the validator agree on it.
+            admit_range_countable_implies_countable: IndexGrammarAdmissions::for_schema_generation(
+                3,
+            )
+            .range_countable_implies_countable,
         },
         platform_version,
     )?;
@@ -441,11 +448,11 @@ mod tests {
     }
 
     /// A `review` doctype with one index over `restaurantId`, averageable on
-    /// `grade`, optionally carrying ranked keywords. Written so the v3
-    /// meta-schema's prerequisite rules are satisfied: the ranked
-    /// `if`/`then` conditionals demand the literal range keys, and the
-    /// `dependentRequired` chain covers the rest
-    /// (`rangeAverageable` → `averageable`).
+    /// `grade`, optionally carrying ranked keywords. The `averageable` +
+    /// `rangeAverageable` sugar satisfies every prerequisite in the v3
+    /// meta-schema (its ranked `if`/`then` pairs accept `rangeAverageable` in
+    /// place of each axis's own range key) and in the structural parser
+    /// (which checks the resolved flags), so any ranked keyword may be added.
     ///
     /// `restaurantId` is capped at 32 characters — comfortably inside the
     /// ranked key bound on every axis, so these grammar tests exercise the
@@ -627,22 +634,24 @@ mod tests {
     }
 
     /// The meta-schema's ranked `if`/`then` conditionals are the declarative
-    /// half of the structural "ranking needs its range axis" rule:
-    /// `rankedCountable: true` without `rangeCountable` fails meta
-    /// validation at PV14.
+    /// half of the structural "ranking needs its range axis" rule, and they
+    /// are sugar-aware: `rankedCountable: true` with `rangeAverageable` and
+    /// no literal `rangeCountable` passes meta validation at PV14, because
+    /// `rangeAverageable` puts the count axis in effect.
+    ///
+    /// Up to `4.2.0-beta.1` this exact shape was refused with
+    /// `"rangeCountable" is a required property`; the rule was corrected in
+    /// place while v3 is still editable.
     #[test]
-    fn ranked_countable_without_range_countable_rejected_by_meta_schema() {
-        // `averageable` + `rangeAverageable` give the index its range axes in
-        // *effect*, but `rangeCountable` is not literally present, so the
-        // `if rankedCountable == true then require rangeCountable`
-        // conditional fails.
+    fn ranked_countable_satisfied_by_range_averageable_in_meta_schema() {
         let schema = ranked_review_schema(vec![("rankedCountable", true)]);
-        let result = parse_with(schema, pv14(), true);
-        assert!(
-            result.is_err(),
-            "meta-schema v3 must demand rangeCountable alongside a true \
-             rankedCountable"
-        );
+        let v2 = parse_with(schema, pv14(), true)
+            .expect("rangeAverageable satisfies rankedCountable's range prerequisite");
+        let index = v2
+            .indices
+            .get("byRestaurant")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.range_countable);
     }
 
     /// An index over `restaurantId` carrying exactly one ranked keyword and
@@ -1752,6 +1761,411 @@ mod tests {
             msg.contains("maxLength") && msg.contains("61") && msg.contains("247"),
             "the error must name maxLength, the 61-character bound and the 247-byte \
              ceiling; got {msg}"
+        );
+    }
+
+    // ---- The `averageable` / `rangeAverageable` sugar and the meta-schema ----
+    //
+    // Meta-schema v3's prerequisite rules are sugar-aware, matching
+    // `Index::try_from_value_map`, which expands the sugar before it checks
+    // the same prerequisites on the resolved flags. `parse_with(.., true)`
+    // runs the meta-schema first in a `validation` build (which is how
+    // `cargo test -p dpp` builds, via the `all_features_without_client`
+    // dev-dependency) and the structural parser after it, so an acceptance
+    // below proves that *both* layers admit the spelling, and a rejection's
+    // message is checked for a word both layers use.
+
+    fn index_entry(pairs: Vec<(&str, Value)>) -> Vec<(Value, Value)> {
+        let mut entry = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("storeRating".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+        ];
+        entry.extend(
+            pairs
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+        entry
+    }
+
+    /// The shape rejected live on a `4.2.0-beta.1` devnet: the index declares
+    /// its aggregate layout with the sugar only, then asks for a Count ranking
+    /// on top of the Avg one.
+    fn sugar_multi_axis_index_entry() -> Vec<(Value, Value)> {
+        index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+            ("rankedCountable", Value::Bool(true)),
+        ])
+    }
+
+    fn schema_with_index_entry(entry: Vec<(Value, Value)>) -> Value {
+        schema_with_doctype_flags_and_index_entry(vec![], entry)
+    }
+
+    fn schema_with_doctype_flags_and_index_entry(
+        doctype_flags: Vec<(&str, Value)>,
+        entry: Vec<(Value, Value)>,
+    ) -> Value {
+        let mut schema = vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "restaurantId": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 0,
+                    },
+                    "grade": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "position": 1,
+                    },
+                }),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("indices".to_string()),
+                Value::Array(vec![Value::Map(entry)]),
+            ),
+        ];
+        schema.extend(
+            doctype_flags
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+        Value::Map(schema)
+    }
+
+    /// The sugar form of a two-axis index is the whole declaration: the
+    /// `rankedCountable` prerequisite is met by `rangeAverageable`, so no
+    /// literal `rangeCountable` (and therefore no literal `countable`) is
+    /// asked for by either layer.
+    #[test]
+    fn averageable_sugar_satisfies_ranked_countable_under_full_validation() {
+        let schema = schema_with_index_entry(sugar_multi_axis_index_entry());
+        let v2 = parse_with(schema, pv14(), true)
+            .expect("the sugar form satisfies every prerequisite in both layers");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// The same for the Sum axis: `rankedSummable` is met by `rangeAverageable`.
+    #[test]
+    fn averageable_sugar_satisfies_ranked_summable_under_full_validation() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedSummable", Value::Bool(true)),
+        ]));
+        let v2 =
+            parse_with(schema, pv14(), true).expect("rangeAverageable stands in for rangeSummable");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_summable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// And the other way round: the explicit longhand satisfies
+    /// `rankedAverageable` without a literal `rangeAverageable`.
+    #[test]
+    fn explicit_longhand_satisfies_ranked_averageable_under_full_validation() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("countable", Value::Text("countable".to_string())),
+            ("summable", Value::Text("grade".to_string())),
+            ("rangeCountable", Value::Bool(true)),
+            ("rangeSummable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]));
+        let v2 = parse_with(schema, pv14(), true)
+            .expect("rangeCountable + rangeSummable stand in for rangeAverageable");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// Sugar-aware is not rule-free: a ranking with no range axis in effect,
+    /// spelled either way, is still refused, and the error names the flag
+    /// that is missing (the meta-schema says `"rangeCountable" is a required
+    /// property`, the parser says `rankedCountable requires rangeCountable`).
+    #[test]
+    fn ranked_countable_with_no_range_axis_is_still_rejected() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rankedCountable", Value::Bool(true)),
+        ]));
+        let error = parse_with(schema, pv14(), true)
+            .expect_err("a Count ranking needs a range axis, however it is spelled");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable"),
+            "the error must name the missing range flag; got {msg}"
+        );
+    }
+
+    /// The ranked rules stay value-sensitive: a written-out
+    /// `"rankedCountable": false` is an opt-out and demands nothing.
+    #[test]
+    fn ranked_opt_out_demands_nothing() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rankedCountable", Value::Bool(false)),
+        ]));
+        let v2 = parse_with(schema, pv14(), true)
+            .expect("an explicit rankedCountable: false asks for no ranking axis");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(!index.ranked_countable && !index.range_countable);
+    }
+
+    /// `rangeCountable` implies `countable`, as it does at the doctype level:
+    /// a `rangeCountable: true` with no `countable` beside it is a complete
+    /// declaration in both layers (the meta-schema has no row for it, the
+    /// parser promotes the omitted `countable`).
+    #[test]
+    fn range_countable_alone_implies_countable_under_full_validation() {
+        let schema =
+            schema_with_index_entry(index_entry(vec![("rangeCountable", Value::Bool(true))]));
+        let v2 = parse_with(schema, pv14(), true)
+            .expect("rangeCountable alone is a complete declaration");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.range_countable && index.countable.is_countable());
+    }
+
+    /// The other range rows keep their presence semantics: a `rangeSummable`
+    /// key with neither `summable` nor `averageable` beside it is refused,
+    /// and the error names `summable`.
+    #[test]
+    fn range_summable_without_summable_or_averageable_is_still_rejected() {
+        let schema =
+            schema_with_index_entry(index_entry(vec![("rangeSummable", Value::Bool(true))]));
+        let error =
+            parse_with(schema, pv14(), true).expect_err("rangeSummable needs something to sum");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("summable"),
+            "the error must name the missing aggregate flag; got {msg}"
+        );
+    }
+
+    /// An explicit `"notCountable"` beside `rangeCountable: true` is the one
+    /// spelling the implication refuses, and the parser names it.
+    #[test]
+    fn range_countable_with_explicit_not_countable_is_rejected() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("countable", Value::Text("notCountable".to_string())),
+            ("rangeCountable", Value::Bool(true)),
+        ]));
+        let error = parse_with(schema, pv14(), true)
+            .expect_err("countable: notCountable contradicts rangeCountable: true");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable: true implies a countable index"),
+            "the parser's contradiction error must be the one raised; got {msg}"
+        );
+    }
+
+    /// Below protocol version 14 nothing moves: generation 2 keeps rejecting
+    /// `rangeCountable` without `countable`, in the structural parser (which
+    /// is all a `full_validation: false` parse runs) and in the frozen v2
+    /// meta-schema alike.
+    #[test]
+    fn range_countable_alone_is_still_rejected_at_protocol_version_13() {
+        let schema =
+            schema_with_index_entry(index_entry(vec![("rangeCountable", Value::Bool(true))]));
+        for full_validation in [false, true] {
+            let error = parse_dispatched(schema.clone(), pv13(), full_validation)
+                .expect_err("generation 2 demands an explicit countable");
+            let msg = format!("{error:?}");
+            assert!(
+                msg.contains("countable"),
+                "full_validation={full_validation}: the error must name countable; got {msg}"
+            );
+        }
+    }
+
+    /// With the sugar satisfying the presence rows, a contradictory
+    /// `"rangeCountable": false` under `rangeAverageable: true` reaches the
+    /// parser, whose message says what to remove. Before the meta-schema was
+    /// made sugar-aware the same index died one layer earlier with
+    /// `"countable" is a required property`, which pointed at the wrong key.
+    #[test]
+    fn explicit_range_countable_false_under_range_averageable_reaches_the_parser() {
+        let mut entry = sugar_multi_axis_index_entry();
+        entry.push((
+            Value::Text("rangeCountable".to_string()),
+            Value::Bool(false),
+        ));
+        let error = parse_with(schema_with_index_entry(entry), pv14(), true)
+            .expect_err("rangeAverageable: true contradicts an explicit rangeCountable: false");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable: false"),
+            "the parser's contradiction error must name the flag to remove; got {msg}"
+        );
+    }
+
+    /// The doctype-level row has the same shape: `documentsAverageable` stands
+    /// in for `documentsSummable` under a doctype-level `rangeSummable`.
+    #[test]
+    fn documents_averageable_sugar_satisfies_doctype_range_summable() {
+        let schema = schema_with_doctype_flags_and_index_entry(
+            vec![
+                ("documentsAverageable", Value::Text("grade".to_string())),
+                ("rangeSummable", Value::Bool(true)),
+            ],
+            index_entry(vec![]),
+        );
+        parse_with(schema, pv14(), true).expect(
+            "documentsAverageable implies documentsSummable, so rangeSummable is satisfied",
+        );
+
+        let schema = schema_with_doctype_flags_and_index_entry(
+            vec![("rangeSummable", Value::Bool(true))],
+            index_entry(vec![]),
+        );
+        let error = parse_with(schema, pv14(), true)
+            .expect_err("a doctype-level rangeSummable with nothing to sum is refused");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("documentsSummable"),
+            "the error must name the missing doctype flag; got {msg}"
+        );
+    }
+
+    /// A contract already written to state is re-parsed with
+    /// `full_validation: false`; that path never ran either layer and must
+    /// keep reconstructing whatever consensus once admitted.
+    #[test]
+    fn sugar_form_parses_without_full_validation() {
+        let schema = schema_with_index_entry(sugar_multi_axis_index_entry());
+        let v2 = parse_with(schema, pv14(), false)
+            .expect("the structural parser is sugar-aware and accepts the short form");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// The SDK-facing entry point reaches the same verdict as consensus.
+    ///
+    /// `DataContract::from_json(.., full_validation = true, ..)` is what
+    /// `DataContractWasm::fromJSON` calls, and drive-abci's data contract
+    /// create validation deserializes the contract with `full_validation =
+    /// true` as well; both land in `DocumentType::try_from_schema`, so
+    /// pinning this entry point pins the pair.
+    #[cfg(feature = "json-conversion")]
+    #[test]
+    fn from_json_full_validation_accepts_the_sugar_short_form() {
+        use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+        use crate::prelude::DataContract;
+        use serde_json::json;
+
+        fn contract_json(index: serde_json::Value) -> serde_json::Value {
+            json!({
+                "$formatVersion": "1",
+                "id": "BmKTJeLL3GfH8FxEx7SUbTog4eAKj8vJRDi97gYkxB9p",
+                "ownerId": "HtQNfXBZJu3WnvjvCFJKgbvfgWYJxWxaFWy23TKoFjg9",
+                "version": 1,
+                "config": {
+                    "$formatVersion": "0",
+                    "canBeDeleted": false,
+                    "readonly": false,
+                    "keepsHistory": false,
+                    "documentsKeepHistoryContractDefault": false,
+                    "documentsMutableContractDefault": true,
+                    "documentsCanBeDeletedContractDefault": false,
+                    "requiresIdentityEncryptionBoundedKey": null,
+                    "requiresIdentityDecryptionBoundedKey": null
+                },
+                "documentSchemas": {
+                    "review": {
+                        "type": "object",
+                        "properties": {
+                            "restaurantId": {"type": "string", "maxLength": 32, "position": 0},
+                            "grade": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100,
+                                "position": 1
+                            }
+                        },
+                        "required": ["restaurantId", "grade"],
+                        "additionalProperties": false,
+                        "indices": [index]
+                    }
+                },
+                "groups": {},
+                "tokens": {},
+                "keywords": [],
+                "description": null
+            })
+        }
+
+        let short_form = json!({
+            "name": "storeRating",
+            "properties": [{"restaurantId": "asc"}],
+            "averageable": "grade",
+            "rangeAverageable": true,
+            "rankedAverageable": true,
+            "rankedCountable": true
+        });
+        DataContract::from_json(contract_json(short_form), true, pv14())
+            .expect("the sugar short form registers, so the SDK must accept it too");
+
+        let no_range_axis = json!({
+            "name": "storeRating",
+            "properties": [{"restaurantId": "asc"}],
+            "averageable": "grade",
+            "rankedCountable": true
+        });
+        let error = DataContract::from_json(contract_json(no_range_axis), true, pv14())
+            .expect_err("a ranking with no range axis is refused by both layers");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable"),
+            "the error must name the missing range flag; got {msg}"
         );
     }
 }
