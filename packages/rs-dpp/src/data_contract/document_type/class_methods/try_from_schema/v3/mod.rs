@@ -1754,4 +1754,310 @@ mod tests {
              ceiling; got {msg}"
         );
     }
+
+    /// The two validators must agree on the `averageable` short form.
+    ///
+    /// This is the shape that was rejected live on a 4.2.0-beta.1 devnet while
+    /// `DataContract.fromJSON(json, true, pv)` in `@dashevo/evo-sdk` accepted
+    /// it: the index declares its aggregate layout with the sugar only, then
+    /// asks for a Count ranking.
+    fn sugar_short_form_index_entry() -> Vec<(Value, Value)> {
+        vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("storeRating".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("grade".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (
+                Value::Text("rankedAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (
+                Value::Text("rankedCountable".to_string()),
+                Value::Bool(true),
+            ),
+        ]
+    }
+
+    fn schema_with_index_entry(index_entry: Vec<(Value, Value)>) -> Value {
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "restaurantId": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 0,
+                    },
+                    "grade": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "position": 1,
+                    },
+                }),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("indices".to_string()),
+                Value::Array(vec![Value::Map(index_entry)]),
+            ),
+        ])
+    }
+
+    /// Call the literal-prerequisite gate the way generation 3's core calls it,
+    /// on the raw document type schema.
+    ///
+    /// Going through the function directly is the point: in a build with the
+    /// `validation` feature (which is how `cargo test -p dpp` builds, via the
+    /// `all_features_without_client` dev-dependency) the meta-schema rejects
+    /// these shapes first, so the gate that the *wasm* build relies on would
+    /// otherwise never be executed by any test.
+    fn literal_prerequisites(schema: &Value) -> Result<(), ProtocolError> {
+        super::super::common::validate_literal_aggregate_prerequisites(
+            "test_doc",
+            schema.to_map().expect("document type schema is an object"),
+            true,
+            true,
+        )
+    }
+
+    /// The sugar short form is refused by the literal gate, with a message
+    /// naming both the flag that was asked for and the one that has to be
+    /// written out — the information the raw meta-schema error
+    /// (`"rangeCountable" is a required property, path: /indices/3`) leaves the
+    /// author to work out.
+    #[test]
+    fn averageable_sugar_with_ranked_countable_rejected_by_literal_gate() {
+        let schema = schema_with_index_entry(sugar_short_form_index_entry());
+        let error = literal_prerequisites(&schema)
+            .expect_err("the sugar does not satisfy rankedCountable's literal prerequisite");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rankedCountable")
+                && msg.contains("rangeCountable")
+                && msg.contains("storeRating"),
+            "the error must name the ranked flag, the missing range flag and the index; \
+             got {msg}"
+        );
+    }
+
+    /// Spelling the layout out longhand satisfies the literal gate, exactly as
+    /// it satisfies the meta-schema. This is the fix an author applies.
+    #[test]
+    fn explicit_longhand_accepted_by_literal_gate() {
+        let mut index_entry = sugar_short_form_index_entry();
+        index_entry.push((
+            Value::Text("countable".to_string()),
+            Value::Text("countable".to_string()),
+        ));
+        index_entry.push((
+            Value::Text("summable".to_string()),
+            Value::Text("grade".to_string()),
+        ));
+        index_entry.push((Value::Text("rangeCountable".to_string()), Value::Bool(true)));
+        index_entry.push((Value::Text("rangeSummable".to_string()), Value::Bool(true)));
+        let schema = schema_with_index_entry(index_entry);
+        literal_prerequisites(&schema).expect("the longhand satisfies every literal prerequisite");
+    }
+
+    /// The ranked prerequisites stay **value-sensitive**: a written-out
+    /// `"rankedCountable": false` is an opt-out and demands nothing, matching
+    /// the meta-schema's `if`/`then` pair (and unlike its `dependentRequired`
+    /// rows, which fire on key presence).
+    #[test]
+    fn ranked_opt_out_demands_nothing_from_the_literal_gate() {
+        let mut index_entry = sugar_short_form_index_entry();
+        index_entry.retain(|(key, _)| key.as_text() != Some("rankedCountable"));
+        index_entry.push((
+            Value::Text("rankedCountable".to_string()),
+            Value::Bool(false),
+        ));
+        let schema = schema_with_index_entry(index_entry);
+        literal_prerequisites(&schema)
+            .expect("an explicit rankedCountable: false asks for no ranking axis");
+    }
+
+    /// The `dependentRequired` rows are presence-based, so an explicit
+    /// `"rangeCountable": false` still demands a literal `countable` — the
+    /// second error the live devnet returned once `rangeCountable` was added.
+    #[test]
+    fn range_flag_presence_demands_its_aggregate_from_the_literal_gate() {
+        let mut index_entry = sugar_short_form_index_entry();
+        index_entry.push((
+            Value::Text("rangeCountable".to_string()),
+            Value::Bool(false),
+        ));
+        let schema = schema_with_index_entry(index_entry);
+        let error = literal_prerequisites(&schema)
+            .expect_err("rangeCountable's presence demands a literal countable");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable") && msg.contains("countable"),
+            "the error must name both keys; got {msg}"
+        );
+    }
+
+    /// Only `full_validation` runs the gate. A contract already written to
+    /// state is re-parsed with `full_validation: false`, and that path must
+    /// keep reconstructing whatever consensus once admitted.
+    #[test]
+    fn literal_gate_does_not_run_without_full_validation() {
+        let schema = schema_with_index_entry(sugar_short_form_index_entry());
+        let v2 = parse_with(schema, pv14(), false)
+            .expect("the structural parser is sugar-aware and accepts the short form");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// End to end through the parser: whichever gate fires first, the short
+    /// form is refused under `full_validation` and the longhand is admitted.
+    ///
+    /// In a `validation` build the meta-schema raises the error; in a build
+    /// without the feature (the wasm SDK) the literal gate above does. Both
+    /// name `rangeCountable`, which is what an author needs.
+    #[test]
+    fn sugar_short_form_rejected_and_longhand_accepted_under_full_validation() {
+        let schema = schema_with_index_entry(sugar_short_form_index_entry());
+        let error = parse_with(schema, pv14(), true)
+            .expect_err("the short form must be refused under full validation");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable"),
+            "the error must name the flag to add; got {msg}"
+        );
+
+        let mut index_entry = sugar_short_form_index_entry();
+        index_entry.push((
+            Value::Text("countable".to_string()),
+            Value::Text("countable".to_string()),
+        ));
+        index_entry.push((
+            Value::Text("summable".to_string()),
+            Value::Text("grade".to_string()),
+        ));
+        index_entry.push((Value::Text("rangeCountable".to_string()), Value::Bool(true)));
+        index_entry.push((Value::Text("rangeSummable".to_string()), Value::Bool(true)));
+        parse_with(schema_with_index_entry(index_entry), pv14(), true)
+            .expect("the six-flag longhand registers, exactly as it did on devnet");
+    }
+
+    /// The SDK-facing entry point must reach the same verdict as consensus.
+    ///
+    /// `DataContract::from_json(.., full_validation = true, ..)` is what
+    /// `DataContractWasm::fromJSON` calls, and drive-abci's data contract
+    /// create validation deserializes the contract with `full_validation =
+    /// true` as well; both land in `DocumentType::try_from_schema`, so pinning
+    /// this entry point pins the pair.
+    #[cfg(feature = "json-conversion")]
+    #[test]
+    fn from_json_full_validation_matches_consensus_on_the_sugar_short_form() {
+        use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+        use crate::prelude::DataContract;
+        use serde_json::json;
+
+        fn contract_json(index: serde_json::Value) -> serde_json::Value {
+            json!({
+                "$formatVersion": "1",
+                "id": "BmKTJeLL3GfH8FxEx7SUbTog4eAKj8vJRDi97gYkxB9p",
+                "ownerId": "HtQNfXBZJu3WnvjvCFJKgbvfgWYJxWxaFWy23TKoFjg9",
+                "version": 1,
+                "config": {
+                    "$formatVersion": "0",
+                    "canBeDeleted": false,
+                    "readonly": false,
+                    "keepsHistory": false,
+                    "documentsKeepHistoryContractDefault": false,
+                    "documentsMutableContractDefault": true,
+                    "documentsCanBeDeletedContractDefault": false,
+                    "requiresIdentityEncryptionBoundedKey": null,
+                    "requiresIdentityDecryptionBoundedKey": null
+                },
+                "documentSchemas": {
+                    "review": {
+                        "type": "object",
+                        "properties": {
+                            "restaurantId": {"type": "string", "maxLength": 32, "position": 0},
+                            "grade": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100,
+                                "position": 1
+                            }
+                        },
+                        "required": ["restaurantId", "grade"],
+                        "additionalProperties": false,
+                        "indices": [index]
+                    }
+                },
+                "groups": {},
+                "tokens": {},
+                "keywords": [],
+                "description": null
+            })
+        }
+
+        let short_form = json!({
+            "name": "storeRating",
+            "properties": [{"restaurantId": "asc"}],
+            "averageable": "grade",
+            "rangeAverageable": true,
+            "rankedAverageable": true,
+            "rankedCountable": true
+        });
+        let error = DataContract::from_json(contract_json(short_form), true, pv14())
+            .expect_err("from_json under full validation must refuse what registration refuses");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable"),
+            "the error must name the flag to add; got {msg}"
+        );
+
+        let longhand = json!({
+            "name": "storeRating",
+            "properties": [{"restaurantId": "asc"}],
+            "countable": "countable",
+            "summable": "grade",
+            "averageable": "grade",
+            "rangeCountable": true,
+            "rangeSummable": true,
+            "rangeAverageable": true,
+            "rankedAverageable": true,
+            "rankedCountable": true
+        });
+        DataContract::from_json(contract_json(longhand), true, pv14())
+            .expect("the six-flag longhand is accepted by both validators");
+    }
 }

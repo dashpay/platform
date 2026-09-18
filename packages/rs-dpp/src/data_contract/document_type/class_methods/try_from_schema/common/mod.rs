@@ -331,6 +331,161 @@ pub(super) fn validate_against_meta_schema_and_compile(
     Ok(())
 }
 
+/// Look a literal key up in a raw schema object, ignoring value shape.
+///
+/// Deliberately *not* one of the `Value::inner_*` helpers: those coerce and
+/// validate, and what the meta-schema's `dependentRequired` rows test is bare
+/// key presence.
+fn raw_key<'a>(map: &'a [(Value, Value)], key: &str) -> Option<&'a Value> {
+    map.iter()
+        .find(|(k, _)| matches!(k, Value::Text(name) if name == key))
+        .map(|(_, v)| v)
+}
+
+/// Build the error a missing literal aggregate flag raises.
+fn missing_literal_aggregate_flag_error(
+    document_type_name: &str,
+    index_name: Option<&str>,
+    present_key: &str,
+    missing_key: &str,
+) -> ProtocolError {
+    let location = match index_name {
+        Some(index_name) => {
+            format!("index \"{index_name}\" of document type \"{document_type_name}\"")
+        }
+        None => format!("document type \"{document_type_name}\""),
+    };
+    consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(format!(
+        "{location}: `{present_key}` requires `{missing_key}` to be written out on the same \
+         object. The document meta-schema tests the object exactly as authored, before \
+         `averageable` / `rangeAverageable` are expanded into their `countable` + `summable` \
+         longhand, so the sugar does not satisfy this prerequisite — spell `{missing_key}` out"
+    )))
+}
+
+/// The document meta-schema's *literal* aggregate prerequisite rules, restated
+/// in Rust so that every build enforces them.
+///
+/// The meta-schema runs over the index object as authored — before
+/// `Index::try_from_value_map` expands the `averageable` / `rangeAverageable`
+/// sugar — so an index written
+///
+/// ```json
+/// {"name": "storeRating", "properties": [{"storeId": "asc"}],
+///  "averageable": "rating", "rangeAverageable": true,
+///  "rankedAverageable": true, "rankedCountable": true}
+/// ```
+///
+/// fails meta validation (`"rangeCountable" is a required property`) even though
+/// the parsed [`Index`] really does carry `range_countable`, because
+/// `rankedCountable`'s `then` branch asks for the literal key. That asymmetry is
+/// baked into the v3 meta-schema, which is frozen for protocol v14 (see the
+/// `$comment` at the top of `document-meta.json`) and therefore cannot be
+/// relaxed.
+///
+/// What *can* be fixed is the disagreement between the two validators. The
+/// JSON-schema half is `#[cfg(feature = "validation")]`, and `wasm-dpp2` builds
+/// `dpp` without that feature, so `DataContract.fromJSON(json, true, pv)` in the
+/// JS SDK compiled the meta-schema out entirely and accepted contracts that
+/// consensus then rejected at registration. This function is the part of the
+/// meta-schema that the sugar interacts with, written so it survives that build.
+///
+/// It runs **after** `validate_document_type_schema`, so in a build that does
+/// compile the meta-schema in, every shape it rejects has already been rejected
+/// there and these errors are unreachable — the consensus error raised for any
+/// given contract is unchanged. In a build without the `validation` feature this
+/// is the only gate, and it fails exactly the same contracts.
+pub(super) fn validate_literal_aggregate_prerequisites(
+    document_type_name: &str,
+    schema_map: &[(Value, Value)],
+    admit_count_indexes: bool,
+    admit_ranked: bool,
+) -> Result<(), ProtocolError> {
+    // Meta-schema top level: `"dependentRequired": {"rangeSummable":
+    // ["documentsSummable"], "rangeAverageable": ["documentsAverageable"]}`.
+    if admit_count_indexes {
+        for (present_key, missing_key) in [
+            (RANGE_SUMMABLE, DOCUMENTS_SUMMABLE),
+            (RANGE_AVERAGEABLE, DOCUMENTS_AVERAGEABLE),
+        ] {
+            if raw_key(schema_map, present_key).is_some()
+                && raw_key(schema_map, missing_key).is_none()
+            {
+                return Err(missing_literal_aggregate_flag_error(
+                    document_type_name,
+                    None,
+                    present_key,
+                    missing_key,
+                ));
+            }
+        }
+    }
+
+    // A malformed `indices` is not this function's error to raise: the index
+    // parser below reports it with the message it always has.
+    let Some(Value::Array(indices)) = raw_key(schema_map, property_names::INDICES) else {
+        return Ok(());
+    };
+
+    for index in indices {
+        let Value::Map(index_map) = index else {
+            continue;
+        };
+        let index_name = raw_key(index_map, "name").and_then(|name| name.as_text());
+
+        // Index level: the same presence-semantics `dependentRequired` rows,
+        // unchanged since meta-schema v2.
+        if admit_count_indexes {
+            for (present_key, missing_key) in [
+                ("rangeCountable", "countable"),
+                ("rangeSummable", "summable"),
+                ("rangeAverageable", "averageable"),
+            ] {
+                if raw_key(index_map, present_key).is_some()
+                    && raw_key(index_map, missing_key).is_none()
+                {
+                    return Err(missing_literal_aggregate_flag_error(
+                        document_type_name,
+                        index_name,
+                        present_key,
+                        missing_key,
+                    ));
+                }
+            }
+        }
+
+        // Index level: the ranked prerequisites, which are value-sensitive
+        // `if`/`then` pairs rather than `dependentRequired` rows, so a
+        // written-out `"rankedCountable": false` opt-out demands nothing.
+        // `rankedCountable` matches its level-addressed object form too
+        // (`{"const": true}` vs `{"anyOf": [{"const": true}, {"type":
+        // "object"}]}` in the meta-schema).
+        if admit_ranked {
+            for (present_key, missing_key, object_form_counts) in [
+                ("rankedCountable", "rangeCountable", true),
+                ("rankedSummable", "rangeSummable", false),
+                ("rankedAverageable", "rangeAverageable", false),
+            ] {
+                let asks_for_ranking = match raw_key(index_map, present_key) {
+                    Some(Value::Bool(true)) => true,
+                    Some(Value::Map(_)) => object_form_counts,
+                    _ => false,
+                };
+                if asks_for_ranking && raw_key(index_map, missing_key).is_none() {
+                    return Err(missing_literal_aggregate_flag_error(
+                        document_type_name,
+                        index_name,
+                        present_key,
+                        missing_key,
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Read the three document-history subscription flags, or return all-`false`
 /// without touching the schema when the generation's grammar does not have
 /// them.
@@ -511,6 +666,19 @@ pub(super) fn parse_document_type_core(
             format!("document schema must be an object: {err}"),
         ))
     })?;
+
+    // Mirrors the meta-schema rules the `averageable` / `rangeAverageable`
+    // sugar does not satisfy, for builds that compiled the meta-schema out.
+    // Runs after `validate_document_type_schema` on purpose — see the function
+    // docs.
+    if ctx.full_validation {
+        validate_literal_aggregate_prerequisites(
+            ctx.name,
+            schema_map,
+            ctx.generation.admit_count_indexes,
+            ctx.generation.admit_ranked,
+        )?;
+    }
 
     let flags = parse_document_type_flags(&ctx, schema_map)?;
 

@@ -100,7 +100,26 @@ The document meta-schema enforces the same prerequisites, but it cannot use the 
 
 The `range*` rows keep their presence semantics because that is what they shipped with in v2, and changing them would move historical validation results.
 
-One asymmetry is worth knowing when authoring: **the meta-schema demands the literal key, the parser accepts the effect.** `rankedAverageable: true` needs a literal `rangeAverageable: true` to satisfy the schema's `then`, even though the parser is satisfied by the explicit `countable` + `summable` + `rangeCountable` + `rangeSummable` longhand. Since full JSON-schema validation only runs under `full_validation`, both layers matter — write the sugar form and the two agree.
+One asymmetry is worth knowing when authoring: **the meta-schema demands the literal key, the parser accepts the effect.** The meta-schema tests the index object exactly as authored, *before* `averageable` / `rangeAverageable` are expanded into their `countable` + `summable` longhand, so the sugar satisfies no literal prerequisite. `rankedAverageable: true` needs a literal `rangeAverageable: true` even though the parser is satisfied by the explicit longhand — and, the other way round, `rankedCountable: true` needs a literal `rangeCountable: true` even though `rangeAverageable` already puts the count axis in effect. An index that opts into more than one ranking axis therefore has to write every flag it depends on out; there is no shorter spelling that both layers accept.
+
+```json
+// REJECTED at registration: `"rangeCountable" is a required property, path: /indices/3`
+{"name": "storeRating", "properties": [{"storeId": "asc"}],
+ "averageable": "rating", "rangeAverageable": true,
+ "rankedAverageable": true, "rankedCountable": true}
+
+// ACCEPTED: the same on-disk layout, every prerequisite spelled out
+{"name": "storeRating", "properties": [{"storeId": "asc"}],
+ "countable": "countable", "summable": "rating", "averageable": "rating",
+ "rangeCountable": true, "rangeSummable": true, "rangeAverageable": true,
+ "rankedAverageable": true, "rankedCountable": true}
+```
+
+(Adding only `rangeCountable` to the first form does not help: the `dependentRequired` rows fire on key *presence*, so `rangeCountable` then demands a literal `countable`, and so on down the chain.)
+
+The `averageable` / `rangeAverageable` descriptions in meta-schema v3 present themselves as plain syntactic sugar and say nothing about this. That text is wrong by omission and cannot be corrected where it lives: v3 is frozen for protocol v14, and mutating it would move historical validation results. Treat this section as the correction until a v4 meta-schema exists.
+
+Both layers run only under `full_validation`, and only the structural one is always compiled: the JSON-schema half sits behind rs-dpp's `validation` feature, which `wasm-dpp2` (and so `@dashevo/evo-sdk`) does not enable. rs-dpp therefore also restates the literal prerequisites in Rust — `validate_literal_aggregate_prerequisites`, run after the meta-schema so a validating build's consensus errors are unchanged — so that an SDK-side `DataContract.fromJSON(json, true, pv)` reaches the same verdict as registration instead of admitting a contract the network then refuses.
 
 ### Shape Restrictions
 
