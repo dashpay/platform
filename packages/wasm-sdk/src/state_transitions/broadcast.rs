@@ -176,8 +176,8 @@ impl WasmSdk {
     /// `waitForResponse` is strict: it fails for the transition families
     /// whose proofs cannot be bound to the execution of one specific
     /// transition (balance top-ups, credit transfers and withdrawals,
-    /// address funds movements, shields, no-history token operations). This
-    /// method accepts those outcomes instead. The result is a verified,
+    /// address funds movements, shields, no-history token operations, key
+    /// limits updates). This method accepts those outcomes instead. The result is a verified,
     /// height-pinned snapshot of the affected state — NOT evidence that this
     /// specific transition executed.
     ///

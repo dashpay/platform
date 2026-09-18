@@ -54,6 +54,8 @@ pub trait UpdateIdentityKeyLimits: Waitable {
     ) -> Result<IdentityPublicKey, Error>;
 
     /// Adds `amount` credits to the total budget of the key `key_id`, and to what is left of it.
+    /// Refused before anything is signed when the key has no budget or `amount` is zero: see
+    /// [`raised_key_limits`].
     async fn top_up_key_budget<S: Signer<IdentityPublicKey> + Send>(
         &self,
         sdk: &Sdk,
@@ -65,6 +67,8 @@ pub trait UpdateIdentityKeyLimits: Waitable {
     ) -> Result<IdentityPublicKey, Error>;
 
     /// Moves the expiry of the key `key_id` to `expires_at`, later than its current expiry.
+    /// Refused before anything is signed when the key has no expiry or `expires_at` does not
+    /// move it later: see [`raised_key_limits`].
     async fn extend_key_expiry<S: Signer<IdentityPublicKey> + Send>(
         &self,
         sdk: &Sdk,
@@ -136,26 +140,12 @@ impl UpdateIdentityKeyLimits for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<IdentityPublicKey, Error> {
-        let current = self
-            .public_keys()
-            .get(&key_id)
-            .ok_or_else(|| Error::Generic(format!("identity has no key {key_id}")))?
-            .total_budget()
-            .ok_or_else(|| {
-                Error::Generic(format!(
-                    "key {key_id} has no budget to top up: a budget can be raised, not added"
-                ))
-            })?;
-        let total_budget = current.checked_add(amount).ok_or_else(|| {
-            Error::Generic(format!(
-                "adding {amount} credits to the budget of key {key_id} overflows"
-            ))
-        })?;
+        let (total_budget, expires_at) = raised_key_limits(self, key_id, Some(amount), None)?;
         self.update_key_limits(
             sdk,
             key_id,
-            Some(total_budget),
-            None,
+            total_budget,
+            expires_at,
             signing_key_to_use,
             signer,
             settings,
@@ -172,17 +162,72 @@ impl UpdateIdentityKeyLimits for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<IdentityPublicKey, Error> {
+        let (total_budget, expires_at) = raised_key_limits(self, key_id, None, Some(expires_at))?;
         self.update_key_limits(
             sdk,
             key_id,
-            None,
-            Some(expires_at),
+            total_budget,
+            expires_at,
             signing_key_to_use,
             signer,
             settings,
         )
         .await
     }
+}
+
+/// The absolute limits to send for adding `add_budget` credits to the budget of the key
+/// `key_id` of `identity` and moving its expiry to `expires_at`, computed from the key as the
+/// identity holds it. What consensus would refuse and charge for is refused here for free: a
+/// limit the key does not have (40220), and a value that does not raise it (40221).
+pub fn raised_key_limits(
+    identity: &Identity,
+    key_id: KeyID,
+    add_budget: Option<Credits>,
+    expires_at: Option<TimestampMillis>,
+) -> Result<(Option<Credits>, Option<TimestampMillis>), Error> {
+    let key = identity
+        .public_keys()
+        .get(&key_id)
+        .ok_or_else(|| Error::Generic(format!("identity has no key {key_id}")))?;
+
+    let total_budget = add_budget
+        .map(|amount| {
+            let current = key.total_budget().ok_or_else(|| {
+                Error::Generic(format!(
+                    "key {key_id} has no budget to top up: a budget can be raised, not added"
+                ))
+            })?;
+            if amount == 0 {
+                return Err(Error::Generic(format!(
+                    "adding nothing to the budget of key {key_id} would be refused as not raising it"
+                )));
+            }
+            current.checked_add(amount).ok_or_else(|| {
+                Error::Generic(format!(
+                    "adding {amount} credits to the budget of key {key_id} overflows"
+                ))
+            })
+        })
+        .transpose()?;
+
+    let expires_at = expires_at
+        .map(|expires_at| {
+            let current = key.expires_at().ok_or_else(|| {
+                Error::Generic(format!(
+                    "key {key_id} has no expiry to extend: an expiry can be moved later, not added"
+                ))
+            })?;
+            if expires_at <= current {
+                return Err(Error::Generic(format!(
+                    "an expiry of {expires_at} ms does not move the expiry of key {key_id} later than {current} ms"
+                )));
+            }
+            Ok(expires_at)
+        })
+        .transpose()?;
+
+    Ok((total_budget, expires_at))
 }
 
 /// The first MASTER key, else the first CRITICAL authentication key without limits and without
@@ -207,7 +252,7 @@ fn signing_key_for_key_limits_update<S: Signer<IdentityPublicKey>>(
         .map(|key| key.id())
         .ok_or_else(|| {
             Error::Generic(
-                "the signer holds no MASTER key, and no CRITICAL authentication key without limits, of this identity"
+                "the signer holds no MASTER key, and no CRITICAL authentication key without limits and without contract bounds, of this identity"
                     .to_string(),
             )
         })
@@ -312,6 +357,32 @@ mod tests {
             signing_key_for_key_limits_update(&identity(), &KeyIdSigner(vec![1, 2, 3]))
                 .expect("expected a signing key");
         assert_eq!(signing_key_id, 2);
+    }
+
+    #[test]
+    fn should_refuse_a_top_up_or_extension_consensus_would_charge_for() {
+        let identity = identity();
+        assert!(matches!(
+            raised_key_limits(&identity, 3, Some(10), None),
+            Ok((Some(1_010), None))
+        ));
+        for (add_budget, expires_at) in [
+            (Some(0), None),
+            (Some(u64::MAX), None),
+            (None, Some(1)),
+            (Some(10), Some(1)),
+        ] {
+            let result = raised_key_limits(&identity, 3, add_budget, expires_at);
+            assert!(
+                matches!(result, Err(Error::Generic(_))),
+                "{add_budget:?} {expires_at:?} must be refused locally: {result:?}"
+            );
+        }
+        // Key 2 has no budget to raise
+        assert!(matches!(
+            raised_key_limits(&identity, 2, Some(10), None),
+            Err(Error::Generic(_))
+        ));
     }
 
     #[test]

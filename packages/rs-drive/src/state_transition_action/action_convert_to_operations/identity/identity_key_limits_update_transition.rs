@@ -6,6 +6,7 @@ use crate::error::Error;
 use dpp::block::epoch::Epoch;
 
 use crate::error::drive::DriveError;
+use crate::state_transition_action::identity::identity_key_limits_update::v0::IdentityKeyLimitsUpdateTransitionActionV0;
 use crate::state_transition_action::identity::identity_key_limits_update::IdentityKeyLimitsUpdateTransitionAction;
 use dpp::version::PlatformVersion;
 
@@ -23,22 +24,33 @@ impl DriveHighLevelOperationConverter for IdentityKeyLimitsUpdateTransitionActio
             .identity_key_limits_update_transition
         {
             0 => {
-                let identity_id = self.identity_id().to_buffer();
+                let IdentityKeyLimitsUpdateTransitionAction::V0(
+                    IdentityKeyLimitsUpdateTransitionActionV0 {
+                        identity_id,
+                        revision,
+                        nonce,
+                        stored_key,
+                        total_budget,
+                        expires_at,
+                        ..
+                    },
+                ) = self;
+                let identity_id = identity_id.to_buffer();
 
                 Ok(vec![
                     IdentityOperation(IdentityOperationType::UpdateIdentityRevision {
                         identity_id,
-                        revision: self.revision(),
+                        revision,
                     }),
                     IdentityOperation(IdentityOperationType::UpdateIdentityNonce {
                         identity_id,
-                        nonce: self.nonce(),
+                        nonce,
                     }),
                     IdentityOperation(IdentityOperationType::UpdateIdentityKeyLimits {
                         identity_id,
-                        key_id: self.key_id(),
-                        total_budget: self.total_budget(),
-                        expires_at: self.expires_at(),
+                        key: stored_key,
+                        total_budget,
+                        expires_at,
                     }),
                 ])
             }
@@ -55,24 +67,30 @@ impl DriveHighLevelOperationConverter for IdentityKeyLimitsUpdateTransitionActio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_transition_action::identity::identity_key_limits_update::v0::IdentityKeyLimitsUpdateTransitionActionV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::IdentityPublicKey;
     use dpp::platform_value::Identifier;
 
     #[test]
     fn should_produce_the_revision_nonce_and_key_limits_operations_in_order() {
+        let platform_version = PlatformVersion::latest();
+        let stored_key =
+            IdentityPublicKey::random_authentication_keys(3, 1, Some(15), platform_version)
+                .remove(0)
+                .with_limits(Some(500), None);
         let action = IdentityKeyLimitsUpdateTransitionAction::V0(
             IdentityKeyLimitsUpdateTransitionActionV0 {
                 identity_id: Identifier::from([0xAA; 32]),
                 revision: 5,
                 nonce: 10,
                 key_id: 3,
+                stored_key,
                 total_budget: Some(700),
                 expires_at: None,
                 user_fee_increase: 0,
             },
         );
         let epoch = Epoch::new(0).expect("epoch");
-        let platform_version = PlatformVersion::latest();
 
         let ops = action
             .into_high_level_drive_operations(&epoch, platform_version)
@@ -93,10 +111,10 @@ mod tests {
             &ops[2],
             IdentityOperation(IdentityOperationType::UpdateIdentityKeyLimits {
                 identity_id,
-                key_id: 3,
+                key,
                 total_budget: Some(700),
                 expires_at: None,
-            }) if *identity_id == [0xAA; 32]
+            }) if *identity_id == [0xAA; 32] && key.id() == 3
         ));
     }
 }

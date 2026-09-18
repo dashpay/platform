@@ -6,7 +6,7 @@ pub mod v0;
 use crate::state_transition_action::identity::identity_key_limits_update::v0::IdentityKeyLimitsUpdateTransitionActionV0;
 use derive_more::From;
 use dpp::fee::Credits;
-use dpp::identity::{KeyID, TimestampMillis};
+use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::Identifier;
 use dpp::prelude::{IdentityNonce, Revision, UserFeeIncrease};
 
@@ -44,6 +44,13 @@ impl IdentityKeyLimitsUpdateTransitionAction {
     pub fn key_id(&self) -> KeyID {
         match self {
             IdentityKeyLimitsUpdateTransitionAction::V0(transition) => transition.key_id,
+        }
+    }
+
+    /// The key as stored before the update
+    pub fn stored_key(&self) -> &IdentityPublicKey {
+        match self {
+            IdentityKeyLimitsUpdateTransitionAction::V0(transition) => &transition.stored_key,
         }
     }
 

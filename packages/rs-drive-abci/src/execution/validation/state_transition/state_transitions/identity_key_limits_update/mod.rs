@@ -37,13 +37,13 @@ impl StateTransitionActionTransformer for IdentityKeyLimitsUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _block_info: &BlockInfo,
+        block_info: &BlockInfo,
         _remaining_address_input_balances: &Option<
             BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         >,
         _validation_mode: ValidationMode,
-        _execution_context: &mut StateTransitionExecutionContext,
-        _tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
@@ -54,7 +54,13 @@ impl StateTransitionActionTransformer for IdentityKeyLimitsUpdateTransition {
             .identity_key_limits_update_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(),
+            0 => self.transform_into_action_v0(
+                platform,
+                block_info,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity key limits update transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -111,7 +117,9 @@ impl StateTransitionStateValidation for IdentityKeyLimitsUpdateTransition {
             .identity_key_limits_update_state_transition
             .state
         {
-            0 => self.validate_state_v0(
+            // The state validation is the transformation: the key is read and checked while
+            // the action that carries it is built.
+            0 => self.transform_into_action_v0(
                 platform,
                 block_info,
                 execution_context,

@@ -209,7 +209,8 @@ export class IdentitiesFacade {
   /**
    * Raises the limits of one of the identity's authentication keys (protocol version 14):
    * adds credits to its total budget, or moves its expiry later. Signed by a MASTER key, or a
-   * CRITICAL authentication key without limits, that the signer holds. Resolves to the key as
+   * CRITICAL authentication key without limits and without contract bounds, that the signer
+   * holds. Resolves to the key as
    * stored after the update.
    */
   async updateKeyLimits(options: wasm.IdentityKeyLimitsUpdateOptions): Promise<wasm.IdentityPublicKey> {

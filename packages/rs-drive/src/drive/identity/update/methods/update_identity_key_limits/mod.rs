@@ -8,7 +8,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
-use dpp::identity::{KeyID, TimestampMillis};
+use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -81,7 +81,7 @@ impl Drive {
     /// # Arguments
     ///
     /// * `identity_id` - The identity the key belongs to.
-    /// * `key_id` - The key whose limits are raised.
+    /// * `key` - The key whose limits are raised, as stored before the update.
     /// * `total_budget` - The new total budget, `None` to leave it as it is.
     /// * `expires_at` - The new expiry, `None` to leave it as it is.
     /// * `epoch` - The current epoch.
@@ -96,7 +96,7 @@ impl Drive {
     pub fn update_identity_key_limits_operations(
         &self,
         identity_id: [u8; 32],
-        key_id: KeyID,
+        key: IdentityPublicKey,
         total_budget: Option<Credits>,
         expires_at: Option<TimestampMillis>,
         epoch: &Epoch,
@@ -115,7 +115,7 @@ impl Drive {
         {
             Some(0) => self.update_identity_key_limits_operations_v0(
                 identity_id,
-                key_id,
+                key,
                 total_budget,
                 expires_at,
                 epoch,
@@ -144,6 +144,7 @@ mod tests {
     use crate::drive::Drive;
     use crate::error::drive::DriveError;
     use crate::error::Error;
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
@@ -379,10 +380,9 @@ mod tests {
             .expect("expected a no-op");
         assert_eq!(remaining, BUDGET);
         assert!(
-            operations.iter().all(|operation| !matches!(
-                operation,
-                crate::fees::op::LowLevelDriveOperation::GroveOperation(_)
-            )),
+            operations
+                .iter()
+                .all(|operation| !matches!(operation, LowLevelDriveOperation::GroveOperation(_))),
             "adding nothing writes nothing"
         );
 

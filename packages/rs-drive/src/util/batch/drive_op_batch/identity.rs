@@ -68,8 +68,8 @@ pub enum IdentityOperationType {
     UpdateIdentityKeyLimits {
         /// The identity id of the identity
         identity_id: [u8; 32],
-        /// The key whose limits are raised
-        key_id: KeyID,
+        /// The key whose limits are raised, as stored before the update
+        key: IdentityPublicKey,
         /// The new total budget, `None` to leave it as it is
         total_budget: Option<Credits>,
         /// The new expiry, `None` to leave it as it is
@@ -194,12 +194,12 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
             ),
             IdentityOperationType::UpdateIdentityKeyLimits {
                 identity_id,
-                key_id,
+                key,
                 total_budget,
                 expires_at,
             } => drive.update_identity_key_limits_operations(
                 identity_id,
-                key_id,
+                key,
                 total_budget,
                 expires_at,
                 &block_info.epoch,

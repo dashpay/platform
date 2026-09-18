@@ -9,14 +9,15 @@ use crate::sdk::WasmSdk;
 use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dash_sdk::dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
-use dash_sdk::platform::transition::update_identity_key_limits::UpdateIdentityKeyLimits;
+use dash_sdk::platform::transition::update_identity_key_limits::{
+    raised_key_limits, UpdateIdentityKeyLimits,
+};
 use js_sys::BigInt;
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
@@ -853,7 +854,7 @@ export interface IdentityKeyLimitsUpdateOptions {
   addBudget?: bigint;
   /** The new expiry of the key in milliseconds, later than its current one */
   expiresAt?: bigint;
-  /** Signer holding a MASTER key, or a CRITICAL authentication key without limits, of the identity */
+  /** Signer holding a MASTER key, or a CRITICAL authentication key without limits and without contract bounds, of the identity */
   signer: IdentitySigner;
   /** Optional broadcast settings */
   settings?: PutSettings;
@@ -880,8 +881,10 @@ struct IdentityKeyLimitsUpdateOptionsInput {
 impl WasmSdk {
     /// Raises the limits of one of the identity's authentication keys: adds credits to its
     /// total budget (and to what is left of it), or moves its expiry later. An update only
-    /// ever loosens limits. Signed by a MASTER key, or a CRITICAL authentication key without
-    /// limits, that the signer holds.
+    /// ever loosens limits, and what consensus would refuse and charge for (a limit the key
+    /// does not have, a value that does not raise it) is refused here before anything is
+    /// signed. Signed by a MASTER key, or a CRITICAL authentication key without limits and
+    /// without contract bounds, that the signer holds.
     ///
     /// @param options - The identity, the key, what to raise, and the signer
     /// @returns The key as it is stored after the update
@@ -903,37 +906,23 @@ impl WasmSdk {
             "identity key limits update options",
         )?;
 
-        if parsed.add_budget.is_none() && parsed.expires_at.is_none() {
-            return Err(WasmSdkError::invalid_argument(
-                "addBudget or expiresAt must be given",
-            ));
-        }
-
-        let key = identity.public_keys().get(&parsed.key_id).ok_or_else(|| {
-            WasmSdkError::invalid_argument(format!("Identity has no key with id {}", parsed.key_id))
-        })?;
-
-        let total_budget = match parsed.add_budget {
-            Some(add_budget) => {
-                let current = key.total_budget().ok_or_else(|| {
-                    WasmSdkError::invalid_argument(format!(
-                        "Key {} has no budget to add to: a budget can be raised, not added",
-                        parsed.key_id
-                    ))
-                })?;
-                Some(current.checked_add(add_budget).ok_or_else(|| {
-                    WasmSdkError::invalid_argument("addBudget overflows the key's budget")
-                })?)
-            }
-            None => None,
-        };
+        // The wire carries absolute values; the SDK turns "add" into a total from the key the
+        // identity holds and refuses what consensus would charge for. An update that sets
+        // neither field is left to consensus (10539, unpaid), which is the one home of that rule.
+        let (total_budget, expires_at) = raised_key_limits(
+            &identity,
+            parsed.key_id,
+            parsed.add_budget,
+            parsed.expires_at,
+        )
+        .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
 
         let updated_key = identity
             .update_key_limits(
                 self.inner_sdk(),
                 parsed.key_id,
                 total_budget,
-                parsed.expires_at,
+                expires_at,
                 None,
                 signer,
                 settings,

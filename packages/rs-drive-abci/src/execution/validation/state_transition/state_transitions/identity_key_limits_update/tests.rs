@@ -15,12 +15,14 @@ use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
 use dpp::fee::Credits;
-use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::serialization::{PlatformSerializable, Signable};
+use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::identity_key_limits_update_transition::methods::IdentityKeyLimitsUpdateTransitionMethodsV0;
 use dpp::state_transition::identity_key_limits_update_transition::v0::IdentityKeyLimitsUpdateTransitionV0;
 use dpp::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
@@ -28,10 +30,12 @@ use dpp::state_transition::proof_result::{
     StateTransitionProofOutcome, StateTransitionProofResult,
 };
 use dpp::state_transition::{StateTransition, StateTransitionSingleSigned};
+use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap};
 use drive::drive::Drive;
+use drive::grovedb::Transaction;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use simple_signer::signer::SimpleSigner;
@@ -39,6 +43,7 @@ use std::cell::Cell;
 
 const IDENTITY_KEY_LIMITS_UPDATE_EMPTY: u32 = 10539;
 const INVALID_IDENTITY_PUBLIC_KEY_BUDGET: u32 = 10537;
+const PUBLIC_KEY_BUDGET_EXHAUSTED: u32 = 20015;
 const PUBLIC_KEY_WITH_LIMITS_CANNOT_UPDATE_KEY_LIMITS: u32 = 20017;
 const INVALID_IDENTITY_REVISION: u32 = 40203;
 const IDENTITY_PUBLIC_KEY_IS_DISABLED: u32 = 40208;
@@ -205,10 +210,33 @@ impl Setup {
         transition
     }
 
+    /// A data contract creation signed by the limited key: a transition a CRITICAL key may
+    /// sign, so the mempool judges the key's budget on it
+    async fn contract_creation_signed_by_limited_key(&self) -> StateTransition {
+        let platform_version = PlatformVersion::latest();
+        let data_contract = get_data_contract_fixture(
+            Some(self.identity.id()),
+            1,
+            platform_version.protocol_version,
+        )
+        .data_contract_owned();
+        DataContractCreateTransition::new_from_data_contract(
+            data_contract,
+            self.take_nonce(),
+            &self.identity.clone().into_partial_identity_info(),
+            LIMITED_KEY_ID,
+            &self.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the contract creation")
+    }
+
     fn process(
         &self,
         transition: &StateTransition,
-        tx: &drive::grovedb::Transaction,
+        tx: &Transaction,
     ) -> StateTransitionExecutionResult {
         let version = self
             .platform
@@ -238,7 +266,7 @@ impl Setup {
         result.execution_results()[0].clone()
     }
 
-    fn stored_key(&self, key_id: KeyID, tx: &drive::grovedb::Transaction) -> IdentityPublicKey {
+    fn stored_key(&self, key_id: KeyID, tx: &Transaction) -> IdentityPublicKey {
         self.platform
             .drive
             .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
@@ -251,7 +279,7 @@ impl Setup {
             .expect("expected the key")
     }
 
-    fn remaining_budget(&self, key_id: KeyID, tx: &drive::grovedb::Transaction) -> Option<Credits> {
+    fn remaining_budget(&self, key_id: KeyID, tx: &Transaction) -> Option<Credits> {
         self.platform
             .drive
             .fetch_identity_key_remaining_budget(
@@ -263,7 +291,7 @@ impl Setup {
             .expect("expected to fetch the remaining budget")
     }
 
-    fn revision(&self, tx: &drive::grovedb::Transaction) -> Option<u64> {
+    fn revision(&self, tx: &Transaction) -> Option<u64> {
         self.platform
             .drive
             .fetch_identity_revision(
@@ -322,7 +350,7 @@ fn assert_unpaid_with_code(execution: &StateTransitionExecutionResult, code: u32
 async fn should_raise_the_budget_of_a_spent_key_so_it_can_sign_again() {
     let setup = Setup::new(Some(BUDGET), None);
     let version = PlatformVersion::latest();
-    let tx = setup.platform.drive.grove.start_transaction();
+    // The budget is spent in committed state: the mempool judges a key on what is committed.
     setup
         .platform
         .drive
@@ -330,23 +358,30 @@ async fn should_raise_the_budget_of_a_spent_key_so_it_can_sign_again() {
             setup.identity.id().to_buffer(),
             LIMITED_KEY_ID,
             BUDGET,
-            Some(&tx),
+            None,
             version,
         )
         .expect("expected to spend the whole budget");
-    assert_eq!(setup.remaining_budget(LIMITED_KEY_ID, &tx), Some(0));
+    let errors = setup.check_tx(&setup.contract_creation_signed_by_limited_key().await);
+    assert!(
+        matches!(errors.as_slice(), [error] if error.code() == PUBLIC_KEY_BUDGET_EXHAUSTED),
+        "a spent key is refused at admission: {errors:?}"
+    );
 
+    let tx = setup.platform.drive.grove.start_transaction();
+    assert_eq!(setup.remaining_budget(LIMITED_KEY_ID, &tx), Some(0));
+    let raised_budget = dash_to_credits!(0.5);
     let transition = setup
-        .update(MASTER_KEY_ID, LIMITED_KEY_ID, Some(3 * BUDGET), None)
+        .update(MASTER_KEY_ID, LIMITED_KEY_ID, Some(raised_budget), None)
         .await;
     assert_success(&setup.process(&transition, &tx));
 
     let key = setup.stored_key(LIMITED_KEY_ID, &tx);
-    assert_eq!(key.total_budget(), Some(3 * BUDGET));
+    assert_eq!(key.total_budget(), Some(raised_budget));
     assert_eq!(key.expires_at(), None);
     assert_eq!(
         setup.remaining_budget(LIMITED_KEY_ID, &tx),
-        Some(2 * BUDGET),
+        Some(raised_budget - BUDGET),
         "what was spent stays spent"
     );
     assert_eq!(
@@ -354,17 +389,19 @@ async fn should_raise_the_budget_of_a_spent_key_so_it_can_sign_again() {
         Some(1),
         "the identity revision is bumped"
     );
+    setup
+        .platform
+        .drive
+        .grove
+        .commit_transaction(tx)
+        .unwrap()
+        .expect("expected to commit");
 
     // The key is usable again: its transitions are admitted to the mempool.
-    let transition = setup
-        .update(LIMITED_KEY_ID, HIGH_KEY_ID, Some(1), None)
-        .await;
+    let errors = setup.check_tx(&setup.contract_creation_signed_by_limited_key().await);
     assert!(
-        setup
-            .check_tx(&transition)
-            .iter()
-            .all(|error| error.code() != 20015),
-        "a topped up key is no longer refused as exhausted"
+        errors.is_empty(),
+        "a topped up key is admitted again: {errors:?}"
     );
 }
 
@@ -633,6 +670,29 @@ async fn should_keep_a_limited_signer_out_of_the_mempool() {
 }
 
 #[tokio::test]
+async fn should_answer_the_mempool_with_consensus_codes_for_a_bad_target_key() {
+    let setup = Setup::new(Some(BUDGET), None);
+
+    // A version 0 key has no limits to raise
+    let transition = setup
+        .update(MASTER_KEY_ID, CRITICAL_KEY_ID, Some(BUDGET), None)
+        .await;
+    let errors = setup.check_tx(&transition);
+    assert!(
+        matches!(errors.as_slice(), [error] if error.code() == IDENTITY_PUBLIC_KEY_LIMIT_NOT_SET),
+        "{errors:?}"
+    );
+
+    // A key the identity does not have
+    let transition = setup.update(MASTER_KEY_ID, 9, Some(BUDGET + 1), None).await;
+    let errors = setup.check_tx(&transition);
+    assert!(
+        matches!(errors.as_slice(), [error] if error.code() == MISSING_IDENTITY_PUBLIC_KEY_IDS),
+        "{errors:?}"
+    );
+}
+
+#[tokio::test]
 async fn should_prove_the_rewritten_key_and_the_revision() {
     let setup = Setup::new(Some(BUDGET), Some(BLOCK_TIME_MS * 2));
     let version = PlatformVersion::latest();
@@ -694,8 +754,6 @@ async fn should_prove_the_rewritten_key_and_the_revision() {
     assert_eq!(key.expires_at(), Some(BLOCK_TIME_MS * 3));
 
     // A proof of the state before the update does not verify for it
-    let mut stale = setup.identity.clone();
-    stale.set_revision(1);
     let other = setup
         .update_signed_by(
             &setup.identity.public_keys()[&MASTER_KEY_ID].clone(),

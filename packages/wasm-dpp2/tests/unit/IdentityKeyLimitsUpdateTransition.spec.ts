@@ -97,6 +97,122 @@ describe('IdentityKeyLimitsUpdate', () => {
     });
   });
 
+  describe('toJSON()', () => {
+    it('should produce the expected JSON structure', () => {
+      const transition = createTransition({
+        totalBudget: BigInt(2500000000),
+        expiresAt: BigInt(1800000000000),
+        userFeeIncrease: 4,
+      });
+
+      const json = transition.toJSON();
+
+      expect(json.$formatVersion).to.equal('0');
+      expect(json.identityId).to.equal('11111111111111111111111111111111');
+      expect(json.revision).to.equal(3);
+      expect(json.nonce).to.equal(7);
+      expect(json.keyId).to.equal(5);
+      expect(json.totalBudget).to.equal(2500000000);
+      expect(json.expiresAt).to.equal(1800000000000);
+      expect(json.userFeeIncrease).to.equal(4);
+      expect(json.signature).to.equal('');
+      expect(json.signaturePublicKeyId).to.equal(0);
+    });
+
+    it('should leave out a limit that is not raised', () => {
+      const json = createTransition({ totalBudget: BigInt(10) }).toJSON();
+
+      expect(json.totalBudget).to.equal(10);
+      expect(json).to.not.have.property('expiresAt');
+    });
+  });
+
+  describe('fromJSON()', () => {
+    it('should restore the transition from JSON', () => {
+      const transition = createTransition({
+        totalBudget: BigInt(2500000000),
+        expiresAt: BigInt(1800000000000),
+        userFeeIncrease: 4,
+      });
+
+      const restored = wasm.IdentityKeyLimitsUpdate.fromJSON(transition.toJSON());
+
+      expect(restored.identityId.toString()).to.equal('11111111111111111111111111111111');
+      expect(restored.revision).to.equal(BigInt(3));
+      expect(restored.nonce).to.equal(BigInt(7));
+      expect(restored.keyId).to.equal(5);
+      expect(restored.totalBudget).to.equal(BigInt(2500000000));
+      expect(restored.expiresAt).to.equal(BigInt(1800000000000));
+      expect(restored.userFeeIncrease).to.equal(4);
+      expect(restored.signaturePublicKeyId).to.equal(0);
+      expect(restored.signature).to.deep.equal(Uint8Array.from([]));
+      expect(restored.toBytes()).to.deep.equal(transition.toBytes());
+    });
+
+    it('should restore a transition with one limit left out', () => {
+      const transition = createTransition({ expiresAt: BigInt(30) });
+
+      const restored = wasm.IdentityKeyLimitsUpdate.fromJSON(transition.toJSON());
+
+      expect(restored.totalBudget).to.equal(undefined);
+      expect(restored.expiresAt).to.equal(BigInt(30));
+      expect(restored.toBytes()).to.deep.equal(transition.toBytes());
+    });
+  });
+
+  describe('toObject()', () => {
+    it('should produce the expected object structure', () => {
+      const transition = createTransition({
+        totalBudget: BigInt(2500000000),
+        expiresAt: BigInt(1800000000000),
+        userFeeIncrease: 4,
+      });
+
+      const obj = transition.toObject();
+
+      expect(obj.$formatVersion).to.equal('0');
+      expect(obj.identityId).to.be.instanceOf(Uint8Array);
+      expect(obj.identityId.length).to.equal(32);
+      expect(obj.revision).to.equal(BigInt(3));
+      expect(obj.nonce).to.equal(BigInt(7));
+      expect(obj.keyId).to.equal(5);
+      expect(obj.totalBudget).to.equal(BigInt(2500000000));
+      expect(obj.expiresAt).to.equal(BigInt(1800000000000));
+      expect(obj.userFeeIncrease).to.equal(4);
+      expect(obj.signature).to.be.instanceOf(Uint8Array);
+      expect(obj.signature.length).to.equal(0);
+      expect(obj.signaturePublicKeyId).to.equal(0);
+    });
+  });
+
+  describe('fromObject()', () => {
+    it('should restore the transition from an object', () => {
+      const transition = createTransition({
+        totalBudget: BigInt(2500000000),
+        expiresAt: BigInt(1800000000000),
+        userFeeIncrease: 4,
+      });
+
+      const restored = wasm.IdentityKeyLimitsUpdate.fromObject(transition.toObject());
+
+      expect(restored.identityId.toString()).to.equal('11111111111111111111111111111111');
+      expect(restored.keyId).to.equal(5);
+      expect(restored.totalBudget).to.equal(BigInt(2500000000));
+      expect(restored.expiresAt).to.equal(BigInt(1800000000000));
+      expect(restored.toBytes()).to.deep.equal(transition.toBytes());
+    });
+
+    it('should restore a transition with one limit left out', () => {
+      const transition = createTransition({ totalBudget: BigInt(10) });
+
+      const restored = wasm.IdentityKeyLimitsUpdate.fromObject(transition.toObject());
+
+      expect(restored.totalBudget).to.equal(BigInt(10));
+      expect(restored.expiresAt).to.equal(undefined);
+      expect(restored.toBytes()).to.deep.equal(transition.toBytes());
+    });
+  });
+
   describe('toStateTransition() / fromStateTransition()', () => {
     it('should convert to a state transition of type 23 and back', () => {
       const transition = createTransition({ totalBudget: BigInt(10) });

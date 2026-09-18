@@ -1145,11 +1145,12 @@ impl Drive {
                 Ok((root_hash, VerifiedPartialIdentity(identity)))
             }
             StateTransition::IdentityKeyLimitsUpdate(transition) => {
+                // The proof holds the rewritten key and the revision, nothing more.
                 let (root_hash, identity) = Drive::verify_identity_keys_by_identity_id(
                     proof,
-                    IdentityKeysRequest::new_all_keys_query(
+                    IdentityKeysRequest::new_specific_key_query_without_limit(
                         &transition.identity_id().into_buffer(),
-                        None,
+                        transition.key_id(),
                     ),
                     true,
                     false,
@@ -2448,9 +2449,11 @@ impl Drive {
             // Binds the transition's revision and its exact key additions
             // and disabling timestamps.
             StateTransition::IdentityUpdate(_) => true,
-            // The proof shows the resulting limits and the revision, not the nonce or the fee
-            // increase: another update by the identity with the same revision, key and limits
-            // would produce the same proof, so this only authenticates the affected state.
+            // The proof pins the revision and the limits the transition named, no more: a
+            // failed no-op raise (paid, no revision bump) followed by any update that reaches
+            // the claimed revision with those limits verifies just the same. Classified
+            // conservatively as the affected state; IdentityUpdate binds no more with its
+            // `true`, which predates this classifier.
             StateTransition::IdentityKeyLimitsUpdate(_) => false,
             // The proven vote is stored under the masternode's identity and
             // must equal the transition's declared vote.
@@ -4893,6 +4896,7 @@ mod tests {
         use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
         use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
         use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+        use dpp::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
         use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
         use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
@@ -4902,6 +4906,12 @@ mod tests {
             (
                 "identity top up",
                 StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(Default::default())),
+            ),
+            (
+                "identity key limits update",
+                StateTransition::IdentityKeyLimitsUpdate(IdentityKeyLimitsUpdateTransition::V0(
+                    Default::default(),
+                )),
             ),
             (
                 "identity credit withdrawal",

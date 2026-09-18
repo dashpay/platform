@@ -2,11 +2,11 @@ mod transformer;
 
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
-use dpp::identity::{KeyID, TimestampMillis};
+use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::{IdentityNonce, Revision, UserFeeIncrease};
 
 /// action v0
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct IdentityKeyLimitsUpdateTransitionActionV0 {
     /// identity id
     pub identity_id: Identifier,
@@ -16,6 +16,9 @@ pub struct IdentityKeyLimitsUpdateTransitionActionV0 {
     pub nonce: IdentityNonce,
     /// the key whose limits are raised
     pub key_id: KeyID,
+    /// the key as stored before the update, read when the transition was validated so that
+    /// Drive rewrites it without reading it again
+    pub stored_key: IdentityPublicKey,
     /// the new total budget of the key, `None` when it stays as it is
     pub total_budget: Option<Credits>,
     /// the new expiry of the key, `None` when it stays as it is
