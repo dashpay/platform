@@ -18,7 +18,7 @@ impl DataContract {
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<DataContract>, ProtocolError> {
-        let merged = match update_values.merge_onto(self, block_info) {
+        let merged = match update_values.merge_onto_v0(self, block_info) {
             Ok(merged) => merged,
             Err(consensus_error) => {
                 return Ok(ConsensusValidationResult::new_with_error(consensus_error))

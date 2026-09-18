@@ -21,8 +21,11 @@ use crate::data_contract::serialized_version::v1::DataContractInSerializationFor
 use crate::data_contract::{
     DataContract, DefinitionName, DocumentName, GroupContractPosition, TokenContractPosition,
 };
+use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::{Identifier, Value};
+use platform_version::version::feature_initial_protocol_versions::DATA_CONTRACT_UPDATE_V1_INITIAL_PROTOCOL_VERSION;
+use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -89,22 +92,48 @@ impl DataContractUpdateValues<'_> {
     /// Merges this delta onto `stored` and returns the contract it produces,
     /// in serialization form.
     ///
-    /// This is the one definition of what a delta means. Consensus applies
-    /// it through [`DataContract::apply_update`](crate::data_contract::DataContract::apply_update)
-    /// and then holds the result to the full update rules; proof
-    /// verification applies it to the pre-update contract the client
-    /// already holds, to learn the exact contract the delta must have
-    /// produced. Only what the delta shape itself makes checkable is
-    /// checked here: the owner matches, updated entries exist, new entries
-    /// do not, a keyword to remove is present and one to add is not.
-    /// Group and token rules on the merged result stay with the callers.
-    ///
-    /// `block_info` stamps the `updatedAt` fields.
+    /// This is the one definition of what a delta means, and it is versioned
+    /// on the same `contract_versions.methods.apply_update` slot that
+    /// [`DataContract::apply_update`](crate::data_contract::DataContract::apply_update)
+    /// dispatches on, so consensus execution (which layers the group, token
+    /// and full update rules on top) and proof verification (which applies
+    /// the delta to the pre-update contract a client already holds) always
+    /// select the same merge generation.
     ///
     /// # Returns
     /// - `Ok(DataContractInSerializationFormatV1)`: the merged contract.
-    /// - `Err(ConsensusError)`: the delta does not fit the stored contract.
+    /// - `Err(ProtocolError::ConsensusError)`: the delta does not fit the
+    ///   stored contract.
+    /// - `Err(ProtocolError)`: the platform version predates delta-based
+    ///   updates (the slot is `None`) or is unknown.
     pub fn merge_onto(
+        &self,
+        stored: &DataContract,
+        block_info: &BlockInfo,
+        platform_version: &PlatformVersion,
+    ) -> Result<DataContractInSerializationFormatV1, ProtocolError> {
+        match platform_version.dpp.contract_versions.methods.apply_update {
+            None => Err(ProtocolError::UnknownVersionError(format!(
+                "DataContractUpdateValues::merge_onto is not active at protocol version {}, delta-based contract updates arrive with protocol version {}",
+                platform_version.protocol_version, DATA_CONTRACT_UPDATE_V1_INITIAL_PROTOCOL_VERSION
+            ))),
+            Some(0) => self
+                .merge_onto_v0(stored, block_info)
+                .map_err(|error| ProtocolError::ConsensusError(Box::new(error))),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContractUpdateValues::merge_onto".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Generation 0 of the merge: only what the delta shape itself makes
+    /// checkable is checked (the owner matches, updated entries exist, new
+    /// entries do not, a keyword to remove is present and one to add is not).
+    /// Group and token rules on the merged result stay with the callers.
+    /// `block_info` stamps the `updatedAt` fields.
+    pub(crate) fn merge_onto_v0(
         &self,
         stored: &DataContract,
         block_info: &BlockInfo,

@@ -196,6 +196,16 @@ impl DataContractUpdateTransitionV1 {
             )));
         }
 
+        // `$defs` is optional on a contract, and an absent map is not the same
+        // contract as an empty one; a delta only adds to or updates the
+        // definitions that are there, so it can not flip that presence.
+        if old_contract.schema_defs().is_none() != new_contract.schema_defs().is_none() {
+            return Err(not_expressible(
+                "the presence of schema definitions changed, which a delta can not express"
+                    .to_string(),
+            ));
+        }
+
         let empty_definitions = BTreeMap::new();
         let old_schema_defs = old_contract.schema_defs().unwrap_or(&empty_definitions);
         let new_schema_defs_all = new_contract.schema_defs().unwrap_or(&empty_definitions);
@@ -344,6 +354,7 @@ mod tests {
     use crate::data_contract::serialized_version::{
         DataContractInSerializationFormat, DataContractMismatch,
     };
+    use crate::data_contract::DefinitionName;
     use crate::tests::fixtures::get_data_contract_fixture;
     use assert_matches::assert_matches;
     use platform_value::platform_value;
@@ -401,7 +412,7 @@ mod tests {
     ) -> DataContractInSerializationFormat {
         DataContractInSerializationFormat::V1(
             DataContractUpdateValues::from(delta)
-                .merge_onto(old_contract, &block_info())
+                .merge_onto(old_contract, &block_info(), PlatformVersion::latest())
                 .expect("the delta applies to the stored contract"),
         )
     }
@@ -708,6 +719,66 @@ mod tests {
         assert_eq!(
             apply(&old_contract, &delta).keywords(),
             new_contract.keywords()
+        );
+    }
+
+    /// The fixture contract with a single reference-free document type and
+    /// the given `$defs`, built without validation: the meta-schema keeps
+    /// `$defs` non-empty on a validated contract, so a presence flip can only
+    /// reach the extractor from an unvalidated contract, and the guard still
+    /// refuses it rather than emitting a delta that materializes to a
+    /// different contract.
+    fn contract_with_schema_defs(
+        base: &DataContract,
+        schema_defs: Option<BTreeMap<DefinitionName, Value>>,
+    ) -> DataContract {
+        let platform_version = PlatformVersion::latest();
+        let mut format: DataContractInSerializationFormat = base
+            .clone()
+            .try_into_platform_versioned(platform_version)
+            .expect("serialization format");
+        let DataContractInSerializationFormat::V1(v1) = &mut format else {
+            panic!("the latest platform version serializes contracts as V1");
+        };
+        v1.document_schemas = BTreeMap::from([("note".to_string(), new_document_schema())]);
+        v1.schema_defs = schema_defs;
+        DataContract::try_from_platform_versioned(format, false, &mut vec![], platform_version)
+            .expect("an unvalidated contract with the given schema definitions")
+    }
+
+    #[test]
+    fn adding_an_empty_schema_definitions_map_can_not_be_expressed() {
+        let (base, _, _) = contracts();
+        let old_contract = contract_with_schema_defs(&base, None);
+        let mut new_contract = contract_with_schema_defs(&base, Some(BTreeMap::new()));
+        new_contract.increment_version();
+
+        let result =
+            DataContractUpdateTransitionV1::from_contract_update(&old_contract, &new_contract, 1);
+
+        assert_matches!(
+            result,
+            Err(ProtocolError::NonConsensusError(
+                NonConsensusError::StateTransitionCreationError(message)
+            )) if message.contains("presence of schema definitions")
+        );
+    }
+
+    #[test]
+    fn removing_an_empty_schema_definitions_map_can_not_be_expressed() {
+        let (base, _, _) = contracts();
+        let old_contract = contract_with_schema_defs(&base, Some(BTreeMap::new()));
+        let mut new_contract = contract_with_schema_defs(&base, None);
+        new_contract.increment_version();
+
+        let result =
+            DataContractUpdateTransitionV1::from_contract_update(&old_contract, &new_contract, 1);
+
+        assert_matches!(
+            result,
+            Err(ProtocolError::NonConsensusError(
+                NonConsensusError::StateTransitionCreationError(message)
+            )) if message.contains("presence of schema definitions")
         );
     }
 

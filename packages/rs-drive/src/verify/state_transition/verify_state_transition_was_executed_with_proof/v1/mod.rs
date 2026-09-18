@@ -167,7 +167,7 @@ impl Drive {
                             ))));
                         }
                         let expected = DataContractUpdateValues::from(v1)
-                            .merge_onto(&stored, block_info)
+                            .merge_onto(&stored, block_info, platform_version)
                             .map_err(|error| {
                                 Error::Proof(ProofError::InvalidTransition(format!(
                                     "delta-based update of contract {} does not apply to the known contract: {}",
