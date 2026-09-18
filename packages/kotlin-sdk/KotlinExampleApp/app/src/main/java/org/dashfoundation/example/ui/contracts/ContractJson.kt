@@ -94,6 +94,74 @@ internal fun documentTypeCapabilities(
     )
 
 /**
+ * The per-property immutability a mutable document type declares (protocol
+ * version 14): [immutable] lists the top-level properties frozen at document
+ * creation, [allowSetting] the subset a replace may still set while the
+ * stored document has no value for them (frozen from then on). Consensus
+ * enforces both on every replace (code 40128), so the UI locks the fields
+ * up front instead of paying for a guaranteed rejection.
+ */
+internal data class DocumentTypeImmutability(
+    val immutable: Set<String>,
+    val allowSetting: Set<String>,
+) {
+    val isEmpty: Boolean get() = immutable.isEmpty()
+
+    companion object {
+        val NONE = DocumentTypeImmutability(emptySet(), emptySet())
+    }
+}
+
+/**
+ * Read the `immutable` and `immutableAllowSetting` keywords off a document
+ * type schema. Non-string entries are ignored, and an `immutableAllowSetting`
+ * entry outside `immutable` is dropped: DPP refuses such a contract at
+ * registration, so it can only appear in hand-edited JSON.
+ */
+internal fun documentTypeImmutability(schema: JsonObject?): DocumentTypeImmutability {
+    val immutable = schema?.arrayField("immutable")
+        ?.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+        ?.toSet()
+        .orEmpty()
+    val allowSetting = schema?.arrayField("immutableAllowSetting")
+        ?.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+        ?.filter { it in immutable }
+        ?.toSet()
+        .orEmpty()
+    return DocumentTypeImmutability(immutable, allowSetting)
+}
+
+/** How the replace form treats one property of a document. */
+internal enum class ImmutablePropertyLock {
+    /** Not immutable: editable as usual. */
+    EDITABLE,
+
+    /** Frozen: any change, addition or removal is rejected by consensus. */
+    FROZEN,
+
+    /**
+     * Listed under `immutableAllowSetting` and absent from the stored
+     * document: may be set exactly once, after which it is frozen.
+     */
+    SETTABLE_ONCE,
+}
+
+/**
+ * The lock state of [property] for a replace of a document that
+ * [hasStoredValue] for it. A settable-once property that already has a value
+ * is frozen: the allowance covers only the transition from absent to present.
+ */
+internal fun immutablePropertyLock(
+    property: String,
+    immutability: DocumentTypeImmutability,
+    hasStoredValue: Boolean,
+): ImmutablePropertyLock = when {
+    property !in immutability.immutable -> ImmutablePropertyLock.EDITABLE
+    property in immutability.allowSetting && !hasStoredValue -> ImmutablePropertyLock.SETTABLE_ONCE
+    else -> ImmutablePropertyLock.FROZEN
+}
+
+/**
  * Human-readable descriptors for an index's protocol-v14 count / sum /
  * ranking axes, in display order. Empty for a pre-v14 index. `countable`
  * may be authored as a boolean or one of its string variants, and the
