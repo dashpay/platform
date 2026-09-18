@@ -796,6 +796,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
@@ -1289,7 +1290,7 @@ mod tests {
     }
 
     fn stored_token_history_claim_distribution_type_enum(
-        platform: &crate::platform_types::platform::Platform<crate::rpc::core::MockCoreRPCLike>,
+        platform: &Platform<MockCoreRPCLike>,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Vec<u64> {
@@ -1299,9 +1300,7 @@ mod tests {
         let (_fee_result, fetch_info) = platform
             .drive
             .get_contract_with_fetch_info_and_fee(
-                *dpp::data_contracts::SystemDataContract::TokenHistory
-                    .id()
-                    .as_bytes(),
+                *SystemDataContract::TokenHistory.id().as_bytes(),
                 None,
                 false,
                 Some(transaction),

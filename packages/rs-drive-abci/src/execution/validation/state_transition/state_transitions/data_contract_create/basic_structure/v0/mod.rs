@@ -5,14 +5,11 @@ use dpp::consensus::basic::data_contract::{
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractTokenPositionsError,
     TooManyKeywordsError,
 };
-use dpp::consensus::basic::token::InvalidTokenOncePerIdentityDistributionAmountError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::Network;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
-use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
-use dpp::data_contract::associated_token::token_once_per_identity_distribution::accessors::v0::TokenOncePerIdentityDistributionV0Methods;
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::data_contract::{TokenContractPosition, INITIAL_DATA_CONTRACT_VERSION};
@@ -116,22 +113,13 @@ impl DataContractCreateStateTransitionBasicStructureValidationV0 for DataContrac
                 }
             }
 
-            if let Some(once_per_identity_distribution) = token_configuration
+            // Version 1 distribution rules are rejected below protocol version 14, and from
+            // there on they must carry a once-per-identity distribution with a valid amount.
+            let validation_result = token_configuration
                 .distribution_rules()
-                .once_per_identity_distribution()
-            {
-                // A claim mints the amount into a signed balance, so it is capped like the base
-                // supply; a zero amount would make every claim a paid no-op.
-                let amount = once_per_identity_distribution.amount();
-                if amount == 0 || amount > i64::MAX as u64 {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidTokenOncePerIdentityDistributionAmountError::new(
-                            amount,
-                            i64::MAX as u64,
-                        )
-                        .into(),
-                    ));
-                }
+                .validate_once_per_identity_distribution(platform_version)?;
+            if !validation_result.is_valid() {
+                return Ok(validation_result);
             }
 
             if token_configuration

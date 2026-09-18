@@ -4,6 +4,7 @@ use crate::data_contract::associated_token::token_distribution_rules::accessors:
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v1::{
     TokenDistributionRulesV1Getters, TokenDistributionRulesV1Setters,
 };
+use crate::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
 use crate::data_contract::associated_token::token_distribution_rules::v1::TokenDistributionRulesV1;
 use crate::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use crate::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
@@ -233,7 +234,8 @@ impl TokenDistributionRulesV1Getters for TokenDistributionRules {
 impl TokenDistributionRulesV1Setters for TokenDistributionRules {
     /// Sets the once-per-identity distribution. Version 0 rules are upgraded to version 1 when
     /// a distribution is set, since version 0 has no field to hold it; clearing it on version 0
-    /// rules is a no-op.
+    /// rules is a no-op, and clearing it on version 1 rules downgrades them to version 0, which
+    /// stays the wire format of every token without the distribution.
     fn set_once_per_identity_distribution(
         &mut self,
         once_per_identity_distribution: Option<TokenOncePerIdentityDistribution>,
@@ -247,7 +249,31 @@ impl TokenDistributionRulesV1Setters for TokenDistributionRules {
                 }
             }
             TokenDistributionRules::V1(v1) => {
-                v1.set_once_per_identity_distribution(once_per_identity_distribution)
+                if once_per_identity_distribution.is_some() {
+                    v1.set_once_per_identity_distribution(once_per_identity_distribution);
+                } else {
+                    let TokenDistributionRulesV1 {
+                        perpetual_distribution,
+                        perpetual_distribution_rules,
+                        pre_programmed_distribution,
+                        new_tokens_destination_identity,
+                        new_tokens_destination_identity_rules,
+                        minting_allow_choosing_destination,
+                        minting_allow_choosing_destination_rules,
+                        change_direct_purchase_pricing_rules,
+                        once_per_identity_distribution: _,
+                    } = v1.clone();
+                    *self = TokenDistributionRules::V0(TokenDistributionRulesV0 {
+                        perpetual_distribution,
+                        perpetual_distribution_rules,
+                        pre_programmed_distribution,
+                        new_tokens_destination_identity,
+                        new_tokens_destination_identity_rules,
+                        minting_allow_choosing_destination,
+                        minting_allow_choosing_destination_rules,
+                        change_direct_purchase_pricing_rules,
+                    });
+                }
             }
         }
     }

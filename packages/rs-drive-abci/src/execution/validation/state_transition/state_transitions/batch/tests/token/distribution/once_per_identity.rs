@@ -14,6 +14,7 @@ use rand::prelude::StdRng;
 /// the total paid out is bounded only by the token's max supply.
 mod once_per_identity_distribution {
     use super::*;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
@@ -43,6 +44,7 @@ mod once_per_identity_distribution {
     use dpp::tests::json_document::json_document_to_contract_with_ids;
     use platform_version::version::PlatformVersion;
     use simple_signer::signer::SimpleSigner;
+    use std::sync::Arc;
 
     const CLAIM_AMOUNT: TokenAmount = 1000;
 
@@ -586,6 +588,158 @@ mod once_per_identity_distribution {
             StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(
                 BasicError::InvalidTokenOncePerIdentityDistributionAmountError(_)
             ))
+        );
+    }
+
+    /// Version 1 distribution rules joined the wire at protocol version 14. Software older than
+    /// that can not decode them, so while protocol version 13 is active they are rejected without
+    /// charging the identity, which is what the undecodable transition gets on older nodes.
+    #[tokio::test]
+    async fn test_token_once_per_identity_distribution_registration_is_rejected_before_protocol_version_14(
+    ) {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (result, _, _) = register_token_with_once_per_identity_amount(
+            &mut platform,
+            CLAIM_AMOUNT,
+            platform_version,
+        )
+        .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(
+                BasicError::UnsupportedFeatureError(_)
+            ))
+        );
+    }
+
+    /// A claim of distribution type 2 is as undecodable on older software as version 1 rules,
+    /// so at protocol version 13 it is rejected unpaid too, instead of being charged for a
+    /// distribution the token does not have.
+    #[tokio::test]
+    async fn test_token_once_per_identity_distribution_claim_is_rejected_before_protocol_version_14(
+    ) {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+
+        let (owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (identity_2, signer_2, key_2) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let result = claim(
+            &platform,
+            token_id,
+            &contract,
+            &identity_2,
+            &key_2,
+            &signer_2,
+            2,
+            &block_info(100, 41),
+            platform_version,
+        )
+        .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(
+                BasicError::UnsupportedFeatureError(_)
+            ))
+        );
+    }
+
+    /// A chain born at protocol version 13 gets the once-per-identity root tree and the token
+    /// history contract v2 from the upgrade, not from genesis. A token registered after the
+    /// upgrade is claimed end to end on it, history document included.
+    #[tokio::test]
+    async fn test_token_once_per_identity_distribution_claims_on_a_chain_upgraded_to_protocol_version_14(
+    ) {
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform.state.load(),
+                &block_info(50, 40),
+                &transaction,
+                13,
+                platform_version,
+            )
+            .expect("expected the upgrade to protocol version 14 to succeed");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let mut upgraded_state = platform.state.load().as_ref().clone();
+        upgraded_state.set_current_protocol_version_in_consensus(14);
+        upgraded_state.set_next_epoch_protocol_version(14);
+        platform.state.store(Arc::new(upgraded_state));
+
+        let mut rng = StdRng::seed_from_u64(49853);
+
+        let (owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (identity_2, signer_2, key_2) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration
+                    .distribution_rules_mut()
+                    .set_once_per_identity_distribution(Some(once_per_identity(CLAIM_AMOUNT)));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let result = claim(
+            &platform,
+            token_id,
+            &contract,
+            &identity_2,
+            &key_2,
+            &signer_2,
+            2,
+            &block_info(100, 41),
+            platform_version,
+        )
+        .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(
+            token_balance(&platform, token_id, identity_2.id(), platform_version),
+            Some(CLAIM_AMOUNT)
         );
     }
 }

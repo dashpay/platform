@@ -24,12 +24,13 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
         // 1. The token distributions root tree, holding the timed, perpetual, pre-programmed and
-        //    once-per-identity subtrees under one-byte keys.
+        //    once-per-identity subtrees under one-byte keys. With four keys the once-per-identity
+        //    key sits two levels below the root of the Merk tree.
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_owned_path(token_distributions_root_path_vec()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                estimated_layer_count: EstimatedLevel(1, false),
+                estimated_layer_count: EstimatedLevel(2, false),
                 estimated_layer_sizes: AllSubtrees(U8_SIZE_U8, NoSumTrees, None),
             },
         );

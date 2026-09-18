@@ -51,6 +51,8 @@ pub const TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY: u8 = 32;
 //                                                       TOKEN_TIMED_DISTRIBUTIONS_KEY
 //                                           /                                                       \
 //                             TOKEN_PERPETUAL_DISTRIBUTIONS_KEY                                   TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY
+//                              /
+//          TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY
 
 // Then inside the timed distribution Merk tree we have
 
@@ -640,15 +642,6 @@ impl TokenPerpetualDistributionMomentPaths for RewardDistributionMoment {
             }
         }
     }
-}
-
-/// The path for the root once-per-identity distributions tree
-pub fn token_root_once_per_identity_distributions_path() -> [&'static [u8]; 3] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::Tokens),
-        &[TOKEN_DISTRIBUTIONS_KEY],
-        &[TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY],
-    ]
 }
 
 /// The path for the root once-per-identity distributions tree as a vector

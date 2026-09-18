@@ -7,6 +7,7 @@ use derive_more::From;
 use serde::{Deserialize, Serialize};
 
 pub mod accessors;
+mod methods;
 pub mod v0;
 pub mod v1;
 
@@ -159,6 +160,22 @@ mod json_convertible_tests {
         );
         let recovered = TokenDistributionRules::from_json(json).expect("from_json");
         assert_eq!(rules, recovered);
+    }
+
+    #[test]
+    fn clearing_once_per_identity_distribution_downgrades_v1_rules_to_v0() {
+        use crate::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Setters;
+        use crate::data_contract::associated_token::token_once_per_identity_distribution::v0::TokenOncePerIdentityDistributionV0;
+        use crate::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
+        // Version 0 stays the wire format whenever the distribution is unset, so clearing it
+        // takes the rules back to the exact version 0 they were upgraded from.
+        let mut rules = fixture();
+        rules.set_once_per_identity_distribution(Some(TokenOncePerIdentityDistribution::V0(
+            TokenOncePerIdentityDistributionV0 { amount: 100 },
+        )));
+        assert!(matches!(rules, TokenDistributionRules::V1(_)));
+        rules.set_once_per_identity_distribution(None);
+        assert_eq!(rules, fixture());
     }
 
     #[test]

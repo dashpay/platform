@@ -14,7 +14,8 @@ pub trait TokenDistributionRulesV1Getters {
 /// Setters for the fields added in version 1 of the distribution rules.
 pub trait TokenDistributionRulesV1Setters {
     /// Sets the once-per-identity distribution. On version 0 rules, setting `Some` upgrades the
-    /// rules to version 1 in place; setting `None` leaves version 0 rules untouched.
+    /// rules to version 1 in place; setting `None` leaves version 0 rules untouched and
+    /// downgrades version 1 rules to version 0.
     fn set_once_per_identity_distribution(
         &mut self,
         once_per_identity_distribution: Option<TokenOncePerIdentityDistribution>,
