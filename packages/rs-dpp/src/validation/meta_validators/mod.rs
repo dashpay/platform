@@ -546,4 +546,214 @@ mod tests {
             "expected refersTo to be rejected by the v2 meta schema"
         );
     }
+
+    // ---- Sugar-aware aggregate prerequisites (v3) ----
+    //
+    // The structural parser expands `averageable` into `countable` +
+    // `summable` and `rangeAverageable` into `rangeCountable` +
+    // `rangeSummable` before it checks the ranked and range prerequisites.
+    // The meta-schema sees the index as authored, so its rules name the
+    // sugar as an accepted alternative; these tests pin that on the schema
+    // itself, independent of the parser.
+
+    fn document_schema_with_index(index: serde_json::Value) -> serde_json::Value {
+        json!({
+            "$schema": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
+            "type": "object",
+            "properties": {
+                "restaurantId": { "type": "string", "maxLength": 32, "position": 0 },
+                "grade": { "type": "integer", "minimum": 0, "maximum": 100, "position": 1 }
+            },
+            "required": ["restaurantId", "grade"],
+            "additionalProperties": false,
+            "indices": [index]
+        })
+    }
+
+    fn v3_errors(schema: &serde_json::Value) -> String {
+        match DOCUMENT_META_SCHEMA_V3.validate(schema) {
+            Ok(()) => panic!("expected the v3 meta-schema to reject {schema}"),
+            Err(errors) => errors
+                .map(|error| error.to_string())
+                .collect::<Vec<_>>()
+                .join("; "),
+        }
+    }
+
+    #[test]
+    fn should_accept_averageable_sugar_as_the_ranked_range_axis_in_v3() {
+        for ranked in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
+            let schema = document_schema_with_index(json!({
+                "name": "storeRating",
+                "properties": [{ "restaurantId": "asc" }],
+                "averageable": "grade",
+                "rangeAverageable": true,
+                ranked: true
+            }));
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "rangeAverageable must satisfy {ranked}'s range prerequisite"
+            );
+        }
+
+        // Two axes at once, the shape that was refused before the rule was
+        // made sugar-aware.
+        let schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }],
+            "averageable": "grade",
+            "rangeAverageable": true,
+            "rankedAverageable": true,
+            "rankedCountable": true
+        }));
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "the sugar form of a two-axis index must validate as written"
+        );
+
+        // The level-addressed object form of `rankedCountable` too.
+        let schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }],
+            "averageable": "grade",
+            "rangeAverageable": true,
+            "rankedCountable": { "at": "restaurantId" }
+        }));
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "the object form must accept rangeAverageable as its range axis"
+        );
+    }
+
+    #[test]
+    fn should_accept_the_explicit_range_pair_as_ranked_averageable_axis_in_v3() {
+        let schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }],
+            "countable": "countable",
+            "summable": "grade",
+            "rangeCountable": true,
+            "rangeSummable": true,
+            "rankedAverageable": true
+        }));
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "rangeCountable + rangeSummable must satisfy rankedAverageable"
+        );
+    }
+
+    #[test]
+    fn should_reject_ranked_flags_with_no_range_axis_in_v3() {
+        for (ranked, missing) in [
+            ("rankedCountable", "rangeCountable"),
+            ("rankedSummable", "rangeSummable"),
+            ("rankedAverageable", "rangeAverageable"),
+        ] {
+            let schema = document_schema_with_index(json!({
+                "name": "storeRating",
+                "properties": [{ "restaurantId": "asc" }],
+                "averageable": "grade",
+                ranked: true
+            }));
+            let errors = v3_errors(&schema);
+            assert!(
+                errors.contains(missing),
+                "{ranked} with no range axis must name {missing}; got {errors}"
+            );
+        }
+
+        // Half of the explicit pair is not enough for the Avg axis.
+        let schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }],
+            "countable": "countable",
+            "summable": "grade",
+            "rangeCountable": true,
+            "rankedAverageable": true
+        }));
+        let errors = v3_errors(&schema);
+        assert!(
+            errors.contains("rangeAverageable"),
+            "rankedAverageable with only rangeCountable must name rangeAverageable; got {errors}"
+        );
+    }
+
+    #[test]
+    fn should_keep_the_ranked_rules_value_sensitive_in_v3() {
+        let schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }],
+            "rankedCountable": false,
+            "rankedSummable": false,
+            "rankedAverageable": false
+        }));
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "a written-out opt-out demands no range axis"
+        );
+    }
+
+    #[test]
+    fn should_accept_averageable_in_place_of_countable_and_summable_in_v3() {
+        for range in ["rangeCountable", "rangeSummable"] {
+            let schema = document_schema_with_index(json!({
+                "name": "storeRating",
+                "properties": [{ "restaurantId": "asc" }],
+                "averageable": "grade",
+                range: true
+            }));
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "averageable must satisfy {range}'s presence row"
+            );
+        }
+    }
+
+    #[test]
+    fn should_keep_the_range_rows_presence_based_in_v3() {
+        for (range, missing) in [
+            ("rangeCountable", "countable"),
+            ("rangeSummable", "summable"),
+            ("rangeAverageable", "averageable"),
+        ] {
+            for value in [true, false] {
+                let schema = document_schema_with_index(json!({
+                    "name": "storeRating",
+                    "properties": [{ "restaurantId": "asc" }],
+                    range: value
+                }));
+                let errors = v3_errors(&schema);
+                assert!(
+                    errors.contains(missing),
+                    "{range}: {value} with nothing to aggregate must name {missing}; got {errors}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_accept_documents_averageable_under_doctype_range_summable_in_v3() {
+        let mut schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }]
+        }));
+        schema["documentsAverageable"] = json!("grade");
+        schema["rangeSummable"] = json!(true);
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "documentsAverageable must satisfy the doctype-level rangeSummable row"
+        );
+
+        let mut schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }]
+        }));
+        schema["rangeSummable"] = json!(true);
+        let errors = v3_errors(&schema);
+        assert!(
+            errors.contains("documentsSummable"),
+            "a doctype-level rangeSummable with nothing to sum must name documentsSummable; \
+             got {errors}"
+        );
+    }
 }

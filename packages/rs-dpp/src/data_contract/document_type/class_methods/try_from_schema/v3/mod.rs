@@ -281,10 +281,6 @@ fn try_from_schema_generation_3(
             // generation is far past that boundary.
             admit_count_indexes: true,
             meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
-            // Meta-schema v3 keeps v2's `dependentRequired` rows verbatim and
-            // adds the value-sensitive ranked `if`/`then` pairs.
-            literal_aggregate_prerequisites: true,
-            literal_ranked_prerequisites: true,
             // RANKED / TIME RANGE: the keyword admissions that make this
             // generation 3, read from the shared generation → admission
             // mapping so the registration-cost re-parse can never drift
@@ -445,11 +441,11 @@ mod tests {
     }
 
     /// A `review` doctype with one index over `restaurantId`, averageable on
-    /// `grade`, optionally carrying ranked keywords. Written so the v3
-    /// meta-schema's prerequisite rules are satisfied: the ranked
-    /// `if`/`then` conditionals demand the literal range keys, and the
-    /// `dependentRequired` chain covers the rest
-    /// (`rangeAverageable` → `averageable`).
+    /// `grade`, optionally carrying ranked keywords. The `averageable` +
+    /// `rangeAverageable` sugar satisfies every prerequisite in the v3
+    /// meta-schema (its ranked `if`/`then` pairs accept `rangeAverageable` in
+    /// place of each axis's own range key) and in the structural parser
+    /// (which checks the resolved flags), so any ranked keyword may be added.
     ///
     /// `restaurantId` is capped at 32 characters — comfortably inside the
     /// ranked key bound on every axis, so these grammar tests exercise the
@@ -631,22 +627,24 @@ mod tests {
     }
 
     /// The meta-schema's ranked `if`/`then` conditionals are the declarative
-    /// half of the structural "ranking needs its range axis" rule:
-    /// `rankedCountable: true` without `rangeCountable` fails meta
-    /// validation at PV14.
+    /// half of the structural "ranking needs its range axis" rule, and they
+    /// are sugar-aware: `rankedCountable: true` with `rangeAverageable` and
+    /// no literal `rangeCountable` passes meta validation at PV14, because
+    /// `rangeAverageable` puts the count axis in effect.
+    ///
+    /// Up to `4.2.0-beta.1` this exact shape was refused with
+    /// `"rangeCountable" is a required property`; the rule was corrected in
+    /// place while v3 is still editable.
     #[test]
-    fn ranked_countable_without_range_countable_rejected_by_meta_schema() {
-        // `averageable` + `rangeAverageable` give the index its range axes in
-        // *effect*, but `rangeCountable` is not literally present, so the
-        // `if rankedCountable == true then require rangeCountable`
-        // conditional fails.
+    fn ranked_countable_satisfied_by_range_averageable_in_meta_schema() {
         let schema = ranked_review_schema(vec![("rankedCountable", true)]);
-        let result = parse_with(schema, pv14(), true);
-        assert!(
-            result.is_err(),
-            "meta-schema v3 must demand rangeCountable alongside a true \
-             rankedCountable"
-        );
+        let v2 = parse_with(schema, pv14(), true)
+            .expect("rangeAverageable satisfies rankedCountable's range prerequisite");
+        let index = v2
+            .indices
+            .get("byRestaurant")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.range_countable);
     }
 
     /// An index over `restaurantId` carrying exactly one ranked keyword and
@@ -1759,14 +1757,19 @@ mod tests {
         );
     }
 
-    /// The two validators must agree on the `averageable` short form.
-    ///
-    /// This is the shape that was rejected live on a 4.2.0-beta.1 devnet while
-    /// `DataContract.fromJSON(json, true, pv)` in `@dashevo/evo-sdk` accepted
-    /// it: the index declares its aggregate layout with the sugar only, then
-    /// asks for a Count ranking.
-    fn sugar_short_form_index_entry() -> Vec<(Value, Value)> {
-        vec![
+    // ---- The `averageable` / `rangeAverageable` sugar and the meta-schema ----
+    //
+    // Meta-schema v3's prerequisite rules are sugar-aware, matching
+    // `Index::try_from_value_map`, which expands the sugar before it checks
+    // the same prerequisites on the resolved flags. `parse_with(.., true)`
+    // runs the meta-schema first in a `validation` build (which is how
+    // `cargo test -p dpp` builds, via the `all_features_without_client`
+    // dev-dependency) and the structural parser after it, so an acceptance
+    // below proves that *both* layers admit the spelling, and a rejection's
+    // message is checked for a word both layers use.
+
+    fn index_entry(pairs: Vec<(&str, Value)>) -> Vec<(Value, Value)> {
+        let mut entry = vec![
             (
                 Value::Text("name".to_string()),
                 Value::Text("storeRating".to_string()),
@@ -1778,27 +1781,36 @@ mod tests {
                     Value::Text("asc".to_string()),
                 )])]),
             ),
-            (
-                Value::Text("averageable".to_string()),
-                Value::Text("grade".to_string()),
-            ),
-            (
-                Value::Text("rangeAverageable".to_string()),
-                Value::Bool(true),
-            ),
-            (
-                Value::Text("rankedAverageable".to_string()),
-                Value::Bool(true),
-            ),
-            (
-                Value::Text("rankedCountable".to_string()),
-                Value::Bool(true),
-            ),
-        ]
+        ];
+        entry.extend(
+            pairs
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+        entry
     }
 
-    fn schema_with_index_entry(index_entry: Vec<(Value, Value)>) -> Value {
-        Value::Map(vec![
+    /// The shape rejected live on a `4.2.0-beta.1` devnet: the index declares
+    /// its aggregate layout with the sugar only, then asks for a Count ranking
+    /// on top of the Avg one.
+    fn sugar_multi_axis_index_entry() -> Vec<(Value, Value)> {
+        index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+            ("rankedCountable", Value::Bool(true)),
+        ])
+    }
+
+    fn schema_with_index_entry(entry: Vec<(Value, Value)>) -> Value {
+        schema_with_doctype_flags_and_index_entry(vec![], entry)
+    }
+
+    fn schema_with_doctype_flags_and_index_entry(
+        doctype_flags: Vec<(&str, Value)>,
+        entry: Vec<(Value, Value)>,
+    ) -> Value {
+        let mut schema = vec![
             (
                 Value::Text("type".to_string()),
                 Value::Text("object".to_string()),
@@ -1832,110 +1844,180 @@ mod tests {
             ),
             (
                 Value::Text("indices".to_string()),
-                Value::Array(vec![Value::Map(index_entry)]),
+                Value::Array(vec![Value::Map(entry)]),
             ),
-        ])
+        ];
+        schema.extend(
+            doctype_flags
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+        Value::Map(schema)
     }
 
-    /// Call the literal-prerequisite gate the way generation 3's core calls it,
-    /// on the raw document type schema.
-    ///
-    /// Going through the function directly is the point: in a build with the
-    /// `validation` feature (which is how `cargo test -p dpp` builds, via the
-    /// `all_features_without_client` dev-dependency) the meta-schema rejects
-    /// these shapes first, so the gate that the *wasm* build relies on would
-    /// otherwise never be executed by any test.
-    fn literal_prerequisites(schema: &Value) -> Result<(), ProtocolError> {
-        super::super::common::validate_literal_aggregate_prerequisites(
-            "test_doc",
-            schema.to_map().expect("document type schema is an object"),
-            true,
-            true,
-        )
-    }
-
-    /// The sugar short form is refused by the literal gate, with a message
-    /// naming both the flag that was asked for and the one that has to be
-    /// written out — the information the raw meta-schema error
-    /// (`"rangeCountable" is a required property, path: /indices/3`) leaves the
-    /// author to work out.
+    /// The sugar form of a two-axis index is the whole declaration: the
+    /// `rankedCountable` prerequisite is met by `rangeAverageable`, so no
+    /// literal `rangeCountable` (and therefore no literal `countable`) is
+    /// asked for by either layer.
     #[test]
-    fn averageable_sugar_with_ranked_countable_rejected_by_literal_gate() {
-        let schema = schema_with_index_entry(sugar_short_form_index_entry());
-        let error = literal_prerequisites(&schema)
-            .expect_err("the sugar does not satisfy rankedCountable's literal prerequisite");
+    fn averageable_sugar_satisfies_ranked_countable_under_full_validation() {
+        let schema = schema_with_index_entry(sugar_multi_axis_index_entry());
+        let v2 = parse_with(schema, pv14(), true)
+            .expect("the sugar form satisfies every prerequisite in both layers");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// The same for the Sum axis: `rankedSummable` is met by `rangeAverageable`.
+    #[test]
+    fn averageable_sugar_satisfies_ranked_summable_under_full_validation() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedSummable", Value::Bool(true)),
+        ]));
+        let v2 =
+            parse_with(schema, pv14(), true).expect("rangeAverageable stands in for rangeSummable");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_summable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// And the other way round: the explicit longhand satisfies
+    /// `rankedAverageable` without a literal `rangeAverageable`.
+    #[test]
+    fn explicit_longhand_satisfies_ranked_averageable_under_full_validation() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("countable", Value::Text("countable".to_string())),
+            ("summable", Value::Text("grade".to_string())),
+            ("rangeCountable", Value::Bool(true)),
+            ("rangeSummable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]));
+        let v2 = parse_with(schema, pv14(), true)
+            .expect("rangeCountable + rangeSummable stand in for rangeAverageable");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// Sugar-aware is not rule-free: a ranking with no range axis in effect,
+    /// spelled either way, is still refused, and the error names the flag
+    /// that is missing (the meta-schema says `"rangeCountable" is a required
+    /// property`, the parser says `rankedCountable requires rangeCountable`).
+    #[test]
+    fn ranked_countable_with_no_range_axis_is_still_rejected() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rankedCountable", Value::Bool(true)),
+        ]));
+        let error = parse_with(schema, pv14(), true)
+            .expect_err("a Count ranking needs a range axis, however it is spelled");
         let msg = format!("{error:?}");
         assert!(
-            msg.contains("rankedCountable")
-                && msg.contains("rangeCountable")
-                && msg.contains("storeRating"),
-            "the error must name the ranked flag, the missing range flag and the index; \
-             got {msg}"
+            msg.contains("rangeCountable"),
+            "the error must name the missing range flag; got {msg}"
         );
     }
 
-    /// Spelling the layout out longhand satisfies the literal gate, exactly as
-    /// it satisfies the meta-schema. This is the fix an author applies.
+    /// The ranked rules stay value-sensitive: a written-out
+    /// `"rankedCountable": false` is an opt-out and demands nothing.
     #[test]
-    fn explicit_longhand_accepted_by_literal_gate() {
-        let mut index_entry = sugar_short_form_index_entry();
-        index_entry.push((
-            Value::Text("countable".to_string()),
-            Value::Text("countable".to_string()),
-        ));
-        index_entry.push((
-            Value::Text("summable".to_string()),
-            Value::Text("grade".to_string()),
-        ));
-        index_entry.push((Value::Text("rangeCountable".to_string()), Value::Bool(true)));
-        index_entry.push((Value::Text("rangeSummable".to_string()), Value::Bool(true)));
-        let schema = schema_with_index_entry(index_entry);
-        literal_prerequisites(&schema).expect("the longhand satisfies every literal prerequisite");
-    }
-
-    /// The ranked prerequisites stay **value-sensitive**: a written-out
-    /// `"rankedCountable": false` is an opt-out and demands nothing, matching
-    /// the meta-schema's `if`/`then` pair (and unlike its `dependentRequired`
-    /// rows, which fire on key presence).
-    #[test]
-    fn ranked_opt_out_demands_nothing_from_the_literal_gate() {
-        let mut index_entry = sugar_short_form_index_entry();
-        index_entry.retain(|(key, _)| key.as_text() != Some("rankedCountable"));
-        index_entry.push((
-            Value::Text("rankedCountable".to_string()),
-            Value::Bool(false),
-        ));
-        let schema = schema_with_index_entry(index_entry);
-        literal_prerequisites(&schema)
+    fn ranked_opt_out_demands_nothing() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rankedCountable", Value::Bool(false)),
+        ]));
+        let v2 = parse_with(schema, pv14(), true)
             .expect("an explicit rankedCountable: false asks for no ranking axis");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(!index.ranked_countable && !index.range_countable);
     }
 
-    /// The `dependentRequired` rows are presence-based, so an explicit
-    /// `"rangeCountable": false` still demands a literal `countable` — the
-    /// second error the live devnet returned once `rangeCountable` was added.
+    /// The range rows keep their presence semantics: a `rangeCountable` key
+    /// with neither `countable` nor `averageable` beside it is refused, and
+    /// the error names `countable`.
     #[test]
-    fn range_flag_presence_demands_its_aggregate_from_the_literal_gate() {
-        let mut index_entry = sugar_short_form_index_entry();
-        index_entry.push((
+    fn range_countable_without_countable_or_averageable_is_still_rejected() {
+        let schema =
+            schema_with_index_entry(index_entry(vec![("rangeCountable", Value::Bool(true))]));
+        let error =
+            parse_with(schema, pv14(), true).expect_err("rangeCountable needs something to count");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("countable"),
+            "the error must name the missing aggregate flag; got {msg}"
+        );
+    }
+
+    /// With the sugar satisfying the presence rows, a contradictory
+    /// `"rangeCountable": false` under `rangeAverageable: true` reaches the
+    /// parser, whose message says what to remove. Before the meta-schema was
+    /// made sugar-aware the same index died one layer earlier with
+    /// `"countable" is a required property`, which pointed at the wrong key.
+    #[test]
+    fn explicit_range_countable_false_under_range_averageable_reaches_the_parser() {
+        let mut entry = sugar_multi_axis_index_entry();
+        entry.push((
             Value::Text("rangeCountable".to_string()),
             Value::Bool(false),
         ));
-        let schema = schema_with_index_entry(index_entry);
-        let error = literal_prerequisites(&schema)
-            .expect_err("rangeCountable's presence demands a literal countable");
+        let error = parse_with(schema_with_index_entry(entry), pv14(), true)
+            .expect_err("rangeAverageable: true contradicts an explicit rangeCountable: false");
         let msg = format!("{error:?}");
         assert!(
-            msg.contains("rangeCountable") && msg.contains("countable"),
-            "the error must name both keys; got {msg}"
+            msg.contains("rangeCountable: false"),
+            "the parser's contradiction error must name the flag to remove; got {msg}"
         );
     }
 
-    /// Only `full_validation` runs the gate. A contract already written to
-    /// state is re-parsed with `full_validation: false`, and that path must
+    /// The doctype-level row has the same shape: `documentsAverageable` stands
+    /// in for `documentsSummable` under a doctype-level `rangeSummable`.
+    #[test]
+    fn documents_averageable_sugar_satisfies_doctype_range_summable() {
+        let schema = schema_with_doctype_flags_and_index_entry(
+            vec![
+                ("documentsAverageable", Value::Text("grade".to_string())),
+                ("rangeSummable", Value::Bool(true)),
+            ],
+            index_entry(vec![]),
+        );
+        parse_with(schema, pv14(), true).expect(
+            "documentsAverageable implies documentsSummable, so rangeSummable is satisfied",
+        );
+
+        let schema = schema_with_doctype_flags_and_index_entry(
+            vec![("rangeSummable", Value::Bool(true))],
+            index_entry(vec![]),
+        );
+        let error = parse_with(schema, pv14(), true)
+            .expect_err("a doctype-level rangeSummable with nothing to sum is refused");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("documentsSummable"),
+            "the error must name the missing doctype flag; got {msg}"
+        );
+    }
+
+    /// A contract already written to state is re-parsed with
+    /// `full_validation: false`; that path never ran either layer and must
     /// keep reconstructing whatever consensus once admitted.
     #[test]
-    fn literal_gate_does_not_run_without_full_validation() {
-        let schema = schema_with_index_entry(sugar_short_form_index_entry());
+    fn sugar_form_parses_without_full_validation() {
+        let schema = schema_with_index_entry(sugar_multi_axis_index_entry());
         let v2 = parse_with(schema, pv14(), false)
             .expect("the structural parser is sugar-aware and accepts the short form");
         let index = v2
@@ -1946,121 +2028,16 @@ mod tests {
         assert!(index.range_countable && index.range_summable);
     }
 
-    /// End to end through the parser: whichever gate fires first, the short
-    /// form is refused under `full_validation` and the longhand is admitted.
-    ///
-    /// In a `validation` build the meta-schema raises the error; in a build
-    /// without the feature (the wasm SDK) the literal gate above does. Both
-    /// name `rangeCountable`, which is what an author needs.
-    #[test]
-    fn sugar_short_form_rejected_and_longhand_accepted_under_full_validation() {
-        let schema = schema_with_index_entry(sugar_short_form_index_entry());
-        let error = parse_with(schema, pv14(), true)
-            .expect_err("the short form must be refused under full validation");
-        let msg = format!("{error:?}");
-        assert!(
-            msg.contains("rangeCountable"),
-            "the error must name the flag to add; got {msg}"
-        );
-
-        let mut index_entry = sugar_short_form_index_entry();
-        index_entry.push((
-            Value::Text("countable".to_string()),
-            Value::Text("countable".to_string()),
-        ));
-        index_entry.push((
-            Value::Text("summable".to_string()),
-            Value::Text("grade".to_string()),
-        ));
-        index_entry.push((Value::Text("rangeCountable".to_string()), Value::Bool(true)));
-        index_entry.push((Value::Text("rangeSummable".to_string()), Value::Bool(true)));
-        parse_with(schema_with_index_entry(index_entry), pv14(), true)
-            .expect("the six-flag longhand registers, exactly as it did on devnet");
-    }
-
-    /// The **minimum** an author has to add to the short form: the
-    /// `dependentRequired` chain stops one step in, because `rangeSummable` is
-    /// never written and so its row never fires.
-    ///
-    /// Running this end to end under `full_validation` is the point — in a
-    /// build with the `validation` feature it proves the *meta-schema* accepts
-    /// this spelling, which is what makes it safe to recommend in the book, and
-    /// it is the guard against the literal gate drifting into over-rejection.
-    #[test]
-    fn two_added_flags_are_enough_for_both_validators() {
-        let mut index_entry = sugar_short_form_index_entry();
-        index_entry.push((
-            Value::Text("countable".to_string()),
-            Value::Text("countable".to_string()),
-        ));
-        index_entry.push((Value::Text("rangeCountable".to_string()), Value::Bool(true)));
-        let schema = schema_with_index_entry(index_entry);
-
-        literal_prerequisites(&schema).expect("no literal prerequisite is left unsatisfied");
-        let v2 = parse_with(schema, pv14(), true)
-            .expect("`countable` + `rangeCountable` is all the short form is missing");
-        let index = v2
-            .indices
-            .get("storeRating")
-            .expect("index parsed under its name");
-        assert!(index.ranked_countable && index.ranked_averageable);
-        assert!(index.range_countable && index.range_summable);
-    }
-
-    /// The doctype-level `dependentRequired` rows — `rangeSummable` →
-    /// `documentsSummable`, `rangeAverageable` → `documentsAverageable` — the
-    /// other half of the gate. The meta-schema has no
-    /// `rangeCountable` → `documentsCountable` row at the doctype level, and
-    /// neither does the gate.
-    #[test]
-    fn doctype_level_range_flags_demand_their_aggregate() {
-        let mut schema_map = schema_with_index_entry(sugar_short_form_index_entry())
-            .to_map()
-            .expect("document type schema is an object")
-            .clone();
-        schema_map.push((
-            Value::Text("rangeAverageable".to_string()),
-            Value::Bool(true),
-        ));
-        let schema = Value::Map(schema_map);
-        let error = literal_prerequisites(&schema)
-            .expect_err("a doctype-level rangeAverageable demands documentsAverageable");
-        let msg = format!("{error:?}");
-        assert!(
-            msg.contains("documentsAverageable") && msg.contains("test_doc"),
-            "the error must name the missing doctype flag and the document type; got {msg}"
-        );
-    }
-
-    /// A generation whose meta-schema does not carry these rules must not
-    /// inherit them. This is the property the two dedicated `ParserGeneration`
-    /// fields exist to protect: a future generation built on a meta-schema that
-    /// made the prerequisites sugar-aware turns them off here rather than
-    /// having them implied by the grammar admissions.
-    #[test]
-    fn gate_is_inert_for_a_generation_whose_meta_schema_lacks_the_rules() {
-        let schema = schema_with_index_entry(sugar_short_form_index_entry());
-        let schema_map = schema.to_map().expect("document type schema is an object");
-        super::super::common::validate_literal_aggregate_prerequisites(
-            "test_doc", schema_map, false, false,
-        )
-        .expect("both rule families switched off leaves nothing to enforce");
-        super::super::common::validate_literal_aggregate_prerequisites(
-            "test_doc", schema_map, true, false,
-        )
-        .expect("the ranked prerequisites are meta-schema v3's alone");
-    }
-
-    /// The SDK-facing entry point must reach the same verdict as consensus.
+    /// The SDK-facing entry point reaches the same verdict as consensus.
     ///
     /// `DataContract::from_json(.., full_validation = true, ..)` is what
     /// `DataContractWasm::fromJSON` calls, and drive-abci's data contract
     /// create validation deserializes the contract with `full_validation =
-    /// true` as well; both land in `DocumentType::try_from_schema`, so pinning
-    /// this entry point pins the pair.
+    /// true` as well; both land in `DocumentType::try_from_schema`, so
+    /// pinning this entry point pins the pair.
     #[cfg(feature = "json-conversion")]
     #[test]
-    fn from_json_full_validation_matches_consensus_on_the_sugar_short_form() {
+    fn from_json_full_validation_accepts_the_sugar_short_form() {
         use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
         use crate::prelude::DataContract;
         use serde_json::json;
@@ -2114,27 +2091,21 @@ mod tests {
             "rankedAverageable": true,
             "rankedCountable": true
         });
-        let error = DataContract::from_json(contract_json(short_form), true, pv14())
-            .expect_err("from_json under full validation must refuse what registration refuses");
+        DataContract::from_json(contract_json(short_form), true, pv14())
+            .expect("the sugar short form registers, so the SDK must accept it too");
+
+        let no_range_axis = json!({
+            "name": "storeRating",
+            "properties": [{"restaurantId": "asc"}],
+            "averageable": "grade",
+            "rankedCountable": true
+        });
+        let error = DataContract::from_json(contract_json(no_range_axis), true, pv14())
+            .expect_err("a ranking with no range axis is refused by both layers");
         let msg = format!("{error:?}");
         assert!(
             msg.contains("rangeCountable"),
-            "the error must name the flag to add; got {msg}"
+            "the error must name the missing range flag; got {msg}"
         );
-
-        let longhand = json!({
-            "name": "storeRating",
-            "properties": [{"restaurantId": "asc"}],
-            "countable": "countable",
-            "summable": "grade",
-            "averageable": "grade",
-            "rangeCountable": true,
-            "rangeSummable": true,
-            "rangeAverageable": true,
-            "rankedAverageable": true,
-            "rankedCountable": true
-        });
-        DataContract::from_json(contract_json(longhand), true, pv14())
-            .expect("the six-flag longhand is accepted by both validators");
     }
 }
