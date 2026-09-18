@@ -31,6 +31,7 @@ use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+use dpp::data_contract::update_values::DescriptionUpdate;
 use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType, PartialIdentity, Purpose, SecurityLevel};
@@ -336,7 +337,9 @@ impl IdentityWallet {
     ///      no manual tagging), then overlays the caller's sections:
     ///      `documentSchemas` / `tokens` / `groups` are merged key-by-
     ///      key (add or replace an entry; never drop an existing one),
-    ///      and `keywords` / `description` / `config` are overridden
+    ///      and `keywords` / `config` are overridden only when supplied,
+    ///      while `description` is a tri-state ([`DescriptionUpdate`]:
+    ///      keep, clear or set). The remaining sections
     ///      only when the caller supplies them. The id + owner stay as
     ///      `existing`'s and the version is the bumped value. The merged
     ///      Value is deserialized via the public
@@ -365,7 +368,7 @@ impl IdentityWallet {
         tokens_schema_json: Option<&str>,
         groups_schema_json: Option<&str>,
         keywords_json: Option<&str>,
-        description: Option<&str>,
+        description: DescriptionUpdate,
         config_json: Option<&str>,
         signer: &S,
     ) -> Result<DataContract, PlatformWalletError>
@@ -473,7 +476,7 @@ impl IdentityWallet {
             parse_optional_json("tokens_schema_json", tokens_schema_json)?,
             parse_optional_json("groups_schema_json", groups_schema_json)?,
             parse_optional_json("keywords_json", keywords_json)?,
-            description.filter(|s| !s.is_empty()),
+            &description,
             parse_optional_json("config_json", config_json)?,
         )?;
 
@@ -607,8 +610,9 @@ fn parse_optional_json(
 ///   but existing keys the caller didn't mention are kept. (DPP rejects
 ///   document-type / token / group *removals* on update, so dropping
 ///   the untouched ones would fail the transition.)
-/// - `keywords` / `description` / `config`: overridden wholesale, but
-///   only when the caller actually supplied them. A supplied `config`
+/// - `keywords` / `config`: overridden wholesale, but only when the caller
+///   actually supplied them. `description` is a tri-state: kept, removed
+///   from the payload, or replaced. A supplied `config`
 ///   that lacks the `$formatVersion` tag inherits the base contract's
 ///   on-chain config version so the tagged-enum dispatch still resolves.
 ///
@@ -622,7 +626,7 @@ fn merge_contract_update_payload(
     tokens: Option<serde_json::Value>,
     groups: Option<serde_json::Value>,
     keywords: Option<serde_json::Value>,
-    description: Option<&str>,
+    description: &DescriptionUpdate,
     config: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, PlatformWalletError> {
     let obj = base.as_object_mut().ok_or_else(|| {
@@ -647,11 +651,17 @@ fn merge_contract_update_payload(
     if let Some(v) = keywords {
         obj.insert("keywords".to_string(), v);
     }
-    if let Some(s) = description {
-        obj.insert(
-            "description".to_string(),
-            serde_json::Value::String(s.to_string()),
-        );
+    match description {
+        DescriptionUpdate::Keep => {}
+        DescriptionUpdate::Clear => {
+            obj.remove("description");
+        }
+        DescriptionUpdate::Set(s) => {
+            obj.insert(
+                "description".to_string(),
+                serde_json::Value::String(s.clone()),
+            );
+        }
     }
     if let Some(mut v) = config {
         // `DataContractConfig` is a `#[serde(tag = "$formatVersion")]`
@@ -795,7 +805,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            &DescriptionUpdate::Keep,
             None,
         )
         .expect("merge");
@@ -832,7 +842,7 @@ mod tests {
             None,
             None,
             None,
-            None,
+            &DescriptionUpdate::Keep,
             None,
         )
         .expect("merge");
@@ -852,7 +862,7 @@ mod tests {
             Some(json!({ "1": { "conventions": {} } })),
             None,
             None,
-            None,
+            &DescriptionUpdate::Keep,
             None,
         )
         .expect("merge");
@@ -877,7 +887,7 @@ mod tests {
             None,
             None,
             Some(json!(["gamma"])),
-            Some("new description"),
+            &DescriptionUpdate::Set("new description".to_string()),
             // Caller supplies a config without the format tag — should
             // inherit the base contract's on-chain version.
             Some(json!({ "canBeDeleted": true })),
@@ -888,6 +898,38 @@ mod tests {
         assert_eq!(merged["description"], json!("new description"));
         assert_eq!(merged["config"]["$formatVersion"], json!("1"));
         assert_eq!(merged["config"]["canBeDeleted"], json!(true));
+    }
+
+    #[test]
+    fn merge_clears_the_description_only_when_asked() {
+        let kept = merge_contract_update_payload(
+            base_contract(),
+            2,
+            json!({}),
+            None,
+            None,
+            None,
+            &DescriptionUpdate::Keep,
+            None,
+        )
+        .expect("merge");
+        assert_eq!(kept["description"], json!("original description"));
+
+        let cleared = merge_contract_update_payload(
+            base_contract(),
+            2,
+            json!({}),
+            None,
+            None,
+            None,
+            &DescriptionUpdate::Clear,
+            None,
+        )
+        .expect("merge");
+        assert!(
+            cleared.get("description").is_none(),
+            "a cleared description leaves the payload, so the delta carries Clear"
+        );
     }
 
     /// The current default config version for the latest protocol — 1 on

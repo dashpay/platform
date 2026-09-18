@@ -3557,6 +3557,27 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// What a contract update does to the contract's stored
+    /// description.
+    ///
+    /// The description is the one contract field an update can
+    /// remove, so it needs a third state next to "leave it alone"
+    /// and "write this text": a plain optional string cannot say
+    /// "delete the stored description", because a `nil` / empty
+    /// string means "keep" on the Rust side.
+    ///
+    /// `.set("")` is NOT a way to clear: the FFI layer treats an
+    /// empty string like a missing one and keeps the stored
+    /// description. Use `.clear` to remove it.
+    public enum DataContractDescriptionUpdate: Sendable, Equatable {
+        /// Leave the on-chain description untouched.
+        case keep
+        /// Remove the stored description from the contract.
+        case clear
+        /// Replace the stored description with `text`.
+        case set(String)
+    }
+
     /// Update an existing data contract owned by `ownerIdentityId`
     /// and broadcast the change to Platform.
     ///
@@ -3568,6 +3589,18 @@ extension ManagedPlatformWallet {
     ///
     /// `contractId` is the id of the existing contract to update.
     /// Returns the (unchanged) contract id of the updated contract.
+    ///
+    /// `descriptionUpdate` is a tri-state and maps onto the two C
+    /// arguments `description` / `clear_description`:
+    ///   - `.keep` (the default) sends a NULL description with the
+    ///     clear flag false, so the stored description survives.
+    ///   - `.clear` sends a NULL description with the clear flag
+    ///     true, which removes the stored description.
+    ///   - `.set(text)` sends `text` with the clear flag false,
+    ///     replacing the stored description.
+    /// Rust rejects the invalid pairing (a non-empty description
+    /// together with the clear flag) with an invalid-parameter
+    /// error; this wrapper never constructs it.
     ///
     /// Lifetime contract: the `signer` instance MUST stay alive for
     /// the duration of the `await` (Rust holds a `passUnretained`
@@ -3581,7 +3614,7 @@ extension ManagedPlatformWallet {
         tokenSchemasJSON: String? = nil,
         groupsJSON: String? = nil,
         keywordsJSON: String? = nil,
-        description: String? = nil,
+        descriptionUpdate: DataContractDescriptionUpdate = .keep,
         contractConfigJSON: String? = nil,
         signer: KeychainSigner
     ) async throws -> Identifier {
@@ -3604,13 +3637,31 @@ extension ManagedPlatformWallet {
             _ = signer
             var contractIdBytes = [UInt8](repeating: 0, count: 32)
 
+            // Lower the tri-state onto the two C arguments. Only
+            // `.set` carries a string, so the pinned pointer is NULL
+            // for both `.keep` and `.clear`, and the clear flag is
+            // the only thing that separates them.
+            let descriptionText: String?
+            let clearDescription: Bool
+            switch descriptionUpdate {
+            case .keep:
+                descriptionText = nil
+                clearDescription = false
+            case .clear:
+                descriptionText = nil
+                clearDescription = true
+            case .set(let text):
+                descriptionText = text
+                clearDescription = false
+            }
+
             let result = ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
                 contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
                     documentSchemasJSON.withCString { docsPtr in
                         Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
                             Self.withOptionalCString(groupsJSON) { groupsPtr in
                                 Self.withOptionalCString(keywordsJSON) { keywordsPtr in
-                                    Self.withOptionalCString(description) { descriptionPtr in
+                                    Self.withOptionalCString(descriptionText) { descriptionPtr in
                                         Self.withOptionalCString(contractConfigJSON) { configPtr in
                                             contractIdBytes.withUnsafeMutableBufferPointer { outBp in
                                                 platform_wallet_update_data_contract_with_signer(
@@ -3622,6 +3673,7 @@ extension ManagedPlatformWallet {
                                                     groupsPtr,
                                                     keywordsPtr,
                                                     descriptionPtr,
+                                                    clearDescription,
                                                     configPtr,
                                                     signerHandle,
                                                     outBp.baseAddress!

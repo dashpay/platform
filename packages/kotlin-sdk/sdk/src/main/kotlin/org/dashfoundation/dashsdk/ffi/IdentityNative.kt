@@ -258,8 +258,9 @@ internal object IdentityNative {
      * the wallet selects the key internally.
      *
      * [documentsSchemaJson] is required; the rest are optional (`null` or
-     * empty ⇒ the section is omitted). Returns the 32-byte updated contract
-     * id.
+     * empty ⇒ the section is omitted). [clearDescription] removes the stored
+     * description and then requires [description] to be `null` or empty.
+     * Returns the 32-byte updated contract id.
      */
     external fun updateDataContract(
         walletHandle: Long,
@@ -270,6 +271,7 @@ internal object IdentityNative {
         groupsSchemaJson: String?,
         keywordsJson: String?,
         description: String?,
+        clearDescription: Boolean,
         configJson: String?,
         signerHandle: Long,
     ): ByteArray
