@@ -586,8 +586,36 @@ public struct DataContractParser {
                         dist.distributionType = "{}"
                     }
                 }
-                if let recipient = perpetual["distributionRecipient"] as? String {
-                    dist.distributionRecipient = recipient
+                // The recipient arrives as the flat, `$type`-tagged map that
+                // rs-dpp has emitted since 4.0.0-beta.4, for example
+                // {"$type": "contractOwner"} or
+                // {"$type": "identity", "identity": "<base58>"}. The old bare
+                // string shape ("ContractOwner") is neither emitted nor
+                // accepted any more, so it is not parsed here.
+                if let recipient = perpetual["distributionRecipient"] as? [String: Any],
+                   let wireType = recipient["$type"] as? String {
+                    switch wireType {
+                    case TokenDistributionRecipient.WireType.contractOwner:
+                        dist.distributionRecipient = TokenDistributionRecipient.contractOwner.rawValue
+                    case TokenDistributionRecipient.WireType.identity:
+                        if let identityBase58 = recipient["identity"] as? String {
+                            // Already base58 on the wire, store it verbatim.
+                            dist.distributionRecipient = TokenDistributionRecipient.identity(identityBase58)
+                        } else {
+                            // Malformed `identity` variant (missing or
+                            // non-string `identity`): keep the raw `$type`
+                            // instead of crashing or claiming a recipient we
+                            // do not have.
+                            dist.distributionRecipient = wireType
+                        }
+                    case TokenDistributionRecipient.WireType.evonodesByParticipation:
+                        dist.distributionRecipient = TokenDistributionRecipient.evonodesByParticipation.rawValue
+                    default:
+                        // A variant added by a newer protocol version. Store
+                        // the raw discriminator so the value is visible rather
+                        // than silently replaced by the init default.
+                        dist.distributionRecipient = wireType
+                    }
                 }
                 // Set enabled flag if it exists (defaults to true in init)
                 if let enabled = perpetual["enabled"] as? Bool {
