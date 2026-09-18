@@ -49,16 +49,19 @@ use grovedb::batch::GroveOp;
 #[cfg(feature = "server")]
 use grovedb::{Element, TransactionArg};
 
+#[cfg(feature = "server")]
 /// Byte length of the destroyed supply scalar: a `u128` in big endian.
-pub const TOKEN_DESTROYED_SUPPLY_SIZE: usize = 16;
+pub(crate) const TOKEN_DESTROYED_SUPPLY_SIZE: usize = 16;
 
+#[cfg(feature = "server")]
 /// Encodes the destroyed supply scalar.
-pub fn encode_destroyed_supply(value: u128) -> Vec<u8> {
+pub(crate) fn encode_destroyed_supply(value: u128) -> Vec<u8> {
     value.to_be_bytes().to_vec()
 }
 
+#[cfg(feature = "server")]
 /// Decodes the destroyed supply scalar, refusing any other length.
-pub fn decode_destroyed_supply(bytes: &[u8]) -> Option<u128> {
+pub(crate) fn decode_destroyed_supply(bytes: &[u8]) -> Option<u128> {
     let bytes: [u8; TOKEN_DESTROYED_SUPPLY_SIZE] = bytes.try_into().ok()?;
     Some(u128::from_be_bytes(bytes))
 }
