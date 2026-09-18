@@ -497,6 +497,35 @@ public struct DataContractParser {
         return nil
     }
 
+    /// Read a token's once-per-identity distribution out of its
+    /// `distributionRules` block (protocol version 14).
+    ///
+    /// rs-dpp emits the block as
+    /// `"oncePerIdentityDistribution": {"$formatVersion": "0", "amount": 5000}`.
+    /// `amount` is a protocol `u64`, so it arrives as a JSON number up to
+    /// 2^53 - 1 and as a decimal string above that;
+    /// `stringifyDistributionAmount` normalises both to an exact decimal
+    /// string, which is what the value type carries.
+    ///
+    /// Returns nil when the block is absent, is not a dictionary, or carries
+    /// no readable `amount`. A malformed block therefore reads the same as
+    /// "this token has no once-per-identity distribution" rather than
+    /// claiming an amount that was never authored.
+    ///
+    /// This is the single place that shape is parsed:
+    /// `PersistentToken.oncePerIdentityDistribution` derives its value by
+    /// calling straight back into here.
+    static func parseOncePerIdentityDistribution(
+        _ value: Any?
+    ) -> TokenOncePerIdentityDistribution? {
+        guard let dict = value as? [String: Any],
+              let amountValue = dict["amount"],
+              let amount = stringifyDistributionAmount(amountValue) else {
+            return nil
+        }
+        return TokenOncePerIdentityDistribution(amount: amount)
+    }
+
     private static func parseTokenConfiguration(token: PersistentToken, from tokenDict: [String: Any]) {
         // Basic properties
         let maxSupplyStr = extractTokenSupply(from: tokenDict, key: "maxSupply")
@@ -625,6 +654,15 @@ public struct DataContractParser {
                 }
                 token.perpetualDistribution = dist
             }
+
+            // The once-per-identity distribution is parsed too, but not
+            // here: it has no column on `PersistentToken`, so it is derived
+            // from the contract JSON persisted on the owning
+            // `PersistentDataContract` through
+            // `PersistentToken.oncePerIdentityDistribution`, which calls
+            // `parseOncePerIdentityDistribution` above. Adding a stored
+            // property instead would move the model's entity hash and cost a
+            // schema version (see `DashModelContainer.modelTypes`).
 
             // Pre-programmed distribution
             if let preProgrammed = distributionRules["preProgrammedDistribution"] as? [String: Any] {

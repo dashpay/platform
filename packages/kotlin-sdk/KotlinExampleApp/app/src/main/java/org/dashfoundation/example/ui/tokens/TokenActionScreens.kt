@@ -598,6 +598,9 @@ private fun ClaimForm(
     val available = buildList {
         if (token.perpetualDistribution != null) add(TokenDistributionType.PERPETUAL)
         if (token.preProgrammedDistribution != null) add(TokenDistributionType.PRE_PROGRAMMED)
+        if (token.oncePerIdentityDistribution != null) {
+            add(TokenDistributionType.ONCE_PER_IDENTITY)
+        }
     }
     var selectedOrdinal by rememberSaveable {
         mutableStateOf((available.firstOrNull() ?: TokenDistributionType.PERPETUAL).ordinal)

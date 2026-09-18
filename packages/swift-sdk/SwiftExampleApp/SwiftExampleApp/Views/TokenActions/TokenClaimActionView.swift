@@ -4,12 +4,12 @@ import SwiftDashSDK
 
 /// Form for claiming a token distribution payout.
 ///
-/// Inputs: distribution-type picker (`PreProgrammed` / `Perpetual`)
-/// driven by which schedule the token has, plus an optional public
-/// note. When only one schedule is configured the picker auto-selects
-/// it and is disabled; when neither is configured the form refuses to
-/// submit. Claim is not group-gated, so there's no group-action
-/// banner.
+/// Inputs: distribution-type picker (`Perpetual` / `PreProgrammed` /
+/// `OncePerIdentity`) driven by which distributions the token has, plus
+/// an optional public note. When only one is configured the picker
+/// auto-selects it and is disabled; when none is configured the form
+/// refuses to submit. Claim is not group-gated, so there's no
+/// group-action banner.
 struct TokenClaimActionView: View {
     let token: PersistentToken
     let identity: PersistentIdentity
@@ -35,17 +35,20 @@ struct TokenClaimActionView: View {
     init(token: PersistentToken, identity: PersistentIdentity) {
         self.token = token
         self.identity = identity
-        // Default to whichever schedule is present; perpetual wins
-        // when both exist (matches Drive's claim ordering). When
-        // neither exists we still need a default — `.perpetual`
-        // keeps the picker valid; submission is gated by
-        // `availableDistributions.isEmpty`.
+        // Default to whichever distribution is present; perpetual wins
+        // when several exist (matches Drive's claim ordering), then
+        // pre-programmed, then once-per-identity. When none exists we
+        // still need a default: `.perpetual` keeps the picker valid;
+        // submission is gated by `availableDistributions.isEmpty`.
         let perpetual = token.perpetualDistribution != nil
         let preProgrammed = token.preProgrammedDistribution != nil
+        let oncePerIdentity = token.oncePerIdentityDistribution != nil
         if perpetual {
             self._selectedDistribution = State(initialValue: .perpetual)
         } else if preProgrammed {
             self._selectedDistribution = State(initialValue: .preProgrammed)
+        } else if oncePerIdentity {
+            self._selectedDistribution = State(initialValue: .oncePerIdentity)
         } else {
             self._selectedDistribution = State(initialValue: .perpetual)
         }
@@ -125,6 +128,9 @@ struct TokenClaimActionView: View {
         }
         if token.preProgrammedDistribution != nil {
             types.append(.preProgrammed)
+        }
+        if token.oncePerIdentityDistribution != nil {
+            types.append(.oncePerIdentity)
         }
         return types
     }

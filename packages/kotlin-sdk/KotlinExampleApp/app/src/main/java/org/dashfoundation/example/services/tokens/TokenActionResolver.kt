@@ -426,8 +426,14 @@ object TokenActionResolver {
     ): TokenActionPermission {
         val hasPerpetual = token.perpetualDistribution != null
         val hasPreProgrammed = token.preProgrammedDistribution != null
-        if (!hasPerpetual && !hasPreProgrammed) {
+        val hasOncePerIdentity = token.oncePerIdentityDistribution != null
+        if (!hasPerpetual && !hasPreProgrammed && !hasOncePerIdentity) {
             return TokenActionPermission.Denied("Token has no distribution schedule")
+        }
+        // Once per identity: every identity may claim the fixed amount once;
+        // an identity that already claimed is rejected on-chain at submit time.
+        if (hasOncePerIdentity) {
+            return TokenActionPermission.Allowed
         }
 
         if (token.newTokensDestinationIdentity?.contentEquals(identity.identityId) == true) {

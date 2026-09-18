@@ -80,6 +80,10 @@ object TokenMaterializer {
         val distributionRules = dict.obj("distributionRules")
         val perpetual = distributionRules?.obj("perpetualDistribution")
         val preProgrammed = distributionRules?.obj("preProgrammedDistribution")
+        // Protocol version 14: a fixed amount every identity may claim once.
+        // Persisted raw like the two blocks above; the amount is read back
+        // through TokenOncePerIdentityDistribution.parse.
+        val oncePerIdentity = distributionRules?.obj("oncePerIdentityDistribution")
         val newTokensDestination = distributionRules?.str("newTokensDestinationIdentity")
             ?.let { Base58.decodeIdentifier(it) }
         val mintingAllowChoosing = distributionRules
@@ -106,7 +110,8 @@ object TokenMaterializer {
             keepsHistoryObj?.boolean(key) ?: keepsHistoryAll ?: true
 
         val now = Date()
-        val hasDistribution = perpetual != null || preProgrammed != null
+        val hasDistribution =
+            perpetual != null || preProgrammed != null || oncePerIdentity != null
         return TokenEntity(
             id = tokenId(contractId, position),
             contractId = contractId,
@@ -138,6 +143,7 @@ object TokenMaterializer {
             emergencyActionRules = emergencyAction?.toJson(),
             perpetualDistribution = perpetual?.toString(),
             preProgrammedDistribution = preProgrammed?.toString(),
+            oncePerIdentityDistribution = oncePerIdentity?.toString(),
             newTokensDestinationIdentity = newTokensDestination,
             mintingAllowChoosingDestination = mintingAllowChoosing,
             distributionChangeRules = distributionChange?.toJson(),
@@ -149,7 +155,7 @@ object TokenMaterializer {
             createdAt = now,
             lastUpdatedAt = now,
             // Capability columns — MUST stay == (rules column != null),
-            // and hasDistribution == (perpetual || preProgrammed).
+            // and hasDistribution == (perpetual || preProgrammed || oncePerIdentity).
             canManuallyMint = manualMinting != null,
             canManuallyBurn = manualBurning != null,
             canFreeze = freeze != null,

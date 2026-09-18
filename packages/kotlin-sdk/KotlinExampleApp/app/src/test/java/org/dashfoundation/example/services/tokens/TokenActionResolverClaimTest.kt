@@ -12,7 +12,8 @@ import org.junit.Test
  * `newTokensDestinationIdentity` (perpetual) path plus pre-programmed
  * recipients named in the contract's `distributions` map
  * (`{"$formatVersion":"0","distributions":{"<timestampMs>":{"<base58>":amount}}}`,
- * the shape [TokenMaterializer] persists).
+ * the shape [TokenMaterializer] persists), and the once-per-identity kind
+ * (protocol version 14) that makes every identity eligible once.
  */
 class TokenActionResolverClaimTest {
 
@@ -28,6 +29,7 @@ class TokenActionResolverClaimTest {
         perpetual: String? = null,
         destination: ByteArray? = null,
         mintingAllowChoosing: Boolean = true,
+        oncePerIdentity: String? = null,
     ) = TokenEntity(
         id = ByteArray(36),
         contractId = ByteArray(32),
@@ -36,9 +38,10 @@ class TokenActionResolverClaimTest {
         baseSupply = "1000",
         perpetualDistribution = perpetual,
         preProgrammedDistribution = preProgrammed,
+        oncePerIdentityDistribution = oncePerIdentity,
         newTokensDestinationIdentity = destination,
         mintingAllowChoosingDestination = mintingAllowChoosing,
-        hasDistribution = preProgrammed != null || perpetual != null,
+        hasDistribution = preProgrammed != null || perpetual != null || oncePerIdentity != null,
     )
 
     private fun claim(token: TokenEntity, identity: IdentityEntity): TokenActionPermission =
@@ -48,6 +51,9 @@ class TokenActionResolverClaimTest {
 
     private fun preProgrammedJson(recipient: String = recipientBase58): String =
         """{"${'$'}formatVersion":"0","distributions":{"1750000000000":{"$recipient":5000}}}"""
+
+    private fun oncePerIdentityJson(amount: String = "5000"): String =
+        """{"${'$'}formatVersion":"0","amount":$amount}"""
 
     @Test
     fun `no distribution schedule is denied`() {
@@ -122,6 +128,24 @@ class TokenActionResolverClaimTest {
         assertEquals(
             TokenActionPermission.Denied("Not a recipient of any pre-programmed release"),
             claim(token(preProgrammed = "not json"), identity()),
+        )
+    }
+
+    @Test
+    fun `once-per-identity distribution allows any identity`() {
+        assertTrue(claim(token(oncePerIdentity = oncePerIdentityJson()), identity()).isAllowed)
+        assertTrue(
+            claim(token(oncePerIdentity = oncePerIdentityJson()), identity(strangerId)).isAllowed,
+        )
+    }
+
+    @Test
+    fun `once-per-identity distribution allows a non-recipient of the pre-programmed releases`() {
+        assertTrue(
+            claim(
+                token(preProgrammed = preProgrammedJson(), oncePerIdentity = oncePerIdentityJson()),
+                identity(strangerId),
+            ).isAllowed,
         )
     }
 

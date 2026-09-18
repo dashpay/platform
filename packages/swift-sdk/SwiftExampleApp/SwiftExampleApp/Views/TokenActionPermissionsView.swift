@@ -573,6 +573,7 @@ enum TokenActionResolver {
         let allowsChoosing = token.mintingAllowChoosingDestination
         let hasPerpetual = token.perpetualDistribution != nil
         let hasPreProgrammed = token.preProgrammedDistribution != nil
+        let hasOncePerIdentity = token.oncePerIdentityDistribution != nil
 
         // Match the rest of the screen's pattern: rows stay visible
         // and surface a denial reason instead of disappearing —
@@ -585,8 +586,19 @@ enum TokenActionResolver {
         // nothing to claim — surface that as the disabled-state
         // reason rather than offering a tappable action that
         // would round-trip into a "no distribution" error.
-        if !hasPerpetual && !hasPreProgrammed {
+        if !hasPerpetual && !hasPreProgrammed && !hasOncePerIdentity {
             return .denied(reason: "Token has no distribution schedule")
+        }
+
+        // A once-per-identity distribution pays a fixed amount to every
+        // identity, so there is no recipient list to match and no
+        // designated-recipient guard to apply: eligibility is universal.
+        // Whether this identity has already taken its single claim is
+        // enforced on-chain by Drive when the claim state transition is
+        // submitted, the same way maturity and already-claimed status are
+        // left to Drive for the pre-programmed case below.
+        if hasOncePerIdentity {
+            return .allowed
         }
 
         // Pre-programmed distributions pin their payouts to explicit

@@ -189,3 +189,42 @@ object AuthorizedActionTakers {
     fun group(position: Int): String = "$GROUP_PREFIX$position"
     fun identity(base58: String): String = "$IDENTITY_PREFIX$base58"
 }
+
+/**
+ * `oncePerIdentityDistribution` (protocol version 14): a fixed [amount]
+ * every identity may claim exactly once. Decoded view of the raw block
+ * [TokenMaterializer] persists in
+ * [org.dashfoundation.dashsdk.persistence.entities.TokenEntity.oncePerIdentityDistribution]
+ * (`{"$formatVersion":"0","amount":<u64>}`, the amount a JSON number or a
+ * decimal string). [amount] stays a decimal string because u64 values
+ * overflow Long.
+ */
+data class TokenOncePerIdentityDistribution(val amount: String) {
+
+    companion object {
+
+        fun parse(json: String?): TokenOncePerIdentityDistribution? {
+            if (json.isNullOrBlank()) return null
+            return try {
+                parse(LenientJson.parseToJsonElement(json).jsonObject)
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        /** Null when the block carries no non-negative integer `amount`. */
+        fun parse(obj: JsonObject): TokenOncePerIdentityDistribution? {
+            // Tolerate the enum-wrapped rendering the pre-programmed
+            // resolver also accepts; rs-dpp itself emits the flat shape.
+            val body = (obj["V0"] as? JsonObject) ?: obj
+            val content = (body["amount"] as? JsonPrimitive)?.content ?: return null
+            val amount = try {
+                java.math.BigInteger(content)
+            } catch (_: NumberFormatException) {
+                return null
+            }
+            if (amount.signum() < 0) return null
+            return TokenOncePerIdentityDistribution(amount.toString())
+        }
+    }
+}

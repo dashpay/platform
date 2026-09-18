@@ -184,8 +184,47 @@ extension PersistentToken {
         conventionsChangeRules != nil
     }
 
+    /// The token's once-per-identity distribution: a fixed amount every
+    /// identity may claim exactly once (protocol version 14).
+    ///
+    /// Derived rather than stored in a column of its own. The owning
+    /// contract's `serializedContract` already holds the whole contract JSON,
+    /// distribution rules included, so the value is persisted with every
+    /// contract the parser writes, and a new stored property here would move
+    /// this model's entity hash. That costs a schema version and a fixture
+    /// store (see `DashModelContainer.modelTypes` and
+    /// `DashModelMigrationTests`), which a display-only amount does not
+    /// justify. `perpetualDistribution` and `preProgrammedDistribution`
+    /// predate that discipline and kept their columns.
+    ///
+    /// Nil both when the token declares no such distribution and when the
+    /// contract JSON cannot be read: a token row whose `dataContract`
+    /// relationship is unset, or a contract persisted without its JSON, has
+    /// nothing to derive from.
+    ///
+    /// Parsing lives in `DataContractParser.parseOncePerIdentityDistribution`
+    /// so the derived read and the contract parser agree on the wire shape.
+    public var oncePerIdentityDistribution: TokenOncePerIdentityDistribution? {
+        guard let contract = dataContract,
+              let tokens = contract.parsedContract?["tokens"] as? [String: Any],
+              let tokenDict = tokens[String(position)] as? [String: Any],
+              let distributionRules = tokenDict["distributionRules"] as? [String: Any] else {
+            return nil
+        }
+        return DataContractParser.parseOncePerIdentityDistribution(
+            distributionRules["oncePerIdentityDistribution"]
+        )
+    }
+
+    /// True when the token carries any distribution kind.
+    ///
+    /// The two column-backed kinds are checked first on purpose: `||` short
+    /// circuits, so a token that already has one never pays for the contract
+    /// JSON decode behind `oncePerIdentityDistribution`.
     public var hasDistribution: Bool {
-        perpetualDistribution != nil || preProgrammedDistribution != nil
+        perpetualDistribution != nil
+            || preProgrammedDistribution != nil
+            || oncePerIdentityDistribution != nil
     }
 
     public var canChangeTradeMode: Bool {
@@ -335,6 +374,11 @@ extension PersistentToken {
         }
     }
 
+    /// Covers the two column-backed distribution kinds only. A `#Predicate`
+    /// is compiled into a store query over stored properties, so it cannot
+    /// see `oncePerIdentityDistribution`, which is derived from the owning
+    /// contract's JSON. Filter in memory on `hasDistribution` when that kind
+    /// has to count.
     public static func distributionTokensPredicate() -> Predicate<PersistentToken> {
         #Predicate<PersistentToken> { token in
             token.perpetualDistribution != nil || token.preProgrammedDistribution != nil
