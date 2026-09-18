@@ -21,9 +21,10 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
 /// Beneficiaries an erase can credit beyond the revisions themselves: the
-/// lifecycle record's writer, the per-document history subtree's creator, and
-/// the current pointer's, all of which a terminal chunk removes.
-const STRUCTURAL_REFUND_RECIPIENTS: u64 = 3;
+/// lifecycle record's writer and the per-document history subtree's creator,
+/// both of which a terminal chunk removes. Delete already removed the current
+/// pointer, so erase cannot refund it again.
+const STRUCTURAL_REFUND_RECIPIENTS: u64 = 2;
 
 impl Drive {
     /// Prices the worst-case number of third-party balance updates one erase

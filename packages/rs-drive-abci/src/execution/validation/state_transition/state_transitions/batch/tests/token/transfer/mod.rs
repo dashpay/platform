@@ -8,10 +8,10 @@ mod token_transfer_tests {
     use dpp::state_transition::batch_transition::TokenMintTransition;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
-    use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+    use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV1;
     use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
     use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
-    use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionMutRef;
+    use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionMutRefV1;
     use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
     use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
     use dpp::identity::KeyType;
@@ -1230,9 +1230,9 @@ mod token_transfer_tests {
         // here we add fake info
         if let StateTransition::Batch(batch) = &mut token_transfer_transition {
             let first_transition = batch
-                .first_transition_mut()
+                .first_transition_mut_v1()
                 .expect("expected_first_transition");
-            if let BatchedTransitionMutRef::Token(TokenTransition::Transfer(transfer)) =
+            if let BatchedTransitionMutRefV1::Token(TokenTransition::Transfer(transfer)) =
                 first_transition
             {
                 transfer

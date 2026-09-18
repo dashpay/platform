@@ -235,12 +235,7 @@ impl DocumentHistoryDriveQuery {
     /// Queries the pointer, lifecycle reservation, and raw history tree separately.
     pub fn metadata_path_query(&self, version: &PlatformVersion) -> Result<PathQuery, Error> {
         self.validate()?;
-        let queries = [
-            0,
-            DOCUMENT_LIFECYCLE_TREE_KEY,
-            DOCUMENT_HISTORY_TREE_KEY,
-        ]
-        .map(|branch| {
+        let queries = [0, DOCUMENT_LIFECYCLE_TREE_KEY, DOCUMENT_HISTORY_TREE_KEY].map(|branch| {
             let mut path =
                 contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
             path.push(vec![branch]);
@@ -326,6 +321,9 @@ impl DocumentHistoryDriveQuery {
             return Err(corrupt(
                 "a current document cannot also carry a lifecycle record",
             ));
+        }
+        if count == Some(0) {
+            return Err(corrupt("an empty history tree must not remain in storage"));
         }
         if active && count.unwrap_or_default() == 0
             || !active && record.is_none() && count.unwrap_or_default() > 0

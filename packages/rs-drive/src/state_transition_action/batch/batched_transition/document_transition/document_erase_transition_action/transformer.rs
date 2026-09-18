@@ -1,7 +1,7 @@
 use crate::drive::contract::DataContractFetchInfo;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::{DocumentEraseTransitionAction, DocumentEraseTransitionActionV0};
-use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+use crate::state_transition_action::batch::v1::BatchedTransitionActionV1;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::Identifier;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
@@ -18,7 +18,7 @@ impl DocumentEraseTransitionAction {
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<
         (
-            ConsensusValidationResult<BatchedTransitionAction>,
+            ConsensusValidationResult<BatchedTransitionActionV1>,
             FeeResult,
         ),
         Error,

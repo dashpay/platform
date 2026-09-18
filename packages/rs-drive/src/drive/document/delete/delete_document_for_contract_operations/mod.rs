@@ -23,8 +23,6 @@ impl Drive {
     /// * `document_id`: The ID of the document to delete.
     /// * `contract`: The contract that contains the document.
     /// * `document_type`: The type of the document.
-    /// * `block_info`: The block this delete belongs to.
-    /// * `deleter_id`: The identity credited with the lifecycle record's bytes.
     /// * `previous_batch_operations`: Previous batch operations to include.
     /// * `estimated_costs_only_with_layer_info`: Estimated costs with layer info.
     /// * `transaction`: The transaction argument.
@@ -39,8 +37,6 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
-        block_info: &BlockInfo,
-        deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -97,10 +93,103 @@ impl Drive {
                 document_id,
                 contract,
                 document_type,
-                block_info,
-                deleter_id,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
+                block_time_ms,
+                transaction,
+                platform_version,
+            ),
+            1 => self.delete_document_for_contract_operations_v1(
+                document_id,
+                contract,
+                document_type,
+                &BlockInfo::default_with_time(block_time_ms),
+                None,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "delete_document_for_contract_operations".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
+    }
+
+    /// Prepares a lifecycle-aware delete using the block and deleter that
+    /// authored the state transition.
+    #[allow(clippy::too_many_arguments)]
+    pub fn delete_document_for_contract_operations_with_lifecycle(
+        &self,
+        document_id: Identifier,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        block_info: &BlockInfo,
+        deleter_id: Option<Identifier>,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_time_ms: u64,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        if estimated_costs_only_with_layer_info.is_none() {
+            self.prepare_document_time_range_ttl(
+                contract,
+                document_type,
+                block_time_ms,
+                transaction,
+                platform_version,
+            )?;
+        }
+        self.delete_document_for_contract_operations_with_lifecycle_without_ttl_drain(
+            document_id,
+            contract,
+            document_type,
+            block_info,
+            deleter_id,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_time_ms,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Builds a lifecycle-aware delete against post-drain state.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn delete_document_for_contract_operations_with_lifecycle_without_ttl_drain(
+        &self,
+        document_id: Identifier,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        block_info: &BlockInfo,
+        deleter_id: Option<Identifier>,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_time_ms: u64,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        match platform_version
+            .drive
+            .methods
+            .document
+            .delete
+            .delete_document_for_contract_operations
+        {
+            0 => self.delete_document_for_contract_operations_v0(
+                document_id,
+                contract,
+                document_type,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                block_time_ms,
                 transaction,
                 platform_version,
             ),
@@ -112,7 +201,6 @@ impl Drive {
                 deleter_id,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
-                block_time_ms,
                 transaction,
                 platform_version,
             ),
@@ -147,8 +235,6 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
-        block_info: &BlockInfo,
-        deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -168,10 +254,9 @@ impl Drive {
                 document_id,
                 contract,
                 document_type,
-                block_info,
-                deleter_id,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
+                block_time_ms,
                 transaction,
                 platform_version,
             ),
@@ -179,11 +264,10 @@ impl Drive {
                 document_id,
                 contract,
                 document_type,
-                block_info,
-                deleter_id,
+                &BlockInfo::default_with_time(block_time_ms),
+                None,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
-                block_time_ms,
                 transaction,
                 platform_version,
             ),

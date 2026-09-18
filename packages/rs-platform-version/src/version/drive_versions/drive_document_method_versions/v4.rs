@@ -84,7 +84,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             primary_key_path_query: 0,
             // The lifecycle tree is introduced with the delete and erase
             // lifecycle; the read exists only from protocol version 14.
-            fetch_document_lifecycle: 0,
+            fetch_document_lifecycle: Some(0),
             detect_count_mode: 0,
             detect_sum_mode: 0,
             detect_ranked_mode: 0,
@@ -99,9 +99,9 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             // pointers, not document items, so its layer sizes come from the
             // reference shape.
             add_estimation_costs_for_remove_document_to_primary_storage: 1,
-            delete_document_for_contract: 0,
-            delete_document_for_contract_id: 0,
-            delete_document_for_contract_apply_and_add_to_operations: 0,
+            delete_document_for_contract: 1,
+            delete_document_for_contract_id: 1,
+            delete_document_for_contract_apply_and_add_to_operations: 1,
             // v1 at protocol v14: the stateless delete of a keep-history
             // primary entry is sized as a reference.
             remove_document_from_primary_storage: 1,
@@ -111,16 +111,16 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             remove_reference_for_index_level_for_contract_operations: 1,
             remove_indices_for_index_level_for_contract_operations: 2,
             remove_indices_for_top_index_level_for_contract_operations: 2,
-            delete_document_for_contract_id_with_named_type_operations: 0,
-            delete_document_for_contract_with_named_type_operations: 0,
+            delete_document_for_contract_id_with_named_type_operations: 1,
+            delete_document_for_contract_with_named_type_operations: 1,
             // v1 at protocol v14: keep-history documents lose their current
             // pointer and index references and gain a lifecycle record; the
             // non-history path is delegated to v0 unchanged.
             delete_document_for_contract_operations: 1,
             delete_index_only_document_for_contract_operations: 0,
             delete_index_only_document_for_contract: 0,
-            erase_document_for_contract_operations: 0,
-            add_estimation_costs_for_erase_document: 0,
+            erase_document_for_contract_operations: Some(0),
+            add_estimation_costs_for_erase_document: Some(0),
         },
         insert: DriveDocumentInsertMethodVersions {
             add_document: 0,

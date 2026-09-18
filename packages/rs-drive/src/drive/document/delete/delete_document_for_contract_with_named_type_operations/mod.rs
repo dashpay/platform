@@ -1,11 +1,10 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use dpp::block::block_info::BlockInfo;
-
 use dpp::data_contract::DataContract;
 
 use dpp::identifier::Identifier;
@@ -35,8 +34,6 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type_name: &str,
-        block_info: &BlockInfo,
-        deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -56,8 +53,18 @@ impl Drive {
                 document_id,
                 contract,
                 document_type_name,
-                block_info,
-                deleter_id,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                block_time_ms,
+                transaction,
+                platform_version,
+            ),
+            1 => self.delete_document_for_contract_with_named_type_operations_v1(
+                document_id,
+                contract,
+                document_type_name,
+                &dpp::block::block_info::BlockInfo::default_with_time(block_time_ms),
+                None,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 block_time_ms,
@@ -66,7 +73,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_document_for_contract_with_named_type_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -21,9 +21,11 @@ use dpp::state_transition::StateTransition::{
     IdentityCreditWithdrawal, IdentityUpdate, MasternodeVote, ShieldFromIdentity,
 };
 use dpp::state_transition::batch_transition::BatchTransition;
-use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::{
+    BatchedTransition, BatchedTransitionV1,
+};
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
@@ -399,6 +401,14 @@ impl StateTransitionWasm {
                         Some(token_batch.identity_contract_nonce())
                     }
                 },
+                BatchTransition::V2(v2) => match v2.transitions.first()? {
+                    BatchedTransitionV1::Document(doc_batch) => {
+                        Some(doc_batch.identity_contract_nonce())
+                    }
+                    BatchedTransitionV1::Token(token_batch) => {
+                        Some(token_batch.identity_contract_nonce())
+                    }
+                },
             },
             StateTransition::IdentityCreate(_) => None,
             IdentityTopUp(_) => None,
@@ -530,6 +540,11 @@ impl StateTransitionWasm {
                         v1.owner_id = owner_id;
 
                         BatchTransition::V1(v1)
+                    }
+                    BatchTransition::V2(mut v2) => {
+                        v2.owner_id = owner_id;
+
+                        BatchTransition::V2(v2)
                     }
                 };
 

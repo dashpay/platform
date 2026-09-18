@@ -1,7 +1,6 @@
 use derive_more::From;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
-use state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
 use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
 
@@ -85,8 +84,10 @@ use crate::state_transition::address_funding_from_asset_lock_transition::{
 use crate::state_transition::address_funds_transfer_transition::{
     AddressFundsTransferTransition, AddressFundsTransferTransitionSignable,
 };
-use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV1;
+use crate::state_transition::batch_transition::batched_transition::{
+    BatchedTransitionRefV1, DocumentTransitionRefV1,
+};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionSignable};
@@ -896,6 +897,7 @@ impl StateTransition {
             StateTransition::Batch(batch_transition) => match batch_transition {
                 BatchTransition::V0(_) => ALL_VERSIONS,
                 BatchTransition::V1(_) => 9..=LATEST_VERSION,
+                BatchTransition::V2(_) => 14..=LATEST_VERSION,
             },
             StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
@@ -973,47 +975,55 @@ impl StateTransition {
             Self::DataContractUpdate(_) => "DataContractUpdate".to_string(),
             Self::Batch(batch_transition) => {
                 let mut document_transition_types = vec![];
-                for transition in batch_transition.transitions_iter() {
+                for transition in batch_transition.transitions_iter_v1() {
                     let document_transition_name = match transition {
-                        BatchedTransitionRef::Document(DocumentTransition::Create(_)) => "Create",
-                        BatchedTransitionRef::Document(DocumentTransition::Replace(_)) => "Replace",
-                        BatchedTransitionRef::Document(DocumentTransition::Delete(_)) => "Delete",
-                        BatchedTransitionRef::Document(DocumentTransition::Transfer(_)) => {
+                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::Create(_)) => {
+                            "Create"
+                        }
+                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::Replace(_)) => {
+                            "Replace"
+                        }
+                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::Delete(_)) => {
+                            "Delete"
+                        }
+                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::Transfer(_)) => {
                             "Transfer"
                         }
-                        BatchedTransitionRef::Document(DocumentTransition::UpdatePrice(_)) => {
-                            "UpdatePrice"
-                        }
-                        BatchedTransitionRef::Document(DocumentTransition::Purchase(_)) => {
+                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::UpdatePrice(
+                            _,
+                        )) => "UpdatePrice",
+                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::Purchase(_)) => {
                             "Purchase"
                         }
-                        BatchedTransitionRef::Document(DocumentTransition::IndexOnlyDelete(_)) => {
-                            "IndexOnlyDelete"
+                        BatchedTransitionRefV1::Document(
+                            DocumentTransitionRefV1::IndexOnlyDelete(_),
+                        ) => "IndexOnlyDelete",
+                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::Erase(_)) => {
+                            "Erase"
                         }
-                        BatchedTransitionRef::Document(DocumentTransition::Erase(_)) => "Erase",
-                        BatchedTransitionRef::Token(TokenTransition::Transfer(_)) => {
+                        BatchedTransitionRefV1::Token(TokenTransition::Transfer(_)) => {
                             "TokenTransfer"
                         }
-                        BatchedTransitionRef::Token(TokenTransition::Mint(_)) => "TokenMint",
-                        BatchedTransitionRef::Token(TokenTransition::Burn(_)) => "TokenBurn",
-                        BatchedTransitionRef::Token(TokenTransition::Freeze(_)) => "TokenFreeze",
-                        BatchedTransitionRef::Token(TokenTransition::Unfreeze(_)) => {
+                        BatchedTransitionRefV1::Token(TokenTransition::Mint(_)) => "TokenMint",
+                        BatchedTransitionRefV1::Token(TokenTransition::Burn(_)) => "TokenBurn",
+                        BatchedTransitionRefV1::Token(TokenTransition::Freeze(_)) => "TokenFreeze",
+                        BatchedTransitionRefV1::Token(TokenTransition::Unfreeze(_)) => {
                             "TokenUnfreeze"
                         }
-                        BatchedTransitionRef::Token(TokenTransition::DestroyFrozenFunds(_)) => {
+                        BatchedTransitionRefV1::Token(TokenTransition::DestroyFrozenFunds(_)) => {
                             "TokenDestroyFrozenFunds"
                         }
-                        BatchedTransitionRef::Token(TokenTransition::EmergencyAction(_)) => {
+                        BatchedTransitionRefV1::Token(TokenTransition::EmergencyAction(_)) => {
                             "TokenEmergencyAction"
                         }
-                        BatchedTransitionRef::Token(TokenTransition::ConfigUpdate(_)) => {
+                        BatchedTransitionRefV1::Token(TokenTransition::ConfigUpdate(_)) => {
                             "TokenConfigUpdate"
                         }
-                        BatchedTransitionRef::Token(TokenTransition::Claim(_)) => "TokenClaim",
-                        BatchedTransitionRef::Token(TokenTransition::DirectPurchase(_)) => {
+                        BatchedTransitionRefV1::Token(TokenTransition::Claim(_)) => "TokenClaim",
+                        BatchedTransitionRefV1::Token(TokenTransition::DirectPurchase(_)) => {
                             "TokenDirectPurchase"
                         }
-                        BatchedTransitionRef::Token(
+                        BatchedTransitionRefV1::Token(
                             TokenTransition::SetPriceForDirectPurchase(_),
                         ) => "SetPriceForDirectPurchase",
                     };
@@ -1389,14 +1399,14 @@ impl StateTransition {
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::Batch(st) => {
-                let allow_token_transfer_keys = st.transitions_len() == 1
+                let allow_token_transfer_keys = st.transitions_len_v1() == 1
                     && (st
-                        .first_transition()
+                        .first_transition_v1()
                         .expect("expected first transition with len 1")
                         .as_transition_token_claim()
                         .is_some()
                         || st
-                            .first_transition()
+                            .first_transition_v1()
                             .expect("expected first transition with len 1")
                             .as_transition_token_transfer()
                             .is_some());
@@ -2055,6 +2065,7 @@ impl StateTransitionStructureValidation for StateTransition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state_transition::batch_transition::batched_transition::DocumentTransition;
 
     // -----------------------------------------------------------------------
     // StateTransitionSigningOptions tests

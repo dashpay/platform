@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_base_transaction_action::DocumentBaseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::state_v0::DocumentDeleteTransitionActionStateValidationV0;
-use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_keep_history_document_lifecycle;
+use crate::execution::validation::state_transition::batch::state::fetch_keep_history_document_lifecycle::fetch_keep_history_document_lifecycle;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::InvalidDocumentTypeError;

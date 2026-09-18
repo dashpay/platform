@@ -1,0 +1,66 @@
+use grovedb::batch::KeyInfoPath;
+
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+
+use std::collections::HashMap;
+
+use crate::drive::Drive;
+use crate::error::document::DocumentError;
+
+use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
+
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::identifier::Identifier;
+
+use dpp::version::PlatformVersion;
+
+impl Drive {
+    /// Prepares the operations for deleting a document.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn delete_document_for_contract_id_with_named_type_operations_v1(
+        &self,
+        document_id: Identifier,
+        contract_id: Identifier,
+        document_type_name: &str,
+        block_info: &BlockInfo,
+        deleter_id: Option<Identifier>,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_time_ms: u64,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut operations = vec![];
+        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(
+            contract_id.to_buffer(),
+            Some(&block_info.epoch),
+            true,
+            transaction,
+            &mut operations,
+            platform_version,
+        )?
+        else {
+            return Err(Error::Document(DocumentError::DataContractNotFound));
+        };
+
+        let contract = &contract_fetch_info.contract;
+        let document_type = contract.document_type_for_name(document_type_name)?;
+        self.delete_document_for_contract_operations_with_lifecycle(
+            document_id,
+            contract,
+            document_type,
+            block_info,
+            deleter_id,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_time_ms,
+            transaction,
+            platform_version,
+        )
+    }
+}

@@ -11,10 +11,14 @@ use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
-use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV1;
+use dpp::state_transition::batch_transition::batched_transition::{
+    BatchedTransition, BatchedTransitionV1,
+};
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
+use dpp::state_transition::batch_transition::{
+    BatchTransition, BatchTransitionV1, BatchTransitionV2,
+};
 use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike, StateTransitionOwned,
     StateTransitionSingleSigned,
@@ -76,7 +80,7 @@ impl From<BatchTransitionWasm> for BatchTransition {
 
 fn convert_array_to_vec_batched(
     batched_transitions: &js_sys::Array,
-) -> WasmDppResult<Vec<BatchedTransition>> {
+) -> WasmDppResult<Vec<BatchedTransitionV1>> {
     let mut transitions = Vec::with_capacity(batched_transitions.length() as usize);
 
     for batched_transition in batched_transitions.iter() {
@@ -84,10 +88,23 @@ fn convert_array_to_vec_batched(
             .to_wasm::<BatchedTransitionWasm>("BatchedTransition")?
             .clone();
 
-        transitions.push(BatchedTransition::from(transition));
+        transitions.push(BatchedTransitionV1::from(transition));
     }
 
     Ok(transitions)
+}
+
+/// The same transitions in the shell of batch formats 0 and 1, when every one
+/// of them fits there; an erase does not.
+fn downcast_batched_transitions(
+    transitions: Vec<BatchedTransitionV1>,
+) -> Result<Vec<BatchedTransition>, Vec<BatchedTransitionV1>> {
+    transitions
+        .iter()
+        .cloned()
+        .map(BatchedTransition::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| transitions)
 }
 
 #[wasm_bindgen(js_class = BatchTransition)]
@@ -99,22 +116,34 @@ impl BatchTransitionWasm {
         #[wasm_bindgen(js_name = "userFeeIncrease")] user_fee_increase: UserFeeIncrease,
     ) -> WasmDppResult<BatchTransitionWasm> {
         let transitions = convert_array_to_vec_batched(batched_transitions)?;
+        let owner_id = owner_id.try_into()?;
 
-        Ok(BatchTransitionWasm(BatchTransition::V1(
-            BatchTransitionV1 {
-                owner_id: owner_id.try_into()?,
+        // Batch format 1 carries every transition but an erase; an erase needs
+        // format 2, which only protocol version 14 and later accept.
+        let batch = match downcast_batched_transitions(transitions) {
+            Ok(transitions) => BatchTransition::V1(BatchTransitionV1 {
+                owner_id,
                 transitions,
                 user_fee_increase,
                 signature_public_key_id: 0u32,
                 signature: BinaryData::default(),
-            },
-        )))
+            }),
+            Err(transitions) => BatchTransition::V2(BatchTransitionV2 {
+                owner_id,
+                transitions,
+                user_fee_increase,
+                signature_public_key_id: 0u32,
+                signature: BinaryData::default(),
+            }),
+        };
+
+        Ok(BatchTransitionWasm(batch))
     }
 
     #[wasm_bindgen(getter = "transitions")]
     pub fn batched_transitions(&self) -> Vec<BatchedTransitionWasm> {
         self.0
-            .transitions_iter()
+            .transitions_iter_v1()
             .map(|transition| BatchedTransitionWasm::from(transition.to_owned_transition()))
             .collect()
     }
@@ -126,7 +155,20 @@ impl BatchTransitionWasm {
     ) -> WasmDppResult<()> {
         let transitions = convert_array_to_vec_batched(batched_transitions)?;
 
-        self.0.set_transitions(transitions);
+        match (&mut self.0, downcast_batched_transitions(transitions)) {
+            (BatchTransition::V2(batch), Ok(transitions)) => {
+                batch.transitions = transitions.into_iter().map(Into::into).collect();
+            }
+            (BatchTransition::V2(batch), Err(transitions)) => {
+                batch.transitions = transitions;
+            }
+            (batch, Ok(transitions)) => batch.set_transitions(transitions),
+            (_, Err(_)) => {
+                return Err(WasmDppError::invalid_argument(
+                    "an erase transition needs batch transition format 2",
+                ));
+            }
+        }
         Ok(())
     }
 

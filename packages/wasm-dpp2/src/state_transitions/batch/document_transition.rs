@@ -13,23 +13,33 @@ use dpp::prelude::{IdentityNonce, Revision};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
+use dpp::state_transition::batch_transition::batched_transition::DocumentTransitionV1;
 use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::{
     DocumentTransitionActionType, DocumentTransitionActionTypeGetter,
 };
 use crate::utils::try_to_u64;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+/// Wraps the document transition shell of batch format 2, which knows every
+/// kind the older batch formats carry plus the erase kind, so one class
+/// mirrors a document transition of any batch format.
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "DocumentTransition")]
-pub struct DocumentTransitionWasm(DocumentTransition);
+pub struct DocumentTransitionWasm(DocumentTransitionV1);
 
-impl From<DocumentTransition> for DocumentTransitionWasm {
-    fn from(transition: DocumentTransition) -> Self {
+impl From<DocumentTransitionV1> for DocumentTransitionWasm {
+    fn from(transition: DocumentTransitionV1) -> Self {
         DocumentTransitionWasm(transition)
     }
 }
 
-impl From<DocumentTransitionWasm> for DocumentTransition {
+impl From<DocumentTransition> for DocumentTransitionWasm {
+    fn from(transition: DocumentTransition) -> Self {
+        DocumentTransitionWasm(transition.into())
+    }
+}
+
+impl From<DocumentTransitionWasm> for DocumentTransitionV1 {
     fn from(transition: DocumentTransitionWasm) -> Self {
         transition.0
     }
@@ -90,7 +100,7 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(getter = "createTransition")]
     pub fn create_transition(&self) -> WasmDppResult<DocumentCreateTransitionWasm> {
         match self.0.clone() {
-            DocumentTransition::Create(create) => Ok(DocumentCreateTransitionWasm::from(create)),
+            DocumentTransitionV1::Create(create) => Ok(DocumentCreateTransitionWasm::from(create)),
             _ => Err(WasmDppError::invalid_argument(
                 "Document transition is not a create transition",
             )),
@@ -100,7 +110,7 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(getter = "replaceTransition")]
     pub fn replace_transition(&self) -> WasmDppResult<DocumentReplaceTransitionWasm> {
         match self.0.clone() {
-            DocumentTransition::Replace(replace) => {
+            DocumentTransitionV1::Replace(replace) => {
                 Ok(DocumentReplaceTransitionWasm::from(replace))
             }
             _ => Err(WasmDppError::invalid_argument(
@@ -112,7 +122,7 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(getter = "deleteTransition")]
     pub fn delete_transition(&self) -> WasmDppResult<DocumentDeleteTransitionWasm> {
         match self.0.clone() {
-            DocumentTransition::Delete(delete) => Ok(DocumentDeleteTransitionWasm::from(delete)),
+            DocumentTransitionV1::Delete(delete) => Ok(DocumentDeleteTransitionWasm::from(delete)),
             _ => Err(WasmDppError::invalid_argument(
                 "Document transition is not a delete transition",
             )),
@@ -122,7 +132,7 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(getter = "purchaseTransition")]
     pub fn purchase_transition(&self) -> WasmDppResult<DocumentPurchaseTransitionWasm> {
         match self.0.clone() {
-            DocumentTransition::Purchase(purchase) => {
+            DocumentTransitionV1::Purchase(purchase) => {
                 Ok(DocumentPurchaseTransitionWasm::from(purchase))
             }
             _ => Err(WasmDppError::invalid_argument(
@@ -134,7 +144,7 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(getter = "transferTransition")]
     pub fn transfer_transition(&self) -> WasmDppResult<DocumentTransferTransitionWasm> {
         match self.0.clone() {
-            DocumentTransition::Transfer(transfer) => {
+            DocumentTransitionV1::Transfer(transfer) => {
                 Ok(DocumentTransferTransitionWasm::from(transfer))
             }
             _ => Err(WasmDppError::invalid_argument(
@@ -146,7 +156,7 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(getter = "updatePriceTransition")]
     pub fn update_price_transition(&self) -> WasmDppResult<DocumentUpdatePriceTransitionWasm> {
         match self.0.clone() {
-            DocumentTransition::UpdatePrice(update_price) => {
+            DocumentTransitionV1::UpdatePrice(update_price) => {
                 Ok(DocumentUpdatePriceTransitionWasm::from(update_price))
             }
             _ => Err(WasmDppError::invalid_argument(

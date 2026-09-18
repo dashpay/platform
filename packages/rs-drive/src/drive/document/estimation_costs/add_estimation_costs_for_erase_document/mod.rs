@@ -40,17 +40,21 @@ impl Drive {
             .delete
             .add_estimation_costs_for_erase_document
         {
-            0 => Self::add_estimation_costs_for_erase_document_v0(
+            Some(0) => Self::add_estimation_costs_for_erase_document_v0(
                 document_id,
                 contract,
                 document_type,
                 layers,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_erase_document".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "add_estimation_costs_for_erase_document".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

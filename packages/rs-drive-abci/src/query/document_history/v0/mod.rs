@@ -138,15 +138,13 @@ impl<C> Platform<C> {
                 lifecycle: history.lifecycle.map(|lifecycle| Lifecycle {
                     state: match lifecycle.state {
                         DocumentHistoryState::Active => State::Active,
-                        DocumentHistoryState::Deleted => State::Deleted,
-                        DocumentHistoryState::Erasing => State::Erasing,
                         DocumentHistoryState::Absent => State::Absent,
+                        DocumentHistoryState::Deleted | DocumentHistoryState::Erasing => {
+                            State::Absent
+                        }
                     } as i32,
                     remaining_revisions: lifecycle.remaining_revisions,
-                    deleted_at_ms: history.lifecycle.times.deleted_at_ms,
-                    erasing_started_at_ms: history.lifecycle.times.erasing_started_at_ms,
-                    erasing_from_time_ms: history.lifecycle.times.erasing_from_time_ms,
-                    erasing_from_revision: history.lifecycle.times.erasing_from_revision,
+                    ..Default::default()
                 }),
             })
         };

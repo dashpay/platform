@@ -577,7 +577,10 @@ impl WasmSdk {
     /// it. Read the document's history to see how much is left.
     ///
     /// @param options - Erase options including the document identifiers, identity key, and signer
-    /// @returns Promise that resolves when the erase has been accepted
+    /// @returns Promise that resolves after an affected-state proof authenticates
+    /// that the document is absent by id. This does not prove that this erase
+    /// executed or was accepted; query document history to observe the lifecycle
+    /// and remaining revisions.
     #[wasm_bindgen(js_name = "documentErase")]
     pub async fn document_erase(
         &self,

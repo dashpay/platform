@@ -8,16 +8,14 @@ use dpp::document::{Document, INITIAL_REVISION};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
-use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::batch_transition::methods::v2::DocumentsBatchTransitionMethodsV2;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use drive::drive::document::history::{
-    DocumentHistoryLifecycle, DocumentHistorySelector, DocumentHistoryState,
-};
+use drive::query::document_history_drive_query::{DocumentHistoryFilter, DocumentHistoryLifecycle};
 use std::sync::Arc;
 
 /// A builder to configure and broadcast document erase transitions.
@@ -143,8 +141,8 @@ impl DocumentEraseTransitionBuilder {
             identity_contract_nonce,
             user_fee_increase,
             signer,
-            platform_version,
             creation_options,
+            platform_version,
         )
         .await?;
 
@@ -187,10 +185,10 @@ impl DocumentEraseTransitionBuilder {
         let batch_feature_version = creation_options
             .and_then(|options| options.batch_feature_version)
             .unwrap_or(serialization.batch_state_transition.default_current_version);
-        if !matches!(batch_feature_version, 0 | 1) {
+        if batch_feature_version != 2 {
             return Err(Error::Protocol(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentEraseTransitionBuilder::sign".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![2],
                 received: batch_feature_version,
             }));
         }
@@ -202,6 +200,20 @@ impl DocumentEraseTransitionBuilder {
                 method: "DocumentEraseTransitionBuilder::sign".to_string(),
                 known_versions: vec![0],
                 received: method_feature_version,
+            }));
+        }
+        let base_feature_version = creation_options
+            .and_then(|options| options.base_feature_version)
+            .unwrap_or(
+                serialization
+                    .document_base_state_transition
+                    .default_current_version,
+            );
+        if !matches!(base_feature_version, 0 | 1) {
+            return Err(Error::Protocol(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentEraseTransitionBuilder::sign".to_string(),
+                known_versions: vec![0, 1],
+                received: base_feature_version,
             }));
         }
         Ok(())
@@ -252,6 +264,12 @@ fn erase_observation(result: StateTransitionProofResult) -> Result<DocumentErase
     }
 }
 
+fn lifecycle_from_history(
+    history: Option<drive_proof_verifier::types::DocumentHistory>,
+) -> Option<DocumentHistoryLifecycle> {
+    history.and_then(|history| history.lifecycle)
+}
+
 impl Sdk {
     /// Erases a chunk of the retained revisions of an already deleted document.
     ///
@@ -290,13 +308,15 @@ impl Sdk {
     /// Deliberately named apart from the erase and delete calls: the answer
     /// describes committed state at the moment of the read, not the outcome of
     /// any particular transition. Another erase, or a re-create of the same id,
-    /// may land between a transition and this read.
+    /// may land between a transition and this read. `None` means the queried
+    /// storage/proof generation does not authenticate lifecycle metadata; it
+    /// must not be interpreted as an authenticated absent state.
     pub async fn document_current_lifecycle(
         &self,
         data_contract_id: Identifier,
         document_type_name: String,
         document_id: Identifier,
-    ) -> Result<DocumentHistoryLifecycle, Error> {
+    ) -> Result<Option<DocumentHistoryLifecycle>, Error> {
         use dash_platform_queries::documents::document_history_query::DocumentHistoryQuery;
         use drive_proof_verifier::types::DocumentHistory;
 
@@ -308,25 +328,20 @@ impl Sdk {
                 document_id,
                 // The oldest retained revision, if any: the page is not the
                 // point, the metadata alongside it is.
-                selector: DocumentHistorySelector::StartAtTime(0),
+                filter: DocumentHistoryFilter::StartAtTime(0),
                 limit: Some(1),
             },
         )
         .await?;
 
-        Ok(history
-            .and_then(|history| history.lifecycle)
-            .unwrap_or(DocumentHistoryLifecycle {
-                state: DocumentHistoryState::Absent,
-                remaining_revisions: 0,
-                times: Default::default(),
-            }))
+        Ok(lifecycle_from_history(history))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use drive::query::document_history_drive_query::DocumentHistoryState;
     use std::collections::BTreeMap;
 
     /// The erase reads its observation out of exactly the result the
@@ -351,6 +366,32 @@ mod tests {
 
         erase_observation(StateTransitionProofResult::VerifiedTokenBalanceAbsence(id))
             .expect_err("only a document result can describe an erase");
+    }
+
+    #[test]
+    fn should_not_turn_unavailable_lifecycle_into_absent() {
+        use drive_proof_verifier::types::DocumentHistory;
+
+        assert_eq!(lifecycle_from_history(None), None);
+        assert_eq!(
+            lifecycle_from_history(Some(DocumentHistory {
+                entries: vec![],
+                lifecycle: None,
+            })),
+            None
+        );
+        let absent = DocumentHistoryLifecycle {
+            state: DocumentHistoryState::Absent,
+            remaining_revisions: 0,
+            times: Default::default(),
+        };
+        assert_eq!(
+            lifecycle_from_history(Some(DocumentHistory {
+                entries: vec![],
+                lifecycle: Some(absent.clone()),
+            })),
+            Some(absent)
+        );
     }
 
     #[cfg(feature = "mocks")]
@@ -379,7 +420,7 @@ mod tests {
     #[test]
     fn should_sign_with_the_settings_fee_increase_unless_set_explicitly() {
         let options = StateTransitionCreationOptions {
-            batch_feature_version: Some(1),
+            batch_feature_version: Some(2),
             ..Default::default()
         };
         let settings = PutSettings {
@@ -411,9 +452,17 @@ mod tests {
         assert!(error
             .to_string()
             .contains("erase transitions do not exist at this platform version"));
-        let current = PlatformVersion::get(14).unwrap();
+        let current = PlatformVersion::latest();
         DocumentEraseTransitionBuilder::check_erase_is_constructible(None, current)
             .expect("protocol 14 constructs erases");
+        for unsupported in [0, 1] {
+            let options = StateTransitionCreationOptions {
+                batch_feature_version: Some(unsupported),
+                ..Default::default()
+            };
+            DocumentEraseTransitionBuilder::check_erase_is_constructible(Some(&options), current)
+                .expect_err("a pre-erase batch generation is refused before nonce reservation");
+        }
         let unknown_batch = StateTransitionCreationOptions {
             batch_feature_version: Some(9),
             ..Default::default()
@@ -424,7 +473,16 @@ mod tests {
             method_feature_version: Some(1),
             ..Default::default()
         };
-        DocumentEraseTransitionBuilder::check_erase_is_constructible(Some(&unknown_method), current)
-            .expect_err("an unknown erase method version is refused before any nonce is reserved");
+        DocumentEraseTransitionBuilder::check_erase_is_constructible(
+            Some(&unknown_method),
+            current,
+        )
+        .expect_err("an unknown erase method version is refused before any nonce is reserved");
+        let unknown_base = StateTransitionCreationOptions {
+            base_feature_version: Some(9),
+            ..Default::default()
+        };
+        DocumentEraseTransitionBuilder::check_erase_is_constructible(Some(&unknown_base), current)
+            .expect_err("an unknown erase base version is refused before any nonce is reserved");
     }
 }

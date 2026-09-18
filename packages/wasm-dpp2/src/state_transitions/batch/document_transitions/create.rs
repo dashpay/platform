@@ -12,7 +12,7 @@ use crate::utils::{
     try_vec_to_fixed_bytes, ToSerdeJSONExt,
 };
 use dpp::prelude::IdentityNonce;
-use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+use dpp::state_transition::batch_transition::batched_transition::DocumentTransitionV1;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::batch_transition::DocumentCreateTransition;
@@ -149,7 +149,7 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(js_name = "toDocumentTransition")]
     pub fn to_document_transition(&self) -> DocumentTransitionWasm {
-        let rs_transition = DocumentTransition::from(self.0.clone());
+        let rs_transition = DocumentTransitionV1::from(self.0.clone());
 
         DocumentTransitionWasm::from(rs_transition)
     }

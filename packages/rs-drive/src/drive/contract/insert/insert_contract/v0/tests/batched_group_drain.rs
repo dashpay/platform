@@ -176,7 +176,6 @@ fn delete_op<'a>(
     document_id: Identifier,
 ) -> DriveOperation<'a> {
     DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument {
-        deleter_id: None,
         document_id,
         contract_info: DataContractInfo::BorrowedDataContract(contract),
         document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr(doctype),

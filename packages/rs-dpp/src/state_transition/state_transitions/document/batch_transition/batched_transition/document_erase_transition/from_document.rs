@@ -15,9 +15,9 @@ impl DocumentEraseTransition {
         document_type: DocumentTypeRef,
         token_payment_info: Option<TokenPaymentInfo>,
         identity_contract_nonce: IdentityNonce,
-        platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // `None` bounds mean the kind does not exist at this platform version
         // (it joined the wire at protocol version 14) — constructing one there
@@ -38,8 +38,8 @@ impl DocumentEraseTransition {
                 document_type,
                 token_payment_info,
                 identity_contract_nonce,
-                platform_version,
                 base_feature_version,
+                platform_version,
             )?
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

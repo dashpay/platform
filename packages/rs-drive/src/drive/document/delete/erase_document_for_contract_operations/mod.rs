@@ -51,7 +51,7 @@ impl Drive {
             .delete
             .erase_document_for_contract_operations
         {
-            0 => self.erase_document_for_contract_operations_v0(
+            Some(0) => self.erase_document_for_contract_operations_v0(
                 document_id,
                 contract,
                 document_type,
@@ -60,10 +60,14 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "erase_document_for_contract_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "erase_document_for_contract_operations".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

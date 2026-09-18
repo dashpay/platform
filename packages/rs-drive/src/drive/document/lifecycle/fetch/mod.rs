@@ -69,7 +69,7 @@ impl Drive {
             .query
             .fetch_document_lifecycle
         {
-            0 => self.fetch_document_lifecycle_v0(
+            Some(0) => self.fetch_document_lifecycle_v0(
                 contract,
                 document_type,
                 document_id,
@@ -77,10 +77,14 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_document_lifecycle".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "fetch_document_lifecycle".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

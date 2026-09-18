@@ -30,6 +30,7 @@ pub mod token_transfer_transition;
 pub mod token_transition;
 pub mod token_transition_action_type;
 pub mod token_unfreeze_transition;
+pub mod v1;
 
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -46,6 +47,10 @@ pub use document_transition::DocumentTransition;
 pub use document_update_price_transition::DocumentUpdatePriceTransition;
 use platform_value::Identifier;
 pub use token_transition::TokenTransition;
+pub use v1::{
+    BatchedTransitionMutRefV1, BatchedTransitionRefV1, BatchedTransitionV1,
+    DocumentTransitionMutRefV1, DocumentTransitionRefV1, DocumentTransitionV1,
+};
 
 pub const PROPERTY_ACTION: &str = "$action";
 

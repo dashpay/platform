@@ -80,8 +80,8 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
         },
         batch_state_transition: FeatureVersionBounds {
             min_version: 0,
-            max_version: 1,
-            default_current_version: 1,
+            max_version: 2,
+            default_current_version: 2,
         },
         document_base_state_transition: FeatureVersionBounds {
             min_version: 0,

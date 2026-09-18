@@ -10,7 +10,7 @@ use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
-use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
 
@@ -25,8 +25,7 @@ impl Drive {
         document_id: Identifier,
         contract_id: Identifier,
         document_type_name: &str,
-        block_info: &BlockInfo,
-        deleter_id: Option<Identifier>,
+        epoch: &Epoch,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -38,7 +37,7 @@ impl Drive {
         let mut operations = vec![];
         let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(
             contract_id.to_buffer(),
-            Some(&block_info.epoch),
+            Some(epoch),
             true,
             transaction,
             &mut operations,
@@ -54,8 +53,6 @@ impl Drive {
             document_id,
             contract,
             document_type,
-            block_info,
-            deleter_id,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
             block_time_ms,

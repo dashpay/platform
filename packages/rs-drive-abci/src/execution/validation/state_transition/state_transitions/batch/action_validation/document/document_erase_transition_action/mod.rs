@@ -43,11 +43,15 @@ impl DocumentEraseTransitionActionValidation for DocumentEraseTransitionAction {
             .batch_state_transition
             .document_erase_transition_structure_validation
         {
-            0 => self.validate_structure_v0(),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            Some(0) => self.validate_structure_v0(),
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentEraseTransitionAction::validate_structure".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "DocumentEraseTransitionAction::validate_structure".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -68,7 +72,7 @@ impl DocumentEraseTransitionActionValidation for DocumentEraseTransitionAction {
             .batch_state_transition
             .document_erase_transition_state_validation
         {
-            0 => self.validate_state_v0(
+            Some(0) => self.validate_state_v0(
                 platform,
                 owner_id,
                 block_info,
@@ -76,10 +80,14 @@ impl DocumentEraseTransitionActionValidation for DocumentEraseTransitionAction {
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentEraseTransitionAction::validate_state".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "DocumentEraseTransitionAction::validate_state".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

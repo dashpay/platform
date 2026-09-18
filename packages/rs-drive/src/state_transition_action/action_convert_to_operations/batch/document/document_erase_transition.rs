@@ -27,7 +27,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentEraseTransitionAction {
             .convert_to_high_level_operations
             .document_erase_transition
         {
-            0 => {
+            Some(0) => {
                 let base = self.base_owned();
                 let data_contract_id = base.data_contract_id();
                 let identity_contract_nonce = base.identity_contract_nonce();
@@ -52,11 +52,16 @@ impl DriveHighLevelBatchOperationConverter for DocumentEraseTransitionAction {
                     }),
                 ])
             }
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DocumentEraseTransitionAction::into_high_level_document_drive_operations"
                     .to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "DocumentEraseTransitionAction::into_high_level_document_drive_operations"
+                    .to_string(),
+                known_versions: vec![0],
             })),
         }
     }

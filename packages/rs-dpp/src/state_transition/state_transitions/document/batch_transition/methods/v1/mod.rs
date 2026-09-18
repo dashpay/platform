@@ -14,7 +14,7 @@ use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
-use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV1;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 #[cfg(feature = "state-transition-signing")]
@@ -34,7 +34,7 @@ use platform_version::version::PlatformVersion;
 
 /// A trait defining methods to create various token-related state transitions as part of a document batch.
 ///
-/// This trait builds on `DocumentsBatchTransitionAccessorsV0` and provides a unified interface
+/// This trait builds on `DocumentsBatchTransitionAccessorsV1` and provides a unified interface
 /// for constructing signed `StateTransition`s for token operations such as minting, burning,
 /// transferring, freezing, claiming, and direct purchases.
 ///
@@ -43,7 +43,7 @@ use platform_version::version::PlatformVersion;
 /// version selection, group action metadata, and fee calculations.
 ///
 /// All methods in this trait require the `state-transition-signing` feature to be enabled.
-pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0 {
+pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV1 {
     /// Creates a `StateTransition` to mint new tokens.
     ///
     /// # Parameters

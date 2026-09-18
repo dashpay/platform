@@ -22,9 +22,8 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v1::DocumentCreateTransitionActionStateValidationV1;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::DocumentReferenceValidation;
-use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::{
-    fetch_keep_history_document_lifecycle, has_contested_document_with_document_id,
-};
+use crate::execution::validation::state_transition::batch::state::fetch_keep_history_document_lifecycle::fetch_keep_history_document_lifecycle;
+use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::has_contested_document_with_document_id;
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentCreateTransitionActionStateValidationV2

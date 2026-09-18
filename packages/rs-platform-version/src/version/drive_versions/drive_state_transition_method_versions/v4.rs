@@ -19,9 +19,9 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 data_contract_create_transition: 0,
                 data_contract_update_transition: 0,
                 document_create_transition: 0,
-                document_delete_transition: 0,
+                document_delete_transition: 1,
                 document_index_only_delete_transition: 0,
-                document_erase_transition: 0,
+                document_erase_transition: Some(0),
                 // PROTOCOL_VERSION_13: v1 rewrites a transferred or purchased
                 // DPNS domain document's `records.identity` to the new owner
                 // so the username resolves to the buyer. v0 stays for
@@ -33,7 +33,9 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 token_burn_transition: 0,
                 token_mint_transition: 0,
                 token_transfer_transition: 0,
-                documents_batch_transition: 0,
+                // Generation 1 consumes batch action format 1, whose items
+                // may include the erase of a keep-history document.
+                documents_batch_transition: 1,
                 identity_create_transition: 0,
                 identity_create_from_addresses_transition: 0,
                 identity_credit_transfer_transition: 0,

@@ -1387,7 +1387,7 @@ mod tests {
         };
 
         apply(
-            DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument {
+            DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocumentWithLifecycle {
                 document_id,
                 deleter_id: Some(dpp::identifier::Identifier::new([3u8; 32])),
                 contract_info: contract_info(),

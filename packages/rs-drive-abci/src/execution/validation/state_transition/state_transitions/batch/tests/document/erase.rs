@@ -16,15 +16,16 @@ use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::identity::{Identity, IdentityPublicKey, SecurityLevel};
 use dpp::prelude::IdentityNonce;
+use dpp::state_transition::batch_transition::methods::v2::DocumentsBatchTransitionMethodsV2;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use drive::drive::document::history::{
-    DocumentHistoryQueryV1, DocumentHistorySelector, DocumentHistoryState,
-};
 use drive::drive::document::lifecycle::DocumentLifecycleState;
+use drive::query::document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryFilter, DocumentHistoryState,
+};
 use drive::util::storage_flags::StorageFlags;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -89,7 +90,7 @@ struct Fixture {
 
 impl Fixture {
     async fn new(document_type_name: &str) -> Self {
-        let platform_version = PlatformVersion::get(14).expect("protocol 14 exists");
+        let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
@@ -155,7 +156,7 @@ impl Fixture {
     }
 
     async fn create(&mut self, document: Document, entropy: Bytes32, document_type_name: &str) {
-        let platform_version = PlatformVersion::get(14).unwrap();
+        let platform_version = PlatformVersion::latest();
         let transition = BatchTransition::new_document_creation_transition_from_document(
             document,
             self.document_type(document_type_name),
@@ -182,7 +183,7 @@ impl Fixture {
         &mut self,
         document_type_name: &str,
     ) -> StateTransitionExecutionResult {
-        let platform_version = PlatformVersion::get(14).unwrap();
+        let platform_version = PlatformVersion::latest();
         let mut document = self.document.clone();
         document.set_revision(Some(1));
         let transition = BatchTransition::new_document_deletion_transition_from_document(
@@ -211,7 +212,7 @@ impl Fixture {
         as_owner: bool,
         token_payment_info: Option<TokenPaymentInfo>,
     ) -> StateTransitionExecutionResult {
-        let platform_version = PlatformVersion::get(14).unwrap();
+        let platform_version = PlatformVersion::latest();
         let mut document = self.document.clone();
         document.set_revision(Some(1));
         if !as_owner {
@@ -251,8 +252,8 @@ impl Fixture {
                 self.nonce,
                 0,
                 &self.owner_signer,
-                platform_version,
                 None,
+                platform_version,
             )
             .await
             .expect("expected an erase transition");
@@ -266,8 +267,8 @@ impl Fixture {
                 self.stranger_nonce,
                 0,
                 &self.stranger_signer,
-                platform_version,
                 None,
+                platform_version,
             )
             .await
             .expect("expected an erase transition");
@@ -284,7 +285,7 @@ impl Fixture {
     /// one erase chunk can remove. How they got there does not matter to an
     /// erase: it reads what the history holds.
     fn retain_revisions(&mut self, document_type_name: &str, revisions: u64) {
-        let platform_version = PlatformVersion::get(14).unwrap();
+        let platform_version = PlatformVersion::latest();
         let contract = self.contract.clone();
         let document_type = contract
             .document_type_for_name(document_type_name)
@@ -326,7 +327,7 @@ impl Fixture {
 
     /// Builds an erase without processing it, so several can share one block.
     async fn erase_transition(&mut self, document_type_name: &str, as_owner: bool) -> Vec<u8> {
-        let platform_version = PlatformVersion::get(14).unwrap();
+        let platform_version = PlatformVersion::latest();
         let mut document = self.document.clone();
         document.set_revision(Some(1));
         let (key, signer, nonce) = if as_owner {
@@ -346,8 +347,8 @@ impl Fixture {
             nonce,
             0,
             signer,
-            platform_version,
             None,
+            platform_version,
         )
         .await
         .expect("expected an erase transition")
@@ -356,44 +357,46 @@ impl Fixture {
     }
 
     fn remaining_revisions(&self, document_type_name: &str) -> u64 {
-        let query = DocumentHistoryQueryV1 {
+        let query = DocumentHistoryDriveQuery {
             contract_id: self.contract.id().to_buffer(),
             document_type_name: document_type_name.to_string(),
             document_id: self.document.id().to_buffer(),
-            selector: DocumentHistorySelector::StartAtTime(0),
+            filter: DocumentHistoryFilter::StartAtTime(0),
             limit: Some(1),
         };
         self.platform
             .drive
-            .fetch_document_history_v1(
+            .fetch_document_history(
                 &query,
                 self.document_type(document_type_name),
                 None,
-                PlatformVersion::get(14).unwrap(),
+                PlatformVersion::latest(),
             )
             .expect("expected to read the history")
             .lifecycle
+            .expect("history carries lifecycle metadata")
             .remaining_revisions
     }
 
     fn history_state(&self, document_type_name: &str) -> DocumentHistoryState {
-        let query = DocumentHistoryQueryV1 {
+        let query = DocumentHistoryDriveQuery {
             contract_id: self.contract.id().to_buffer(),
             document_type_name: document_type_name.to_string(),
             document_id: self.document.id().to_buffer(),
-            selector: DocumentHistorySelector::StartAtTime(0),
+            filter: DocumentHistoryFilter::StartAtTime(0),
             limit: Some(1),
         };
         self.platform
             .drive
-            .fetch_document_history_v1(
+            .fetch_document_history(
                 &query,
                 self.document_type(document_type_name),
                 None,
-                PlatformVersion::get(14).unwrap(),
+                PlatformVersion::latest(),
             )
             .expect("expected to read the history")
             .lifecycle
+            .expect("history carries lifecycle metadata")
             .state
     }
 
@@ -406,7 +409,7 @@ impl Fixture {
                 self.document.id(),
                 None,
                 None,
-                PlatformVersion::get(14).unwrap(),
+                PlatformVersion::latest(),
             )
             .expect("expected to read the lifecycle")
             .0
@@ -424,27 +427,27 @@ async fn rewrite_delete_as_erase(
 ) -> StateTransition {
     use dpp::state_transition::batch_transition::batched_transition::document_erase_transition::DocumentEraseTransitionV0;
     use dpp::state_transition::batch_transition::batched_transition::{
-        BatchedTransition, DocumentEraseTransition, DocumentTransition,
+        BatchedTransitionV1, DocumentEraseTransition, DocumentTransitionV1,
     };
     use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
     use dpp::state_transition::batch_transition::BatchTransition;
 
-    let StateTransition::Batch(BatchTransition::V1(mut batch)) = transition else {
-        panic!("expected a v1 batch transition");
+    let StateTransition::Batch(BatchTransition::V2(mut batch)) = transition else {
+        panic!("expected a v2 batch transition");
     };
-    let BatchedTransition::Document(DocumentTransition::Delete(delete)) =
+    let BatchedTransitionV1::Document(DocumentTransitionV1::Delete(delete)) =
         batch.transitions.remove(0)
     else {
         panic!("expected a single document delete");
     };
     batch
         .transitions
-        .push(BatchedTransition::Document(DocumentTransition::Erase(
+        .push(BatchedTransitionV1::Document(DocumentTransitionV1::Erase(
             DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
                 base: delete.base().clone(),
             }),
         )));
-    let mut rebuilt: StateTransition = BatchTransition::V1(batch).into();
+    let mut rebuilt: StateTransition = BatchTransition::V2(batch).into();
     rebuilt
         .sign_external(
             key,
@@ -501,7 +504,7 @@ async fn should_reject_a_create_over_a_deleted_documents_id() {
     let mut fixture = Fixture::new("note").await;
     assert_successful(&fixture.delete_as_owner("note").await, "the delete");
 
-    let platform_version = PlatformVersion::get(14).unwrap();
+    let platform_version = PlatformVersion::latest();
     let document = fixture.document.clone();
     // The same id the deleted document had: a document id is derived from its
     // creator, contract, type and entropy, so re-creating with the same inputs
@@ -666,8 +669,7 @@ async fn should_reject_an_erase_of_an_id_that_holds_nothing() {
 /// keys, their funds or their permission cannot strand a half-erased document.
 #[tokio::test]
 async fn should_let_any_identity_finish_an_erasure_its_owner_started() {
-    let chunk = PlatformVersion::get(14)
-        .unwrap()
+    let chunk = PlatformVersion::latest()
         .system_limits
         .max_document_revisions_erased_per_transition
         .expect("protocol 14 bounds the chunk") as u64;
@@ -707,8 +709,7 @@ async fn should_let_any_identity_finish_an_erasure_its_owner_started() {
 /// A document whose erasure has begun is not there to be deleted again.
 #[tokio::test]
 async fn should_reject_a_delete_of_a_document_whose_erasure_has_begun() {
-    let chunk = PlatformVersion::get(14)
-        .unwrap()
+    let chunk = PlatformVersion::latest()
         .system_limits
         .max_document_revisions_erased_per_transition
         .expect("protocol 14 bounds the chunk") as u64;
@@ -733,8 +734,7 @@ async fn should_reject_a_delete_of_a_document_whose_erasure_has_begun() {
 /// validated.
 #[tokio::test]
 async fn should_finish_an_erasure_across_two_transitions_in_one_block() {
-    let chunk = PlatformVersion::get(14)
-        .unwrap()
+    let chunk = PlatformVersion::latest()
         .system_limits
         .max_document_revisions_erased_per_transition
         .expect("protocol 14 bounds the chunk") as u64;
@@ -781,7 +781,7 @@ async fn should_finish_an_erasure_across_two_transitions_in_one_block() {
 async fn should_delete_and_erase_in_one_block() {
     let mut fixture = Fixture::new("note").await;
 
-    let platform_version = PlatformVersion::get(14).unwrap();
+    let platform_version = PlatformVersion::latest();
     let mut document = fixture.document.clone();
     document.set_revision(Some(1));
     let delete = BatchTransition::new_document_deletion_transition_from_document(
@@ -845,7 +845,7 @@ async fn should_charge_an_erase_for_the_refund_recipients_it_can_credit() {
     let mut fixture = Fixture::new("note").await;
     assert_successful(&fixture.delete_as_owner("note").await, "the delete");
 
-    let platform_version = PlatformVersion::get(14).unwrap();
+    let platform_version = PlatformVersion::latest();
     let recipient_cost = fixture
         .platform
         .drive
@@ -894,7 +894,7 @@ async fn should_persist_the_nonce_bump_on_a_refused_erase() {
                 fixture.contract.id().to_buffer(),
                 true,
                 None,
-                PlatformVersion::get(14).unwrap(),
+                PlatformVersion::latest(),
             )
             .expect("expected to read the identity contract nonce")
             .expect("the create already wrote one")
@@ -940,7 +940,7 @@ async fn should_persist_the_nonce_bump_on_a_refused_erase() {
 async fn should_reject_a_create_that_follows_a_delete_of_the_same_id_in_one_block() {
     let mut fixture = Fixture::new("note").await;
 
-    let platform_version = PlatformVersion::get(14).unwrap();
+    let platform_version = PlatformVersion::latest();
     let mut document = fixture.document.clone();
     document.set_revision(Some(1));
     let delete = BatchTransition::new_document_deletion_transition_from_document(
@@ -1019,7 +1019,7 @@ async fn should_reject_a_replace_of_a_deleted_document() {
     let mut fixture = Fixture::new("note").await;
     assert_successful(&fixture.delete_as_owner("note").await, "the delete");
 
-    let platform_version = PlatformVersion::get(14).unwrap();
+    let platform_version = PlatformVersion::latest();
     let mut replacement = fixture.document.clone();
     replacement.set_revision(Some(2));
     let transition = BatchTransition::new_document_replacement_transition_from_document(

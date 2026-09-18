@@ -5052,7 +5052,7 @@ mod creation_tests {
 
         assert_matches!(
             documents_batch_create_transition,
-            StateTransition::Batch(BatchTransition::V1(_))
+            StateTransition::Batch(BatchTransition::V2(_))
         );
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition

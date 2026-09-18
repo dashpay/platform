@@ -69,6 +69,56 @@ fn should_preserve_released_keep_history_validation_versions() {
             0,
             "the keep-history delete branch must not be selected at protocol {protocol}"
         );
+        assert_eq!(
+            version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .max_version,
+            1,
+            "batch wire versions at protocol {protocol}"
+        );
+        assert_eq!(
+            version
+                .dpp
+                .state_transitions
+                .documents
+                .documents_batch_transition
+                .validation
+                .validate_base_structure,
+            0,
+            "batch structure validation at protocol {protocol}"
+        );
+        assert_eq!(
+            version
+                .drive
+                .methods
+                .state_transitions
+                .convert_to_high_level_operations
+                .document_delete_transition,
+            0,
+            "delete action conversion at protocol {protocol}"
+        );
+        assert_eq!(
+            version
+                .drive
+                .methods
+                .verify
+                .state_transition
+                .verify_state_transition_was_executed_with_proof,
+            0,
+            "state transition proof verification at protocol {protocol}"
+        );
+        assert_eq!(
+            version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .transform_into_action,
+            1,
+            "batch action transform at protocol {protocol}"
+        );
     }
 }
 
@@ -115,6 +165,85 @@ fn should_activate_keep_history_validation_at_protocol_14() {
         1,
         "protocol 14 selects the keep-history delete branch"
     );
+    assert_eq!(
+        version
+            .dpp
+            .state_transition_serialization_versions
+            .batch_state_transition
+            .max_version,
+        2,
+        "protocol 14 admits BatchTransitionV2"
+    );
+    assert_eq!(
+        version
+            .dpp
+            .state_transition_serialization_versions
+            .batch_state_transition
+            .default_current_version,
+        2,
+        "protocol 14 constructs BatchTransitionV2"
+    );
+    assert_eq!(
+        version
+            .dpp
+            .state_transitions
+            .documents
+            .documents_batch_transition
+            .validation
+            .validate_base_structure,
+        1,
+        "protocol 14 selects structure validation that admits erase only in V2"
+    );
+    assert_eq!(
+        version
+            .drive
+            .methods
+            .state_transitions
+            .convert_to_high_level_operations
+            .document_delete_transition,
+        1,
+        "protocol 14 selects the lifecycle-specific delete operation"
+    );
+    assert_eq!(
+        version
+            .drive
+            .methods
+            .verify
+            .state_transition
+            .verify_state_transition_was_executed_with_proof,
+        1,
+        "protocol 14 selects erase-aware proof verification"
+    );
+    assert_eq!(
+        version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition
+            .transform_into_action,
+        2,
+        "protocol 14 selects the erase-aware transformer"
+    );
+    assert_eq!(
+        version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition
+            .advanced_structure,
+        1,
+        "protocol 14 selects erase-aware advanced validation"
+    );
+    assert_eq!(
+        version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition
+            .state,
+        1,
+        "protocol 14 selects erase-aware state validation"
+    );
 
     let bounds = version
         .dpp
@@ -145,6 +274,7 @@ fn should_expose_one_implementation_of_each_new_lifecycle_slot() {
         let Ok(version) = PlatformVersion::get(protocol) else {
             continue;
         };
+        let expected_erase_version = (protocol >= 14).then_some(0);
         assert_eq!(
             version
                 .drive
@@ -152,7 +282,7 @@ fn should_expose_one_implementation_of_each_new_lifecycle_slot() {
                 .document
                 .query
                 .fetch_document_lifecycle,
-            0,
+            expected_erase_version,
             "lifecycle read at protocol {protocol}"
         );
         assert_eq!(
@@ -162,8 +292,28 @@ fn should_expose_one_implementation_of_each_new_lifecycle_slot() {
                 .document
                 .delete
                 .erase_document_for_contract_operations,
-            0,
+            expected_erase_version,
             "erase operation at protocol {protocol}"
+        );
+        assert_eq!(
+            version
+                .drive
+                .methods
+                .document
+                .delete
+                .add_estimation_costs_for_erase_document,
+            expected_erase_version,
+            "erase estimation at protocol {protocol}"
+        );
+        assert_eq!(
+            version
+                .drive
+                .methods
+                .state_transitions
+                .convert_to_high_level_operations
+                .document_erase_transition,
+            expected_erase_version,
+            "erase action conversion at protocol {protocol}"
         );
         assert_eq!(
             version
@@ -172,7 +322,7 @@ fn should_expose_one_implementation_of_each_new_lifecycle_slot() {
                 .state_transitions
                 .batch_state_transition
                 .document_erase_transition_structure_validation,
-            0,
+            expected_erase_version,
             "erase structure validation at protocol {protocol}"
         );
         assert_eq!(
@@ -182,8 +332,18 @@ fn should_expose_one_implementation_of_each_new_lifecycle_slot() {
                 .state_transitions
                 .batch_state_transition
                 .document_erase_transition_state_validation,
-            0,
+            expected_erase_version,
             "erase state validation at protocol {protocol}"
+        );
+        assert_eq!(
+            version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .fetch_keep_history_document_lifecycle,
+            expected_erase_version,
+            "lifecycle state read at protocol {protocol}"
         );
     }
 }

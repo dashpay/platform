@@ -12,6 +12,8 @@ pub struct DriveAbciQueryVersions {
     pub proofs_query: FeatureVersion,
     pub document_query: FeatureVersionBounds,
     pub document_history: FeatureVersionBounds,
+    /// Internal processing generation for the document-history wire v0 query.
+    pub document_history_processing: FeatureVersion,
     /// Per-helper version slots for internal v1-document-query
     /// routing helpers. Separate from `document_query` (which
     /// versions the wire surface) because the helper output is

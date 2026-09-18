@@ -24,6 +24,7 @@ use drive::error::proof::ProofError;
 use drive::error::Error as DriveError;
 use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::v1::BatchedTransitionActionV1;
 use drive::state_transition_action::StateTransitionAction;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use drive_abci::platform_types::platform::PlatformRef;
@@ -451,13 +452,33 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         );
                     }
                 }
-                StateTransitionAction::BatchAction(batch_transition) => {
-                    if batch_transition.transitions().is_empty() {
+                StateTransitionAction::BatchAction(_) | StateTransitionAction::BatchActionV1(_) => {
+                    // Both batch action formats are checked the same way: a
+                    // format 1 action wraps the format 0 items and may add an
+                    // erase, which strategies never generate.
+                    let (batch_owner_id, transition_action) = match action {
+                        StateTransitionAction::BatchAction(batch_transition) => (
+                            batch_transition.owner_id(),
+                            batch_transition
+                                .transitions()
+                                .first()
+                                .cloned()
+                                .map(BatchedTransitionActionV1::Batched),
+                        ),
+                        StateTransitionAction::BatchActionV1(batch_transition) => (
+                            batch_transition.owner_id(),
+                            batch_transition.transitions().first().cloned(),
+                        ),
+                        _ => unreachable!("the outer match only admits batch actions here"),
+                    };
+                    let Some(transition_action) = transition_action else {
                         panic!("we should have at least one transition");
-                    }
-
-                    let Some(transition_action) = batch_transition.transitions().first() else {
-                        panic!("we should have at least one transition");
+                    };
+                    let transition_action = match &transition_action {
+                        BatchedTransitionActionV1::Batched(transition_action) => transition_action,
+                        BatchedTransitionActionV1::DocumentErase(_) => {
+                            panic!("strategies do not generate erases");
+                        }
                     };
                     match transition_action {
                         BatchedTransitionAction::DocumentAction(document_action) => {
@@ -536,7 +557,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         //     &document,
                                         //     Document::try_from_create_transition(
                                         //         creation_action,
-                                        //         documents_batch_transition.owner_id(),
+                                        //         documents_batch_owner_id,
                                         //         platform_version,
                                         //     )
                                         //     .expect("expected to get document")
@@ -544,7 +565,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         let mut expected_document =
                                             Document::try_from_create_transition_action(
                                                 creation_action,
-                                                batch_transition.owner_id(),
+                                                batch_owner_id,
                                                 platform_version,
                                             )
                                             .expect("expected to get document");
@@ -576,7 +597,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                             let mut expected_document =
                                                 Document::try_from_replace_transition_action(
                                                     replace_action,
-                                                    batch_transition.owner_id(),
+                                                    batch_owner_id,
                                                     platform_version,
                                                 )
                                                 .expect("expected to get document");
@@ -600,7 +621,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                                 document,
                                                 Document::try_from_replace_transition_action(
                                                     replace_action,
-                                                    batch_transition.owner_id(),
+                                                    batch_owner_id,
                                                     platform_version,
                                                 )
                                                 .expect("expected to get document")
@@ -611,14 +632,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                                 DocumentTransitionAction::DeleteAction(_) => {
                                     // we expect no document
-                                    assert!(document.is_none());
-                                }
-                                DocumentTransitionAction::EraseAction(_) => {
-                                    // An erase acts on a document that was
-                                    // already deleted, so the by-id query this
-                                    // harness proves against returns nothing
-                                    // whether or not the erase executed;
-                                    // strategies do not generate erases today.
                                     assert!(document.is_none());
                                 }
                                 DocumentTransitionAction::IndexOnlyDeleteAction(_) => {
@@ -714,7 +727,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     document_type_name,
                                     document_type_keeps_history: false,
                                     document_id: token_transition_action
-                                        .historical_document_id(batch_transition.owner_id())
+                                        .historical_document_id(batch_owner_id)
                                         .to_buffer(),
                                     block_time_ms: None, //None because we want latest
                                     contested_status:
@@ -744,7 +757,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 let expected_document = token_transition_action
                                     .build_historical_document(
                                         token_id,
-                                        batch_transition.owner_id(),
+                                        batch_owner_id,
                                         token_transition_action.base().identity_contract_nonce(),
                                         platform
                                             .state

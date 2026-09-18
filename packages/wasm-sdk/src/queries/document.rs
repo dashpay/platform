@@ -193,7 +193,8 @@ export interface DocumentHistoryQuery {
 }
 export interface DocumentHistoryResult {
   entries: { timeMs: bigint; revision: bigint; document: Document }[];
-  lifecycle: {
+  /** Missing when the legacy storage generation cannot authenticate lifecycle metadata. */
+  lifecycle?: {
     /**
      * ACTIVE while the document is visible to ordinary reads, DELETED once it
      * has been deleted and its revisions are retained, ERASING once an
@@ -1672,7 +1673,8 @@ mod tests {
 mod history_wasm_tests {
     use super::*;
     use drive_proof_verifier::types::{
-        DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
+        DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
+        DocumentHistoryState,
     };
     use js_sys::{Array, Reflect};
     use wasm_bindgen::JsCast;
@@ -1742,8 +1744,6 @@ mod history_wasm_tests {
     /// survive a JavaScript number.
     #[wasm_bindgen_test]
     fn should_report_the_erasing_state_and_its_times_exactly_in_javascript() {
-        use drive::drive::document::history::DocumentHistoryLifecycleTimes;
-
         let started_at = (1u64 << 53) + 3;
         let history = DocumentHistory {
             entries: vec![],
@@ -1758,7 +1758,9 @@ mod history_wasm_tests {
                 },
             }),
         };
-        let result = document_history_to_js(history, [1; 32].into(), "note").unwrap();
+        let result = JsValue::from(
+            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
+        );
         let lifecycle = Reflect::get(&result, &"lifecycle".into()).unwrap();
         assert_eq!(
             Reflect::get(&lifecycle, &"state".into()).unwrap(),
@@ -1789,6 +1791,7 @@ mod history_wasm_tests {
             lifecycle: Some(DocumentHistoryLifecycle {
                 state: DocumentHistoryState::Active,
                 remaining_revisions: (1u64 << 53) + 1,
+                times: Default::default(),
             }),
         };
         let response = ProofMetadataResponseWasm::from_sdk_parts(

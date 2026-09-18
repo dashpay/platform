@@ -28,6 +28,7 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V0: DriveAbciQueryVersions = DriveAbciQueryV
         max_version: 0,
         default_current_version: 0,
     },
+    document_history_processing: 0,
     document_query_helpers: DriveAbciDocumentQueryHelperVersions {
         compute_aggregate_mode_and_check_limit: 0,
     },

@@ -23,9 +23,12 @@ use crate::prelude::UserFeeIncrease;
 use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
+use crate::state_transition::batch_transition::methods::v2::DocumentsBatchTransitionMethodsV2;
 use crate::state_transition::batch_transition::BatchTransition;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::batch_transition::{BatchTransitionV0, BatchTransitionV1};
+use crate::state_transition::batch_transition::{
+    BatchTransitionV0, BatchTransitionV1, BatchTransitionV2,
+};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionSigningOptions;
@@ -46,6 +49,7 @@ use platform_version::version::PlatformVersion;
 
 pub mod v0;
 pub mod v1;
+pub mod v2;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub struct StateTransitionCreationOptions {
@@ -61,6 +65,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
         match self {
             BatchTransition::V0(v0) => v0.all_document_purchases_amount(),
             BatchTransition::V1(v1) => v1.all_document_purchases_amount(),
+            BatchTransition::V2(v2) => v2.all_document_purchases_amount(),
         }
     }
 
@@ -70,6 +75,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
         match self {
             BatchTransition::V0(v0) => v0.all_conflicting_index_collateral_voting_funds(),
             BatchTransition::V1(v1) => v1.all_conflicting_index_collateral_voting_funds(),
+            BatchTransition::V2(v2) => v2.all_conflicting_index_collateral_voting_funds(),
         }
     }
 
@@ -77,6 +83,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
         match self {
             BatchTransition::V0(v0) => v0.set_transitions(transitions),
             BatchTransition::V1(v1) => v1.set_transitions(transitions),
+            BatchTransition::V2(v2) => v2.set_transitions(transitions),
         }
     }
 
@@ -84,6 +91,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
         match self {
             BatchTransition::V0(v0) => v0.set_identity_contract_nonce(identity_contract_nonce),
             BatchTransition::V1(v1) => v1.set_identity_contract_nonce(identity_contract_nonce),
+            BatchTransition::V2(v2) => v2.set_identity_contract_nonce(identity_contract_nonce),
         }
     }
 
@@ -123,6 +131,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                 )
                 .await?,
             ),
+
             1 => Ok(
                 BatchTransitionV1::new_document_creation_transition_from_document(
                     document,
@@ -138,9 +147,24 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                 )
                 .await?,
             ),
+            2 => Ok(
+                BatchTransitionV2::new_document_creation_transition_from_document(
+                    document,
+                    document_type,
+                    entropy,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    token_payment_info,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await?,
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_created_from_document".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }
@@ -180,8 +204,23 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                 )
                 .await?,
             ),
+
             1 => Ok(
                 BatchTransitionV1::new_document_replacement_transition_from_document(
+                    document,
+                    document_type,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    token_payment_info,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await?,
+            ),
+            2 => Ok(
+                BatchTransitionV2::new_document_replacement_transition_from_document(
                     document,
                     document_type,
                     identity_public_key,
@@ -198,62 +237,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                 method:
                     "DocumentsBatchTransition::new_document_replacement_transition_from_document"
                         .to_string(),
-                known_versions: vec![0, 1],
-                received: version,
-            }),
-        }
-    }
-
-    #[cfg(feature = "state-transition-signing")]
-    #[allow(clippy::too_many_arguments)]
-    async fn new_document_erase_transition_from_document<S: Signer<IdentityPublicKey>>(
-        document: Document,
-        document_type: DocumentTypeRef<'_>,
-        identity_public_key: &IdentityPublicKey,
-        identity_contract_nonce: IdentityNonce,
-        user_fee_increase: UserFeeIncrease,
-        signer: &S,
-        platform_version: &PlatformVersion,
-        options: Option<StateTransitionCreationOptions>,
-    ) -> Result<StateTransition, ProtocolError> {
-        let resolved_options = options.unwrap_or_default();
-        match resolved_options.batch_feature_version.unwrap_or(
-            platform_version
-                .dpp
-                .state_transition_serialization_versions
-                .batch_state_transition
-                .default_current_version,
-        ) {
-            0 => Ok(
-                BatchTransitionV0::new_document_erase_transition_from_document(
-                    document,
-                    document_type,
-                    identity_public_key,
-                    identity_contract_nonce,
-                    user_fee_increase,
-                    signer,
-                    platform_version,
-                    options,
-                )
-                .await?,
-            ),
-            1 => Ok(
-                BatchTransitionV1::new_document_erase_transition_from_document(
-                    document,
-                    document_type,
-                    identity_public_key,
-                    identity_contract_nonce,
-                    user_fee_increase,
-                    signer,
-                    platform_version,
-                    options,
-                )
-                .await?,
-            ),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DocumentsBatchTransition::new_document_erase_transition_from_document"
-                    .to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }
@@ -296,8 +280,24 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                 )
                 .await?,
             ),
+
             1 => Ok(
                 BatchTransitionV1::new_document_transfer_transition_from_document(
+                    document,
+                    document_type,
+                    recipient_owner_id,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    token_payment_info,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await?,
+            ),
+            2 => Ok(
+                BatchTransitionV2::new_document_transfer_transition_from_document(
                     document,
                     document_type,
                     recipient_owner_id,
@@ -315,7 +315,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                 method:
                     "DocumentsBatchTransition::new_document_replacement_transition_from_document"
                         .to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }
@@ -355,8 +355,23 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                 )
                 .await?,
             ),
+
             1 => Ok(
                 BatchTransitionV1::new_document_deletion_transition_from_document(
+                    document,
+                    document_type,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    token_payment_info,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await?,
+            ),
+            2 => Ok(
+                BatchTransitionV2::new_document_deletion_transition_from_document(
                     document,
                     document_type,
                     identity_public_key,
@@ -372,7 +387,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_document_deletion_transition_from_document"
                     .to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }
@@ -414,8 +429,24 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                 )
                 .await?,
             ),
+
             1 => Ok(
                 BatchTransitionV1::new_document_update_price_transition_from_document(
+                    document,
+                    document_type,
+                    price,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    token_payment_info,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await?,
+            ),
+            2 => Ok(
+                BatchTransitionV2::new_document_update_price_transition_from_document(
                     document,
                     document_type,
                     price,
@@ -433,7 +464,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                 method:
                     "DocumentsBatchTransition::new_document_update_price_transition_from_document"
                         .to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }
@@ -477,8 +508,25 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                 )
                 .await?,
             ),
+
             1 => Ok(
                 BatchTransitionV1::new_document_purchase_transition_from_document(
+                    document,
+                    document_type,
+                    new_owner_id,
+                    price,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    token_payment_info,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await?,
+            ),
+            2 => Ok(
+                BatchTransitionV2::new_document_purchase_transition_from_document(
                     document,
                     document_type,
                     new_owner_id,
@@ -496,7 +544,51 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_document_purchase_transition_from_document"
                     .to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
+                received: version,
+            }),
+        }
+    }
+}
+
+impl DocumentsBatchTransitionMethodsV2 for BatchTransition {
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_document_erase_transition_from_document<S: Signer<IdentityPublicKey>>(
+        document: Document,
+        document_type: DocumentTypeRef<'_>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        options: Option<StateTransitionCreationOptions>,
+        platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, ProtocolError> {
+        let batch_feature_version = options.unwrap_or_default().batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        );
+        match batch_feature_version {
+            2 => {
+                BatchTransitionV2::new_document_erase_transition_from_document(
+                    document,
+                    document_type,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    options,
+                    platform_version,
+                )
+                .await
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_document_erase_transition_from_document"
+                    .to_string(),
+                known_versions: vec![2],
                 received: version,
             }),
         }
@@ -529,6 +621,31 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 .batch_state_transition
                 .default_current_version,
         ) {
+            2 if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .max_version
+                >= 2 =>
+            {
+                BatchTransitionV2::new_token_mint_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    amount,
+                    issued_to_identity_id,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
             1 | 0
                 if platform_version
                     .dpp
@@ -557,7 +674,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_mint_transition".to_string(),
-                known_versions: vec![1],
+                known_versions: vec![1, 2],
                 received: version,
             }),
         }
@@ -587,6 +704,30 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 .batch_state_transition
                 .default_current_version,
         ) {
+            2 if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .max_version
+                >= 2 =>
+            {
+                BatchTransitionV2::new_token_burn_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    amount,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
             1 | 0
                 if platform_version
                     .dpp
@@ -614,7 +755,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_burn_transition".to_string(),
-                known_versions: vec![1],
+                known_versions: vec![1, 2],
                 received: version,
             }),
         }
@@ -646,6 +787,33 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 .batch_state_transition
                 .default_current_version,
         ) {
+            2 if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .max_version
+                >= 2 =>
+            {
+                // Create the transfer transition for batch version 1
+                BatchTransitionV2::new_token_transfer_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    amount,
+                    recipient_id,
+                    public_note,
+                    shared_encrypted_note,
+                    private_encrypted_note,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
             1 | 0
                 if platform_version
                     .dpp
@@ -676,7 +844,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_transfer_transition".to_string(),
-                known_versions: vec![1],
+                known_versions: vec![1, 2],
                 received: version,
             }),
         }
@@ -706,6 +874,31 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 .batch_state_transition
                 .default_current_version,
         ) {
+            2 if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .max_version
+                >= 2 =>
+            {
+                // Create the freeze transition for batch version 1
+                BatchTransitionV2::new_token_freeze_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    freeze_identity_id,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
             1 | 0
                 if platform_version
                     .dpp
@@ -734,7 +927,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_freeze_transition".to_string(),
-                known_versions: vec![1],
+                known_versions: vec![1, 2],
                 received: version,
             }),
         }
@@ -764,6 +957,31 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 .batch_state_transition
                 .default_current_version,
         ) {
+            2 if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .max_version
+                >= 2 =>
+            {
+                // Create the freeze transition for batch version 1
+                BatchTransitionV2::new_token_unfreeze_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    unfreeze_identity_id,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
             1 | 0
                 if platform_version
                     .dpp
@@ -792,7 +1010,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_unfreeze_transition".to_string(),
-                known_versions: vec![1],
+                known_versions: vec![1, 2],
                 received: version,
             }),
         }
@@ -822,6 +1040,31 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 .batch_state_transition
                 .default_current_version,
         ) {
+            2 if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .max_version
+                >= 2 =>
+            {
+                // Create the destroy frozen funds transition for batch version 1
+                BatchTransitionV2::new_token_destroy_frozen_funds_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    frozen_identity_id,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
             1 | 0
                 if platform_version
                     .dpp
@@ -851,7 +1094,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_destroy_frozen_funds_transition"
                     .to_string(),
-                known_versions: vec![1],
+                known_versions: vec![1, 2],
                 received: version,
             }),
         }
@@ -881,6 +1124,31 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 .batch_state_transition
                 .default_current_version,
         ) {
+            2 if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .max_version
+                >= 2 =>
+            {
+                // Create the emergency action transition for batch version 1
+                BatchTransitionV2::new_token_emergency_action_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    emergency_action,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
             1 | 0
                 if platform_version
                     .dpp
@@ -910,7 +1178,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_emergency_action_transition"
                     .to_string(),
-                known_versions: vec![1],
+                known_versions: vec![1, 2],
                 received: version,
             }),
         }
@@ -940,6 +1208,31 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 .batch_state_transition
                 .default_current_version,
         ) {
+            2 if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .max_version
+                >= 2 =>
+            {
+                // Create the emergency action transition for batch version 1
+                BatchTransitionV2::new_token_config_update_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    update_token_configuration_item,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
             1 | 0
                 if platform_version
                     .dpp
@@ -968,7 +1261,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_config_update_transition".to_string(),
-                known_versions: vec![1],
+                known_versions: vec![1, 2],
                 received: version,
             }),
         }
@@ -997,6 +1290,30 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 .batch_state_transition
                 .default_current_version,
         ) {
+            2 if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .max_version
+                >= 2 =>
+            {
+                // Create the emergency action transition for batch version 1
+                BatchTransitionV2::new_token_claim_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    distribution_type,
+                    public_note,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
             1 | 0
                 if platform_version
                     .dpp
@@ -1024,7 +1341,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_claim_transition".to_string(),
-                known_versions: vec![1],
+                known_versions: vec![1, 2],
                 received: version,
             }),
         }
@@ -1055,6 +1372,31 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 .batch_state_transition
                 .default_current_version,
         ) {
+            2 if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .max_version
+                >= 2 =>
+            {
+                // Create the emergency action transition for batch version 1
+                BatchTransitionV2::new_token_change_direct_purchase_price_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    token_pricing_schedule,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
             1 | 0
                 if platform_version
                     .dpp
@@ -1085,7 +1427,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 method:
                     "DocumentsBatchTransition::new_token_change_direct_purchase_price_transition"
                         .to_string(),
-                known_versions: vec![1],
+                known_versions: vec![1, 2],
                 received: version,
             }),
         }
@@ -1114,6 +1456,30 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                 .batch_state_transition
                 .default_current_version,
         ) {
+            2 if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .max_version
+                >= 2 =>
+            {
+                // Create the emergency action transition for batch version 1
+                BatchTransitionV2::new_token_direct_purchase_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    amount,
+                    total_agreed_price,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
             1 | 0
                 if platform_version
                     .dpp
@@ -1142,7 +1508,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_direct_purchase_transition"
                     .to_string(),
-                known_versions: vec![1],
+                known_versions: vec![1, 2],
                 received: version,
             }),
         }

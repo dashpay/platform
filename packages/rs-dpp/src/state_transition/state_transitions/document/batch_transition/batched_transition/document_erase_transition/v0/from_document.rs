@@ -13,8 +13,8 @@ impl DocumentEraseTransitionV0 {
         document_type: DocumentTypeRef,
         token_payment_info: Option<TokenPaymentInfo>,
         identity_contract_nonce: IdentityNonce,
-        platform_version: &PlatformVersion,
         base_feature_version: Option<FeatureVersion>,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         Ok(DocumentEraseTransitionV0 {
             base: DocumentBaseTransition::from_document(

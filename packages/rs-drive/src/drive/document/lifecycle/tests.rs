@@ -4,13 +4,14 @@
 
 use super::fetch::DocumentLifecycleState;
 use super::DocumentLifecycleRecord;
-use crate::drive::document::history::{
-    DocumentHistoryQueryV1, DocumentHistorySelector, DocumentHistoryState,
-};
 use crate::drive::document::paths::{document_history_path, document_lifecycle_path};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryFilter, DocumentHistoryLifecycle,
+    DocumentHistoryState,
+};
 use crate::query::{
     DriveDocumentQuery, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus,
 };
@@ -18,6 +19,7 @@ use crate::util::grove_operations::BatchDeleteApplyType::StatefulBatchDelete;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+use crate::verify::document::DocumentHistoryProof;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -139,25 +141,30 @@ fn history_metadata(
     drive: &Drive,
     contract: &DataContract,
     id: Identifier,
-) -> crate::drive::document::history::DocumentHistoryLifecycle {
-    let query = DocumentHistoryQueryV1 {
+) -> DocumentHistoryLifecycle {
+    let query = DocumentHistoryDriveQuery {
         contract_id: contract.id().to_buffer(),
         document_type_name: "person".into(),
         document_id: id.to_buffer(),
-        selector: DocumentHistorySelector::StartAtTime(0),
+        filter: DocumentHistoryFilter::StartAtTime(0),
         limit: Some(10),
     };
-    let (page, proof) = drive
-        .prove_document_history_v1(&query, document_type_of(contract), None, latest())
+    let page = drive
+        .fetch_document_history(&query, document_type_of(contract), None, latest())
+        .expect("expected to fetch history");
+    let proof = drive
+        .prove_document_history(&query, document_type_of(contract), None, latest())
         .expect("expected to prove history");
     let (_, verified) =
-        Drive::verify_document_history_v1(&query, &proof, document_type_of(contract), latest())
+        Drive::verify_document_history(&query, &proof, document_type_of(contract), latest())
             .expect("expected the proof to verify");
     assert_eq!(
         verified, page,
         "the proved history must match the read history"
     );
-    verified.lifecycle
+    verified
+        .lifecycle
+        .expect("the latest protocol authenticates lifecycle metadata")
 }
 
 fn delete(
@@ -170,7 +177,7 @@ fn delete(
     let mut operations = vec![];
     let block_info = BlockInfo::default_with_time(time_ms);
     let batch = drive
-        .delete_document_for_contract_operations(
+        .delete_document_for_contract_operations_with_lifecycle(
             id,
             contract,
             document_type_of(contract),
@@ -178,6 +185,7 @@ fn delete(
             Some(deleter),
             None,
             &mut None,
+            time_ms,
             None,
             latest(),
         )
@@ -546,34 +554,36 @@ fn should_page_and_prove_the_history_of_a_deleted_document() {
     let (drive, contract, id) = setup_history(12, owner);
     delete(&drive, &contract, id, Identifier::new(owner), 5_000);
 
-    let mut selector = DocumentHistorySelector::StartAtTime(0);
+    let mut selector = DocumentHistoryFilter::StartAtTime(0);
     let mut seen = vec![];
     loop {
-        let query = DocumentHistoryQueryV1 {
+        let query = DocumentHistoryDriveQuery {
             contract_id: contract.id().to_buffer(),
             document_type_name: "person".into(),
             document_id: id.to_buffer(),
-            selector,
+            filter: selector,
             limit: Some(10),
         };
-        let (page, proof) = drive
-            .prove_document_history_v1(&query, document_type_of(&contract), None, latest())
+        let page = drive
+            .fetch_document_history(&query, document_type_of(&contract), None, latest())
+            .expect("expected to fetch a page");
+        let proof = drive
+            .prove_document_history(&query, document_type_of(&contract), None, latest())
             .expect("expected to prove a page");
-        let (_, verified) = Drive::verify_document_history_v1(
-            &query,
-            &proof,
-            document_type_of(&contract),
-            latest(),
-        )
-        .expect("expected the page proof to verify");
-        assert_eq!(verified.lifecycle.state, DocumentHistoryState::Deleted);
-        assert_eq!(verified.lifecycle.remaining_revisions, 12);
-        assert_eq!(verified.lifecycle.times.deleted_at_ms, 5_000);
+        let (_, verified) =
+            Drive::verify_document_history(&query, &proof, document_type_of(&contract), latest())
+                .expect("expected the page proof to verify");
+        let lifecycle = verified
+            .lifecycle
+            .expect("the latest protocol authenticates lifecycle metadata");
+        assert_eq!(lifecycle.state, DocumentHistoryState::Deleted);
+        assert_eq!(lifecycle.remaining_revisions, 12);
+        assert_eq!(lifecycle.times.deleted_at_ms, 5_000);
         seen.extend(page.entries.iter().map(|entry| entry.revision));
         let Some(last) = page.entries.last() else {
             break;
         };
-        selector = DocumentHistorySelector::StartAfter {
+        selector = DocumentHistoryFilter::StartAfter {
             time_ms: last.time_ms,
             revision: last.revision,
         };
@@ -867,7 +877,7 @@ fn should_decrement_the_count_and_the_sum_when_a_keep_history_document_is_delete
     );
 
     let batch = drive
-        .delete_document_for_contract_operations(
+        .delete_document_for_contract_operations_with_lifecycle(
             document.id(),
             &contract,
             document_type,
@@ -875,6 +885,7 @@ fn should_decrement_the_count_and_the_sum_when_a_keep_history_document_is_delete
             Some(Identifier::new([7; 32])),
             None,
             &mut None,
+            5_000,
             None,
             version,
         )
@@ -1030,7 +1041,7 @@ fn should_reject_an_unsupported_erase_estimation_version() {
             .document
             .delete
             .add_estimation_costs_for_erase_document,
-        0,
+        Some(0),
         "protocol 14 selects the only implementation there is"
     );
     version
@@ -1038,7 +1049,7 @@ fn should_reject_an_unsupported_erase_estimation_version() {
         .methods
         .document
         .delete
-        .add_estimation_costs_for_erase_document = 1;
+        .add_estimation_costs_for_erase_document = Some(1);
 
     let error = Drive::add_estimation_costs_for_erase_document(
         id,
@@ -1077,20 +1088,33 @@ fn should_price_the_refund_recipients_an_erase_can_credit() {
         "pricing must not invent a refund or a storage charge of its own"
     );
 
-    // The same shape at half the bound costs proportionally less, which is what
-    // makes this a price for the bound rather than a constant.
-    let mut halved = version.clone();
-    halved
+    let mut no_revisions = version.clone();
+    no_revisions
         .system_limits
-        .max_document_revisions_erased_per_transition = Some(chunk_size() as u16 / 2);
-    let smaller = drive
-        .erase_refund_recipient_cost(&epoch, &halved)
-        .expect("expected a price at the smaller bound");
-    assert!(
-        smaller.processing_fee < priced.processing_fee,
-        "a smaller chunk credits fewer beneficiaries: {} is not below {}",
-        smaller.processing_fee,
-        priced.processing_fee
+        .max_document_revisions_erased_per_transition = Some(0);
+    let structural = drive
+        .erase_refund_recipient_cost(&epoch, &no_revisions)
+        .expect("expected the structural-recipient price");
+    let mut one_revision = no_revisions.clone();
+    one_revision
+        .system_limits
+        .max_document_revisions_erased_per_transition = Some(1);
+    let with_one_revision = drive
+        .erase_refund_recipient_cost(&epoch, &one_revision)
+        .expect("expected the one-revision price");
+    let one_recipient = with_one_revision
+        .processing_fee
+        .checked_sub(structural.processing_fee)
+        .expect("one additional recipient increases the price");
+    assert_eq!(
+        structural.processing_fee,
+        one_recipient * 2,
+        "terminal erase refunds only the lifecycle record and history subtree"
+    );
+    assert_eq!(
+        priced.processing_fee,
+        one_recipient * (chunk_size() + 2),
+        "the full estimate prices every revision plus two structural recipients"
     );
 
     // Every balance in the drive is untouched: this is a measurement, not a
@@ -1176,7 +1200,7 @@ fn should_refund_each_writer_under_the_epoch_they_wrote_in() {
         ..BlockInfo::default_with_time(5_000)
     };
     let batch = drive
-        .delete_document_for_contract_operations(
+        .delete_document_for_contract_operations_with_lifecycle(
             id,
             &contract,
             document_type,
@@ -1184,6 +1208,7 @@ fn should_refund_each_writer_under_the_epoch_they_wrote_in() {
             Some(Identifier::new(early_writer)),
             None,
             &mut None,
+            block_info.time_ms,
             None,
             version,
         )
@@ -1454,7 +1479,7 @@ fn should_refuse_rather_than_half_apply_two_deletes_sharing_a_new_container() {
         .expect("expected a second document");
 
     let delete_operation = |id: Identifier| {
-        DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument {
+        DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocumentWithLifecycle {
             document_id: id,
             deleter_id: Some(Identifier::new(owner)),
             contract_info: DataContractInfo::BorrowedDataContract(&contract),
@@ -1505,87 +1530,85 @@ fn should_refuse_rather_than_half_apply_two_deletes_sharing_a_new_container() {
 }
 
 /// Every state the lifecycle can be in has to survive the proof round trip, and
-/// each of the four claimed times has to be the one the proof authenticates: a
-/// node that reports a different deletion time, a different erasure start, or a
-/// different remaining count must fail verification rather than be believed.
+/// corrupting the lifecycle proof must fail verification rather than return
+/// unauthenticated metadata.
 #[test]
-fn should_prove_the_erasing_state_and_reject_a_tampered_claim() {
+fn should_prove_the_erasing_state_and_reject_a_tampered_proof() {
     let chunk = chunk_size();
     let owner = [47u8; 32];
     let (drive, contract, id) = setup_history(chunk + 2, owner);
     delete(&drive, &contract, id, Identifier::new(owner), 5_000);
     erase(&drive, &contract, id, 6_000);
 
-    let query = |selector| DocumentHistoryQueryV1 {
+    let query = |filter| DocumentHistoryDriveQuery {
         contract_id: contract.id().to_buffer(),
         document_type_name: "person".into(),
         document_id: id.to_buffer(),
         // A single-revision read is capped at one entry by the selector's own
         // rule; the page selectors take the full page.
-        limit: Some(match selector {
-            DocumentHistorySelector::Revision(_) => 1,
+        limit: Some(match filter {
+            DocumentHistoryFilter::Revision(_) => 1,
             _ => 10,
         }),
-        selector,
+        filter,
     };
 
     // A populated page, and a page whose lower bound is past the end of what
     // survives. Both must authenticate the same erasing metadata.
     for selector in [
-        DocumentHistorySelector::StartAtTime(0),
-        DocumentHistorySelector::StartAtTime(u64::MAX / 2),
-        DocumentHistorySelector::Revision(1),
+        DocumentHistoryFilter::StartAtTime(0),
+        DocumentHistoryFilter::StartAtTime(u64::MAX / 2),
+        DocumentHistoryFilter::Revision(1),
     ] {
         let query = query(selector);
-        let (page, proof) = drive
-            .prove_document_history_v1(&query, document_type_of(&contract), None, latest())
+        let page = drive
+            .fetch_document_history(&query, document_type_of(&contract), None, latest())
+            .expect("expected to fetch the page");
+        let proof = drive
+            .prove_document_history(&query, document_type_of(&contract), None, latest())
             .expect("expected to prove the page");
-        let (_, verified) = Drive::verify_document_history_v1(
-            &query,
-            &proof,
-            document_type_of(&contract),
-            latest(),
-        )
-        .expect("expected the proof to verify");
+        let (_, verified) =
+            Drive::verify_document_history(&query, &proof, document_type_of(&contract), latest())
+                .expect("expected the proof to verify");
         assert_eq!(verified, page);
-        assert_eq!(verified.lifecycle.state, DocumentHistoryState::Erasing);
-        assert_eq!(verified.lifecycle.remaining_revisions, 2);
-        assert_eq!(verified.lifecycle.times.deleted_at_ms, 5_000);
-        assert_eq!(verified.lifecycle.times.erasing_started_at_ms, 6_000);
-        assert_eq!(verified.lifecycle.times.erasing_from_revision, chunk + 2);
+        let lifecycle = verified
+            .lifecycle
+            .expect("the latest protocol authenticates lifecycle metadata");
+        assert_eq!(lifecycle.state, DocumentHistoryState::Erasing);
+        assert_eq!(lifecycle.remaining_revisions, 2);
+        assert_eq!(lifecycle.times.deleted_at_ms, 5_000);
+        assert_eq!(lifecycle.times.erasing_started_at_ms, 6_000);
+        assert_eq!(lifecycle.times.erasing_from_revision, chunk + 2);
 
-        // A claim that differs from the proof in any one field is not the
-        // proof's claim, and the verifier rebuilds it rather than trusting it.
-        let mut tampered = verified.lifecycle.clone();
-        for corrupt in [
-            &mut tampered.times.deleted_at_ms,
-            &mut tampered.times.erasing_started_at_ms,
-            &mut tampered.times.erasing_from_time_ms,
-            &mut tampered.times.erasing_from_revision,
-        ] {
-            *corrupt += 1;
-        }
-        tampered.remaining_revisions += 1;
-        tampered.state = DocumentHistoryState::Deleted;
-        assert_ne!(
-            tampered, verified.lifecycle,
-            "the verifier's answer is derived, so a different claim cannot match it"
-        );
+        let mut tampered =
+            DocumentHistoryProof::from_bytes(&proof).expect("expected the history proof envelope");
+        tampered.metadata_proof.push(0xff);
+        let tampered = tampered.to_bytes().expect("expected to encode the proof");
+        Drive::verify_document_history(&query, &tampered, document_type_of(&contract), latest())
+            .expect_err("tampering with the lifecycle proof must fail verification");
     }
 
     // And the terminal state after the erasure finishes.
     erase(&drive, &contract, id, 7_000);
-    let query = query(DocumentHistorySelector::StartAtTime(0));
-    let (page, proof) = drive
-        .prove_document_history_v1(&query, document_type_of(&contract), None, latest())
+    let query = query(DocumentHistoryFilter::StartAtTime(0));
+    let page = drive
+        .fetch_document_history(&query, document_type_of(&contract), None, latest())
+        .expect("expected to fetch the absent id");
+    let proof = drive
+        .prove_document_history(&query, document_type_of(&contract), None, latest())
         .expect("expected to prove the absent id");
     let (_, verified) =
-        Drive::verify_document_history_v1(&query, &proof, document_type_of(&contract), latest())
+        Drive::verify_document_history(&query, &proof, document_type_of(&contract), latest())
             .expect("expected the absence proof to verify");
     assert_eq!(verified, page);
-    assert_eq!(verified.lifecycle.state, DocumentHistoryState::Absent);
-    assert_eq!(verified.lifecycle.remaining_revisions, 0);
-    assert_eq!(verified.lifecycle.times, Default::default());
+    let lifecycle = verified
+        .lifecycle
+        .expect("the latest protocol authenticates lifecycle metadata");
+    assert_eq!(lifecycle.state, DocumentHistoryState::Absent);
+    assert_eq!(lifecycle.remaining_revisions, 0);
+    assert_eq!(lifecycle.times, Default::default());
+    let proof =
+        DocumentHistoryProof::from_bytes(&proof).expect("expected the history proof envelope");
     assert!(
         proof.entries_proof.is_none(),
         "there is no history tree left to page over"
@@ -1604,15 +1627,15 @@ fn should_read_revisions_by_position_after_a_partial_erasure() {
     erase(&drive, &contract, id, 6_000);
 
     for revision in 1..=3u64 {
-        let query = DocumentHistoryQueryV1 {
+        let query = DocumentHistoryDriveQuery {
             contract_id: contract.id().to_buffer(),
             document_type_name: "person".into(),
             document_id: id.to_buffer(),
-            selector: DocumentHistorySelector::Revision(revision),
+            filter: DocumentHistoryFilter::Revision(revision),
             limit: Some(1),
         };
         let page = drive
-            .fetch_document_history_v1(&query, document_type_of(&contract), None, latest())
+            .fetch_document_history(&query, document_type_of(&contract), None, latest())
             .expect("expected to read a surviving revision");
         assert_eq!(
             page.entries.len(),
@@ -1624,15 +1647,15 @@ fn should_read_revisions_by_position_after_a_partial_erasure() {
 
     // The revisions the chunk removed are gone, not silently answered with a
     // neighbour.
-    let query = DocumentHistoryQueryV1 {
+    let query = DocumentHistoryDriveQuery {
         contract_id: contract.id().to_buffer(),
         document_type_name: "person".into(),
         document_id: id.to_buffer(),
-        selector: DocumentHistorySelector::Revision(4),
+        filter: DocumentHistoryFilter::Revision(4),
         limit: Some(1),
     };
     let page = drive
-        .fetch_document_history_v1(&query, document_type_of(&contract), None, latest())
+        .fetch_document_history(&query, document_type_of(&contract), None, latest())
         .expect("expected the read to run");
     assert!(
         page.entries.is_empty(),
@@ -1704,22 +1727,22 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
         .expect("expected the migration to commit");
     let id = document.id();
 
-    let query = |selector| DocumentHistoryQueryV1 {
+    let query = |filter| DocumentHistoryDriveQuery {
         contract_id: contract.id().to_buffer(),
         document_type_name: "profile".into(),
         document_id: id.to_buffer(),
         // A single-revision read is capped at one entry by the selector's
         // own rule; the page selectors take the full page.
-        limit: Some(match selector {
-            DocumentHistorySelector::Revision(_) => 1,
+        limit: Some(match filter {
+            DocumentHistoryFilter::Revision(_) => 1,
             _ => 10,
         }),
-        selector,
+        filter,
     };
     let by_revision = [
-        DocumentHistorySelector::Revision(3),
-        DocumentHistorySelector::StartAtRevision(3),
-        DocumentHistorySelector::Revision(2),
+        DocumentHistoryFilter::Revision(3),
+        DocumentHistoryFilter::StartAtRevision(3),
+        DocumentHistoryFilter::Revision(2),
     ];
     let is_gap_refusal = |error: Error| {
         let message = error.to_string();
@@ -1733,7 +1756,7 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
     for selector in by_revision.clone() {
         is_gap_refusal(
             drive
-                .fetch_document_history_v1(&query(selector), document_type, None, new)
+                .fetch_document_history(&query(selector), document_type, None, new)
                 .expect_err("a gapped history refuses by-revision reads"),
         );
     }
@@ -1745,7 +1768,7 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
     };
     apply(
         drive
-            .delete_document_for_contract_operations(
+            .delete_document_for_contract_operations_with_lifecycle(
                 id,
                 &contract,
                 document_type,
@@ -1753,21 +1776,25 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
                 Some(Identifier::new(owner)),
                 None,
                 &mut None,
+                5_000,
                 None,
                 new,
             )
             .expect("expected to build the delete"),
     );
     let page = drive
-        .fetch_document_history_v1(
-            &query(DocumentHistorySelector::StartAtTime(0)),
+        .fetch_document_history(
+            &query(DocumentHistoryFilter::StartAtTime(0)),
             document_type,
             None,
             new,
         )
         .expect("time pagination still reads a deleted gapped history");
-    assert_eq!(page.lifecycle.state, DocumentHistoryState::Deleted);
-    assert_eq!(page.lifecycle.remaining_revisions, 2);
+    let lifecycle = page
+        .lifecycle
+        .expect("protocol 14 authenticates lifecycle metadata");
+    assert_eq!(lifecycle.state, DocumentHistoryState::Deleted);
+    assert_eq!(lifecycle.remaining_revisions, 2);
     assert_eq!(
         page.entries
             .iter()
@@ -1779,12 +1806,12 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
         let query = query(selector.clone());
         is_gap_refusal(
             drive
-                .fetch_document_history_v1(&query, document_type, None, new)
+                .fetch_document_history(&query, document_type, None, new)
                 .expect_err("a deleted gapped history refuses by-revision reads"),
         );
         is_gap_refusal(
             drive
-                .prove_document_history_v1(&query, document_type, None, new)
+                .prove_document_history(&query, document_type, None, new)
                 .expect_err("a deleted gapped history cannot be proved by revision"),
         );
     }
@@ -1807,9 +1834,14 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
     );
     for selector in by_revision {
         let page = drive
-            .fetch_document_history_v1(&query(selector), document_type, None, new)
+            .fetch_document_history(&query(selector), document_type, None, new)
             .expect("an unused id reads as an authenticated absence");
-        assert_eq!(page.lifecycle.state, DocumentHistoryState::Absent);
+        assert_eq!(
+            page.lifecycle
+                .expect("protocol 14 authenticates lifecycle metadata")
+                .state,
+            DocumentHistoryState::Absent
+        );
         assert!(page.entries.is_empty());
     }
 }

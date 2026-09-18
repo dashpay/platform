@@ -137,6 +137,14 @@ impl JsonSafeFields
     for crate::state_transition::batch_transition::batched_transition::BatchedTransition
 {
 }
+impl JsonSafeFields
+    for crate::state_transition::batch_transition::batched_transition::DocumentTransitionV1
+{
+}
+impl JsonSafeFields
+    for crate::state_transition::batch_transition::batched_transition::BatchedTransitionV1
+{
+}
 impl JsonSafeFields for crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice {}
 impl JsonSafeFields for crate::group::action_event::GroupActionEvent {}
 // TokenEvent contains u64 aliases (TokenAmount, Credits) in tuple variants that

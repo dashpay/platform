@@ -2,8 +2,8 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::v0::DocumentEraseTransitionActionV0;
-use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+use crate::state_transition_action::batch::v1::BatchedTransitionActionV1;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use dpp::consensus::basic::document::InvalidDocumentTransitionActionError;
 use dpp::consensus::basic::BasicError;
@@ -26,7 +26,7 @@ impl DocumentEraseTransitionActionV0 {
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<
         (
-            ConsensusValidationResult<BatchedTransitionAction>,
+            ConsensusValidationResult<BatchedTransitionActionV1>,
             FeeResult,
         ),
         Error,
@@ -48,7 +48,9 @@ impl DocumentEraseTransitionActionV0 {
                 );
             return Ok((
                 ConsensusValidationResult::new_with_data_and_errors(
-                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                    BatchedTransitionActionV1::Batched(
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                    ),
                     vec![ConsensusError::BasicError(
                         BasicError::InvalidDocumentTransitionActionError(
                             InvalidDocumentTransitionActionError::new(format!(
@@ -81,8 +83,9 @@ impl DocumentEraseTransitionActionV0 {
                         owner_id,
                         user_fee_increase,
                     );
-                let batched_action =
-                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+                let batched_action = BatchedTransitionActionV1::Batched(
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                );
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
@@ -95,9 +98,9 @@ impl DocumentEraseTransitionActionV0 {
         };
 
         Ok((
-            BatchedTransitionAction::DocumentAction(DocumentTransitionAction::EraseAction(
+            BatchedTransitionActionV1::DocumentErase(
                 DocumentEraseTransitionActionV0 { base }.into(),
-            ))
+            )
             .into(),
             FeeResult::default(),
         ))

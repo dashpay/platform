@@ -9,6 +9,7 @@ use dapi_grpc::platform::v0::{GetDocumentHistoryRequest, GetDocumentHistoryRespo
 use dpp::version::PlatformVersion;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C> {
     /// Querying of a document history.
@@ -43,8 +44,27 @@ impl<C> Platform<C> {
 
         match version {
             RequestVersion::V0(request) => {
-                let result =
-                    self.query_document_history_v0(request, platform_state, platform_version)?;
+                let result = match platform_version
+                    .drive_abci
+                    .query
+                    .document_history_processing
+                {
+                    0 => {
+                        self.query_document_history_v0(request, platform_state, platform_version)?
+                    }
+                    1 => {
+                        self.query_document_history_v1(request, platform_state, platform_version)?
+                    }
+                    processing_version => {
+                        return Err(Error::Execution(
+                            crate::error::execution::ExecutionError::UnknownVersionMismatch {
+                                method: "query_document_history".to_string(),
+                                known_versions: vec![0, 1],
+                                received: processing_version,
+                            },
+                        ));
+                    }
+                };
                 Ok(result.map(|response| GetDocumentHistoryResponse {
                     version: Some(ResponseVersion::V0(response)),
                 }))

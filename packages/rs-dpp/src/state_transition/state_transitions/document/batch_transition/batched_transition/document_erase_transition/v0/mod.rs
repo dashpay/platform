@@ -3,7 +3,7 @@ pub mod v0_methods;
 
 use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
 
 #[cfg(feature = "json-conversion")]
@@ -19,7 +19,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 /// whether it starts or continues an erasure, are decided from the document's
 /// committed lifecycle rather than from anything the submitter signs.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
