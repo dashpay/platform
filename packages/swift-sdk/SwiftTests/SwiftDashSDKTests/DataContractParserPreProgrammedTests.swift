@@ -250,8 +250,13 @@ final class DataContractParserPreProgrammedTests: XCTestCase {
             "distributionRules": [
                 // Only a perpetual block — no preProgrammedDistribution.
                 "perpetualDistribution": [
-                    "distributionType": ["Fixed": ["amount": 1]],
-                    "distributionRecipient": "ContractOwner"
+                    "$formatVersion": "0",
+                    "distributionType": [
+                        "$type": "blockBasedDistribution",
+                        "interval": 1000,
+                        "function": ["$type": "fixedAmount", "amount": 100]
+                    ],
+                    "distributionRecipient": ["$type": "contractOwner"]
                 ]
             ]
         ]

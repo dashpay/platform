@@ -156,6 +156,37 @@ public enum AuthorizedActionTakers: String, CaseIterable, Codable, Sendable {
     }
 }
 
+// MARK: - Token Distribution Recipient
+
+/// Canonical strings stored in `TokenPerpetualDistribution.distributionRecipient`.
+///
+/// rs-dpp serialises its `TokenDistributionRecipient` as a flat map tagged by
+/// `$type` (since 4.0.0-beta.4), for example `{"$type": "contractOwner"}` or
+/// `{"$type": "identity", "identity": "<base58>"}`. `DataContractParser` folds
+/// that map into one of the strings below. This type is a plain helper, it is
+/// not part of the SwiftData model graph and carries no stored properties.
+///
+/// The string shapes mirror `AuthorizedActionTakers`, so both columns read the
+/// same way in the UI: `"ContractOwner"`, `"Identity:<base58>"`.
+public enum TokenDistributionRecipient: String, CaseIterable, Codable, Sendable {
+    case contractOwner = "ContractOwner"
+    case evonodesByParticipation = "EvonodesByParticipation"
+
+    /// The `$type` discriminators emitted by rs-dpp on the wire. Kept here so
+    /// the parser does not scatter string literals.
+    public enum WireType {
+        public static let contractOwner = "contractOwner"
+        public static let identity = "identity"
+        public static let evonodesByParticipation = "evonodesByParticipation"
+    }
+
+    /// The `identity` variant. The base58 identifier arrives already encoded in
+    /// the contract JSON, so it is used verbatim rather than re-encoded.
+    public static func identity(_ base58Id: String) -> String {
+        return "Identity:\(base58Id)"
+    }
+}
+
 // MARK: - Token Trade Mode
 
 /// Trading modes for tokens
