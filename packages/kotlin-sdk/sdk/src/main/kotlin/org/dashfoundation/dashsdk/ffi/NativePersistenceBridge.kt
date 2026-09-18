@@ -504,10 +504,13 @@ abstract class NativePersistenceBridge {
 
     /**
      * One `IdentityKeyEntryFFI` upsert. Descriptor
-     * `([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ)I`. The last four
-     * arguments are the key's usage limits (protocol version 14): the credits it
-     * may spend over its lifetime when [totalBudgetIsSome], and the block time in
-     * milliseconds from which it can no longer sign when [expiresAtIsSome].
+     * `([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ)I`.
+     * `contractBoundsKind`: 0 none, 1 SingleContract, 2 SingleContractDocumentType,
+     * 3 ContractGroup (`contractBoundsId` is then the contract group id and
+     * `contractBoundsDocumentType` is null). The last four arguments are the
+     * key's usage limits (protocol version 14): the credits it may spend over
+     * its lifetime when [totalBudgetIsSome], and the block time in milliseconds
+     * from which it can no longer sign when [expiresAtIsSome].
      */
     @Suppress("LongParameterList")
     open fun onPersistIdentityKeyUpsert(
@@ -1263,8 +1266,10 @@ class ContactRequestRestoreData(
  * `keyType` / `purpose` / `securityLevel` are DPP `repr(u8)` discriminants
  * (out-of-range = 255 sentinel → Rust drops the row rather than coercing to
  * MASTER/AUTHENTICATION, matching the Swift loader's `UInt8.max` fallback).
- * `contractBoundsKind`: 0 none, 1 SingleContract, 2 SingleContractDocumentType;
- * `contractBoundsId` is 32 bytes (or empty for kind 0);
+ * `contractBoundsKind`: 0 none, 1 SingleContract, 2 SingleContractDocumentType,
+ * 3 ContractGroup;
+ * `contractBoundsId` is 32 bytes (or empty for kind 0): the contract id, or
+ * the contract group id for kind 3;
  * `contractBoundsDocumentType` is non-null only for kind 2.
  * `totalBudget` / `expiresAt` are the key's usage limits (protocol version 14),
  * meaningful only when the matching `*IsSome` flag is set; a limited key must

@@ -765,13 +765,18 @@ struct PublicKeyStorageDetailView: View {
             }
             Section("Data") {
                 FieldRow(label: "Public Key", value: hexString(record.publicKeyData))
+                // The kind row always shows, so a row whose stored kind
+                // says "bound" but whose id blob is missing or unreadable
+                // still surfaces the persisted discriminator instead of a
+                // bare "None".
+                FieldRow(label: "Contract Bounds", value: contractBoundsKindDisplay)
                 if let bounds = record.contractBounds, !bounds.isEmpty {
-                    FieldRow(label: "Contract Bounds", value: "\(bounds.count)")
-                    ForEach(Array(bounds.enumerated()), id: \.offset) { _, contractId in
-                        FieldRow(label: "Contract", value: contractId.toBase58String())
+                    ForEach(Array(bounds.enumerated()), id: \.offset) { _, boundId in
+                        FieldRow(label: boundIdLabel, value: boundId.toBase58String())
                     }
-                } else {
-                    FieldRow(label: "Contract Bounds", value: "None")
+                    if let docType = record.contractBoundsDocumentTypeName, !docType.isEmpty {
+                        FieldRow(label: "Document Type", value: docType)
+                    }
                 }
                 // Surface the keychain identifier itself rather than a
                 // bare presence/absence flag — it's load-bearing for
@@ -813,6 +818,28 @@ struct PublicKeyStorageDetailView: View {
     private var keyTypeDisplay: String {
         if let t = record.keyTypeEnum { return "\(t.name) (\(record.keyType))" }
         return record.keyType
+    }
+
+    /// The bounds variant the row restores as. Reads the stored kind
+    /// when there is one and the legacy inference otherwise, so a row
+    /// written before the kind column shows what it will actually
+    /// restore as, not what it was meant to be.
+    private var contractBoundsKindDisplay: String {
+        let kind = record.effectiveContractBoundsKind
+        let name: String
+        switch kind {
+        case 0: name = "None"
+        case 1: name = "Single contract"
+        case 2: name = "Single contract document type"
+        case 3: name = "Contract group"
+        default: name = "Unknown"
+        }
+        if kind == 0 && record.contractBoundsKind == nil { return name }
+        return record.contractBoundsKind == nil ? "\(name) (\(kind), inferred)" : "\(name) (\(kind))"
+    }
+
+    private var boundIdLabel: String {
+        record.effectiveContractBoundsKind == 3 ? "Contract Group" : "Contract"
     }
 }
 

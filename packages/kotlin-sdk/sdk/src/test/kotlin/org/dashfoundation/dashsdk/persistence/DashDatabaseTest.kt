@@ -233,13 +233,14 @@ class DashDatabaseTest {
     }
 
     @Test
-    fun schemaIsAtVersion12WithTheSweepHoldIndexes() = runTest {
+    fun schemaIsAtVersion13WithTheSweepHoldIndexes() = runTest {
         // The sweep-hold columns land in ONE migration (10 → 11), with the
         // two `pending_inputs` indexes the sweep's claimed-row lookup
         // (`spendingTxid`) and the end-of-round collector
         // (`walletId, isSweptTombstone, winnerMinedHeight`) rely on.
-        // 11 → 12 adds the identity key usage limits columns on top.
-        assertEquals(12, db.openHelper.readableDatabase.version)
+        // 11 → 12 adds the identity key usage limits columns on top, and
+        // 12 → 13 the contract bounds kind.
+        assertEquals(13, db.openHelper.readableDatabase.version)
         val indexes = mutableSetOf<String>()
         db.openHelper.readableDatabase.query("PRAGMA index_list('pending_inputs')").use { c ->
             val nameColumn = c.getColumnIndexOrThrow("name")
@@ -247,6 +248,27 @@ class DashDatabaseTest {
         }
         assertTrue(indexes.contains("index_pending_inputs_spendingTxid"))
         assertTrue(indexes.contains("index_pending_inputs_walletId_isSweptTombstone_winnerMinedHeight"))
+    }
+
+    @Test
+    fun shouldHaveANullableContractBoundsKindColumnOnPublicKeys() = runTest {
+        // Version 13 (12 → 13): nullable with no default, so a legacy row
+        // reads back NULL and the restore path infers its kind.
+        var found = false
+        db.openHelper.readableDatabase.query("PRAGMA table_info('public_keys')").use { c ->
+            val name = c.getColumnIndexOrThrow("name")
+            val type = c.getColumnIndexOrThrow("type")
+            val notNull = c.getColumnIndexOrThrow("notnull")
+            val default = c.getColumnIndexOrThrow("dflt_value")
+            while (c.moveToNext()) {
+                if (c.getString(name) != "contractBoundsKind") continue
+                found = true
+                assertEquals("INTEGER", c.getString(type))
+                assertEquals(0, c.getInt(notNull))
+                assertTrue(c.isNull(default))
+            }
+        }
+        assertTrue(found)
     }
 
     @Test

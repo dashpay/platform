@@ -66,6 +66,13 @@ data class PublicKeyEntity(
     val contractBoundsData: ByteArray? = null,
     /** Document-type qualifier for `.singleContractDocumentType` bounds. */
     val contractBoundsDocumentTypeName: String? = null,
+    /**
+     * Contract-bounds kind as the native row carried it: 0 none, 1
+     * SingleContract, 2 SingleContractDocumentType, 3 ContractGroup (then
+     * [contractBoundsData] holds the contract group id). Null on rows
+     * written before schema 13, whose kind is inferred on restore.
+     */
+    val contractBoundsKind: Int? = null,
     val privateKeyKeychainIdentifier: String? = null,
     /**
      * Derivation breadcrumb (DIP-9 identity index) captured from the
