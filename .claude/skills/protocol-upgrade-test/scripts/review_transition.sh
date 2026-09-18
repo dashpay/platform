@@ -133,6 +133,7 @@ git diff --name-status "$baseline_sha..$target_sha" -- \
   packages/data-contracts \
   packages/dpns-contract \
   packages/document-history-contract \
+  packages/app-connect-contract \
   packages/dashmate/configs \
   packages/dashmate/src/commands
 
@@ -145,7 +146,8 @@ git diff --dirstat=files,0 "$baseline_sha..$target_sha" -- \
   packages/rs-platform-version \
   packages/data-contracts \
   packages/dpns-contract \
-  packages/document-history-contract
+  packages/document-history-contract \
+  packages/app-connect-contract
 
 echo
 echo "Target dispatch and threshold files"

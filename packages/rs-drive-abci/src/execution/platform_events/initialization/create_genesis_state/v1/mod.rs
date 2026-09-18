@@ -71,6 +71,16 @@ impl<C> Platform<C> {
             );
         }
 
+        // The app-connect contract activates with protocol version 14, for the
+        // same reason: chains born earlier keep their historical genesis state
+        // and receive it from `transition_to_version_14` instead
+        if platform_version.protocol_version >= 14 {
+            system_data_contract_types.insert(
+                SystemDataContract::AppConnect,
+                system_data_contracts.load_app_connect(platform_version)?,
+            );
+        }
+
         for data_contract in system_data_contract_types.values() {
             self.register_system_data_contract_operations(
                 data_contract,
@@ -146,6 +156,56 @@ mod tests {
                 hex::encode(root_hash),
                 "dc5b0d4be407428adda2315db7d782e64015cbe2d2b7df963f05622390dc3c9f"
             )
+        }
+
+        /// The app-connect contract is part of the genesis state from protocol
+        /// version 14 on and absent from the genesis state of every earlier
+        /// version, which a replaying node must still reproduce byte for byte.
+        #[test]
+        pub fn should_register_the_app_connect_contract_only_from_protocol_version_14() {
+            use dpp::data_contract::accessors::v0::DataContractV0Getters;
+            use dpp::data_contracts::SystemDataContract;
+
+            let app_connect_id = SystemDataContract::AppConnect.id();
+
+            for (initial_protocol_version, expected) in [(13, false), (14, true)] {
+                let platform_version = PlatformVersion::get(initial_protocol_version)
+                    .expect("expected a supported platform version");
+                let platform = TestPlatformBuilder::new()
+                    .with_initial_protocol_version(initial_protocol_version)
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let stored = platform
+                    .drive
+                    .fetch_contract(
+                        app_connect_id.to_buffer(),
+                        None,
+                        None,
+                        None,
+                        platform_version,
+                    )
+                    .value
+                    .expect("expected to query the app-connect contract");
+
+                assert_eq!(
+                    stored.is_some(),
+                    expected,
+                    "app-connect contract presence in a genesis state born at protocol version {initial_protocol_version}"
+                );
+
+                if let Some(stored) = stored {
+                    assert_eq!(stored.contract.id(), app_connect_id);
+                    assert!(stored
+                        .contract
+                        .document_type_for_name("loginKeyResponse")
+                        .is_ok());
+                    assert!(stored
+                        .contract
+                        .document_type_for_name("appManifest")
+                        .is_ok());
+                }
+            }
         }
     }
 }

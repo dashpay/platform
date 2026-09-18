@@ -1,0 +1,164 @@
+{
+  "loginKeyResponse": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "creationRestrictionMode": 0,
+    "indices": [
+      {
+        "name": "byContractAndEphemeralKey",
+        "properties": [
+          {
+            "contractId": "asc"
+          },
+          {
+            "appEphemeralPubKeyHash": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "contractId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "contract"
+        },
+        "description": "The data contract of the app the login was approved for",
+        "position": 0
+      },
+      "appEphemeralPubKeyHash": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 20,
+        "maxItems": 20,
+        "description": "hash160 of the ephemeral public key the app put in its connect request; identifies the request",
+        "position": 1
+      },
+      "walletEphemeralPubKey": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 33,
+        "maxItems": 33,
+        "description": "The wallet's compressed ephemeral public key; the app derives the shared secret from it and its own ephemeral private key",
+        "position": 2
+      },
+      "encryptedPayload": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 60,
+        "maxItems": 284,
+        "description": "The session key material encrypted to the app: a 28-byte envelope followed by 32 bytes per key, one to eight keys",
+        "position": 3
+      }
+    },
+    "required": [
+      "contractId",
+      "appEphemeralPubKeyHash",
+      "walletEphemeralPubKey",
+      "encryptedPayload"
+    ],
+    "description": "A wallet's answer to an app's connect request, found by the app through the request's ephemeral key hash. The index is deliberately not unique: the request id is public, so a unique index without the owner would let anyone block the wallet's write; the app instead authenticates every candidate by decrypting it. A wallet replaces its own response on re-login.",
+    "additionalProperties": false
+  },
+  "appManifest": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "creationRestrictionMode": 0,
+    "indices": [
+      {
+        "name": "byOwnerAndApp",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "appContractId": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "appContractId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "contract"
+        },
+        "description": "The app's data contract; wallets only trust a manifest whose owner is this contract's owner",
+        "position": 0
+      },
+      "name": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "The app's display name, shown on the wallet's approval sheet",
+        "position": 1
+      },
+      "url": {
+        "type": "string",
+        "maxLength": 256,
+        "description": "The app's URL, shown on the wallet's approval sheet",
+        "position": 2
+      },
+      "authBoundsKind": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 3,
+        "description": "The contract bounds the login key must carry: 0 none, 1 the contract in authBoundsId, 2 the document type authBoundsDocType of the contract in authBoundsId, 3 the contract group in authBoundsId",
+        "position": 3
+      },
+      "authBoundsId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The contract or contract group id the login key is bound to; absent when authBoundsKind is 0",
+        "position": 4
+      },
+      "authBoundsDocType": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "The document type name the login key is bound to; present only when authBoundsKind is 2",
+        "position": 5
+      },
+      "sessionSeconds": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The login key lifetime the app asks for, in seconds; the wallet may grant less",
+        "position": 6
+      },
+      "sessionBudget": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The login key budget the app asks for, in credits; the wallet may grant less",
+        "position": 7
+      },
+      "encBindings": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 0,
+        "maxItems": 768,
+        "description": "Zero to eight fixed 96-byte records, each a contract id (32 bytes), a purpose mask (1 byte: bit 0 ENCRYPTION, bit 1 DECRYPTION) and a zero-padded document type name (63 bytes, all zero for a contract-level binding), naming where the app needs encryption keys bound",
+        "position": 8
+      }
+    },
+    "required": [
+      "appContractId",
+      "name",
+      "url",
+      "authBoundsKind",
+      "sessionSeconds",
+      "sessionBudget"
+    ],
+    "description": "An app's published identity and requirements for the connect handshake, created by the owner of the app's data contract. The bounds are requirements; the session lifetime and budget are requests that cap what the wallet grants.",
+    "additionalProperties": false
+  }
+}

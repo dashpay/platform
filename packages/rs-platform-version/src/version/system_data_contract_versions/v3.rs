@@ -10,6 +10,12 @@ use crate::version::system_data_contract_versions::SystemDataContractVersions;
 // `distributionType`, written for once-per-identity distribution claims.
 // v2 (dashpay: 1, withdrawals: 1, token_history: 1) remains for
 // PROTOCOL_VERSION_13 chain replay.
+//
+// The app-connect contract (app_connect: 1) also activates with
+// PROTOCOL_VERSION_14: it is registered at genesis from that version on and
+// inserted by `transition_to_version_14` on chains upgrading from 13. Its
+// feature version is listed in the earlier tables only because the struct has
+// no optional fields; before 14 the contract is never loaded or served.
 pub const SYSTEM_DATA_CONTRACT_VERSIONS_V3: SystemDataContractVersions =
     SystemDataContractVersions {
         withdrawals: 2,
@@ -20,4 +26,5 @@ pub const SYSTEM_DATA_CONTRACT_VERSIONS_V3: SystemDataContractVersions =
         token_history: 2,
         keyword_search: 1,
         document_history: 1,
+        app_connect: 1,
     };
