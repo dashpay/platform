@@ -13,6 +13,11 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '17 * * * *'
+    # A build turning green raises no event this controller hears. This one
+    # reconciles only the pull requests already recorded as waiting on one, so
+    # it costs a listing and a single batched read when none are — which is
+    # almost always. Offset from the hourly sweep so the two never collide.
+    - cron: '2,32,47 * * * *'
 permissions:
   contents: read
   pull-requests: write
@@ -40,4 +45,4 @@ jobs:
       (contains(fromJSON('["coderabbitai", "coderabbitai[bot]"]'), github.event.comment.user.login) &&
       (contains(github.event.comment.body, 'final_review_risk_coverage') ||
       contains(github.event.comment.body, 'rate limited by coderabbit.ai')))
-    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@6d57d4c22eeeeaff88554f6e78466be2aec7aed7
+    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@6636e320352dfafaa8187eb73b2d51c9975f2a48
