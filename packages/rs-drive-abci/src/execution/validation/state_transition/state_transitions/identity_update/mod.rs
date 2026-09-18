@@ -1977,6 +1977,272 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_identity_update_adding_contract_bound_key_multiple_reference_to_latest() {
+        use crate::execution::validation::state_transition::tests::{
+            register_contract_from_bytes, IdentityTestInfo,
+        };
+
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform_version = PlatformVersion::latest();
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // {
+        //   "$formatVersion": "1",
+        //   "id": "5pkMhyeaFjJfVMkFhLtJdDp2ofx6iqt7i9k6ckkHBwbs",
+        //   "config": {
+        //     "$formatVersion": "1",
+        //     "canBeDeleted": false,
+        //     "readonly": false,
+        //     "keepsHistory": false,
+        //     "documentsKeepHistoryContractDefault": false,
+        //     "documentsMutableContractDefault": true,
+        //     "documentsCanBeDeletedContractDefault": true,
+        //     "requiresIdentityEncryptionBoundedKey": 0,
+        //     "requiresIdentityDecryptionBoundedKey": 0,
+        //     "sizedIntegerTypes": true
+        //   },
+        //   "version": 1,
+        //   "ownerId": "DicUmimv71VqxNBzZHXb887RgssSEjjx7DyLfxrt8q1X",
+        //   "schemaDefs": null,
+        //   "documentSchemas": {
+        //     "preorder": {
+        //       "documentsMutable": false,
+        //       "canBeDeleted": true,
+        //       "type": "object",
+        //       "indices": [
+        //         {
+        //           "name": "saltedHash",
+        //           "properties": [
+        //             {
+        //               "saltedDomainHash": "asc"
+        //             }
+        //           ],
+        //           "unique": true
+        //         }
+        //       ],
+        //       "properties": {
+        //         "saltedDomainHash": {
+        //           "type": "array",
+        //           "byteArray": true,
+        //           "minItems": 32,
+        //           "maxItems": 32,
+        //           "position": 0,
+        //           "description": "Double sha-256 of the concatenation of a 32 byte random salt and a normalized domain name"
+        //         }
+        //       },
+        //       "required": [
+        //         "saltedDomainHash"
+        //       ],
+        //       "additionalProperties": false,
+        //       "$comment": "Preorder documents are immutable: modification and deletion are restricted"
+        //     }
+        //   },
+        //   "createdAt": 1749816974718,
+        //   "updatedAt": null,
+        //   "createdAtBlockHeight": 159130,
+        //   "updatedAtBlockHeight": null,
+        //   "createdAtEpoch": 7906,
+        //   "updatedAtEpoch": null,
+        //   "groups": {},
+        //   "tokens": {},
+        //   "keywords": [],
+        //   "description": null
+        // }
+        let contract_bytes = hex::decode("0147aa11d517710d509edaf84bb54902394dcb8f6cc68775138d1cdd8334600d2e01000000000101010001000101bcf52c1c5d57d2e21530c5d03ef4c6e7b39a91da7c444fdb17e0a7746b6285860001087072656f7264657216081210646f63756d656e74734d757461626c651300120c63616e426544656c65746564130012047479706512066f626a6563741207696e64696365731501160312046e616d65120a73616c74656448617368120a70726f7065727469657315011601121073616c746564446f6d61696e4861736812036173631206756e697175651301120a70726f706572746965731601121073616c746564446f6d61696e486173681606120474797065120561727261791209627974654172726179130112086d696e4974656d73022012086d61784974656d7302201208706f736974696f6e0200120b6465736372697074696f6e1259446f75626c65207368612d323536206f662074686520636f6e636174656e6174696f6e206f66206120333220627974652072616e646f6d2073616c7420616e642061206e6f726d616c697a656420646f6d61696e206e616d65120872657175697265641501121073616c746564446f6d61696e4861736812146164646974696f6e616c50726f706572746965731300120824636f6d6d656e74124a5072656f7264657220646f63756d656e74732061726520696d6d757461626c653a206d6f64696669636174696f6e20616e642064656c6574696f6e20617265207265737472696374656401fd0000019769381d7e0001fc00026d9a0001fb1ee20000000000").expect("expected to decode contract bytes");
+
+        let (identity, signer, critical_key, master_key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(5.0));
+
+        let platform_state = platform.state.load();
+
+        // Same contract, but opting bound ENCRYPTION and DECRYPTION keys in with
+        // `MultipleReferenceToLatest` (2), the mode the DashPay contract and every
+        // contract published from the JS SDK use, instead of `Unique` (0).
+        let contract_bytes = {
+            use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+            use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+            use dpp::serialization::{
+                PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
+                PlatformSerializableWithPlatformVersion,
+            };
+            let mut contract = dpp::data_contract::DataContract::versioned_deserialize_untrusted(
+                &contract_bytes,
+                false,
+                platform_version,
+            )
+            .expect("expected to deserialize data contract");
+            contract
+                .config_mut()
+                .set_requires_identity_encryption_bounded_key(Some(
+                    StorageKeyRequirements::MultipleReferenceToLatest,
+                ));
+            contract
+                .config_mut()
+                .set_requires_identity_decryption_bounded_key(Some(
+                    StorageKeyRequirements::MultipleReferenceToLatest,
+                ));
+            contract
+                .serialize_to_bytes_with_platform_version(platform_version)
+                .expect("expected to serialize data contract")
+        };
+
+        // Register the contract
+        let data_contract = register_contract_from_bytes(
+            &mut platform,
+            &platform_state,
+            contract_bytes,
+            IdentityTestInfo::Given {
+                identity: &identity,
+                signer: &signer,
+                public_key: &critical_key,
+                identity_nonce: 1,
+            },
+            platform_version,
+        )
+        .await;
+
+        let secp = Secp256k1::new();
+
+        let mut rng = StdRng::seed_from_u64(1292);
+
+        let new_key_pair = Keypair::new(&secp, &mut rng);
+
+        let mut new_key = IdentityPublicKeyInCreationV0 {
+            id: 2,
+            purpose: Purpose::ENCRYPTION,
+            security_level: SecurityLevel::MEDIUM,
+            key_type: ECDSA_SECP256K1,
+            read_only: false,
+            data: new_key_pair.public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+            contract_bounds: Some(ContractBounds::SingleContract {
+                id: data_contract.id(),
+            }),
+        };
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 2, // Use nonce 2 since we used 1 for contract creation
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key.clone())],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: master_key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let update_transition: StateTransition = update_transition.into();
+
+        let signable_bytes = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+
+        // Sign the new key with its own private key
+        let secret = new_key_pair.secret_key();
+        let signature =
+            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+
+        new_key.signature = signature.to_vec().into();
+
+        // Create the transition again with the signed key
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 2,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: master_key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+
+        // Sign the transition with the master key
+        update_transition.set_signature(
+            signer
+                .sign(&master_key, signable_bytes.as_slice())
+                .await
+                .expect("expected to sign"),
+        );
+
+        let update_transition_bytes = update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![update_transition_bytes.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        // We expect success - contract bound keys are allowed
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Verify the key was added
+        use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
+
+        let identity_keys_request = IdentityKeysRequest {
+            identity_id: identity.id().to_buffer(),
+            request_type: KeyRequestType::AllKeys,
+            limit: None,
+            offset: None,
+        };
+
+        let updated_partial_identity = platform
+            .drive
+            .fetch_identity_keys_as_partial_identity(identity_keys_request, None, platform_version)
+            .expect("expected to fetch identity")
+            .expect("expected identity to exist");
+
+        assert_eq!(updated_partial_identity.loaded_public_keys.len(), 3); // Original 2 + new contract bound key
+
+        let contract_bound_key = updated_partial_identity
+            .loaded_public_keys
+            .get(&2)
+            .expect("expected to find key with id 2");
+
+        assert_eq!(
+            contract_bound_key.contract_bounds(),
+            Some(&ContractBounds::SingleContract {
+                id: data_contract.id()
+            })
+        );
+    }
+
+    #[tokio::test]
     async fn test_identity_update_adding_contract_bound_key_on_document_level() {
         use crate::execution::validation::state_transition::tests::{
             register_contract_from_bytes, IdentityTestInfo,
