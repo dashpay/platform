@@ -5,8 +5,8 @@
 A wallet's **public** state has to survive a restart. This schema is the
 on-disk shape of that state: one SQLite file holding many wallets, every
 per-wallet row anchored to a `wallet_id`, so a client can reload its UTXOs,
-identities, contacts, balances, and sync watermarks without re-scanning the
-chain.
+identities, contacts, balances, and sync watermarks. Databases predating full
+Core snapshots require one Core rescan while preserving accounts and Platform data.
 
 ## What it stores — and the boundary
 
@@ -54,7 +54,9 @@ erDiagram
     WALLETS ||--o{ CORE_TRANSACTIONS : "records"
     WALLETS ||--o{ CORE_UTXOS : "owns"
     WALLETS ||--o{ CORE_INSTANT_LOCKS : "holds"
+    WALLETS ||--o| CORE_WALLET_SNAPSHOTS : "restores"
     WALLETS ||--o| CORE_SYNC_STATE : "tracks"
+    WALLETS ||--o| CORE_WALLET_SNAPSHOTS : "restores"
 
     WALLETS {
         BLOB wallet_id PK "32-byte WalletId"
@@ -98,6 +100,13 @@ erDiagram
         BLOB wallet_id PK
         BLOB txid PK
         BLOB islock_blob "bincode-encoded InstantLock"
+    }
+
+    CORE_WALLET_SNAPSHOTS {
+        BLOB wallet_id PK "one row per wallet; cascading wallet FK"
+        INTEGER format_version "snapshot codec version"
+        BLOB layout_marker "canonical empty upstream account layout"
+        BLOB snapshot_blob "bounded bincode-serde ManagedWalletInfo"
     }
 
     CORE_SYNC_STATE {
@@ -855,4 +864,15 @@ table-rebuild migration, as V004 does.
 | V016 | `V016__identity_keys_null_scope_requires_existing_identity.rs` | Recreates the `identity_keys` null-scope trigger pair (see Triggers above) to also reject a NULL-scoped key naming an identity that does not exist at all, closing the gap where V008's guard caught only the wallet-owned case. |
 | V017 | `V017__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |
 | V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
-| V019 | `V019__core_account_records.rs` | Adds nullable per-account transaction slices; legacy folded records remain readable through ownership-based reconstruction. |
+| V019 | `V019__core_account_records.rs` | Adds nullable per-account transaction slices to SQL projections. |
+| V020 | `V020__core_wallet_snapshots.rs` | Adds versioned complete Core wallet snapshots, including a serialization-layout marker. |
+
+### Core restart state
+
+`core_wallet_snapshots` is authoritative for the Core engine. Its public wallet
+state is committed atomically with SQL projections and checked for wallet ID,
+network, codec version, serialization layout, and size on load. The layout
+marker detects upstream Cargo-feature differences before decoding the payload.
+Signing keys remain outside this table. Without a snapshot, the engine starts
+at the wallet birthday for a Core rescan; saved accounts, address pools, and
+Platform rows remain available. Core projections are retained for SQL queries.

@@ -323,7 +323,7 @@ pub(crate) fn load_untyped_pool_entries(
     pool_type: AddressPoolType,
 ) -> Result<Vec<(u32, Vec<u8>, bool)>, WalletStorageError> {
     let (user_id, friend_id) = accounts::account_dashpay_ids(account_type);
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare_cached(
         "SELECT address_index, length(script), script, used FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
            AND user_identity_id = ?4 AND friend_identity_id = ?5 AND pool_type = ?6 \
@@ -358,7 +358,7 @@ pub(crate) fn load_pool_reservations(
     pool_type: AddressPoolType,
 ) -> Result<Vec<(u32, u64)>, WalletStorageError> {
     let (user_id, friend_id) = accounts::account_dashpay_ids(account_type);
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare_cached(
         "SELECT address_index, reserved_at FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
            AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \

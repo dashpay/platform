@@ -14,6 +14,7 @@
 //!    other state intact.
 
 mod common;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
 use std::collections::BTreeMap;
 
@@ -80,6 +81,14 @@ fn overlay_only_write_does_not_corrupt_load() {
         last_processed_height: Some(99),
         ..Default::default()
     });
+    let wallet = key_wallet::wallet::Wallet::new_external_signable(
+        key_wallet::Network::Testnet,
+        w,
+        key_wallet::account::account_collection::AccountCollection::new(),
+    );
+    let mut snapshot = key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet, 0);
+    snapshot.update_synced_height(99);
+    core_cs.core_wallet_snapshot = Some(snapshot);
     persister.store(w, core_cs).expect("store core");
     persister.flush(w).expect("flush core");
 

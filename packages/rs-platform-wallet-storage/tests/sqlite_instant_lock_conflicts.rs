@@ -9,13 +9,12 @@ use key_wallet::account::ManagedAccountTrait;
 use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use key_wallet::wallet::managed_wallet_info::{ManagedWalletInfo, PersistedWalletState};
+use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use platform_wallet::changeset::{
     AccountRegistrationEntry, CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
-use platform_wallet_storage::sqlite::{rehydrate::apply_persisted_core_state, schema::core_state};
-use platform_wallet_storage::{LoadCtx, SqlitePersister, SqlitePersisterConfig};
+use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
 
 async fn separate_lock_round_trip(with_descendant: bool) {
     let (persister, _tmp, path) = fresh_persister();
@@ -28,6 +27,53 @@ async fn separate_lock_round_trip(with_descendant: bool) {
     let mut live = ManagedWalletInfo::from_wallet(&wallet, 1);
     let wallet_id = live.wallet_id;
     ensure_wallet_meta(&persister, &wallet_id);
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                provider_key_account_registrations: {
+                    use key_wallet::account::AccountType;
+                    use platform_wallet::changeset::{
+                        ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+                    };
+                    let mut entries = Vec::new();
+                    if let Some(account) = wallet
+                        .accounts
+                        .bls_account_of_type(AccountType::ProviderOperatorKeys)
+                    {
+                        entries.push(ProviderKeyAccountEntry {
+                            account_type: AccountType::ProviderOperatorKeys,
+                            extended_public_key: ProviderKeyExtendedPubKey::Bls(
+                                account.bls_public_key.clone(),
+                            ),
+                        });
+                    }
+                    if let Some(account) = wallet
+                        .accounts
+                        .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+                    {
+                        entries.push(ProviderKeyAccountEntry {
+                            account_type: AccountType::ProviderPlatformKeys,
+                            extended_public_key: ProviderKeyExtendedPubKey::EdDSA(
+                                account.ed25519_public_key.clone(),
+                            ),
+                        });
+                    }
+                    entries
+                },
+                account_registrations: wallet
+                    .accounts
+                    .all_accounts()
+                    .into_iter()
+                    .map(|account| AccountRegistrationEntry {
+                        account_type: account.account_type,
+                        account_xpub: account.account_xpub,
+                    })
+                    .collect(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
     let address = live
         .monitored_addresses()
         .into_iter()
@@ -113,6 +159,7 @@ async fn separate_lock_round_trip(with_descendant: bool) {
         .store(
             wallet_id,
             PlatformWalletChangeSet {
+                core_wallet_snapshot: Some(live.clone()),
                 core: Some(CoreChangeSet {
                     records: records.clone(),
                     account_records: records.clone(),
@@ -141,6 +188,7 @@ async fn separate_lock_round_trip(with_descendant: bool) {
         .store(
             wallet_id,
             PlatformWalletChangeSet {
+                core_wallet_snapshot: Some(live.clone()),
                 core: Some(CoreChangeSet {
                     instant_locks_for_non_final_records: [(winner.txid(), lock.clone())].into(),
                     ..Default::default()
@@ -151,46 +199,14 @@ async fn separate_lock_round_trip(with_descendant: bool) {
         .unwrap();
     drop(persister);
 
-    // Replaying the lock without pre-registering it performs the needed sweep.
-    let mut replay_control = ManagedWalletInfo::from_wallet(&wallet, 1);
-    replay_control
-        .restore_persisted_state(PersistedWalletState {
-            transactions: records,
-            utxos: coins,
-            ..Default::default()
-        })
-        .unwrap();
-    assert!(replay_control.mark_instant_send_utxos(&winner.txid(), &lock));
-    assert_eq!(replay_control.balance.total(), live.balance.total());
-
     let reopened = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
-    let (core, owners, spent) = core_state::load_state(
-        &reopened.lock_conn_for_test(),
-        &wallet_id,
-        dashcore::Network::Testnet,
-        &LoadCtx::strict(),
-    )
-    .unwrap();
-    let manifest: Vec<_> = wallet
-        .accounts
-        .all_accounts()
-        .into_iter()
-        .map(|account| AccountRegistrationEntry {
-            account_type: account.account_type,
-            account_xpub: account.account_xpub,
-        })
-        .collect();
-    let mut restored = ManagedWalletInfo::from_wallet(&wallet, 1);
-    apply_persisted_core_state(
-        &mut restored,
-        &manifest,
-        &core,
-        &owners,
-        &Default::default(),
-        &spent,
-        &LoadCtx::strict(),
-    )
-    .unwrap();
+    let restored = reopened
+        .load()
+        .unwrap()
+        .wallets
+        .remove(&wallet_id)
+        .unwrap()
+        .wallet_info;
     assert_eq!(
         restored.balance.total(),
         live.balance.total(),

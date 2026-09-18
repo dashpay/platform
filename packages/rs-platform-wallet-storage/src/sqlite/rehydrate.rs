@@ -901,7 +901,7 @@ mod tests {
     #[test]
     fn snapshot_manifest_comparison_includes_provider_and_platform_accounts() {
         use key_wallet::account::account_collection::PlatformPaymentAccountKey;
-        use key_wallet::managed_account::ManagedPlatformAccount;
+        use key_wallet::managed_account::managed_platform_account::ManagedPlatformAccount;
         use key_wallet::{AddressPool, DerivationPath};
         let wallet = Wallet::from_seed_bytes(
             [0xED; 64],
