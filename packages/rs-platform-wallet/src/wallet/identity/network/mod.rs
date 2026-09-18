@@ -26,6 +26,8 @@ mod document;
 mod dpns;
 mod dpns_marketplace;
 mod identity_handle;
+mod key_limits;
+mod key_selection;
 mod loading;
 mod register_from_addresses;
 mod registration;
@@ -34,6 +36,7 @@ mod top_up_from_addresses;
 mod transfer;
 mod transfer_to_addresses;
 mod update;
+pub(crate) use key_selection::usable_authentication_key;
 mod withdrawal;
 pub(crate) use withdrawal::{select_owner_withdrawal_key, select_transfer_withdrawal_key};
 

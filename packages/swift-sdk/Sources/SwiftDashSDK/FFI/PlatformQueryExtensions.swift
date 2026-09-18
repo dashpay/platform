@@ -354,6 +354,71 @@ extension SDK {
         return try processJSONResult(result)
     }
 
+    /// What is left of the budgets of the given keys of an identity
+    /// (protocol version 14).
+    ///
+    /// An authentication key registered with a total budget spends it as its
+    /// transitions run, and Platform tracks what remains next to the key;
+    /// raising the budget through
+    /// ``ManagedPlatformWallet/updateIdentityKeyLimits(identityId:keyId:addBudget:expiresAt:signer:)``
+    /// raises what remains by the same amount.
+    ///
+    /// - Parameters:
+    ///   - identityId: base58-encoded identity id.
+    ///   - keyIds: the key ids to look up. At least one, none repeated.
+    /// - Returns: one entry per key id the node answered for. The value is
+    ///   what is left of that key's budget in CREDITS, or `nil` for a key
+    ///   that carries no budget, or that the identity does not have.
+    public func fetchKeysRemainingBudgets(
+        identityId: String,
+        keyIds: [UInt32]
+    ) async throws -> [UInt32: UInt64?] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        guard !keyIds.isEmpty else {
+            throw SDKError.invalidParameter("At least one key id is required")
+        }
+
+        // The FFI answers with a JSON object keyed by key id, whose values
+        // are decimal STRINGS (credits are `u64`, which JSON numbers cannot
+        // carry losslessly) or null.
+        let json = try keyIds.withUnsafeBufferPointer { buffer in
+            try processJSONResult(
+                dash_sdk_identity_fetch_keys_remaining_budgets(
+                    handle,
+                    identityId,
+                    buffer.baseAddress,
+                    UInt(buffer.count)
+                )
+            )
+        }
+
+        var budgets: [UInt32: UInt64?] = [:]
+        budgets.reserveCapacity(json.count)
+        for (rawKeyId, value) in json {
+            guard let keyId = UInt32(rawKeyId) else {
+                throw SDKError.serializationError(
+                    "Unparseable key id in remaining-budgets response: \(rawKeyId)"
+                )
+            }
+            if value is NSNull {
+                // `updateValue`, not the subscript: assigning `nil` through
+                // the subscript of a dictionary whose value type is itself
+                // optional REMOVES the entry instead of storing "no budget".
+                budgets.updateValue(nil, forKey: keyId)
+                continue
+            }
+            guard let text = value as? String, let credits = UInt64(text) else {
+                throw SDKError.serializationError(
+                    "Unparseable remaining budget for key \(keyId): \(value)"
+                )
+            }
+            budgets.updateValue(credits, forKey: keyId)
+        }
+        return budgets
+    }
+
     /// Get identity by public key hash
     public func identityGetByPublicKeyHash(publicKeyHash: String) async throws -> [String: Any] {
         guard let handle = handle else {

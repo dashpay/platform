@@ -69,6 +69,10 @@ pub(crate) struct DecodedPubkeyRow {
     pub(crate) pubkey_bytes: Vec<u8>,
     pub(crate) contract_bounds_id: Option<[u8; 32]>,
     pub(crate) contract_bounds_document_type: Option<CString>,
+    /// Usage limits (protocol version 14): the credits the key may spend over its lifetime,
+    /// and the block time in ms from which it can no longer sign.
+    pub(crate) total_budget: Option<u64>,
+    pub(crate) expires_at: Option<u64>,
 }
 
 impl DecodedPubkeyRow {
@@ -95,6 +99,10 @@ impl DecodedPubkeyRow {
                 .contract_bounds_document_type
                 .as_ref()
                 .map_or(ptr::null(), |c| c.as_ptr()),
+            has_total_budget: self.total_budget.is_some(),
+            total_budget: self.total_budget.unwrap_or(0),
+            has_expires_at: self.expires_at.is_some(),
+            expires_at: self.expires_at.unwrap_or(0),
         }
     }
 }
@@ -118,12 +126,18 @@ impl DecodedPubkeyRow {
 ///     u8[32] contract_bounds_id
 ///   if contract_bounds_kind == 2:
 ///     u16 doc_type_len, u8[doc_type_len] doc_type (UTF-8)
+///   u8   limits_flags       (bit 0: total_budget follows, bit 1: expires_at follows;
+///                            any other bit is rejected)
+///   if limits_flags & 1:
+///     u64 total_budget      (credits the key may spend over its lifetime)
+///   if limits_flags & 2:
+///     u64 expires_at        (block time in ms from which the key can no longer sign)
 /// ```
 ///
 /// Strict: returns `Err` on truncation, trailing bytes, a negative key ID
 /// (`writeInt` is signed on the Kotlin side, so a set sign bit is a bug), an
-/// invalid `read_only` or `contract_bounds_kind` byte, or an interior NUL in a
-/// document type. It does **not** validate the DPP role bytes against DPP's
+/// invalid `read_only`, `contract_bounds_kind` or `limits_flags` byte, or an
+/// interior NUL in a document type. It does **not** validate the DPP role bytes against DPP's
 /// structural rules — that stays server-side — nor does it apply any
 /// registration-only invariant; the registration seam layers those on top.
 pub(crate) fn parse_pubkey_rows(bytes: &[u8]) -> Result<Vec<DecodedPubkeyRow>, String> {
@@ -146,11 +160,11 @@ pub(crate) fn parse_pubkey_rows(bytes: &[u8]) -> Result<Vec<DecodedPubkeyRow>, S
         count_bytes[3],
     ]) as usize;
     // Length-before-allocation guard: each row is at least an 11-byte fixed
-    // header, so a header claiming more rows than the remaining payload can
-    // possibly hold is malformed — prevents a huge `with_capacity` abort from a
-    // raw-JNI blob.
+    // header plus the limits flags byte, so a header claiming more rows than
+    // the remaining payload can possibly hold is malformed — prevents a huge
+    // `with_capacity` abort from a raw-JNI blob.
     if count
-        .checked_mul(11)
+        .checked_mul(12)
         .is_none_or(|need| bytes.len() - cursor < need)
     {
         return Err(format!(
@@ -213,6 +227,31 @@ pub(crate) fn parse_pubkey_rows(bytes: &[u8]) -> Result<Vec<DecodedPubkeyRow>, S
             }
         }
 
+        let limits_flags = read(&mut cursor, 1)
+            .ok_or_else(|| format!("pubkey blob truncated at row {i} limitsFlags"))?[0];
+        if limits_flags & !0b11 != 0 {
+            return Err(format!(
+                "pubkey blob row {i} limitsFlags must only set bits 0 and 1, got {limits_flags:#b}"
+            ));
+        }
+        let read_u64 = |cursor: &mut usize, what: &str| -> Result<u64, String> {
+            let bytes = read(cursor, 8)
+                .ok_or_else(|| format!("pubkey blob truncated at row {i} {what}"))?;
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(bytes);
+            Ok(u64::from_be_bytes(buf))
+        };
+        let total_budget = if limits_flags & 0b01 != 0 {
+            Some(read_u64(&mut cursor, "totalBudget")?)
+        } else {
+            None
+        };
+        let expires_at = if limits_flags & 0b10 != 0 {
+            Some(read_u64(&mut cursor, "expiresAt")?)
+        } else {
+            None
+        };
+
         rows.push(DecodedPubkeyRow {
             key_id,
             key_type,
@@ -223,6 +262,8 @@ pub(crate) fn parse_pubkey_rows(bytes: &[u8]) -> Result<Vec<DecodedPubkeyRow>, S
             pubkey_bytes,
             contract_bounds_id,
             contract_bounds_document_type,
+            total_budget,
+            expires_at,
         });
     }
 
@@ -367,6 +408,8 @@ mod tests {
         read_only: u8,
         pubkey: Vec<u8>,
         bounds: Option<(u8, [u8; 32], Option<String>)>,
+        total_budget: Option<u64>,
+        expires_at: Option<u64>,
     }
 
     fn encode(rows: &[Row]) -> Vec<u8> {
@@ -390,6 +433,15 @@ mod tests {
                     out.extend_from_slice(dt);
                 }
             }
+            let flags =
+                u8::from(r.total_budget.is_some()) | (u8::from(r.expires_at.is_some()) << 1);
+            out.push(flags);
+            if let Some(total_budget) = r.total_budget {
+                out.extend_from_slice(&total_budget.to_be_bytes());
+            }
+            if let Some(expires_at) = r.expires_at {
+                out.extend_from_slice(&expires_at.to_be_bytes());
+            }
         }
         out
     }
@@ -403,6 +455,8 @@ mod tests {
             read_only: 0,
             pubkey: vec![2u8; 33],
             bounds: None,
+            total_budget: None,
+            expires_at: None,
         }
     }
 
@@ -421,6 +475,8 @@ mod tests {
                 read_only: 0,
                 pubkey: vec![3u8; 33],
                 bounds: None,
+                total_budget: None,
+                expires_at: None,
             },
             Row {
                 key_id: 2,
@@ -430,6 +486,8 @@ mod tests {
                 read_only: 0,
                 pubkey: vec![4u8; 33],
                 bounds: None,
+                total_budget: None,
+                expires_at: None,
             },
             Row {
                 key_id: 3,
@@ -439,6 +497,8 @@ mod tests {
                 read_only: 0,
                 pubkey: vec![5u8; 33],
                 bounds: None,
+                total_budget: None,
+                expires_at: None,
             },
             Row {
                 key_id: 4,
@@ -448,6 +508,8 @@ mod tests {
                 read_only: 0,
                 pubkey: vec![6u8; 33],
                 bounds: Some((2, dashpay_id, Some("contactRequest".to_string()))),
+                total_budget: None,
+                expires_at: None,
             },
             Row {
                 key_id: 5,
@@ -457,6 +519,8 @@ mod tests {
                 read_only: 0,
                 pubkey: vec![7u8; 33],
                 bounds: Some((2, dashpay_id, Some("contactRequest".to_string()))),
+                total_budget: None,
+                expires_at: None,
             },
         ]
     }
@@ -508,6 +572,8 @@ mod tests {
             read_only: 1,
             pubkey: vec![2u8; 33],
             bounds: Some((1, id, None)),
+            total_budget: None,
+            expires_at: None,
         }];
         let decoded = parse_pubkey_rows(&encode(&rows)).expect("parse");
         assert_eq!(decoded[0].contract_bounds_kind, 1);
@@ -558,6 +624,8 @@ mod tests {
             read_only: 0,
             pubkey: vec![4u8; 33],
             bounds: Some((3, contract_group_id, None)),
+            total_budget: None,
+            expires_at: None,
         }];
         let decoded = parse_pubkey_rows(&encode(&rows)).expect("parse");
         assert_eq!(decoded[0].contract_bounds_kind, 3);
@@ -597,6 +665,8 @@ mod tests {
             read_only: 0,
             pubkey: vec![2u8; 33],
             bounds: Some((2, [1u8; 32], Some("con\0tact".to_string()))),
+            total_budget: None,
+            expires_at: None,
         }];
         let err = parse_pubkey_rows(&encode(&rows)).unwrap_err();
         assert!(err.contains("interior NUL"), "{err}");
@@ -692,7 +762,7 @@ mod tests {
     /// copy in the Kotlin SDK's test resources so the two can never drift.
     const GOLDEN: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../kotlin-sdk/sdk/src/test/resources/golden/registration_pubkeys_v1.bin"
+        "/../kotlin-sdk/sdk/src/test/resources/golden/registration_pubkeys_v2.bin"
     ));
 
     /// Decode the golden blob and assert the full 6-key DashPay policy — role
@@ -760,6 +830,8 @@ mod tests {
                 read_only: 0,
                 pubkey: vec![2u8; 33],
                 bounds: None,
+                total_budget: None,
+                expires_at: None,
             },
             Row {
                 key_id: 5,
@@ -769,10 +841,78 @@ mod tests {
                 read_only: 0,
                 pubkey: vec![3u8; 33],
                 bounds: None,
+                total_budget: None,
+                expires_at: None,
             },
         ];
         let rows = parse_pubkey_rows(&encode(&update_rows)).expect("parse");
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().all(|r| r.key_id != 0));
+    }
+
+    /// A row with limits, one with a budget only and one with an expiry only round trip,
+    /// and the FFI view flags exactly what was set.
+    #[test]
+    fn round_trips_usage_limits() {
+        let limited = |key_id: u32, total_budget: Option<u64>, expires_at: Option<u64>| Row {
+            key_id,
+            key_type: KEY_TYPE_ECDSA,
+            purpose: PURPOSE_AUTH,
+            security_level: SEC_CRITICAL,
+            read_only: 0,
+            pubkey: vec![key_id as u8; 33],
+            bounds: None,
+            total_budget,
+            expires_at,
+        };
+        let rows = vec![
+            limited(1, Some(500_000_000), Some(1_800_000_000_000)),
+            limited(2, Some(7), None),
+            limited(3, None, Some(9)),
+            limited(4, None, None),
+        ];
+
+        let decoded = parse_pubkey_rows(&encode(&rows)).expect("parse");
+
+        assert_eq!(decoded.len(), 4);
+        assert_eq!(decoded[0].total_budget, Some(500_000_000));
+        assert_eq!(decoded[0].expires_at, Some(1_800_000_000_000));
+        assert_eq!(decoded[1].total_budget, Some(7));
+        assert_eq!(decoded[1].expires_at, None);
+        assert_eq!(decoded[2].total_budget, None);
+        assert_eq!(decoded[2].expires_at, Some(9));
+        assert_eq!(decoded[3].total_budget, None);
+        assert_eq!(decoded[3].expires_at, None);
+
+        let ffi = decoded[0].to_ffi();
+        assert!(ffi.has_total_budget && ffi.total_budget == 500_000_000);
+        assert!(ffi.has_expires_at && ffi.expires_at == 1_800_000_000_000);
+        let ffi = decoded[1].to_ffi();
+        assert!(ffi.has_total_budget && ffi.total_budget == 7);
+        assert!(!ffi.has_expires_at && ffi.expires_at == 0);
+        let ffi = decoded[3].to_ffi();
+        assert!(!ffi.has_total_budget && !ffi.has_expires_at);
+    }
+
+    #[test]
+    fn rejects_unknown_limits_flags() {
+        let mut bytes = encode(&[base_master()]);
+        // The flags byte is the last byte of a row without limits.
+        let last = bytes.len() - 1;
+        bytes[last] = 0b100;
+
+        let err = parse_pubkey_rows(&bytes).expect_err("unknown flag bit");
+        assert!(err.contains("limitsFlags"), "{err}");
+    }
+
+    #[test]
+    fn rejects_a_truncated_limit() {
+        let mut row = base_master();
+        row.total_budget = Some(1);
+        let mut bytes = encode(&[row]);
+        bytes.truncate(bytes.len() - 1);
+
+        let err = parse_pubkey_rows(&bytes).expect_err("truncated budget");
+        assert!(err.contains("truncated"), "{err}");
     }
 }

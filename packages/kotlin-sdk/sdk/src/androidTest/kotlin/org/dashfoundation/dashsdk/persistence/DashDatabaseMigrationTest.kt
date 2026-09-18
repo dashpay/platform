@@ -470,13 +470,48 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v11 -> v12 adds the identity key usage limits (protocol version 14):
+     * `totalBudget` and `expiresAt` on `public_keys`, both nullable. A key
+     * persisted before the migration reads back without limits, and a limited
+     * key written afterwards keeps both values, so a restored key keeps the
+     * limits it was registered with.
+     */
+    @Test
+    fun migrate11To12AddsKeyLimitColumns() {
+        val legacy = helper.createDatabase(dbName, 11)
+        legacy.execSQL(
+            "INSERT INTO public_keys (keyId, purpose, securityLevel, keyType, readOnly, " +
+                "publicKeyData, identityId, createdAt) " +
+                "VALUES (5, '0', '1', '0', 0, x'02', 'GL2Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3', 0)",
+        )
+        legacy.close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 12, true, DashDatabase.MIGRATION_11_12)
+        db.query("SELECT totalBudget, expiresAt FROM public_keys WHERE keyId = 5").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(c.isNull(0))
+            assertTrue(c.isNull(1))
+        }
+        db.execSQL(
+            "UPDATE public_keys SET totalBudget = 500000000, expiresAt = 1800000000000 " +
+                "WHERE keyId = 5",
+        )
+        db.query("SELECT totalBudget, expiresAt FROM public_keys WHERE keyId = 5").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(500_000_000L, c.getLong(0))
+            assertEquals(1_800_000_000_000L, c.getLong(1))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            11,
+            12,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -485,16 +520,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
+            DashDatabase.MIGRATION_11_12,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v11 schema. */
+    /** The full chain from v1 must also land on a valid v12 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            11,
+            12,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -506,6 +542,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
+            DashDatabase.MIGRATION_11_12,
         ).close()
     }
 }

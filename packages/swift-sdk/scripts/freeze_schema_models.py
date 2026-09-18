@@ -147,6 +147,26 @@ V1_GRAPH_MODELS = [
     "PersistentMasternode",
 ]
 
+# Every model registered by V4, in the order `DashModelContainer` lists
+# them: the shared graph with the asset lock back in its own slot and the
+# tracked-masternode registry V2 added appended at the end.
+#
+# V4 is frozen as a whole graph rather than as a row for the three models it
+# widened (`PersistentTxo`, `PersistentPendingInput`, `PersistentWallet`).
+# Those three carry relationships, and a frozen model that names a
+# relationship target absent from its own schema binds that bare name to the
+# live type, which is the partial-freeze failure this file's header warns
+# about. The rows above get away with being partial only because the models
+# they freeze (`PersistentAssetLock`, `PersistentTrackedMasternode`) are
+# relationship-isolated.
+_V4_ASSET_LOCK_SLOT = V1_GRAPH_MODELS.index("PersistentInvitation")
+V4_GRAPH_MODELS = (
+    V1_GRAPH_MODELS[:_V4_ASSET_LOCK_SLOT]
+    + ["PersistentAssetLock"]
+    + V1_GRAPH_MODELS[_V4_ASSET_LOCK_SLOT:]
+    + ["PersistentTrackedMasternode"]
+)
+
 
 @dataclasses.dataclass(frozen=True)
 class Freeze:
@@ -176,6 +196,15 @@ FREEZES = [
     Freeze("DashSchemaV2", "5f58417079", ("PersistentTrackedMasternode",)),
     # V3 replaces the asset lock with the shape that has `recipientIsExternal`.
     Freeze("DashSchemaV3", "5f58417079", ("PersistentAssetLock",)),
+    # V4 as it shipped: the whole graph at the last commit before V5 added
+    # the key usage-limit columns to `PersistentPublicKey`.
+    Freeze(
+        "DashSchemaV4",
+        "787cac09e7",
+        tuple(V4_GRAPH_MODELS),
+        TOKEN_TYPES_FILE,
+        tuple(TOKEN_VALUE_TYPES),
+    ),
 ]
 
 HEADER = "import Foundation\nimport SwiftData\n\n"

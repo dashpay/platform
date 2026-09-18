@@ -283,6 +283,59 @@ describe('IdentityPublicKey', () => {
     });
   });
 
+  describe('limits', () => {
+    it('should build a version 1 key from a budget and an expiry', () => {
+      const pubKey = new wasm.IdentityPublicKey({
+        keyId,
+        purpose,
+        securityLevel,
+        keyType,
+        isReadOnly: false,
+        data: binaryData,
+        totalBudget: BigInt(500000000),
+        expiresAt: BigInt(1800000000000),
+      });
+
+      expect(pubKey.totalBudget).to.equal(BigInt(500000000));
+      expect(pubKey.expiresAt).to.equal(BigInt(1800000000000));
+
+      const obj = pubKey.toObject();
+      expect(obj.$formatVersion).to.equal('1');
+      expect(obj.totalBudget).to.equal(BigInt(500000000));
+      expect(obj.expiresAt).to.equal(BigInt(1800000000000));
+
+      const json = pubKey.toJSON();
+      expect(json.$formatVersion).to.equal('1');
+      expect(json.totalBudget).to.equal(500000000);
+      expect(json.expiresAt).to.equal(1800000000000);
+
+      const restored = wasm.IdentityPublicKey.fromJSON(json);
+      expect(restored.totalBudget).to.equal(BigInt(500000000));
+      expect(restored.expiresAt).to.equal(BigInt(1800000000000));
+      expect(wasm.IdentityPublicKey.fromObject(obj).toBytes()).to.deep.equal(pubKey.toBytes());
+    });
+
+    it('should keep a key without limits at version 0 and add them through the setters', () => {
+      const pubKey = new wasm.IdentityPublicKey({
+        keyId,
+        purpose,
+        securityLevel,
+        keyType,
+        isReadOnly: false,
+        data: binaryData,
+      });
+
+      expect(pubKey.totalBudget).to.equal(undefined);
+      expect(pubKey.expiresAt).to.equal(undefined);
+      expect(pubKey.toObject().$formatVersion).to.equal('0');
+
+      pubKey.totalBudget = BigInt(10);
+      expect(pubKey.totalBudget).to.equal(BigInt(10));
+      expect(pubKey.toObject().$formatVersion).to.equal('1');
+      expect(pubKey.toJSON()).to.not.have.property('expiresAt');
+    });
+  });
+
   describe('toJSON()', () => {
     it('should serialize to JSON with expected fixture values', () => {
       const pubKey = new wasm.IdentityPublicKey({
