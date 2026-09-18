@@ -230,6 +230,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
     fn index_only(&self) -> bool {
         self.index_only
     }
+
+    fn immutable_fields(&self) -> &BTreeSet<String> {
+        &self.immutable_fields
+    }
 }
 
 impl DocumentTypeV2Setters for DocumentTypeV2 {

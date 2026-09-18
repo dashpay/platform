@@ -342,6 +342,7 @@ impl ErrorWithCode for StateError {
             Self::ReferencedKeyIdPropertyInvalidError(_) => 40125,
             Self::ReferencedDocumentPropertyAgreementInvalidError(_) => 40126,
             Self::ReferencedDocumentPropertyMismatchError(_) => 40127,
+            Self::DocumentImmutablePropertyChangedError(_) => 40128,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

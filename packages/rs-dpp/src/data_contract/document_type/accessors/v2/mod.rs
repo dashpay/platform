@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 /// Trait providing getters for DocumentTypeV2-specific fields.
 pub trait DocumentTypeV2Getters {
     /// Returns whether documents of this type are countable.
@@ -30,6 +32,14 @@ pub trait DocumentTypeV2Getters {
     /// each terminating in an `Item` keyed by the index's `terminal`
     /// property. Only what is in the indexes exists and is recoverable.
     fn index_only(&self) -> bool;
+
+    /// The top-level properties frozen at document creation on a mutable
+    /// document type (the `immutable` keyword, protocol version 14). A
+    /// replace that changes, adds or removes any of them is rejected with
+    /// `DocumentImmutablePropertyChangedError`. Empty on document types
+    /// that predate the keyword and on types whose documents are not
+    /// mutable, where every property is already immutable.
+    fn immutable_fields(&self) -> &BTreeSet<String>;
 }
 
 /// Trait providing setters for DocumentTypeV2-specific fields.

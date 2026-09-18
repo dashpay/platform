@@ -69,6 +69,12 @@ pub(crate) mod property_names {
     pub const REQUIRED: &str = "required";
     pub const REQUIRED_SINCE: &str = "requiredSince";
     pub const TRANSIENT: &str = "transient";
+    /// Doctype-level array naming the top-level properties of a **mutable**
+    /// document type whose values are frozen at creation: a replace that
+    /// changes, adds or removes any of them is rejected. Meta-schema v3+
+    /// (protocol version 14). See `apply_immutable_fields` in
+    /// `try_from_schema::common` for the structural rules.
+    pub const IMMUTABLE: &str = "immutable";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";
     pub const CREATED_AT: &str = "$createdAt";

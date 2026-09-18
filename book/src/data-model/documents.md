@@ -250,6 +250,34 @@ pub const INITIAL_REVISION: u64 = 1;
 
 Revision 0 is never used for active documents. This allows `0` to serve as a sentinel value meaning "no revision" in some contexts.
 
+## Immutable Properties on Mutable Document Types
+
+A document type either allows replaces (`documentsMutable: true`, the default) or freezes its documents entirely. Protocol version 14 adds a middle ground: the doctype-level `immutable` keyword lists top-level properties that are frozen at creation while the rest of the document stays replaceable.
+
+```json
+"post": {
+  "type": "object",
+  "documentsMutable": true,
+  "properties": {
+    "author": { "type": "string", "maxLength": 63, "position": 0 },
+    "body": { "type": "string", "maxLength": 500, "position": 1 }
+  },
+  "required": ["author", "body"],
+  "immutable": ["author"],
+  "additionalProperties": false
+}
+```
+
+The parser (generation 3, meta-schema v3) checks the list when a contract enters the chain:
+
+- Every entry names a declared top-level property. System properties (`$`-prefixed) are refused because the platform manages them, and nested paths are refused: list the containing object to freeze it whole, nested values included.
+- The list is only allowed when `documentsMutable` is true. On an immutable document type every property is already frozen.
+- On contract update the list may gain entries but never lose one (`DocumentTypeUpdateError`). Adding an entry invalidates no stored document; removing one would break the promise documents were created under. The schema compatibility differ strips the key, like `indices` and `required`, so `validate_update` v1 is the single judge.
+
+Enforcement lives in the replace action's state validation (generation 1). The action already records which top-level properties differ from the stored document in `changed_data_fields` (the same set that scopes `refersTo` re-validation), and any of them in the type's `immutable_fields()` fails the replace with `DocumentImmutablePropertyChangedError` (state code 40128). "Differ" covers a changed value, a property the stored document lacked, and a property the replace dropped. Transfers, price updates and purchases carry no property data and are unaffected.
+
+In Rust the list is `DocumentTypeV2Getters::immutable_fields()`. Earlier document type generations return an empty set.
+
 ## Rules and Guidelines
 
 **Do:**

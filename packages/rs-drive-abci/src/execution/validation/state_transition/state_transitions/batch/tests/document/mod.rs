@@ -1,6 +1,7 @@
 mod creation;
 mod deletion;
 mod dpns;
+mod immutable;
 mod index_only;
 mod keep_history;
 mod nft;
