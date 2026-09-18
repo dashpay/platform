@@ -24,6 +24,11 @@
 //! added as required with `requiredSince` equal to the version the update
 //! creates. Nested `required` arrays (under `/properties/<name>/required`)
 //! remain frozen by the differ.
+//!
+//! The top-level `immutable` key (protocol version 14) is stripped as well:
+//! the differ has no rule for it, and `validate_update` v1's
+//! `validate_immutable_fields_update` judges it (the list may grow, never
+//! shrink).
 
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
@@ -56,35 +61,50 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
     }
 });
 
-/// Strips the two top-level keys whose changes are validated by dedicated
-/// checks in `validate_update` v1 instead of the JSON diff: `indices`
-/// (index definitions compared by name) and `required`
+/// The document type's own top-level keys whose changes are validated by
+/// dedicated checks in `validate_update` v1 instead of the JSON diff:
+/// `indices` (index definitions compared by name), `required`
 /// (`validate_required_fields_update`, which admits new-property additions
-/// annotated with `requiredSince`). Only the document type's own top-level
-/// keys are removed; a nested object property's `required` array lives under
+/// annotated with `requiredSince`), and `immutable` together with
+/// `immutableAllowSetting` (`validate_immutable_fields_update`: the first may
+/// only grow, the second may only shrink except for newly immutable
+/// properties). The differ has no rule for the last three at all and would
+/// hard-error on any change to them.
+const TOP_LEVEL_VALIDATED_KEYS: [&str; 4] =
+    ["indices", "required", "immutable", "immutableAllowSetting"];
+
+/// Strips [`TOP_LEVEL_VALIDATED_KEYS`] from a document type schema before it
+/// is diffed. Only the document type's own top-level keys are removed; a
+/// nested object property's `required` array lives under
 /// `/properties/<name>/required` and stays governed by the differ's frozen
-/// `required` rule, as do properties named `indices` or `required`.
+/// `required` rule, as do properties named `indices`, `required` or
+/// `immutable`.
 fn without_top_level_validated_keys(schema: &JsonValue) -> Cow<'_, JsonValue> {
     match schema {
-        JsonValue::Object(map) if map.contains_key("indices") || map.contains_key("required") => {
+        JsonValue::Object(map)
+            if TOP_LEVEL_VALIDATED_KEYS
+                .iter()
+                .any(|key| map.contains_key(*key)) =>
+        {
             let mut map = map.clone();
-            map.remove("indices");
-            map.remove("required");
+            for key in TOP_LEVEL_VALIDATED_KEYS {
+                map.remove(key);
+            }
             Cow::Owned(JsonValue::Object(map))
         }
         _ => Cow::Borrowed(schema),
     }
 }
 
-/// Pairing invariant: stripping `indices` and top-level `required`
-/// unconditionally is only safe because every `PlatformVersion` that selects
-/// this generation (`validate_schema_compatibility: 1`) also selects a
-/// `validate_update` generation of at least 1
+/// Pairing invariant: stripping `indices`, top-level `required` and
+/// `immutable` unconditionally is only safe because every `PlatformVersion`
+/// that selects this generation (`validate_schema_compatibility: 1`) also
+/// selects a `validate_update` generation of at least 1
 /// (`dpp.validation.document_type.validate_update`), which rejects every
-/// real index change and every disallowed required-set change before this
-/// check runs. A future version table that bumps one without the other
-/// would let index or required changes bypass compatibility validation
-/// entirely.
+/// real index change, every disallowed required-set change and every
+/// shrinking of the immutable list before this check runs. A future version
+/// table that bumps one without the other would let those changes bypass
+/// compatibility validation entirely.
 pub(super) fn validate_schema_compatibility_v1(
     original_schema: &JsonValue,
     new_schema: &JsonValue,
@@ -157,6 +177,44 @@ mod tests {
         assert!(
             result.is_valid(),
             "an indices-only diff must be ignored, got {:?}",
+            result.errors
+        );
+    }
+
+    // The differ has no rule for `immutable`; a change to the list is judged
+    // by `validate_update` v1 and must be invisible here rather than a
+    // hard error.
+    #[test]
+    fn should_ignore_immutable_list_change() {
+        let platform_version = PlatformVersion::latest();
+
+        let original_schema = json!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0},
+                "b": {"type": "string", "position": 1},
+            },
+            "immutable": ["a"],
+            "additionalProperties": false,
+        });
+
+        let new_schema = json!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0},
+                "b": {"type": "string", "position": 1},
+            },
+            "immutable": ["a", "b"],
+            "immutableAllowSetting": ["b"],
+            "additionalProperties": false,
+        });
+
+        let result = validate_schema_compatibility(&original_schema, &new_schema, platform_version)
+            .expect("an immutable-only diff must not error");
+
+        assert!(
+            result.is_valid(),
+            "an immutable-only diff must be ignored, got {:?}",
             result.errors
         );
     }

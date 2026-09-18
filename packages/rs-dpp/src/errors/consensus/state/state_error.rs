@@ -63,6 +63,7 @@ use crate::consensus::state::identity::identity_public_key_already_exists_for_un
 use crate::consensus::state::identity::identity_public_key_already_expired_error::IdentityPublicKeyAlreadyExpiredError;
 use crate::consensus::state::identity::identity_public_key_budget_exceeded_error::IdentityPublicKeyBudgetExceededError;
 use crate::consensus::state::identity::identity_public_key_limit_not_raised_error::IdentityPublicKeyLimitNotRaisedError;
+use crate::consensus::state::document::document_immutable_property_changed_error::DocumentImmutablePropertyChangedError;
 use crate::consensus::state::identity::identity_public_key_limit_not_set_error::IdentityPublicKeyLimitNotSetError;
 use crate::consensus::state::identity::identity_to_freeze_does_not_exist_error::IdentityToFreezeDoesNotExistError;
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
@@ -442,6 +443,10 @@ pub enum StateError {
 
     #[error(transparent)]
     IdentityPublicKeyLimitNotRaisedError(IdentityPublicKeyLimitNotRaisedError),
+
+    // Immutable document properties (protocol version 14).
+    #[error(transparent)]
+    DocumentImmutablePropertyChangedError(DocumentImmutablePropertyChangedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -642,6 +647,17 @@ mod tests {
                 IdentityPublicKeyLimitNotRaisedError::new(1, KeyLimit::Expiry, 2, 3)
             )),
             108
+        );
+        // Immutable document properties (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentImmutablePropertyChangedError(
+                DocumentImmutablePropertyChangedError::new(
+                    identity_id,
+                    "post".to_string(),
+                    "author".to_string()
+                )
+            )),
+            109
         );
     }
 }

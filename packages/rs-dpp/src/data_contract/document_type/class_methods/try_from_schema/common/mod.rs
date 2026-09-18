@@ -1971,6 +1971,148 @@ pub(super) fn parse_index_only_keyword(schema: &Value) -> Result<bool, ProtocolE
         .unwrap_or(false))
 }
 
+/// Reads a doctype-level array of top-level property names (`immutable`, the
+/// properties frozen at document creation on a mutable type, or
+/// `immutableAllowSetting`, the frozen properties a replace may still set
+/// while absent) before the core parse consumes `schema`, same shape as
+/// [`parse_index_only_keyword`]. Only the generation-3 driver calls this;
+/// earlier generations ignore both keywords exactly as they ignore every
+/// doctype-level keyword they predate (their meta-schemas still reject them
+/// under `full_validation`).
+///
+/// Every entry must be a string. The meta-schema enforces that under full
+/// validation and a stored contract can only ever have passed it, so a
+/// non-string entry is a malformed schema on either path and is refused
+/// rather than silently dropped: dropping it would record a smaller set than
+/// the author declared.
+pub(super) fn parse_property_name_list_keyword(
+    schema: &Value,
+    name: &str,
+    keyword: &str,
+) -> Result<BTreeSet<String>, ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(BTreeSet::new());
+    };
+    let Some(value) = Value::get_optional_from_map(schema_map, keyword) else {
+        return Ok(BTreeSet::new());
+    };
+    let Value::Array(entries) = value else {
+        return Err(structure_error(format!(
+            "document type \"{name}\": `{keyword}` must be an array of top-level property names"
+        )));
+    };
+
+    entries
+        .iter()
+        .map(|entry| {
+            entry.as_text().map(str::to_owned).ok_or_else(|| {
+                structure_error(format!(
+                    "document type \"{name}\": every `{keyword}` entry must be a property name \
+                     (a string)"
+                ))
+            })
+        })
+        .collect()
+}
+
+/// Write the `immutable` and `immutableAllowSetting` property lists onto the
+/// parsed document type and, under full validation, check them against the
+/// rest of the type.
+///
+/// The checks are schema lints rather than storage-layout invariants: an
+/// entry naming an unknown property could never match a changed field, and a
+/// list on a non-mutable type is unreachable because replaces of such
+/// documents are refused before any property is compared. So, like the
+/// keep-history/delete check in the generation-3 driver, they only run for
+/// contracts entering the chain. Stored contracts bypass them, which keeps a
+/// later tightening of these rules from ever making a committed contract
+/// unreadable.
+///
+/// Entries are top-level property names only. A nested path is refused with
+/// a hint to list the containing object instead: the replace action compares
+/// top-level properties, so freezing an object freezes everything inside it.
+/// Every `immutableAllowSetting` entry must also be in `immutable`: the
+/// second list only relaxes the first (a frozen property may still be set
+/// while the stored document has no value for it), so on its own it means
+/// nothing.
+pub(super) fn apply_immutable_fields(
+    document_type: &mut DocumentTypeV2,
+    immutable_fields: BTreeSet<String>,
+    immutable_fields_allow_setting: BTreeSet<String>,
+    name: &str,
+    full_validation: bool,
+) -> Result<(), ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if full_validation {
+        if !immutable_fields.is_empty() && !document_type.documents_mutable {
+            return Err(structure_error(format!(
+                "document type \"{name}\" lists `immutable` properties but its documents are not \
+                 mutable (documentsMutable: false), so every property is already immutable; \
+                 remove the `immutable` list or set documentsMutable: true"
+            )));
+        }
+
+        for property in &immutable_fields {
+            if property.starts_with('$') {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists system property \"{property}\" as immutable: \
+                     system properties are managed by the platform and cannot be listed"
+                )));
+            }
+            if !document_type.properties.contains_key(property) {
+                let hint = if property.contains('.') {
+                    "; nested paths are not accepted, list the top-level property that contains \
+                     it to freeze it whole"
+                } else {
+                    ""
+                };
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" as immutable, but it is not a \
+                     top-level property of the document type{hint}"
+                )));
+            }
+            // A transient property is never stored, so the stored document
+            // always lacks it and any replace that supplies it counts as
+            // setting it. Frozen at "absent", it could never be written; if
+            // it is also required, no replace could ever pass at all.
+            if document_type.transient_fields.contains(property) {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" as both transient and \
+                     immutable: a transient property is never stored, so every replace that \
+                     supplies it would be refused as changing an immutable property; remove it \
+                     from one of the two lists"
+                )));
+            }
+        }
+
+        for property in &immutable_fields_allow_setting {
+            if !immutable_fields.contains(property) {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" in `immutableAllowSetting`, but \
+                     it is not in `immutable`: only an immutable property can be allowed to be \
+                     set while absent"
+                )));
+            }
+        }
+    }
+
+    document_type.immutable_fields = immutable_fields;
+    document_type.immutable_fields_allow_setting = immutable_fields_allow_setting;
+
+    Ok(())
+}
+
 /// Write the `indexOnly` flag onto the parsed document type, normalize each
 /// index's `terminal` (an omitted terminal defaults to `$ownerId`), and run
 /// the structural cross-checks the index-only on-disk layout depends on.

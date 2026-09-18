@@ -6,6 +6,7 @@ pub mod document_contest_index_mismatch_error;
 pub mod document_contest_not_joinable_error;
 pub mod document_contest_not_paid_for_error;
 pub mod document_contest_not_required_error;
+pub mod document_immutable_property_changed_error;
 pub mod document_incorrect_purchase_price_error;
 pub mod document_not_for_sale_error;
 pub mod document_not_found_error;

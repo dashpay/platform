@@ -124,6 +124,7 @@ use dpp::consensus::state::document::referenced_identity_key_disabled_error::Ref
 use dpp::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
 use dpp::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use dpp::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
+use dpp::consensus::state::document::document_immutable_property_changed_error::DocumentImmutablePropertyChangedError;
 use dpp::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
@@ -553,6 +554,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::IdentityPublicKeyLimitNotRaisedError(e) => {
             generic_consensus_error!(IdentityPublicKeyLimitNotRaisedError, e).into()
+        }
+        StateError::DocumentImmutablePropertyChangedError(e) => {
+            generic_consensus_error!(DocumentImmutablePropertyChangedError, e).into()
         }
     }
 }

@@ -250,6 +250,43 @@ pub const INITIAL_REVISION: u64 = 1;
 
 Revision 0 is never used for active documents. This allows `0` to serve as a sentinel value meaning "no revision" in some contexts.
 
+## Immutable Properties on Mutable Document Types
+
+A document type either allows replaces (`documentsMutable: true`, the default) or freezes its documents entirely. Protocol version 14 adds a middle ground: the doctype-level `immutable` keyword lists top-level properties that are frozen at creation while the rest of the document stays replaceable.
+
+```json
+"post": {
+  "type": "object",
+  "documentsMutable": true,
+  "properties": {
+    "author": { "type": "string", "maxLength": 63, "position": 0 },
+    "body": { "type": "string", "maxLength": 500, "position": 1 }
+  },
+  "required": ["author", "body"],
+  "immutable": ["author"],
+  "additionalProperties": false
+}
+```
+
+A second list, `immutableAllowSetting`, relaxes the first for optional properties that are not known at creation: a property listed there may still be set by a replace while the stored document has no value for it, and is frozen from then on (it can neither change nor be removed). Every entry must also be in `immutable`.
+
+```json
+"immutable": ["author", "mood"],
+"immutableAllowSetting": ["mood"]
+```
+
+The parser (generation 3, meta-schema v3) checks both lists when a contract enters the chain:
+
+- Every `immutable` entry names a declared top-level property. System properties (`$`-prefixed) are refused because the platform manages them, and nested paths are refused: list the containing object to freeze it whole, nested values included. A `transient` property is refused too: it is never stored, so once frozen it could never be written, and combined with `required` no replace could pass at all.
+- The replace compares stored and supplied values by underlying data, recursing into objects regardless of member order and into arrays position by position, with integer widths ignored. Storage reorders object members by schema position and narrows integers, so a byte-for-byte comparison would flag an untouched object as changed.
+- The lists are only allowed when `documentsMutable` is true. On an immutable document type every property is already frozen.
+- Every `immutableAllowSetting` entry is also in `immutable`; on its own the allowance means nothing.
+- On contract update `immutable` may gain entries but never lose one, and `immutableAllowSetting` may lose entries but only gain one for a property that becomes immutable in the same update (`DocumentTypeUpdateError` otherwise). Each rule keeps the promise documents were created under: nothing frozen becomes editable, and nothing already frozen starts accepting a late set. The schema compatibility differ strips both keys, like `indices` and `required`, so `validate_update` v1 is the single judge.
+
+Enforcement lives in the replace action's state validation (generation 1). The action already records which top-level properties differ from the stored document in `changed_data_fields` (the same set that scopes `refersTo` re-validation), and alongside it which of those the stored document had no value for (`added_data_fields`). A changed property in the type's `immutable_fields()` fails the replace with `DocumentImmutablePropertyChangedError` (state code 40128) unless it is in `immutable_fields_allow_setting()` and was absent before. "Differ" covers a changed value, a property the stored document lacked, and a property the replace dropped. Transfers, price updates and purchases carry no property data and are unaffected.
+
+In Rust the lists are `DocumentTypeV2Getters::immutable_fields()` and `immutable_fields_allow_setting()`. Earlier document type generations return empty sets.
+
 ## Rules and Guidelines
 
 **Do:**
