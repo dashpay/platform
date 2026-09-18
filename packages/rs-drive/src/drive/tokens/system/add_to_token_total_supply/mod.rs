@@ -1,5 +1,5 @@
 mod v0;
-mod v1;
+pub(in crate::drive::tokens::system) mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;

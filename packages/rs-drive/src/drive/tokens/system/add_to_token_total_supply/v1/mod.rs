@@ -17,7 +17,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 /// The largest supply a token can hold: its leaf is a sum item.
-const MAX_TOKEN_SUPPLY: TokenAmount = i64::MAX as TokenAmount;
+pub(in crate::drive::tokens::system) const MAX_TOKEN_SUPPLY: TokenAmount = i64::MAX as TokenAmount;
 
 impl Drive {
     /// Generation 1: the same supply write as v0, plus the issuer's lifecycle rollup moved by

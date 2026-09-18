@@ -1,5 +1,6 @@
 use crate::drive::balances::{total_tokens_root_supply_path, total_tokens_root_supply_path_vec};
 use crate::drive::tokens::lifecycle::add_to_contract_issued_supply::IssuedSupplyChange;
+use crate::drive::tokens::system::add_to_token_total_supply::v1::MAX_TOKEN_SUPPLY;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -128,6 +129,18 @@ impl Drive {
                 ))),
             )?;
 
+            // The supply leaf is a sum item, so a genuine supply never exceeds `i64::MAX`.
+            // The reader widens a negative sum item with `as u64`, which wraps; refuse it
+            // here the way the add side does instead of subtracting from the wrapped value
+            // and writing a negative supply back.
+            if total_token_supply_in_platform > MAX_TOKEN_SUPPLY {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                    "total supply {} of token {} is above the sum item ceiling",
+                    total_token_supply_in_platform,
+                    Identifier::from(token_id)
+                ))));
+            }
+
             total_token_supply_in_platform.checked_sub(amount)
                 .ok_or(Error::Drive(DriveError::CorruptedDriveState(
                     format!("trying to subtract an amount {} from current amount {} that would underflow total supply for token {}", amount, total_token_supply_in_platform, Identifier::from(token_id)),
@@ -161,6 +174,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::balances::total_tokens_root_supply_path;
     use crate::drive::Drive;
     use crate::error::drive::DriveError;
     use crate::error::Error;
@@ -169,6 +183,7 @@ mod tests {
     use dpp::prelude::Identifier;
     use dpp::tokens::contract_lifecycle::v0::ContractTokenLifecycleV0Accessors;
     use dpp::version::PlatformVersion;
+    use grovedb::Element;
 
     fn setup_token_with_supply(initial_supply: u64) -> (Drive, Identifier, [u8; 32]) {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -300,6 +315,45 @@ mod tests {
                 .expect("expected to fetch supply"),
             Some(100)
         );
+    }
+
+    #[test]
+    fn should_refuse_a_supply_above_the_sum_item_ceiling_instead_of_writing_a_negative_one() {
+        let (drive, contract_id, token_id) = setup_token_with_supply(100);
+        let platform_version = PlatformVersion::latest();
+
+        // A negative supply leaf cannot be reached through Drive; write one directly to
+        // stand in for a corrupted state. The reader widens it to a value above the ceiling.
+        drive
+            .grove
+            .insert(
+                &total_tokens_root_supply_path(),
+                &token_id,
+                Element::new_sum_item(-5),
+                None,
+                None,
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected to overwrite the supply leaf");
+
+        let result = drive.remove_from_token_total_supply(
+            token_id,
+            1,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedDriveState(ref message))) if message.contains("above the sum item ceiling")
+            ),
+            "expected the ceiling refusal, got {result:?}"
+        );
+        assert_eq!(rollup(&drive, contract_id), 100);
     }
 
     #[test]
