@@ -1,11 +1,15 @@
 pub mod contract_bounds;
 pub mod document;
+pub mod document_type_immutability;
 pub mod document_type_reference;
 pub mod model;
 pub mod transitions;
 
 pub use contract_bounds::ContractBoundsWasm;
 pub use document::DocumentWasm;
+pub use document_type_immutability::{
+    DocumentTypeImmutablePropertiesJs, DocumentTypeImmutablePropertiesMapJs,
+};
 pub use document_type_reference::{
     DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs,
 };

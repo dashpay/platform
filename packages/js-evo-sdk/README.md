@@ -16,6 +16,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Facades](#facades)
 - [Ranked queries](#ranked-queries)
 - [Document references (`refersTo`)](#document-references-refersto)
+- [Immutable properties (`immutable`)](#immutable-properties-immutable)
 - [Chained queries (provable semi-join)](#chained-queries-provable-semi-join)
 - [Composite queries (a page plus its sub-queries)](#composite-queries-a-page-plus-its-sub-queries)
 - [Contributing](#contributing)
@@ -212,6 +213,38 @@ try {
 } catch (e) {
   if (e.code === DocumentReferenceErrorCode.ReferencedIdentityKeyDisabled) {
     // the referenced key exists but was disabled
+  }
+}
+```
+
+## Immutable properties (`immutable`)
+
+From protocol version 14 a mutable document type can freeze some of its top-level properties at creation with the doctype-level `immutable` list, while the rest of the document stays replaceable. A second list, `immutableAllowSetting`, names the frozen properties a replace may still set while the stored document has no value for them; once present they are frozen too. Both are consensus-enforced on every replace, and a fetched contract can be asked what it declares:
+
+```ts
+const contract = await sdk.contracts.fetch(contractId);
+
+contract.documentTypeImmutableProperties('post');
+// { immutable: ['author', 'mood'], immutableAllowSetting: ['mood'] }
+// Both arrays hold top-level property names, sorted. Listing an object
+// property freezes it whole, nested values included.
+
+// Every document type that freezes at least one property.
+contract.documentImmutableProperties;
+```
+
+The lists are only parsed from protocol version 14 onward; a contract deserialized against an earlier version reports empty lists even when its raw schema carries the keywords.
+
+A replace that changes, adds or removes a frozen property is rejected, and the consensus code reaches JS as `error.code`:
+
+```ts
+import { DocumentImmutabilityErrorCode } from '@dashevo/evo-sdk';
+
+try {
+  await sdk.documents.replace({ document, identityKey, signer });
+} catch (e) {
+  if (e.code === DocumentImmutabilityErrorCode.DocumentImmutablePropertyChanged) {
+    // the replace touched a property the document type freezes (code 40128)
   }
 }
 ```
