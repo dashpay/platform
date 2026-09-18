@@ -163,7 +163,7 @@ for each state transition. There are eight variants:
 
 | Variant | Fee Source | Used By |
 |---|---|---|
-| `Paid` | Identity credit balance | Most identity-based transitions |
+| `Paid` | Identity credit balance, or the contract owner's for a sponsored document batch (below) | Most identity-based transitions |
 | `PaidFromAssetLock` | Asset lock transaction value | IdentityCreate, IdentityTopUp |
 | `PaidFromAssetLockWithoutIdentity` | Asset lock (fixed amount) | PartiallyUseAssetLock |
 | `PaidFromAssetLockToPool` | Asset lock value; fee routed to the fee pools | ShieldFromAssetLock |
@@ -175,6 +175,37 @@ for each state transition. There are eight variants:
 Each variant carries the operations to execute and enough context for the fee
 validation and execution pipeline to deduct the correct amount from the correct
 source.
+
+### Gas paid by the contract owner
+
+From protocol version 14 a document action that is paid for with a token can
+have its gas (the storage and processing fee) paid by the contract owner. The
+document type's token cost offers it (`gasFeesPaidBy`: `DocumentOwner`,
+`ContractOwner` or `PreferContractOwner`) and the transition's
+`$tokenPaymentInfo` asks for it with the same enum; `GasFeesPaidBy::resolve`
+in `rs-dpp` names the payer. A document owner can always opt out, can always
+state a preference, and can insist (`ContractOwner`) only on a document type
+that commits to paying. Only a token-paid action can be sponsored, so every
+sponsored transition is backed by a token the contract owner chose to hand out.
+
+The batch transformer (v2) resolves one payer for the whole batch, reads the
+contract owner's balance into the action (`ResolvedGasSponsor`, billed to the
+batch) and the execution event carries it in `Paid.gas_sponsor`. Fee
+validation v1 judges the fee against the sponsor's balance and the signer only
+has to fund `removed_balance`; when the sponsor's balance falls short a batch
+that insists is refused unpaid (`GasSponsorInsufficientBalanceError`, 40222)
+and a batch that prefers falls back to the signer's balance. Execution v1 then
+charges whoever fee validation admitted. A batch that fails validation is never
+sponsored: its signer pays for the work that ran, and a request the document
+type does not offer is a paid rejection (`GasFeesPaidByNotAllowedError`,
+40129). Storage refunds still go to whoever paid the storage originally, so a
+sponsored document refunds its owner when it is deleted: the sponsor bounds
+that exposure through the tokens it hands out.
+
+The signer's minimum balance pre-check runs before the contracts are loaded;
+its v1 asks a batch that requests sponsorship for its principal only
+(purchases, contest collateral) and leaves the gas to fee validation, so an
+identity without credits can act on tokens it was given.
 
 ## FeeResult
 

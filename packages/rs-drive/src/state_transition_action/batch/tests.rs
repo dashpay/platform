@@ -7,7 +7,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use crate::state_transition_action::batch::GasPayer;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionInfo;
@@ -130,6 +132,7 @@ fn test_document_base_v0() -> DocumentBaseTransitionActionV0 {
         data_contract: test_dpns_contract_info(),
         token_cost: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
+        contract_gas_fees_paid_by: GasFeesPaidBy::default(),
     }
 }
 
@@ -2932,6 +2935,7 @@ fn stamp_test_create_action(protocol_version: u32) -> DocumentCreateTransitionAc
         data_contract: stamp_test_contract_info(protocol_version),
         token_cost: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
+        contract_gas_fees_paid_by: GasFeesPaidBy::default(),
     });
     DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0 {
         base,
@@ -2951,6 +2955,7 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         data_contract: stamp_test_contract_info(protocol_version),
         token_cost: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
+        contract_gas_fees_paid_by: GasFeesPaidBy::default(),
     });
     DocumentReplaceTransitionAction::V0(DocumentReplaceTransitionActionV0 {
         base,
@@ -3041,4 +3046,151 @@ fn should_stamp_fetched_contract_version_on_replace_conversion() {
         Document::try_from_owned_replace_transition_action(action, owner_id, platform_version)
             .expect("owned replace conversion");
     assert_eq!(owned.contract_version(), Some(STAMP_TEST_CONTRACT_VERSION));
+}
+
+// ============================================================
+// 24. Gas payer resolution (protocol version 14)
+// ============================================================
+
+/// A creation on `contract` asking `requested` for its gas, on a document type offering
+/// `offered`. The fixture's owner differs per call, so tests share one contract.
+fn create_asking(
+    contract: &Arc<DataContractFetchInfo>,
+    requested: GasFeesPaidBy,
+    offered: GasFeesPaidBy,
+) -> BatchedTransitionAction {
+    let mut base = test_document_base_v0();
+    base.data_contract = contract.clone();
+    base.gas_fees_paid_by = requested;
+    base.contract_gas_fees_paid_by = offered;
+    BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(
+        DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0 {
+            base: DocumentBaseTransitionAction::V0(base),
+            ..make_create_v0()
+        }),
+    ))
+}
+
+fn batch_of(transitions: Vec<BatchedTransitionAction>) -> BatchTransitionAction {
+    BatchTransitionAction::V0(BatchTransitionActionV0 {
+        transitions,
+        ..make_batch_v0()
+    })
+}
+
+#[test]
+fn should_resolve_an_empty_batch_and_an_unsponsored_one_to_the_document_owner() {
+    let contract = test_dpns_contract_info();
+    assert_eq!(
+        batch_of(vec![]).resolve_gas_payer(),
+        Ok(GasPayer::DocumentOwner)
+    );
+    // An offer the transition does not take up
+    assert_eq!(
+        batch_of(vec![create_asking(
+            &contract,
+            GasFeesPaidBy::DocumentOwner,
+            GasFeesPaidBy::ContractOwner
+        )])
+        .resolve_gas_payer(),
+        Ok(GasPayer::DocumentOwner)
+    );
+    // A preference the document type does not offer
+    assert_eq!(
+        batch_of(vec![create_asking(
+            &contract,
+            GasFeesPaidBy::PreferContractOwner,
+            GasFeesPaidBy::DocumentOwner
+        )])
+        .resolve_gas_payer(),
+        Ok(GasPayer::DocumentOwner)
+    );
+}
+
+#[test]
+fn should_name_the_contract_owner_with_the_strictness_the_batch_asked_for() {
+    let contract = test_dpns_contract_info();
+    let contract_owner = contract.contract.owner_id();
+    assert_eq!(
+        batch_of(vec![create_asking(
+            &contract,
+            GasFeesPaidBy::PreferContractOwner,
+            GasFeesPaidBy::ContractOwner
+        )])
+        .resolve_gas_payer(),
+        Ok(GasPayer::ContractOwner {
+            identity_id: contract_owner,
+            strict: false
+        })
+    );
+    assert_eq!(
+        batch_of(vec![create_asking(
+            &contract,
+            GasFeesPaidBy::ContractOwner,
+            GasFeesPaidBy::ContractOwner
+        )])
+        .resolve_gas_payer(),
+        Ok(GasPayer::ContractOwner {
+            identity_id: contract_owner,
+            strict: true
+        })
+    );
+    // One insisting transition makes the whole batch insist
+    assert_eq!(
+        batch_of(vec![
+            create_asking(
+                &contract,
+                GasFeesPaidBy::PreferContractOwner,
+                GasFeesPaidBy::ContractOwner
+            ),
+            create_asking(
+                &contract,
+                GasFeesPaidBy::ContractOwner,
+                GasFeesPaidBy::ContractOwner
+            ),
+        ])
+        .resolve_gas_payer(),
+        Ok(GasPayer::ContractOwner {
+            identity_id: contract_owner,
+            strict: true
+        })
+    );
+}
+
+#[test]
+fn should_refuse_an_insistence_the_document_type_does_not_offer() {
+    let contract = test_dpns_contract_info();
+    for offered in [
+        GasFeesPaidBy::DocumentOwner,
+        GasFeesPaidBy::PreferContractOwner,
+    ] {
+        let error = batch_of(vec![create_asking(
+            &contract,
+            GasFeesPaidBy::ContractOwner,
+            offered,
+        )])
+        .resolve_gas_payer()
+        .expect_err("expected the insistence to be refused");
+        assert_eq!(error.code(), 40129);
+    }
+}
+
+#[test]
+fn should_refuse_a_batch_that_names_two_payers() {
+    let contract = test_dpns_contract_info();
+    let error = batch_of(vec![
+        create_asking(
+            &contract,
+            GasFeesPaidBy::PreferContractOwner,
+            GasFeesPaidBy::ContractOwner,
+        ),
+        create_asking(
+            &contract,
+            GasFeesPaidBy::DocumentOwner,
+            GasFeesPaidBy::ContractOwner,
+        ),
+    ])
+    .resolve_gas_payer()
+    .expect_err("expected the mixed batch to be refused");
+    assert_eq!(error.code(), 40130);
 }

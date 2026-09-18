@@ -21,6 +21,7 @@ pub mod missing_identity_public_key_ids_error;
 pub mod missing_transfer_key_error;
 pub mod no_transfer_key_for_core_withdrawal_available_error;
 
+pub mod gas_sponsor_insufficient_balance_error;
 pub mod identity_for_token_configuration_not_found_error;
 pub mod identity_to_freeze_does_not_exist_error;
 mod recipient_identity_does_not_exist_error;

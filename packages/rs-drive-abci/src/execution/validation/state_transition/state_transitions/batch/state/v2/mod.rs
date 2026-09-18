@@ -8,14 +8,19 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::BatchTransition;
-use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::state_transition::{StateTransitionIdentitySigned, StateTransitionOwned};
 use drive::grovedb::TransactionArg;
-use drive::state_transition_action::batch::ResolvedContractGroupMemberships;
+use drive::state_transition_action::batch::{
+    GasPayer, ResolvedContractGroupMemberships, ResolvedGasSponsor,
+};
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeSet;
 
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformStateRef;
@@ -107,6 +112,42 @@ impl DocumentsBatchStateTransitionStateValidationV2 for BatchTransition {
                     contract_id,
                     ResolvedContractGroupMemberships { memberships, fee },
                 );
+            }
+        }
+
+        // A batch whose every transition asks the contract owner to pay its gas, on a document
+        // type that offers it, names that contract owner its sponsor. Their balance is read here,
+        // billed to the batch, and judged by fee validation against the fee. The batch's own
+        // signer is never their own sponsor. A batch that already has errors, or asks for a payer
+        // the contracts do not offer, resolves nothing: advanced structure validation raises the
+        // latter, and the signer pays for the former.
+        if let Some(action) = validation_result
+            .data
+            .as_mut()
+            .filter(|_| validation_result.errors.is_empty())
+        {
+            if let Ok(GasPayer::ContractOwner {
+                identity_id,
+                strict,
+            }) = action.resolve_gas_payer()
+            {
+                if identity_id != self.owner_id() {
+                    let platform_version = platform.state.current_platform_version()?;
+                    let (balance, fee) = platform.drive.fetch_identity_balance_with_costs(
+                        identity_id.to_buffer(),
+                        block_info,
+                        true,
+                        tx,
+                        platform_version,
+                    )?;
+                    execution_context
+                        .add_operation(ValidationOperation::PrecalculatedOperation(fee));
+                    action.set_gas_sponsor(Some(ResolvedGasSponsor {
+                        identity_id,
+                        balance: balance.unwrap_or_default(),
+                        strict,
+                    }));
+                }
             }
         }
 

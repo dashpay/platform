@@ -1,9 +1,11 @@
+mod gas_fees_paid_by_not_allowed_error;
 mod identity_does_not_have_enough_token_balance_error;
 mod identity_has_not_agreed_to_pay_required_token_amount_error;
 mod identity_token_account_already_frozen_error;
 mod identity_token_account_frozen_error;
 mod identity_token_account_not_frozen_error;
 mod identity_trying_to_pay_with_wrong_token_error;
+mod inconsistent_gas_fees_paid_by_in_batch_error;
 mod invalid_group_position_error;
 mod invalid_token_claim_no_current_rewards;
 mod invalid_token_claim_property_mismatch;
@@ -26,12 +28,14 @@ mod token_setting_max_supply_to_less_than_current_supply_error;
 mod token_transfer_recipient_identity_not_exist_error;
 mod unauthorized_token_action_error;
 
+pub use gas_fees_paid_by_not_allowed_error::*;
 pub use identity_does_not_have_enough_token_balance_error::*;
 pub use identity_has_not_agreed_to_pay_required_token_amount_error::*;
 pub use identity_token_account_already_frozen_error::*;
 pub use identity_token_account_frozen_error::*;
 pub use identity_token_account_not_frozen_error::*;
 pub use identity_trying_to_pay_with_wrong_token_error::*;
+pub use inconsistent_gas_fees_paid_by_in_batch_error::*;
 pub use invalid_group_position_error::*;
 pub use invalid_token_claim_no_current_rewards::*;
 pub use invalid_token_claim_property_mismatch::*;

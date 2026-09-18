@@ -70,6 +70,8 @@ pub struct DocumentActionTokenCost {
     pub token_amount: TokenAmount,
     /// The amount
     pub effect: DocumentActionTokenEffect,
-    /// Who is paying for gas fees for this action
+    /// Who the contract owner offers to have pay the gas of this action; the transition's token
+    /// payment info asks with the same enum and `GasFeesPaidBy::resolve` names the payer
+    /// (acted on from protocol version 14)
     pub gas_fees_paid_by: GasFeesPaidBy,
 }

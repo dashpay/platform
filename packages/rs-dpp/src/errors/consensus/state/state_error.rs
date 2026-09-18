@@ -65,6 +65,8 @@ use crate::consensus::state::identity::identity_public_key_budget_exceeded_error
 use crate::consensus::state::identity::identity_public_key_limit_not_raised_error::IdentityPublicKeyLimitNotRaisedError;
 use crate::consensus::state::document::document_immutable_property_changed_error::DocumentImmutablePropertyChangedError;
 use crate::consensus::state::identity::identity_public_key_limit_not_set_error::IdentityPublicKeyLimitNotSetError;
+use crate::consensus::state::identity::gas_sponsor_insufficient_balance_error::GasSponsorInsufficientBalanceError;
+use crate::consensus::state::token::{GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
 use crate::consensus::state::identity::identity_to_freeze_does_not_exist_error::IdentityToFreezeDoesNotExistError;
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
 use crate::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
@@ -447,6 +449,16 @@ pub enum StateError {
     // Immutable document properties (protocol version 14).
     #[error(transparent)]
     DocumentImmutablePropertyChangedError(DocumentImmutablePropertyChangedError),
+
+    // Gas paid by the contract owner (protocol version 14).
+    #[error(transparent)]
+    GasFeesPaidByNotAllowedError(GasFeesPaidByNotAllowedError),
+
+    #[error(transparent)]
+    InconsistentGasFeesPaidByInBatchError(InconsistentGasFeesPaidByInBatchError),
+
+    #[error(transparent)]
+    GasSponsorInsufficientBalanceError(GasSponsorInsufficientBalanceError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -459,6 +471,7 @@ impl From<StateError> for ConsensusError {
 mod tests {
     use super::*;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
+    use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use platform_value::Identifier;
 
     /// `StateError` is encoded by variant position, so inserting a variant
@@ -658,6 +671,30 @@ mod tests {
                 )
             )),
             109
+        );
+        // Gas paid by the contract owner (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::GasFeesPaidByNotAllowedError(
+                GasFeesPaidByNotAllowedError::new(
+                    "post".to_string(),
+                    "create".to_string(),
+                    GasFeesPaidBy::ContractOwner,
+                    GasFeesPaidBy::DocumentOwner,
+                )
+            )),
+            110
+        );
+        assert_eq!(
+            discriminant_of(StateError::InconsistentGasFeesPaidByInBatchError(
+                InconsistentGasFeesPaidByInBatchError::new(Some(identity_id), None)
+            )),
+            111
+        );
+        assert_eq!(
+            discriminant_of(StateError::GasSponsorInsufficientBalanceError(
+                GasSponsorInsufficientBalanceError::new(identity_id, 1, 2)
+            )),
+            112
         );
     }
 }

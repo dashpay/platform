@@ -54,9 +54,32 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             StateTransition::IdentityCreditWithdrawal(st) => st
                 .validate_estimated_fee(balance, platform_version)
                 .map_err(Error::Protocol),
-            StateTransition::Batch(st) => st
-                .validate_estimated_fee(balance, platform_version)
-                .map_err(Error::Protocol),
+            StateTransition::Batch(st) => match platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .identity_minimum_balance_pre_check
+            {
+                0 => st
+                    .validate_estimated_fee(balance, platform_version)
+                    .map_err(Error::Protocol),
+                // A batch asking the contract owner to pay its gas cannot be judged before its
+                // contracts are loaded: the signer only has to fund the principal here, and fee
+                // validation judges the gas against whoever ends up paying it.
+                1 if st.requests_gas_sponsorship() => st
+                    .validate_estimated_principal(balance)
+                    .map_err(Error::Protocol),
+                1 => st
+                    .validate_estimated_fee(balance, platform_version)
+                    .map_err(Error::Protocol),
+                version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                    method: "documents batch transition: identity minimum balance pre check"
+                        .to_string(),
+                    known_versions: vec![0, 1],
+                    received: version,
+                })),
+            },
             StateTransition::IdentityCreditTransferToAddresses(st) => st
                 .validate_estimated_fee(balance, platform_version)
                 .map_err(Error::Protocol),
