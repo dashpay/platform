@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 /// Estimated serialized size of a lifecycle record: the largest `u128` rollup, a wipe marker
 /// with two `u64` fields and the version discriminants, all varint encoded.
-pub const ESTIMATED_TOKEN_CONTRACT_LIFECYCLE_SIZE_BYTES: u32 = 40;
+pub(crate) const ESTIMATED_TOKEN_CONTRACT_LIFECYCLE_SIZE_BYTES: u32 = 40;
 
 impl Drive {
     /// Adds the layer estimation for writes under the token contract lifecycle ledger.
