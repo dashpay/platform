@@ -20,12 +20,28 @@ use dash_sdk::RequestSettings;
 use dashcore::hashes::Hash;
 use dashcore::{Block, BlockHash, Txid};
 
+/// What a header store answered for one height.
+///
+/// "No header there" and "the store could not be read" are different facts:
+/// the first says the chain has nothing at that height, the second says
+/// nothing at all. Only the first may be treated as evidence.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum HeaderLookup {
+    /// The store holds this header at that height.
+    Found(BlockHash),
+    /// The store is readable and holds no header at that height.
+    Absent,
+    /// The store could not be read.
+    Unreadable(String),
+    /// There is no header store to ask.
+    NoSource,
+}
+
 /// Source of SPV-verified block headers, by height.
 #[async_trait]
 pub(crate) trait BlockHeaderSource: Send + Sync {
-    /// Hash of the stored header at `height`, or `None` when the store does
-    /// not hold it.
-    async fn header_hash_at(&self, height: u32) -> Option<BlockHash>;
+    /// What the store holds at `height`.
+    async fn header_hash_at(&self, height: u32) -> HeaderLookup;
 }
 
 /// Where a lookup placed a transaction.
@@ -62,9 +78,9 @@ pub(crate) trait MinedHeightLocator: Send + Sync {
     /// Where `txid` was mined, as far as this locator can establish.
     async fn locate(&self, txid: &Txid) -> Located;
 
-    /// Hash of the SPV header this locator verifies against at `height`, or
-    /// `None` when it has no such header.
-    async fn header_hash_at(&self, height: u32) -> Option<BlockHash>;
+    /// What the SPV header store this locator verifies against holds at
+    /// `height`.
+    async fn header_hash_at(&self, height: u32) -> HeaderLookup;
 }
 
 /// Locator for managers built without a DAPI + SPV pair. Answers
@@ -77,8 +93,8 @@ impl MinedHeightLocator for NoMinedHeightLocator {
         Located::Unavailable("no mined-height locator configured".to_string())
     }
 
-    async fn header_hash_at(&self, _height: u32) -> Option<BlockHash> {
-        None
+    async fn header_hash_at(&self, _height: u32) -> HeaderLookup {
+        HeaderLookup::NoSource
     }
 }
 
@@ -187,7 +203,18 @@ impl MinedHeightLocator for DapiSpvLocator {
             Err(e) => return Located::Unavailable(e),
         };
         let spv_hash = if placement.height > 0 {
-            self.headers.header_hash_at(placement.height).await
+            match self.headers.header_hash_at(placement.height).await {
+                HeaderLookup::Found(hash) => Some(hash),
+                HeaderLookup::Absent => None,
+                // Nothing was established, so nothing may be concluded about
+                // DAPI's placement — and no block is worth fetching for it.
+                HeaderLookup::Unreadable(reason) => {
+                    return Located::Unavailable(format!("SPV header read failed: {reason}"))
+                }
+                HeaderLookup::NoSource => {
+                    return Located::Unavailable("no SPV header source".to_string())
+                }
+            }
         } else {
             None
         };
@@ -226,7 +253,7 @@ impl MinedHeightLocator for DapiSpvLocator {
         }
     }
 
-    async fn header_hash_at(&self, height: u32) -> Option<BlockHash> {
+    async fn header_hash_at(&self, height: u32) -> HeaderLookup {
         self.headers.header_hash_at(height).await
     }
 }
@@ -583,13 +610,13 @@ mod tests {
         }
     }
 
-    /// An SPV header store holding `hash` at every height.
-    struct FakeHeaders(Option<BlockHash>);
+    /// An SPV header store answering the same way at every height.
+    struct FakeHeaders(HeaderLookup);
 
     #[async_trait]
     impl BlockHeaderSource for FakeHeaders {
-        async fn header_hash_at(&self, _height: u32) -> Option<BlockHash> {
-            self.0
+        async fn header_hash_at(&self, _height: u32) -> HeaderLookup {
+            self.0.clone()
         }
     }
 
@@ -601,9 +628,19 @@ mod tests {
         }))
     }
 
-    /// A locator over `core` with the SPV header store holding `spv_hash`.
+    /// A locator over `core` with the SPV header store holding `spv_hash`,
+    /// or holding nothing when it is `None`.
     fn locator(core: Arc<FakeCoreBlockSource>, spv_hash: Option<BlockHash>) -> DapiSpvLocator {
-        DapiSpvLocator::with_core_source(core, Arc::new(FakeHeaders(spv_hash)))
+        let lookup = spv_hash.map_or(HeaderLookup::Absent, HeaderLookup::Found);
+        locator_with_headers(core, lookup)
+    }
+
+    /// A locator over `core` whose header store answers `lookup`.
+    fn locator_with_headers(
+        core: Arc<FakeCoreBlockSource>,
+        lookup: HeaderLookup,
+    ) -> DapiSpvLocator {
+        DapiSpvLocator::with_core_source(core, Arc::new(FakeHeaders(lookup)))
     }
 
     /// `Mined` only comes back after the block proved to contain the tx.
@@ -697,6 +734,28 @@ mod tests {
     async fn locator_exposes_the_spv_header_hash() {
         let core = FakeCoreBlockSource::new(Ok(None), Ok(None));
         let locator = locator(core, Some(hash(3)));
-        assert_eq!(locator.header_hash_at(5).await, Some(hash(3)));
+        assert_eq!(
+            locator.header_hash_at(5).await,
+            HeaderLookup::Found(hash(3))
+        );
+    }
+
+    /// An unreadable header store makes the lookup unavailable rather than
+    /// "no such header", and no block is fetched on the strength of it.
+    #[tokio::test]
+    async fn unreadable_header_makes_the_lookup_unavailable() {
+        let block = genesis();
+        let core = FakeCoreBlockSource::new(placed_in(&block), Ok(Some(block.clone())));
+        let located = locator_with_headers(
+            Arc::clone(&core),
+            HeaderLookup::Unreadable("disk error".to_string()),
+        )
+        .locate(&block.txdata[0].txid())
+        .await;
+        assert_eq!(
+            located,
+            Located::Unavailable("SPV header read failed: disk error".to_string())
+        );
+        assert_eq!(core.block_calls(), 0);
     }
 }

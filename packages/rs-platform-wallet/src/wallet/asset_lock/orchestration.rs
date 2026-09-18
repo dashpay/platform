@@ -528,6 +528,45 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point))
     }
 
+    /// Rebuild a ChainLock proof for a lock whose IS-lock never propagated,
+    /// **persist it**, and hand back the proof with the derivation path the
+    /// caller needs to sign.
+    ///
+    /// The persist is the point. Without it the row stays `Broadcast` with no
+    /// proof, and the next resume of the same lock re-enters the record-only
+    /// [`wait_for_proof`](Self::wait_for_proof) that timed out in the first
+    /// place: with `cl_wait = None` that wait runs its full bound and the
+    /// operation ends in `TransactionBroadcastUnconfirmed` instead of using
+    /// the proof this call already established.
+    ///
+    /// Mirrors what the stale-IS-proof (10513) path does after its own
+    /// upgrade: advance the row to `ChainLocked` carrying the proof, queue the
+    /// changeset, then resume for the path.
+    ///
+    /// Only the shielded fund path takes this fallback today, so it is
+    /// `shielded`-gated to avoid a dead-code warning without that feature.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn resolve_chain_proof_after_is_timeout(
+        &self,
+        out_point: &OutPoint,
+        cl_wait: Option<Duration>,
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
+        let chain_proof = self.upgrade_to_chain_lock_proof(out_point, cl_wait).await?;
+        let cs = self
+            .advance_asset_lock_status(
+                out_point,
+                crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+                Some(chain_proof.clone()),
+            )
+            .await?;
+        self.queue_asset_lock_changeset(cs);
+
+        // The row now carries the proof, so this resume takes the
+        // already-final arm rather than waiting for one.
+        let (_, path) = self.resume_asset_lock(out_point, cl_wait).await?;
+        Ok((chain_proof, path))
+    }
+
     /// Resolve an [`AssetLockFunding`] to a concrete proof + path +
     /// (optional) tracked outpoint, capturing the IS-lock timeout case
     /// as a structured outcome so the caller can drive a CL retry.
