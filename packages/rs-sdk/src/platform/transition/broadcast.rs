@@ -33,7 +33,7 @@ use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestS
 use std::future::Future;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use tracing::{info, trace, warn};
+use tracing::{debug, trace, warn};
 
 const DPNS_REGISTRATION_BROADCAST_RETRIES: usize = 2;
 
@@ -328,7 +328,7 @@ where
                     .fetch_add(sent, Ordering::Relaxed)
                     .saturating_add(sent);
                 match &result {
-                    Ok(response) => info!(
+                    Ok(response) => debug!(
                         stage,
                         transaction_id,
                         node = %response.address,
