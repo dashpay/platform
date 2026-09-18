@@ -12,7 +12,7 @@ Five facts define a limited key:
 
 1. **Limits are opt-in per key and live on a new key version.** `IdentityPublicKey::V1` is the version 0 key followed by `total_budget` and `expires_at`. Every key that existed before, and every key without limits registered after, is still a version 0 key with the same bytes as ever.
 2. **Only AUTHENTICATION keys below MASTER may carry them.** The master key is what registers a replacement when a key runs out, so it must never run out itself. TRANSFER, ENCRYPTION and DECRYPTION keys cannot be limited.
-3. **Limits are signed and immutable.** They are part of the signable bytes of the transition that registers the key, and there is no transition that changes them. To give an application more, register another key.
+3. **Limits are signed, and only ever loosened.** They are part of the signable bytes of the transition that registers the key. The one transition that changes them, `IdentityKeyLimitsUpdate` (see Raising Limits below), raises a budget or moves an expiry later; to give an application less, disable the key and register another.
 4. **A budget caps what leaves the identity, and only goes down.** Fees, and credits the transition moves out (a document purchase, a prefunded voting balance), count against it. Storage refunds do not top it up. What is left is tracked by Drive next to the key, because the key itself never changes.
 5. **An expiry is a block time.** `expires_at` is an absolute timestamp in milliseconds, the same unit and clock as `disabled_at`. The key signs at `expires_at - 1` and not at `expires_at`.
 
@@ -216,7 +216,7 @@ The last check is the one with a twist. An expired key may be revived by moving 
 
 **The proof.** The proof is the rewritten key, nothing more. The verifier requires the key present and holding exactly the total budget and the expiry the transition asked for. That authenticates the state the update aimed at, not this exact transition: the nonce and the fee increase are signed but not stored, so any later state of the key with those limits would produce the same proof. The outcome is therefore classified as affected state, like a credit transfer, and the SDKs wait for it with the affected-state wait.
 
-In the SDKs: `Identity::update_key_limits`, `top_up_key_budget` and `extend_key_expiry` (Rust, `UpdateIdentityKeyLimits`), `identityUpdateKeyLimits({ identity, keyId, addBudget, expiresAt, signer })` (wasm-sdk), `sdk.identities.updateKeyLimits` (js-evo-sdk). All resolve to the key as stored after the update.
+In the SDKs: `Identity::update_key_limits`, `top_up_key_budget` and `extend_key_expiry` (Rust, `UpdateIdentityKeyLimits`), `identityUpdateKeyLimits({ identity, keyId, addBudget, expiresAt, signer })` (wasm-sdk), `sdk.identities.updateKeyLimits` (js-evo-sdk). All resolve to the key as stored after the update. A limited key is registered the ordinary way: an `IdentityPublicKeyInCreation` built with `totalBudget` or `expiresAt` (wasm-dpp2) passed to `identityUpdate` or `sdk.identities.update`, or an `IdentityPublicKey::with_limits(..)` key passed to the Rust identity update builder.
 
 ## The Budget Rule
 
