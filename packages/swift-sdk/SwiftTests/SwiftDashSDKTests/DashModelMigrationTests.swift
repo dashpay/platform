@@ -15,8 +15,8 @@ import XCTest
 /// the persistence sources as of commit 5f58417079 — the last state before
 /// V4, the state the frozen copies under `FrozenSchemas/` are generated
 /// from — through that build's own `DashSchemaV1` / `DashSchemaV2` /
-/// `DashSchemaV3`, and `dash-v4` / `dash-v5` by the builds that registered
-/// V4 and V5, through
+/// `DashSchemaV3`, and `dash-v4` / `dash-v5` / `dash-v6` by the builds that registered
+/// V4, V5 and V6, through
 /// `DashModelContainer.create`. They pin the frozen copies as the pre-V4
 /// build defined them, not what the original V1 release wrote (see the
 /// `DashSchemaV1` doc for why those stores are expected to fail open and
@@ -73,6 +73,9 @@ final class DashModelMigrationTests: XCTestCase {
         Fixture(
             name: "dash-v5", version: DashSchemaV5.self,
             hasTrackedMasternode: true, assetLockRecipientIsExternal: true),
+        Fixture(
+            name: "dash-v6", version: DashSchemaV6.self,
+            hasTrackedMasternode: true, assetLockRecipientIsExternal: true),
     ]
 
     /// Every schema version that has ever shipped, oldest first, as
@@ -84,7 +87,7 @@ final class DashModelMigrationTests: XCTestCase {
     /// give it a fixture store in `fixtures`, written by that build with
     /// `testWriteTheLiveSchemaFixtureStore`. Every entry has a fixture,
     /// the live one included.
-    private static let shippedVersions = ["1.0.0", "2.0.0", "3.0.0", "4.0.0", "5.0.0"]
+    private static let shippedVersions = ["1.0.0", "2.0.0", "3.0.0", "4.0.0", "5.0.0", "6.0.0"]
 
     private static let fixtureWalletId = Data(repeating: 0x31, count: 32)
     private static let fixtureSpendTxid = Data(repeating: 0x32, count: 32)
@@ -807,7 +810,7 @@ final class DashModelMigrationTests: XCTestCase {
             migrationPlan: DashMigrationPlan.self,
             configurations: [v5Configuration])
 
-        let keys = try migrated.mainContext.fetch(FetchDescriptor<PersistentPublicKey>())
+        let keys = try migrated.mainContext.fetch(FetchDescriptor<DashSchemaV5.PersistentPublicKey>())
         XCTAssertEqual(keys.count, 1, "the V4 key row must survive the migration")
         let key = try XCTUnwrap(keys.first)
         XCTAssertEqual(key.keyId, 3)
@@ -823,10 +826,22 @@ final class DashModelMigrationTests: XCTestCase {
         key.expiresAtMillis = 1_800_000_000_000
         try migrated.mainContext.save()
         let reread = try XCTUnwrap(
-            migrated.mainContext.fetch(FetchDescriptor<PersistentPublicKey>()).first)
+            migrated.mainContext.fetch(FetchDescriptor<DashSchemaV5.PersistentPublicKey>()).first)
         XCTAssertEqual(reread.totalBudgetCredits, 1_000)
         XCTAssertEqual(reread.expiresAtMillis, 1_800_000_000_000)
         XCTAssertTrue(reread.hasLimits)
+    }
+
+    func testV6AddsOnlyTheIndependentBalanceMetadataEntity() throws {
+        let v5 = Schema(versionedSchema: DashSchemaV5.self)
+        let v6 = Schema(versionedSchema: DashSchemaV6.self)
+        XCTAssertEqual(Set(v6.entities.map(\.name)).subtracting(v5.entities.map(\.name)),
+                       ["PersistentIdentityBalanceMetadata"])
+        for old in v5.entities {
+            let current = try XCTUnwrap(v6.entities.first { $0.name == old.name })
+            XCTAssertEqual(old.attributesByName.keys.sorted(), current.attributesByName.keys.sorted())
+            XCTAssertEqual(old.relationshipsByName.keys.sorted(), current.relationshipsByName.keys.sorted())
+        }
     }
 
     /// What makes the V4 -> V5 stage lightweight: the two versions name the

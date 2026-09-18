@@ -27,6 +27,28 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         _ = platform_wallet_destroy(handle)
     }
 
+    /// Read a managed identity's credit balance from Platform and persist it.
+    /// This read-only operation requires no signer or wallet unlock.
+    public func refreshIdentityBalance(identityId: Identifier) async throws -> UInt64 {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            try withExtendedLifetime(self) {
+                var balance: UInt64 = 0
+                let result = identityId.withUnsafeBytes { bytes in
+                    platform_wallet_refresh_identity_balance(
+                        handle,
+                        bytes.bindMemory(to: UInt8.self).baseAddress!,
+                        &balance
+                    )
+                }
+                try result.check()
+                return balance
+            }
+        }.value
+    }
+
     // MARK: - Balance (lock-free)
 
     /// Wallet balance breakdown. These are atomic reads — no lock contention.

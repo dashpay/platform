@@ -31,16 +31,10 @@ pub enum PlatformWalletError {
     #[error("failed to load persisted client state: {0}")]
     PersisterLoad(#[source] crate::changeset::PersistenceError),
 
-    /// The persister failed to store the wallet-registration changeset.
+    /// A wallet changeset could not be stored. Wallet registration and balance
+    /// refresh preserve the typed cause; other best-effort writers may log it.
     /// See [`Self::PersisterLoad`] for why the typed cause is carried.
-    ///
-    /// Scope: wallet registration is the only write that reports this today.
-    /// A contact un-ignore flattens its failure into `Persistence(String)`,
-    /// the asset-lock pool write returns the raw `PersistenceError` on its own
-    /// signature, and the fire-and-forget writes (DPNS marketplace, platform
-    /// addresses, asset-lock tracking) log and swallow it. A host branching on
-    /// the classification gets it for registration and nowhere else yet.
-    #[error("failed to persist wallet registration changeset: {0}")]
+    #[error("failed to persist wallet changeset: {0}")]
     PersisterStore(#[source] crate::changeset::PersistenceError),
 
     /// Restoring persisted platform-address state into a freshly registered
@@ -60,6 +54,11 @@ pub enum PlatformWalletError {
 
     #[error("Identity not found: {0}")]
     IdentityNotFound(Identifier),
+
+    /// The wallet owns the identity, but the queried Platform node has no
+    /// balance yet. This may be transient immediately after registration.
+    #[error("Platform balance unavailable for identity {0}; retry against an up-to-date node")]
+    IdentityBalanceUnavailable(Identifier),
 
     #[error("No primary identity set")]
     NoPrimaryIdentity,

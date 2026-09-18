@@ -133,10 +133,49 @@ public enum DashModelContainer {
         ]
     }
 
-    /// All persistent model types in the current Dash SDK schema (V5).
-    /// Unlike the released versions above this list tracks the LIVE models,
-    /// so it moves whenever a model gains a property — which is exactly why
-    /// the released versions must not. When the next property lands: freeze
+    /// The exact model graph shipped as V5, frozen before adding V6.
+    fileprivate static var v5ModelTypes: [any PersistentModel.Type] {
+        [
+            DashSchemaV5.PersistentIdentity.self,
+            DashSchemaV5.PersistentDPNSName.self,
+            DashSchemaV5.PersistentDashpayProfile.self,
+            DashSchemaV5.PersistentDashpayContactProfile.self,
+            DashSchemaV5.PersistentDashpayContactRequest.self,
+            DashSchemaV5.PersistentDashpayPayment.self,
+            DashSchemaV5.PersistentDashpayIgnoredSender.self,
+            DashSchemaV5.PersistentDocument.self,
+            DashSchemaV5.PersistentDataContract.self,
+            DashSchemaV5.PersistentPublicKey.self,
+            DashSchemaV5.PersistentTokenBalance.self,
+            DashSchemaV5.PersistentKeyword.self,
+            DashSchemaV5.PersistentToken.self,
+            DashSchemaV5.PersistentDocumentType.self,
+            DashSchemaV5.PersistentIndex.self,
+            DashSchemaV5.PersistentProperty.self,
+            DashSchemaV5.PersistentTokenHistoryEvent.self,
+            DashSchemaV5.PersistentPlatformAddress.self,
+            DashSchemaV5.PersistentPlatformAddressesSyncState.self,
+            DashSchemaV5.PersistentWallet.self,
+            DashSchemaV5.PersistentAccount.self,
+            DashSchemaV5.PersistentCoreAddress.self,
+            DashSchemaV5.PersistentTransaction.self,
+            DashSchemaV5.PersistentTxo.self,
+            DashSchemaV5.PersistentPendingInput.self,
+            DashSchemaV5.PersistentWalletManagerMetadata.self,
+            DashSchemaV5.PersistentShieldedNote.self,
+            DashSchemaV5.PersistentShieldedOutgoingNote.self,
+            DashSchemaV5.PersistentShieldedSyncState.self,
+            DashSchemaV5.PersistentShieldedActivity.self,
+            DashSchemaV5.PersistentShieldedViewingKey.self,
+            DashSchemaV5.PersistentAssetLock.self,
+            DashSchemaV5.PersistentInvitation.self,
+            DashSchemaV5.PersistentMasternode.self,
+            DashSchemaV5.PersistentTrackedMasternode.self
+        ]
+    }
+
+    /// All persistent model types in the current Dash SDK schema (V6).
+    /// Released versions retain their original shape. When the next property lands: freeze
     /// every model here into the version being retired
     /// (`scripts/freeze_schema_models.py`), add a version, add a stage, and
     /// commit a store written by this build for the new version under the
@@ -181,13 +220,14 @@ public enum DashModelContainer {
             PersistentAssetLock.self,
             PersistentInvitation.self,
             PersistentMasternode.self,
-            PersistentTrackedMasternode.self
+            PersistentTrackedMasternode.self,
+            PersistentIdentityBalanceMetadata.self
         ]
     }
 
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV5.self)
+        Schema(versionedSchema: DashSchemaV6.self)
     }
 
     /// Create a persistent model container for storing data
@@ -256,7 +296,7 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
         [
             DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self,
-            DashSchemaV5.self
+            DashSchemaV5.self, DashSchemaV6.self
         ]
     }
 
@@ -265,7 +305,8 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self),
             .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self),
             .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),
-            .lightweight(fromVersion: DashSchemaV4.self, toVersion: DashSchemaV5.self)
+            .lightweight(fromVersion: DashSchemaV4.self, toVersion: DashSchemaV5.self),
+            .lightweight(fromVersion: DashSchemaV5.self, toVersion: DashSchemaV6.self)
         ]
     }
 }
@@ -500,6 +541,13 @@ public enum DashSchemaV5: VersionedSchema {
     }
 
     public static var models: [any PersistentModel.Type] {
-        DashModelContainer.modelTypes
+        DashModelContainer.v5ModelTypes
     }
+}
+
+/// V6 adds an independent balance-freshness sidecar. Existing balances have no
+/// watermark until a proven network read; all V5 entities keep their shape.
+public enum DashSchemaV6: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { Schema.Version(6, 0, 0) }
+    public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }
 }

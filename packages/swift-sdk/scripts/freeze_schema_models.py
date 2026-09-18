@@ -205,6 +205,15 @@ FREEZES = [
         TOKEN_TYPES_FILE,
         tuple(TOKEN_VALUE_TYPES),
     ),
+    # V5 as shipped by #4811: preserve its key-limit columns before V6 adds
+    # the independent identity balance metadata table.
+    Freeze(
+        "DashSchemaV5",
+        "ba01d4cdfa85a37184343b0449ecd9f345910814",
+        tuple(V4_GRAPH_MODELS),
+        TOKEN_TYPES_FILE,
+        tuple(TOKEN_VALUE_TYPES),
+    ),
 ]
 
 HEADER = "import Foundation\nimport SwiftData\n\n"

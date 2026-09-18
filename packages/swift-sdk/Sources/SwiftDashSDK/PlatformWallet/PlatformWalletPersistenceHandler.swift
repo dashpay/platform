@@ -3199,6 +3199,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // so `upsertUtxo` has them in hand (see `roundUtxoCreditVerdicts`).
         extensionCallbacks.on_persist_wallet_changeset_utxo_verdicts_fn =
             persistWalletChangesetUtxoVerdictsCallback
+        extensionCallbacks.on_persist_identity_balance_block_time_fn = persistIdentityBalanceBlockTimeCallback
+        extensionCallbacks.on_load_identity_balance_block_time_fn = loadIdentityBalanceBlockTimeCallback
         return extensionCallbacks
     }
 
@@ -4901,6 +4903,56 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return (written, skipped, failed)
     }
 
+    // MARK: - Identity balance freshness (additive persistence extension)
+
+    private func balanceMetadataDescriptor(walletId: Data, identityId: Data) throws
+        -> FetchDescriptor<PersistentIdentityBalanceMetadata> {
+        guard let network = self.network ?? walletNetwork(walletId: walletId) else {
+            throw PlatformWalletError.walletOperation("Cannot resolve identity balance metadata network")
+        }
+        let networkRaw = network.rawValue
+        return FetchDescriptor(predicate: #Predicate {
+            $0.networkRaw == networkRaw && $0.walletId == walletId && $0.identityId == identityId
+        })
+    }
+
+    func persistIdentityBalanceBlockTime(walletId: Data, identityId: Data, blockTime: BlockTime?) throws {
+        try onQueue {
+            guard inChangeset else {
+                throw PlatformWalletError.walletOperation("Balance metadata requires an identity changeset")
+            }
+            let descriptor = try balanceMetadataDescriptor(walletId: walletId, identityId: identityId)
+            let existing = try backgroundContext.fetch(descriptor).first
+            guard let blockTime else {
+                if let existing { backgroundContext.delete(existing) }
+                return
+            }
+            if let existing {
+                existing.platformHeight = Int64(bitPattern: blockTime.height)
+                existing.coreHeight = blockTime.core_height
+                existing.timestampMillis = Int64(bitPattern: blockTime.timestamp)
+            } else {
+                guard let network = self.network ?? walletNetwork(walletId: walletId) else {
+                    throw PlatformWalletError.walletOperation("Cannot resolve identity balance metadata network")
+                }
+                backgroundContext.insert(PersistentIdentityBalanceMetadata(
+                    networkRaw: network.rawValue, walletId: walletId, identityId: identityId,
+                    platformHeight: blockTime.height, coreHeight: blockTime.core_height,
+                    timestampMillis: blockTime.timestamp))
+            }
+            // endChangeset performs the atomic save with the balance itself.
+        }
+    }
+
+    func loadIdentityBalanceBlockTime(walletId: Data, identityId: Data) throws -> BlockTime? {
+        try onQueue {
+            let descriptor = try balanceMetadataDescriptor(walletId: walletId, identityId: identityId)
+            guard let row = try backgroundContext.fetch(descriptor).first else { return nil }
+            return BlockTime(height: UInt64(bitPattern: row.platformHeight), core_height: row.coreHeight,
+                             timestamp: UInt64(bitPattern: row.timestampMillis))
+        }
+    }
+
     // MARK: - Identity snapshot structs
 
     /// Swift-side snapshot of the Rust `IdentityEntryFFI` with C
@@ -6259,6 +6311,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
                 let walletRow = try backgroundContext.fetch(walletDescriptor).first
                 let walletNetwork = walletRow?.network
+                if let metadataNetwork = self.network ?? walletNetwork {
+                    let raw = metadataNetwork.rawValue
+                    let metadata = FetchDescriptor<PersistentIdentityBalanceMetadata>(
+                        predicate: #Predicate { $0.walletId == walletId && $0.networkRaw == raw })
+                    for row in try backgroundContext.fetch(metadata) {
+                        backgroundContext.delete(row)
+                    }
+                }
 
                 if let walletRow = walletRow {
                     // Wallet → identities is `.nullify`; this delete
@@ -11414,4 +11474,35 @@ extension PlatformWalletPersistenceHandler {
             return false
         }
     }
+}
+
+private func persistIdentityBalanceBlockTimeCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    identityId: UnsafePointer<UInt8>?, blockTime: UnsafePointer<BlockTime>?
+) -> Int32 {
+    guard let context, let walletId, let identityId else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistIdentityBalanceBlockTime(
+            walletId: Data(bytes: walletId, count: 32), identityId: Data(bytes: identityId, count: 32),
+            blockTime: blockTime?.pointee)
+        return 0
+    } catch { return -1 }
+}
+
+private func loadIdentityBalanceBlockTimeCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?, identityId: UnsafePointer<UInt8>?,
+    outFound: UnsafeMutablePointer<Bool>?, outBlockTime: UnsafeMutablePointer<BlockTime>?
+) -> Int32 {
+    guard let context, let walletId, let identityId, let outFound, let outBlockTime else { return -1 }
+    outFound.pointee = false
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        if let stamp = try handler.loadIdentityBalanceBlockTime(
+            walletId: Data(bytes: walletId, count: 32), identityId: Data(bytes: identityId, count: 32)) {
+            outBlockTime.pointee = stamp
+            outFound.pointee = true
+        }
+        return 0
+    } catch { return -1 }
 }

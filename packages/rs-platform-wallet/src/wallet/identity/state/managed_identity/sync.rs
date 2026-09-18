@@ -3,9 +3,24 @@
 use super::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
 use crate::BlockTime;
+use dpp::identity::accessors::IdentitySettersV0;
 use dpp::prelude::TimestampMillis;
 
 impl ManagedIdentity {
+    /// Apply a transaction result together with its proof height so lagging
+    /// balance queries (or older transaction completions) cannot replace it.
+    pub(crate) fn set_confirmed_balance(&mut self, balance: u64, height: u64) {
+        if self
+            .last_updated_balance_block_time
+            .is_none_or(|previous| height >= previous.height)
+        {
+            self.identity.set_balance(balance);
+            // These transaction APIs expose only the proof height; zero marks
+            // unavailable Core height and time, rather than retaining stale values.
+            self.last_updated_balance_block_time = Some(BlockTime::new(height, 0, 0));
+        }
+    }
+
     /// Update the last balance update block time.
     ///
     /// Persists the resulting changeset via `persister` and returns `()`.
