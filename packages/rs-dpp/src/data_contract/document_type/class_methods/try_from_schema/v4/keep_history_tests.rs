@@ -36,7 +36,11 @@ fn parse_at_version(
 }
 
 fn parse(schema: Value) -> Result<DocumentType, ProtocolError> {
-    parse_at_version(schema, 15, true)
+    parse_at_version(schema, PlatformVersion::latest().protocol_version, true)
+}
+
+fn parse_without_validation(schema: Value) -> Result<DocumentType, ProtocolError> {
+    parse_at_version(schema, PlatformVersion::latest().protocol_version, false)
 }
 
 fn keep_history_deletable_schema() -> Value {
@@ -62,7 +66,7 @@ fn keep_history_deletable_schema() -> Value {
 #[test]
 fn should_accept_a_keep_history_type_that_allows_deletion() {
     let document_type = parse(keep_history_deletable_schema())
-        .expect("a keep-history type may allow deletion from protocol version 15");
+        .expect("a keep-history type may allow deletion at the latest protocol version");
     assert!(document_type.documents_keep_history());
     assert!(document_type.documents_can_be_deleted());
     assert!(
@@ -282,7 +286,7 @@ fn should_still_load_a_legacy_contested_keep_history_type_without_validation() {
         "documentsKeepHistory": true,
         "canBeDeleted": false,
     });
-    let document_type = parse_at_version(schema, 15, false)
+    let document_type = parse_without_validation(schema)
         .expect("a stored contract with this combination must still load");
     assert!(document_type.documents_keep_history());
 }
@@ -328,12 +332,12 @@ fn repair_schema(keep_history: bool, can_be_deleted: bool) -> Value {
 
 /// A keep-history type may withdraw deletion, and only in that direction.
 #[test]
-fn should_allow_a_keep_history_type_to_withdraw_deletion_at_protocol_15() {
+fn should_allow_a_keep_history_type_to_withdraw_deletion() {
     let old = parse_at_version(repair_schema(true, true), 13, true).unwrap();
-    let new = parse_at_version(repair_schema(true, false), 15, true).unwrap();
+    let new = parse(repair_schema(true, false)).unwrap();
     let result = old
         .as_ref()
-        .validate_update(new.as_ref(), 2, PlatformVersion::get(15).unwrap())
+        .validate_update(new.as_ref(), 2, PlatformVersion::latest())
         .expect("the update must reach a consensus result");
     assert!(result.is_valid(), "rejected: {:?}", result.errors);
 }
@@ -355,7 +359,7 @@ fn should_preserve_the_immutable_delete_flag_through_protocol_13() {
 }
 
 #[test]
-fn should_reject_other_delete_and_history_flag_changes_at_protocol_15() {
+fn should_reject_other_delete_and_history_flag_changes() {
     for (old_flags, new_flags) in [
         ((false, true), (false, false)),
         ((false, false), (false, true)),
@@ -366,10 +370,10 @@ fn should_reject_other_delete_and_history_flag_changes_at_protocol_15() {
         let old = parse_at_version(repair_schema(old_flags.0, old_flags.1), 13, true).unwrap();
         // A caller may already have a parsed contract; update validation must
         // enforce immutability even without the full-validation parser guard.
-        let new = parse_at_version(repair_schema(new_flags.0, new_flags.1), 15, false).unwrap();
+        let new = parse_without_validation(repair_schema(new_flags.0, new_flags.1)).unwrap();
         let result = old
             .as_ref()
-            .validate_update(new.as_ref(), 2, PlatformVersion::get(15).unwrap())
+            .validate_update(new.as_ref(), 2, PlatformVersion::latest())
             .unwrap();
         assert!(
             !result.is_valid(),
@@ -384,15 +388,20 @@ fn should_reject_other_delete_and_history_flag_changes_at_protocol_15() {
 #[test]
 fn should_reject_every_change_to_the_erasure_flag() {
     for (before, after) in [(false, true), (true, false)] {
-        let old = parse_at_version(erasable_schema(true, true, before), 15, false).unwrap();
-        let new = parse_at_version(erasable_schema(true, true, after), 15, false).unwrap();
+        let old = parse_without_validation(erasable_schema(true, true, before)).unwrap();
+        let new = parse_without_validation(erasable_schema(true, true, after)).unwrap();
         let result = old
             .as_ref()
-            .validate_update(new.as_ref(), 2, PlatformVersion::get(15).unwrap())
+            .validate_update(new.as_ref(), 2, PlatformVersion::latest())
             .unwrap();
+        let message = result
+            .errors
+            .first()
+            .unwrap_or_else(|| panic!("unexpectedly accepted canBeErased {before} -> {after}"))
+            .to_string();
         assert!(
-            !result.is_valid(),
-            "unexpectedly accepted canBeErased {before} -> {after}"
+            message.contains("can not change whether its documents can be erased"),
+            "canBeErased {before} -> {after} must be refused for being immutable, got {message}"
         );
     }
 }
@@ -405,15 +414,15 @@ fn should_reject_every_change_to_the_erasure_flag() {
 #[test]
 fn should_refuse_to_withdraw_deletion_from_an_erasable_type() {
     assert!(
-        parse_at_version(erasable_schema(true, false, true), 15, false).is_err(),
+        parse_without_validation(erasable_schema(true, false, true)).is_err(),
         "an erasable type that forbids deletion is not a valid type at all"
     );
 
-    let old = parse_at_version(erasable_schema(true, true, true), 15, false).unwrap();
-    let new = parse_at_version(repair_schema(true, false), 15, false).unwrap();
+    let old = parse_without_validation(erasable_schema(true, true, true)).unwrap();
+    let new = parse_without_validation(repair_schema(true, false)).unwrap();
     let result = old
         .as_ref()
-        .validate_update(new.as_ref(), 2, PlatformVersion::get(15).unwrap())
+        .validate_update(new.as_ref(), 2, PlatformVersion::latest())
         .unwrap();
     assert!(!result.is_valid(), "an erasable type kept its delete flag");
 }
@@ -421,23 +430,19 @@ fn should_refuse_to_withdraw_deletion_from_an_erasable_type() {
 #[test]
 fn should_reject_incompatible_properties_during_a_delete_flag_withdrawal() {
     let old = parse_at_version(repair_schema(true, true), 13, true).unwrap();
-    let new = parse_at_version(
-        platform_value!({
-            "type": "object",
-            "properties": {
-                "label": {"type": "integer", "position": 0},
-            },
-            "additionalProperties": false,
-            "documentsKeepHistory": true,
-            "canBeDeleted": false,
-        }),
-        15,
-        true,
-    )
+    let new = parse(platform_value!({
+        "type": "object",
+        "properties": {
+            "label": {"type": "integer", "position": 0},
+        },
+        "additionalProperties": false,
+        "documentsKeepHistory": true,
+        "canBeDeleted": false,
+    }))
     .unwrap();
     let result = old
         .as_ref()
-        .validate_update(new.as_ref(), 2, PlatformVersion::get(15).unwrap())
+        .validate_update(new.as_ref(), 2, PlatformVersion::latest())
         .unwrap();
     assert!(
         !result.is_valid(),
@@ -450,10 +455,10 @@ fn should_reject_mutability_change_during_a_delete_flag_withdrawal() {
     let old = parse_at_version(repair_schema(true, true), 13, true).unwrap();
     let mut schema = repair_schema(true, false);
     schema.set_value("documentsMutable", false.into()).unwrap();
-    let new = parse_at_version(schema, 15, true).unwrap();
+    let new = parse(schema).unwrap();
     let result = old
         .as_ref()
-        .validate_update(new.as_ref(), 2, PlatformVersion::get(15).unwrap())
+        .validate_update(new.as_ref(), 2, PlatformVersion::latest())
         .unwrap();
     assert!(
         !result.is_valid(),
@@ -483,10 +488,10 @@ fn should_still_validate_a_property_named_can_be_deleted_during_a_withdrawal() {
         )
         .unwrap();
     let old = parse_at_version(old_schema, 13, true).unwrap();
-    let new = parse_at_version(new_schema, 15, true).unwrap();
+    let new = parse(new_schema).unwrap();
     let result = old
         .as_ref()
-        .validate_update(new.as_ref(), 2, PlatformVersion::get(15).unwrap())
+        .validate_update(new.as_ref(), 2, PlatformVersion::latest())
         .unwrap();
     assert!(
         !result.is_valid(),

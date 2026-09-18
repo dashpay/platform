@@ -12,8 +12,11 @@ pub const STATE_TRANSITION_VERSIONS_V4: DPPStateTransitionVersions = DPPStateTra
     documents: DocumentTransitionVersions {
         documents_batch_transition: DocumentsBatchTransitionVersions {
             validation: DocumentsBatchTransitionValidationVersions {
-                find_duplicates_by_id: 0,
                 validate_base_structure: 1,
+                ..STATE_TRANSITION_VERSIONS_V3
+                    .documents
+                    .documents_batch_transition
+                    .validation
             },
         },
     },

@@ -1,5 +1,4 @@
 mod v0;
-mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -63,21 +62,9 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
-            1 => self.delete_document_for_contract_id_with_named_type_operations_v1(
-                document_id,
-                contract_id,
-                document_type_name,
-                &dpp::block::block_info::BlockInfo::default_with_time(block_time_ms),
-                None,
-                previous_batch_operations,
-                estimated_costs_only_with_layer_info,
-                block_time_ms,
-                transaction,
-                platform_version,
-            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_document_for_contract_id_with_named_type_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }

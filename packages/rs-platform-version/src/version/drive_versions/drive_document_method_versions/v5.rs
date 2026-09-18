@@ -30,7 +30,6 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
             delete_document_for_contract_id: 1,
             delete_document_for_contract_apply_and_add_to_operations: 1,
             remove_document_from_primary_storage: 1,
-            delete_document_for_contract_id_with_named_type_operations: 1,
             delete_document_for_contract_with_named_type_operations: 1,
             delete_document_for_contract_operations: 1,
             erase_document_for_contract_operations: Some(0),

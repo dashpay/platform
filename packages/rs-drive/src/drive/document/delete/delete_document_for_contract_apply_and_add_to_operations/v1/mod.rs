@@ -14,7 +14,7 @@ impl Drive {
     /// Deletes a document.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::drive::document::delete) fn delete_document_for_contract_apply_and_add_to_operations_v1(
+    pub(super) fn delete_document_for_contract_apply_and_add_to_operations_v1(
         &self,
         document_id: Identifier,
         contract: &DataContract,
@@ -36,18 +36,19 @@ impl Drive {
             && transaction.is_none())
         .then(|| self.grove.start_transaction());
         let transaction = owned_transaction.as_ref().or(transaction);
-        let batch_operations = self.delete_document_for_contract_with_named_type_operations_v1(
-            document_id,
-            contract,
-            document_type_name,
-            block_info,
-            deleter_id,
-            None,
-            &mut estimated_costs_only_with_layer_info,
-            block_time_ms,
-            transaction,
-            platform_version,
-        )?;
+        let batch_operations = self
+            .delete_document_for_contract_with_named_type_operations_with_lifecycle(
+                document_id,
+                contract,
+                document_type_name,
+                block_info,
+                deleter_id,
+                None,
+                &mut estimated_costs_only_with_layer_info,
+                block_time_ms,
+                transaction,
+                platform_version,
+            )?;
         self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,

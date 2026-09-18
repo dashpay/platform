@@ -87,15 +87,15 @@ fn contested_keep_history() -> Value {
 async fn refused_create(
     schema: Value,
 ) -> (TempPlatform<MockCoreRPCLike>, Identifier, IdentityNonce) {
-    let platform_version = PlatformVersion::get(15).expect("protocol 15 exists");
+    let platform_version = PlatformVersion::latest();
     let mut platform = TestPlatformBuilder::new()
-        .with_initial_protocol_version(15)
+        .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
     let platform_state = platform.state.load();
     let (identity, signer, key) = setup_identity(&mut platform, 4001, dash_to_credits!(10.0));
 
-    let contract = DataContractFactory::new(15)
+    let contract = DataContractFactory::new(platform_version.protocol_version)
         .expect("expected a contract factory")
         .create_with_value_config(
             identity.id(),
@@ -195,15 +195,15 @@ async fn should_charge_for_a_signed_contested_keep_history_contract() {
 /// The same refusal on the update path, which has its own error-category split.
 #[tokio::test]
 async fn should_charge_for_a_signed_contract_update_asking_for_erasure_without_history() {
-    let platform_version = PlatformVersion::get(15).expect("protocol 15 exists");
+    let platform_version = PlatformVersion::latest();
     let mut platform = TestPlatformBuilder::new()
-        .with_initial_protocol_version(15)
+        .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
     let platform_state = platform.state.load();
     let (identity, signer, key) = setup_identity(&mut platform, 4002, dash_to_credits!(1.0));
 
-    let mut contract = DataContractFactory::new(15)
+    let mut contract = DataContractFactory::new(platform_version.protocol_version)
         .expect("expected a contract factory")
         .create_with_value_config(
             identity.id(),

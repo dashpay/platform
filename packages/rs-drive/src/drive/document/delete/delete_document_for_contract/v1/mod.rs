@@ -33,7 +33,7 @@ impl Drive {
         } else {
             Some(HashMap::new())
         };
-        self.delete_document_for_contract_apply_and_add_to_operations_v1(
+        self.delete_document_for_contract_apply_and_add_to_operations_with_lifecycle(
             document_id,
             contract,
             document_type_name,

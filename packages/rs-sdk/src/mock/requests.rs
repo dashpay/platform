@@ -360,7 +360,7 @@ mod document_history_mock_tests {
     #[test]
     fn should_round_trip_every_lifecycle_state_with_its_times() {
         let mut sdk = crate::SdkBuilder::default()
-            .with_version(dpp::version::PlatformVersion::get(15).unwrap())
+            .with_version(dpp::version::PlatformVersion::latest())
             .build()
             .unwrap();
         let mock = sdk.mock();

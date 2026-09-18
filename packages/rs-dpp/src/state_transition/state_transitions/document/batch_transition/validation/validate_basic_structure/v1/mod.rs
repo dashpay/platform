@@ -2,7 +2,11 @@ use crate::consensus::basic::document::{
     DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
     MaxDocumentsTransitionsExceededError, NonceOutOfBoundsError,
 };
+use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::BasicError;
+use crate::state_transition::batch_transition::batched_transition::{
+    DocumentEraseTransition, DocumentIndexOnlyDeleteTransition,
+};
 
 use crate::identity::identity_nonce::MISSING_IDENTITY_REVISIONS_FILTER;
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV1;
@@ -11,6 +15,7 @@ use crate::state_transition::batch_transition::BatchTransition;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Identifier;
+use platform_version::version::dpp_versions::dpp_state_transition_serialization_versions::DocumentFeatureVersionBounds;
 use platform_version::version::PlatformVersion;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -103,6 +108,43 @@ impl BatchTransition {
                     result.add_error(BasicError::NonceOutOfBoundsError(
                         NonceOutOfBoundsError::new(transition.identity_contract_nonce()),
                     ));
+                }
+
+                // The kinds that joined the wire after the first batch formats
+                // are gated on the version bounds the active protocol version
+                // publishes for them. Software that knows a newer generation of
+                // a kind decodes it whatever the active protocol version, so
+                // this is where it agrees with software that does not.
+                match transition {
+                    DocumentTransitionRefV1::IndexOnlyDelete(index_only_delete) => {
+                        let feature_version = match index_only_delete {
+                            DocumentIndexOnlyDeleteTransition::V0(_) => 0,
+                        };
+                        check_kind_version_bounds(
+                            feature_version,
+                            platform_version
+                                .dpp
+                                .state_transition_serialization_versions
+                                .document_index_only_delete_state_transition
+                                .as_ref(),
+                            &mut result,
+                        );
+                    }
+                    DocumentTransitionRefV1::Erase(erase) => {
+                        let feature_version = match erase {
+                            DocumentEraseTransition::V0(_) => 0,
+                        };
+                        check_kind_version_bounds(
+                            feature_version,
+                            platform_version
+                                .dpp
+                                .state_transition_serialization_versions
+                                .document_erase_state_transition
+                                .as_ref(),
+                            &mut result,
+                        );
+                    }
+                    _ => {}
                 }
             }
 
@@ -242,10 +284,39 @@ impl<'a> From<DocumentTransitionRefV1<'a>> for TransitionFingerprint<'a> {
     }
 }
 
+/// Records an error when the active protocol version does not publish
+/// `feature_version` of a document transition kind: an absent entry means the
+/// kind does not exist at all at that version, which the empty range (min 1,
+/// max 0) states.
+fn check_kind_version_bounds(
+    feature_version: u16,
+    bounds: Option<&DocumentFeatureVersionBounds>,
+    result: &mut SimpleConsensusValidationResult,
+) {
+    match bounds {
+        None => result.add_error(BasicError::UnsupportedVersionError(
+            UnsupportedVersionError::new(feature_version, 1, 0),
+        )),
+        Some(bounds) if !bounds.bounds.check_version(feature_version) => result.add_error(
+            BasicError::UnsupportedVersionError(UnsupportedVersionError::new(
+                feature_version,
+                bounds.bounds.min_version,
+                bounds.bounds.max_version,
+            )),
+        ),
+        Some(_) => {}
+    }
+}
+
 /// Finds the duplicates among the document transitions of one contract. Two
 /// transitions are duplicates when they name the same document type and
 /// document id, whatever their kinds. Every duplicated transition is reported,
 /// the first one once per later duplicate.
+///
+/// The shared `find_duplicates_by_id` helper and its version slot take the
+/// shell of batch formats 0 and 1, which cannot hold an erase, so this
+/// generation carries its own finder over the shell of every format. A later
+/// generation that needs a different rule forks this module.
 fn find_duplicates_by_id<'a>(
     document_transitions: &[DocumentTransitionRefV1<'a>],
 ) -> Vec<DocumentTransitionRefV1<'a>> {
@@ -421,6 +492,48 @@ mod tests {
                 BasicError::DocumentTransitionsAreAbsentError(_)
             ))
         ));
+    }
+
+    /// Software that knows the erase kind decodes it whatever protocol version
+    /// is active, so the structure check has to refuse the kind wherever the
+    /// active version publishes no bounds for it; that is how such software
+    /// agrees with software that cannot decode it at all.
+    #[test]
+    fn should_gate_an_erase_on_the_bounds_the_protocol_version_publishes() {
+        let batch = make_batch_v2(vec![make_erase(1, 1)]);
+        let is_unsupported_version = |error: &ConsensusError| {
+            matches!(
+                error,
+                ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+            )
+        };
+
+        let without_erase = PlatformVersion::get(14).expect("protocol version 14 exists");
+        assert!(
+            without_erase
+                .dpp
+                .state_transition_serialization_versions
+                .document_erase_state_transition
+                .is_none(),
+            "the test needs a version that publishes no erase bounds"
+        );
+        let result = batch
+            .validate_base_structure_v1(without_erase)
+            .expect("no protocol err");
+        assert!(
+            result.errors.iter().any(is_unsupported_version),
+            "a version without erase bounds must refuse the kind, got {:?}",
+            result.errors
+        );
+
+        let result = batch
+            .validate_base_structure_v1(PlatformVersion::latest())
+            .expect("no protocol err");
+        assert!(
+            !result.errors.iter().any(is_unsupported_version),
+            "the latest version publishes erase bounds, got {:?}",
+            result.errors
+        );
     }
 
     /// A format 2 batch never reaches the released structure generation in

@@ -21,7 +21,7 @@ impl Drive {
     /// Prepares the operations for deleting a document.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::drive::document::delete) fn delete_document_for_contract_with_named_type_operations_v1(
+    pub(super) fn delete_document_for_contract_with_named_type_operations_v1(
         &self,
         document_id: Identifier,
         contract: &DataContract,

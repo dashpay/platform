@@ -182,7 +182,7 @@ impl Drive {
 
         // The record remembers how many revisions the history retained next to
         // the revision being deleted, so a later by-revision read can tell a
-        // contiguous history from one a pre-protocol-14 overwrite left gapped.
+        // contiguous history from one a pre-protocol-15 overwrite left gapped.
         // That count is the history tree's own aggregate, read off its element
         // in the type's history tree.
         let mut history_type_path = document_history_path(

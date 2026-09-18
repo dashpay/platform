@@ -92,12 +92,12 @@ impl Fixture {
     async fn new(document_type_name: &str) -> Self {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
-            .with_initial_protocol_version(15)
+            .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
         let contract = json_document_to_contract(ERASABLE_CONTRACT, true, platform_version)
-            .expect("the erasable note contract must pass full validation at protocol 15");
+            .expect("the erasable note contract must pass full validation");
         platform
             .drive
             .apply_contract(
