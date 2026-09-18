@@ -428,6 +428,9 @@ impl LowLevelDriveOperation {
                         }
                     }
                     for (key, owner) in refund_owners {
+                        if *key == SYSTEM_REFUND_CARRIER_KEY {
+                            continue;
+                        }
                         Self::record_refund_owner(&mut owners, *key, *owner)?;
                     }
                     cost += operation_cost.clone();
@@ -2300,6 +2303,28 @@ mod tests {
             &BTreeMap::from([(0, FeeVersion::first())]),
         )
         .expect("every key has an owner");
+    }
+
+    /// The typed split closure never records the system key (the all-zero
+    /// identity records nothing, a bucket deriving it fails the batch), so a
+    /// system key in an owner map can only come from a hand-built operation.
+    /// The aggregate drops it rather than hand a consumer an owner that is
+    /// not routable.
+    #[test]
+    fn should_never_record_the_system_key_as_an_owner_from_a_typed_owner_map() {
+        let operations = vec![CalculatedCostOperationWithRefundOwners {
+            cost: sectioned_cost(&[(SYSTEM_REFUND_CARRIER_KEY, 7)]),
+            refund_owners: BTreeMap::from([(
+                SYSTEM_REFUND_CARRIER_KEY,
+                RefundOwner::Identity(Identifier::from(SYSTEM_REFUND_CARRIER_KEY)),
+            )]),
+        }];
+
+        let (_, owners) =
+            LowLevelDriveOperation::combine_cost_operations_with_refund_owners(&operations)
+                .expect("should combine");
+
+        assert!(owners.is_empty());
     }
 
     #[test]
