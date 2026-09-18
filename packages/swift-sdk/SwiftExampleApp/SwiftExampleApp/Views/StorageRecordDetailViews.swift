@@ -765,16 +765,18 @@ struct PublicKeyStorageDetailView: View {
             }
             Section("Data") {
                 FieldRow(label: "Public Key", value: hexString(record.publicKeyData))
+                // The kind row always shows, so a row whose stored kind
+                // says "bound" but whose id blob is missing or unreadable
+                // still surfaces the persisted discriminator instead of a
+                // bare "None".
+                FieldRow(label: "Contract Bounds", value: contractBoundsKindDisplay)
                 if let bounds = record.contractBounds, !bounds.isEmpty {
-                    FieldRow(label: "Contract Bounds", value: contractBoundsKindDisplay)
                     ForEach(Array(bounds.enumerated()), id: \.offset) { _, boundId in
                         FieldRow(label: boundIdLabel, value: boundId.toBase58String())
                     }
                     if let docType = record.contractBoundsDocumentTypeName, !docType.isEmpty {
                         FieldRow(label: "Document Type", value: docType)
                     }
-                } else {
-                    FieldRow(label: "Contract Bounds", value: "None")
                 }
                 // Surface the keychain identifier itself rather than a
                 // bare presence/absence flag — it's load-bearing for
@@ -826,11 +828,13 @@ struct PublicKeyStorageDetailView: View {
         let kind = record.effectiveContractBoundsKind
         let name: String
         switch kind {
+        case 0: name = "None"
         case 1: name = "Single contract"
         case 2: name = "Single contract document type"
         case 3: name = "Contract group"
         default: name = "Unknown"
         }
+        if kind == 0 && record.contractBoundsKind == nil { return name }
         return record.contractBoundsKind == nil ? "\(name) (\(kind), inferred)" : "\(name) (\(kind))"
     }
 
