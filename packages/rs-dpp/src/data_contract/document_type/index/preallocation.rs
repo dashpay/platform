@@ -33,10 +33,13 @@ pub enum PreallocatedKeySource<'a> {
     /// referencing the created document is that document's `$id`.
     ReferencedDocumentId,
     /// The index property is bound by the reference's `propertyAgreement`:
-    /// its value is the named property of the referenced document. The two
-    /// sides are validated to share one value kind, so encoding the
-    /// referenced document's value yields the same key bytes the referring
-    /// side would produce.
+    /// its value is the named property of the referenced document, which may
+    /// be one of its `$ownerId` and `$creatorId` system identifiers as well
+    /// as a schema property. The two sides are validated to share one value
+    /// kind, so encoding the referenced document's value yields the same key
+    /// bytes the referring side would produce; the insert path resolves the
+    /// name through the same document accessor the entry walkers key by,
+    /// which serves the two system names alongside the schema properties.
     ReferencedDocumentProperty(&'a str),
 }
 
@@ -193,6 +196,15 @@ mod tests {
         }
     }
 
+    fn identifier_property() -> DocumentProperty {
+        DocumentProperty {
+            property_type: DocumentPropertyType::Identifier,
+            required: true,
+            required_since: None,
+            transient: false,
+        }
+    }
+
     fn index_on(properties: &[&str]) -> Index {
         Index {
             name: "test".to_string(),
@@ -244,6 +256,37 @@ mod tests {
                 ],
             }]
         );
+    }
+
+    /// An agreement on the referenced document's `$ownerId` (or
+    /// `$creatorId`) determines the index path exactly like one on a
+    /// schema property: the key source carries the system name for the
+    /// insert path to resolve against the created document.
+    #[test]
+    fn binds_agreement_on_referenced_system_identifier() {
+        let own_contract_id = Identifier::from([1u8; 32]);
+        for referenced in ["$ownerId", "$creatorId"] {
+            let mut properties = IndexMap::new();
+            properties.insert("authorId".to_string(), identifier_property());
+            properties.insert(
+                "postId".to_string(),
+                identifier_reference_property("post", None, &[("authorId", referenced)]),
+            );
+
+            let index = index_on(&["authorId", "postId"]);
+            let bindings = index.preallocation_bindings(&properties, own_contract_id);
+            assert_eq!(
+                bindings,
+                vec![PreallocationBinding {
+                    referring_property: "postId",
+                    target_document_type_name: "post",
+                    key_sources: vec![
+                        PreallocatedKeySource::ReferencedDocumentProperty(referenced),
+                        PreallocatedKeySource::ReferencedDocumentId,
+                    ],
+                }]
+            );
+        }
     }
 
     #[test]

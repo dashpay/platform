@@ -425,6 +425,73 @@ mod tests {
         }
     }
 
+    fn document_schema_with_agreement(agreement: serde_json::Value) -> serde_json::Value {
+        json!({
+            "$schema": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
+            "type": "object",
+            "properties": {
+                "authorId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0
+                },
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 1,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "post",
+                        "propertyAgreement": agreement
+                    }
+                }
+            },
+            "additionalProperties": false
+        })
+    }
+
+    #[test]
+    fn should_accept_referenced_system_identifiers_in_property_agreement() {
+        for referenced in ["$ownerId", "$creatorId"] {
+            let schema = document_schema_with_agreement(json!({ "authorId": referenced }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "expected {referenced} on the referenced side of an agreement to be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_other_system_properties_on_the_referenced_side_of_an_agreement() {
+        for referenced in ["$id", "$createdAt", "$revision", "$owner"] {
+            let schema = document_schema_with_agreement(json!({ "authorId": referenced }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected {referenced} on the referenced side of an agreement to be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_system_properties_on_the_referring_side_of_an_agreement() {
+        for referring in ["$ownerId", "$creatorId"] {
+            let schema = document_schema_with_agreement(json!({ referring: "$ownerId" }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected {referring} on the referring side of an agreement to be invalid"
+            );
+        }
+    }
+
     #[test]
     fn should_accept_identity_public_key_refers_to_in_v3_document_schema() {
         let schema = document_schema_with_refers_to(json!({

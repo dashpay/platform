@@ -7,6 +7,7 @@ mod nft;
 mod ranked_group_drain;
 mod replacement;
 mod required_since;
+mod system_agreement;
 mod transfer;
 
 use super::*;

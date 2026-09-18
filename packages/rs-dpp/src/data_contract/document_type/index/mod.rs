@@ -90,7 +90,8 @@ pub const TERMINAL: &str = "terminal";
 /// property must be either the referring property itself (it equals the
 /// referenced document's `$id`) or a key of that property's `refersTo`
 /// `propertyAgreement` (consensus-enforced equal to a referenced-document
-/// property). Only allowed on indexOnly document types with a same-contract
+/// property, its `$ownerId` and `$creatorId` included). Only allowed on
+/// indexOnly document types with a same-contract
 /// `permanentDocument` reference; the doc-type-level validation rejects every
 /// other shape. See [`preallocation`]. Meta-schema v3+ (protocol version 14).
 pub const PREALLOCATED: &str = "preallocated";

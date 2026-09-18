@@ -57,7 +57,10 @@ export type DocumentPropertyReferenceTarget =
        * Write-time equality bindings between the two documents:
        * `{ <referring property path>: <referenced property path> }`.
        * Consensus refuses a write whose referring property does not equal
-       * the referenced document's property (code 40127). Absent — not
+       * the referenced document's property (code 40127). The referenced
+       * side may also be `$ownerId` or `$creatorId`, the referenced
+       * document's current owner or original creator, against an
+       * identifier property on the referring side. Absent — not
        * `{}`-valued — when the declaration carries none.
        */
       propertyAgreement?: Record<string, string>;

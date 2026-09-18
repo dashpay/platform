@@ -7,10 +7,13 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
+use dpp::document::property_names::{CREATOR_ID, OWNER_ID};
+use dpp::document::DocumentV0Getters;
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
@@ -25,6 +28,7 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use dpp::platform_value::Value;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use std::borrow::Cow;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome,
 };
@@ -305,9 +309,6 @@ fn validate_document_type_references_v0(
                 // agreement key triggers a skipIfAbsent index stay
                 // consistently absent for untagged targets.
                 if let Some(referenced_document) = &referenced_document {
-                    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-                    use dpp::document::DocumentV0Getters;
-
                     for (referring_property, referenced_property) in property_agreement {
                         let mismatch = || {
                             SimpleConsensusValidationResult::new_with_error(
@@ -329,12 +330,33 @@ fn validate_document_type_references_v0(
                         else {
                             return Ok(mismatch());
                         };
-                        let Ok(referenced_value) = referenced_document
-                            .properties()
-                            .get_optional_at_path(referenced_property)
-                        else {
-                            return Ok(mismatch());
-                        };
+                        // The referenced side may name one of the two system
+                        // identifiers a document carries outside its data:
+                        // `$ownerId`, which follows the document through
+                        // transfers, and `$creatorId`, set once at creation
+                        // and absent on document types that do not record
+                        // it. Contract registration validated that either
+                        // faces an identifier property on the referring
+                        // side, and the key serializer below already encodes
+                        // both names as 32-byte identifiers.
+                        let referenced_value: Option<Cow<Value>> =
+                            match referenced_property.as_str() {
+                                OWNER_ID => Some(Cow::Owned(Value::Identifier(
+                                    referenced_document.owner_id().to_buffer(),
+                                ))),
+                                CREATOR_ID => referenced_document.creator_id().map(|creator_id| {
+                                    Cow::Owned(Value::Identifier(creator_id.to_buffer()))
+                                }),
+                                _ => {
+                                    let Ok(referenced_value) = referenced_document
+                                        .properties()
+                                        .get_optional_at_path(referenced_property)
+                                    else {
+                                        return Ok(mismatch());
+                                    };
+                                    referenced_value.map(Cow::Borrowed)
+                                }
+                            };
                         let (referring_value, referenced_value) =
                             match (referring_value, referenced_value) {
                                 (Some(referring_value), Some(referenced_value)) => {
@@ -356,7 +378,7 @@ fn validate_document_type_references_v0(
                         let Ok(referenced_encoded) = referenced_document_type
                             .serialize_value_for_key(
                                 referenced_property,
-                                referenced_value,
+                                &referenced_value,
                                 platform_version,
                             )
                         else {

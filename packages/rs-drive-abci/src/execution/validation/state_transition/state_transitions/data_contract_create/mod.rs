@@ -5547,6 +5547,62 @@ mod tests {
             );
         }
 
+        /// `$ownerId` and `$creatorId` may sit on the referenced side of an
+        /// agreement when the referring side is an identifier and, for
+        /// `$creatorId`, the referenced type records creator ids
+        /// (transferable, on a format-1 contract).
+        #[tokio::test]
+        async fn should_register_contract_with_agreements_on_referenced_system_identifiers() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-system-valid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// The same declaration against a non-transferable note: the note
+        /// never carries a creator id, so no message could ever agree.
+        #[tokio::test]
+        async fn should_reject_creator_id_agreement_when_the_referenced_type_records_no_creator() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-creator-id-not-recorded.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        /// A string `authorId` can never equal the note's `$ownerId`.
+        #[tokio::test]
+        async fn should_reject_system_identifier_agreement_against_a_non_identifier_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-system-kind-mismatch.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
         #[tokio::test]
         async fn should_register_contract_with_valid_identity_key_reference() {
             let result = run_contract_create(
