@@ -403,10 +403,12 @@ impl ManagedIdentity {
     /// after a key limits update, and emit a single-key [`IdentityKeysChangeSet`] upsert for
     /// it: the limits-side counterpart to [`Self::add_key`] and [`Self::disable_keys`].
     ///
-    /// The key is layered by id, so a key the identity did not hold is added. The entry reuses
-    /// the `(wallet_id, identity_index, key_index)` derivation breadcrumb `add_key` carries, so
-    /// the client keeps the key's private-key linkage across the upsert; an out-of-wallet
-    /// identity emits a breadcrumb-less entry, matching its watch-only state.
+    /// The key is layered by id, so a key the identity did not hold is added. The entry carries
+    /// no derivation breadcrumb: a limits update changes nothing about where the key came from,
+    /// and the managed identity does not know per key whether it was derived from the wallet
+    /// seed or supplied from outside. Every persister keeps the breadcrumb it already holds for
+    /// the key when an upsert arrives without one, so the private-key linkage survives the
+    /// upsert; inventing coordinates here would overwrite it for an external key.
     ///
     /// Does **not** touch the identity revision: a key limits update claims none.
     pub fn replace_key(
@@ -420,17 +422,6 @@ impl ManagedIdentity {
         let key_id = public_key.id();
         let public_key_hash = pubkey_hash_of(&public_key);
 
-        let (wallet_id, derivation_indices) = match (self.wallet_id, self.identity_index) {
-            (Some(wallet_id), Some(identity_index)) => (
-                Some(wallet_id),
-                Some(crate::changeset::IdentityKeyDerivationIndices {
-                    identity_index,
-                    key_index: key_id,
-                }),
-            ),
-            _ => (None, None),
-        };
-
         let mut keys = self.identity.public_keys().clone();
         keys.insert(key_id, public_key.clone());
         self.identity.set_public_keys(keys);
@@ -443,8 +434,8 @@ impl ManagedIdentity {
                 key_id,
                 public_key,
                 public_key_hash,
-                wallet_id,
-                derivation_indices,
+                wallet_id: None,
+                derivation_indices: None,
             },
         );
         let cs = crate::changeset::PlatformWalletChangeSet {
@@ -691,6 +682,64 @@ mod tests {
             "watch-only key carries no breadcrumb"
         );
         assert_eq!(upserts[&(id, 1)].wallet_id, None);
+    }
+
+    /// `replace_key` emits the updated key without a derivation breadcrumb. The managed
+    /// identity does not track per key whether it was wallet-derived, so coordinates built
+    /// from `(wallet_id, identity_index, key_id)` would be invented for an external key and
+    /// overwrite the linkage the client persisted; every persister keeps its existing
+    /// breadcrumb when an upsert carries none.
+    #[test]
+    fn replace_key_carries_no_breadcrumb() {
+        use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 7);
+        let wallet_id: WalletId = [0xAB; 32];
+        managed.wallet_id = Some(wallet_id);
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
+
+        // Key 1 came from outside the wallet: no breadcrumb.
+        managed
+            .add_keys(
+                vec![crate::changeset::KeyWithBreadcrumb {
+                    key: key(1),
+                    breadcrumb: None,
+                }],
+                &p,
+            )
+            .expect("add_keys persists in test");
+
+        managed
+            .replace_key(key(1).with_limits(Some(1_000), None), &p)
+            .expect("replace_key persists in test");
+
+        let stores = persister.stores.lock().unwrap();
+        let cs = stores.last().expect("a changeset was stored");
+        let id = managed.id();
+        let entry = &cs
+            .identity_keys
+            .as_ref()
+            .expect("identity_keys present")
+            .upserts[&(id, 1)];
+        assert_eq!(entry.public_key.total_budget(), Some(1_000));
+        assert_eq!(
+            entry.derivation_indices, None,
+            "a limits-only upsert must not invent derivation coordinates"
+        );
+        assert_eq!(entry.wallet_id, None);
+        assert!(cs.identities.is_some(), "the identity snapshot rides along");
+        assert_eq!(
+            managed.identity.public_keys()[&1].total_budget(),
+            Some(1_000),
+            "the in-memory key is replaced"
+        );
     }
 
     /// An empty `add_keys` is a no-op — no changeset stored.

@@ -538,6 +538,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // here; the encrypt step below reuses these bytes.
         let plaintext = encode_private_data_bounded(&metadata)?;
 
+        let dashpay_contract = super::dashpay_contract()?;
+
         // 1. Local state first — works offline and feeds SwiftData.
         let (established_count, identity_index, signing_key, root_key_id) = {
             let mut wm = self.wallet_manager.write().await;
@@ -564,6 +566,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let identity_index = managed.identity_index;
             let signing_key = super::usable_authentication_key(
                 &managed.identity,
+                dashpay_contract.id(),
+                "contactInfo",
                 &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
                 &[KeyType::ECDSA_SECP256K1],
             )
@@ -741,7 +745,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             creator_id: None,
         });
 
-        let dashpay_contract = super::dashpay_contract()?;
         let document_type = dashpay_contract
             .document_type_for_name("contactInfo")
             .map_err(|e| {
