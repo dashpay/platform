@@ -719,15 +719,21 @@ public struct DataContractParser {
 
         var controlRules = ChangeControlRules.mostRestrictive()
 
-        // Handle both snake_case (from JSON) and camelCase
-        if let authorized = rule["authorized_to_make_change"] as? String ?? rule["authorizedToMakeChange"] as? String {
+        // Both action-taker fields arrive as the flat, `$type`-tagged
+        // map that rs-dpp has emitted since 4.0.0-beta.4, for example
+        // {"$type": "contractOwner"} or
+        // {"$type": "group", "position": 3}. The old bare string shape
+        // ("ContractOwner") is neither emitted nor accepted any more,
+        // so it is not parsed here.
+        if let authorized = parseAuthorizedActionTakers(rule["authorizedToMakeChange"]) {
             controlRules.authorizedToMakeChange = authorized
         }
 
-        if let admin = rule["admin_action_takers"] as? String ?? rule["adminActionTakers"] as? String {
+        if let admin = parseAuthorizedActionTakers(rule["adminActionTakers"]) {
             controlRules.adminActionTakers = admin
         }
 
+        // The boolean flags are read from both snake_case and camelCase.
         if let flag = rule["changing_authorized_action_takers_to_no_one_allowed"] as? Bool ?? rule["changingAuthorizedActionTakersToNoOneAllowed"] as? Bool {
             controlRules.changingAuthorizedActionTakersToNoOneAllowed = flag
         }
@@ -741,5 +747,46 @@ public struct DataContractParser {
         }
 
         return controlRules
+    }
+
+    /// Map one rs-dpp `AuthorizedActionTakers` wire value onto the
+    /// canonical string the persistence layer stores and the example app
+    /// compares against (see `AuthorizedActionTakers`).
+    ///
+    /// Returns nil when the value is missing or is not a `$type`-tagged
+    /// map, so the caller keeps whatever default it started from.
+    private static func parseAuthorizedActionTakers(_ value: Any?) -> String? {
+        guard let taker = value as? [String: Any],
+              let wireType = taker["$type"] as? String else {
+            return nil
+        }
+
+        switch wireType {
+        case AuthorizedActionTakers.WireType.noOne:
+            return AuthorizedActionTakers.noOne.rawValue
+        case AuthorizedActionTakers.WireType.contractOwner:
+            return AuthorizedActionTakers.contractOwner.rawValue
+        case AuthorizedActionTakers.WireType.mainGroup:
+            return AuthorizedActionTakers.mainGroup.rawValue
+        case AuthorizedActionTakers.WireType.identity:
+            guard let identityBase58 = taker["identity"] as? String else {
+                // Tagged as an identity but carrying no usable id: keep
+                // the discriminator rather than name an identity we do
+                // not have.
+                return wireType
+            }
+            return AuthorizedActionTakers.identity(identityBase58)
+        case AuthorizedActionTakers.WireType.group:
+            // JSONSerialization hands back an NSNumber for `position`.
+            guard let position = taker["position"] as? Int else {
+                return wireType
+            }
+            return AuthorizedActionTakers.group(position)
+        default:
+            // A variant added by a newer protocol version. Store the raw
+            // discriminator so the value stays visible rather than being
+            // silently collapsed to the most restrictive default.
+            return wireType
+        }
     }
 }

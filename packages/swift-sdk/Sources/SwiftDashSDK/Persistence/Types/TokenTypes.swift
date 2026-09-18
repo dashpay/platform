@@ -147,8 +147,30 @@ public enum AuthorizedActionTakers: String, CaseIterable, Codable, Sendable {
     case contractOwner = "ContractOwner"
     case mainGroup = "MainGroup"
 
+    /// The `$type` discriminators rs-dpp emits for an
+    /// `AuthorizedActionTakers` value on the wire. Since 4.0.0-beta.4
+    /// the value arrives as a flat tagged map, for example
+    /// `{"$type": "contractOwner"}`,
+    /// `{"$type": "identity", "identity": "<base58>"}` or
+    /// `{"$type": "group", "position": 3}`. These constants are the
+    /// values of that tag, which are distinct from the canonical
+    /// persisted strings above.
+    public enum WireType {
+        public static let noOne = "noOne"
+        public static let contractOwner = "contractOwner"
+        public static let identity = "identity"
+        public static let mainGroup = "mainGroup"
+        public static let group = "group"
+    }
+
     public static func identity(_ id: Data) -> String {
         return "Identity:\(id.toBase58String())"
+    }
+
+    /// Overload for an identity id that is already base58-encoded, the
+    /// form it takes in contract JSON. The string is used verbatim.
+    public static func identity(_ base58Id: String) -> String {
+        return "Identity:\(base58Id)"
     }
 
     public static func group(_ position: Int) -> String {
