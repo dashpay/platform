@@ -3,26 +3,8 @@ import SwiftData
 
 /// Factory for creating SwiftData model containers for Dash Platform persistence
 public enum DashModelContainer {
-    /// The wallet-and-platform model graph as every released schema version
-    /// registered it, built from the frozen copies under `FrozenSchemas/`
-    /// and parameterised on the one slot whose frozen shape differs between
-    /// versions (`PersistentAssetLock`, which V3 changed).
-    ///
-    /// Every entry is a nested frozen type, never a live one. A released
-    /// version's checksum is the hash of every entity it declares — and a
-    /// relationship binds its destination by entity NAME, so a version that
-    /// mixed one live model into an otherwise frozen graph would have that
-    /// live model's current shape hashed into it (the entity name resolves
-    /// to whichever Swift type claimed it first in the process). Freezing
-    /// the whole relationship-connected graph per version is what keeps a
-    /// released checksum stable no matter what the live models do next, and
-    /// `DashModelMigrationTests` proves it against stores an older build
-    /// actually wrote.
-    ///
-    /// Ordering is load-bearing only in the sense that it must not need to
-    /// change: keeping each model in the slot its live counterpart occupies
-    /// makes a frozen version's list positionally identical to what that
-    /// version shipped.
+    /// Accepted V1 graph. Every registered type stays frozen: relationship
+    /// destinations can otherwise rebind by entity name to a changed live type.
     private static func frozenModelGraph(
         assetLock: any PersistentModel.Type
     ) -> [any PersistentModel.Type] {
@@ -70,81 +52,9 @@ public enum DashModelContainer {
         frozenModelGraph(assetLock: DashSchemaV1.PersistentAssetLock.self)
     }
 
-    /// The exact model set registered as schema V2 — V1 plus
-    /// `PersistentTrackedMasternode`. Frozen for the same reason as
-    /// `v1ModelTypes`.
-    fileprivate static var v2ModelTypes: [any PersistentModel.Type] {
-        v1ModelTypes + [DashSchemaV2.PersistentTrackedMasternode.self]
-    }
-
-    /// The exact model set registered as schema V3 — V2 with the asset-lock
-    /// shape that gained `recipientIsExternal`. Frozen for the same reason
-    /// as `v1ModelTypes`.
-    fileprivate static var v3ModelTypes: [any PersistentModel.Type] {
-        frozenModelGraph(assetLock: DashSchemaV3.PersistentAssetLock.self)
-            + [DashSchemaV2.PersistentTrackedMasternode.self]
-    }
-
-    /// The exact model set registered as schema V4: the same entities as
-    /// V3, with the wallet transaction models V4 widened. Frozen as its own
-    /// whole graph rather than as a row for the three models that changed:
-    /// `PersistentTxo`, `PersistentPendingInput` and `PersistentWallet` all
-    /// carry relationships, and a frozen model naming a relationship target
-    /// that its own schema does not declare binds that bare name to the live
-    /// type (the earlier partial rows get away with it because the models
-    /// they freeze are relationship-isolated).
-    fileprivate static var v4ModelTypes: [any PersistentModel.Type] {
-        [
-            DashSchemaV4.PersistentIdentity.self,
-            DashSchemaV4.PersistentDPNSName.self,
-            DashSchemaV4.PersistentDashpayProfile.self,
-            DashSchemaV4.PersistentDashpayContactProfile.self,
-            DashSchemaV4.PersistentDashpayContactRequest.self,
-            DashSchemaV4.PersistentDashpayPayment.self,
-            DashSchemaV4.PersistentDashpayIgnoredSender.self,
-            DashSchemaV4.PersistentDocument.self,
-            DashSchemaV4.PersistentDataContract.self,
-            DashSchemaV4.PersistentPublicKey.self,
-            DashSchemaV4.PersistentTokenBalance.self,
-            DashSchemaV4.PersistentKeyword.self,
-            DashSchemaV4.PersistentToken.self,
-            DashSchemaV4.PersistentDocumentType.self,
-            DashSchemaV4.PersistentIndex.self,
-            DashSchemaV4.PersistentProperty.self,
-            DashSchemaV4.PersistentTokenHistoryEvent.self,
-            DashSchemaV4.PersistentPlatformAddress.self,
-            DashSchemaV4.PersistentPlatformAddressesSyncState.self,
-            DashSchemaV4.PersistentWallet.self,
-            DashSchemaV4.PersistentAccount.self,
-            DashSchemaV4.PersistentCoreAddress.self,
-            DashSchemaV4.PersistentTransaction.self,
-            DashSchemaV4.PersistentTxo.self,
-            DashSchemaV4.PersistentPendingInput.self,
-            DashSchemaV4.PersistentWalletManagerMetadata.self,
-            DashSchemaV4.PersistentShieldedNote.self,
-            DashSchemaV4.PersistentShieldedOutgoingNote.self,
-            DashSchemaV4.PersistentShieldedSyncState.self,
-            DashSchemaV4.PersistentShieldedActivity.self,
-            DashSchemaV4.PersistentShieldedViewingKey.self,
-            DashSchemaV4.PersistentAssetLock.self,
-            DashSchemaV4.PersistentInvitation.self,
-            DashSchemaV4.PersistentMasternode.self,
-            DashSchemaV4.PersistentTrackedMasternode.self
-        ]
-    }
-
-    /// All persistent model types in the current Dash SDK schema (V5).
-    /// Unlike the released versions above this list tracks the LIVE models,
-    /// so it moves whenever a model gains a property — which is exactly why
-    /// the released versions must not. When the next property lands: freeze
-    /// every model here into the version being retired
-    /// (`scripts/freeze_schema_models.py`), add a version, add a stage, and
-    /// commit a store written by this build for the new version under the
-    /// test fixtures (`DashModelMigrationTests.testWriteTheLiveSchemaFixtureStore`).
-    /// `DashModelMigrationTests` proves a version's shape (what the entity
-    /// hash covers, plus its indexes) only against such a store, for the
-    /// live version too: changing a model here before the version ships
-    /// means rewriting the live fixture on purpose in the same change.
+    /// Live models for the next App Store schema. A release snapshot does not
+    /// replace these types until a subsequent shape change introduces a new live
+    /// version; callers must continue fetching the top-level model types.
     public static var modelTypes: [any PersistentModel.Type] {
         [
             PersistentIdentity.self,
@@ -187,7 +97,7 @@ public enum DashModelContainer {
 
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV5.self)
+        Schema(versionedSchema: DashSchemaV2.self)
     }
 
     /// Create a persistent model container for storing data
@@ -254,18 +164,12 @@ public enum DashModelContainer {
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [
-            DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self,
-            DashSchemaV5.self
-        ]
+        [DashSchemaV1.self, DashSchemaV2.self]
     }
 
     public static var stages: [MigrationStage] {
         [
-            .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self),
-            .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self),
-            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),
-            .lightweight(fromVersion: DashSchemaV4.self, toVersion: DashSchemaV5.self)
+            .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self)
         ]
     }
 }
@@ -402,101 +306,17 @@ public enum DashSchemaV1: VersionedSchema {
     }
 }
 
-/// Version 2 adds wallet-independent tracked masternodes. The new model has
-/// no relationship or required-data dependency on V1 rows, so a lightweight
-/// migration preserves every existing row and creates its table.
+/// Unreleased V2 combines the tracked-masternode, asset-lock recipient, sweep,
+/// and public-key usage-limit additions. V1 is the accepted historical baseline. Intermediate beta
+/// layouts are not supported release schemas.
+///
+/// After App Store publication a separate DashSchemaSnapshotV2 preserves the
+/// complete graph. Keep this version on the live models while they match that
+/// snapshot. The next shape change must move this version onto the snapshot,
+/// introduce a new live version and explicitly test its migration.
 public enum DashSchemaV2: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
         Schema.Version(2, 0, 0)
-    }
-
-    public static var models: [any PersistentModel.Type] {
-        DashModelContainer.v2ModelTypes
-    }
-}
-
-/// Version 3 adds `recipientIsExternal` to `PersistentAssetLock` — an
-/// optional column on an existing entity, so a lightweight migration
-/// preserves every existing row and backfills `NULL`.
-///
-/// This is the first version to be registered alongside a genuinely frozen
-/// copy of the model it changes (`DashSchemaV1.PersistentAssetLock`). Without
-/// that copy, adding the property would have mutated V1's and V2's checksums
-/// in place and a store written by the V2 binary would have matched no
-/// registered schema, failing to open with Cocoa error 134504 rather than
-/// migrating. Follow the same pattern for the next property added to any
-/// model: freeze the old shape, add a version, add a stage.
-public enum DashSchemaV3: VersionedSchema {
-    public static var versionIdentifier: Schema.Version {
-        Schema.Version(3, 0, 0)
-    }
-
-    public static var models: [any PersistentModel.Type] {
-        DashModelContainer.v3ModelTypes
-    }
-}
-
-/// Version 4 adds the sweep columns, on the same entity set as V3:
-///   - `PersistentTxo.supersededByTxid` (optional) and
-///     `PersistentPendingInput.isSweptTombstone` (defaulted `false`).
-///     Together they let a sweep's claim on an input whose funding TXO
-///     hasn't arrived yet survive the loser transaction's deletion —
-///     previously that claim lived only on the doomed row's
-///     `PersistentPendingInput`, which cascades away with it. Existing
-///     rows migrate as ordinary (non-tombstone, non-superseded) entries.
-///   - `PersistentPendingInput.winnerMinedHeight` (optional — a
-///     block-context sweep tombstone's finality stamp, the winner's own
-///     mined height) and `PersistentWallet.lastAppliedChainLockHeight`
-///     (optional — the numeric chainlock watermark delivered by
-///     `on_persist_wallet_changeset_chain_lock_height_fn`, stored
-///     monotonic-max). Together they drive the bounded tombstone lifetime:
-///     a tombstone is collected exactly when
-///     `min(chainlockHeight, syncedHeight)` reaches its stamp.
-///     Pre-existing rows read as unstamped (held forever) over a wallet
-///     with no boundary yet.
-///   - The `(walletId, isSweptTombstone)` index on
-///     `PersistentPendingInput`, serving the collector's tombstone-only
-///     scan.
-/// Every column is additive with a default or optional and the index is
-/// additive, so a lightweight migration preserves each existing row.
-///
-/// Registering it required freezing every model V1–V3 register — the
-/// generated copies under `FrozenSchemas/`, see
-/// `scripts/freeze_schema_models.py`.
-public enum DashSchemaV4: VersionedSchema {
-    public static var versionIdentifier: Schema.Version {
-        Schema.Version(4, 0, 0)
-    }
-
-    public static var models: [any PersistentModel.Type] {
-        DashModelContainer.v4ModelTypes
-    }
-}
-
-/// Version 5 adds the key usage-limit columns (protocol version 14) to
-/// `PersistentPublicKey`, on the same entity set as V4:
-///   - `totalBudget` (optional): the credits an authentication key may take
-///     from its identity over its whole lifetime, `nil` for a key registered
-///     without a budget. Signed carrier for the protocol's unsigned
-///     `Credits`, read through `totalBudgetCredits`.
-///   - `expiresAt` (optional): the block time in milliseconds from which the
-///     key can no longer sign, `nil` for a key registered without an expiry.
-///     Read through `expiresAtMillis`.
-/// Both are what make a key an `IdentityPublicKey::V1`; without the columns a
-/// limited key would come back unlimited on cold restart and the wallet would
-/// offer it for signing work consensus refuses. Existing rows migrate with
-/// both `NULL`, which is exactly "a version 0 key, no limits".
-///
-/// Both columns are additive and optional, so a lightweight migration
-/// preserves every existing row.
-///
-/// Registering it required freezing every model V4 registers: the generated
-/// copies under `FrozenSchemas/`, see `scripts/freeze_schema_models.py`.
-/// V4 needed the whole graph rather than a row for `PersistentPublicKey`
-/// alone: see `DashModelContainer.v4ModelTypes`.
-public enum DashSchemaV5: VersionedSchema {
-    public static var versionIdentifier: Schema.Version {
-        Schema.Version(5, 0, 0)
     }
 
     public static var models: [any PersistentModel.Type] {

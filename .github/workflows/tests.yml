@@ -22,7 +22,11 @@ concurrency:
 jobs:
   check-secrets:
     name: Check secret availability
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+      || !github.event.pull_request.draft
+      || (github.event.pull_request.head.repo.full_name == github.repository
+          && startsWith(github.head_ref, 'codex/freeze-swift-schema-v')) }}
     runs-on: ubuntu-24.04
     outputs:
       has_ecr: ${{ steps.check.outputs.has_ecr }}
@@ -39,7 +43,11 @@ jobs:
 
   changes:
     name: Determine changed packages
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+      || !github.event.pull_request.draft
+      || (github.event.pull_request.head.repo.full_name == github.repository
+          && startsWith(github.head_ref, 'codex/freeze-swift-schema-v')) }}
     runs-on: ubuntu-24.04
     outputs:
       js-packages: ${{ steps.override.outputs.js-packages || steps.prune-pr-matrix.outputs.js-packages || steps.filter-js.outputs.changes }}
@@ -307,6 +315,7 @@ jobs:
           filters: |
             swift-sdk-changed:
               - .github/workflows/swift-sdk-build.yml
+              - .github/workflows/swift-sdk-freeze-release.yml
               - .github/workflows/tests.yml
               - packages/swift-sdk/**
               - packages/dapi-grpc/**

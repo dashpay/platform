@@ -1,0 +1,61 @@
+name: Freeze SwiftData App Store release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: App Store version ID recorded by the iOS publication monitor
+        required: true
+        type: string
+      data_commit:
+        description: Full commit on dashwallet-ios/schema-release-data containing the publication proof
+        required: true
+        type: string
+      dry_run:
+        description: Validate and generate without committing, pushing or opening a PR
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# Different releases may share a schema and therefore an automation branch.
+concurrency:
+  group: swift-sdk-appstore-schema-freeze
+  cancel-in-progress: false
+
+jobs:
+  freeze:
+    if: github.repository == 'dashpay/platform'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout reviewed worker
+        uses: actions/checkout@v4
+        with:
+          ref: v4.2-dev
+          path: platform
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout publication records from the fixed iOS repository
+        uses: actions/checkout@v4
+        with:
+          repository: dashpay/dashwallet-ios
+          ref: schema-release-data
+          path: release-data
+          fetch-depth: 0
+          token: ${{ secrets.SCHEMA_RELEASE_TOKEN }}
+          persist-credentials: false
+      - name: Validate publication and prepare draft snapshot PR
+        env:
+          SCHEMA_RELEASE_TOKEN: ${{ secrets.SCHEMA_RELEASE_TOKEN }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          DATA_COMMIT: ${{ inputs.data_commit }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        working-directory: platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--release-id "$RELEASE_ID" --data-commit "$DATA_COMMIT" --data-repo ../release-data)
+          if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
+          python3 packages/swift-sdk/scripts/freeze_appstore_release.py "${args[@]}"
