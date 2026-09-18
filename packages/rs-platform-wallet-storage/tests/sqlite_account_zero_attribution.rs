@@ -12,25 +12,12 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::AddressInfo;
-use platform_wallet::changeset::AccountRegistrationEntry;
 use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::sqlite::schema::core_state;
 use platform_wallet_storage::LoadCtx;
-
-fn manifest_for(wallet: &Wallet) -> Vec<AccountRegistrationEntry> {
-    wallet
-        .accounts
-        .all_accounts()
-        .into_iter()
-        .map(|account| AccountRegistrationEntry {
-            account_type: account.account_type,
-            account_xpub: account.account_xpub,
-        })
-        .collect()
-}
 
 /// The LAST address in the wallet's Standard BIP44 external pool — the
 /// gap-limit-edge address, the one most likely to be a fresh extension and
@@ -85,15 +72,14 @@ fn utxo_at(addr: &dashcore::Address, vout: u32, value: u64) -> key_wallet::Utxo 
     }
 }
 
-/// A UTXO without a pool row follows the real restart path into the first
-/// funds account with its exact balance.
+/// A UTXO without a pool row remains readable while legacy Core state rescans.
 #[test]
-fn utxo_on_fresh_gap_limit_address_rehydrates_under_first_funds_account() {
+fn utxo_on_fresh_gap_limit_address_survives_in_legacy_rows_for_rescan() {
     let (persister, _tmp, path) = fresh_persister();
     let w: WalletId = wid(0xD1);
     ensure_wallet_meta(&persister, &w);
 
-    let (wallet, edge) = wallet_and_gap_limit_edge_address(0x55);
+    let (_wallet, edge) = wallet_and_gap_limit_edge_address(0x55);
     let addr = edge.address.clone();
     let utxo = utxo_at(&addr, 0, 777_000);
     let outpoint = utxo.outpoint;
@@ -117,7 +103,7 @@ fn utxo_on_fresh_gap_limit_address_rehydrates_under_first_funds_account() {
     )
     .expect("reopen persister");
     let conn = reopened.lock_conn_for_test();
-    let (core, utxo_accounts, restored_spends) =
+    let (core, utxo_accounts, _restored_spends) =
         core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
             .expect("load state");
     drop(conn);
@@ -127,23 +113,12 @@ fn utxo_on_fresh_gap_limit_address_rehydrates_under_first_funds_account() {
         "the missing pool row must exercise the unattributed fallback"
     );
 
-    let mut managed = ManagedWalletInfo::from_wallet(&wallet, 1);
-    platform_wallet_storage::sqlite::rehydrate::apply_persisted_core_state(
-        &mut managed,
-        &manifest_for(&wallet),
-        &core,
-        &utxo_accounts,
-        &Default::default(),
-        &restored_spends,
-        &LoadCtx::strict(),
-    )
-    .expect("rehydration must apply the unattributed UTXO");
-
-    let first_funds = managed.accounts.all_funding_accounts().remove(0);
-    assert!(
-        first_funds.utxos.contains_key(&outpoint),
-        "the UTXO must land in the first funds account"
-    );
-    assert_eq!(first_funds.balance.total(), 777_000);
-    assert_eq!(WalletInfoInterface::balance(&managed).total(), 777_000);
+    assert_eq!(core.new_utxos.len(), 1);
+    assert_eq!(core.new_utxos[0].outpoint, outpoint);
+    assert_eq!(core.new_utxos[0].value(), 777_000);
+    let loaded = reopened.load().expect("legacy wallet can start its rescan");
+    let managed = &loaded.wallets.get(&w).unwrap().wallet_info;
+    assert!(managed.utxos().is_empty());
+    assert_eq!(managed.balance.total(), 0);
+    assert_eq!(managed.metadata.synced_height, 0);
 }
