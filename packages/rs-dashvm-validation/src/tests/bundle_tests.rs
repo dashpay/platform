@@ -595,10 +595,10 @@ fn should_diagnose_a_late_binding_mismatch_in_large_lists_without_quadratic_scan
     ));
 }
 
-/// `dependencies_of` does not rely on the binding list being sorted: a bundle whose public
-/// fields were filled with unsorted bindings still reports each target once.
+/// The lookups do not rely on the public lists being sorted: a bundle whose fields were filled
+/// out of canonical order still finds each module and reports each dependency once.
 #[test]
-fn should_list_each_dependency_once_whatever_the_binding_order() {
+fn should_look_up_modules_and_dependencies_whatever_the_field_order() {
     let profile = latest_profile();
     let app = consumer("lib", "(param i32) (result i32)");
     let lib = provider();
@@ -644,4 +644,9 @@ fn should_list_each_dependency_once_whatever_the_binding_order() {
         bundle.dependencies_of(&name("app")),
         vec![name("lib"), name("zzz")]
     );
+    bundle.modules.reverse();
+    assert_eq!(bundle.modules[0].name, name("lib"));
+    assert!(bundle.module(&name("app")).is_some());
+    assert!(bundle.module(&name("lib")).is_some());
+    assert!(bundle.module(&name("zzz")).is_none());
 }

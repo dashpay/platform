@@ -333,10 +333,9 @@ pub struct PreparedBundle {
 impl PreparedBundle {
     /// The prepared module of that name, if any.
     pub fn module(&self, name: &ModuleName) -> Option<&PreparedModule> {
-        self.modules
-            .binary_search_by(|module| module.name.cmp(name))
-            .ok()
-            .map(|index| &self.modules[index])
+        // A linear scan: the module cap is small and the fields are public, so the lookup
+        // does not assume the canonical order preparation produces.
+        self.modules.iter().find(|module| module.name == *name)
     }
 
     /// The modules `name` imports from, in canonical order, without duplicates.
