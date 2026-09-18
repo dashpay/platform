@@ -748,6 +748,23 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             );
         }
 
+        // The DashPay sync above ran its rescan sweep BEFORE the drain created
+        // the receival accounts, so it saw none of them. Run it once more now:
+        // with `synced_height == 0` (this sequence runs before SPV starts) the
+        // sweep marks every registered receival contact as covered by the
+        // coming full scan, instead of leaving it for the first post-scan
+        // sweep to rewind for. Not budgeted: a pass over in-memory state, no
+        // I/O.
+        if drained > 0 {
+            if let Err(e) = identity_wallet.dashpay().reconcile_dashpay_rescan().await {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "startup: post-drain DashPay rescan sweep failed"
+                );
+            }
+        }
+
         Ok(tally.into_outcome(started.elapsed()))
     }
 
