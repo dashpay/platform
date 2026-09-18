@@ -340,18 +340,23 @@ pub fn token_unshield_extra_sighash_data_v0(
     data
 }
 
-/// Extra sighash data of a batch `TokenBurnFromPool`: the token id, the burning identity and the
-/// amount destroyed, so a bundle proven for one burn cannot be replayed for another token,
-/// signer or amount (72 bytes; no other layout has that length).
+/// Extra sighash data of a batch `TokenBurnFromPool`: the token id, the burner and the amount
+/// destroyed, so a bundle proven for one burn cannot be replayed for another token, burner or
+/// amount (72 bytes; no other layout has that length).
+///
+/// `burner_id` is the identity the burn is attributed to: the batch owner of a direct burn, or
+/// the proposer of a group action burn. A group action pins the digest of the bundle's actions
+/// (spend authorization signatures included), so every other signer submits the proposer's
+/// bundle unchanged and the sighash must not depend on whose batch carries it.
 pub fn token_burn_from_pool_extra_sighash_data(
     token_id: &[u8; 32],
-    owner_id: &[u8; 32],
+    burner_id: &[u8; 32],
     amount: u64,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<u8>, ProtocolError> {
     match platform_version.dpp.methods.shielded_extra_sighash_data {
         0 => Ok(token_burn_from_pool_extra_sighash_data_v0(
-            token_id, owner_id, amount,
+            token_id, burner_id, amount,
         )),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "token_burn_from_pool_extra_sighash_data".to_string(),
@@ -361,15 +366,15 @@ pub fn token_burn_from_pool_extra_sighash_data(
     }
 }
 
-/// Version 0 layout: `token_id (32) || owner_id (32) || amount (8, little endian)`.
+/// Version 0 layout: `token_id (32) || burner_id (32) || amount (8, little endian)`.
 pub fn token_burn_from_pool_extra_sighash_data_v0(
     token_id: &[u8; 32],
-    owner_id: &[u8; 32],
+    burner_id: &[u8; 32],
     amount: u64,
 ) -> Vec<u8> {
     let mut data = Vec::with_capacity(32 + 32 + 8);
     data.extend_from_slice(token_id);
-    data.extend_from_slice(owner_id);
+    data.extend_from_slice(burner_id);
     data.extend_from_slice(&amount.to_le_bytes());
     data
 }
@@ -925,7 +930,7 @@ mod tests {
     }
 
     #[test]
-    fn token_burn_from_pool_layout_is_token_owner_amount() {
+    fn token_burn_from_pool_layout_is_token_burner_amount() {
         let data = token_burn_from_pool_extra_sighash_data_v0(&[1u8; 32], &[2u8; 32], 300);
         assert_eq!(data.len(), 72);
         assert_eq!(&data[..32], &[1u8; 32]);

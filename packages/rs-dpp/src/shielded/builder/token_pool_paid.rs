@@ -1,5 +1,5 @@
 use grovedb_commitment_tree::{
-    Anchor, Builder, BundleType, DashMemo, FullViewingKey, NoteValue, PaymentAddress, Scope,
+    Anchor, Builder, BundleType, DashMemo, Flags, FullViewingKey, NoteValue, PaymentAddress, Scope,
     SpendAuthorizingKey,
 };
 
@@ -29,8 +29,8 @@ use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
 use super::{
-    build_output_only_bundle, build_spend_bundle, prove_and_sign_bundle,
-    serialize_authorized_bundle, OrchardProver, SerializedBundle, SpendableNote,
+    build_spend_bundle, prove_and_sign_bundle, serialize_authorized_bundle, OrchardProver,
+    SerializedBundle, SpendableNote,
 };
 
 /// The credit pool side of an identity-less token pool transition: the wallet's credit pool
@@ -350,43 +350,38 @@ pub fn build_token_purchase_from_shielded_pool_transition<P: OrchardProver>(
             "token purchase count must be greater than zero".to_string(),
         ));
     }
-    let token_bundle = build_output_only_bundle(
-        recipient,
-        token_count,
-        memo,
-        Some(recipient_fvk.to_ovk(Scope::External)),
-        0,
-        prover,
-    )?;
-    // An outputs-only bundle carries no spend-auth signatures; its binding signature must
-    // still commit to the token id, count and price, so re-sign it over that sighash.
-    let token_sb = {
-        let mut builder = Builder::<DashMemo>::new(
-            BundleType::Transactional {
-                flags: grovedb_commitment_tree::Flags::SPENDS_DISABLED,
-                bundle_required: false,
-            },
-            Anchor::empty_tree(),
-        );
-        builder
-            .add_output(
-                Some(recipient_fvk.to_ovk(Scope::External)),
-                PaymentAddress::from(recipient),
-                NoteValue::from_raw(token_count),
-                memo,
-            )
-            .map_err(|e| {
-                ProtocolError::ShieldedBuildError(format!("failed to add output: {:?}", e))
-            })?;
-        let token_extra = token_purchase_from_shielded_pool_extra_sighash_data(
-            &token_id.to_buffer(),
+    if token_count > i64::MAX as u64 {
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "token purchase count {} exceeds maximum allowed value {}",
             token_count,
-            total_agreed_price,
-            platform_version,
-        )?;
-        drop(token_bundle);
-        serialize_authorized_bundle(&prove_and_sign_bundle(builder, prover, &[], &token_extra)?)
-    };
+            i64::MAX as u64
+        )));
+    }
+    // An outputs-only bundle carries no spend-auth signatures; its binding signature still
+    // commits to the token id, count and price, so the bundle is proven over that sighash.
+    let token_extra = token_purchase_from_shielded_pool_extra_sighash_data(
+        &token_id.to_buffer(),
+        token_count,
+        total_agreed_price,
+        platform_version,
+    )?;
+    let mut builder = Builder::<DashMemo>::new(
+        BundleType::Transactional {
+            flags: Flags::SPENDS_DISABLED,
+            bundle_required: false,
+        },
+        Anchor::empty_tree(),
+    );
+    builder
+        .add_output(
+            Some(recipient_fvk.to_ovk(Scope::External)),
+            PaymentAddress::from(recipient),
+            NoteValue::from_raw(token_count),
+            memo,
+        )
+        .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add output: {:?}", e)))?;
+    let token_sb =
+        serialize_authorized_bundle(&prove_and_sign_bundle(builder, prover, &[], &token_extra)?);
     if token_sb.value_balance != -(token_count as i64) {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "token purchase bundle value balance {} does not equal minus the token count {}",
@@ -512,6 +507,37 @@ mod tests {
         .expect_err("zero amount must be rejected")
         .to_string();
         assert!(err.contains("greater than zero"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn rejects_a_purchase_count_outside_the_value_balance_range() {
+        let (fvk, ask) = keys();
+        let address = test_orchard_address();
+        let err = build_token_purchase_from_shielded_pool_transition(
+            Identifier::from([1u8; 32]),
+            Identifier::from([2u8; 32]),
+            0,
+            &address,
+            &fvk,
+            1u64 << 63,
+            1_000,
+            [0u8; 36],
+            ShieldedFeePayer {
+                spends: vec![test_spendable_note(1_000_000_000)],
+                change_address: &address,
+                fvk: &fvk,
+                ask: &ask,
+                anchor: Anchor::empty_tree(),
+            },
+            &TestProver,
+            PlatformVersion::latest(),
+        )
+        .expect_err("a count that cannot be negated as i64 must be rejected before proving")
+        .to_string();
+        assert!(
+            err.contains("exceeds maximum allowed value"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

@@ -1097,7 +1097,7 @@ mod token_shielded_pool_tests {
 mod token_pool_mint_burn_claim_purchase_tests {
     use super::token_shielded_pool_tests::{
         assert_tokens_conserved, build_shield_bundle, build_spend_bundle, dummy_bundle,
-        enable_shielded_pool, identity_token_balance, insert_token_pool_anchor,
+        enable_shielded_pool, identity_token_balance, insert_token_pool_anchor, nullifier_is_spent,
         platform_with_latest_version, pool_balance, pool_notes_count, process, spendable_note,
         OWNER_INITIAL_BALANCE,
     };
@@ -1111,8 +1111,10 @@ mod token_pool_mint_burn_claim_purchase_tests {
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::shielded::token_burn_from_pool_extra_sighash_data_v0;
-    use dpp::state_transition::batch_transition::TokenSetPriceForDirectPurchaseTransition;
+    use dpp::shielded::{serialized_actions_digest, token_burn_from_pool_extra_sighash_data_v0};
+    use dpp::state_transition::batch_transition::{
+        TokenBurnFromPoolTransition, TokenSetPriceForDirectPurchaseTransition,
+    };
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
     use platform_version::version::PlatformVersion;
 
@@ -1405,6 +1407,222 @@ mod token_pool_mint_burn_claim_purchase_tests {
                 ..
             }]
         );
+    }
+
+    /// A burn from the pool authorized by a group of two. The proposer proves the bundle, bound
+    /// to itself; the second signer submits that very bundle and the burn executes on the second
+    /// signature. A bundle the second signer built itself is refused: the group action pins the
+    /// digest of the proposer's actions.
+    #[tokio::test]
+    async fn test_token_burn_from_pool_by_group_of_two() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9105);
+
+        let (proposer, proposer_signer, proposer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (confirmer, confirmer_signer, confirmer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            proposer.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                enable_shielded_pool(token_configuration);
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(proposer.id(), 1), (confirmer.id(), 1)].into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+        let token = token_id.to_buffer();
+
+        // Fund the pool first.
+        let shield = BatchTransition::new_token_shield_transition(
+            token_id,
+            proposer.id(),
+            contract.id(),
+            0,
+            10_000,
+            build_shield_bundle(10_000, 24),
+            &proposer_key,
+            2,
+            0,
+            &proposer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+        let result = process(&platform, &shield);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        // The proposer proves a burn of 4_000 out of a 6_000 note, bound to the proposer.
+        let (note, anchor, merkle_path) = spendable_note(6_000, 4);
+        insert_token_pool_anchor(&platform, token_id, &anchor);
+        let burn_amount = 4_000;
+        let extra = token_burn_from_pool_extra_sighash_data_v0(
+            &token,
+            &proposer.id().to_buffer(),
+            burn_amount,
+        );
+        let (burn_bundle, value_balance) =
+            build_spend_bundle(note, merkle_path, anchor, burn_amount, &extra, 25);
+        assert_eq!(value_balance, burn_amount as i64);
+        let proposer_nonce = 3;
+
+        let proposal = BatchTransition::new_token_burn_from_pool_transition(
+            token_id,
+            proposer.id(),
+            contract.id(),
+            0,
+            burn_amount,
+            burn_bundle.clone(),
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &proposer_key,
+            proposer_nonce,
+            0,
+            &proposer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token burn from pool proposal");
+        let result = process(&platform, &proposal);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        // One signature of two: nothing has left the pool yet.
+        assert_eq!(pool_balance(&platform, token_id), 10_000);
+        assert_eq!(total_supply(&platform, token_id), OWNER_INITIAL_BALANCE);
+        assert!(!nullifier_is_spent(
+            &platform,
+            token_id,
+            &burn_bundle.actions[0].nullifier
+        ));
+
+        let action_id = TokenBurnFromPoolTransition::calculate_action_id_with_fields(
+            &token,
+            proposer.id().as_bytes(),
+            proposer_nonce,
+            burn_amount,
+            &serialized_actions_digest(&burn_bundle.actions),
+        );
+        let as_other_signer = || {
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id,
+                        action_is_proposer: false,
+                    },
+                ),
+            )
+        };
+
+        // The confirmer cannot substitute a bundle of its own, even for the same amount.
+        let (other_note, other_anchor, other_path) = spendable_note(6_000, 5);
+        insert_token_pool_anchor(&platform, token_id, &other_anchor);
+        let confirmer_extra = token_burn_from_pool_extra_sighash_data_v0(
+            &token,
+            &confirmer.id().to_buffer(),
+            burn_amount,
+        );
+        let (substituted_bundle, _) = build_spend_bundle(
+            other_note,
+            other_path,
+            other_anchor,
+            burn_amount,
+            &confirmer_extra,
+            26,
+        );
+        let substituted = BatchTransition::new_token_burn_from_pool_transition(
+            token_id,
+            confirmer.id(),
+            contract.id(),
+            0,
+            burn_amount,
+            substituted_bundle,
+            None,
+            as_other_signer(),
+            &confirmer_key,
+            2,
+            0,
+            &confirmer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token burn from pool confirmation with a substituted bundle");
+        let result = process(&platform, &substituted);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ModificationOfGroupActionMainParametersNotPermittedError(_)
+                ),
+                ..
+            }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), 10_000);
+
+        // The confirmer submits the proposer's bundle unchanged and the burn executes.
+        let confirmation = BatchTransition::new_token_burn_from_pool_transition(
+            token_id,
+            confirmer.id(),
+            contract.id(),
+            0,
+            burn_amount,
+            burn_bundle.clone(),
+            None,
+            as_other_signer(),
+            &confirmer_key,
+            3,
+            0,
+            &confirmer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token burn from pool confirmation");
+        let result = process(&platform, &confirmation);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert_eq!(pool_balance(&platform, token_id), 10_000 - burn_amount);
+        assert_eq!(
+            total_supply(&platform, token_id),
+            OWNER_INITIAL_BALANCE - burn_amount
+        );
+        assert!(nullifier_is_spent(
+            &platform,
+            token_id,
+            &burn_bundle.actions[0].nullifier
+        ));
+        assert_tokens_conserved(&platform);
     }
 
     #[tokio::test]
