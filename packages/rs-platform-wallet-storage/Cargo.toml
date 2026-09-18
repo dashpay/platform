@@ -193,6 +193,9 @@ serial_test = "3"
 # outside — `cfg(test)` alone would satisfy it from within the crate.
 platform-wallet-storage = { path = ".", default-features = false, features = ["sqlite", "cli", "secrets", "kv", "__test-helpers", "test-util"] }
 tempfile = "3"
+# Drives key-wallet's async `check_core_transaction` in the restore-then-redeliver
+# regression tests (`sqlite_core_state_reader.rs`).
+tokio = { version = "1.40", features = ["macros", "rt"] }
 # `sqlite_hardening_3625.rs`, `sqlite_persist_roundtrip.rs`, and
 # `sqlite_load_reconstruction.rs` import `dash_sdk::platform::address_sync::AddressFunds`.
 # Mocks feature lets the consumer↔persister boundary tests stand up a

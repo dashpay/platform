@@ -5355,6 +5355,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "time",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "tracing-test",

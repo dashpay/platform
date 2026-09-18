@@ -1073,6 +1073,46 @@ pub fn load_state(
     Ok((cs, utxo_accounts))
 }
 
+/// Every stamped sweep hold for this wallet, as `(outpoint, winner mined
+/// height)` — the durable rows `apply_sweep` writes when a block-mined
+/// winner, possibly foreign and so never recorded here, spent a coin whose
+/// funding output has not materialised yet.
+///
+/// These rows are the storage projection of key-wallet's
+/// `observed_spent_outpoints` for spends no stored record carries, so the
+/// restore path merges them back into that map: otherwise the funding
+/// transaction, delivered after a restart, is credited as a fresh coin. An
+/// unstamped (mempool-context) hold has no height to merge and is not
+/// returned; neither is a materialised row, whose funding already arrived.
+///
+/// # Errors
+///
+/// Fail-hard on a malformed outpoint or out-of-range height: a dropped hold
+/// silently re-credits a consumed coin.
+pub fn load_observed_spend_holds(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<Vec<(dashcore::OutPoint, u32)>, WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT length(outpoint), outpoint, winner_mined_height FROM core_utxos \
+         WHERE wallet_id = ?1 AND is_sweep_placeholder = 1 AND spent = 1 \
+           AND winner_mined_height IS NOT NULL",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let mut holds = Vec::new();
+    while let Some(row) = rows.next()? {
+        blob::check_size(row.get::<_, i64>(0)?)?;
+        let op_bytes: Vec<u8> = row.get(1)?;
+        let outpoint = blob::decode_outpoint(&op_bytes)?;
+        let height = crate::sqlite::util::safe_cast::i64_to_u32(
+            "core_utxos.winner_mined_height",
+            row.get(2)?,
+        )?;
+        holds.push((outpoint, height));
+    }
+    Ok(holds)
+}
+
 /// Every address that has ever held a `core_utxos` row for this wallet —
 /// spent **and** unspent — deduplicated, each paired with its resolved
 /// owning account. The rehydration address-reuse guard: an address whose
