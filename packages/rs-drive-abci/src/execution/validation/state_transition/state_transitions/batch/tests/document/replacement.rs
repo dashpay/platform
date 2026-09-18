@@ -7,6 +7,8 @@ mod replacement_tests {
     use dpp::document::Document;
     use dpp::fee::fee_result::FeeResult;
     use dpp::identifier::Identifier;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::KeyID;
     use dpp::prelude::IdentityNonce;
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
@@ -3175,6 +3177,264 @@ mod replacement_tests {
                 error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
                 ..
             }
+        );
+    }
+
+    const REFERENCE_VALIDATION_IDENTITY_KEY_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key.json";
+
+    /// Committed state the identity-key reference replace tests can point at:
+    /// the test identity, its enabled critical authentication key and its
+    /// master key, which the helper disables in state.
+    struct IdentityKeyReferenceTargets {
+        identity_id: Identifier,
+        enabled_key_id: KeyID,
+        disabled_key_id: KeyID,
+    }
+
+    /// Registers the identity-key fixture contract, disables the test
+    /// identity's master key in state, creates a `message` document shaped by
+    /// `create_mutator` (asserting success), then replaces it shaped by
+    /// `replace_mutator` and returns the replace execution result.
+    async fn run_identity_key_reference_create_then_replace<C, R>(
+        create_mutator: C,
+        replace_mutator: R,
+    ) -> StateTransitionExecutionResult
+    where
+        C: FnOnce(&mut Document, &IdentityKeyReferenceTargets),
+        R: FnOnce(&mut Document, &IdentityKeyReferenceTargets),
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        // Key 0 is the master key; documents are signed with the critical key,
+        // so disabling it leaves the transitions below valid
+        platform
+            .drive
+            .disable_identity_keys(
+                identity.id().to_buffer(),
+                vec![0],
+                1,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to disable the master key");
+
+        let targets = IdentityKeyReferenceTargets {
+            identity_id: identity.id(),
+            enabled_key_id: key.id(),
+            disabled_key_id: 0,
+        };
+
+        let contract = setup_contract(
+            &platform.drive,
+            REFERENCE_VALIDATION_IDENTITY_KEY_CONTRACT_PATH,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                // The reference properties are optional; each test sets only
+                // what it exercises
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random message document");
+
+        create_mutator(&mut document, &targets);
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                message,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        document.increment_revision().unwrap();
+        replace_mutator(&mut document, &targets);
+
+        let documents_batch_replace_transition =
+            BatchTransition::new_document_replacement_transition_from_document(
+                document,
+                message,
+                &key,
+                3,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_replace_serialized_transition = documents_batch_replace_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_replace_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
+    /// identityPublicKey on replace: changing only the key id property while
+    /// leaving the identity id untouched must re-validate the reference:
+    /// the referenced key is the (identity id, key id) pair, so the
+    /// changed-fields gate binds the key id property the way it binds an
+    /// agreement's referring property.
+    #[tokio::test]
+    async fn should_document_replace_fail_when_only_key_id_changed_to_disabled_key() {
+        let result = run_identity_key_reference_create_then_replace(
+            |document, targets| {
+                document.set("toUserId", targets.identity_id.into());
+                document.set("toKeyIndex", (targets.enabled_key_id as i64).into());
+            },
+            |document, targets| {
+                document.set("toKeyIndex", (targets.disabled_key_id as i64).into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyDisabledError(
+                    _
+                )),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_replace_fail_when_only_key_id_changed_to_missing_key() {
+        let result = run_identity_key_reference_create_then_replace(
+            |document, targets| {
+                document.set("toUserId", targets.identity_id.into());
+                document.set("toKeyIndex", (targets.enabled_key_id as i64).into());
+            },
+            |document, _| {
+                document.set("toKeyIndex", 99i64.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
+                    _
+                )),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_replace_succeed_when_key_reference_and_key_id_untouched() {
+        let result = run_identity_key_reference_create_then_replace(
+            |document, targets| {
+                document.set("toUserId", targets.identity_id.into());
+                document.set("toKeyIndex", (targets.enabled_key_id as i64).into());
+            },
+            |document, _| {
+                document.set("note", "changed".into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
     }
 }
