@@ -159,6 +159,14 @@ impl SystemDataContracts {
         self.load(SystemDataContract::DocumentHistory, platform_version)
     }
 
+    /// Returns the app-connect contract materialized for `platform_version`.
+    pub fn load_app_connect(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Arc<DataContract>, Error> {
+        self.load(SystemDataContract::AppConnect, platform_version)
+    }
+
     /// Returns the system contract whose deterministic identifier matches `id`, materialized
     /// for `platform_version`.
     ///
@@ -197,6 +205,8 @@ impl SystemDataContracts {
             SystemDataContract::TokenHistory | SystemDataContract::KeywordSearch => 9,
             // Written to state by the transition to protocol version 13.
             SystemDataContract::DocumentHistory => 13,
+            // Written to state by the transition to protocol version 14.
+            SystemDataContract::AppConnect => 14,
             // Never served from this cache: `WalletUtils` is only ever read from grovedb, and
             // the reserved `FeatureFlags` slot has no implementation.
             SystemDataContract::WalletUtils | SystemDataContract::FeatureFlags => return Ok(None),
@@ -396,6 +406,20 @@ mod tests {
                 platform_version(13)
             )
             .expect("expected the v13 lookup to succeed")
+            .is_some());
+    }
+
+    #[test]
+    fn app_connect_cache_respects_its_activation_version() {
+        let contracts = SystemDataContracts::new();
+
+        assert!(contracts
+            .find_by_id(SystemDataContract::AppConnect.id(), platform_version(13))
+            .expect("expected the pre-activation lookup to succeed")
+            .is_none());
+        assert!(contracts
+            .find_by_id(SystemDataContract::AppConnect.id(), platform_version(14))
+            .expect("expected the v14 lookup to succeed")
             .is_some());
     }
 

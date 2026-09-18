@@ -309,6 +309,7 @@ jobs:
               - .github/workflows/swift-sdk-build.yml
               - .github/workflows/tests.yml
               - packages/swift-sdk/**
+              - packages/app-connect-contract/**
               - packages/dapi-grpc/**
               - packages/dashpay-contract/**
               - packages/data-contracts/**
