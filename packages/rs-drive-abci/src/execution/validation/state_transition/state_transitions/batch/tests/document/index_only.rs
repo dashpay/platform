@@ -1188,6 +1188,211 @@ pub(super) mod index_only_tests {
             );
         }
     }
+
+    /// An UNSIGNED `mark` create for the given property values, for
+    /// assembling batches that carry more than one transition (the factory
+    /// signs exactly one create per batch). Same shape as
+    /// [`signed_mark_create`]; the document comes back alongside so the
+    /// test can probe the entries its values address.
+    fn mark_create_transition(
+        contract: &DataContract,
+        owner: Identifier,
+        a: &str,
+        b: &str,
+        nonce: u64,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> (
+        dpp::state_transition::batch_transition::batched_transition::DocumentCreateTransition,
+        Document,
+    ) {
+        use dpp::document::DocumentV0Setters;
+        use dpp::state_transition::batch_transition::batched_transition::DocumentCreateTransition;
+        let mark_type = contract
+            .document_type_for_name("mark")
+            .expect("mark doctype exists");
+        let entropy = Bytes32::random_with_rng(rng);
+        let mut mark = mark_type
+            .random_document_with_identifier_and_entropy(
+                rng,
+                owner,
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random mark");
+        mark.set("a", a.into());
+        mark.set("b", b.into());
+        let create = DocumentCreateTransition::from_document(
+            mark.clone(),
+            mark_type,
+            entropy.0,
+            None,
+            nonce,
+            platform_version,
+            None,
+            None,
+        )
+        .expect("expected the create transition");
+        (create, mark)
+    }
+
+    /// Two creates in ONE batch whose entries collide under one index
+    /// (`byA`: same `a`, same owner) but not under another (`byB`:
+    /// different `b`). Every transition of a batch is validated against
+    /// the same unapplied state, so the state probe sees neither create's
+    /// entries, and the batch is then applied as one grove batch, where a
+    /// second insert at the same path and key silently replaces the
+    /// first. Left alone, the loser's `byA` entry would carry the winner's
+    /// row commitment while its `byB` entry stood: a document nobody could
+    /// delete (the commitment probe fails on the replaced entry) or
+    /// recreate (its surviving entry is a duplicate). The batch-scoped
+    /// entry tracking must refuse the second create exactly as the state
+    /// probe refuses a collision with committed state, while a pair that
+    /// shares no entry passes untouched.
+    ///
+    /// Driven through the transformer and the batch state validation
+    /// directly: `max_transitions_in_documents_batch` is 1 at every
+    /// protocol version, so `process_raw_state_transitions` refuses any
+    /// two-transition batch at basic structure (pinned by
+    /// `ranked_group_drain`) and this shape cannot reach the write path
+    /// from the network today. The tracker is what keeps that true for
+    /// indexOnly types on the day the cap is raised.
+    #[tokio::test]
+    async fn test_colliding_index_only_creates_in_one_batch_are_refused() {
+        use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+        use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
+        use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
+        use crate::execution::validation::state_transition::ValidationMode;
+        use crate::platform_types::platform::PlatformRef;
+        use dpp::version::DefaultForPlatformVersion;
+        use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+        use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+        use drive::state_transition_action::StateTransitionAction;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let mut rng = StdRng::seed_from_u64(78056);
+
+        let (alice, _alice_signer, _alice_key) =
+            setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+        let contract = register_likes(&platform, alice.id(), platform_version);
+
+        let state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        // Transforms and state-validates an unsigned two-create batch (neither
+        // step checks signatures) and returns the consensus errors alongside
+        // whether each transition survived as a create.
+        let mut validate_pair = |pairs: [(&str, &str); 2]| {
+            let [(a_1, b_1), (a_2, b_2)] = pairs;
+            let (first, _) = mark_create_transition(
+                &contract,
+                alice.id(),
+                a_1,
+                b_1,
+                2,
+                &mut rng,
+                platform_version,
+            );
+            let (second, second_mark) = mark_create_transition(
+                &contract,
+                alice.id(),
+                a_2,
+                b_2,
+                3,
+                &mut rng,
+                platform_version,
+            );
+            let batch: StateTransition = BatchTransition::from(BatchTransitionV0 {
+                owner_id: alice.id(),
+                transitions: vec![first.into(), second.into()],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            })
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected an execution context");
+            let transformed = batch
+                .transform_into_action(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    &None,
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                )
+                .expect("expected to transform the batch");
+            assert!(
+                transformed.errors.is_empty(),
+                "the batch must transform cleanly: {:?}",
+                transformed.errors
+            );
+            let action = transformed.data.expect("expected the batch action");
+
+            let validated = batch
+                .validate_state(
+                    Some(action),
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &BlockInfo::default(),
+                    &mut execution_context,
+                    None,
+                )
+                .expect("expected to validate the batch against state");
+            let Some(StateTransitionAction::BatchAction(action)) = validated.data else {
+                panic!("expected a batch action back from state validation");
+            };
+            let survived_as_creates: Vec<bool> = action
+                .transitions()
+                .iter()
+                .map(|transition| {
+                    matches!(
+                        transition,
+                        BatchedTransitionAction::DocumentAction(
+                            DocumentTransitionAction::CreateAction(_)
+                        )
+                    )
+                })
+                .collect();
+            (validated.errors, survived_as_creates, second_mark)
+        };
+
+        // ── colliding on `byA` (same `a`), differing on `byB` ──────────
+        let (errors, survived, second_mark) = validate_pair([("x", "one"), ("x", "two")]);
+        assert_matches!(
+            errors.as_slice(),
+            [ConsensusError::StateError(StateError::DuplicateUniqueIndexError(error))]
+                if error.document_id() == &second_mark.id()
+                    && error.duplicating_properties() == &["a".to_string(), "$ownerId".to_string()],
+            "the second create collides with the first on `byA` and must be refused, \
+             naming the second document and the colliding index: {errors:?}"
+        );
+        assert_eq!(
+            survived,
+            vec![true, false],
+            "the first create must stand and the second must become a nonce bump"
+        );
+
+        // ── sharing no entry: both stand ───────────────────────────────
+        let (errors, survived, _) = validate_pair([("y", "one"), ("z", "two")]);
+        assert!(
+            errors.is_empty(),
+            "two creates that share no entry must both pass: {errors:?}"
+        );
+        assert_eq!(survived, vec![true, true]);
+    }
 }
 
 mod index_only_executed_proof_tests {
