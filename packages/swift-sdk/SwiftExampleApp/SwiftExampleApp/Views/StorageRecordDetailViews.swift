@@ -1140,6 +1140,22 @@ struct DocumentTypeStorageDetailView: View {
             Section("Flags") {
                 FieldRow(label: "Keeps History", value: record.documentsKeepHistory ? "Yes" : "No")
                 FieldRow(label: "Mutable", value: record.documentsMutable ? "Yes" : "No")
+                // Protocol version 14 per-property freeze, read off the
+                // stored schema; rows appear only when the type declares it,
+                // so a pre-v14 type renders as before.
+                let immutability = record.immutability
+                if !immutability.isEmpty {
+                    FieldRow(
+                        label: "Immutable",
+                        value: immutability.immutableProperties.joined(separator: ", ")
+                    )
+                    if !immutability.immutableAllowSetting.isEmpty {
+                        FieldRow(
+                            label: "Settable Once While Absent",
+                            value: immutability.immutableAllowSetting.joined(separator: ", ")
+                        )
+                    }
+                }
                 FieldRow(label: "Can Be Deleted", value: record.documentsCanBeDeleted ? "Yes" : "No")
                 FieldRow(label: "Transferable", value: record.documentsTransferable ? "Yes" : "No")
                 FieldRow(

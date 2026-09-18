@@ -6,6 +6,18 @@ struct DocumentFieldsView: View {
     let documentType: PersistentDocumentType
     @Binding var fieldValues: [String: Any]
 
+    /// The per-property freeze a REPLACE must respect (protocol version 14).
+    /// `.none` for a create, which writes every property for the first time
+    /// and is never refused on these grounds.
+    var immutability: DocumentTypeImmutability = .none
+
+    /// Top-level property names the document being replaced already has a
+    /// value for. Empty when the form cannot see the stored document, which
+    /// leaves a settable-once property editable: setting one that is in fact
+    /// already present is the only case consensus would then refuse, and the
+    /// caption says so.
+    var storedPropertyNames: Set<String> = []
+
     @State private var textFields: [String: String] = [:]
     @State private var numberFields: [String: String] = [:]
     @State private var boolFields: [String: Bool] = [:]
@@ -40,6 +52,15 @@ struct DocumentFieldsView: View {
 
     @ViewBuilder
     private func fieldView(for property: PersistentProperty) -> some View {
+        // Frozen properties are locked rather than validated on submit: a
+        // replace that touches one is refused by consensus with
+        // `DocumentImmutablePropertyChangedError` (code 40128), and the
+        // rejected transition is still paid for.
+        let lock = immutability.lockState(
+            for: property.name,
+            hasStoredValue: storedPropertyNames.contains(property.name)
+        )
+
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(property.name)
@@ -48,6 +69,16 @@ struct DocumentFieldsView: View {
                 if property.isRequired {
                     Text("*")
                         .foregroundColor(.red)
+                }
+                if lock != .editable {
+                    Text(lock == .frozen ? "Immutable" : "Immutable once set")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.2))
+                        .foregroundColor(.orange)
+                        .cornerRadius(4)
+                        .accessibilityIdentifier("createDocument.lock.\(property.name)")
                 }
             }
 
@@ -124,7 +155,19 @@ struct DocumentFieldsView: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
+
+            if lock == .frozen {
+                Text("Frozen at creation: a replace cannot change, add or remove it.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            } else if lock == .settableOnce {
+                Text("May be set once while the stored document has no value for it.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
         }
+        .disabled(lock == .frozen)
+        .opacity(lock == .frozen ? 0.6 : 1)
     }
 
     private func placeholderText(for property: PersistentProperty) -> String {

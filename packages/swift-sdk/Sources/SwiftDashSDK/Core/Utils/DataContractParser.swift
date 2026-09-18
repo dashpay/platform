@@ -169,6 +169,12 @@ public struct DataContractParser {
                 docType.indexOnly = indexOnly
             }
 
+            // The protocol-version-14 `immutable` / `immutableAllowSetting`
+            // keywords need no column of their own: `schemaJSON` above is the
+            // whole `typeDict`, so they are persisted with it and read back
+            // through `PersistentDocumentType.immutability`. Keep that true
+            // when touching the schema stored here.
+
             // The actual field name is just "canBeDeleted" not "documentsCanBeDeleted"
             if let canDelete = typeDict["canBeDeleted"] as? Bool {
                 docType.documentsCanBeDeleted = canDelete

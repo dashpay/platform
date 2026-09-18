@@ -288,6 +288,15 @@ struct TransitionDetailView: View {
       } else if let contract = dataContracts.first(where: { $0.idBase58 == contractId }),
                 let documentTypes = contract.documentTypes {
         if let documentType = documentTypes.first(where: { $0.name == documentTypeName }) {
+          // Only a replace can hit the protocol-version-14 freeze: a create
+          // writes every property for the first time. This builder types the
+          // replacement from scratch and never loads the stored document, so
+          // no property is known to have a stored value and a settable-once
+          // property stays editable (see `DocumentFieldsView`).
+          let immutability = transitionKey == "documentReplace"
+            ? documentType.immutability
+            : DocumentTypeImmutability.none
+
           DocumentFieldsView(
             documentType: documentType,
             fieldValues: Binding(
@@ -300,7 +309,8 @@ struct TransitionDetailView: View {
                   formInputs["documentFields"] = jsonString
                 }
               }
-            )
+            ),
+            immutability: immutability
           )
         } else {
           Text("Document type '\(documentTypeName)' not found in contract")

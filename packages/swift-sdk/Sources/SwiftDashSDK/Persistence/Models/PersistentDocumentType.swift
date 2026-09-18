@@ -102,6 +102,32 @@ extension PersistentDocumentType {
         return try? JSONSerialization.jsonObject(with: data, options: []) as? [String]
     }
 
+    /// The type's `immutable` / `immutableAllowSetting` keywords (protocol
+    /// version 14), read off the persisted schema.
+    ///
+    /// Derived rather than stored in columns of its own: `schemaJSON` already
+    /// holds the whole document type dictionary as authored, so the keywords
+    /// are persisted with every contract the parser writes, and a new stored
+    /// property would move this model's entity hash. That costs a schema
+    /// version and a fixture store (see `DashModelContainer.modelTypes` and
+    /// `DashModelMigrationTests`), which a display-only keyword does not
+    /// justify. `indexOnly` predates that discipline and kept its column.
+    public var immutability: DocumentTypeImmutability {
+        DocumentTypeImmutability(documentTypeSchema: schema)
+    }
+
+    /// Top-level properties frozen at document creation, sorted. Empty when
+    /// the type declares no `immutable` list.
+    public var immutableProperties: [String] {
+        immutability.immutableProperties
+    }
+
+    /// The `immutable` entries a replace may still set while the stored
+    /// document has no value for them, sorted. Empty when none are declared.
+    public var immutableAllowSetting: [String] {
+        immutability.immutableAllowSetting
+    }
+
     public var documentCount: Int {
         documents?.count ?? 0
     }
