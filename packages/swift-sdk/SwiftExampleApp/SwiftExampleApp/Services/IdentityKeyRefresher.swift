@@ -73,6 +73,13 @@ enum IdentityKeyRefresher {
 
                 let readOnly = keyData["readOnly"] as? Bool ?? false
                 let disabledAt = keyData["disabledAt"] as? UInt64
+                // Usage limits (protocol version 14). Present only on a
+                // version 1 key: `totalBudget` is credits for the key's
+                // whole lifetime, `expiresAt` is block time in
+                // milliseconds. Dropping them here would persist a
+                // limited key as unlimited.
+                let totalBudget = keyData["totalBudget"] as? UInt64
+                let expiresAt = keyData["expiresAt"] as? UInt64
 
                 return IdentityPublicKey(
                     id: UInt32(id),
@@ -82,7 +89,9 @@ enum IdentityKeyRefresher {
                     keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
                     readOnly: readOnly,
                     data: data,
-                    disabledAt: disabledAt
+                    disabledAt: disabledAt,
+                    totalBudget: totalBudget,
+                    expiresAt: expiresAt
                 )
             }
         }

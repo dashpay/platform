@@ -4006,6 +4006,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             row.contractBounds = snapshotBoundsIds
             row.contractBoundsDocumentTypeName = snapshotBoundsDocType
 
+            // Usage limits (protocol version 14). Rust is the source of
+            // truth on every callback, and a key limits update raises a
+            // budget / moves an expiry in place, so the row follows the
+            // snapshot rather than keeping whatever it held: a key whose
+            // budget was just raised must not read back at the old value.
+            row.totalBudgetCredits = entry.totalBudget
+            row.expiresAtMillis = entry.expiresAt
+
             // Private-key handling: no secret crosses the FFI. A
             // wallet-derivable key whose private bytes were materialized by
             // another path (e.g. identity registration writes its keychain
@@ -5000,6 +5008,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let keyType: UInt8
         let readOnly: Bool
         let disabledAt: UInt64?
+        /// Usage limit (protocol version 14): the credits the key may take
+        /// from the identity over its whole lifetime. `nil` for a key
+        /// without a budget.
+        let totalBudget: UInt64?
+        /// Usage limit (protocol version 14): the block time in
+        /// milliseconds from which the key can no longer sign. `nil` for a
+        /// key without an expiry.
+        let expiresAt: UInt64?
         let publicKeyData: Data
         let publicKeyHash: Data
         /// Owning wallet if this key is derivable from one we control.
@@ -8135,6 +8151,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         row.contract_bounds_document_type = nil
                     }
 
+                    // Usage limits (protocol version 14). Without them a
+                    // key registered with a budget or an expiry would come
+                    // back unlimited on cold restart, and the restored
+                    // identity would offer it for signing work consensus
+                    // rejects. `total_budget` is credits; `expires_at` is
+                    // block time in milliseconds.
+                    if let totalBudget = pk.totalBudgetCredits {
+                        row.total_budget_is_some = true
+                        row.total_budget = totalBudget
+                    } else {
+                        row.total_budget_is_some = false
+                        row.total_budget = 0
+                    }
+                    if let expiresAt = pk.expiresAtMillis {
+                        row.expires_at_is_some = true
+                        row.expires_at = expiresAt
+                    } else {
+                        row.expires_at_is_some = false
+                        row.expires_at = 0
+                    }
+
                     keyBuf[k] = row
                 }
                 entry.keys = UnsafePointer(keyBuf)
@@ -9834,6 +9871,8 @@ private func persistIdentityKeysCallback(
                 keyType: e.key_type,
                 readOnly: e.read_only,
                 disabledAt: e.disabled_at_is_some ? e.disabled_at : nil,
+                totalBudget: e.total_budget_is_some ? e.total_budget : nil,
+                expiresAt: e.expires_at_is_some ? e.expires_at : nil,
                 publicKeyData: pubKey,
                 publicKeyHash: dataFromTuple20(e.public_key_hash),
                 walletId: walletId,

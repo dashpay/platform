@@ -85,7 +85,55 @@ public enum DashModelContainer {
             + [DashSchemaV2.PersistentTrackedMasternode.self]
     }
 
-    /// All persistent model types in the current Dash SDK schema (V4).
+    /// The exact model set registered as schema V4: the same entities as
+    /// V3, with the wallet transaction models V4 widened. Frozen as its own
+    /// whole graph rather than as a row for the three models that changed:
+    /// `PersistentTxo`, `PersistentPendingInput` and `PersistentWallet` all
+    /// carry relationships, and a frozen model naming a relationship target
+    /// that its own schema does not declare binds that bare name to the live
+    /// type (the earlier partial rows get away with it because the models
+    /// they freeze are relationship-isolated).
+    fileprivate static var v4ModelTypes: [any PersistentModel.Type] {
+        [
+            DashSchemaV4.PersistentIdentity.self,
+            DashSchemaV4.PersistentDPNSName.self,
+            DashSchemaV4.PersistentDashpayProfile.self,
+            DashSchemaV4.PersistentDashpayContactProfile.self,
+            DashSchemaV4.PersistentDashpayContactRequest.self,
+            DashSchemaV4.PersistentDashpayPayment.self,
+            DashSchemaV4.PersistentDashpayIgnoredSender.self,
+            DashSchemaV4.PersistentDocument.self,
+            DashSchemaV4.PersistentDataContract.self,
+            DashSchemaV4.PersistentPublicKey.self,
+            DashSchemaV4.PersistentTokenBalance.self,
+            DashSchemaV4.PersistentKeyword.self,
+            DashSchemaV4.PersistentToken.self,
+            DashSchemaV4.PersistentDocumentType.self,
+            DashSchemaV4.PersistentIndex.self,
+            DashSchemaV4.PersistentProperty.self,
+            DashSchemaV4.PersistentTokenHistoryEvent.self,
+            DashSchemaV4.PersistentPlatformAddress.self,
+            DashSchemaV4.PersistentPlatformAddressesSyncState.self,
+            DashSchemaV4.PersistentWallet.self,
+            DashSchemaV4.PersistentAccount.self,
+            DashSchemaV4.PersistentCoreAddress.self,
+            DashSchemaV4.PersistentTransaction.self,
+            DashSchemaV4.PersistentTxo.self,
+            DashSchemaV4.PersistentPendingInput.self,
+            DashSchemaV4.PersistentWalletManagerMetadata.self,
+            DashSchemaV4.PersistentShieldedNote.self,
+            DashSchemaV4.PersistentShieldedOutgoingNote.self,
+            DashSchemaV4.PersistentShieldedSyncState.self,
+            DashSchemaV4.PersistentShieldedActivity.self,
+            DashSchemaV4.PersistentShieldedViewingKey.self,
+            DashSchemaV4.PersistentAssetLock.self,
+            DashSchemaV4.PersistentInvitation.self,
+            DashSchemaV4.PersistentMasternode.self,
+            DashSchemaV4.PersistentTrackedMasternode.self
+        ]
+    }
+
+    /// All persistent model types in the current Dash SDK schema (V5).
     /// Unlike the released versions above this list tracks the LIVE models,
     /// so it moves whenever a model gains a property — which is exactly why
     /// the released versions must not. When the next property lands: freeze
@@ -139,7 +187,7 @@ public enum DashModelContainer {
 
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV4.self)
+        Schema(versionedSchema: DashSchemaV5.self)
     }
 
     /// Create a persistent model container for storing data
@@ -206,14 +254,18 @@ public enum DashModelContainer {
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self]
+        [
+            DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self,
+            DashSchemaV5.self
+        ]
     }
 
     public static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self),
             .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self),
-            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)
+            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),
+            .lightweight(fromVersion: DashSchemaV4.self, toVersion: DashSchemaV5.self)
         ]
     }
 }
@@ -414,6 +466,37 @@ public enum DashSchemaV3: VersionedSchema {
 public enum DashSchemaV4: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
         Schema.Version(4, 0, 0)
+    }
+
+    public static var models: [any PersistentModel.Type] {
+        DashModelContainer.v4ModelTypes
+    }
+}
+
+/// Version 5 adds the key usage-limit columns (protocol version 14) to
+/// `PersistentPublicKey`, on the same entity set as V4:
+///   - `totalBudget` (optional): the credits an authentication key may take
+///     from its identity over its whole lifetime, `nil` for a key registered
+///     without a budget. Signed carrier for the protocol's unsigned
+///     `Credits`, read through `totalBudgetCredits`.
+///   - `expiresAt` (optional): the block time in milliseconds from which the
+///     key can no longer sign, `nil` for a key registered without an expiry.
+///     Read through `expiresAtMillis`.
+/// Both are what make a key an `IdentityPublicKey::V1`; without the columns a
+/// limited key would come back unlimited on cold restart and the wallet would
+/// offer it for signing work consensus refuses. Existing rows migrate with
+/// both `NULL`, which is exactly "a version 0 key, no limits".
+///
+/// Both columns are additive and optional, so a lightweight migration
+/// preserves every existing row.
+///
+/// Registering it required freezing every model V4 registers: the generated
+/// copies under `FrozenSchemas/`, see `scripts/freeze_schema_models.py`.
+/// V4 needed the whole graph rather than a row for `PersistentPublicKey`
+/// alone: see `DashModelContainer.v4ModelTypes`.
+public enum DashSchemaV5: VersionedSchema {
+    public static var versionIdentifier: Schema.Version {
+        Schema.Version(5, 0, 0)
     }
 
     public static var models: [any PersistentModel.Type] {
