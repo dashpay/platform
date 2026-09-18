@@ -173,14 +173,28 @@ impl Value {
         // 3) containers, recursively and (for maps) regardless of member order
         match (self, other) {
             (Value::Map(this), Value::Map(that)) => {
-                this.len() == that.len()
-                    && this.iter().all(|(key, value)| {
+                if this.len() != that.len() {
+                    return false;
+                }
+                // One-to-one: a map is a list of pairs, so a duplicated key
+                // on one side must not be satisfied twice by a single entry
+                // on the other. Each matched entry is consumed.
+                let mut consumed = vec![false; that.len()];
+                for (key, value) in this {
+                    let matched =
                         that.iter()
-                            .find(|(other_key, _)| key.equal_underlying_data(other_key))
-                            .is_some_and(|(_, other_value)| {
-                                value.equal_underlying_data(other_value)
-                            })
-                    })
+                            .enumerate()
+                            .find(|(index, (other_key, other_value))| {
+                                !consumed[*index]
+                                    && key.equal_underlying_data(other_key)
+                                    && value.equal_underlying_data(other_value)
+                            });
+                    match matched {
+                        Some((index, _)) => consumed[index] = true,
+                        None => return false,
+                    }
+                }
+                true
             }
             (Value::Array(this), Value::Array(that)) => {
                 this.len() == that.len()
@@ -282,6 +296,20 @@ mod underlying_data_tests {
         assert!(sent.equal_underlying_data(&stored));
         assert!(!sent.equal_underlying_data(&reordered));
         assert!(!sent.equal_underlying_data(&shorter));
+    }
+
+    /// A map is a list of pairs, so a key can in principle appear twice.
+    /// Two entries on one side must not both be satisfied by the single
+    /// entry they match on the other.
+    #[test]
+    fn maps_match_entries_one_to_one() {
+        let doubled = map(vec![("tag", Value::U8(1)), ("tag", Value::U8(1))]);
+        let single_plus_other = map(vec![("tag", Value::U8(1)), ("rank", Value::U8(1))]);
+        let doubled_too = map(vec![("tag", Value::U64(1)), ("tag", Value::U64(1))]);
+
+        assert!(!doubled.equal_underlying_data(&single_plus_other));
+        assert!(!single_plus_other.equal_underlying_data(&doubled));
+        assert!(doubled.equal_underlying_data(&doubled_too));
     }
 
     #[test]
