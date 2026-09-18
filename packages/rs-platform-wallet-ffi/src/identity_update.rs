@@ -22,7 +22,9 @@ use rs_sdk_ffi::{SignerHandle, VTableSigner};
 use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
-use crate::identity_registration_with_signer::{decode_contract_bounds, IdentityPubkeyFFI};
+use crate::identity_registration_with_signer::{
+    decode_contract_bounds, key_with_row_limits, IdentityPubkeyFFI,
+};
 use crate::runtime::block_on_worker;
 use crate::types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
@@ -315,16 +317,19 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
                     "add_public_keys"
                 ));
 
-                keys.push(IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                    id: row.key_id,
-                    purpose,
-                    security_level,
-                    contract_bounds,
-                    key_type,
-                    read_only: row.read_only,
-                    data: BinaryData::new(pubkey_bytes),
-                    disabled_at: None,
-                }));
+                keys.push(key_with_row_limits(
+                    IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                        id: row.key_id,
+                        purpose,
+                        security_level,
+                        contract_bounds,
+                        key_type,
+                        read_only: row.read_only,
+                        data: BinaryData::new(pubkey_bytes),
+                        disabled_at: None,
+                    }),
+                    row,
+                ));
             }
             keys
         };

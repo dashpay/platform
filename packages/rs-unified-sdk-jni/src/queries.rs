@@ -29,11 +29,12 @@ use rs_sdk_ffi::{
     dash_sdk_identity_fetch_balance, dash_sdk_identity_fetch_balance_and_revision,
     dash_sdk_identity_fetch_by_non_unique_public_key_hash,
     dash_sdk_identity_fetch_by_public_key_hash, dash_sdk_identity_fetch_contract_nonce,
-    dash_sdk_identity_fetch_nonce, dash_sdk_identity_fetch_public_keys,
-    dash_sdk_identity_fetch_token_balances, dash_sdk_protocol_version_get_upgrade_state,
-    dash_sdk_protocol_version_get_upgrade_vote_status, dash_sdk_refresh_protocol_version,
-    dash_sdk_system_get_current_quorums_info, dash_sdk_system_get_epochs_info,
-    dash_sdk_system_get_path_elements, dash_sdk_system_get_prefunded_specialized_balance,
+    dash_sdk_identity_fetch_keys_remaining_budgets, dash_sdk_identity_fetch_nonce,
+    dash_sdk_identity_fetch_public_keys, dash_sdk_identity_fetch_token_balances,
+    dash_sdk_protocol_version_get_upgrade_state, dash_sdk_protocol_version_get_upgrade_vote_status,
+    dash_sdk_refresh_protocol_version, dash_sdk_system_get_current_quorums_info,
+    dash_sdk_system_get_epochs_info, dash_sdk_system_get_path_elements,
+    dash_sdk_system_get_prefunded_specialized_balance,
     dash_sdk_system_get_total_credits_in_platform, dash_sdk_token_get_contract_info,
     dash_sdk_token_get_direct_purchase_prices,
     dash_sdk_token_get_perpetual_distribution_last_claim,
@@ -100,6 +101,54 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identit
         let id = require_cstr!(env, identity_id);
         let result =
             unsafe { dash_sdk_identity_fetch_balance(sdk as *const SDKHandle, id.as_ptr()) };
+        unsafe { unwrap_string(env, result) }
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// What is left of the budgets of the given keys of an identity (protocol version
+/// 14), as a JSON object keyed by key id: `{"5": "1000", "6": null}`. A budgeted key
+/// maps to the credits left, as a decimal string; a key without a budget, or that the
+/// identity does not have, maps to null. `keyIds` is a JVM `int[]` of at least one id.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_identityFetchKeysRemainingBudgets(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+    identity_id: JString,
+    key_ids: jni::objects::JIntArray,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let id = require_cstr!(env, identity_id);
+        let key_ids: Vec<u32> = match env.get_array_length(&key_ids) {
+            Ok(len) if len > 0 => {
+                let mut buf = vec![0i32; len as usize];
+                if env.get_int_array_region(&key_ids, 0, &mut buf).is_err() {
+                    let _ = env.exception_clear();
+                    throw_sdk_exception(env, 1, "keyIds could not be read");
+                    return ptr::null_mut();
+                }
+                if buf.iter().any(|&i| i < 0) {
+                    throw_sdk_exception(env, 1, "keyIds must be non-negative");
+                    return ptr::null_mut();
+                }
+                buf.into_iter().map(|i| i as u32).collect()
+            }
+            _ => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "keyIds must hold at least one key id");
+                return ptr::null_mut();
+            }
+        };
+        let result = unsafe {
+            dash_sdk_identity_fetch_keys_remaining_budgets(
+                sdk as *const SDKHandle,
+                id.as_ptr(),
+                key_ids.as_ptr(),
+                key_ids.len(),
+            )
+        };
         unsafe { unwrap_string(env, result) }
             .map(|s| s.into_raw())
             .unwrap_or(ptr::null_mut())

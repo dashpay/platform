@@ -399,6 +399,63 @@ impl ManagedIdentity {
         Ok(())
     }
 
+    /// Replace one public key of the identity with `public_key`, the key as it is stored
+    /// after a key limits update, and emit a single-key [`IdentityKeysChangeSet`] upsert for
+    /// it: the limits-side counterpart to [`Self::add_key`] and [`Self::disable_keys`].
+    ///
+    /// The key is layered by id, so a key the identity did not hold is added. The entry reuses
+    /// the `(wallet_id, identity_index, key_index)` derivation breadcrumb `add_key` carries, so
+    /// the client keeps the key's private-key linkage across the upsert; an out-of-wallet
+    /// identity emits a breadcrumb-less entry, matching its watch-only state.
+    ///
+    /// Does **not** touch the identity revision: a key limits update claims none.
+    pub fn replace_key(
+        &mut self,
+        public_key: dpp::identity::IdentityPublicKey,
+        persister: &WalletPersister,
+    ) -> Result<(), crate::changeset::PersistenceError> {
+        use dpp::identity::accessors::IdentitySettersV0;
+
+        let identity_id = self.id();
+        let key_id = public_key.id();
+        let public_key_hash = pubkey_hash_of(&public_key);
+
+        let (wallet_id, derivation_indices) = match (self.wallet_id, self.identity_index) {
+            (Some(wallet_id), Some(identity_index)) => (
+                Some(wallet_id),
+                Some(crate::changeset::IdentityKeyDerivationIndices {
+                    identity_index,
+                    key_index: key_id,
+                }),
+            ),
+            _ => (None, None),
+        };
+
+        let mut keys = self.identity.public_keys().clone();
+        keys.insert(key_id, public_key.clone());
+        self.identity.set_public_keys(keys);
+
+        let mut keys_cs = IdentityKeysChangeSet::default();
+        keys_cs.upserts.insert(
+            (identity_id, key_id),
+            IdentityKeyEntry {
+                identity_id,
+                key_id,
+                public_key,
+                public_key_hash,
+                wallet_id,
+                derivation_indices,
+            },
+        );
+        let cs = crate::changeset::PlatformWalletChangeSet {
+            identities: Some(self.snapshot_changeset()),
+            identity_keys: Some(keys_cs),
+            ..Default::default()
+        };
+        persister.store(cs)?;
+        Ok(())
+    }
+
     /// Stamp `disabled_at` on the public keys named by `key_ids` and
     /// emit a single-key [`IdentityKeysChangeSet`] upsert per affected
     /// key — the disable-side counterpart to [`Self::add_key`].

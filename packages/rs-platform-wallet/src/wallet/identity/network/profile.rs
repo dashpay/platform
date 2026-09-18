@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
+#[cfg(test)]
 use dpp::identity::identity_public_key::Purpose;
 use dpp::identity::signer::Signer;
 use dpp::identity::KeyType;
@@ -18,13 +19,13 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
 
 // Profile documents require HIGH or CRITICAL authentication; MASTER is reserved
-// for identity operations and cannot authorize an ordinary document write.
+// for identity operations and cannot authorize an ordinary document write. A key
+// without limits is preferred and an expired one is skipped.
 fn profile_signing_key(identity: &Identity) -> Option<&IdentityPublicKey> {
-    identity.get_first_public_key_matching(
-        Purpose::AUTHENTICATION,
-        [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-        [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160].into(),
-        false,
+    super::usable_authentication_key(
+        identity,
+        &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+        &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
     )
 }
 

@@ -16,10 +16,9 @@
 //! everything from chain.
 
 use dpp::document::{Document, DocumentV0};
-use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{IdentityPublicKey, KeyType, SecurityLevel};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
@@ -563,15 +562,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
             let established_count = managed.dashpay().established_contacts().len();
             let identity_index = managed.identity_index;
-            let signing_key = managed
-                .identity
-                .get_first_public_key_matching(
-                    Purpose::AUTHENTICATION,
-                    [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
-                    false,
-                )
-                .cloned();
+            let signing_key = super::usable_authentication_key(
+                &managed.identity,
+                &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+                &[KeyType::ECDSA_SECP256K1],
+            )
+            .cloned();
             // Shared own-ECDH-root selector (same policy as the
             // contact-request send path); `Option` preserved — a missing
             // key defers the publish rather than erroring here.

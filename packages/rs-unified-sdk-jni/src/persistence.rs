@@ -1317,7 +1317,7 @@ unsafe fn persist_identity_key_upsert(
     env.call_method(
         bridge,
         "onPersistIdentityKeyUpsert",
-        "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;)I",
+        "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ)I",
         &[
             wid.into(),
             (&identity_id).into(),
@@ -1338,6 +1338,10 @@ unsafe fn persist_identity_key_upsert(
             JValue::Byte(e.contract_bounds_kind as i8),
             (&cb_id).into(),
             (&cb_doctype).into(),
+            JValue::Bool(e.total_budget_is_some as u8),
+            JValue::Long(e.total_budget as i64),
+            JValue::Bool(e.expires_at_is_some as u8),
+            JValue::Long(e.expires_at as i64),
         ],
     )?
     .i()
@@ -3370,6 +3374,11 @@ fn build_identity_key_restore(
     // Java String. Interior NULs (impossible for a DPP document-type name)
     // would fail `CString::new` — degrade to `None` rather than fail the load.
     let doc_type = read_opt_cstring_field(env, holder, "contractBoundsDocumentType")?;
+    // Usage limits (protocol version 14): a limited key must restore as limited.
+    let total_budget_is_some = env.get_field(holder, "totalBudgetIsSome", "Z")?.z()?;
+    let total_budget = env.get_field(holder, "totalBudget", "J")?.j()? as u64;
+    let expires_at_is_some = env.get_field(holder, "expiresAtIsSome", "Z")?.z()?;
+    let expires_at = env.get_field(holder, "expiresAt", "J")?.j()? as u64;
 
     let key = IdentityKeyRestoreFFI {
         key_id,
@@ -3382,6 +3391,10 @@ fn build_identity_key_restore(
         contract_bounds_kind,
         contract_bounds_id,
         contract_bounds_document_type: ptr::null(),
+        total_budget_is_some,
+        total_budget,
+        expires_at_is_some,
+        expires_at,
     };
     Ok(IdentityKeyRestoreStaged {
         key,
