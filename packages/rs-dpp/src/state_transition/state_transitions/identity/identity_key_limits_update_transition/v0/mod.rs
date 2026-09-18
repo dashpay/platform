@@ -14,11 +14,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::fee::Credits;
 use crate::identity::{KeyID, TimestampMillis};
-use crate::prelude::{Identifier, IdentityNonce, Revision, UserFeeIncrease};
+use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
 use crate::ProtocolError;
 
 /// Raises the limits of one authentication key of the identity. Both limit fields carry the new
 /// absolute value, so what the transition claims is exactly what a proof of its execution shows.
+/// The identity's revision is not claimed and not bumped: the transition names an existing key
+/// and allocates nothing, so a stale view of the identity cannot make it collide.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq, DecodeUntrusted)]
 #[cfg_attr(
@@ -30,9 +32,6 @@ use crate::ProtocolError;
 pub struct IdentityKeyLimitsUpdateTransitionV0 {
     /// Unique identifier of the identity whose key is updated
     pub identity_id: Identifier,
-
-    /// The revision of the identity after the update
-    pub revision: Revision,
 
     /// Identity nonce for this transition to prevent replay attacks
     pub nonce: IdentityNonce,
@@ -80,7 +79,6 @@ mod test {
     fn make_update_v0() -> IdentityKeyLimitsUpdateTransitionV0 {
         IdentityKeyLimitsUpdateTransitionV0 {
             identity_id: Identifier::random(),
-            revision: 2,
             nonce: 5,
             key_id: 3,
             total_budget: Some(200_000_000),
@@ -94,7 +92,6 @@ mod test {
     #[test]
     fn should_default_to_no_change() {
         let t = IdentityKeyLimitsUpdateTransitionV0::default();
-        assert_eq!(t.revision, 0);
         assert_eq!(t.nonce, 0);
         assert_eq!(t.key_id, 0);
         assert_eq!(t.total_budget, None);
@@ -158,11 +155,6 @@ mod test {
             ("identity_id", {
                 let mut t = base.clone();
                 t.identity_id = Identifier::random();
-                t
-            }),
-            ("revision", {
-                let mut t = base.clone();
-                t.revision += 1;
                 t
             }),
             ("nonce", {

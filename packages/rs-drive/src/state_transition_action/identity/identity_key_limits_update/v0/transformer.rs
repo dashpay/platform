@@ -10,7 +10,6 @@ impl IdentityKeyLimitsUpdateTransitionActionV0 {
     ) -> Self {
         let IdentityKeyLimitsUpdateTransitionV0 {
             identity_id,
-            revision,
             nonce,
             key_id,
             total_budget,
@@ -20,7 +19,6 @@ impl IdentityKeyLimitsUpdateTransitionActionV0 {
         } = value;
         IdentityKeyLimitsUpdateTransitionActionV0 {
             identity_id: *identity_id,
-            revision: *revision,
             nonce: *nonce,
             key_id: *key_id,
             stored_key,

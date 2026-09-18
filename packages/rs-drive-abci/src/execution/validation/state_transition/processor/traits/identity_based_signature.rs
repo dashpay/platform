@@ -65,7 +65,8 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::Batch(_)
             | StateTransition::ShieldFromIdentity(_)
-            | StateTransition::IdentityCreditTransferToAddresses(_) => {
+            | StateTransition::IdentityCreditTransferToAddresses(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_) => {
                 //Basic signature verification
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
@@ -99,8 +100,8 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
                 }
                 Ok(consensus_validation_result)
             }
-            StateTransition::IdentityUpdate(_) | StateTransition::IdentityKeyLimitsUpdate(_) => {
-                //Basic signature verification, requesting the revision for advanced structure
+            StateTransition::IdentityUpdate(_) => {
+                //Basic signature verification
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
                     true,

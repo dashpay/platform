@@ -1145,14 +1145,14 @@ impl Drive {
                 Ok((root_hash, VerifiedPartialIdentity(identity)))
             }
             StateTransition::IdentityKeyLimitsUpdate(transition) => {
-                // The proof holds the rewritten key and the revision, nothing more.
+                // The proof holds the rewritten key, nothing more.
                 let (root_hash, identity) = Drive::verify_identity_keys_by_identity_id(
                     proof,
                     IdentityKeysRequest::new_specific_key_query_without_limit(
                         &transition.identity_id().into_buffer(),
                         transition.key_id(),
                     ),
-                    true,
+                    false,
                     false,
                     false,
                     platform_version,
@@ -1161,14 +1161,6 @@ impl Drive {
                     "proof did not contain identity {} expected to exist because of state transition (key limits update)",
                     transition.identity_id()
                 ))))?;
-
-                if identity.revision != Some(transition.revision()) {
-                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
-                        "identity key limits update proof contains revision {:?}, expected {}",
-                        identity.revision,
-                        transition.revision()
-                    ))));
-                }
 
                 let Some(key) = identity.loaded_public_keys.get(&transition.key_id()) else {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!(
@@ -2449,11 +2441,9 @@ impl Drive {
             // Binds the transition's revision and its exact key additions
             // and disabling timestamps.
             StateTransition::IdentityUpdate(_) => true,
-            // The proof pins the revision and the limits the transition named, no more: a
-            // failed no-op raise (paid, no revision bump) followed by any update that reaches
-            // the claimed revision with those limits verifies just the same. Classified
-            // conservatively as the affected state; IdentityUpdate binds no more with its
-            // `true`, which predates this classifier.
+            // The proof shows the key holding the limits the transition named, no more: any
+            // later state of that key with those limits verifies just the same, so this only
+            // authenticates the affected state.
             StateTransition::IdentityKeyLimitsUpdate(_) => false,
             // The proven vote is stored under the masternode's identity and
             // must equal the transition's declared vote.

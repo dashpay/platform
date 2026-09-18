@@ -3,15 +3,13 @@ mod transformer;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
-use dpp::prelude::{IdentityNonce, Revision, UserFeeIncrease};
+use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 
 /// action v0
 #[derive(Debug, Clone)]
 pub struct IdentityKeyLimitsUpdateTransitionActionV0 {
     /// identity id
     pub identity_id: Identifier,
-    /// revision
-    pub revision: Revision,
     /// nonce used to prevent replay attacks
     pub nonce: IdentityNonce,
     /// the key whose limits are raised

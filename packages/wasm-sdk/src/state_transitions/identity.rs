@@ -846,7 +846,7 @@ const IDENTITY_KEY_LIMITS_UPDATE_OPTIONS_TS: &str = r#"
  * (protocol version 14). At least one of addBudget and expiresAt must be given.
  */
 export interface IdentityKeyLimitsUpdateOptions {
-  /** The identity as it currently is in state: the transition claims its next revision */
+  /** The identity holding the key: the new total is computed from the key as it holds it */
   identity: Identity;
   /** The key whose limits are raised */
   keyId: number;

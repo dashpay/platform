@@ -24,11 +24,10 @@ const KEY_LIMITS_UPDATE_OPTIONS_TS: &str = r#"
 /**
  * Raises the limits of one of the identity's authentication keys: the new total budget and the
  * new expiry are absolute values, each greater than the one the key holds, and at least one of
- * them must be given. The transition claims the identity's next revision.
+ * them must be given. No identity revision is claimed.
  */
 export interface IdentityKeyLimitsUpdateTransitionOptions {
     identityId: IdentifierLike;
-    revision: bigint;
     nonce: bigint;
     keyId: number;
     totalBudget?: bigint;
@@ -41,7 +40,6 @@ export interface IdentityKeyLimitsUpdateTransitionOptions {
  */
 export interface IdentityKeyLimitsUpdateObject {
     identityId: Uint8Array;
-    revision: bigint;
     nonce: bigint;
     keyId: number;
     totalBudget?: bigint;
@@ -56,7 +54,6 @@ export interface IdentityKeyLimitsUpdateObject {
  */
 export interface IdentityKeyLimitsUpdateJSON {
     identityId: string;
-    revision: number | string;
     nonce: number | string;
     keyId: number;
     totalBudget?: number | string;
@@ -83,7 +80,6 @@ extern "C" {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityKeyLimitsUpdateOptionsInput {
-    revision: u64,
     nonce: u64,
     key_id: u32,
     #[serde(default)]
@@ -129,7 +125,6 @@ impl IdentityKeyLimitsUpdateWasm {
         Ok(IdentityKeyLimitsUpdateWasm(
             IdentityKeyLimitsUpdateTransition::V0(IdentityKeyLimitsUpdateTransitionV0 {
                 identity_id: identity_id.into(),
-                revision: input.revision,
                 nonce: input.nonce,
                 key_id: input.key_id,
                 total_budget: input.total_budget,
@@ -183,12 +178,6 @@ impl IdentityKeyLimitsUpdateWasm {
     #[wasm_bindgen(setter = "identityId")]
     pub fn set_identity_id(&mut self, identity_id: IdentifierLikeJs) -> WasmDppResult<()> {
         self.0.set_identity_id(identity_id.try_into()?);
-        Ok(())
-    }
-
-    #[wasm_bindgen(setter = "revision")]
-    pub fn set_revision(&mut self, revision: &js_sys::BigInt) -> WasmDppResult<()> {
-        self.0.set_revision(try_to_u64(revision, "revision")?);
         Ok(())
     }
 
@@ -262,11 +251,6 @@ impl IdentityKeyLimitsUpdateWasm {
     #[wasm_bindgen(getter = "identityId")]
     pub fn identity_id(&self) -> IdentifierWasm {
         self.0.identity_id().into()
-    }
-
-    #[wasm_bindgen(getter = "revision")]
-    pub fn revision(&self) -> u64 {
-        self.0.revision()
     }
 
     #[wasm_bindgen(getter = "nonce")]

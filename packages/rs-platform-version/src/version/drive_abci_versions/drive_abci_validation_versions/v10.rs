@@ -56,7 +56,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             identity_key_limits_update_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
-                    advanced_structure: Some(0),
+                    advanced_structure: None,
                     identity_signatures: Some(0),
                     nonce: Some(0),
                     state: 0,

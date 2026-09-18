@@ -7,7 +7,6 @@ before(async () => {
 
 interface KeyLimitsUpdateOptions {
   identityId?: string;
-  revision?: bigint;
   nonce?: bigint;
   keyId?: number;
   totalBudget?: bigint;
@@ -18,7 +17,6 @@ interface KeyLimitsUpdateOptions {
 function createTransition(options: KeyLimitsUpdateOptions = {}) {
   return new wasm.IdentityKeyLimitsUpdate({
     identityId: options.identityId ?? '11111111111111111111111111111111',
-    revision: options.revision ?? BigInt(3),
     nonce: options.nonce ?? BigInt(7),
     keyId: options.keyId ?? 5,
     totalBudget: options.totalBudget,
@@ -36,7 +34,6 @@ describe('IdentityKeyLimitsUpdate', () => {
       expect(transition.keyId).to.equal(5);
       expect(transition.totalBudget).to.equal(BigInt(2500000000));
       expect(transition.expiresAt).to.equal(undefined);
-      expect(transition.revision).to.equal(BigInt(3));
       expect(transition.nonce).to.equal(BigInt(7));
       expect(transition.userFeeIncrease).to.equal(0);
     });
@@ -52,7 +49,6 @@ describe('IdentityKeyLimitsUpdate', () => {
       const identityId = new wasm.Identifier('11111111111111111111111111111111');
       const transition = new wasm.IdentityKeyLimitsUpdate({
         identityId,
-        revision: BigInt(1),
         nonce: BigInt(1),
         keyId: 2,
         totalBudget: BigInt(10),
@@ -78,20 +74,18 @@ describe('IdentityKeyLimitsUpdate', () => {
   });
 
   describe('setters', () => {
-    it('should update the limits, the nonce and the revision', () => {
+    it('should update the limits and the nonce', () => {
       const transition = createTransition({ totalBudget: BigInt(10) });
 
       transition.totalBudget = BigInt(20);
       transition.expiresAt = BigInt(30);
       transition.nonce = BigInt(8);
-      transition.revision = BigInt(4);
       transition.keyId = 9;
       transition.userFeeIncrease = 2;
 
       expect(transition.totalBudget).to.equal(BigInt(20));
       expect(transition.expiresAt).to.equal(BigInt(30));
       expect(transition.nonce).to.equal(BigInt(8));
-      expect(transition.revision).to.equal(BigInt(4));
       expect(transition.keyId).to.equal(9);
       expect(transition.userFeeIncrease).to.equal(2);
     });
@@ -109,7 +103,6 @@ describe('IdentityKeyLimitsUpdate', () => {
 
       expect(json.$formatVersion).to.equal('0');
       expect(json.identityId).to.equal('11111111111111111111111111111111');
-      expect(json.revision).to.equal(3);
       expect(json.nonce).to.equal(7);
       expect(json.keyId).to.equal(5);
       expect(json.totalBudget).to.equal(2500000000);
@@ -138,7 +131,6 @@ describe('IdentityKeyLimitsUpdate', () => {
       const restored = wasm.IdentityKeyLimitsUpdate.fromJSON(transition.toJSON());
 
       expect(restored.identityId.toString()).to.equal('11111111111111111111111111111111');
-      expect(restored.revision).to.equal(BigInt(3));
       expect(restored.nonce).to.equal(BigInt(7));
       expect(restored.keyId).to.equal(5);
       expect(restored.totalBudget).to.equal(BigInt(2500000000));
@@ -173,7 +165,6 @@ describe('IdentityKeyLimitsUpdate', () => {
       expect(obj.$formatVersion).to.equal('0');
       expect(obj.identityId).to.be.instanceOf(Uint8Array);
       expect(obj.identityId.length).to.equal(32);
-      expect(obj.revision).to.equal(BigInt(3));
       expect(obj.nonce).to.equal(BigInt(7));
       expect(obj.keyId).to.equal(5);
       expect(obj.totalBudget).to.equal(BigInt(2500000000));

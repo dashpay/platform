@@ -2,7 +2,7 @@ mod v0;
 
 use crate::fee::Credits;
 use crate::identity::{KeyID, TimestampMillis};
-use crate::prelude::{IdentityNonce, Revision};
+use crate::prelude::IdentityNonce;
 use crate::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
 use platform_value::Identifier;
 pub use v0::*;
@@ -17,18 +17,6 @@ impl IdentityKeyLimitsUpdateTransitionAccessorsV0 for IdentityKeyLimitsUpdateTra
     fn identity_id(&self) -> Identifier {
         match self {
             IdentityKeyLimitsUpdateTransition::V0(transition) => transition.identity_id(),
-        }
-    }
-
-    fn set_revision(&mut self, revision: Revision) {
-        match self {
-            IdentityKeyLimitsUpdateTransition::V0(transition) => transition.set_revision(revision),
-        }
-    }
-
-    fn revision(&self) -> Revision {
-        match self {
-            IdentityKeyLimitsUpdateTransition::V0(transition) => transition.revision(),
         }
     }
 

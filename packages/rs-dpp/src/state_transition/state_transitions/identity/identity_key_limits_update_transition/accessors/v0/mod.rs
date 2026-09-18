@@ -1,12 +1,10 @@
 use crate::fee::Credits;
 use crate::identity::{KeyID, TimestampMillis};
-use crate::prelude::{Identifier, IdentityNonce, Revision};
+use crate::prelude::{Identifier, IdentityNonce};
 
 pub trait IdentityKeyLimitsUpdateTransitionAccessorsV0 {
     fn set_identity_id(&mut self, id: Identifier);
     fn identity_id(&self) -> Identifier;
-    fn set_revision(&mut self, revision: Revision);
-    fn revision(&self) -> Revision;
     fn set_nonce(&mut self, nonce: IdentityNonce);
     fn nonce(&self) -> IdentityNonce;
     fn set_key_id(&mut self, key_id: KeyID);

@@ -32,15 +32,16 @@ use super::waitable::Waitable;
 pub trait UpdateIdentityKeyLimits: Waitable {
     /// Raises the limits of the key `key_id` of this identity: `total_budget` is the new total
     /// (greater than the current one), `expires_at` the new expiry (later than the current one);
-    /// at least one must be given. The identity must be as it currently is in state, since the
-    /// transition claims its next revision.
+    /// at least one must be given. No identity revision is claimed, so the identity only needs
+    /// to hold the signing key: a total computed from a stale key still executes if it raises
+    /// the stored one, and is refused, paid, if it does not.
     ///
     /// If `signing_key_to_use` is not set, the first MASTER key, else the first CRITICAL
     /// authentication key without limits and without contract bounds, that the signer can sign
     /// with is used.
     ///
-    /// This method resolves once the key is proved to hold the requested limits at the claimed
-    /// revision, with the key as it is stored after the update.
+    /// This method resolves once the key is proved to hold the requested limits, with the key
+    /// as it is stored after the update.
     #[allow(clippy::too_many_arguments)]
     async fn update_key_limits<S: Signer<IdentityPublicKey> + Send>(
         &self,
@@ -114,8 +115,8 @@ impl UpdateIdentityKeyLimits for Identity {
         .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-        // The proof shows the rewritten key and the revision, not this exact transition (the
-        // nonce is not stored), so it is waited for as affected state.
+        // The proof shows the rewritten key, not this exact transition (the nonce is not
+        // stored), so it is waited for as affected state.
         let identity: PartialIdentity = state_transition
             .broadcast_and_wait_for_affected_state(sdk, settings)
             .await?;

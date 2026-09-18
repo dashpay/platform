@@ -17,9 +17,9 @@ use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 pub trait IdentityKeyLimitsUpdateTransitionMethodsV0 {
-    /// Builds and signs the transition for `identity` as it currently is in state: the
-    /// transition claims the next revision. `signing_key_id` must name a MASTER key, or a CRITICAL
-    /// authentication key without limits, that `signer` holds the private key for.
+    /// Builds and signs the transition for `identity`, which only needs to hold the signing
+    /// key. `signing_key_id` must name a MASTER key, or a CRITICAL authentication key without
+    /// limits and without contract bounds, that `signer` holds the private key for.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
     async fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(

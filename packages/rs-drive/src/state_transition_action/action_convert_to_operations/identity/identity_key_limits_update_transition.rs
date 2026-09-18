@@ -27,7 +27,6 @@ impl DriveHighLevelOperationConverter for IdentityKeyLimitsUpdateTransitionActio
                 let IdentityKeyLimitsUpdateTransitionAction::V0(
                     IdentityKeyLimitsUpdateTransitionActionV0 {
                         identity_id,
-                        revision,
                         nonce,
                         stored_key,
                         total_budget,
@@ -38,10 +37,6 @@ impl DriveHighLevelOperationConverter for IdentityKeyLimitsUpdateTransitionActio
                 let identity_id = identity_id.to_buffer();
 
                 Ok(vec![
-                    IdentityOperation(IdentityOperationType::UpdateIdentityRevision {
-                        identity_id,
-                        revision,
-                    }),
                     IdentityOperation(IdentityOperationType::UpdateIdentityNonce {
                         identity_id,
                         nonce,
@@ -72,7 +67,7 @@ mod tests {
     use dpp::platform_value::Identifier;
 
     #[test]
-    fn should_produce_the_revision_nonce_and_key_limits_operations_in_order() {
+    fn should_produce_the_nonce_and_key_limits_operations_in_order() {
         let platform_version = PlatformVersion::latest();
         let stored_key =
             IdentityPublicKey::random_authentication_keys(3, 1, Some(15), platform_version)
@@ -81,7 +76,6 @@ mod tests {
         let action = IdentityKeyLimitsUpdateTransitionAction::V0(
             IdentityKeyLimitsUpdateTransitionActionV0 {
                 identity_id: Identifier::from([0xAA; 32]),
-                revision: 5,
                 nonce: 10,
                 key_id: 3,
                 stored_key,
@@ -96,19 +90,14 @@ mod tests {
             .into_high_level_drive_operations(&epoch, platform_version)
             .expect("expected operations");
 
-        assert_eq!(ops.len(), 3);
+        assert_eq!(ops.len(), 2);
         assert!(matches!(
             &ops[0],
-            IdentityOperation(IdentityOperationType::UpdateIdentityRevision { identity_id, revision: 5 })
-                if *identity_id == [0xAA; 32]
-        ));
-        assert!(matches!(
-            &ops[1],
             IdentityOperation(IdentityOperationType::UpdateIdentityNonce { identity_id, nonce: 10 })
                 if *identity_id == [0xAA; 32]
         ));
         assert!(matches!(
-            &ops[2],
+            &ops[1],
             IdentityOperation(IdentityOperationType::UpdateIdentityKeyLimits {
                 identity_id,
                 key,

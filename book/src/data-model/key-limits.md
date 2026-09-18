@@ -181,7 +181,6 @@ A spent key, or one about to expire, does not have to be replaced. `IdentityKeyL
 ```rust
 pub struct IdentityKeyLimitsUpdateTransitionV0 {
     pub identity_id: Identifier,
-    pub revision: Revision,                   // the identity's revision plus one
     pub nonce: IdentityNonce,
     pub key_id: KeyID,
     pub total_budget: Option<Credits>,        // the new total, None to leave it
@@ -194,15 +193,13 @@ pub struct IdentityKeyLimitsUpdateTransitionV0 {
 
 **An update only ever loosens.** A budget can grow, an expiry can move later, and that is all: a limit cannot be lowered, and a key that has no budget or no expiry cannot be given one. Tightening is what disabling is for. This one rule keeps the transition small, and it is what makes the arithmetic safe: the remaining budget never exceeds the total, both grow by the same amount, so the addition cannot overflow.
 
-Both fields carry the **new absolute value**, not an amount to add. The client already holds a fresh copy of the identity, because the transition claims its next revision like an identity update does, so it knows the current total; "top up by X" is SDK sugar that adds X to it. What the wire carries is then exactly what a proof of the execution shows, and the proof binds it.
+Both fields carry the **new absolute value**, not an amount to add; "top up by X" is SDK sugar that adds X to the total the client's copy of the key shows. What the wire carries is then exactly what a proof of the execution shows, and the proof binds it. No identity revision is claimed and none is bumped: an identity update needs one because clients allocate key ids, while this transition names an existing key and allocates nothing, so a stale copy of the identity cannot make it collide and the client only needs to hold the signing key. Two clients topping up the same key from the same stale copy find the second raise counted from the first's result, and a total that no longer raises the stored one is refused.
 
 **Who may sign.** A MASTER key, or a CRITICAL authentication key that carries no limits itself and no contract bounds (a bound key may only sign batches, `ContractBoundedKeyNonBatchError` 20013). A key with limits can never raise limits, so it can never top itself up; the identity signature validation refuses it before the remaining budget is even read.
 
 ```mermaid
 flowchart TD
-    S["signer is MASTER,<br/>or CRITICAL without limits<br/>and without contract bounds"] --> R{"revision is<br/>current + 1?"}
-    R -->|no| E1["<b>40203</b><br/>paid"]
-    R -->|yes| K{"key exists<br/>and is enabled?"}
+    S["signer is MASTER,<br/>or CRITICAL without limits<br/>and without contract bounds"] --> K{"key exists<br/>and is enabled?"}
     K -->|no| E2["<b>40209</b> / <b>40208</b><br/>paid"]
     K -->|yes| L{"has each limit<br/>being raised?"}
     L -->|no| E3["<b>40220</b><br/>paid"]
@@ -210,14 +207,14 @@ flowchart TD
     G -->|no| E4["<b>40221</b><br/>paid"]
     G -->|yes| X{"not expired<br/>afterwards?"}
     X -->|no| E5["<b>40219</b><br/>paid"]
-    X -->|yes| OK["key rewritten,<br/>remaining raised,<br/>revision bumped"]
+    X -->|yes| OK["key rewritten,<br/>remaining raised"]
 ```
 
 The last check is the one with a twist. An expired key may be revived by moving its expiry past the block time, but it cannot be topped up while it stays expired: after the update the key must be usable, or the update was pointless. The mempool asks the same questions of the key when it admits the transition, against the last block's time, so a bad target key is answered with these codes at admission; a top-up that arrives just before the key's expiry can still be admitted and then refused, paid, in the block where it lands. The two structural rules run unpaid before any of this: the transition must set at least one of the two fields (`IdentityKeyLimitsUpdateEmptyError` 10539), and a budget it sets is not zero (10537). A limited signer is refused unpaid with `PublicKeyWithLimitsCannotUpdateKeyLimitsError` 20017.
 
-**What Drive does.** The key is read once, when the transition is validated, and carried in the action as it is stored: `update_identity_key_limits` sets the new limits on that copy and rewrites it in place with `replace_key_in_storage_operations`, the same patch a disable uses; the rewrite is priced by the byte delta, since a bigger total is a bigger varint and an expiry that was absent is new bytes. The references to the key in the purpose and security level trees carry its value hash, so they are refreshed as a disable refreshes them. Then `add_to_identity_key_budget` raises the remaining budget by the difference between the new total and the old one: a same-size replace of the eight byte entry. The revision and the nonce are updated first, as for an identity update.
+**What Drive does.** The key is read once, when the transition is validated, and carried in the action as it is stored: `update_identity_key_limits` sets the new limits on that copy and rewrites it in place with `replace_key_in_storage_operations`, the same patch a disable uses; the rewrite is priced by the byte delta, since a bigger total is a bigger varint and an expiry that was absent is new bytes. The references to the key in the purpose and security level trees carry its value hash, so they are refreshed as a disable refreshes them. Then `add_to_identity_key_budget` raises the remaining budget by the difference between the new total and the old one: a same-size replace of the eight byte entry. The nonce is updated first.
 
-**The proof.** The proof is the rewritten key with the identity's revision, nothing more. The verifier requires the revision the transition claimed, the key present, and the key holding exactly the total budget and the expiry the transition asked for. That authenticates the state the update aimed at, not this exact transition: the nonce and the fee increase are signed but not stored, so a second update by the identity with the same revision, key and limits would produce the same proof. The outcome is therefore classified as affected state, like a credit transfer, and the SDKs wait for it with the affected-state wait.
+**The proof.** The proof is the rewritten key, nothing more. The verifier requires the key present and holding exactly the total budget and the expiry the transition asked for. That authenticates the state the update aimed at, not this exact transition: the nonce and the fee increase are signed but not stored, so any later state of the key with those limits would produce the same proof. The outcome is therefore classified as affected state, like a credit transfer, and the SDKs wait for it with the affected-state wait.
 
 In the SDKs: `Identity::update_key_limits`, `top_up_key_budget` and `extend_key_expiry` (Rust, `UpdateIdentityKeyLimits`), `identityUpdateKeyLimits({ identity, keyId, addBudget, expiresAt, signer })` (wasm-sdk), `sdk.identities.updateKeyLimits` (js-evo-sdk). All resolve to the key as stored after the update.
 

@@ -45,7 +45,6 @@ const IDENTITY_KEY_LIMITS_UPDATE_EMPTY: u32 = 10539;
 const INVALID_IDENTITY_PUBLIC_KEY_BUDGET: u32 = 10537;
 const PUBLIC_KEY_BUDGET_EXHAUSTED: u32 = 20015;
 const PUBLIC_KEY_WITH_LIMITS_CANNOT_UPDATE_KEY_LIMITS: u32 = 20017;
-const INVALID_IDENTITY_REVISION: u32 = 40203;
 const IDENTITY_PUBLIC_KEY_IS_DISABLED: u32 = 40208;
 const MISSING_IDENTITY_PUBLIC_KEY_IDS: u32 = 40209;
 const IDENTITY_PUBLIC_KEY_ALREADY_EXPIRED: u32 = 40219;
@@ -177,18 +176,16 @@ impl Setup {
         .await
     }
 
-    /// A limits update built by hand, so tests can claim any revision or signer
+    /// A limits update built by hand, so tests can pick any signer
     async fn update_signed_by(
         &self,
         signing_key: &IdentityPublicKey,
-        revision: u64,
         key_id: KeyID,
         total_budget: Option<Credits>,
         expires_at: Option<TimestampMillis>,
     ) -> StateTransition {
         let mut transition: StateTransition = IdentityKeyLimitsUpdateTransitionV0 {
             identity_id: self.identity.id(),
-            revision,
             nonce: self.take_nonce(),
             key_id,
             total_budget,
@@ -291,18 +288,6 @@ impl Setup {
             .expect("expected to fetch the remaining budget")
     }
 
-    fn revision(&self, tx: &Transaction) -> Option<u64> {
-        self.platform
-            .drive
-            .fetch_identity_revision(
-                self.identity.id().to_buffer(),
-                true,
-                Some(tx),
-                PlatformVersion::latest(),
-            )
-            .expect("expected to fetch the revision")
-    }
-
     fn check_tx(&self, transition: &StateTransition) -> Vec<ConsensusError> {
         let version = PlatformVersion::latest();
         let state = self.platform.state.load();
@@ -383,11 +368,6 @@ async fn should_raise_the_budget_of_a_spent_key_so_it_can_sign_again() {
         setup.remaining_budget(LIMITED_KEY_ID, &tx),
         Some(raised_budget - BUDGET),
         "what was spent stays spent"
-    );
-    assert_eq!(
-        setup.revision(&tx),
-        Some(1),
-        "the identity revision is bumped"
     );
     setup
         .platform
@@ -569,23 +549,6 @@ async fn should_refuse_a_missing_or_disabled_key() {
 }
 
 #[tokio::test]
-async fn should_refuse_a_stale_revision_before_reading_the_key() {
-    let setup = Setup::new(Some(BUDGET), None);
-    let tx = setup.platform.drive.grove.start_transaction();
-    let master_key = setup.identity.public_keys()[&MASTER_KEY_ID].clone();
-
-    // The identity is at revision 0, so the transition must claim 1
-    let transition = setup
-        .update_signed_by(&master_key, 2, LIMITED_KEY_ID, Some(BUDGET + 1), None)
-        .await;
-    assert_paid_with_code(&setup.process(&transition, &tx), INVALID_IDENTITY_REVISION);
-    assert_eq!(
-        setup.stored_key(LIMITED_KEY_ID, &tx).total_budget(),
-        Some(BUDGET)
-    );
-}
-
-#[tokio::test]
 async fn should_refuse_an_update_that_changes_nothing_or_zeroes_the_budget_unpaid() {
     let setup = Setup::new(Some(BUDGET), None);
     let tx = setup.platform.drive.grove.start_transaction();
@@ -640,7 +603,7 @@ async fn should_accept_an_unlimited_critical_signer_and_refuse_limited_or_lower_
         ))
     );
     let transition = setup
-        .update_signed_by(&setup.high_key, 2, LIMITED_KEY_ID, Some(BUDGET + 2), None)
+        .update_signed_by(&setup.high_key, LIMITED_KEY_ID, Some(BUDGET + 2), None)
         .await;
     assert_matches!(
         setup.process(&transition, &tx),
@@ -693,7 +656,7 @@ async fn should_answer_the_mempool_with_consensus_codes_for_a_bad_target_key() {
 }
 
 #[tokio::test]
-async fn should_prove_the_rewritten_key_and_the_revision() {
+async fn should_prove_the_rewritten_key() {
     let setup = Setup::new(Some(BUDGET), Some(BLOCK_TIME_MS * 2));
     let version = PlatformVersion::latest();
     let tx = setup.platform.drive.grove.start_transaction();
@@ -740,15 +703,14 @@ async fn should_prove_the_rewritten_key_and_the_revision() {
             .unwrap()
             .expect("expected a root hash")
     );
-    // The proof shows the resulting key and revision, not the nonce, so it authenticates the
-    // affected state rather than this exact transition.
+    // The proof shows the resulting key, not the nonce, so it authenticates the affected
+    // state rather than this exact transition.
     let StateTransitionProofOutcome::AffectedState(
         StateTransitionProofResult::VerifiedPartialIdentity(identity),
     ) = outcome
     else {
         panic!("expected the affected state to be proved, got {outcome:?}");
     };
-    assert_eq!(identity.revision, Some(1));
     let key = &identity.loaded_public_keys[&LIMITED_KEY_ID];
     assert_eq!(key.total_budget(), Some(BUDGET * 2));
     assert_eq!(key.expires_at(), Some(BLOCK_TIME_MS * 3));
@@ -757,7 +719,6 @@ async fn should_prove_the_rewritten_key_and_the_revision() {
     let other = setup
         .update_signed_by(
             &setup.identity.public_keys()[&MASTER_KEY_ID].clone(),
-            1,
             LIMITED_KEY_ID,
             Some(BUDGET * 3),
             None,

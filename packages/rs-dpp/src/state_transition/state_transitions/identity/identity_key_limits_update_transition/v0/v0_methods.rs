@@ -12,7 +12,7 @@ use crate::identity::{Identity, IdentityPublicKey};
 use crate::identity::{KeyID, TimestampMillis};
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
-use crate::prelude::{Identifier, IdentityNonce, Revision};
+use crate::prelude::{Identifier, IdentityNonce};
 use crate::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
 use crate::state_transition::identity_key_limits_update_transition::methods::IdentityKeyLimitsUpdateTransitionMethodsV0;
 use crate::state_transition::identity_key_limits_update_transition::v0::IdentityKeyLimitsUpdateTransitionV0;
@@ -49,7 +49,6 @@ impl IdentityKeyLimitsUpdateTransitionMethodsV0 for IdentityKeyLimitsUpdateTrans
 
         let mut state_transition: StateTransition = IdentityKeyLimitsUpdateTransitionV0 {
             identity_id: identity.id(),
-            revision: identity.revision() + 1,
             nonce,
             key_id,
             total_budget,
@@ -81,14 +80,6 @@ impl IdentityKeyLimitsUpdateTransitionAccessorsV0 for IdentityKeyLimitsUpdateTra
 
     fn identity_id(&self) -> Identifier {
         self.identity_id
-    }
-
-    fn set_revision(&mut self, revision: Revision) {
-        self.revision = revision;
-    }
-
-    fn revision(&self) -> Revision {
-        self.revision
     }
 
     fn set_nonce(&mut self, nonce: IdentityNonce) {

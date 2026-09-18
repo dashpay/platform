@@ -244,19 +244,13 @@ impl Drive {
                 &st.identity_id().to_buffer(),
                 &platform_version.drive.grove_version,
             )?,
-            // Only the rewritten key and the revision: the verifier compares that one key.
+            // Only the rewritten key: the verifier compares that one key.
             StateTransition::IdentityKeyLimitsUpdate(st) => {
-                let identity_id = st.identity_id().to_buffer();
-                let revision_query = Drive::identity_revision_query(&identity_id);
-                let key_query = IdentityKeysRequest::new_specific_key_query_without_limit(
-                    &identity_id,
+                IdentityKeysRequest::new_specific_key_query_without_limit(
+                    &st.identity_id().to_buffer(),
                     st.key_id(),
                 )
-                .into_path_query();
-                PathQuery::merge(
-                    vec![&revision_query, &key_query],
-                    &platform_version.drive.grove_version,
-                )?
+                .into_path_query()
             }
             StateTransition::IdentityCreditTransfer(st) => {
                 let sender_query = Drive::identity_balance_query(&st.identity_id().into_buffer());

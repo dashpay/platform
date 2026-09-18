@@ -8,7 +8,7 @@ use derive_more::From;
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::Identifier;
-use dpp::prelude::{IdentityNonce, Revision, UserFeeIncrease};
+use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 
 /// The action of an identity key limits update: raises the total budget of one of the
 /// identity's keys, and the remaining budget with it, or moves its expiry later.
@@ -23,13 +23,6 @@ impl IdentityKeyLimitsUpdateTransitionAction {
     pub fn identity_id(&self) -> Identifier {
         match self {
             IdentityKeyLimitsUpdateTransitionAction::V0(transition) => transition.identity_id,
-        }
-    }
-
-    /// Revision
-    pub fn revision(&self) -> Revision {
-        match self {
-            IdentityKeyLimitsUpdateTransitionAction::V0(transition) => transition.revision,
         }
     }
 

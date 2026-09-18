@@ -124,7 +124,6 @@ mod test {
     fn make_update() -> IdentityKeyLimitsUpdateTransition {
         IdentityKeyLimitsUpdateTransition::V0(IdentityKeyLimitsUpdateTransitionV0 {
             identity_id: Identifier::random(),
-            revision: 3,
             nonce: 10,
             key_id: 7,
             total_budget: Some(500_000_000),
@@ -182,9 +181,6 @@ mod test {
     #[test]
     fn should_expose_the_accessors() {
         let mut t = make_update();
-        assert_eq!(t.revision(), 3);
-        t.set_revision(5);
-        assert_eq!(t.revision(), 5);
         assert_eq!(t.nonce(), 10);
         t.set_nonce(20);
         assert_eq!(t.nonce(), 20);
@@ -254,7 +250,6 @@ pub(crate) mod json_convertible_tests {
     pub(crate) fn fixture() -> IdentityKeyLimitsUpdateTransition {
         IdentityKeyLimitsUpdateTransition::V0(IdentityKeyLimitsUpdateTransitionV0 {
             identity_id: Identifier::new([0x55; 32]),
-            revision: 3,
             nonce: 17,
             key_id: 5,
             total_budget: Some(1_000_000_000),
@@ -275,7 +270,6 @@ pub(crate) mod json_convertible_tests {
             json!({
                 "$formatVersion": "0",
                 "identityId": Identifier::new([0x55; 32]),
-                "revision": 3,
                 "nonce": 17,
                 "keyId": 5,
                 "totalBudget": 1_000_000_000u64,
@@ -299,7 +293,6 @@ pub(crate) mod json_convertible_tests {
             platform_value!({
                 "$formatVersion": "0",
                 "identityId": Identifier::new([0x55; 32]),
-                "revision": 3u64,
                 "nonce": 17u64,
                 "keyId": 5u32,
                 "totalBudget": 1_000_000_000u64,
