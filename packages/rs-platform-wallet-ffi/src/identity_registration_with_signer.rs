@@ -116,9 +116,24 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 /// the credits its transitions may take from the identity over its
 /// lifetime, when `has_total_budget`; `expires_at`, the block time in
 /// milliseconds from which it can no longer sign, when
-/// `has_expires_at`. Only AUTHENTICATION keys below MASTER may carry
-/// them; a row with neither flag registers a version 0 key, the same
-/// bytes as ever.
+/// `has_expires_at`. A row with either flag set is registered as an
+/// `IdentityPublicKeyInCreation::V1` (the limits are part of the
+/// signable bytes, so the identity signs what it grants); a row with
+/// neither flag registers a version 0 key, the same bytes as ever. The
+/// `0` values behind an unset flag are ignored, so a caller that
+/// encodes "no limit" as `0` must leave the flag false: a budget of
+/// literally zero is refused by consensus
+/// (`InvalidIdentityPublicKeyBudgetError`, 10537).
+///
+/// Consensus rules the FFI deliberately does not duplicate (see
+/// `docs/protocol/authentication-key-limits.md`): limits are allowed
+/// only on AUTHENTICATION keys with a security level below MASTER
+/// (`IdentityPublicKeyLimitsNotAllowedError`, 10536), a budget must be
+/// non-zero (10537), and an expiry must lie after the registering
+/// block's time (`IdentityPublicKeyAlreadyExpiredError`, 40219, a paid
+/// failure; seconds instead of milliseconds is the usual way there).
+/// Platform enforces all three at validation; the FFI passes the row
+/// through so the error the caller sees is the chain's own.
 ///
 /// All pointers are borrowed for the call duration only — the
 /// FFI does not retain or free them.
@@ -947,6 +962,94 @@ mod tests {
         let map = unsafe { decode_identity_pubkeys(rows.as_ptr(), rows.len()) }
             .expect("unbounded encryption key must decode");
         assert_eq!(map.len(), 2);
+    }
+
+    /// A row with a budget, an expiry, or both decodes to a version 1 key
+    /// carrying exactly those limits; a row with neither flag stays version
+    /// 0 so identities that do not use limits keep their historical bytes.
+    /// The `0` behind an unset flag is not read.
+    #[test]
+    fn key_with_row_limits_builds_v1_only_when_a_limit_is_set() {
+        use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+
+        let pk = [0x02u8; 33];
+        let base = || {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 7,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(pk.to_vec()),
+                disabled_at: None,
+            })
+        };
+
+        let mut unlimited = ffi_row(7, &pk);
+        unlimited.total_budget = 5; // ignored: has_total_budget is false
+        unlimited.expires_at = 5; // ignored: has_expires_at is false
+        let key = key_with_row_limits(base(), &unlimited);
+        assert!(matches!(key, IdentityPublicKey::V0(_)));
+        assert_eq!(key.total_budget(), None);
+        assert_eq!(key.expires_at(), None);
+
+        let mut budget_only = ffi_row(7, &pk);
+        budget_only.has_total_budget = true;
+        budget_only.total_budget = 10_000_000_000;
+        let key = key_with_row_limits(base(), &budget_only);
+        assert!(matches!(key, IdentityPublicKey::V1(_)));
+        assert_eq!(key.total_budget(), Some(10_000_000_000));
+        assert_eq!(key.expires_at(), None);
+
+        let mut expiry_only = ffi_row(7, &pk);
+        expiry_only.has_expires_at = true;
+        expiry_only.expires_at = 1_800_000_000_000;
+        let key = key_with_row_limits(base(), &expiry_only);
+        assert!(matches!(key, IdentityPublicKey::V1(_)));
+        assert_eq!(key.total_budget(), None);
+        assert_eq!(key.expires_at(), Some(1_800_000_000_000));
+
+        let mut both = ffi_row(7, &pk);
+        both.has_total_budget = true;
+        both.total_budget = 10_000_000_000;
+        both.has_expires_at = true;
+        both.expires_at = 1_800_000_000_000;
+        let key = key_with_row_limits(base(), &both);
+        assert!(matches!(key, IdentityPublicKey::V1(_)));
+        assert_eq!(key.total_budget(), Some(10_000_000_000));
+        assert_eq!(key.expires_at(), Some(1_800_000_000_000));
+    }
+
+    /// The identity create / update transitions carry the key as an
+    /// `IdentityPublicKeyInCreation`; a limited row must become the V1
+    /// variant there too, since the limits are part of the signable bytes.
+    #[test]
+    fn limited_row_becomes_a_v1_key_in_creation() {
+        use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV1Getters;
+        use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+
+        let pk = [0x02u8; 33];
+        let mut session = ffi_row(9, &pk);
+        session.security_level = 2; // SecurityLevel::HIGH
+        session.has_total_budget = true;
+        session.total_budget = 10_000_000_000;
+        session.has_expires_at = true;
+        session.expires_at = 1_800_000_000_000;
+        let rows = [ffi_row(0, &pk), session];
+
+        // SAFETY: `rows` (and the pubkey array it borrows) outlive the call.
+        let map = unsafe { decode_identity_pubkeys(rows.as_ptr(), rows.len()) }
+            .expect("limited authentication key must decode");
+
+        let master = IdentityPublicKeyInCreation::from(&map[&0]);
+        assert!(matches!(master, IdentityPublicKeyInCreation::V0(_)));
+        assert!(!master.has_limits());
+
+        let session = IdentityPublicKeyInCreation::from(&map[&9]);
+        assert!(matches!(session, IdentityPublicKeyInCreation::V1(_)));
+        assert_eq!(session.total_budget(), Some(10_000_000_000));
+        assert_eq!(session.expires_at(), Some(1_800_000_000_000));
     }
 
     #[test]
