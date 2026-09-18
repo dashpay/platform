@@ -20,7 +20,9 @@ NC="\033[0m"
 # -------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR/../../"
-TARGET_DIR="$ROOT_DIR/target"
+# Honor CARGO_TARGET_DIR like cargo itself does, so a caller can keep its
+# own target cache (the release workflow keeps one outside the workspace).
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT_DIR/target}"
 PACKAGE="rs-unified-sdk-ffi"
 XCFRAMEWORK="$SCRIPT_DIR/DashSDKFFI.xcframework"
 PROFILE="dev"

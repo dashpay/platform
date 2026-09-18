@@ -35,13 +35,15 @@ jobs:
       version: ${{ steps.release-ref.outputs.version }}
       sha: ${{ steps.resolve-sha.outputs.sha }}
       checksum: ${{ steps.zip.outputs.checksum }}
-    # Same persistent runner as swift-sdk-build.yml, so release builds reuse
-    # its warm Cargo caches instead of building cold on a hosted mac. No fork
-    # PR guard is needed here: the workflow only triggers on release/
+    # Same persistent runner as swift-sdk-build.yml. Release builds keep their
+    # own Cargo target cache on it (see "Prepare release Cargo target cache"),
+    # so later releases only rebuild what changed since the previous one. No
+    # fork PR guard is needed here: the workflow only triggers on release/
     # workflow_dispatch (via release.yml), never on pull_request.
     runs-on: [self-hosted, macOS, ARM64]
-    # 45 minutes fit a hosted run with a warm registry cache; a cold first run
-    # on the persistent runner needs the same headroom as swift-sdk-build.yml.
+    # Three cold fat-LTO slices took over 45 minutes on a hosted macos-15
+    # runner. A cold run here (first release, or after the cache is reset)
+    # needs the same headroom; warm runs finish well inside it.
     timeout-minutes: 90
     permissions:
       contents: read # release attachment runs on an ephemeral hosted job
@@ -165,11 +167,36 @@ jobs:
           # through the 60 req/h anonymous limit.
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # PR builds on this runner (swift-sdk-build.yml) set PRUNE_CARGO_TARGETS,
+      # which deletes every Apple target directory under the workspace
+      # target/ before and after each slice. A release build there would
+      # always start cold, so releases keep their own release-ios cache
+      # outside the workspace instead. It is capped so it cannot starve the
+      # PR jobs of disk: reset it when it outgrows the cap or the volume runs
+      # low, and Cargo rebuilds from scratch.
+      - name: Prepare release Cargo target cache
+        run: |
+          set -euo pipefail
+          RELEASE_TARGET_DIR="$HOME/.cache/dash-platform/release-swift-sdk-target"
+          MAX_CACHE_KIB=$((60 * 1024 * 1024))
+          MIN_FREE_KIB=$((40 * 1024 * 1024))
+          mkdir -p "$RELEASE_TARGET_DIR"
+          USED_KIB=$(du -sk "$RELEASE_TARGET_DIR" | cut -f1)
+          FREE_KIB=$(df -Pk "$RELEASE_TARGET_DIR" | awk 'NR == 2 { print $4 }')
+          if [ "$USED_KIB" -gt "$MAX_CACHE_KIB" ] || [ "$FREE_KIB" -lt "$MIN_FREE_KIB" ]; then
+            echo "::notice::Resetting the release target cache (${USED_KIB} KiB used, ${FREE_KIB} KiB free on the volume)."
+            rm -rf "${RELEASE_TARGET_DIR:?}"
+            mkdir -p "$RELEASE_TARGET_DIR"
+          fi
+          du -sh "$RELEASE_TARGET_DIR"
+          df -h "$RELEASE_TARGET_DIR"
+          echo "CARGO_TARGET_DIR=$RELEASE_TARGET_DIR" >> "$GITHUB_ENV"
+
       - name: Build DashSDKFFI.xcframework and install into Swift package
         env:
-          # The self-hosted runner persists Cargo's target cache between jobs.
-          # Keep only one Apple architecture's intermediates at a time.
-          PRUNE_CARGO_TARGETS: "1"
+          # Keep all three slices' intermediates in the release cache above;
+          # pruning them would make every release a cold build.
+          PRUNE_CARGO_TARGETS: "0"
         run: |
           bash packages/swift-sdk/build_ios.sh --target all --profile release
 
