@@ -29,6 +29,9 @@ use dpp::state_transition::identity_create_from_addresses_transition::accessors:
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+use dpp::data_contract::config::moderation::ContractModerationList;
+use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
+use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionWitnessSigned};
@@ -50,7 +53,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractModerationStatus, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1143,6 +1146,48 @@ impl Drive {
                     }
                 }
                 Ok((root_hash, VerifiedPartialIdentity(identity)))
+            }
+            StateTransition::ContractUserModeration(transition) => {
+                // The proof holds the edited list entry, present or absent, nothing more.
+                let contract_id = transition.data_contract_id();
+                let identity_id = transition.target_identity_id();
+                let list = match transition.action() {
+                    ContractUserModerationAction::Ban { .. }
+                    | ContractUserModerationAction::Unban { .. } => ContractModerationList::Banlist,
+                    ContractUserModerationAction::Suspend { .. }
+                    | ContractUserModerationAction::Unsuspend { .. } => {
+                        ContractModerationList::Suspensions
+                    }
+                };
+                let (root_hash, status) = Drive::verify_contract_moderation_status(
+                    proof,
+                    contract_id,
+                    identity_id,
+                    &[list],
+                    platform_version,
+                )?;
+                let as_expected = match transition.action() {
+                    ContractUserModerationAction::Ban { .. } => status.banned,
+                    ContractUserModerationAction::Unban { .. } => !status.banned,
+                    ContractUserModerationAction::Suspend { until, .. } => {
+                        status.suspended_until == Some(until)
+                    }
+                    ContractUserModerationAction::Unsuspend { .. } => {
+                        status.suspended_until.is_none()
+                    }
+                };
+                if !as_expected {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "proof of state transition execution does not show the {} of {} on contract {}",
+                        transition.action(),
+                        identity_id,
+                        contract_id
+                    ))));
+                }
+                Ok((
+                    root_hash,
+                    VerifiedContractModerationStatus(contract_id, identity_id, status),
+                ))
             }
             StateTransition::IdentityKeyLimitsUpdate(transition) => {
                 // The proof holds the rewritten key, nothing more.
@@ -2445,6 +2490,10 @@ impl Drive {
             // later state of that key with those limits verifies just the same, so this only
             // authenticates the affected state.
             StateTransition::IdentityKeyLimitsUpdate(_) => false,
+            // The proven entry shows the target's state on the list; an earlier or later
+            // moderation leaving the same entry verifies just the same, so this only
+            // authenticates the affected state.
+            StateTransition::ContractUserModeration(_) => false,
             // The proven vote is stored under the masternode's identity and
             // must equal the transition's declared vote.
             StateTransition::MasternodeVote(_) => true,

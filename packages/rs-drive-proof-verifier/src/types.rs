@@ -11,6 +11,8 @@
 
 /// Contract groups: a group's information, its members and the groups a contract is in
 pub mod contract_groups;
+/// Contract moderation query results
+pub mod contract_moderation;
 /// Data contracts by range (the paginated contract enumeration)
 pub mod data_contracts_by_range;
 /// The current versions of data contracts

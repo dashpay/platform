@@ -563,6 +563,8 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getContractGroupInfo",
                 "getContractGroupMembers",
                 "getContractGroupsForContract",
+                "getContractModerationStatus",
+                "getContractModerationEntries",
                 "getDataContracts",
                 "getDataContractsByRange",
                 "getDocumentHistory",

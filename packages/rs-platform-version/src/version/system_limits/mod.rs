@@ -104,6 +104,11 @@ pub struct SystemLimits {
     pub max_contract_group_name_length: u16,
     /// Maximum length, in characters, of a contract group description.
     pub max_contract_group_description_length: u16,
+    /// Maximum number of moderator identities a moderated data contract may name besides its
+    /// owner (`DataContractConfigV2::moderation`). Contract moderation exists from protocol
+    /// version 14; read by the contract's `validate_moderation_config` v0 and never reached
+    /// before.
+    pub max_contract_moderators: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to

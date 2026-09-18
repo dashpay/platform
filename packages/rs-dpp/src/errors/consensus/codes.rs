@@ -222,6 +222,10 @@ impl ErrorWithCode for BasicError {
             Self::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(_) => 10538,
             Self::IdentityKeyLimitsUpdateEmptyError(_) => 10539,
 
+            // Contract moderation errors: 10462-10463 (data contract band)
+            Self::InvalidContractModerationConfigError(_) => 10462,
+            Self::ContractModerationSelfTargetError(_) => 10463,
+
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,
             Self::MissingStateTransitionTypeError { .. } => 10601,
@@ -432,6 +436,18 @@ impl ErrorWithCode for StateError {
             Self::ContractGroupNotFoundError(_) => 41001,
             Self::IdentityNotContractGroupOwnerOrAdminError(_) => 41002,
             Self::ContractGroupAdminNotFoundError(_) => 41003,
+
+            // Contract moderation errors: 41100-41199
+            Self::ContractModerationNotEnabledError(_) => 41100,
+            Self::IdentityNotContractModeratorError(_) => 41101,
+            Self::ContractModerationTargetNotAllowedError(_) => 41102,
+            Self::ContractUserAlreadyBannedError(_) => 41103,
+            Self::ContractUserNotBannedError(_) => 41104,
+            Self::ContractUserNotSuspendedError(_) => 41105,
+            Self::ContractSuspensionNotInFutureError(_) => 41106,
+            Self::ContractUserBannedError(_) => 41107,
+            Self::ContractUserSuspendedError(_) => 41108,
+            Self::ContractModerationTargetNotFoundError(_) => 41109,
         }
     }
 }

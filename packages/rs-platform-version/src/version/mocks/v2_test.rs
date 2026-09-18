@@ -19,10 +19,11 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::v1::DRIVE_A
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
     DriveAbciDataContractQueryHelperVersions, DriveAbciDocumentQueryHelperVersions,
     DriveAbciQueryAddressFundsVersions, DriveAbciQueryContractGroupVersions,
-    DriveAbciQueryDataContractVersions, DriveAbciQueryGroupVersions,
-    DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions,
-    DriveAbciQueryShieldedVersions, DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions,
-    DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+    DriveAbciQueryContractModerationVersions, DriveAbciQueryDataContractVersions,
+    DriveAbciQueryGroupVersions, DriveAbciQueryIdentityVersions,
+    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQueryShieldedVersions,
+    DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions,
+    DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
 };
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v1::DRIVE_ABCI_VALIDATION_VERSIONS_V1;
@@ -454,6 +455,18 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
             },
+            contract_moderation_queries: DriveAbciQueryContractModerationVersions {
+                contract_moderation_status: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                contract_moderation_entries: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
             shielded_queries: DriveAbciQueryShieldedVersions {
                 encrypted_notes: FeatureVersionBounds {
                     min_version: 0,
@@ -562,6 +575,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contract_group_admins: 16,
         max_contract_group_name_length: 64,
         max_contract_group_description_length: 256,
+        max_contract_moderators: 16,
         max_token_redemption_cycles: 128,
         max_shielded_transition_actions: 16,
         max_time_range_overlap_factor: None,

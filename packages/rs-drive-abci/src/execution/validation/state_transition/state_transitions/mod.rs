@@ -28,6 +28,9 @@ pub mod data_contract_create;
 /// Module for updating an existing data contract entity.
 pub mod data_contract_update;
 
+/// Module for banning and suspending identities on a moderated data contract.
+pub mod contract_user_moderation;
+
 /// Module for voting from a masternode.
 pub mod masternode_vote;
 

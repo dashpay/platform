@@ -96,6 +96,9 @@ use crate::state_transition::batch_transition::batched_transition::BatchedTransi
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionSignable};
+use crate::state_transition::contract_user_moderation_transition::{
+    ContractUserModerationTransition, ContractUserModerationTransitionSignable,
+};
 use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionSignable,
@@ -184,6 +187,7 @@ macro_rules! call_method {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method($args),
             StateTransition::DataContractUpdate(st) => st.$method($args),
+            StateTransition::ContractUserModeration(st) => st.$method($args),
             StateTransition::Batch(st) => st.$method($args),
             StateTransition::IdentityCreate(st) => st.$method($args),
             StateTransition::IdentityTopUp(st) => st.$method($args),
@@ -212,6 +216,7 @@ macro_rules! call_method {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method(),
             StateTransition::DataContractUpdate(st) => st.$method(),
+            StateTransition::ContractUserModeration(st) => st.$method(),
             StateTransition::Batch(st) => st.$method(),
             StateTransition::IdentityCreate(st) => st.$method(),
             StateTransition::IdentityTopUp(st) => st.$method(),
@@ -243,6 +248,7 @@ macro_rules! call_getter_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => Some(st.$method($args)),
             StateTransition::DataContractUpdate(st) => Some(st.$method($args)),
+            StateTransition::ContractUserModeration(st) => Some(st.$method($args)),
             StateTransition::Batch(st) => Some(st.$method($args)),
             StateTransition::IdentityCreate(_) => None,
             StateTransition::IdentityTopUp(_) => None,
@@ -271,6 +277,7 @@ macro_rules! call_getter_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => Some(st.$method()),
             StateTransition::DataContractUpdate(st) => Some(st.$method()),
+            StateTransition::ContractUserModeration(st) => Some(st.$method()),
             StateTransition::Batch(st) => Some(st.$method()),
             StateTransition::IdentityCreate(_) => None,
             StateTransition::IdentityTopUp(_) => None,
@@ -302,6 +309,7 @@ macro_rules! call_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method($args),
             StateTransition::DataContractUpdate(st) => st.$method($args),
+            StateTransition::ContractUserModeration(st) => st.$method($args),
             StateTransition::Batch(st) => st.$method($args),
             StateTransition::IdentityCreate(_st) => {}
             StateTransition::IdentityTopUp(_st) => {}
@@ -330,6 +338,7 @@ macro_rules! call_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method(),
             StateTransition::DataContractUpdate(st) => st.$method(),
+            StateTransition::ContractUserModeration(st) => st.$method(),
             StateTransition::Batch(st) => st.$method(),
             StateTransition::IdentityCreate(st) => {}
             StateTransition::IdentityTopUp(st) => {}
@@ -362,6 +371,7 @@ macro_rules! call_errorable_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method($( $arg ),*),
             StateTransition::DataContractUpdate(st) => st.$method($( $arg ),*),
+            StateTransition::ContractUserModeration(st) => st.$method($( $arg ),*),
             StateTransition::Batch(st) => st.$method($( $arg ),*),
             StateTransition::IdentityCreate(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create can not be called for identity signing".to_string(),
@@ -418,6 +428,7 @@ macro_rules! call_errorable_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method(),
             StateTransition::DataContractUpdate(st) => st.$method(),
+            StateTransition::ContractUserModeration(st) => st.$method(),
             StateTransition::Batch(st) => st.$method(),
             StateTransition::IdentityCreate(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create can not be called for identity signing".to_string(),
@@ -536,6 +547,7 @@ pub enum StateTransition {
     ShieldFromIdentity(ShieldFromIdentityTransition),
     IdentityTopUpFromShieldedPool(IdentityTopUpFromShieldedPoolTransition),
     IdentityKeyLimitsUpdate(IdentityKeyLimitsUpdateTransition),
+    ContractUserModeration(ContractUserModerationTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -714,6 +726,15 @@ mod json_convertible_tests {
         assert_umbrella_round_trip(
             StateTransition::IdentityKeyLimitsUpdate(inner),
             "identityKeyLimitsUpdate",
+        );
+    }
+
+    #[test]
+    fn umbrella_round_trip_contract_user_moderation() {
+        let inner = crate::state_transition::contract_user_moderation_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::ContractUserModeration(inner),
+            "contractUserModeration",
         );
     }
 
@@ -984,7 +1005,8 @@ impl StateTransition {
             | StateTransition::ShieldedWithdrawal(_) => 12..=LATEST_VERSION,
             StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_)
-            | StateTransition::IdentityKeyLimitsUpdate(_) => 14..=LATEST_VERSION,
+            | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_) => 14..=LATEST_VERSION,
         }
     }
 
@@ -1039,6 +1061,7 @@ impl StateTransition {
         match self {
             Self::DataContractCreate(_) => "DataContractCreate".to_string(),
             Self::DataContractUpdate(_) => "DataContractUpdate".to_string(),
+            Self::ContractUserModeration(_) => "ContractUserModeration".to_string(),
             Self::Batch(batch_transition) => {
                 let mut document_transition_types = vec![];
                 for transition in batch_transition.transitions_iter() {
@@ -1119,6 +1142,7 @@ impl StateTransition {
         match self {
             StateTransition::DataContractCreate(st) => Some(st.signature()),
             StateTransition::DataContractUpdate(st) => Some(st.signature()),
+            StateTransition::ContractUserModeration(st) => Some(st.signature()),
             StateTransition::Batch(st) => Some(st.signature()),
             StateTransition::IdentityCreate(st) => Some(st.signature()),
             StateTransition::IdentityTopUp(st) => Some(st.signature()),
@@ -1167,6 +1191,7 @@ impl StateTransition {
         match self {
             StateTransition::DataContractCreate(st) => st.user_fee_increase(),
             StateTransition::DataContractUpdate(st) => st.user_fee_increase(),
+            StateTransition::ContractUserModeration(st) => st.user_fee_increase(),
             StateTransition::Batch(st) => st.user_fee_increase(),
             StateTransition::IdentityCreate(st) => st.user_fee_increase(),
             StateTransition::IdentityTopUp(st) => st.user_fee_increase(),
@@ -1239,6 +1264,7 @@ impl StateTransition {
         match self {
             StateTransition::DataContractCreate(st) => Some(st.owner_id()),
             StateTransition::DataContractUpdate(st) => Some(st.owner_id()),
+            StateTransition::ContractUserModeration(st) => Some(st.owner_id()),
             StateTransition::Batch(st) => Some(st.owner_id()),
             StateTransition::IdentityCreate(st) => Some(st.owner_id()),
             StateTransition::IdentityTopUp(st) => Some(st.owner_id()),
@@ -1269,6 +1295,7 @@ impl StateTransition {
         match self {
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
+            | StateTransition::ContractUserModeration(_)
             | StateTransition::Batch(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
@@ -1312,6 +1339,10 @@ impl StateTransition {
                 true
             }
             StateTransition::DataContractUpdate(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::ContractUserModeration(st) => {
                 st.set_signature(signature);
                 true
             }
@@ -1381,6 +1412,9 @@ impl StateTransition {
         match self {
             StateTransition::DataContractCreate(st) => st.set_user_fee_increase(user_fee_increase),
             StateTransition::DataContractUpdate(st) => st.set_user_fee_increase(user_fee_increase),
+            StateTransition::ContractUserModeration(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
             StateTransition::Batch(st) => st.set_user_fee_increase(user_fee_increase),
             StateTransition::IdentityCreate(st) => st.set_user_fee_increase(user_fee_increase),
             StateTransition::IdentityTopUp(st) => st.set_user_fee_increase(user_fee_increase),
@@ -1465,6 +1499,10 @@ impl StateTransition {
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::DataContractUpdate(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
+            }
+            StateTransition::ContractUserModeration(st) => {
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
@@ -2112,6 +2150,7 @@ impl StateTransitionStructureValidation for StateTransition {
         match self {
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
+            | StateTransition::ContractUserModeration(_)
             | StateTransition::Batch(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)

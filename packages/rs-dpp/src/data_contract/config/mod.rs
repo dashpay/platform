@@ -1,10 +1,16 @@
 mod fields;
 mod methods;
+pub mod moderation;
 pub mod v0;
 pub mod v1;
+pub mod v2;
 
+use crate::data_contract::config::moderation::ContractModerationConfig;
 use crate::data_contract::config::v1::{
     DataContractConfigGettersV1, DataContractConfigSettersV1, DataContractConfigV1,
+};
+use crate::data_contract::config::v2::{
+    DataContractConfigGettersV2, DataContractConfigSettersV2, DataContractConfigV2,
 };
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 #[cfg(feature = "json-conversion")]
@@ -24,7 +30,7 @@ use v0::{DataContractConfigGettersV0, DataContractConfigSettersV0, DataContractC
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[derive(
-    Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, From, DecodeUntrusted,
+    Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, From, DecodeUntrusted,
 )]
 #[serde(tag = "$formatVersion")]
 pub enum DataContractConfig {
@@ -32,6 +38,9 @@ pub enum DataContractConfig {
     V0(DataContractConfigV0),
     #[serde(rename = "1")]
     V1(DataContractConfigV1),
+    /// Protocol version 14: V1 plus the optional contract moderation declaration.
+    #[serde(rename = "2")]
+    V2(DataContractConfigV2),
 }
 
 impl DataContractConfig {
@@ -39,6 +48,7 @@ impl DataContractConfig {
         match self {
             DataContractConfig::V0(_) => 0,
             DataContractConfig::V1(_) => 1,
+            DataContractConfig::V2(_) => 2,
         }
     }
 
@@ -53,29 +63,68 @@ impl DataContractConfig {
         {
             0 => Ok(DataContractConfigV0::default().into()),
             1 => Ok(DataContractConfigV1::default().into()),
+            2 => Ok(DataContractConfigV2::default().into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractConfig::default_for_version".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }
     }
 
+    /// The same config declaring `moderation`, raised to V2 when it is lower. A V0 config keeps
+    /// V0's defaults for the V1 fields.
+    pub fn with_moderation(self, moderation: Option<ContractModerationConfig>) -> Self {
+        let mut v2: DataContractConfigV2 = match self {
+            DataContractConfig::V0(v0) => DataContractConfigV1 {
+                can_be_deleted: v0.can_be_deleted,
+                readonly: v0.readonly,
+                keeps_history: v0.keeps_history,
+                documents_keep_history_contract_default: v0.documents_keep_history_contract_default,
+                documents_mutable_contract_default: v0.documents_mutable_contract_default,
+                documents_can_be_deleted_contract_default: v0
+                    .documents_can_be_deleted_contract_default,
+                requires_identity_encryption_bounded_key: v0
+                    .requires_identity_encryption_bounded_key,
+                requires_identity_decryption_bounded_key: v0
+                    .requires_identity_decryption_bounded_key,
+                sized_integer_types: false,
+            }
+            .into(),
+            DataContractConfig::V1(v1) => v1.into(),
+            DataContractConfig::V2(v2) => v2,
+        };
+        v2.moderation = moderation;
+        DataContractConfig::V2(v2)
+    }
+
     /// Adjusts the current `DataContractConfig` to be valid for the provided platform version.
     ///
-    /// This replaces the internal version with the `default_current_version` defined in the platform version's
-    /// feature bounds for contract config.
+    /// A V1 config is lowered to V0 where the platform version admits no V1. A V2 config that
+    /// declares no moderation is lowered to V1, so an unmoderated contract keeps the bytes it
+    /// had before protocol version 14; a V2 config that declares moderation is never lowered,
+    /// because lowering would silently drop the declaration (a node whose platform version
+    /// admits no V2 refuses it at deserialization instead).
     pub fn config_valid_for_platform_version(
         self,
         platform_version: &PlatformVersion,
     ) -> DataContractConfig {
+        let max_version = platform_version.dpp.contract_versions.config.max_version;
         match self {
             DataContractConfig::V0(v0) => DataContractConfig::V0(v0),
             DataContractConfig::V1(v1) => {
-                if platform_version.dpp.contract_versions.config.max_version == 0 {
+                if max_version == 0 {
                     DataContractConfig::V0(v1.into())
                 } else {
-                    self
+                    DataContractConfig::V1(v1)
+                }
+            }
+            DataContractConfig::V2(v2) => {
+                if v2.moderation.is_some() {
+                    DataContractConfig::V2(v2)
+                } else {
+                    DataContractConfig::V1(v2.into())
+                        .config_valid_for_platform_version(platform_version)
                 }
             }
         }
@@ -101,12 +150,25 @@ impl DataContractConfig {
                 Ok(config.into())
             }
             1 => {
-                let config: DataContractConfigV1 = platform_value::from_value(value)?;
-                Ok(config.into())
+                // A `moderation` key is only meaningful once the platform version admits config
+                // V2; parsing as V2 and lowering keeps every other value byte-identical to V1.
+                if platform_version.dpp.contract_versions.config.max_version >= 2 {
+                    let config: DataContractConfigV2 = platform_value::from_value(value)?;
+                    Ok(DataContractConfig::from(config)
+                        .config_valid_for_platform_version(platform_version))
+                } else {
+                    let config: DataContractConfigV1 = platform_value::from_value(value)?;
+                    Ok(config.into())
+                }
+            }
+            2 => {
+                let config: DataContractConfigV2 = platform_value::from_value(value)?;
+                Ok(DataContractConfig::from(config)
+                    .config_valid_for_platform_version(platform_version))
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractConfig::from_value".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }
@@ -147,9 +209,12 @@ impl DataContractConfig {
             1 => Ok(
                 DataContractConfigV1::get_contract_configuration_properties_v1(contract)?.into(),
             ),
+            2 => Ok(
+                DataContractConfigV2::get_contract_configuration_properties_v2(contract)?.into(),
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractConfig::get_contract_configuration_properties".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }
@@ -161,6 +226,7 @@ impl DataContractConfigGettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.can_be_deleted,
             DataContractConfig::V1(v1) => v1.can_be_deleted,
+            DataContractConfig::V2(v2) => v2.can_be_deleted,
         }
     }
 
@@ -168,6 +234,7 @@ impl DataContractConfigGettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.readonly,
             DataContractConfig::V1(v1) => v1.readonly,
+            DataContractConfig::V2(v2) => v2.readonly,
         }
     }
 
@@ -175,6 +242,7 @@ impl DataContractConfigGettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.keeps_history,
             DataContractConfig::V1(v1) => v1.keeps_history,
+            DataContractConfig::V2(v2) => v2.keeps_history,
         }
     }
 
@@ -182,6 +250,7 @@ impl DataContractConfigGettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.documents_keep_history_contract_default,
             DataContractConfig::V1(v1) => v1.documents_keep_history_contract_default,
+            DataContractConfig::V2(v2) => v2.documents_keep_history_contract_default,
         }
     }
 
@@ -189,6 +258,7 @@ impl DataContractConfigGettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.documents_mutable_contract_default,
             DataContractConfig::V1(v1) => v1.documents_mutable_contract_default,
+            DataContractConfig::V2(v2) => v2.documents_mutable_contract_default,
         }
     }
 
@@ -196,6 +266,7 @@ impl DataContractConfigGettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.documents_can_be_deleted_contract_default,
             DataContractConfig::V1(v1) => v1.documents_can_be_deleted_contract_default,
+            DataContractConfig::V2(v2) => v2.documents_can_be_deleted_contract_default,
         }
     }
 
@@ -204,6 +275,7 @@ impl DataContractConfigGettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.requires_identity_encryption_bounded_key,
             DataContractConfig::V1(v1) => v1.requires_identity_encryption_bounded_key,
+            DataContractConfig::V2(v2) => v2.requires_identity_encryption_bounded_key,
         }
     }
 
@@ -212,6 +284,7 @@ impl DataContractConfigGettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.requires_identity_decryption_bounded_key,
             DataContractConfig::V1(v1) => v1.requires_identity_decryption_bounded_key,
+            DataContractConfig::V2(v2) => v2.requires_identity_decryption_bounded_key,
         }
     }
 }
@@ -221,6 +294,7 @@ impl DataContractConfigSettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.can_be_deleted = value,
             DataContractConfig::V1(v1) => v1.can_be_deleted = value,
+            DataContractConfig::V2(v2) => v2.can_be_deleted = value,
         }
     }
 
@@ -228,6 +302,7 @@ impl DataContractConfigSettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.readonly = value,
             DataContractConfig::V1(v1) => v1.readonly = value,
+            DataContractConfig::V2(v2) => v2.readonly = value,
         }
     }
 
@@ -235,6 +310,7 @@ impl DataContractConfigSettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.keeps_history = value,
             DataContractConfig::V1(v1) => v1.keeps_history = value,
+            DataContractConfig::V2(v2) => v2.keeps_history = value,
         }
     }
 
@@ -242,6 +318,7 @@ impl DataContractConfigSettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.documents_keep_history_contract_default = value,
             DataContractConfig::V1(v1) => v1.documents_keep_history_contract_default = value,
+            DataContractConfig::V2(v2) => v2.documents_keep_history_contract_default = value,
         }
     }
 
@@ -249,6 +326,7 @@ impl DataContractConfigSettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.documents_can_be_deleted_contract_default = value,
             DataContractConfig::V1(v1) => v1.documents_can_be_deleted_contract_default = value,
+            DataContractConfig::V2(v2) => v2.documents_can_be_deleted_contract_default = value,
         }
     }
 
@@ -256,6 +334,7 @@ impl DataContractConfigSettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.documents_mutable_contract_default = value,
             DataContractConfig::V1(v1) => v1.documents_mutable_contract_default = value,
+            DataContractConfig::V2(v2) => v2.documents_mutable_contract_default = value,
         }
     }
 
@@ -266,6 +345,7 @@ impl DataContractConfigSettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.requires_identity_encryption_bounded_key = value,
             DataContractConfig::V1(v1) => v1.requires_identity_encryption_bounded_key = value,
+            DataContractConfig::V2(v2) => v2.requires_identity_encryption_bounded_key = value,
         }
     }
 
@@ -276,6 +356,7 @@ impl DataContractConfigSettersV0 for DataContractConfig {
         match self {
             DataContractConfig::V0(v0) => v0.requires_identity_decryption_bounded_key = value,
             DataContractConfig::V1(v1) => v1.requires_identity_decryption_bounded_key = value,
+            DataContractConfig::V2(v2) => v2.requires_identity_decryption_bounded_key = value,
         }
     }
 }
@@ -285,6 +366,7 @@ impl DataContractConfigGettersV1 for DataContractConfig {
         match self {
             DataContractConfig::V0(_) => false,
             DataContractConfig::V1(v1) => v1.sized_integer_types,
+            DataContractConfig::V2(v2) => v2.sized_integer_types,
         }
     }
 }
@@ -294,6 +376,25 @@ impl DataContractConfigSettersV1 for DataContractConfig {
         match self {
             DataContractConfig::V0(_) => {}
             DataContractConfig::V1(v1) => v1.sized_integer_types = enable,
+            DataContractConfig::V2(v2) => v2.sized_integer_types = enable,
+        }
+    }
+}
+
+impl DataContractConfigGettersV2 for DataContractConfig {
+    fn moderation(&self) -> Option<&ContractModerationConfig> {
+        match self {
+            DataContractConfig::V0(_) | DataContractConfig::V1(_) => None,
+            DataContractConfig::V2(v2) => v2.moderation.as_ref(),
+        }
+    }
+}
+
+impl DataContractConfigSettersV2 for DataContractConfig {
+    fn set_moderation(&mut self, moderation: Option<ContractModerationConfig>) {
+        match self {
+            DataContractConfig::V0(_) | DataContractConfig::V1(_) => {}
+            DataContractConfig::V2(v2) => v2.moderation = moderation,
         }
     }
 }
@@ -714,7 +815,7 @@ mod tests {
                 requires_identity_encryption_bounded_key: Some(StorageKeyRequirements::Unique),
                 requires_identity_decryption_bounded_key: None,
             });
-            let bytes = bincode::encode_to_vec(original, cfg).expect("encode");
+            let bytes = bincode::encode_to_vec(&original, cfg).expect("encode");
             let (decoded, _): (DataContractConfig, _) =
                 bincode::decode_from_slice(&bytes, cfg).expect("decode");
             assert_eq!(decoded, original);
@@ -734,7 +835,7 @@ mod tests {
                 requires_identity_decryption_bounded_key: None,
                 sized_integer_types: false,
             });
-            let bytes = bincode::encode_to_vec(original, cfg).expect("encode");
+            let bytes = bincode::encode_to_vec(&original, cfg).expect("encode");
             let (decoded, _): (DataContractConfig, _) =
                 bincode::decode_from_slice(&bytes, cfg).expect("decode");
             assert_eq!(decoded, original);

@@ -69,3 +69,63 @@ impl VerifiedDataContractWasm {
 }
 
 impl_wasm_type_info!(VerifiedDataContractWasm, VerifiedDataContract);
+
+/// `VerifiedContractModerationStatus` proof-result wrapper: the target identity's status on the
+/// contract after a moderation transition.
+#[wasm_bindgen(js_name = "VerifiedContractModerationStatus")]
+#[derive(Clone)]
+pub struct VerifiedContractModerationStatusWasm {
+    #[wasm_bindgen(getter_with_clone, js_name = "contractId")]
+    pub contract_id: crate::IdentifierWasm,
+    #[wasm_bindgen(getter_with_clone, js_name = "identityId")]
+    pub identity_id: crate::IdentifierWasm,
+    /// The identity is on the banlist
+    pub banned: bool,
+    /// The block time, in milliseconds, until which the identity is suspended
+    #[wasm_bindgen(js_name = "suspendedUntil")]
+    pub suspended_until: Option<u64>,
+}
+
+#[wasm_bindgen(js_class = VerifiedContractModerationStatus)]
+impl VerifiedContractModerationStatusWasm {
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        Ok(js_obj(&[
+            ("contractId", self.contract_id.clone().into()),
+            ("identityId", self.identity_id.clone().into()),
+            ("banned", JsValue::from_bool(self.banned)),
+            (
+                "suspendedUntil",
+                self.suspended_until
+                    .map(|until| JsValue::from(js_sys::BigInt::from(until)))
+                    .unwrap_or(JsValue::UNDEFINED),
+            ),
+        ]))
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        Ok(js_obj(&[
+            (
+                "contractId",
+                JsValue::from_str(&self.contract_id.to_base58()),
+            ),
+            (
+                "identityId",
+                JsValue::from_str(&self.identity_id.to_base58()),
+            ),
+            ("banned", JsValue::from_bool(self.banned)),
+            (
+                "suspendedUntil",
+                self.suspended_until
+                    .map(|until| JsValue::from_f64(until as f64))
+                    .unwrap_or(JsValue::UNDEFINED),
+            ),
+        ]))
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedContractModerationStatusWasm,
+    VerifiedContractModerationStatus
+);

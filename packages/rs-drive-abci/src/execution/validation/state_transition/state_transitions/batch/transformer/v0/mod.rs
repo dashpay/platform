@@ -22,7 +22,7 @@
 // fields rather than rename this file.
 
 use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::error::Error;
@@ -34,9 +34,14 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
 
+use dpp::consensus::state::contract_moderation::{
+    ContractUserBannedError, ContractUserSuspendedError,
+};
 use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::moderation::ContractModerationList;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
@@ -117,6 +122,7 @@ trait BatchTransitionInternalTransformerV0 {
         owner_id: Identifier,
         document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
         user_fee_increase: UserFeeIncrease,
+        lapsed_suspensions: &mut BTreeSet<(Identifier, Identifier)>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -260,6 +266,8 @@ impl BatchTransitionTransformerV0 for BatchTransition {
             }
         }
 
+        let mut lapsed_suspensions: BTreeSet<(Identifier, Identifier)> = BTreeSet::new();
+
         let validation_result_documents = document_transitions_by_contracts_and_types
             .iter()
             .map(
@@ -272,6 +280,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
                         owner_id,
                         document_transitions_by_document_type,
                         user_fee_increase,
+                        &mut lapsed_suspensions,
                         execution_context,
                         transaction,
                         platform_version,
@@ -313,6 +322,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
                 owner_id,
                 transitions,
                 user_fee_increase,
+                lapsed_suspensions,
                 ..Default::default()
             }
             .into();
@@ -411,6 +421,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         owner_id: Identifier,
         document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
         user_fee_increase: UserFeeIncrease,
+        lapsed_suspensions: &mut BTreeSet<(Identifier, Identifier)>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -434,6 +445,60 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 .into(),
             ));
         };
+
+        // Contract moderation (protocol version 14). A moderated contract refuses every
+        // document transition of an identity on its banlist or under a live suspension, and
+        // the first document transition after a suspension lapsed sweeps the stale entry.
+        // The gate runs here, in the transformer, so the mempool refuses a barred identity
+        // as a block does. Only a config that declares moderation triggers the read, and no
+        // contract could declare it before protocol version 14 (config V2 does not decode
+        // there), so older blocks replay unchanged.
+        if let Some(moderation) = data_contract_fetch_info.contract.config().moderation() {
+            let lists: Vec<ContractModerationList> = moderation.lists().collect();
+            let (fee, status) = drive.fetch_contract_moderation_status_with_fee(
+                *data_contract_id,
+                owner_id,
+                &lists,
+                &block_info.epoch,
+                transaction,
+                platform_version,
+            )?;
+            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+
+            let barred: Option<ConsensusError> = if status.banned {
+                Some(ContractUserBannedError::new(*data_contract_id, owner_id).into())
+            } else {
+                status
+                    .suspended_until
+                    .filter(|until| *until > block_info.time_ms)
+                    .map(|until| {
+                        ContractUserSuspendedError::new(*data_contract_id, owner_id, until).into()
+                    })
+            };
+            if let Some(error) = barred {
+                // Paid: the signer is authenticated and the read happened. One nonce bump per
+                // contract, on the first of its transitions.
+                let Some(first_transition) = document_transitions.values().flatten().next() else {
+                    return Ok(ConsensusValidationResult::new_with_error(error));
+                };
+                let failed = Self::failed_per_transition_action(
+                    first_transition.base(),
+                    owner_id,
+                    vec![error],
+                    platform_version,
+                )?;
+                let ConsensusValidationResult { data, errors } = failed;
+                return Ok(match data {
+                    Some(action) => {
+                        ConsensusValidationResult::new_with_data_and_errors(vec![action], errors)
+                    }
+                    None => ConsensusValidationResult::new_with_errors(errors),
+                });
+            }
+            if status.has_lapsed_suspension_at(block_info.time_ms) {
+                lapsed_suspensions.insert((*data_contract_id, owner_id));
+            }
+        }
 
         let validation_result = document_transitions
             .iter()

@@ -113,6 +113,29 @@ export interface DataContractConfig {
     documentsCanBeDeletedContractDefault: boolean;
     requiresIdentityEncryptionBoundedKey?: number;
     requiresIdentityDecryptionBoundedKey?: number;
+    /**
+     * Contract moderation (protocol version 14): the banlist and/or suspension list the
+     * contract keeps and who may edit them. Absent for an unmoderated contract.
+     */
+    moderation?: ContractModerationConfig;
+}
+
+/**
+ * Who may ban and suspend identities on a moderated contract: the owner alone, or the owner
+ * and a fixed set of identities (at most 16, never the owner).
+ */
+export type ContractModerators =
+  | { $type: "contractOwner" }
+  | { $type: "ownerAndIdentities"; identities: string[] };
+
+/**
+ * The moderation a data contract declares. At least one list must be kept, and a list that is
+ * kept can never be turned off by a contract update.
+ */
+export interface ContractModerationConfig {
+    banlist: boolean;
+    suspensions: boolean;
+    moderators: ContractModerators;
 }
 "#;
 

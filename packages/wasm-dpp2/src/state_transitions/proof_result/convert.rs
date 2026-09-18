@@ -6,7 +6,7 @@ use super::address_funds::{
     VerifiedAddressInfosWasm, VerifiedIdentityFullWithAddressInfosWasm,
     VerifiedIdentityWithAddressInfosWasm,
 };
-use super::data_contract::VerifiedDataContractWasm;
+use super::data_contract::{VerifiedContractModerationStatusWasm, VerifiedDataContractWasm};
 use super::document::VerifiedDocumentsWasm;
 use super::helpers::{
     action_status_to_string, build_address_infos_map, build_nullifier_map, doc_to_wasm,
@@ -69,7 +69,8 @@ export type StateTransitionProofResultType =
   | VerifiedShieldedNullifiers
   | VerifiedShieldedNullifiersWithAddressInfos
   | VerifiedShieldedNullifiersWithWithdrawalDocument
-  | VerifiedIdentityWithShieldedNullifiers;
+  | VerifiedIdentityWithShieldedNullifiers
+  | VerifiedContractModerationStatus;
 "#;
 
 #[wasm_bindgen]
@@ -318,6 +319,18 @@ pub fn convert_proof_result(
             identity.into(),
             build_nullifier_map(nullifiers),
         )
+        .into(),
+
+        StateTransitionProofResult::VerifiedContractModerationStatus(
+            contract_id,
+            identity_id,
+            status,
+        ) => VerifiedContractModerationStatusWasm {
+            contract_id: contract_id.into(),
+            identity_id: identity_id.into(),
+            banned: status.banned,
+            suspended_until: status.suspended_until,
+        }
         .into(),
     };
 

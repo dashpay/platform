@@ -34,6 +34,7 @@ pub struct DriveAbciQueryVersions {
     pub system: DriveAbciQuerySystemVersions,
     pub group_queries: DriveAbciQueryGroupVersions,
     pub contract_group_queries: DriveAbciQueryContractGroupVersions,
+    pub contract_moderation_queries: DriveAbciQueryContractModerationVersions,
     pub address_funds_queries: DriveAbciQueryAddressFundsVersions,
     pub shielded_queries: DriveAbciQueryShieldedVersions,
 }
@@ -87,6 +88,14 @@ pub struct DriveAbciQueryGroupVersions {
     pub group_infos: FeatureVersionBounds,
     pub group_actions: FeatureVersionBounds,
     pub group_action_signers: FeatureVersionBounds,
+}
+
+/// The contract moderation queries: one identity's status on a moderated contract, and one page
+/// of a contract's banlist or suspension list.
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryContractModerationVersions {
+    pub contract_moderation_status: FeatureVersionBounds,
+    pub contract_moderation_entries: FeatureVersionBounds,
 }
 
 /// The contract group queries: a group's stored information, one page of its members of one

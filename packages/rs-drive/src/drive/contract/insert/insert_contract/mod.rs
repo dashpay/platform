@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -55,9 +56,12 @@ impl Drive {
             1 => {
                 self.insert_contract_v1(contract, block_info, apply, transaction, platform_version)
             }
+            2 => {
+                self.insert_contract_v2(contract, block_info, apply, transaction, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_contract".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -118,9 +122,18 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            2 => self.insert_contract_add_operations_v2(
+                contract_element,
+                contract,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                drive_operations,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_contract_add_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

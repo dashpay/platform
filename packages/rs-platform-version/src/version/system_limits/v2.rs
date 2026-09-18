@@ -27,6 +27,7 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     max_contract_group_admins: 16,
     max_contract_group_name_length: 64,
     max_contract_group_description_length: 256,
+    max_contract_moderators: 16,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is

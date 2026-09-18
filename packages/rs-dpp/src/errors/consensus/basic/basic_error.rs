@@ -11,6 +11,9 @@ use crate::consensus::basic::contract_group::{
     InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
     RedundantContractGroupMembershipError,
 };
+use crate::consensus::basic::contract_moderation::{
+    ContractModerationSelfTargetError, InvalidContractModerationConfigError,
+};
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
@@ -770,6 +773,13 @@ pub enum BasicError {
     // Identity key limits update (protocol version 14).
     #[error(transparent)]
     IdentityKeyLimitsUpdateEmptyError(IdentityKeyLimitsUpdateEmptyError),
+
+    // Contract moderation (protocol version 14).
+    #[error(transparent)]
+    InvalidContractModerationConfigError(InvalidContractModerationConfigError),
+
+    #[error(transparent)]
+    ContractModerationSelfTargetError(ContractModerationSelfTargetError),
 }
 
 impl From<BasicError> for ConsensusError {

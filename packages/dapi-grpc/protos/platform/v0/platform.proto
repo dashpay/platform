@@ -47,6 +47,10 @@ service Platform {
       returns (GetContractGroupMembersResponse);
   rpc getContractGroupsForContract(GetContractGroupsForContractRequest)
       returns (GetContractGroupsForContractResponse);
+  rpc getContractModerationStatus(GetContractModerationStatusRequest)
+      returns (GetContractModerationStatusResponse);
+  rpc getContractModerationEntries(GetContractModerationEntriesRequest)
+      returns (GetContractModerationEntriesResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
       returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
@@ -696,6 +700,77 @@ message GetContractGroupMembersResponse {
     ResponseMetadata metadata = 5; // Metadata about the blockchain state
   }
   oneof version { GetContractGroupMembersResponseV0 v0 = 1; }
+}
+
+// One of the two moderation lists a moderated data contract may keep (protocol version 14).
+enum ContractModerationList {
+  CONTRACT_MODERATION_LIST_BANLIST = 0;     // Identities barred until an unban
+  CONTRACT_MODERATION_LIST_SUSPENSIONS = 1; // Identities barred until a block time
+}
+
+message GetContractModerationStatusRequest {
+  message GetContractModerationStatusRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the moderated contract
+    bytes identity_id = 2; // The 32-byte id of the identity
+    repeated ContractModerationList lists =
+        3; // The lists to read, which the contract's config must declare; at
+           // least one, no repeats
+    bool prove = 4; // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationStatusRequestV0 v0 = 1; }
+}
+
+message GetContractModerationStatusResponse {
+  message ContractModerationStatus {
+    bool banned = 1; // The identity is on the banlist
+    optional uint64 suspended_until =
+        2; // The block time, in milliseconds, until which the identity is
+           // suspended; a lapsed suspension stays until it is swept
+  }
+
+  message GetContractModerationStatusResponseV0 {
+    oneof result {
+      ContractModerationStatus status = 1; // The identity's status on the lists read
+      Proof proof = 2;                     // Cryptographic proof of the status, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationStatusResponseV0 v0 = 1; }
+}
+
+message GetContractModerationEntriesRequest {
+  message GetContractModerationEntriesRequestV0 {
+    bytes contract_id = 1;           // The 32-byte id of the moderated contract
+    ContractModerationList list = 2; // The list to read, which the contract's config must declare
+    optional bytes start_after =
+        3; // 32-byte identity id; the page starts after it
+    optional uint32 limit =
+        4; // Maximum number of entries to return, 1..=100; absent means 100
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationEntriesRequestV0 v0 = 1; }
+}
+
+message GetContractModerationEntriesResponse {
+  message ContractModerationEntry {
+    bytes identity_id = 1; // The barred identity
+    optional uint64 until =
+        2; // For a suspension list entry: the block time, in milliseconds, at
+           // which it lapses
+  }
+
+  message ContractModerationEntries {
+    repeated ContractModerationEntry entries = 1; // The page, in identity id order
+  }
+
+  message GetContractModerationEntriesResponseV0 {
+    oneof result {
+      ContractModerationEntries entries = 1; // One page of the list
+      Proof proof = 2;                       // Cryptographic proof of the page, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationEntriesResponseV0 v0 = 1; }
 }
 
 message GetContractGroupsForContractRequest {

@@ -11,6 +11,13 @@ use crate::consensus::state::shielded::insufficient_shielded_fee_error::Insuffic
 use crate::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
+use crate::consensus::state::contract_moderation::{
+    ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
+    ContractModerationTargetNotFoundError,
+    ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
+    ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
+    IdentityNotContractModeratorError,
+};
 use crate::consensus::state::contract_group::{
     ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
     ContractGroupAdminNotFoundError, IdentityNotContractGroupOwnerOrAdminError,
@@ -447,6 +454,37 @@ pub enum StateError {
     // Immutable document properties (protocol version 14).
     #[error(transparent)]
     DocumentImmutablePropertyChangedError(DocumentImmutablePropertyChangedError),
+
+    // Contract moderation (protocol version 14).
+    #[error(transparent)]
+    ContractModerationNotEnabledError(ContractModerationNotEnabledError),
+
+    #[error(transparent)]
+    IdentityNotContractModeratorError(IdentityNotContractModeratorError),
+
+    #[error(transparent)]
+    ContractModerationTargetNotAllowedError(ContractModerationTargetNotAllowedError),
+
+    #[error(transparent)]
+    ContractUserAlreadyBannedError(ContractUserAlreadyBannedError),
+
+    #[error(transparent)]
+    ContractUserNotBannedError(ContractUserNotBannedError),
+
+    #[error(transparent)]
+    ContractUserNotSuspendedError(ContractUserNotSuspendedError),
+
+    #[error(transparent)]
+    ContractSuspensionNotInFutureError(ContractSuspensionNotInFutureError),
+
+    #[error(transparent)]
+    ContractUserBannedError(ContractUserBannedError),
+
+    #[error(transparent)]
+    ContractUserSuspendedError(ContractUserSuspendedError),
+
+    #[error(transparent)]
+    ContractModerationTargetNotFoundError(ContractModerationTargetNotFoundError),
 }
 
 impl From<StateError> for ConsensusError {

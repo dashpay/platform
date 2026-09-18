@@ -1,6 +1,6 @@
 use crate::state_transition_action::batch::ResolvedContractGroupMemberships;
 use dpp::fee::Credits;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use dpp::identifier::Identifier;
 use dpp::prelude::UserFeeIncrease;
@@ -25,6 +25,10 @@ pub struct BatchTransitionActionV0 {
     /// the batch is signed by a key bound to a contract group, so that key can be judged from
     /// the action alone; empty for every other batch and under earlier transformer versions.
     pub contract_group_memberships: BTreeMap<Identifier, ResolvedContractGroupMemberships>,
+    /// The suspensions the transformer found lapsed for the owner on the contracts the batch
+    /// touches, as `(contract id, identity id)` (protocol version 14). Each is deleted when
+    /// the batch executes: the first document transition after a suspension lapses sweeps it.
+    pub lapsed_suspensions: BTreeSet<(Identifier, Identifier)>,
 }
 
 impl BatchTransitionActionV0 {

@@ -9,6 +9,7 @@ use dpp::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdat
 use dpp::consensus::ConsensusError;
 use dpp::contract_group::ContractGroupMember;
 use dpp::dashcore::Network;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::identifier::Identifier;
 use dpp::state_transition::data_contract_create_transition::accessors::{
     DataContractCreateTransitionAccessorsV0, DataContractCreateTransitionAccessorsV1,
@@ -101,6 +102,15 @@ impl DataContractCreateStateTransitionBasicStructureValidationV2 for DataContrac
         // Contract groups (version 1 transitions; a version 0 transition carries none).
         if let Some(error) = contract_group_basic_structure_error(self, platform_version) {
             return Ok(SimpleConsensusValidationResult::new_with_error(error));
+        }
+
+        // Contract moderation: a config that declares it must be well formed (at least one
+        // list, moderators within the limit and not naming the owner).
+        if let Some(moderation) = self.data_contract().config().moderation() {
+            let result = moderation.validate(&self.data_contract().owner_id(), platform_version)?;
+            if !result.is_valid() {
+                return Ok(result);
+            }
         }
 
         Ok(SimpleConsensusValidationResult::new())

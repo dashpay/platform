@@ -29,6 +29,8 @@ pub struct DataContractMethodVersions {
     pub validate_update: FeatureVersion,
     pub schema: FeatureVersion,
     pub validate_groups: FeatureVersion,
+    /// `ContractModerationConfig::validate` (protocol version 14); never reached before.
+    pub validate_moderation_config: FeatureVersion,
     pub equal_ignoring_time_fields: FeatureVersion,
     pub registration_cost: FeatureVersion,
 }

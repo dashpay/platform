@@ -131,6 +131,8 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub masternode_vote_state_transition_balance_pre_check: FeatureVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
+    /// `ContractUserModeration` (protocol version 14).
+    pub contract_user_moderation_state_transition: DriveAbciStateTransitionValidationVersion,
     /// Validation of the `refersTo` reference declarations a contract's
     /// document types carry, run at contract create and update. Only
     /// reachable from contract create/update state validation 1 and above.
