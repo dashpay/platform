@@ -102,7 +102,7 @@ class DataContracts internal constructor(private val walletHandle: Long,
     ): ByteArray = gate.op {
         require(ownerIdentityId.size == 32) { "ownerIdentityId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
-        require(!(clearDescription && !description.isNullOrBlank())) {
+        require(!(clearDescription && !description.isNullOrEmpty())) {
             "clearDescription cannot be combined with a non-empty description"
         }
         mapNativeErrors {
