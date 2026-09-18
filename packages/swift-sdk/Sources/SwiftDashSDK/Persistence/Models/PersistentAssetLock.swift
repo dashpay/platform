@@ -194,16 +194,10 @@ public final class PersistentAssetLock {
     /// mutates the checksum of every registered schema version that
     /// references it. The model LIST being unchanged is irrelevant.
     ///
-    /// Left unaddressed, a store written by the V2 binary would match no
-    /// schema in `DashMigrationPlan.schemas` and
-    /// `ModelContainer(for:migrationPlan:configurations:)` would fail to
-    /// open it with Cocoa error 134504 ("Cannot use staged migration with
-    /// an unknown model version"). So V1 and V2 now reference a frozen
-    /// copy of this model (`DashSchemaV1.PersistentAssetLock`, generated
-    /// under `FrozenSchemas/`), this property is what schema
-    /// `DashSchemaV3` adds, and a lightweight V2 -> V3 stage carries
-    /// existing stores across. Do the same for the next property added
-    /// here.
+    /// V1 retains its frozen copy without this property. The collapsed
+    /// V2 adds the column along with the other unreleased model changes;
+    /// migration backfills NULL. After publication, freeze its exact graph
+    /// before introducing a subsequent version for further shape changes.
     public var recipientIsExternal: Bool?
 
     /// Record timestamps.
