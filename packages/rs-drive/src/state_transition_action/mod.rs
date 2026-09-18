@@ -25,6 +25,7 @@ use crate::state_transition_action::identity::identity_create_from_addresses::Id
 use crate::state_transition_action::identity::identity_credit_transfer::IdentityCreditTransferTransitionAction;
 use crate::state_transition_action::identity::identity_credit_transfer_to_addresses::IdentityCreditTransferToAddressesTransitionAction;
 use crate::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
+use crate::state_transition_action::identity::identity_key_limits_update::IdentityKeyLimitsUpdateTransitionAction;
 use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use crate::state_transition_action::identity::identity_topup_from_addresses::IdentityTopUpFromAddressesTransitionAction;
 use crate::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
@@ -74,6 +75,8 @@ pub enum StateTransitionAction {
     IdentityCreditWithdrawalAction(IdentityCreditWithdrawalTransitionAction),
     /// identity update
     IdentityUpdateAction(IdentityUpdateTransitionAction),
+    /// identity key limits update
+    IdentityKeyLimitsUpdateAction(IdentityKeyLimitsUpdateTransitionAction),
     /// identity credit transfer
     IdentityCreditTransferAction(IdentityCreditTransferTransitionAction),
     /// identity credit transfer to addresses
@@ -131,6 +134,9 @@ impl StateTransitionAction {
                 action.user_fee_increase()
             }
             StateTransitionAction::IdentityUpdateAction(action) => action.user_fee_increase(),
+            StateTransitionAction::IdentityKeyLimitsUpdateAction(action) => {
+                action.user_fee_increase()
+            }
             StateTransitionAction::IdentityCreditTransferAction(action) => {
                 action.user_fee_increase()
             }

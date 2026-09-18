@@ -136,6 +136,9 @@ use crate::state_transition::identity_credit_transfer_transition::{
 use crate::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionSignable,
 };
+use crate::state_transition::identity_key_limits_update_transition::{
+    IdentityKeyLimitsUpdateTransition, IdentityKeyLimitsUpdateTransitionSignable,
+};
 use crate::state_transition::identity_top_up_from_shielded_pool_transition::{
     IdentityTopUpFromShieldedPoolTransition, IdentityTopUpFromShieldedPoolTransitionSignable,
 };
@@ -186,6 +189,7 @@ macro_rules! call_method {
             StateTransition::IdentityTopUp(st) => st.$method($args),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
             StateTransition::IdentityUpdate(st) => st.$method($args),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
             StateTransition::MasternodeVote(st) => st.$method($args),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method($args),
@@ -213,6 +217,7 @@ macro_rules! call_method {
             StateTransition::IdentityTopUp(st) => st.$method(),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
             StateTransition::MasternodeVote(st) => st.$method(),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method(),
@@ -243,6 +248,7 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityTopUp(_) => None,
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method($args)),
             StateTransition::IdentityUpdate(st) => Some(st.$method($args)),
+            StateTransition::IdentityKeyLimitsUpdate(st) => Some(st.$method($args)),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method($args)),
             StateTransition::MasternodeVote(st) => Some(st.$method($args)),
             StateTransition::IdentityCreditTransferToAddresses(st) => Some(st.$method($args)),
@@ -270,6 +276,7 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityTopUp(_) => None,
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method()),
             StateTransition::IdentityUpdate(st) => Some(st.$method()),
+            StateTransition::IdentityKeyLimitsUpdate(st) => Some(st.$method()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method()),
             StateTransition::MasternodeVote(st) => Some(st.$method()),
             StateTransition::IdentityCreditTransferToAddresses(st) => Some(st.$method()),
@@ -300,6 +307,7 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityTopUp(_st) => {}
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
             StateTransition::IdentityUpdate(st) => st.$method($args),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
             StateTransition::MasternodeVote(st) => st.$method($args),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method($args),
@@ -327,6 +335,7 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityTopUp(st) => {}
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
             StateTransition::MasternodeVote(st) => st.$method(),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method(),
@@ -362,6 +371,7 @@ macro_rules! call_errorable_method_identity_signed {
             )),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($( $arg ),*),
             StateTransition::IdentityUpdate(st) => st.$method($( $arg ),*),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.$method($( $arg ),*),
             StateTransition::IdentityCreditTransfer(st) => st.$method($( $arg ),*),
             StateTransition::MasternodeVote(st) => st.$method($( $arg ),*),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method($( $arg ),*),
@@ -417,6 +427,7 @@ macro_rules! call_errorable_method_identity_signed {
             )),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
             StateTransition::MasternodeVote(st) => st.$method(),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method(),
@@ -524,6 +535,7 @@ pub enum StateTransition {
     IdentityCreateFromShieldedPool(IdentityCreateFromShieldedPoolTransition),
     ShieldFromIdentity(ShieldFromIdentityTransition),
     IdentityTopUpFromShieldedPool(IdentityTopUpFromShieldedPoolTransition),
+    IdentityKeyLimitsUpdate(IdentityKeyLimitsUpdateTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -694,6 +706,15 @@ mod json_convertible_tests {
         let inner =
             crate::state_transition::identity_update_transition::json_convertible_tests::fixture();
         assert_umbrella_round_trip(StateTransition::IdentityUpdate(inner), "identityUpdate");
+    }
+
+    #[test]
+    fn umbrella_identity_key_limits_update() {
+        let inner = crate::state_transition::identity_key_limits_update_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityKeyLimitsUpdate(inner),
+            "identityKeyLimitsUpdate",
+        );
     }
 
     #[test]
@@ -962,7 +983,8 @@ impl StateTransition {
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_) => 12..=LATEST_VERSION,
             StateTransition::ShieldFromIdentity(_)
-            | StateTransition::IdentityTopUpFromShieldedPool(_) => 14..=LATEST_VERSION,
+            | StateTransition::IdentityTopUpFromShieldedPool(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_) => 14..=LATEST_VERSION,
         }
     }
 
@@ -1070,6 +1092,7 @@ impl StateTransition {
             Self::IdentityTopUp(_) => "IdentityTopUp".to_string(),
             Self::IdentityCreditWithdrawal(_) => "IdentityCreditWithdrawal".to_string(),
             Self::IdentityUpdate(_) => "IdentityUpdate".to_string(),
+            Self::IdentityKeyLimitsUpdate(_) => "IdentityKeyLimitsUpdate".to_string(),
             Self::IdentityCreditTransfer(_) => "IdentityCreditTransfer".to_string(),
             Self::MasternodeVote(_) => "MasternodeVote".to_string(),
             Self::IdentityCreditTransferToAddresses(_) => {
@@ -1101,6 +1124,7 @@ impl StateTransition {
             StateTransition::IdentityTopUp(st) => Some(st.signature()),
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.signature()),
             StateTransition::IdentityUpdate(st) => Some(st.signature()),
+            StateTransition::IdentityKeyLimitsUpdate(st) => Some(st.signature()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.signature()),
             StateTransition::MasternodeVote(st) => Some(st.signature()),
             StateTransition::IdentityCreditTransferToAddresses(st) => Some(st.signature()),
@@ -1148,6 +1172,7 @@ impl StateTransition {
             StateTransition::IdentityTopUp(st) => st.user_fee_increase(),
             StateTransition::IdentityCreditWithdrawal(st) => st.user_fee_increase(),
             StateTransition::IdentityUpdate(st) => st.user_fee_increase(),
+            StateTransition::IdentityKeyLimitsUpdate(st) => st.user_fee_increase(),
             StateTransition::IdentityCreditTransfer(st) => st.user_fee_increase(),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.user_fee_increase(),
             StateTransition::IdentityCreateFromAddresses(st) => st.user_fee_increase(),
@@ -1219,6 +1244,7 @@ impl StateTransition {
             StateTransition::IdentityTopUp(st) => Some(st.owner_id()),
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.owner_id()),
             StateTransition::IdentityUpdate(st) => Some(st.owner_id()),
+            StateTransition::IdentityKeyLimitsUpdate(st) => Some(st.owner_id()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.owner_id()),
             StateTransition::MasternodeVote(st) => Some(st.owner_id()),
             StateTransition::IdentityCreditTransferToAddresses(st) => Some(st.owner_id()),
@@ -1248,6 +1274,7 @@ impl StateTransition {
             | StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_)
             | StateTransition::IdentityCreditTransferToAddresses(_) => None,
@@ -1308,6 +1335,10 @@ impl StateTransition {
                 st.set_signature(signature);
                 true
             }
+            StateTransition::IdentityKeyLimitsUpdate(st) => {
+                st.set_signature(signature);
+                true
+            }
             StateTransition::IdentityCreditTransfer(st) => {
                 st.set_signature(signature);
                 true
@@ -1357,6 +1388,9 @@ impl StateTransition {
                 st.set_user_fee_increase(user_fee_increase)
             }
             StateTransition::IdentityUpdate(st) => st.set_user_fee_increase(user_fee_increase),
+            StateTransition::IdentityKeyLimitsUpdate(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
             StateTransition::IdentityCreditTransfer(st) => {
                 st.set_user_fee_increase(user_fee_increase)
             }
@@ -1481,6 +1515,10 @@ impl StateTransition {
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::IdentityUpdate(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
+            }
+            StateTransition::IdentityKeyLimitsUpdate(st) => {
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
@@ -2079,6 +2117,7 @@ impl StateTransitionStructureValidation for StateTransition {
             | StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_) => {
                 crate::validation::SimpleConsensusValidationResult::new_with_error(

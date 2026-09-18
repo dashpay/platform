@@ -20,6 +20,7 @@ use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
+use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis};
 use dpp::platform_value::BinaryData;
@@ -263,6 +264,19 @@ impl IdentityPublicKeyWasm {
     #[wasm_bindgen(getter = disabledAt)]
     pub fn disabled_at(&self) -> Option<u64> {
         self.0.disabled_at()
+    }
+
+    /// The total credits the key may spend over its lifetime, `undefined` when it has no budget
+    #[wasm_bindgen(getter = totalBudget)]
+    pub fn total_budget(&self) -> Option<u64> {
+        self.0.total_budget()
+    }
+
+    /// The block time in milliseconds from which the key can no longer sign, `undefined` when
+    /// it does not expire
+    #[wasm_bindgen(getter = expiresAt)]
+    pub fn expires_at(&self) -> Option<u64> {
+        self.0.expires_at()
     }
 
     #[wasm_bindgen(setter = keyId)]

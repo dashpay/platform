@@ -120,8 +120,33 @@ the last committed block, so it is an upper bound on what the next transition ca
 In the SDKs: `IdentityKeysRemainingBudgets::fetch` (Rust), `getIdentityKeysRemainingBudgets`
 (wasm-sdk), `sdk.identities.keysRemainingBudgets` (js-evo-sdk).
 
+## Raising limits
+
+`IdentityKeyLimitsUpdate` (state transition type 23, protocol version 14) raises the limits of one
+key of the identity. It carries the key id, the new `totalBudget` and the new `expiresAt` (each
+optional, at least one given, each the new absolute value) and an identity nonce; no identity
+revision is claimed or bumped, since the transition allocates nothing. An update only ever loosens a key: the new total must be greater than the
+current one, the new expiry later than the current one, and a limit the key does not have cannot
+be added. The remaining budget grows by the amount the total grew. After the update the key must
+not be expired, so an expired key can be revived by an extension but not topped up while it stays
+expired.
+
+It is signed by a MASTER key, or by a CRITICAL authentication key that carries no limits itself
+and no contract bounds (a bound key may only sign batches, 20013); a key with limits can never
+raise limits, its own included (`PublicKeyWithLimitsCannotUpdateKeyLimitsError`, 20017, unpaid). The structural refusals are unpaid as well: nothing to change
+(`IdentityKeyLimitsUpdateEmptyError`, 10539) and a zero budget (10537). Every other refusal is
+paid for by bumping the identity nonce: a missing (40209) or disabled
+(40208) key, a limit the key does not have (`IdentityPublicKeyLimitNotSetError`, 40220), a value
+that does not raise it (`IdentityPublicKeyLimitNotRaisedError`, 40221), and a key that would stay
+expired (40219).
+
+The proof is the rewritten key; it must hold exactly the values the transition asked for. It authenticates the resulting state rather than this exact transition (the
+nonce is not stored), so SDKs wait for it as affected state. In the SDKs: `Identity::update_key_limits`, `top_up_key_budget`,
+`extend_key_expiry` (Rust), `identityUpdateKeyLimits` (wasm-sdk), `sdk.identities.updateKeyLimits`
+(js-evo-sdk).
+
 ## Not included
 
-- Raising, lowering or resetting the limits of an existing key.
+- Lowering or removing the limits of an existing key: disable it instead.
 - SDK helpers for creating limited keys and for choosing a usable key when signing. These follow
   separately.

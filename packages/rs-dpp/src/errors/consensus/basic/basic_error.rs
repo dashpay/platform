@@ -57,6 +57,7 @@ use crate::consensus::basic::document::{
     MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::identity::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError;
+use crate::consensus::basic::identity::IdentityKeyLimitsUpdateEmptyError;
 use crate::consensus::basic::identity::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError;
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
@@ -765,6 +766,10 @@ pub enum BasicError {
     IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(
         IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError,
     ),
+
+    // Identity key limits update (protocol version 14).
+    #[error(transparent)]
+    IdentityKeyLimitsUpdateEmptyError(IdentityKeyLimitsUpdateEmptyError),
 }
 
 impl From<BasicError> for ConsensusError {

@@ -53,6 +53,15 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 state: 1,
                 transform_into_action: 0,
             },
+            identity_key_limits_update_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: Some(0),
+                    nonce: Some(0),
+                    state: 0,
+                    transform_into_action: 0,
+                },
             identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
                 advanced_structure: None,

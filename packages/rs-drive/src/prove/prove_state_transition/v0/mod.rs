@@ -1,3 +1,4 @@
+use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::{Drive, RootTree};
 use crate::error::proof::ProofError;
 use crate::error::Error;
@@ -28,6 +29,7 @@ use dpp::state_transition::identity_create_transition::accessors::IdentityCreate
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
@@ -242,6 +244,14 @@ impl Drive {
                 &st.identity_id().to_buffer(),
                 &platform_version.drive.grove_version,
             )?,
+            // Only the rewritten key: the verifier compares that one key.
+            StateTransition::IdentityKeyLimitsUpdate(st) => {
+                IdentityKeysRequest::new_specific_key_query_without_limit(
+                    &st.identity_id().to_buffer(),
+                    st.key_id(),
+                )
+                .into_path_query()
+            }
             StateTransition::IdentityCreditTransfer(st) => {
                 let sender_query = Drive::identity_balance_query(&st.identity_id().into_buffer());
                 let recipient_query =

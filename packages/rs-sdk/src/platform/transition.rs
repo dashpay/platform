@@ -38,6 +38,7 @@ pub mod transfer_to_addresses;
 mod txid;
 #[cfg(feature = "shielded")]
 pub mod unshield;
+pub mod update_identity_key_limits;
 pub mod update_price_of_document;
 pub(crate) mod validation;
 pub mod vote;

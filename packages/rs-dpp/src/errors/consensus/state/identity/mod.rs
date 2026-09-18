@@ -10,6 +10,8 @@ pub mod identity_public_key_already_expired_error;
 pub mod identity_public_key_budget_exceeded_error;
 pub mod identity_public_key_is_disabled_error;
 pub mod identity_public_key_is_read_only_error;
+pub mod identity_public_key_limit_not_raised_error;
+pub mod identity_public_key_limit_not_set_error;
 pub mod invalid_identity_contract_nonce_error;
 pub mod invalid_identity_public_key_id_error;
 pub mod invalid_identity_revision_error;

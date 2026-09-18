@@ -2,6 +2,7 @@ use crate::consensus::signature::ContractBoundedKeyNonBatchError;
 use crate::consensus::signature::ContractBoundedKeyOutOfBoundsError;
 use crate::consensus::signature::PublicKeyBudgetExhaustedError;
 use crate::consensus::signature::PublicKeyExpiredError;
+use crate::consensus::signature::PublicKeyWithLimitsCannotUpdateKeyLimitsError;
 use crate::consensus::signature::{
     BasicBLSError, BasicECDSAError, IdentityNotFoundError, InvalidIdentityPublicKeyTypeError,
     InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError,
@@ -87,6 +88,10 @@ pub enum SignatureError {
 
     #[error(transparent)]
     PublicKeyExpiredError(PublicKeyExpiredError),
+
+    // Identity key limits update (protocol version 14).
+    #[error(transparent)]
+    PublicKeyWithLimitsCannotUpdateKeyLimitsError(PublicKeyWithLimitsCannotUpdateKeyLimitsError),
 }
 
 impl From<SignatureError> for ConsensusError {
@@ -144,6 +149,14 @@ mod tests {
                 PublicKeyExpiredError::new(1, 2, 3)
             )),
             16
+        );
+        assert_eq!(
+            discriminant_of(
+                SignatureError::PublicKeyWithLimitsCannotUpdateKeyLimitsError(
+                    PublicKeyWithLimitsCannotUpdateKeyLimitsError::new(1)
+                )
+            ),
+            17
         );
     }
 }

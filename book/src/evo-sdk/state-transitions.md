@@ -62,6 +62,20 @@ await sdk.identities.creditTransfer({
 });
 ```
 
+### Raise a key's limits
+
+A key registered with a budget or an expiry can be topped up, or have its expiry moved later, without being replaced. The signer holds a MASTER key, or a CRITICAL authentication key without limits and without contract bounds; the budget is added to the total the passed identity's key shows.
+
+```typescript
+const key = await sdk.identities.updateKeyLimits({
+  identity,
+  keyId: 5,
+  addBudget: 100000000n,        // credits added to the budget and to what is left of it
+  expiresAt: 1800000000000n,    // optional: a later expiry in milliseconds
+  signer,
+});
+```
+
 ## Document operations
 
 ### Create a document

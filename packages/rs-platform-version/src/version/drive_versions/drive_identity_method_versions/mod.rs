@@ -172,6 +172,8 @@ pub struct DriveIdentityKeysBudgetMethodVersions {
     pub fetch_identity_keys_remaining_budgets: OptionalFeatureVersion,
     /// Proves what is left of the budgets of several keys of one identity
     pub prove_identity_keys_remaining_budgets: OptionalFeatureVersion,
+    /// Raises the remaining budget of a key by the amount its total budget grew.
+    pub add_to_identity_key_budget: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -233,4 +235,7 @@ pub struct DriveIdentityUpdateMethodVersions {
     pub apply_balance_change_from_fee_to_identity: FeatureVersion,
     pub remove_from_identity_balance: FeatureVersion,
     pub refresh_identity_key_reference_operations: FeatureVersion,
+    /// Rewrites a key with a raised total budget or a later expiry (protocol version 14). Keys
+    /// cannot carry limits before v14, so earlier tables keep the slot `None`.
+    pub update_identity_key_limits: OptionalFeatureVersion,
 }

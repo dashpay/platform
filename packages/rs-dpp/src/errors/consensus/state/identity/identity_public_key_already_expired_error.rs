@@ -21,7 +21,7 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("Identity public key {public_key_id} would already be expired when added: it expires at {expires_at} ms and the block time is {block_time_ms} ms")]
+#[error("Identity public key {public_key_id} is expired at the block time: it expires at {expires_at} ms and the block time is {block_time_ms} ms")]
 #[platform_serialize(unversioned)]
 pub struct IdentityPublicKeyAlreadyExpiredError {
     /*

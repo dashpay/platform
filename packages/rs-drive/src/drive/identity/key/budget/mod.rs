@@ -11,6 +11,7 @@
 //! replaces it.
 
 mod add_estimation_costs_for_key_budgets;
+mod add_to_identity_key_budget;
 mod deduct_from_identity_key_budget;
 mod fetch_identity_key_remaining_budget;
 mod fetch_identity_keys_remaining_budgets;

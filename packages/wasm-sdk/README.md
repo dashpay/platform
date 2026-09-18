@@ -181,6 +181,8 @@ const members = await client.getContractGroupMembers({ contractGroupId, kind: 'c
 const memberships = await client.getContractGroupsForContract('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
 // What is left of the budgets of an identity's keys: a bigint per budgeted key (0n = spent), null for a key without a budget
 const budgets = await client.getIdentityKeysRemainingBudgets('5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS', [3, 4]);
+// Raise the limits of a key: add credits to its budget, or move its expiry later (signed by a MASTER key or an unlimited CRITICAL key)
+const key = await client.identityUpdateKeyLimits({ identity, keyId: 5, addBudget: 100000000n, signer });
 // Seed a contract the app already holds (a bundled snapshot); pair with the versions check above
 client.addKnownContract(contract);
 client.free();

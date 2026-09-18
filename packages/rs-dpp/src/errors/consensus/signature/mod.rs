@@ -36,6 +36,8 @@ pub use contract_bounded_key_out_of_bounds_error::ContractBoundedKeyOutOfBoundsE
 
 mod public_key_budget_exhausted_error;
 pub use public_key_budget_exhausted_error::PublicKeyBudgetExhaustedError;
+mod public_key_with_limits_cannot_update_key_limits_error;
+pub use public_key_with_limits_cannot_update_key_limits_error::PublicKeyWithLimitsCannotUpdateKeyLimitsError;
 
 mod public_key_expired_error;
 pub use public_key_expired_error::PublicKeyExpiredError;

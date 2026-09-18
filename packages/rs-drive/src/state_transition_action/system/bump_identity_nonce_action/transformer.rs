@@ -8,6 +8,7 @@ use crate::state_transition_action::system::bump_identity_nonce_action::{
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dpp::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
 
@@ -20,6 +21,17 @@ impl BumpIdentityNonceAction {
         match value {
             ShieldFromIdentityTransition::V0(v0) => {
                 BumpIdentityNonceActionV0::from_borrowed_shield_from_identity(v0).into()
+            }
+        }
+    }
+
+    /// from borrowed identity key limits update (the paid penalty for a refused update)
+    pub fn from_borrowed_identity_key_limits_update_transition(
+        value: &IdentityKeyLimitsUpdateTransition,
+    ) -> Self {
+        match value {
+            IdentityKeyLimitsUpdateTransition::V0(v0) => {
+                BumpIdentityNonceActionV0::from_borrowed_identity_key_limits_update(v0).into()
             }
         }
     }

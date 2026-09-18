@@ -28,6 +28,8 @@ use dpp::state_transition::batch_transition::batched_transition::BatchedTransiti
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
+use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionWitnessSigned};
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
@@ -1140,6 +1142,55 @@ impl Drive {
                         }
                     }
                 }
+                Ok((root_hash, VerifiedPartialIdentity(identity)))
+            }
+            StateTransition::IdentityKeyLimitsUpdate(transition) => {
+                // The proof holds the rewritten key, nothing more.
+                let (root_hash, identity) = Drive::verify_identity_keys_by_identity_id(
+                    proof,
+                    IdentityKeysRequest::new_specific_key_query_without_limit(
+                        &transition.identity_id().into_buffer(),
+                        transition.key_id(),
+                    ),
+                    false,
+                    false,
+                    false,
+                    platform_version,
+                )?;
+                let identity = identity.ok_or(Error::Proof(ProofError::IncorrectProof(format!(
+                    "proof did not contain identity {} expected to exist because of state transition (key limits update)",
+                    transition.identity_id()
+                ))))?;
+
+                let Some(key) = identity.loaded_public_keys.get(&transition.key_id()) else {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "identity key limits update proof does not contain key {}",
+                        transition.key_id()
+                    ))));
+                };
+
+                // Both limits carry the value the transition asked for, so the proved key must
+                // hold exactly that value.
+                if transition.total_budget().is_some()
+                    && key.total_budget() != transition.total_budget()
+                {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "identity key limits update proof shows key {} with total budget {:?}, expected {:?}",
+                        transition.key_id(),
+                        key.total_budget(),
+                        transition.total_budget()
+                    ))));
+                }
+                if transition.expires_at().is_some() && key.expires_at() != transition.expires_at()
+                {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "identity key limits update proof shows key {} expiring at {:?}, expected {:?}",
+                        transition.key_id(),
+                        key.expires_at(),
+                        transition.expires_at()
+                    ))));
+                }
+
                 Ok((root_hash, VerifiedPartialIdentity(identity)))
             }
             StateTransition::IdentityCreditTransfer(identity_credit_transfer) => {
@@ -2390,6 +2441,10 @@ impl Drive {
             // Binds the transition's revision and its exact key additions
             // and disabling timestamps.
             StateTransition::IdentityUpdate(_) => true,
+            // The proof shows the key holding the limits the transition named, no more: any
+            // later state of that key with those limits verifies just the same, so this only
+            // authenticates the affected state.
+            StateTransition::IdentityKeyLimitsUpdate(_) => false,
             // The proven vote is stored under the masternode's identity and
             // must equal the transition's declared vote.
             StateTransition::MasternodeVote(_) => true,
@@ -4831,6 +4886,7 @@ mod tests {
         use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
         use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
         use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+        use dpp::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
         use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
         use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
@@ -4840,6 +4896,12 @@ mod tests {
             (
                 "identity top up",
                 StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(Default::default())),
+            ),
+            (
+                "identity key limits update",
+                StateTransition::IdentityKeyLimitsUpdate(IdentityKeyLimitsUpdateTransition::V0(
+                    Default::default(),
+                )),
             ),
             (
                 "identity credit withdrawal",
