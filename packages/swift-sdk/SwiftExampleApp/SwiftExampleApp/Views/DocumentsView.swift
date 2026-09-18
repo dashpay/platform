@@ -533,6 +533,7 @@ struct ReplaceDocumentView: View {
                         DetailRow(label: "Document ID", value: document.documentId)
                         DetailRow(label: "Type", value: document.documentType)
                     }
+                    immutabilitySection
                     Section {
                         TextEditor(text: $propertiesText)
                             .font(.system(.body, design: .monospaced))
@@ -559,6 +560,51 @@ struct ReplaceDocumentView: View {
                 Alert(title: Text("Replace failed"), message: Text(err.message), dismissButton: .default(Text("OK")))
             }
             .onAppear { seedProperties() }
+        }
+    }
+
+    /// The protocol-version-14 freeze declared by this document's type. The
+    /// editor is one free-form JSON object rather than per-property fields, so
+    /// there is nothing to disable: name the frozen properties instead, which
+    /// the seeded text already carries at their stored values. Consensus
+    /// refuses a replace that changes, adds or removes one
+    /// (`DocumentImmutablePropertyChangedError`, code 40128), and the rejected
+    /// transition is still paid for. This surface knows the stored document,
+    /// so a settable-once property is listed as still open only while the
+    /// document really has no value for it.
+    @ViewBuilder
+    private var immutabilitySection: some View {
+        let immutability = document.documentType_relation?.immutability
+            ?? DocumentTypeImmutability.none
+        if !immutability.isEmpty {
+            let storedNames = Set((document.properties ?? [:]).keys)
+            let settableNow = immutability.immutableProperties.filter {
+                immutability.lockState(
+                    for: $0, hasStoredValue: storedNames.contains($0)) == .settableOnce
+            }
+            let frozen = immutability.immutableProperties.filter { !settableNow.contains($0) }
+            Section {
+                if !frozen.isEmpty {
+                    Label(
+                        "Immutable: \(frozen.joined(separator: ", "))",
+                        systemImage: "lock.fill"
+                    )
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                }
+                if !settableNow.isEmpty {
+                    Label(
+                        "Settable once: \(settableNow.joined(separator: ", "))",
+                        systemImage: "lock.open"
+                    )
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+            } header: {
+                Text("Immutable Properties")
+            } footer: {
+                Text("Keep the immutable values exactly as seeded. A settable-once property may still be given a value while the document has none.")
+            }
         }
     }
 
