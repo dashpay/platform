@@ -18,6 +18,14 @@ platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
 key-wallet-ffi = { workspace = true }
 dash-network = { workspace = true, features = ["ffi"] }
 log = "0.4"
+# Serialization for the TXO-reconcile transport (the paged wallet
+# inventory and the outpoint-classification batch). Both exports are
+# shims over one platform-wallet call each: serde shapes the JSON
+# against the same field names the Kotlin side decodes, so a renamed
+# key fails the decode loudly instead of defaulting a row.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
 zeroize = "1"
 
 [target.'cfg(target_os = "android")'.dependencies]
