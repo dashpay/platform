@@ -42,7 +42,8 @@ mod immutable_tests {
                     "type": "object",
                     "position": 3,
                     "properties": {
-                        "tag": {"type": "string", "position": 0, "maxLength": 30_u32}
+                        "tag": {"type": "string", "position": 0, "maxLength": 30_u32},
+                        "rank": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000}
                     },
                     "additionalProperties": false
                 }
@@ -404,8 +405,22 @@ mod immutable_tests {
 
     #[tokio::test]
     async fn should_freeze_an_immutable_object_property_whole() {
+        // Members deliberately in the opposite order to their schema
+        // positions, and the integer as a wide variant: storage reorders
+        // members by position and narrows integers, so the stored object
+        // is not byte-identical to what the client keeps sending. The
+        // comparison has to see through both (review finding on #4815).
         let mut fixture = PostFixture::new(platform_value!(["meta"]), |post| {
-            post.set("meta", platform_value!({"tag": "intro"}))
+            post.set(
+                "meta",
+                Value::Map(vec![
+                    (Value::Text("rank".to_string()), Value::U64(7)),
+                    (
+                        Value::Text("tag".to_string()),
+                        Value::Text("intro".to_string()),
+                    ),
+                ]),
+            )
         })
         .await;
 
@@ -420,10 +435,17 @@ mod immutable_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. },
             "an unchanged immutable object must not block the replace"
         );
+        assert_eq!(fixture.stored_post().revision(), Some(2));
 
-        // Changing a nested value changes the top-level object.
+        // Changing a nested value, integer or string, changes the top-level
+        // object.
         let result = fixture
-            .replace(|post| post.set("meta", platform_value!({"tag": "outro"})))
+            .replace(|post| post.set("meta", platform_value!({"tag": "intro", "rank": 8_u64})))
+            .await;
+        expect_immutable_property_error(result, "meta", &fixture);
+
+        let result = fixture
+            .replace(|post| post.set("meta", platform_value!({"tag": "outro", "rank": 7_u64})))
             .await;
         expect_immutable_property_error(result, "meta", &fixture);
     }

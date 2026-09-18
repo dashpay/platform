@@ -203,6 +203,20 @@ fn rejects_a_system_property() {
     );
 }
 
+/// A transient property is never stored, so frozen it could never be
+/// written, and required as well it would leave the type permanently
+/// uneditable (supplying it fails the immutable check, omitting it fails
+/// required-field validation). The grow-only update rule would then keep
+/// it that way, so the overlap is refused at registration.
+#[test]
+fn rejects_a_transient_property() {
+    let schema = post_schema_with("transient", platform_value!(["author"]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), true),
+        "\"author\" as both transient and immutable",
+    );
+}
+
 #[test]
 fn rejects_the_list_on_a_non_mutable_document_type() {
     let schema = post_schema_with("documentsMutable", Value::Bool(false));

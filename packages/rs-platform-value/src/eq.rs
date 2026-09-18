@@ -152,8 +152,13 @@ impl Value {
     ///   sequences match.
     /// * All integer variants (`U*`, `I*`) compare equal when they
     ///   represent the same numeric value.
+    /// * Two `Map`s compare equal when they hold the same keys, in any
+    ///   order, each with equal underlying data; two `Array`s when they
+    ///   have the same length and equal underlying data position by
+    ///   position. Both recurse with the same rules, so a nested integer
+    ///   stored at a narrower width, or an object whose members were
+    ///   reordered by schema position, still compares equal.
     /// * Otherwise falls back to normal `==` (`PartialEq`) behaviour.
-    #[inline]
     pub fn equal_underlying_data(&self, other: &Value) -> bool {
         // 1) bytes-like cross-variant equality
         if let (Ok(a), Ok(b)) = (self.as_bytes_slice(), other.as_bytes_slice()) {
@@ -165,8 +170,126 @@ impl Value {
             return a == b;
         }
 
-        // 3) default
-        self == other
+        // 3) containers, recursively and (for maps) regardless of member order
+        match (self, other) {
+            (Value::Map(this), Value::Map(that)) => {
+                this.len() == that.len()
+                    && this.iter().all(|(key, value)| {
+                        that.iter()
+                            .find(|(other_key, _)| key.equal_underlying_data(other_key))
+                            .is_some_and(|(_, other_value)| {
+                                value.equal_underlying_data(other_value)
+                            })
+                    })
+            }
+            (Value::Array(this), Value::Array(that)) => {
+                this.len() == that.len()
+                    && this
+                        .iter()
+                        .zip(that)
+                        .all(|(value, other_value)| value.equal_underlying_data(other_value))
+            }
+            // 4) default
+            _ => self == other,
+        }
+    }
+}
+
+#[cfg(test)]
+mod underlying_data_tests {
+    use crate::Value;
+
+    fn map(entries: Vec<(&str, Value)>) -> Value {
+        Value::Map(
+            entries
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value))
+                .collect(),
+        )
+    }
+
+    /// The two ways storage rewrites an object a client sent: integer
+    /// widths shrink to the smallest fitting variant and members are
+    /// reordered by schema position.
+    #[test]
+    fn maps_compare_equal_across_member_order_and_integer_width() {
+        let sent = map(vec![
+            ("rank", Value::U64(7)),
+            ("tag", Value::Text("intro".into())),
+        ]);
+        let stored = map(vec![
+            ("tag", Value::Text("intro".into())),
+            ("rank", Value::U8(7)),
+        ]);
+
+        assert!(sent.equal_underlying_data(&stored));
+        assert!(stored.equal_underlying_data(&sent));
+    }
+
+    #[test]
+    fn maps_differ_on_a_changed_nested_value() {
+        let before = map(vec![
+            ("rank", Value::U64(7)),
+            ("tag", Value::Text("intro".into())),
+        ]);
+        let after = map(vec![
+            ("tag", Value::Text("intro".into())),
+            ("rank", Value::U8(8)),
+        ]);
+
+        assert!(!before.equal_underlying_data(&after));
+    }
+
+    #[test]
+    fn maps_differ_on_a_missing_or_extra_member() {
+        let one = map(vec![("tag", Value::Text("intro".into()))]);
+        let two = map(vec![
+            ("tag", Value::Text("intro".into())),
+            ("rank", Value::U8(7)),
+        ]);
+
+        assert!(!one.equal_underlying_data(&two));
+        assert!(!two.equal_underlying_data(&one));
+    }
+
+    #[test]
+    fn nested_maps_recurse() {
+        let sent = map(vec![(
+            "meta",
+            map(vec![
+                ("rank", Value::I64(7)),
+                ("tag", Value::Text("a".into())),
+            ]),
+        )]);
+        let stored = map(vec![(
+            "meta",
+            map(vec![
+                ("tag", Value::Text("a".into())),
+                ("rank", Value::U8(7)),
+            ]),
+        )]);
+
+        assert!(sent.equal_underlying_data(&stored));
+    }
+
+    #[test]
+    fn arrays_compare_position_by_position_with_integer_leniency() {
+        let sent = Value::Array(vec![Value::U64(1), Value::U64(2)]);
+        let stored = Value::Array(vec![Value::U8(1), Value::U8(2)]);
+        let reordered = Value::Array(vec![Value::U8(2), Value::U8(1)]);
+        let shorter = Value::Array(vec![Value::U8(1)]);
+
+        assert!(sent.equal_underlying_data(&stored));
+        assert!(!sent.equal_underlying_data(&reordered));
+        assert!(!sent.equal_underlying_data(&shorter));
+    }
+
+    #[test]
+    fn a_map_never_equals_a_non_map() {
+        let a_map = map(vec![("tag", Value::Text("a".into()))]);
+
+        assert!(!a_map.equal_underlying_data(&Value::Text("a".into())));
+        assert!(!a_map.equal_underlying_data(&Value::Array(vec![])));
     }
 }
 

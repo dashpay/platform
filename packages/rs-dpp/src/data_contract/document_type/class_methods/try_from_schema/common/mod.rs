@@ -2082,6 +2082,18 @@ pub(super) fn apply_immutable_fields(
                      top-level property of the document type{hint}"
                 )));
             }
+            // A transient property is never stored, so the stored document
+            // always lacks it and any replace that supplies it counts as
+            // setting it. Frozen at "absent", it could never be written; if
+            // it is also required, no replace could ever pass at all.
+            if document_type.transient_fields.contains(property) {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" as both transient and \
+                     immutable: a transient property is never stored, so every replace that \
+                     supplies it would be refused as changing an immutable property; remove it \
+                     from one of the two lists"
+                )));
+            }
         }
 
         for property in &immutable_fields_allow_setting {
