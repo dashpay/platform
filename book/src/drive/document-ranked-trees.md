@@ -82,7 +82,7 @@ the per-group counts the range-count layout maintains
 
 ### Value-Sensitive Prerequisites in the Meta-Schema
 
-The document meta-schema enforces the same prerequisites, in two forms. The `range*` rows are presence rules: a `rangeCountable` key, whatever its value, needs a `countable` (or an `averageable`) key beside it. The ranked rules are **value-sensitive** `if` / `then` pairs, because a written-out opt-out, `"rankedCountable": false`, which the structural parser accepts as exactly that, must not be made to demand a `rangeCountable` the index does not need:
+The document meta-schema enforces the same prerequisites, in two forms. The `range*` rows are presence rules: a `rangeSummable` key, whatever its value, needs a `summable` (or an `averageable`) key beside it, and a `rangeAverageable` key needs an `averageable`. `rangeCountable` has no row: it implies `countable`, exactly as the doctype-level `rangeCountable` implies `documentsCountable`, and the parser promotes an omitted `countable` to `"countable"` (an explicit `"countableAllowingOffset"` is kept, an explicit `"notCountable"` is rejected as a contradiction). The ranked rules are **value-sensitive** `if` / `then` pairs, because a written-out opt-out, `"rankedCountable": false`, which the structural parser accepts as exactly that, must not be made to demand a `rangeCountable` the index does not need:
 
 ```json
 {
@@ -99,7 +99,7 @@ The document meta-schema enforces the same prerequisites, in two forms. The `ran
 
 (The `rankedCountable` conditional matches the object form as well as the literal `true`; both spellings need a range axis, and only a written-out `false` escapes the requirement.)
 
-Every rule is **sugar-aware**, and the `not` clause above is what makes it so. JSON-schema validation runs over the index object exactly as authored, before `averageable` / `rangeAverageable` are expanded into their `countable` + `summable` longhand, so each rule spells the sugar out as an accepted alternative: `rangeCountable` and `rangeSummable` accept `averageable` in place of the flag they range over, `rankedCountable` and `rankedSummable` accept `rangeAverageable` in place of their own range axis, and `rankedAverageable` accepts the explicit `rangeCountable` + `rangeSummable` pair in place of `rangeAverageable`. The doctype-level `rangeSummable` row accepts `documentsAverageable` the same way. The parser then checks the same prerequisites on the resolved flags, so the two layers agree on every spelling, and the sugar form of a multi-axis index is the whole declaration:
+Every rule is **sugar-aware**, and the `not` clause above is what makes it so. JSON-schema validation runs over the index object exactly as authored, before `averageable` / `rangeAverageable` are expanded into their `countable` + `summable` longhand, so each rule spells the sugar out as an accepted alternative: `rangeSummable` accepts `averageable` in place of `summable`, `rankedCountable` and `rankedSummable` accept `rangeAverageable` in place of their own range axis, and `rankedAverageable` accepts the explicit `rangeCountable` + `rangeSummable` pair in place of `rangeAverageable`. The doctype-level `rangeSummable` row accepts `documentsAverageable` the same way. The parser then checks the same prerequisites on the resolved flags, so the two layers agree on every spelling, and the sugar form of a multi-axis index is the whole declaration:
 
 ```json
 {"name": "storeRating", "properties": [{"storeId": "asc"}],
@@ -107,7 +107,7 @@ Every rule is **sugar-aware**, and the `not` clause above is what makes it so. J
  "rankedAverageable": true, "rankedCountable": true}
 ```
 
-Up to `4.2.0-beta.1`, meta-schema v3 demanded the literal key instead: this index failed registration with `"rangeCountable" is a required property`, and adding `rangeCountable` then pulled in a literal `countable` through the presence row, so the only accepted spellings carried keys the sugar already implied. v3 is editable until 4.2 is live on mainnet, so the rule was corrected in place rather than carried into a v4.
+Up to `4.2.0-beta.1`, meta-schema v3 demanded the literal key instead: this index failed registration with `"rangeCountable" is a required property`, and adding `rangeCountable` then pulled in a literal `countable` through a presence row, so the only accepted spellings carried keys the sugar already implied. The same release also made the index-level parser demand an explicit `countable` beside `rangeCountable`, while the doctype level had always treated `rangeCountable` as implying `documentsCountable`. v3 is editable until 4.2 is live on mainnet, so both rules were corrected in place rather than carried into a v4; below protocol version 14 nothing moves.
 
 The two layers are not gated alike. The structural parser runs on every parse, `full_validation` or not, and is compiled into every build. The JSON-schema layer runs only under `full_validation`, and only in builds with rs-dpp's `validation` feature, which `wasm-dpp2` (and so `@dashevo/evo-sdk`) does not enable. An SDK-side `DataContract.fromJSON(json, true, pv)` therefore sees the parser's verdict alone, which is why the two layers agreeing on every spelling matters: it is what keeps an offline acceptance from turning into a registration refusal.
 

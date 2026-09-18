@@ -575,7 +575,7 @@
           },
           "rangeCountable": {
             "type": "boolean",
-            "description": "When true, the property-name level becomes a ProvableCountTree and value trees become CountTrees so range-count queries on the indexed property are O(log n). Requires `countable` to be \"countable\" or \"countableAllowingOffset\"; `averageable` satisfies this, since it implies `countable: \"countable\"`."
+            "description": "When true, the property-name level becomes a ProvableCountTree and value trees become CountTrees so range-count queries on the indexed property are O(log n). Implies `countable: \"countable\"` when `countable` is omitted, as the doctype-level `rangeCountable` implies `documentsCountable`; an explicit `\"countableAllowingOffset\"` is kept, and an explicit `\"notCountable\"` is rejected as a contradiction."
           },
           "summable": {
             "type": "string",
@@ -699,15 +699,8 @@
         "dependentRequired": {
           "rangeAverageable": ["averageable"]
         },
-        "$comment": "Every prerequisite here is sugar-aware, matching the structural parser, which expands `averageable` into `countable` + `summable` and `rangeAverageable` into `rangeCountable` + `rangeSummable` before it checks the same prerequisites on the resolved flags. `rangeCountable` and `rangeSummable` accept `averageable` in place of the flag they range over, and each `ranked*` flag accepts `rangeAverageable` in place of its own range axis (`rankedAverageable` also accepts the explicit `rangeCountable` + `rangeSummable` pair). They are `if`/`then` pairs rather than `dependentRequired` rows only because `dependentRequired` cannot express the alternative. The range* rows keep the presence semantics they shipped with in v2 (an explicit `\"rangeCountable\": false` still needs a `countable` or an `averageable`); the ranked pairs are value-sensitive so that an explicit `\"rankedCountable\": false`, a written-out opt-out the structural parser accepts as such, demands nothing.",
+        "$comment": "Every prerequisite here is sugar-aware, matching the structural parser, which expands `averageable` into `countable` + `summable` and `rangeAverageable` into `rangeCountable` + `rangeSummable` before it checks the same prerequisites on the resolved flags. `rangeSummable` accepts `averageable` in place of `summable`, and each `ranked*` flag accepts `rangeAverageable` in place of its own range axis (`rankedAverageable` also accepts the explicit `rangeCountable` + `rangeSummable` pair). They are `if`/`then` pairs rather than `dependentRequired` rows only because `dependentRequired` cannot express the alternative. `rangeCountable` has no row at all: it implies `countable`, as it does at the doctype level, and the parser promotes an omitted `countable`. The remaining range rows keep the presence semantics they shipped with in v2 (an explicit `\"rangeSummable\": false` still needs a `summable` or an `averageable`); the ranked pairs are value-sensitive so that an explicit `\"rankedCountable\": false`, a written-out opt-out the structural parser accepts as such, demands nothing.",
         "allOf": [
-          {
-            "if": {
-              "required": ["rangeCountable"],
-              "not": { "required": ["averageable"] }
-            },
-            "then": { "required": ["countable"] }
-          },
           {
             "if": {
               "required": ["rangeSummable"],

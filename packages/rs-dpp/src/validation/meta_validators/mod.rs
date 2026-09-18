@@ -694,17 +694,34 @@ mod tests {
     }
 
     #[test]
-    fn should_accept_averageable_in_place_of_countable_and_summable_in_v3() {
-        for range in ["rangeCountable", "rangeSummable"] {
+    fn should_accept_averageable_in_place_of_summable_in_v3() {
+        let schema = document_schema_with_index(json!({
+            "name": "storeRating",
+            "properties": [{ "restaurantId": "asc" }],
+            "averageable": "grade",
+            "rangeSummable": true
+        }));
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "averageable must satisfy rangeSummable's presence row"
+        );
+    }
+
+    /// `rangeCountable` implies `countable` (as it does at the doctype
+    /// level), so v3 has no row for it: the flag stands alone, whatever its
+    /// value. The parser promotes an omitted `countable` and rejects an
+    /// explicit `"notCountable"` beside a true `rangeCountable`.
+    #[test]
+    fn should_accept_range_countable_without_countable_in_v3() {
+        for value in [true, false] {
             let schema = document_schema_with_index(json!({
                 "name": "storeRating",
                 "properties": [{ "restaurantId": "asc" }],
-                "averageable": "grade",
-                range: true
+                "rangeCountable": value
             }));
             assert!(
                 DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
-                "averageable must satisfy {range}'s presence row"
+                "rangeCountable: {value} needs no countable beside it"
             );
         }
     }
@@ -712,7 +729,6 @@ mod tests {
     #[test]
     fn should_keep_the_range_rows_presence_based_in_v3() {
         for (range, missing) in [
-            ("rangeCountable", "countable"),
             ("rangeSummable", "summable"),
             ("rangeAverageable", "averageable"),
         ] {

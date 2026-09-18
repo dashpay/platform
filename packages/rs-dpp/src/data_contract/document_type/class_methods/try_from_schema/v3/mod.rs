@@ -299,6 +299,13 @@ fn try_from_schema_generation_3(
             // same shared mapping.
             admit_index_skip_if_absent: IndexGrammarAdmissions::for_schema_generation(3)
                 .skip_if_absent,
+            // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 desugaring rule
+            // rather than a keyword, read from the same shared mapping so the
+            // registration-cost re-parse and the validator agree on it.
+            admit_range_countable_implies_countable: IndexGrammarAdmissions::for_schema_generation(
+                3,
+            )
+            .range_countable_implies_countable,
         },
         platform_version,
     )?;
@@ -1947,20 +1954,73 @@ mod tests {
         assert!(!index.ranked_countable && !index.range_countable);
     }
 
-    /// The range rows keep their presence semantics: a `rangeCountable` key
-    /// with neither `countable` nor `averageable` beside it is refused, and
-    /// the error names `countable`.
+    /// `rangeCountable` implies `countable`, as it does at the doctype level:
+    /// a `rangeCountable: true` with no `countable` beside it is a complete
+    /// declaration in both layers (the meta-schema has no row for it, the
+    /// parser promotes the omitted `countable`).
     #[test]
-    fn range_countable_without_countable_or_averageable_is_still_rejected() {
+    fn range_countable_alone_implies_countable_under_full_validation() {
         let schema =
             schema_with_index_entry(index_entry(vec![("rangeCountable", Value::Bool(true))]));
+        let v2 = parse_with(schema, pv14(), true)
+            .expect("rangeCountable alone is a complete declaration");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.range_countable && index.countable.is_countable());
+    }
+
+    /// The other range rows keep their presence semantics: a `rangeSummable`
+    /// key with neither `summable` nor `averageable` beside it is refused,
+    /// and the error names `summable`.
+    #[test]
+    fn range_summable_without_summable_or_averageable_is_still_rejected() {
+        let schema =
+            schema_with_index_entry(index_entry(vec![("rangeSummable", Value::Bool(true))]));
         let error =
-            parse_with(schema, pv14(), true).expect_err("rangeCountable needs something to count");
+            parse_with(schema, pv14(), true).expect_err("rangeSummable needs something to sum");
         let msg = format!("{error:?}");
         assert!(
-            msg.contains("countable"),
+            msg.contains("summable"),
             "the error must name the missing aggregate flag; got {msg}"
         );
+    }
+
+    /// An explicit `"notCountable"` beside `rangeCountable: true` is the one
+    /// spelling the implication refuses, and the parser names it.
+    #[test]
+    fn range_countable_with_explicit_not_countable_is_rejected() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("countable", Value::Text("notCountable".to_string())),
+            ("rangeCountable", Value::Bool(true)),
+        ]));
+        let error = parse_with(schema, pv14(), true)
+            .expect_err("countable: notCountable contradicts rangeCountable: true");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable: true implies a countable index"),
+            "the parser's contradiction error must be the one raised; got {msg}"
+        );
+    }
+
+    /// Below protocol version 14 nothing moves: generation 2 keeps rejecting
+    /// `rangeCountable` without `countable`, in the structural parser (which
+    /// is all a `full_validation: false` parse runs) and in the frozen v2
+    /// meta-schema alike.
+    #[test]
+    fn range_countable_alone_is_still_rejected_at_protocol_version_13() {
+        let schema =
+            schema_with_index_entry(index_entry(vec![("rangeCountable", Value::Bool(true))]));
+        for full_validation in [false, true] {
+            let error = parse_dispatched(schema.clone(), pv13(), full_validation)
+                .expect_err("generation 2 demands an explicit countable");
+            let msg = format!("{error:?}");
+            assert!(
+                msg.contains("countable"),
+                "full_validation={full_validation}: the error must name countable; got {msg}"
+            );
+        }
     }
 
     /// With the sugar satisfying the presence rows, a contradictory
