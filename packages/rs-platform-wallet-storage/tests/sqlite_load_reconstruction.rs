@@ -1519,6 +1519,9 @@ fn tc_p4_012_load_query_count_bounded() {
         }
     }
 
+    let (p0, _tmp0, _path0) = fresh_persister();
+    let shared = count_load_queries(&p0);
+
     let (p1, _tmp1, _path1) = fresh_persister();
     seed_wallets(&p1, 1);
     let count_one = count_load_queries(&p1);
@@ -1544,14 +1547,17 @@ fn tc_p4_012_load_query_count_bounded() {
         (1..=20).contains(&per_wallet),
         "per-wallet statement count must be small + bounded, got {per_wallet}"
     );
-    // Shared (wallet-count-independent) overhead: the `list_ids` +
-    // `platform_addrs::load_all` scans. `count_one = shared + per_wallet`
-    // ⇒ shared must itself be a small constant, not growing with N.
-    let shared = count_one - per_wallet;
+    // Shared reads plus BEGIN/COMMIT; shielded adds one bulk viewing-key scan.
+    let shared_budget = 8 + usize::from(cfg!(feature = "shielded"));
     assert!(
-        (1..=8).contains(&shared),
+        (1..=shared_budget).contains(&shared),
         "shared load() overhead must be a small constant, got {shared} \
          (N=1 → {count_one}, per-wallet → {per_wallet})"
+    );
+    assert_eq!(
+        count_one,
+        shared + per_wallet,
+        "empty-wallet load must measure the same shared overhead"
     );
     // And it really is N-independent: N=10 total == shared + 10×per_wallet.
     assert_eq!(
