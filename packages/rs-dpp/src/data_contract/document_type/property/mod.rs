@@ -13,6 +13,7 @@ use crate::consensus::basic::decode::DecodingError;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::property_names;
+use crate::document::property_names::{CREATOR_ID, OWNER_ID};
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use array::ArrayItemType;
@@ -119,8 +120,18 @@ pub enum DocumentPropertyReferenceTarget {
         /// document's value and the referenced document's value, checked by
         /// consensus at document write time (the referenced document is
         /// already fetched for existence validation, so agreement adds no
-        /// reads). Declarations are validated at contract registration:
-        /// both properties must exist and share one property type.
+        /// reads). The referring side is a schema property of the declaring
+        /// document type or its own `$ownerId`, the writer, which makes the
+        /// pair a write gate (see [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`]).
+        /// The referenced side is a schema
+        /// property of the referenced document type or one of the system
+        /// identifiers in [`REFERENCED_SYSTEM_AGREEMENT_PROPERTIES`]:
+        /// `$ownerId`, which follows the referenced document through
+        /// transfers, or `$creatorId`, set once at creation. Declarations
+        /// are validated at contract registration: both sides must exist
+        /// and share one value kind (an identifier on the referring side
+        /// for the system names), and `$creatorId` needs a referenced
+        /// document type that records creator ids at all.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         property_agreement: BTreeMap<String, String>,
     },
@@ -137,6 +148,41 @@ pub enum DocumentPropertyReferenceTarget {
         /// referenced key id
         key_id_property: String,
     },
+}
+
+/// The system properties of a referenced document that the referenced side
+/// of a `propertyAgreement` pair may name, next to the referenced document
+/// type's schema properties: `$ownerId`, the current owner (which follows
+/// the document through transfers), and `$creatorId`, the original creator
+/// (set once, and only recorded by transferable or tradeable document types
+/// of a format-1 contract). Both are identifiers, so the referring side must
+/// be an identifier property. The referring side is a schema property or
+/// the writer's own `$ownerId`, see [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
+pub const REFERENCED_SYSTEM_AGREEMENT_PROPERTIES: [&str; 2] = [OWNER_ID, CREATOR_ID];
+
+/// Whether `name` is one of [`REFERENCED_SYSTEM_AGREEMENT_PROPERTIES`].
+pub fn is_referenced_system_agreement_property(name: &str) -> bool {
+    REFERENCED_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)
+}
+
+/// The system properties of the REFERRING document that the referring side
+/// of a `propertyAgreement` pair may name, next to the declaring document
+/// type's schema properties: only `$ownerId`, the writer. Such a pair is a
+/// write gate: consensus refuses a create or replace unless the writer's id
+/// equals the referenced side, so the referenced document's owner (or its
+/// creator, or a named identifier) is the only identity that may write
+/// referring documents. It is checked on every create and on EVERY replace
+/// of the referring document, not only when the reference changes, since
+/// either document may have been transferred in between; a transfer itself
+/// is not re-checked, so on a transferable referring type the gate governs
+/// writing, not holding. The writer's id lives on the transition rather
+/// than in the document data, which is why it is threaded into write-time
+/// validation separately.
+pub const REFERRING_SYSTEM_AGREEMENT_PROPERTIES: [&str; 1] = [OWNER_ID];
+
+/// Whether `name` is one of [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
+pub fn is_referring_system_agreement_property(name: &str) -> bool {
+    REFERRING_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)
 }
 
 impl std::fmt::Display for DocumentPropertyReferenceTarget {

@@ -1,0 +1,63 @@
+{
+  "$formatVersion": "1",
+  "id": "BwrtBnSeoK7hbfXDfPqr8p2aYj5c7JDqX6yJSaG42yFX",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "note": {
+      "type": "object",
+      "canBeDeleted": false,
+      "properties": {
+        "content": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "message": {
+      "type": "object",
+      "documentsMutable": true,
+      "properties": {
+        "noteId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "note",
+            "propertyAgreement": {
+              "authorId": "$ownerId",
+              "originalAuthorId": "$creatorId"
+            }
+          }
+        },
+        "authorId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1
+        },
+        "originalAuthorId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 2
+        }
+      },
+      "required": [
+        "noteId"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

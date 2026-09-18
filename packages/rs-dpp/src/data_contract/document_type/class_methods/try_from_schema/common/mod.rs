@@ -2533,9 +2533,11 @@ pub(super) fn apply_index_only(
                  be either a property with a same-contract permanentDocument `refersTo` \
                  declaration (the referring property — its value is the referenced \
                  document's $id) or a key of that declaration's `propertyAgreement` \
-                 (consensus-equal to a referenced-document property). System properties \
-                 like $ownerId cannot be determined by the referenced document, so a \
-                 preallocated index may carry $ownerId only as its terminal",
+                 (consensus-equal to a referenced-document property, which may be the \
+                 referenced document's $ownerId or $creatorId). The referring document's \
+                 OWN system properties like $ownerId cannot be determined by the \
+                 referenced document, so a preallocated index may carry $ownerId only as \
+                 its terminal",
                 index_name, name,
             )));
         }

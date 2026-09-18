@@ -139,18 +139,35 @@
               "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
             },
             "propertyAgreement": {
-              "description": "permanentDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time; both properties must exist and share one property type, validated at contract registration",
+              "description": "permanentDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId and $creatorId system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId never changes; either is checked when the referring document is written, not when the referenced document later moves",
               "type": "object",
               "minProperties": 1,
               "maxProperties": 10,
               "propertyNames": {
-                "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                "anyOf": [
+                  {
+                    "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                  },
+                  {
+                    "const": "$ownerId"
+                  }
+                ]
               },
               "additionalProperties": {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 256,
-                "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+                  },
+                  {
+                    "enum": [
+                      "$ownerId",
+                      "$creatorId"
+                    ]
+                  }
+                ]
               }
             }
           },

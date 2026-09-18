@@ -1,8 +1,12 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::{DocumentPropertyReferenceTarget, DocumentPropertyType};
+use dpp::data_contract::document_type::{
+    is_referenced_system_agreement_property, is_referring_system_agreement_property,
+    DocumentPropertyReferenceTarget, DocumentPropertyType,
+};
 use dpp::data_contract::DataContract;
+use dpp::document::property_names::CREATOR_ID;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
@@ -23,6 +27,20 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 
+/// Whether two property types hold the same KIND of value for agreement
+/// purposes: sizes and other constraints may differ (both sides validated
+/// their own documents already), and an identifier is one kind whether or
+/// not it carries its own reference annotation.
+fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
+    let normalized_kind = |property_type: &DocumentPropertyType| match property_type {
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+            std::mem::discriminant(&DocumentPropertyType::Identifier)
+        }
+        other => std::mem::discriminant(other),
+    };
+    normalized_kind(a) == normalized_kind(b)
+}
+
 /// Checks every reference declaration of the given contract that carries
 /// declaration content.
 ///
@@ -38,20 +56,6 @@ use crate::execution::types::state_transition_execution_context::{
 ///
 /// The error paths name the failing declaration as
 /// `documentTypeName.propertyPath`. Validation stops at the first invalid
-/// Whether two property types hold the same KIND of value for agreement
-/// purposes: sizes and other constraints may differ (both sides validated
-/// their own documents already), and an identifier is one kind whether or
-/// not it carries its own reference annotation.
-fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
-    let normalized_kind = |property_type: &DocumentPropertyType| match property_type {
-        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
-            std::mem::discriminant(&DocumentPropertyType::Identifier)
-        }
-        other => std::mem::discriminant(other),
-    };
-    normalized_kind(a) == normalized_kind(b)
-}
-
 /// declaration: this bounds the billed work an invalid contract can cause and
 /// matches document write-time reference validation. Foreign contract
 /// resolutions are memoized per contract id, so a contract declaring many
@@ -200,7 +204,16 @@ pub(super) fn validate_data_contract_references_v0(
             // propertyAgreement declarations: both sides must exist, be
             // plain values (not containers), and share one value kind — a
             // cross-kind equality could never be satisfied and would brick
-            // every create of the declaring document type.
+            // every create of the declaring document type. The referenced
+            // side may instead be one of the referenced document's
+            // `$ownerId` and `$creatorId` system identifiers, which then
+            // must face an identifier on the referring side; `$creatorId`
+            // further needs a referenced type that records creator ids at
+            // all, or again no document could ever agree. The referring side
+            // may be the writer's own `$ownerId` instead of a schema property,
+            // an identifier that lives on the transition: that pair is a
+            // write gate.
+            let writer_identifier_type = DocumentPropertyType::Identifier;
             for (referring_property, referenced_property) in property_agreement {
                 let invalid = |reason: &str| {
                     SimpleConsensusValidationResult::new_with_error(
@@ -219,14 +232,59 @@ pub(super) fn validate_data_contract_references_v0(
                     ));
                 }
                 let declaring_document_type = document_type.as_ref();
-                let Some(referring) = declaring_document_type
-                    .flattened_properties()
-                    .get(referring_property)
-                else {
-                    return Ok(invalid(
-                        "the declaring document type does not define the referring property",
-                    ));
+                let referring_type = if referring_property.starts_with('$') {
+                    if !is_referring_system_agreement_property(referring_property) {
+                        return Ok(invalid(
+                            "the referring side must be a schema property of the declaring \
+                             document type or its $ownerId",
+                        ));
+                    }
+                    &writer_identifier_type
+                } else {
+                    let Some(referring) = declaring_document_type
+                        .flattened_properties()
+                        .get(referring_property)
+                    else {
+                        return Ok(invalid(
+                            "the declaring document type does not define the referring property",
+                        ));
+                    };
+                    &referring.property_type
                 };
+                if referenced_property.starts_with('$') {
+                    if !is_referenced_system_agreement_property(referenced_property) {
+                        return Ok(invalid(
+                            "only the referenced document's $ownerId and $creatorId system \
+                             properties may be agreed with",
+                        ));
+                    }
+                    if !matches!(
+                        referring_type,
+                        DocumentPropertyType::Identifier
+                            | DocumentPropertyType::IdentifierWithReference(_)
+                    ) {
+                        return Ok(invalid(
+                            "$ownerId and $creatorId are identifiers, so the referring \
+                             property must be an identifier",
+                        ));
+                    }
+                    if referenced_property == CREATOR_ID
+                        && !referenced_document_type
+                            .should_use_creator_id(
+                                referenced_contract.system_version_type(),
+                                referenced_contract.config().version(),
+                                platform_version,
+                            )
+                            .map_err(Error::Protocol)?
+                    {
+                        return Ok(invalid(
+                            "the referenced document type does not record $creatorId: only \
+                             transferable or tradeable document types of a format-1 contract \
+                             do",
+                        ));
+                    }
+                    continue;
+                }
                 let Some(referenced) = referenced_document_type
                     .flattened_properties()
                     .get(referenced_property)
@@ -235,14 +293,14 @@ pub(super) fn validate_data_contract_references_v0(
                         "the referenced document type does not define the referenced property",
                     ));
                 };
-                if matches!(referring.property_type, DocumentPropertyType::Object(_))
+                if matches!(referring_type, DocumentPropertyType::Object(_))
                     || matches!(referenced.property_type, DocumentPropertyType::Object(_))
                 {
                     return Ok(invalid(
                         "agreement properties must be plain values, not object containers",
                     ));
                 }
-                if !same_value_kind(&referring.property_type, &referenced.property_type) {
+                if !same_value_kind(referring_type, &referenced.property_type) {
                     return Ok(invalid(
                         "the two properties must share one value kind: a cross-kind \
                          equality could never be satisfied",

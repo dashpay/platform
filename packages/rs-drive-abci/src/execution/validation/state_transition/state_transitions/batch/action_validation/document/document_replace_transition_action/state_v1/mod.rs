@@ -89,6 +89,7 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
 
         let reference_result = self.base().validate_document_references(
             self.data(),
+            owner_id,
             Some(self.changed_data_fields()),
             platform,
             block_info,

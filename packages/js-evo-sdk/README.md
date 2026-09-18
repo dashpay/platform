@@ -194,6 +194,11 @@ for (const ref of contract.documentTypeReferences('note')) {
   // equality binding between the two documents' properties:
   // { path: 'postId', type: 'permanentDocument', contractId, documentType: 'post',
   //   propertyAgreement: { hashtag: 'hashtag' } }
+  // The referenced side may also name the referenced document's `$ownerId`
+  // or `$creatorId`, e.g. `propertyAgreement: { authorId: '$ownerId' }`, and
+  // the referring side may be the writer's own `$ownerId`: a write gate such
+  // as `{ '$ownerId': '$ownerId' }` lets only the referenced document's
+  // current owner create or replace the referring document.
   console.log(ref.path, ref.type);
 }
 
