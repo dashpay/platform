@@ -111,21 +111,21 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Releasing DashSDKFFI ${TAG#v} for platform release ${TAG}"
 
+      # PR jobs run in this same workspace on this persistent runner. Git
+      # state they leave behind (.git/hooks, .git/config, .git/info/attributes)
+      # would run inside actions/checkout's own `git checkout`, before any
+      # later cleanup could remove it. Start from an empty directory and a
+      # fresh clone; the release build cache lives outside the workspace.
+      - name: Empty the workspace left by earlier jobs
+        run: |
+          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} + \
+            || sudo -n find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.release-ref.outputs.checkout_ref }}
-          clean: false
           persist-credentials: false
-
-      # Same hygiene as swift-sdk-build.yml: release from a tree that is
-      # exactly the tag's content plus the persistent Cargo target cache.
-      - name: Clean working directory while preserving Rust build cache
-        run: |
-          git reset --hard HEAD
-          git clean -ffdx \
-            -e 'target/' \
-            -e 'target/**'
 
       - name: Resolve built commit SHA
         id: resolve-sha
@@ -158,39 +158,33 @@ jobs:
         run: |
           rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 
-      - name: Install protoc (Protocol Buffers compiler)
-        uses: arduino/setup-protoc@v3
-        with:
-          version: '32.x'
-          # Without a token the action resolves the protoc release
-          # unauthenticated, and the shared macOS-runner egress IP burns
-          # through the 60 req/h anonymous limit.
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # Fresh, checksum-verified copy in this job's temp directory. The runner's
+      # tool cache persists between jobs, so a protoc left there by an earlier
+      # job is not trusted for a release build.
+      - name: Install protoc v32.0 (Protocol Buffers compiler)
+        env:
+          PROTOC_SHA256: 09a2c729cc821215cc0d4c564b761760961fe338c52f24b302fd7e18e7b675d1
+        run: |
+          set -euo pipefail
+          PROTOC_DIR="$RUNNER_TEMP/protoc-32.0"
+          curl -fsSL -o "$RUNNER_TEMP/protoc.zip" \
+            https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-osx-aarch_64.zip
+          echo "$PROTOC_SHA256  $RUNNER_TEMP/protoc.zip" | shasum -a 256 -c -
+          rm -rf "$PROTOC_DIR"
+          unzip -q "$RUNNER_TEMP/protoc.zip" -d "$PROTOC_DIR"
+          echo "PROTOC=$PROTOC_DIR/bin/protoc" >> "$GITHUB_ENV"
+          echo "$PROTOC_DIR/bin" >> "$GITHUB_PATH"
+          "$PROTOC_DIR/bin/protoc" --version
 
       # PR builds on this runner (swift-sdk-build.yml) set PRUNE_CARGO_TARGETS,
       # which deletes every Apple target directory under the workspace
-      # target/ before and after each slice. A release build there would
-      # always start cold, so releases keep their own release-ios cache
-      # outside the workspace instead. It is capped so it cannot starve the
-      # PR jobs of disk: reset it when it outgrows the cap or the volume runs
-      # low, and Cargo rebuilds from scratch.
+      # target/ before and after each slice, and this job empties the
+      # workspace anyway. Releases keep their own release-ios cache outside
+      # it instead.
       - name: Prepare release Cargo target cache
-        run: |
-          set -euo pipefail
-          RELEASE_TARGET_DIR="$HOME/.cache/dash-platform/release-swift-sdk-target"
-          MAX_CACHE_KIB=$((60 * 1024 * 1024))
-          MIN_FREE_KIB=$((40 * 1024 * 1024))
-          mkdir -p "$RELEASE_TARGET_DIR"
-          USED_KIB=$(du -sk "$RELEASE_TARGET_DIR" | cut -f1)
-          FREE_KIB=$(df -Pk "$RELEASE_TARGET_DIR" | awk 'NR == 2 { print $4 }')
-          if [ "$USED_KIB" -gt "$MAX_CACHE_KIB" ] || [ "$FREE_KIB" -lt "$MIN_FREE_KIB" ]; then
-            echo "::notice::Resetting the release target cache (${USED_KIB} KiB used, ${FREE_KIB} KiB free on the volume)."
-            rm -rf "${RELEASE_TARGET_DIR:?}"
-            mkdir -p "$RELEASE_TARGET_DIR"
-          fi
-          du -sh "$RELEASE_TARGET_DIR"
-          df -h "$RELEASE_TARGET_DIR"
-          echo "CARGO_TARGET_DIR=$RELEASE_TARGET_DIR" >> "$GITHUB_ENV"
+        uses: ./.github/actions/release-cargo-target-cache
+        with:
+          name: release-swift-sdk-target
 
       - name: Build DashSDKFFI.xcframework and install into Swift package
         env:

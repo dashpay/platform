@@ -1,0 +1,51 @@
+---
+name: "Release Cargo target cache"
+description: >-
+  Point CARGO_TARGET_DIR at a per-workflow release cache outside the workspace
+  of a persistent self-hosted runner. Release jobs wipe the workspace before
+  checkout (PR jobs share it), so a cache inside it would never survive. The
+  cache is reset when it outgrows max-gib or the volume drops below
+  min-free-gib, so it cannot starve the PR jobs on the same runner of disk.
+inputs:
+  name:
+    description: Cache directory name, unique per release workflow
+    required: true
+  max-gib:
+    description: Reset the cache when it grows past this many GiB
+    required: false
+    default: "60"
+  min-free-gib:
+    description: Reset the cache when the volume has less than this many GiB free
+    required: false
+    default: "40"
+runs:
+  using: composite
+  steps:
+    - name: Prepare release Cargo target cache
+      shell: bash
+      env:
+        CACHE_NAME: ${{ inputs.name }}
+        MAX_GIB: ${{ inputs.max-gib }}
+        MIN_FREE_GIB: ${{ inputs.min-free-gib }}
+      run: |
+        set -euo pipefail
+        case "$CACHE_NAME" in
+          ''|*/*|.*)
+            echo "::error::Invalid release target cache name '$CACHE_NAME'."
+            exit 1
+            ;;
+        esac
+        RELEASE_TARGET_DIR="$HOME/.cache/dash-platform/$CACHE_NAME"
+        MAX_CACHE_KIB=$((MAX_GIB * 1024 * 1024))
+        MIN_FREE_KIB=$((MIN_FREE_GIB * 1024 * 1024))
+        mkdir -p "$RELEASE_TARGET_DIR"
+        USED_KIB=$(du -sk "$RELEASE_TARGET_DIR" | cut -f1)
+        FREE_KIB=$(df -Pk "$RELEASE_TARGET_DIR" | awk 'NR == 2 { print $4 }')
+        if [ "$USED_KIB" -gt "$MAX_CACHE_KIB" ] || [ "$FREE_KIB" -lt "$MIN_FREE_KIB" ]; then
+          echo "::notice::Resetting the release target cache (${USED_KIB} KiB used, ${FREE_KIB} KiB free on the volume)."
+          rm -rf "${RELEASE_TARGET_DIR:?}"
+          mkdir -p "$RELEASE_TARGET_DIR"
+        fi
+        du -sh "$RELEASE_TARGET_DIR"
+        df -h "$RELEASE_TARGET_DIR"
+        echo "CARGO_TARGET_DIR=$RELEASE_TARGET_DIR" >> "$GITHUB_ENV"

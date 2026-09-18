@@ -26,9 +26,9 @@ permissions:
 jobs:
   build-npm:
     name: Build NPM packages
-    # Reuse the persistent Linux runner's Cargo target and registry state. The
-    # publish job stays on a GitHub-hosted runner because npm trusted publishing
-    # does not support self-hosted runners.
+    # Reuse the persistent Linux runner's Cargo registry and a release-only
+    # target cache. The publish job stays on a GitHub-hosted runner because npm
+    # trusted publishing does not support self-hosted runners.
     runs-on: [self-hosted, kotlin-ci]
     timeout-minutes: 120
     if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
@@ -41,11 +41,20 @@ jobs:
         with:
           name: js-build-${{ github.sha }}
 
+      # PR jobs run in this same workspace on this persistent runner. Git
+      # state they leave behind (.git/hooks, .git/config, .git/info/attributes)
+      # would run inside actions/checkout's own `git checkout`, before any
+      # later cleanup could remove it. Start from an empty directory and a
+      # fresh clone; the release build cache lives outside the workspace.
+      - name: Empty the workspace left by earlier jobs
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+        run: |
+          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} + \
+            || sudo -n find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
       - name: Check out repo
         uses: actions/checkout@v4
         with:
-          # Preserve the expensive Cargo target cache between release builds.
-          clean: false
           persist-credentials: false
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
@@ -71,23 +80,42 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
           docker info >/dev/null
-          if ! docker image inspect rvolosatovs/protoc:4.0.0 >/dev/null 2>&1; then
-            docker pull rvolosatovs/protoc:4.0.0
-          fi
-
-      - name: Clean stale build outputs
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-        run: |
-          git reset --hard
-          git clean -ffdx -e 'target/'
+          # Always pull: a local image under this tag may have been replaced
+          # by an earlier job, and a pull resets the tag to the registry's.
+          docker pull rvolosatovs/protoc:4.0.0
 
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
           target: wasm32-unknown-unknown
-          # The runner persists the Cargo registry and target directory.
+          # The runner persists the Cargo registry between runs.
           cache: 'false'
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      # The Rust action above reuses a protoc left in ~/.local by earlier jobs.
+      # Override it with a fresh, checksum-verified copy for the release build;
+      # prost-build reads PROTOC first.
+      - name: Install protoc v32.0
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+        env:
+          PROTOC_SHA256: 7ca037bfe5e5cabd4255ccd21dd265f79eb82d3c010117994f5dc81d2140ee88
+        run: |
+          set -euo pipefail
+          PROTOC_DIR="$RUNNER_TEMP/protoc-32.0"
+          curl -fsSL -o "$RUNNER_TEMP/protoc.zip" \
+            https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip
+          echo "$PROTOC_SHA256  $RUNNER_TEMP/protoc.zip" | sha256sum -c -
+          rm -rf "$PROTOC_DIR"
+          unzip -q "$RUNNER_TEMP/protoc.zip" -d "$PROTOC_DIR"
+          echo "PROTOC=$PROTOC_DIR/bin/protoc" >> "$GITHUB_ENV"
+          echo "$PROTOC_DIR/bin" >> "$GITHUB_PATH"
+          "$PROTOC_DIR/bin/protoc" --version
+
+      - name: Prepare release Cargo target cache
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+        uses: ./.github/actions/release-cargo-target-cache
+        with:
+          name: release-npm-target
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
@@ -97,31 +125,37 @@ jobs:
         uses: cargo-bins/cargo-binstall@v1.3.1
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
+      # Always reinstalled, never trusted from an earlier job: a binary left on
+      # this persistent runner can print the pinned version and still be
+      # something else.
       - name: Install wasm-bindgen-cli
         run: |
-          if ! wasm-bindgen --version 2>/dev/null | grep -Fxq 'wasm-bindgen 0.2.108'; then
-            cargo binstall wasm-bindgen-cli@0.2.108 --no-confirm --force
-          fi
+          set -euo pipefail
+          cargo binstall wasm-bindgen-cli@0.2.108 --no-confirm --force
+          wasm-bindgen --version | grep -Fxq 'wasm-bindgen 0.2.108'
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install wasm-pack
         run: |
-          if ! wasm-pack --version 2>/dev/null | grep -Fxq 'wasm-pack 0.15.0'; then
-            cargo binstall wasm-pack@0.15.0 --no-confirm --force
-          fi
+          set -euo pipefail
+          cargo binstall wasm-pack@0.15.0 --no-confirm --force
+          wasm-pack --version | grep -Fxq 'wasm-pack 0.15.0'
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
+      # Fresh, checksum-verified copy in this job's temp directory rather than
+      # one left in ~/.local by an earlier job.
       - name: Install Binaryen
+        env:
+          BINARYEN_SHA256: c90e0e295e8f8484ba5b47da92f26e5d1d18db6cd2fcc0c5cc265a5a73609f17
         run: |
-          BINARYEN_DIR="$HOME/.local/binaryen-version_121"
-          if [ ! -x "$BINARYEN_DIR/bin/wasm-opt" ]; then
-            ARCHIVE="$RUNNER_TEMP/binaryen-version_121-x86_64-linux.tar.gz"
-            curl -fsSL -o "$ARCHIVE" \
-              https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz
-            mkdir -p "$HOME/.local"
-            tar -xzf "$ARCHIVE" -C "$HOME/.local"
-          fi
-          echo "$BINARYEN_DIR/bin" >> "$GITHUB_PATH"
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/binaryen-version_121-x86_64-linux.tar.gz"
+          curl -fsSL -o "$ARCHIVE" \
+            https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz
+          echo "$BINARYEN_SHA256  $ARCHIVE" | sha256sum -c -
+          rm -rf "$RUNNER_TEMP/binaryen-version_121"
+          tar -xzf "$ARCHIVE" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-version_121/bin" >> "$GITHUB_PATH"
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Build packages

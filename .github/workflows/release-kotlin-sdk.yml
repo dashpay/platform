@@ -147,6 +147,17 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Releasing Kotlin SDK ${VERSION} for platform release ${TAG}"
 
+      # PR jobs run in this same workspace on this persistent runner. Git
+      # state they leave behind (.git/hooks, .git/config, .git/info/attributes)
+      # would run inside actions/checkout's own `git checkout`, before any
+      # later cleanup could remove it, and stale jniLibs or gradle outputs
+      # must never leak into a release AAR. Start from an empty directory and
+      # a fresh clone; the release build cache lives outside the workspace.
+      - name: Empty the workspace left by earlier jobs
+        run: |
+          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} + \
+            || sudo -n find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -154,18 +165,7 @@ jobs:
           # raw dispatch input — so the released AAR is built from the tag's
           # commit and a manual run can never build from a branch.
           ref: ${{ steps.release-ref.outputs.checkout_ref }}
-          clean: false
           persist-credentials: false
-
-      # Release from a tree that is exactly the tag's content plus the
-      # persistent Cargo target cache: stale jniLibs or gradle outputs from an
-      # earlier dev build on this runner must never leak into a release AAR.
-      - name: Clean working directory while preserving Rust build cache
-        run: |
-          git reset --hard HEAD
-          git clean -ffdx \
-            -e 'target/' \
-            -e 'target/**'
 
       - name: Resolve built commit SHA
         id: resolve-sha
@@ -193,33 +193,40 @@ jobs:
         with:
           targets: aarch64-linux-android,x86_64-linux-android
 
-      # No actions/cache here: the persistent runner keeps ~/.cargo and the
-      # Cargo target/ directory between runs, same as kotlin-sdk-build.yml.
+      # No actions/cache here: the persistent runner keeps ~/.cargo between
+      # runs, and the release target cache below lives outside the workspace.
+      - name: Prepare release Cargo target cache
+        uses: ./.github/actions/release-cargo-target-cache
+        with:
+          name: release-kotlin-sdk-target
 
-      # Pinned: this runner is persistent, so an unpinned `cargo install`
-      # leaves whatever version happened to be current on the day it first ran,
-      # and every later job silently builds with it. Assert after installing so
-      # a drifted host fails here instead of somewhere in the NDK build.
-      - name: Ensure cargo-ndk v4.1.2 is installed
+      # Always reinstalled, never trusted from an earlier job: a binary left in
+      # ~/.cargo/bin can print the pinned version and still be something else.
+      # Cargo looks up `cargo ndk` in $CARGO_HOME/bin before PATH, so the
+      # install has to overwrite that copy rather than land elsewhere.
+      - name: Install cargo-ndk v4.1.2
         run: |
           set -euo pipefail
-          if ! cargo ndk --version 2>/dev/null | grep -qx 'cargo-ndk 4.1.2'; then
-            cargo install cargo-ndk --version 4.1.2 --locked --force
-          fi
-          cargo ndk --version
+          cargo install cargo-ndk --version 4.1.2 --locked --force
           cargo ndk --version | grep -qx 'cargo-ndk 4.1.2'
 
-      - name: Ensure protoc v32.0 is installed (repo-standard; apt's 3.21 breaks tenderdash-proto)
+      # Fresh, checksum-verified copy in this job's temp directory rather than
+      # whatever an earlier job left in /usr/local (repo-standard v32.0; apt's
+      # 3.21 breaks tenderdash-proto). prost-build reads PROTOC first.
+      - name: Install protoc v32.0
+        env:
+          PROTOC_SHA256: 7ca037bfe5e5cabd4255ccd21dd265f79eb82d3c010117994f5dc81d2140ee88
         run: |
           set -euo pipefail
-          if ! protoc --version 2>/dev/null | grep -qx 'libprotoc 32.0'; then
-            curl -fsSL -o /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip
-            sudo unzip -o /tmp/protoc.zip -d /usr/local 'bin/protoc' 'include/*'
-          fi
-          protoc --version
-          # A stale protoc earlier on PATH would shadow the one just unpacked
-          # into /usr/local; catch that here rather than in a codegen failure.
-          protoc --version | grep -qx 'libprotoc 32.0'
+          PROTOC_DIR="$RUNNER_TEMP/protoc-32.0"
+          curl -fsSL -o "$RUNNER_TEMP/protoc.zip" \
+            https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip
+          echo "$PROTOC_SHA256  $RUNNER_TEMP/protoc.zip" | sha256sum -c -
+          rm -rf "$PROTOC_DIR"
+          unzip -q "$RUNNER_TEMP/protoc.zip" -d "$PROTOC_DIR"
+          echo "PROTOC=$PROTOC_DIR/bin/protoc" >> "$GITHUB_ENV"
+          echo "$PROTOC_DIR/bin" >> "$GITHUB_PATH"
+          "$PROTOC_DIR/bin/protoc" --version
 
       - name: Build native library (both ABIs, release profile)
         working-directory: packages/kotlin-sdk
