@@ -322,4 +322,82 @@ final class DashModelMigrationTests: XCTestCase {
                 .subtracting(Schema(versionedSchema: DashSchemaV1.self).entities.map(\.name)),
             ["PersistentTrackedMasternode"])
     }
+
+    /// The accepted V1 graph predates key limits. Its keys must arrive in
+    /// live V2 unlimited, then accept limits through the public accessors.
+    @MainActor
+    func testV1StoreMigratesToV2AndBackfillsTheKeyLimitColumns() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("dash.store")
+
+        let identityId = "FixtureIdentityBase58"
+
+        let v1Schema = Schema(versionedSchema: DashSchemaV1.self)
+        let v1Configuration = ModelConfiguration(
+            "DashKeyLimitsMigrationTest",
+            schema: v1Schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none)
+        var v1Container: ModelContainer? = try ModelContainer(
+            for: v1Schema,
+            configurations: [v1Configuration])
+        v1Container?.mainContext.insert(DashSchemaV1.PersistentPublicKey(
+            keyId: 3,
+            purpose: .authentication,
+            securityLevel: .high,
+            keyType: .ecdsaSecp256k1,
+            publicKeyData: Data(repeating: 0x02, count: 33),
+            identityId: identityId))
+        try v1Container?.mainContext.save()
+        v1Container = nil
+
+        let v2Schema = Schema(versionedSchema: DashSchemaV2.self)
+        let v2Configuration = ModelConfiguration(
+            "DashKeyLimitsMigrationTest",
+            schema: v2Schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none)
+        let migrated = try ModelContainer(
+            for: v2Schema,
+            migrationPlan: DashMigrationPlan.self,
+            configurations: [v2Configuration])
+
+        let keys = try migrated.mainContext.fetch(FetchDescriptor<PersistentPublicKey>())
+        XCTAssertEqual(keys.count, 1, "the V1 key row must survive the migration")
+        let key = try XCTUnwrap(keys.first)
+        XCTAssertEqual(key.keyId, 3)
+        XCTAssertEqual(key.identityId, identityId)
+        XCTAssertEqual(key.publicKeyData, Data(repeating: 0x02, count: 33))
+        XCTAssertNil(key.totalBudget, "a key migrated from V1 carries no budget")
+        XCTAssertNil(key.expiresAt, "nor an expiry; together, that is a version 0 key")
+        XCTAssertFalse(key.hasLimits)
+
+        // And both new columns are writable on the migrated row, through the
+        // unsigned accessors the rest of the SDK reads them with.
+        key.totalBudgetCredits = 1_000
+        key.expiresAtMillis = 1_800_000_000_000
+        try migrated.mainContext.save()
+        let reread = try XCTUnwrap(
+            migrated.mainContext.fetch(FetchDescriptor<PersistentPublicKey>()).first)
+        XCTAssertEqual(reread.totalBudgetCredits, 1_000)
+        XCTAssertEqual(reread.expiresAtMillis, 1_800_000_000_000)
+        XCTAssertTrue(reread.hasLimits)
+    }
+
+    func testV2AddsKeyLimitColumnsWithoutChangingTheFrozenBaseline() throws {
+        let baseline = Schema(versionedSchema: DashSchemaV1.self)
+        let live = Schema(versionedSchema: DashSchemaV2.self)
+        let oldKey = try XCTUnwrap(baseline.entities.first { $0.name == "PersistentPublicKey" })
+        let newKey = try XCTUnwrap(live.entities.first { $0.name == "PersistentPublicKey" })
+        for column in ["totalBudget", "expiresAt"] {
+            XCTAssertNil(oldKey.attributesByName[column])
+            XCTAssertNotNil(newKey.attributesByName[column])
+        }
+    }
 }

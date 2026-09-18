@@ -12,6 +12,21 @@ public final class PersistentPublicKey {
     public var readOnly: Bool
     public var disabledAt: Int64?
 
+    // MARK: - Usage limits (protocol version 14)
+    /// The credits this key may take from the identity over its whole
+    /// lifetime, or `nil` for a key registered without a budget. Schema-stable
+    /// signed carrier for the protocol's unsigned `Credits`: read it through
+    /// `totalBudgetCredits` rather than the column, the same way
+    /// `PersistentTokenBalance.balance` carries an unsigned balance.
+    /// Additive optional column => SwiftData lightweight migration.
+    public var totalBudget: Int64?
+
+    /// The block time in milliseconds from which this key can no longer sign,
+    /// or `nil` for a key registered without an expiry. Signed carrier for an
+    /// unsigned protocol value, like `totalBudget`; read it through
+    /// `expiresAtMillis`. Additive optional column => lightweight migration.
+    public var expiresAt: Int64?
+
     // MARK: - Key Data
     public var publicKeyData: Data
 
@@ -74,6 +89,8 @@ public final class PersistentPublicKey {
         disabledAt: Int64? = nil,
         contractBounds: [Data]? = nil,
         contractBoundsDocumentTypeName: String? = nil,
+        totalBudget: Int64? = nil,
+        expiresAt: Int64? = nil,
         identityId: String
     ) {
         self.keyId = keyId
@@ -83,6 +100,8 @@ public final class PersistentPublicKey {
         self.publicKeyData = publicKeyData
         self.readOnly = readOnly
         self.disabledAt = disabledAt
+        self.totalBudget = totalBudget
+        self.expiresAt = expiresAt
         if let contractBounds = contractBounds {
             self.contractBoundsData = try? JSONSerialization.data(withJSONObject: contractBounds.map { $0.base64EncodedString() })
         } else {
@@ -143,6 +162,26 @@ public final class PersistentPublicKey {
         disabledAt != nil
     }
 
+    /// The key's lifetime budget in credits, read through the signed
+    /// `totalBudget` column's raw bits. Setter writes through.
+    public var totalBudgetCredits: UInt64? {
+        get { totalBudget.map { UInt64(bitPattern: $0) } }
+        set { totalBudget = newValue.map { Int64(bitPattern: $0) } }
+    }
+
+    /// The key's expiry as block time in milliseconds, read through the
+    /// signed `expiresAt` column's raw bits. Setter writes through.
+    public var expiresAtMillis: UInt64? {
+        get { expiresAt.map { UInt64(bitPattern: $0) } }
+        set { expiresAt = newValue.map { Int64(bitPattern: $0) } }
+    }
+
+    /// Whether the key carries either usage limit, which is what makes it
+    /// a version 1 key on the wire.
+    public var hasLimits: Bool {
+        totalBudget != nil || expiresAt != nil
+    }
+
     /// Check if this public key has an associated private key identifier
     public var hasPrivateKeyIdentifier: Bool {
         privateKeyKeychainIdentifier != nil
@@ -196,7 +235,9 @@ extension PersistentPublicKey {
             keyType: keyType,
             readOnly: readOnly,
             data: publicKeyData,
-            disabledAt: disabledAt.map { TimestampMillis($0) }
+            disabledAt: disabledAt.map { TimestampMillis($0) },
+            totalBudget: totalBudgetCredits,
+            expiresAt: expiresAtMillis
         )
     }
 
@@ -226,6 +267,8 @@ extension PersistentPublicKey {
             disabledAt: publicKey.disabledAt.map { Int64($0) },
             contractBounds: boundsIds,
             contractBoundsDocumentTypeName: docTypeName,
+            totalBudget: publicKey.totalBudget.map { Int64(bitPattern: $0) },
+            expiresAt: publicKey.expiresAt.map { Int64(bitPattern: $0) },
             identityId: identityId
         )
     }

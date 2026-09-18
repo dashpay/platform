@@ -48,6 +48,16 @@ data class PublicKeyEntity(
     val keyType: String,
     val readOnly: Boolean = false,
     val disabledAt: Long? = null,
+    /**
+     * Usage limit (protocol version 14): the credits the key may take from the
+     * identity over its lifetime, null for a key without a budget.
+     */
+    val totalBudget: Long? = null,
+    /**
+     * Usage limit (protocol version 14): the block time in milliseconds from which
+     * the key can no longer sign, null for a key that does not expire.
+     */
+    val expiresAt: Long? = null,
     val publicKeyData: ByteArray,
     /**
      * JSON-encoded `[base64(contractId)]` blob — legacy shape kept verbatim

@@ -520,7 +520,9 @@ export interface IdentityUpdateOptions {
 
   /**
    * Array of public keys to add to the identity.
-   * Use IdentityPublicKeyInCreation to create new keys.
+   * Use IdentityPublicKeyInCreation to create new keys. A key built with `totalBudget` or
+   * `expiresAt` is registered with those limits (protocol version 14); the signer must hold
+   * its private key as well as the master key, since a new key signs its own registration.
    */
   addPublicKeys?: IdentityPublicKeyInCreation[];
 

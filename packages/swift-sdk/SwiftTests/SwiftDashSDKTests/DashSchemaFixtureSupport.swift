@@ -120,6 +120,13 @@ enum DashSchemaFixtureSupport {
             identityId: Data(repeating: 0x35, count: 32), balance: 5, network: .testnet)
         identity.wallet = wallet
         context.insert(identity)
+        let key = PersistentPublicKey(
+            keyId: 3, purpose: .authentication, securityLevel: .high,
+            keyType: .ecdsaSecp256k1, publicKeyData: Data(repeating: 0x02, count: 33),
+            totalBudget: 100_000, expiresAt: 1_800_000_000_000,
+            identityId: identity.identityIdString)
+        key.identity = identity
+        context.insert(key)
         context.insert(PersistentKeyword(keyword: "preserved", contractId: "contract"))
         let lock = PersistentAssetLock(
             outPointHex: String(repeating: "ab", count: 32) + ":0",
@@ -131,5 +138,9 @@ enum DashSchemaFixtureSupport {
             networkRaw: Network.testnet.rawValue, proTxHash: Data(repeating: 7, count: 32),
             label: "fixture", addedAt: 1, snapshotJSON: "{}"))
         try context.save()
+        let storedKey = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentPublicKey>()).first)
+        XCTAssertEqual(storedKey.totalBudgetCredits, 100_000)
+        XCTAssertEqual(storedKey.expiresAtMillis, 1_800_000_000_000)
+        XCTAssertEqual(storedKey.identity?.identityId, identity.identityId)
     }
 }

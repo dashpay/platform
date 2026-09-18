@@ -28,7 +28,9 @@ internal object TransactionsNative {
      *   rowCount` then per row `u32 keyId, u8 keyType, u8 purpose, u8
      *   securityLevel, u8 readOnly, u8 contractBoundsKind, u16 pubkeyLen,
      *   pubkey`, plus (when `contractBoundsKind != 0`) a 32-byte contract id
-     *   and (when `== 2`) `u16 docTypeLen, docType`. May be empty.
+     *   and (when `== 2`) `u16 docTypeLen, docType`, then `u8 limitsFlags`
+     *   followed by `u64 totalBudget` (bit 0) and `u64 expiresAt` (bit 1).
+     *   May be empty.
      * @param disablePublicKeyIds key ids to disable; may be empty. At least
      *   one of add / disable must be non-empty.
      */
@@ -37,6 +39,27 @@ internal object TransactionsNative {
         identityId: ByteArray,
         addPubkeysBlob: ByteArray,
         disablePublicKeyIds: IntArray,
+        signerHandle: Long,
+    )
+
+    /**
+     * Raise the limits of key [keyId] of [identityId] (protocol version 14):
+     * add [addBudget] credits to its total budget when [hasAddBudget], and
+     * move its expiry to [expiresAt] (block time in milliseconds) when
+     * [hasExpiresAt]. Bridges
+     * `platform_wallet_update_identity_key_limits_with_signer`; [signerHandle]
+     * holds the identity's MASTER key or a CRITICAL authentication key
+     * without limits and without contract bounds. Room learns of the raised
+     * limits through the persistence changeset.
+     */
+    external fun updateIdentityKeyLimits(
+        walletHandle: Long,
+        identityId: ByteArray,
+        keyId: Int,
+        hasAddBudget: Boolean,
+        addBudget: Long,
+        hasExpiresAt: Boolean,
+        expiresAt: Long,
         signerHandle: Long,
     )
 

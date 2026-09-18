@@ -3,8 +3,8 @@
 SwiftData schemas become supported history when a build reaches App Store
 distribution. TestFlight uploads capture provenance and a synthetic SQLite
 fixture, but do not by themselves register a released schema. V1 is the agreed
-existing baseline. Intermediate pre-release schemas have been collapsed into
-the working V2; databases from those old development builds are unsupported.
+existing baseline. Intermediate pre-release V2–V5 schemas have been collapsed
+into the working V2, including the public-key usage-limit columns; databases from those old development builds are unsupported.
 
 ## Release flow
 

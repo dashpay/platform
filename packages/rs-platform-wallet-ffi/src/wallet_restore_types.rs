@@ -224,6 +224,16 @@ pub struct IdentityKeyRestoreFFI {
     /// same load-callback allocation arena that frees the public-
     /// key data buffer).
     pub contract_bounds_document_type: *const c_char,
+    /// Usage limits (protocol version 14), mirroring
+    /// [`crate::identity_persistence::IdentityKeyEntryFFI`]: the credits
+    /// the key may spend over its lifetime when `total_budget_is_some`,
+    /// and the block time in milliseconds from which it can no longer
+    /// sign when `expires_at_is_some`. Without them a limited key would
+    /// come back unlimited on cold restart.
+    pub total_budget_is_some: bool,
+    pub total_budget: u64,
+    pub expires_at_is_some: bool,
+    pub expires_at: u64,
 }
 
 /// Per-identity entry attached to a [`WalletRestoreEntryFFI`].

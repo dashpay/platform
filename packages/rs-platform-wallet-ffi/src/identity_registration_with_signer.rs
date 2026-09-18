@@ -112,6 +112,14 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 ///     keys only). `contract_bounds_id` is the 32-byte contract group
 ///     id; the `contract_bounds_document_type` pointer is ignored.
 ///
+/// A key may carry usage limits (protocol version 14): `total_budget`,
+/// the credits its transitions may take from the identity over its
+/// lifetime, when `has_total_budget`; `expires_at`, the block time in
+/// milliseconds from which it can no longer sign, when
+/// `has_expires_at`. Only AUTHENTICATION keys below MASTER may carry
+/// them; a row with neither flag registers a version 0 key, the same
+/// bytes as ever.
+///
 /// All pointers are borrowed for the call duration only — the
 /// FFI does not retain or free them.
 #[repr(C)]
@@ -130,6 +138,29 @@ pub struct IdentityPubkeyFFI {
     /// NUL-terminated UTF-8 document type name when
     /// `contract_bounds_kind == 2`. Null otherwise.
     pub contract_bounds_document_type: *const std::os::raw::c_char,
+    /// Whether `total_budget` is set.
+    pub has_total_budget: bool,
+    /// The key's total budget in credits when `has_total_budget`.
+    pub total_budget: u64,
+    /// Whether `expires_at` is set.
+    pub has_expires_at: bool,
+    /// The key's expiry in block time milliseconds when `has_expires_at`.
+    pub expires_at: u64,
+}
+
+/// Attach the usage limits of `row` to `key`. A row with neither limit
+/// leaves the key a version 0 key; either limit makes it a version 1 key.
+pub(crate) fn key_with_row_limits(
+    key: IdentityPublicKey,
+    row: &IdentityPubkeyFFI,
+) -> IdentityPublicKey {
+    match (
+        row.has_total_budget.then_some(row.total_budget),
+        row.has_expires_at.then_some(row.expires_at),
+    ) {
+        (None, None) => key,
+        (total_budget, expires_at) => key.with_limits(total_budget, expires_at),
+    }
 }
 
 /// Decode the optional `contract_bounds_*` payload off an
@@ -338,16 +369,19 @@ pub(crate) unsafe fn decode_identity_pubkeys(
         }
         keys_map.insert(
             row.key_id,
-            IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                id: row.key_id,
-                purpose,
-                security_level,
-                contract_bounds,
-                key_type,
-                read_only: row.read_only,
-                data: BinaryData::new(pubkey_bytes),
-                disabled_at: None,
-            }),
+            key_with_row_limits(
+                IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: row.key_id,
+                    purpose,
+                    security_level,
+                    contract_bounds,
+                    key_type,
+                    read_only: row.read_only,
+                    data: BinaryData::new(pubkey_bytes),
+                    disabled_at: None,
+                }),
+                row,
+            ),
         );
     }
     Ok(keys_map)
@@ -862,6 +896,10 @@ mod tests {
             contract_bounds_kind: 0,
             contract_bounds_id: ptr::null(),
             contract_bounds_document_type: ptr::null(),
+            has_total_budget: false,
+            total_budget: 0,
+            has_expires_at: false,
+            expires_at: 0,
         }
     }
 

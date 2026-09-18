@@ -275,7 +275,10 @@ struct TokenDetailsView: View {
 
                         if let function = timeBased["function"] as? [String: Any],
                            let fixedAmount = function["FixedAmount"] as? [String: Any],
-                           let amount = fixedAmount["amount"] as? Int {
+                           let amount = UInt64(jsonValue: fixedAmount["amount"]) {
+                            // A token amount is a protocol `u64` on a
+                            // `#[json_safe_fields]` type, so one above
+                            // 2^53 - 1 arrives as a decimal string.
                             InfoRow(label: "Amount per interval:", value: "\(amount)")
                         }
                     }

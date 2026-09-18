@@ -302,6 +302,17 @@ pub struct IdentityKeyEntryFFI {
     pub contract_bounds_kind: u8,
     pub contract_bounds_id: [u8; 32],
     pub contract_bounds_document_type: *const c_char,
+
+    // Usage limits (protocol version 14). `total_budget` is the credits
+    // the key may take from the identity over its lifetime when
+    // `total_budget_is_some`; `expires_at` is the block time in
+    // milliseconds from which it can no longer sign when
+    // `expires_at_is_some`. A version 0 key has neither, and the client
+    // must persist both so a limited key restores as limited.
+    pub total_budget_is_some: bool,
+    pub total_budget: u64,
+    pub expires_at_is_some: bool,
+    pub expires_at: u64,
 }
 
 /// Composite identifier for [`IdentityKeysChangeSet::removed`] entries
@@ -348,9 +359,15 @@ pub struct IdentityKeyRemovalFFI {
 //   137..=168 contract_bounds_id      [u8; 32]
 //   169..=175 (padding to 8 for pointer alignment)
 //   176..=183 contract_bounds_document_type *const c_char
+//   184       total_budget_is_some    bool
+//   185..=191 (padding to 8)
+//   192..=199 total_budget            u64
+//   200       expires_at_is_some      bool
+//   201..=207 (padding to 8)
+//   208..=215 expires_at              u64
 //
-// Total size = 184, alignment = 8 (from u64 / pointer).
-const _: [u8; 184] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
+// Total size = 216, alignment = 8 (from u64 / pointer).
+const _: [u8; 216] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 
 // Compile-time guard for `IdentityEntryFFI`. Same rationale as the
@@ -659,6 +676,7 @@ impl IdentityKeyEntryFFI {
     /// [`free_identity_key_entry_ffi`].
     pub fn from_entry(entry: &IdentityKeyEntry) -> Self {
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
         use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 
         let pk_bytes = entry.public_key.data().as_slice().to_vec();
@@ -667,6 +685,14 @@ impl IdentityKeyEntryFFI {
         let public_key_data_ptr = Box::into_raw(pk_boxed) as *mut u8;
 
         let (disabled_some, disabled_at) = match entry.public_key.disabled_at() {
+            Some(ts) => (true, ts),
+            None => (false, 0u64),
+        };
+        let (total_budget_is_some, total_budget) = match entry.public_key.total_budget() {
+            Some(credits) => (true, credits),
+            None => (false, 0u64),
+        };
+        let (expires_at_is_some, expires_at) = match entry.public_key.expires_at() {
             Some(ts) => (true, ts),
             None => (false, 0u64),
         };
@@ -727,6 +753,10 @@ impl IdentityKeyEntryFFI {
             contract_bounds_kind,
             contract_bounds_id,
             contract_bounds_document_type,
+            total_budget_is_some,
+            total_budget,
+            expires_at_is_some,
+            expires_at,
         }
     }
 }

@@ -35,6 +35,11 @@ import java.io.DataOutputStream
  *     u8[32] contractBoundsId
  *   if contractBoundsKind == 2:
  *     u16 docTypeLen, u8[docTypeLen] docType (UTF-8)
+ *   u8  limitsFlags        (bit 0: totalBudget follows, bit 1: expiresAt follows)
+ *   if limitsFlags & 1:
+ *     u64 totalBudget      (credits the key may spend over its lifetime)
+ *   if limitsFlags & 2:
+ *     u64 expiresAt        (block time in ms from which the key can no longer sign)
  * ```
  */
 object IdentityPubkeyCodec {
@@ -67,6 +72,11 @@ object IdentityPubkeyCodec {
                     dos.write(dt)
                 }
             }
+            // Usage limits (protocol version 14): flags first, then only the values set.
+            val flags = (if (k.totalBudget != null) 1 else 0) or (if (k.expiresAt != null) 2 else 0)
+            dos.writeByte(flags)
+            k.totalBudget?.let { dos.writeLong(it) }
+            k.expiresAt?.let { dos.writeLong(it) }
         }
         return out.toByteArray()
     }

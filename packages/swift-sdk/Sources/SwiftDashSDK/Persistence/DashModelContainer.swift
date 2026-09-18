@@ -306,8 +306,8 @@ public enum DashSchemaV1: VersionedSchema {
     }
 }
 
-/// Unreleased V2 combines the tracked-masternode, asset-lock recipient, and
-/// sweep additions. V1 is the accepted historical baseline. Intermediate beta
+/// Unreleased V2 combines the tracked-masternode, asset-lock recipient, sweep,
+/// and public-key usage-limit additions. V1 is the accepted historical baseline. Intermediate beta
 /// layouts are not supported release schemas.
 ///
 /// After App Store publication a separate DashSchemaSnapshotV2 preserves the

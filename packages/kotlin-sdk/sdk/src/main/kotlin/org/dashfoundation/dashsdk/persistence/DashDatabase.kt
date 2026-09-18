@@ -144,7 +144,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * at all (nothing collects).
  */
 @Database(
-    version = 11,
+    version = 12,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -617,6 +617,22 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v11 -> v12: identity key usage limits (protocol version 14). Two
+         * nullable columns on `public_keys`, `totalBudget` (credits the key may
+         * spend over its lifetime) and `expiresAt` (block time in ms from which
+         * it can no longer sign), so a limited key persisted from the
+         * identity-keys changeset restores as limited. Additive: every
+         * pre-migration row reads back as a key without limits, which is what
+         * every key registered before protocol version 14 is.
+         */
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `public_keys` ADD COLUMN `totalBudget` INTEGER")
+                db.execSQL("ALTER TABLE `public_keys` ADD COLUMN `expiresAt` INTEGER")
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -635,6 +651,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
+                    MIGRATION_11_12,
                 )
                 .build()
 
