@@ -1,5 +1,6 @@
 use crate::drive::balances::total_tokens_root_supply_path;
 use crate::drive::tokens::lifecycle::estimated_costs::ESTIMATED_TOKEN_CONTRACT_LIFECYCLE_SIZE_BYTES;
+use crate::drive::tokens::lifecycle::pending_ledger_write;
 use crate::drive::tokens::paths::{
     token_balances_root_path, token_contract_infos_root_path, token_contract_lifecycles_root_path,
     token_contract_lifecycles_root_path_vec, token_identity_infos_root_path,
@@ -20,8 +21,7 @@ use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::contract_lifecycle::ContractTokenLifecycle;
 use dpp::tokens::status::TokenStatus;
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::{GroveOp, KeyInfoPath};
+use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
@@ -309,34 +309,15 @@ impl Drive {
                 ),
             }
         };
-        let pending_record_write = previous_batch_operations.as_deref().and_then(|operations| {
-            let lifecycles_path =
-                KeyInfoPath::from_known_owned_path(token_contract_lifecycles_root_path_vec());
-            let contract_key = Some(KeyInfo::KnownKey(contract_id.to_vec()));
-            operations.iter().find_map(|operation| match operation {
-                LowLevelDriveOperation::GroveOperation(grove_op)
-                    if grove_op.path == lifecycles_path && grove_op.key == contract_key =>
-                {
-                    Some(&grove_op.op)
-                }
-                _ => None,
-            })
-        });
+        let pending_record_write = pending_ledger_write(
+            previous_batch_operations.as_deref(),
+            &token_contract_lifecycles_root_path_vec(),
+            contract_id.as_slice(),
+        )?;
         match pending_record_write {
             Some(pending) if estimated_costs_only_with_layer_info.is_none() => {
-                let record = match pending {
-                    GroveOp::InsertOrReplace {
-                        element: Element::Item(bytes, _),
-                    }
-                    | GroveOp::Replace {
-                        element: Element::Item(bytes, _),
-                    } => ContractTokenLifecycle::deserialize_from_bytes(bytes.as_slice())?,
-                    _ => {
-                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "a pending contract token lifecycle write is not an item insert or replacement",
-                        )))
-                    }
-                };
+                let record =
+                    ContractTokenLifecycle::deserialize_from_bytes(pending.bytes.as_slice())?;
                 if record.is_wiped() {
                     return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
                         "contract {} is destroyed in this batch, it cannot issue a new token",
