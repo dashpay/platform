@@ -2,7 +2,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
-    is_referenced_system_agreement_property, DocumentPropertyReferenceTarget, DocumentPropertyType,
+    is_referenced_system_agreement_property, is_referring_system_agreement_property,
+    DocumentPropertyReferenceTarget, DocumentPropertyType,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::CREATOR_ID;
@@ -208,7 +209,11 @@ pub(super) fn validate_data_contract_references_v0(
             // `$ownerId` and `$creatorId` system identifiers, which then
             // must face an identifier on the referring side; `$creatorId`
             // further needs a referenced type that records creator ids at
-            // all, or again no document could ever agree.
+            // all, or again no document could ever agree. The referring side
+            // may be the writer's own `$ownerId` instead of a schema property,
+            // an identifier that lives on the transition: that pair is a
+            // write gate.
+            let writer_identifier_type = DocumentPropertyType::Identifier;
             for (referring_property, referenced_property) in property_agreement {
                 let invalid = |reason: &str| {
                     SimpleConsensusValidationResult::new_with_error(
@@ -226,20 +231,25 @@ pub(super) fn validate_data_contract_references_v0(
                         "the referring property cannot be the reference property itself",
                     ));
                 }
-                if referring_property.starts_with('$') {
-                    return Ok(invalid(
-                        "the referring property must be a schema property of the declaring \
-                         document type: its system properties cannot be referring properties",
-                    ));
-                }
                 let declaring_document_type = document_type.as_ref();
-                let Some(referring) = declaring_document_type
-                    .flattened_properties()
-                    .get(referring_property)
-                else {
-                    return Ok(invalid(
-                        "the declaring document type does not define the referring property",
-                    ));
+                let referring_type = if referring_property.starts_with('$') {
+                    if !is_referring_system_agreement_property(referring_property) {
+                        return Ok(invalid(
+                            "the referring side must be a schema property of the declaring \
+                             document type or its $ownerId",
+                        ));
+                    }
+                    &writer_identifier_type
+                } else {
+                    let Some(referring) = declaring_document_type
+                        .flattened_properties()
+                        .get(referring_property)
+                    else {
+                        return Ok(invalid(
+                            "the declaring document type does not define the referring property",
+                        ));
+                    };
+                    &referring.property_type
                 };
                 if referenced_property.starts_with('$') {
                     if !is_referenced_system_agreement_property(referenced_property) {
@@ -249,7 +259,7 @@ pub(super) fn validate_data_contract_references_v0(
                         ));
                     }
                     if !matches!(
-                        referring.property_type,
+                        referring_type,
                         DocumentPropertyType::Identifier
                             | DocumentPropertyType::IdentifierWithReference(_)
                     ) {
@@ -283,14 +293,14 @@ pub(super) fn validate_data_contract_references_v0(
                         "the referenced document type does not define the referenced property",
                     ));
                 };
-                if matches!(referring.property_type, DocumentPropertyType::Object(_))
+                if matches!(referring_type, DocumentPropertyType::Object(_))
                     || matches!(referenced.property_type, DocumentPropertyType::Object(_))
                 {
                     return Ok(invalid(
                         "agreement properties must be plain values, not object containers",
                     ));
                 }
-                if !same_value_kind(&referring.property_type, &referenced.property_type) {
+                if !same_value_kind(referring_type, &referenced.property_type) {
                     return Ok(invalid(
                         "the two properties must share one value kind: a cross-kind \
                          equality could never be satisfied",

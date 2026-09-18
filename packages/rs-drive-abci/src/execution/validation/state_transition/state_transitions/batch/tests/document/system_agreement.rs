@@ -22,15 +22,22 @@ mod system_agreement_tests {
     use dpp::state_transition::StateTransition;
 
     /// Shared with the contract-create registration tests, which pin that
-    /// the declaration itself is accepted.
-    const CONTRACT_PATH: &str = "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-system-valid.json";
+    /// the declarations themselves are accepted. `message.noteId` binds
+    /// `authorId` to the note's `$ownerId` and `originalAuthorId` to its
+    /// `$creatorId`.
+    const SYSTEM_CONTRACT_PATH: &str = "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-system-valid.json";
+
+    /// `message.noteId` binds the WRITER (`$ownerId`) to the note's
+    /// `$ownerId`: only the note's current owner may write a message on it.
+    const WRITER_CONTRACT_PATH: &str = "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-writer-valid.json";
 
     fn register_contract(
         platform: &TempPlatform<MockCoreRPCLike>,
+        path: &str,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> DataContract {
-        let mut contract = json_document_to_contract(CONTRACT_PATH, true, platform_version)
+        let mut contract = json_document_to_contract(path, true, platform_version)
             .expect("expected to parse the system agreement contract");
         contract.set_owner_id(owner_id);
         // A note records its creator id only under a format-1 config, which
@@ -265,7 +272,12 @@ mod system_agreement_tests {
         let (alice, alice_signer, alice_key) =
             setup_identity(&mut platform, 958, dash_to_credits!(1.0));
         let (bob, bob_signer, bob_key) = setup_identity(&mut platform, 450, dash_to_credits!(1.0));
-        let contract = register_contract(&platform, alice.id(), platform_version);
+        let contract = register_contract(
+            &platform,
+            SYSTEM_CONTRACT_PATH,
+            alice.id(),
+            platform_version,
+        );
 
         let note = create_note(
             &platform,
@@ -416,6 +428,181 @@ mod system_agreement_tests {
         assert_mismatch(
             &result,
             "$creatorId never changes, whoever owns the note now",
+        );
+    }
+
+    /// Submits a `message` on `note_id` owned (and signed) by `owner` under
+    /// the writer-gated contract, whose message carries no author fields.
+    #[allow(clippy::too_many_arguments)]
+    async fn submit_gated_message<S: Signer<IdentityPublicKey>>(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        contract: &DataContract,
+        owner: Identifier,
+        note_id: Identifier,
+        key: &IdentityPublicKey,
+        nonce: u64,
+        signer: &S,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> StateTransitionsProcessingResult {
+        let message_type = contract
+            .document_type_for_name("message")
+            .expect("message doctype exists");
+        let entropy = Bytes32::random_with_rng(rng);
+        let mut message = message_type
+            .random_document_with_identifier_and_entropy(
+                rng,
+                owner,
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random message");
+        message.set("noteId", Value::Identifier(note_id.to_buffer()));
+        let create = BatchTransition::new_document_creation_transition_from_document(
+            message,
+            message_type,
+            entropy.0,
+            key,
+            nonce,
+            0,
+            None,
+            signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the message create transition");
+        process_and_commit(platform, platform_state, &create, platform_version)
+    }
+
+    /// `{ "$ownerId": "$ownerId" }` is a write gate: only the note's current
+    /// owner may create a message on it. The gate follows a transfer of the
+    /// note, and it is checked at write time only, so a message written
+    /// before the transfer is not disturbed by it.
+    #[tokio::test]
+    async fn test_writer_owner_agreement_gates_creation_to_the_referenced_owner() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let mut rng = StdRng::seed_from_u64(4247);
+
+        let (alice, alice_signer, alice_key) =
+            setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+        let (bob, bob_signer, bob_key) = setup_identity(&mut platform, 450, dash_to_credits!(1.0));
+        let contract = register_contract(
+            &platform,
+            WRITER_CONTRACT_PATH,
+            alice.id(),
+            platform_version,
+        );
+
+        let note = create_note(
+            &platform,
+            &platform_state,
+            &contract,
+            alice.id(),
+            &alice_key,
+            2,
+            &alice_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+
+        // The note's owner may write; anyone else may not.
+        let result = submit_gated_message(
+            &platform,
+            &platform_state,
+            &contract,
+            alice.id(),
+            note.id(),
+            &alice_key,
+            3,
+            &alice_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        assert_eq!(
+            result.valid_count(),
+            1,
+            "the note's owner must pass the writer gate: {:?}",
+            result.execution_results()
+        );
+
+        let result = submit_gated_message(
+            &platform,
+            &platform_state,
+            &contract,
+            bob.id(),
+            note.id(),
+            &bob_key,
+            2,
+            &bob_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        assert_mismatch(
+            &result,
+            "an identity that does not own the note must be refused",
+        );
+
+        transfer_note(
+            &platform,
+            &platform_state,
+            &contract,
+            &note,
+            bob.id(),
+            &alice_key,
+            4,
+            &alice_signer,
+            platform_version,
+        )
+        .await;
+
+        // The gate follows the note to its new owner.
+        let result = submit_gated_message(
+            &platform,
+            &platform_state,
+            &contract,
+            bob.id(),
+            note.id(),
+            &bob_key,
+            3,
+            &bob_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        assert_eq!(
+            result.valid_count(),
+            1,
+            "after the transfer the new owner must pass the writer gate: {:?}",
+            result.execution_results()
+        );
+
+        let result = submit_gated_message(
+            &platform,
+            &platform_state,
+            &contract,
+            alice.id(),
+            note.id(),
+            &alice_key,
+            5,
+            &alice_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        assert_mismatch(
+            &result,
+            "the previous owner no longer passes the writer gate",
         );
     }
 }

@@ -3,8 +3,9 @@ use crate::data_contract::document_type::class_methods::apply_required_since::ap
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
-    is_referenced_system_agreement_property, property_names, DocumentProperty,
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentType,
+    is_referenced_system_agreement_property, is_referring_system_agreement_property,
+    property_names, DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
+    DocumentType,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -427,17 +428,17 @@ fn apply_property_reference_v0(
                                     ));
                                 }
                             }
-                            // The referring side is always a schema property: a
-                            // referring document's own system values live on the
-                            // transition, not in the data an agreement compares.
-                            // The referenced side may name a system property, but
-                            // only one a referenced document carries as an
-                            // identifier the agreement can read back.
-                            if referring_property.starts_with('$') {
+                            // Either side may name a system property, but only one
+                            // the agreement can read back as an identifier: the
+                            // writer's `$ownerId` on the referring side (a write
+                            // gate), `$ownerId` or `$creatorId` on the referenced
+                            // side.
+                            if referring_property.starts_with('$')
+                                && !is_referring_system_agreement_property(referring_property)
+                            {
                                 return Err(DataContractError::InvalidContractStructure(
-                                    "propertyAgreement keys must be schema properties of the \
-                                     declaring document type: system properties such as \
-                                     $ownerId cannot be referring properties"
+                                    "propertyAgreement keys must name a schema property of \
+                                     the declaring document type or its $ownerId"
                                         .to_string(),
                                 ));
                             }
@@ -828,17 +829,47 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_system_properties_on_the_referring_side_of_an_agreement() {
-        for referring in ["$ownerId", "$creatorId", "$id"] {
+    fn should_reject_other_system_properties_on_the_referring_side_of_an_agreement() {
+        for referring in ["$creatorId", "$id", "$createdAt"] {
             let err = try_document_type_from_schema(system_agreement_schema(json!({
                 referring: "$ownerId"
             })))
-            .expect_err("a system property cannot be the referring side");
+            .expect_err("only $ownerId may be the referring side");
 
             let message = err.to_string();
             assert!(
-                message.contains("cannot be referring properties"),
+                message.contains("declaring document type or its $ownerId"),
                 "unexpected error for {referring}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_parse_writer_owner_id_on_the_referring_side_of_an_agreement() {
+        for referenced in ["$ownerId", "$creatorId", "authorId"] {
+            let document_type = try_document_type_from_schema(system_agreement_schema(json!({
+                "$ownerId": referenced
+            })))
+            .expect("the writer's $ownerId should parse as the referring side");
+
+            let property_type = document_type
+                .as_ref()
+                .flattened_properties()
+                .get("postId")
+                .map(|p| p.property_type.clone())
+                .expect("property should be present");
+
+            let DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    property_agreement, ..
+                },
+            ) = property_type
+            else {
+                panic!("expected a permanentDocument reference");
+            };
+            assert_eq!(
+                property_agreement,
+                BTreeMap::from([("$ownerId".to_string(), referenced.to_string())])
             );
         }
     }

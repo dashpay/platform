@@ -130,6 +130,13 @@ impl Index {
                 .map(|index_property| {
                     if index_property.name == candidate.name {
                         Some(PreallocatedKeySource::ReferencedDocumentId)
+                    } else if index_property.name.starts_with('$') {
+                        // The referring document's own system properties are
+                        // never derived from the referenced document, even
+                        // when an agreement binds the writer's `$ownerId` to
+                        // it: that agreement is a write gate, and deriving an
+                        // owner-prefixed path from it is left for later.
+                        None
                     } else {
                         property_agreement
                             .get(&index_property.name)
@@ -287,6 +294,24 @@ mod tests {
                 }]
             );
         }
+    }
+
+    /// A writer gate (`{ "$ownerId": "$ownerId" }`) does not make an
+    /// owner-prefixed index preallocatable: the referring document's own
+    /// system properties never come from the referenced document.
+    #[test]
+    fn no_binding_through_a_writer_owner_agreement() {
+        let own_contract_id = Identifier::from([1u8; 32]);
+        let mut properties = IndexMap::new();
+        properties.insert(
+            "postId".to_string(),
+            identifier_reference_property("post", None, &[("$ownerId", "$ownerId")]),
+        );
+
+        let index = index_on(&["$ownerId", "postId"]);
+        assert!(index
+            .preallocation_bindings(&properties, own_contract_id)
+            .is_empty());
     }
 
     #[test]

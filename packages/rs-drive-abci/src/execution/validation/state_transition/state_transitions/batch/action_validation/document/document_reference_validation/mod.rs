@@ -3,6 +3,7 @@ pub mod v0;
 use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::block::block_info::BlockInfo;
+use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -22,10 +23,15 @@ pub(crate) trait DocumentReferenceValidation {
     /// those fields are validated. A reference also counts as changed when a
     /// property bound to it changed: a `propertyAgreement` referring property
     /// or an `identityPublicKey` key id property.
+    ///
+    /// `owner_id` is the writer, the transition's owner: a `propertyAgreement`
+    /// whose referring side is `$ownerId` compares it, since it lives on the
+    /// transition rather than in `document_data`.
     #[allow(clippy::too_many_arguments)]
     fn validate_document_references(
         &self,
         document_data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -39,6 +45,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
     fn validate_document_references(
         &self,
         document_data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -55,6 +62,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
         {
             0 => self.validate_document_references_v0(
                 document_data,
+                owner_id,
                 changed_fields,
                 platform,
                 block_info,

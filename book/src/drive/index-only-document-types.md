@@ -186,6 +186,14 @@ sentinel disappears (see the absence-aware `propertyAgreement` below).
   when the like is written, not when the post later moves. `$creatorId` is
   only recorded by transferable or tradeable types of a format-1 contract,
   which contract registration checks before accepting the declaration.
+  The referring side may in turn be the like's own `$ownerId`, the writer:
+  `{ "$ownerId": "$ownerId" }` lets only the post's current owner create
+  or replace a like on it, `{ "$ownerId": "$creatorId" }` only its
+  original creator. That is a write gate, checked at create and replace
+  like every agreement; a later transfer of either document is not
+  re-checked, so on a transferable referring type it governs minting, not
+  holding. A writer gate does not make an owner-prefixed index
+  preallocatable.
 - **Delete** is its own transition kind,
   `DocumentIndexOnlyDeleteTransition { base, data }` (`$action:
   "indexOnlyDelete"`), carrying the full value tuple (`$createdAt` under

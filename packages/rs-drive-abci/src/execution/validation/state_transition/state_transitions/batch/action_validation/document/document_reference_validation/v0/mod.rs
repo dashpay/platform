@@ -56,6 +56,7 @@ pub(crate) trait DocumentReferenceValidationV0 {
     fn validate_document_references_v0(
         &self,
         document_data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -69,6 +70,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
     fn validate_document_references_v0(
         &self,
         document_data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
         changed_fields: Option<&BTreeSet<String>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -91,6 +93,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
             contract,
             document_type,
             document_data,
+            owner_id,
             changed_fields,
             platform,
             block_info,
@@ -106,6 +109,7 @@ fn validate_document_type_references_v0(
     contract: &DataContract,
     document_type: DocumentTypeRef<'_>,
     document_data: &BTreeMap<String, Value>,
+    owner_id: Identifier,
     changed_fields: Option<&BTreeSet<String>>,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
@@ -325,10 +329,20 @@ fn validate_document_type_references_v0(
                         // mismatch, never absence — folding it into `None`
                         // would let two malformed sides "agree" as
                         // both-absent.
-                        let Ok(referring_value) =
-                            document_data.get_optional_at_path(referring_property)
-                        else {
-                            return Ok(mismatch());
+                        // The referring side is a schema property of the document
+                        // being written, or the writer's own `$ownerId`, which
+                        // lives on the transition rather than in its data: that
+                        // pair is a write gate, and the writer is `owner_id`.
+                        let referring_value: Option<Cow<Value>> = if referring_property == OWNER_ID
+                        {
+                            Some(Cow::Owned(Value::Identifier(owner_id.to_buffer())))
+                        } else {
+                            let Ok(referring_value) =
+                                document_data.get_optional_at_path(referring_property)
+                            else {
+                                return Ok(mismatch());
+                            };
+                            referring_value.map(Cow::Borrowed)
                         };
                         // The referenced side may name one of the two system
                         // identifiers a document carries outside its data:
@@ -370,7 +384,7 @@ fn validate_document_type_references_v0(
                             };
                         let Ok(referring_encoded) = document_type.serialize_value_for_key(
                             referring_property,
-                            referring_value,
+                            &referring_value,
                             platform_version,
                         ) else {
                             return Ok(mismatch());

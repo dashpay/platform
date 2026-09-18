@@ -120,8 +120,10 @@ pub enum DocumentPropertyReferenceTarget {
         /// document's value and the referenced document's value, checked by
         /// consensus at document write time (the referenced document is
         /// already fetched for existence validation, so agreement adds no
-        /// reads). The referring side is always a schema property of the
-        /// declaring document type. The referenced side is a schema
+        /// reads). The referring side is a schema property of the declaring
+        /// document type or its own `$ownerId`, the writer, which makes the
+        /// pair a write gate (see [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`]).
+        /// The referenced side is a schema
         /// property of the referenced document type or one of the system
         /// identifiers in [`REFERENCED_SYSTEM_AGREEMENT_PROPERTIES`]:
         /// `$ownerId`, which follows the referenced document through
@@ -154,14 +156,32 @@ pub enum DocumentPropertyReferenceTarget {
 /// the document through transfers), and `$creatorId`, the original creator
 /// (set once, and only recorded by transferable or tradeable document types
 /// of a format-1 contract). Both are identifiers, so the referring side must
-/// be an identifier property. The referring side is always a schema
-/// property: a referring document's own system values live on the
-/// transition, not in the data an agreement compares.
+/// be an identifier property. The referring side is a schema property or
+/// the writer's own `$ownerId`, see [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
 pub const REFERENCED_SYSTEM_AGREEMENT_PROPERTIES: [&str; 2] = [OWNER_ID, CREATOR_ID];
 
 /// Whether `name` is one of [`REFERENCED_SYSTEM_AGREEMENT_PROPERTIES`].
 pub fn is_referenced_system_agreement_property(name: &str) -> bool {
     REFERENCED_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)
+}
+
+/// The system properties of the REFERRING document that the referring side
+/// of a `propertyAgreement` pair may name, next to the declaring document
+/// type's schema properties: only `$ownerId`, the writer. Such a pair is a
+/// write gate: consensus refuses a create or replace unless the writer's id
+/// equals the referenced side, so the referenced document's owner (or its
+/// creator, or a named identifier) is the only identity that may write
+/// referring documents. Like every agreement it is checked when the
+/// referring document is written; a later transfer of either document is
+/// not re-checked, so on a transferable referring type the gate governs
+/// minting, not holding. The writer's id lives on the transition rather
+/// than in the document data, which is why it is threaded into write-time
+/// validation separately.
+pub const REFERRING_SYSTEM_AGREEMENT_PROPERTIES: [&str; 1] = [OWNER_ID];
+
+/// Whether `name` is one of [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
+pub fn is_referring_system_agreement_property(name: &str) -> bool {
+    REFERRING_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)
 }
 
 impl std::fmt::Display for DocumentPropertyReferenceTarget {

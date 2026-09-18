@@ -481,8 +481,20 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_system_properties_on_the_referring_side_of_an_agreement() {
-        for referring in ["$ownerId", "$creatorId"] {
+    fn should_accept_the_writer_owner_id_on_the_referring_side_of_an_agreement() {
+        for referenced in ["$ownerId", "$creatorId", "authorId"] {
+            let schema = document_schema_with_agreement(json!({ "$ownerId": referenced }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "expected the writer's $ownerId against {referenced} to be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_other_system_properties_on_the_referring_side_of_an_agreement() {
+        for referring in ["$creatorId", "$id", "$createdAt"] {
             let schema = document_schema_with_agreement(json!({ referring: "$ownerId" }));
 
             assert!(

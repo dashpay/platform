@@ -5603,6 +5603,40 @@ mod tests {
             );
         }
 
+        /// `{ "$ownerId": "$ownerId" }` makes the writer the referring side:
+        /// only the note's current owner may write a message on it.
+        #[tokio::test]
+        async fn should_register_contract_with_writer_owner_agreement() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-writer-valid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// The writer is an identifier, so the referenced side must be one too.
+        #[tokio::test]
+        async fn should_reject_writer_owner_agreement_against_a_non_identifier_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-writer-kind-mismatch.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
         #[tokio::test]
         async fn should_register_contract_with_valid_identity_key_reference() {
             let result = run_contract_create(

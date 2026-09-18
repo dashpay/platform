@@ -60,7 +60,10 @@ export type DocumentPropertyReferenceTarget =
        * the referenced document's property (code 40127). The referenced
        * side may also be `$ownerId` or `$creatorId`, the referenced
        * document's current owner or original creator, against an
-       * identifier property on the referring side. Absent — not
+       * identifier property on the referring side. The referring side may
+       * be the writer's own `$ownerId`, which makes the pair a write gate:
+       * only an identity equal to the referenced side may create or
+       * replace the document. Absent — not
        * `{}`-valued — when the declaration carries none.
        */
       propertyAgreement?: Record<string, string>;
