@@ -143,9 +143,16 @@ pub(crate) fn restore_provider_platform_node_pool(
             .accounts
             .provider_platform_keys
             .as_ref()
-            .and_then(|account| account.get_address_info(&address))
+            .and_then(|account| {
+                account
+                    .managed_account_type()
+                    .address_pools()
+                    .into_iter()
+                    .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+                    .and_then(|pool| pool.info_at_index(index))
+            })
         {
-            if existing.index != index
+            if existing.address != address
                 || existing.script_pubkey != script_pubkey
                 || existing.public_key != Some(PublicKeyType::EdDSA(public_key.to_vec()))
             {
@@ -263,6 +270,30 @@ fn restore_indexed_pools(
         }
     }
     Ok(())
+}
+
+/// Check that a snapshot includes exactly the currently registered account identities.
+pub(crate) fn snapshot_matches_manifest(
+    snapshot: &ManagedWalletInfo,
+    registered: &ManagedWalletInfo,
+) -> bool {
+    fn account_types(info: &ManagedWalletInfo) -> std::collections::BTreeSet<AccountType> {
+        info.accounts
+            .all_accounts()
+            .into_iter()
+            .map(|account| account.managed_account_type().to_account_type())
+            .chain(
+                info.accounts
+                    .all_platform_accounts()
+                    .into_iter()
+                    .map(|account| AccountType::PlatformPayment {
+                        account: account.account,
+                        key_class: account.key_class,
+                    }),
+            )
+            .collect()
+    }
+    account_types(snapshot) == account_types(registered)
 }
 
 /// Restore persisted address pools without changing Core financial or sync state.
@@ -865,6 +896,62 @@ mod tests {
                 account_xpub: a.account_xpub,
             })
             .collect()
+    }
+
+    #[test]
+    fn snapshot_manifest_comparison_includes_provider_and_platform_accounts() {
+        use key_wallet::account::account_collection::PlatformPaymentAccountKey;
+        use key_wallet::managed_account::ManagedPlatformAccount;
+        use key_wallet::{AddressPool, DerivationPath};
+        let wallet = Wallet::from_seed_bytes(
+            [0xED; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let registered = ManagedWalletInfo::from_wallet(&wallet, 1);
+        let mut snapshot = registered.clone();
+        snapshot.metadata.synced_height = 100;
+        assert!(
+            snapshot_matches_manifest(&snapshot, &registered),
+            "sync progress is not account configuration"
+        );
+        snapshot.accounts.provider_platform_keys = None;
+        assert!(!snapshot_matches_manifest(&snapshot, &registered));
+        snapshot = registered.clone();
+        snapshot.accounts.coinjoin_accounts.remove(&0);
+        assert!(!snapshot_matches_manifest(&snapshot, &registered));
+        snapshot = registered.clone();
+        snapshot.accounts.platform_payment_accounts.insert(
+            PlatformPaymentAccountKey {
+                account: 7,
+                key_class: 1,
+            },
+            ManagedPlatformAccount::new(
+                7,
+                1,
+                AddressPool::new_without_generation(
+                    DerivationPath::default(),
+                    AddressPoolType::Absent,
+                    0,
+                    Network::Testnet,
+                ),
+                true,
+            ),
+        );
+        assert!(!snapshot_matches_manifest(&snapshot, &registered));
+        let mut same_account_other_class = snapshot.clone();
+        same_account_other_class
+            .accounts
+            .platform_payment_accounts
+            .values_mut()
+            .find(|account| account.account == 7)
+            .unwrap()
+            .key_class = 2;
+        assert!(!snapshot_matches_manifest(
+            &snapshot,
+            &same_account_other_class
+        ));
     }
 
     #[test]

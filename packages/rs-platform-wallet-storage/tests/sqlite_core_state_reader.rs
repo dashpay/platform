@@ -46,6 +46,36 @@ fn store_snapshot(
             wallet.wallet_id,
             PlatformWalletChangeSet {
                 account_registrations: manifest_for(wallet),
+                provider_key_account_registrations: {
+                    use key_wallet::account::AccountType;
+                    use platform_wallet::changeset::{
+                        ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+                    };
+                    let mut entries = Vec::new();
+                    if let Some(account) = wallet
+                        .accounts
+                        .bls_account_of_type(AccountType::ProviderOperatorKeys)
+                    {
+                        entries.push(ProviderKeyAccountEntry {
+                            account_type: AccountType::ProviderOperatorKeys,
+                            extended_public_key: ProviderKeyExtendedPubKey::Bls(
+                                account.bls_public_key.clone(),
+                            ),
+                        });
+                    }
+                    if let Some(account) = wallet
+                        .accounts
+                        .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+                    {
+                        entries.push(ProviderKeyAccountEntry {
+                            account_type: AccountType::ProviderPlatformKeys,
+                            extended_public_key: ProviderKeyExtendedPubKey::EdDSA(
+                                account.ed25519_public_key.clone(),
+                            ),
+                        });
+                    }
+                    entries
+                },
                 core_wallet_snapshot: Some(info),
                 ..Default::default()
             },
