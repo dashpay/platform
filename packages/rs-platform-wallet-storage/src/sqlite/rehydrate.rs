@@ -1157,7 +1157,7 @@ mod tests {
         }
     }
 
-    fn ensure_derived_failure_fixture(seed: u8) -> GapRefillFixture {
+    fn sparse_pool_fixture(seed: u8) -> GapRefillFixture {
         use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -1194,7 +1194,9 @@ mod tests {
                 .pop()
                 .expect("one derived address");
             let missing_index = probe.highest_generated.expect("derived index");
-            pool.highest_generated = Some(missing_index);
+            restore_indexed_address(pool, &key_source, missing_index + 1)
+                .expect("restore a later saved address without filling the hole");
+            assert!(pool.address_at_index(missing_index).is_none());
             (marked, pool.highest_generated, pool.gap_limit)
         };
 
@@ -1296,32 +1298,33 @@ mod tests {
     }
 
     #[test]
-    fn ensure_derived_failure_is_strictly_fatal_and_recovery_is_deferred() {
-        let mut strict_fixture = ensure_derived_failure_fixture(24);
-        let missing_index = strict_fixture.generated_before.expect("missing index");
-        let err = rehydrate_fixture(&mut strict_fixture, &LoadCtx::strict())
-            .expect_err("strict must reject the inconsistent pool high-water mark");
-        assert!(matches!(
-            err,
-            WalletStorageError::RehydrationEnsureDerivedFailed { index }
-                if index == missing_index
-        ));
-
-        let mut recovery_fixture = ensure_derived_failure_fixture(25);
-        let generated_before = recovery_fixture.generated_before;
-        let ctx = LoadCtx::recovery();
-        rehydrate_fixture(&mut recovery_fixture, &ctx)
-            .expect("recovery must defer the inconsistent pool");
-        let degradation = ctx.degradation();
-        assert_eq!(
-            degradation.by_site.get(&LoadSite::RehydrationEnsureDerived),
-            Some(&1)
-        );
-        assert_eq!(degradation.by_site.len(), 1);
-        assert_eq!(
-            external_pool_state(&recovery_fixture.wallet_info),
-            generated_before
-        );
+    fn sparse_pool_hole_is_derived_and_marked_used_under_both_policies() {
+        for (seed, ctx) in [(24, LoadCtx::strict()), (25, LoadCtx::recovery())] {
+            let mut fixture = sparse_pool_fixture(seed);
+            let missing_index = fixture.generated_before.unwrap() - 1;
+            rehydrate_fixture(&mut fixture, &ctx)
+                .expect("a derivable sparse address is recoverable");
+            assert!(!ctx.degradation().degraded);
+            let accounts = fixture.wallet_info.accounts.all_funding_accounts();
+            let pool = accounts[0]
+                .managed_account_type()
+                .address_pools()
+                .into_iter()
+                .find(|pool| pool.is_external())
+                .unwrap();
+            let info = pool
+                .info_at_index(missing_index)
+                .expect("the missing address was restored");
+            assert_eq!(info.address, fixture.marked);
+            assert!(info.is_used());
+            assert_eq!(pool.address_index(&fixture.marked), Some(missing_index));
+            assert_eq!(
+                pool.script_pubkey_index(&info.script_pubkey),
+                Some(missing_index)
+            );
+            assert!(pool.used_indices.contains(&missing_index));
+            assert!(pool.highest_generated >= Some(missing_index + fixture.gap_limit));
+        }
     }
 
     /// A pool whose refill target crosses the `2^31` non-hardened
