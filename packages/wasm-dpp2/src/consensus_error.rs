@@ -62,6 +62,39 @@ impl DocumentReferenceErrorCodeWasm {
     }
 }
 
+/// Consensus error codes emitted by the immutable-property check on document
+/// replaces (`immutable` / `immutableAllowSetting`, protocol version 14+).
+///
+/// Branch on an error's `code` against this instead of matching its message:
+///
+/// ```js
+/// try {
+///   await sdk.documents.replace({ document, identityKey, signer });
+/// } catch (e) {
+///   if (e.code === DocumentImmutabilityErrorCode.DocumentImmutablePropertyChanged) {
+///     // the replace touched a property the document type freezes
+///   }
+/// }
+/// ```
+#[wasm_bindgen(js_name = "DocumentImmutabilityErrorCode")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocumentImmutabilityErrorCodeWasm {
+    /// The replace changed, added or removed a property the document type
+    /// lists under `immutable`, and the change was not the one first-time
+    /// set `immutableAllowSetting` permits.
+    DocumentImmutablePropertyChanged = 40128,
+}
+
+impl DocumentImmutabilityErrorCodeWasm {
+    /// The immutability error a code names, or `None` for any other code.
+    fn from_code(code: u32) -> Option<Self> {
+        match code {
+            40128 => Some(Self::DocumentImmutablePropertyChanged),
+            _ => None,
+        }
+    }
+}
+
 #[wasm_bindgen(js_name = "ConsensusError")]
 pub struct ConsensusErrorWasm(ConsensusError);
 
@@ -95,6 +128,13 @@ impl ConsensusErrorWasm {
     pub fn document_reference_error_code(&self) -> Option<DocumentReferenceErrorCodeWasm> {
         DocumentReferenceErrorCodeWasm::from_code(self.0.code())
     }
+
+    /// The immutable-property error this is, or `undefined` when it is not
+    /// code 40128.
+    #[wasm_bindgen(getter = "documentImmutabilityErrorCode")]
+    pub fn document_immutability_error_code(&self) -> Option<DocumentImmutabilityErrorCodeWasm> {
+        DocumentImmutabilityErrorCodeWasm::from_code(self.0.code())
+    }
 }
 
 impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
@@ -114,6 +154,38 @@ mod tests {
 
     fn id() -> Identifier {
         Identifier::from([1u8; 32])
+    }
+
+    /// Built from the real DPP error rather than a code literal, for the
+    /// same reason as `cases()` below: the code comes back through
+    /// [`ErrorWithCode`], which is the source of truth the JS enum mirrors.
+    #[test]
+    fn immutability_error_code_mirrors_the_dpp_error() {
+        use dpp::consensus::state::document::document_immutable_property_changed_error::DocumentImmutablePropertyChangedError;
+
+        let error: ConsensusError = StateError::DocumentImmutablePropertyChangedError(
+            DocumentImmutablePropertyChangedError::new(
+                id(),
+                "post".to_string(),
+                "author".to_string(),
+            ),
+        )
+        .into();
+
+        assert_eq!(
+            DocumentImmutabilityErrorCodeWasm::from_code(error.code()),
+            Some(DocumentImmutabilityErrorCodeWasm::DocumentImmutablePropertyChanged)
+        );
+        assert_eq!(
+            DocumentImmutabilityErrorCodeWasm::DocumentImmutablePropertyChanged as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_immutability_error_code(),
+            Some(DocumentImmutabilityErrorCodeWasm::DocumentImmutablePropertyChanged)
+        );
+        // A neighbouring code is not claimed.
+        assert_eq!(DocumentImmutabilityErrorCodeWasm::from_code(40127), None);
     }
 
     /// The six reference-validation errors, paired with the JS enum variant
