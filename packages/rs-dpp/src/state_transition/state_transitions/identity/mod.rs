@@ -4,6 +4,7 @@ pub mod identity_create_transition;
 pub mod identity_credit_transfer_to_addresses_transition;
 pub mod identity_credit_transfer_transition;
 pub mod identity_credit_withdrawal_transition;
+pub mod identity_key_limits_update_transition;
 pub mod identity_topup_from_addresses_transition;
 pub mod identity_topup_transition;
 pub mod identity_update_transition;

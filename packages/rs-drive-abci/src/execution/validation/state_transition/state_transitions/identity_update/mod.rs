@@ -132,9 +132,11 @@ mod tests {
         setup_add_key_to_identity, setup_identity_return_master_key,
     };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use crate::test::helpers::contract_groups::{register_group, single_owner_info};
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::codes::ErrorWithCode;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::dashcore::key::{Keypair, Secp256k1};
@@ -692,6 +694,200 @@ mod tests {
             .drive
             .grove
             .commit_transaction(tx)
+            .unwrap()
+            .unwrap();
+        let fetched = platform
+            .drive
+            .fetch_identity_keys_as_partial_identity(
+                IdentityKeysRequest::new_specific_key_query(&identity.id().to_buffer(), 2),
+                None,
+                platform_version,
+            )
+            .unwrap()
+            .unwrap();
+        let revoked = fetched.loaded_public_keys.get(&2).unwrap();
+        assert_eq!(revoked.disabled_at(), Some(50));
+        assert_eq!(revoked.contract_bounds(), Some(&bounds));
+        assert!(platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .unwrap()
+            .is_empty());
+    }
+
+    /// A key bound to a contract group is registered through the whole pipeline only once the
+    /// group exists; it is then indexed under the group, and stays bound after revocation.
+    #[tokio::test]
+    async fn should_register_and_revoke_an_authentication_key_bound_to_a_contract_group() {
+        use drive::drive::identity::key::fetch::IdentityKeysRequest;
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, signer, _, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let contract_group_id = Identifier::from([0x61; 32]);
+        let bounds = ContractBounds::ContractGroup {
+            id: contract_group_id,
+        };
+        let platform_state = platform.state.load();
+        let secp = Secp256k1::new();
+        let mut rng = StdRng::seed_from_u64(293);
+        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let build =
+            |revision: u64, nonce: u64, add: Vec<IdentityPublicKeyInCreationV0>, disable| {
+                StateTransition::from(IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                    identity_id: identity.id(),
+                    revision,
+                    nonce,
+                    add_public_keys: add
+                        .into_iter()
+                        .map(IdentityPublicKeyInCreation::V0)
+                        .collect(),
+                    disable_public_keys: disable,
+                    user_fee_increase: 0,
+                    signature_public_key_id: key.id(),
+                    signature: Default::default(),
+                }))
+            };
+        let mut signed_updates = Vec::new();
+        for (revision, nonce) in [(1, 1), (1, 2)] {
+            let mut new_key = IdentityPublicKeyInCreationV0 {
+                id: 2,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                key_type: ECDSA_SECP256K1,
+                read_only: false,
+                data: new_key_pair.public_key().serialize().to_vec().into(),
+                signature: Default::default(),
+                contract_bounds: Some(bounds.clone()),
+            };
+            let signable_bytes = build(revision, nonce, vec![new_key.clone()], vec![])
+                .signable_bytes()
+                .unwrap();
+            new_key.signature =
+                signer::sign(&signable_bytes, &new_key_pair.secret_key().secret_bytes())
+                    .unwrap()
+                    .to_vec()
+                    .into();
+            let mut update = build(revision, nonce, vec![new_key], vec![]);
+            update.set_signature(signer.sign(&key, signable_bytes.as_slice()).await.unwrap());
+            signed_updates.push(update);
+        }
+
+        // The group does not exist yet: a paid failure that registers nothing.
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![signed_updates[0].serialize_to_bytes().unwrap()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError { error, .. }]
+                if error.code() == 41001
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+
+        register_group(
+            &platform,
+            contract_group_id,
+            &single_owner_info(Identifier::from([0x60; 32]), None, None),
+            platform_version,
+        );
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![signed_updates[1].serialize_to_bytes().unwrap()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+
+        // The key is indexed as the current authentication key of the group.
+        let group_keys_request = || {
+            IdentityKeysRequest::new_contract_group_authentication_keys_query(
+                identity.id().to_buffer(),
+                contract_group_id.to_buffer(),
+            )
+        };
+        let indexed = platform
+            .drive
+            .fetch_identity_keys_as_partial_identity(group_keys_request(), None, platform_version)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            indexed
+                .loaded_public_keys
+                .get(&2)
+                .unwrap()
+                .contract_bounds(),
+            Some(&bounds)
+        );
+
+        // Revocation through the master key refreshes the group references and keeps the
+        // bounds on the disabled key.
+        let mut revoke = build(2, 3, vec![], vec![2]);
+        revoke.set_signature(
+            signer
+                .sign(&key, &revoke.signable_bytes().unwrap())
+                .await
+                .unwrap(),
+        );
+        let block = BlockInfo {
+            time_ms: 50,
+            ..Default::default()
+        };
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![revoke.serialize_to_bytes().unwrap()],
+                &platform_state,
+                &block,
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
             .unwrap()
             .unwrap();
         let fetched = platform
@@ -2776,5 +2972,226 @@ mod tests {
             processing_result.execution_results().as_slice(),
             [StateTransitionExecutionResult::PaidConsensusError { .. }]
         );
+    }
+    mod key_limits {
+        use super::*;
+        use dpp::consensus::codes::ErrorWithCode;
+        use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+        use dpp::identity::{IdentityPublicKey, TimestampMillis};
+        use dpp::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
+        use drive::drive::identity::key::fetch::{
+            IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
+        };
+
+        const IDENTITY_PUBLIC_KEY_LIMITS_NOT_ALLOWED: u32 = 10536;
+        const INVALID_IDENTITY_PUBLIC_KEY_BUDGET: u32 = 10537;
+        const IDENTITY_PUBLIC_KEY_ALREADY_EXPIRED: u32 = 40219;
+
+        const BLOCK_TIME_MS: TimestampMillis = 1_000_000;
+        const NEW_KEY_ID: u32 = 2;
+
+        struct AddedKey {
+            purpose: Purpose,
+            security_level: SecurityLevel,
+            total_budget: Option<u64>,
+            expires_at: Option<TimestampMillis>,
+        }
+
+        /// Processes an identity update, signed by the master key, that adds one version 1 key
+        /// with the given limits, and gives back the platform to look at the outcome.
+        async fn add_key(
+            added_key: AddedKey,
+        ) -> (
+            crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+            Identifier,
+            StateTransitionExecutionResult,
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, _, master_key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+            let platform_state = platform.state.load();
+
+            let secp = Secp256k1::new();
+            let mut rng = StdRng::seed_from_u64(292);
+            let new_key_pair = Keypair::new(&secp, &mut rng);
+            let mut new_key = IdentityPublicKeyInCreationV1 {
+                id: NEW_KEY_ID,
+                purpose: added_key.purpose,
+                security_level: added_key.security_level,
+                key_type: ECDSA_SECP256K1,
+                read_only: false,
+                data: new_key_pair.public_key().serialize().to_vec().into(),
+                contract_bounds: None,
+                total_budget: added_key.total_budget,
+                expires_at: added_key.expires_at,
+                signature: Default::default(),
+            };
+
+            let transition_adding = |new_key: IdentityPublicKeyInCreationV1| -> StateTransition {
+                let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                    identity_id: identity.id(),
+                    revision: 1,
+                    nonce: 1,
+                    add_public_keys: vec![new_key.into()],
+                    disable_public_keys: vec![],
+                    user_fee_increase: 0,
+                    signature_public_key_id: master_key.id(),
+                    signature: Default::default(),
+                }
+                .into();
+                update_transition.into()
+            };
+
+            // The limits are part of the signable bytes: the new key and the master key both
+            // sign over them.
+            let signable_bytes = transition_adding(new_key.clone())
+                .signable_bytes()
+                .expect("expected signable bytes");
+            new_key.signature =
+                signer::sign(&signable_bytes, &new_key_pair.secret_key().secret_bytes())
+                    .expect("expected to sign")
+                    .to_vec()
+                    .into();
+
+            let mut update_transition = transition_adding(new_key);
+            update_transition.set_signature(
+                signer
+                    .sign(&master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![update_transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize")],
+                    &platform_state,
+                    &BlockInfo {
+                        time_ms: BLOCK_TIME_MS,
+                        ..Default::default()
+                    },
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            let execution = processing_result.execution_results()[0].clone();
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+            drop(platform_state);
+            (platform, identity.id(), execution)
+        }
+
+        fn stored_key(
+            platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+            identity_id: Identifier,
+        ) -> Option<IdentityPublicKey> {
+            platform
+                .drive
+                .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
+                    IdentityKeysRequest::new_specific_key_query(identity_id.as_bytes(), NEW_KEY_ID),
+                    None,
+                    PlatformVersion::latest(),
+                )
+                .expect("expected to fetch keys")
+                .remove(&NEW_KEY_ID)
+        }
+
+        #[tokio::test]
+        async fn should_register_a_key_with_a_budget_and_an_expiry() {
+            let (platform, identity_id, execution) = add_key(AddedKey {
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                total_budget: Some(5_000_000),
+                expires_at: Some(BLOCK_TIME_MS + 1),
+            })
+            .await;
+            assert_matches!(
+                execution,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+
+            let key = stored_key(&platform, identity_id).expect("expected the new key");
+            assert_eq!(key.total_budget(), Some(5_000_000));
+            assert_eq!(key.expires_at(), Some(BLOCK_TIME_MS + 1));
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_identity_key_remaining_budget(
+                        identity_id.to_buffer(),
+                        NEW_KEY_ID,
+                        None,
+                        PlatformVersion::latest()
+                    )
+                    .expect("expected to fetch the remaining budget"),
+                Some(5_000_000),
+                "a new key has its whole budget left"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_paid_a_key_that_is_already_expired() {
+            // Seconds instead of milliseconds is the usual way to get here.
+            let (platform, identity_id, execution) = add_key(AddedKey {
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                total_budget: None,
+                expires_at: Some(BLOCK_TIME_MS),
+            })
+            .await;
+            assert!(
+                matches!(&execution, StateTransitionExecutionResult::PaidConsensusError { error, .. } if error.code() == IDENTITY_PUBLIC_KEY_ALREADY_EXPIRED),
+                "{execution:?}"
+            );
+            assert_eq!(stored_key(&platform, identity_id), None);
+        }
+
+        #[tokio::test]
+        async fn should_reject_limits_on_a_key_that_may_not_carry_them() {
+            for (purpose, security_level) in [
+                (Purpose::TRANSFER, SecurityLevel::CRITICAL),
+                (Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            ] {
+                let (platform, identity_id, execution) = add_key(AddedKey {
+                    purpose,
+                    security_level,
+                    total_budget: Some(5_000_000),
+                    expires_at: None,
+                })
+                .await;
+                assert!(
+                    matches!(&execution, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.code() == IDENTITY_PUBLIC_KEY_LIMITS_NOT_ALLOWED),
+                    "{purpose:?} {security_level:?}: {execution:?}"
+                );
+                assert_eq!(stored_key(&platform, identity_id), None);
+            }
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_budget_of_zero() {
+            let (_, _, execution) = add_key(AddedKey {
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                total_budget: Some(0),
+                expires_at: None,
+            })
+            .await;
+            assert!(
+                matches!(&execution, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.code() == INVALID_IDENTITY_PUBLIC_KEY_BUDGET),
+                "{execution:?}"
+            );
+        }
     }
 }

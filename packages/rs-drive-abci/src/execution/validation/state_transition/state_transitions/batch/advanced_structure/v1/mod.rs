@@ -1,6 +1,9 @@
 use crate::error::Error;
 use dpp::consensus::signature::ContractBoundedKeyOutOfBoundsError;
+use dpp::contract_group::{ContractGroupMember, ContractGroupMembership};
+use dpp::identity::contract_bounds::BatchedTransitionBoundsCheck;
 use dpp::identity::Purpose;
+use std::collections::BTreeSet;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
 use dpp::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
@@ -97,13 +100,60 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
         }
 
         // A contract-bound AUTHENTICATION key may only act inside its contract (and document
-        // type). The signer is authenticated, so an out-of-bounds member is a paid failure.
+        // type), or inside the members of its contract group. The signer is authenticated, so
+        // an out-of-bounds member is a paid failure.
         if signing_key.purpose() == Purpose::AUTHENTICATION {
             if let Some(bounds) = signing_key.contract_bounds() {
-                if self
-                    .transitions_iter()
-                    .any(|member| !bounds.allows_batched_transition(member))
-                {
+                let mut out_of_bounds = false;
+                let mut billed_contracts = BTreeSet::new();
+                for member in self.transitions_iter() {
+                    match bounds.check_batched_transition(member) {
+                        BatchedTransitionBoundsCheck::Allowed => {}
+                        BatchedTransitionBoundsCheck::Denied => {
+                            out_of_bounds = true;
+                            break;
+                        }
+                        BatchedTransitionBoundsCheck::RequiresContractGroupMembership {
+                            contract_group_id,
+                            contract_id,
+                            member,
+                        } => {
+                            // The transformer resolved the member contract's group
+                            // memberships into the action, with the fee of that read. The
+                            // fee is billed here, once per contract, where the answer is
+                            // used. The whole contract or the exact document type or token
+                            // must belong to the key's group.
+                            let resolved = action.contract_group_memberships(&contract_id).ok_or(
+                                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                                    "the batch transformer must resolve contract group memberships for a batch signed by a group-bound key",
+                                )),
+                            )?;
+                            if billed_contracts.insert(contract_id) {
+                                execution_context.add_operation(
+                                    ValidationOperation::PrecalculatedOperation(
+                                        resolved.fee.clone(),
+                                    ),
+                                );
+                            }
+                            let memberships = &resolved.memberships;
+                            let whole_contract = ContractGroupMembership {
+                                contract_group_id,
+                                member: ContractGroupMember::Contract,
+                            };
+                            let exact = ContractGroupMembership {
+                                contract_group_id,
+                                member,
+                            };
+                            if !memberships.contains(&whole_contract)
+                                && !memberships.contains(&exact)
+                            {
+                                out_of_bounds = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if out_of_bounds {
                     let first = self.first_transition().ok_or(Error::Execution(
                         ExecutionError::CorruptedCodeExecution("empty validated batch"),
                     ))?;

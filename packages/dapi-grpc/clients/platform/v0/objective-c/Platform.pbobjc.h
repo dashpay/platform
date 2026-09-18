@@ -229,6 +229,10 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0;
 @class GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0;
 @class GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0;
+@class GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0;
+@class GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0;
+@class GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry;
+@class GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets;
 @class GetIdentityKeysRequest_GetIdentityKeysRequestV0;
 @class GetIdentityKeysResponse_GetIdentityKeysResponseV0;
 @class GetIdentityKeysResponse_GetIdentityKeysResponseV0_Keys;
@@ -1220,6 +1224,154 @@ GPB_FINAL @interface GetIdentityContractNonceResponse_GetIdentityContractNonceRe
  * Clears whatever value was set for the oneof 'result'.
  **/
 void GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_ClearResultOneOfCase(GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0 *message);
+
+#pragma mark - GetIdentityKeysRemainingBudgetsRequest
+
+typedef GPB_ENUM(GetIdentityKeysRemainingBudgetsRequest_FieldNumber) {
+  GetIdentityKeysRemainingBudgetsRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentityKeysRemainingBudgetsRequest_Version_OneOfCase) {
+  GetIdentityKeysRemainingBudgetsRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityKeysRemainingBudgetsRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * What is left of the budgets of keys of one identity. A key may carry a
+ * total budget (protocol version 14); the key itself never changes, so what
+ * remains of it is tracked next to it and read with this query.
+ **/
+GPB_FINAL @interface GetIdentityKeysRemainingBudgetsRequest : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityKeysRemainingBudgetsRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentityKeysRemainingBudgetsRequest_ClearVersionOneOfCase(GetIdentityKeysRemainingBudgetsRequest *message);
+
+#pragma mark - GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0
+
+typedef GPB_ENUM(GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0_FieldNumber) {
+  GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0_FieldNumber_IdentityId = 1,
+  GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0_FieldNumber_KeyIdsArray = 2,
+  GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0_FieldNumber_Prove = 3,
+};
+
+GPB_FINAL @interface GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0 : GPBMessage
+
+/** ID of the identity */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
+
+/** IDs of the keys to look up, at least one */
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Array *keyIdsArray;
+/** The number of items in @c keyIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger keyIdsArray_Count;
+
+/** Flag to request a proof as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetIdentityKeysRemainingBudgetsResponse
+
+typedef GPB_ENUM(GetIdentityKeysRemainingBudgetsResponse_FieldNumber) {
+  GetIdentityKeysRemainingBudgetsResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentityKeysRemainingBudgetsResponse_Version_OneOfCase) {
+  GetIdentityKeysRemainingBudgetsResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityKeysRemainingBudgetsResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentityKeysRemainingBudgetsResponse : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityKeysRemainingBudgetsResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentityKeysRemainingBudgetsResponse_ClearVersionOneOfCase(GetIdentityKeysRemainingBudgetsResponse *message);
+
+#pragma mark - GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0
+
+typedef GPB_ENUM(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_FieldNumber) {
+  GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_FieldNumber_KeysRemainingBudgets = 1,
+  GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_FieldNumber_Proof = 2,
+  GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_Result_OneOfCase) {
+  GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_Result_OneOfCase_KeysRemainingBudgets = 1,
+  GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** The remaining budgets */
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets *keysRemainingBudgets;
+
+/** Proof of the remaining budgets, if requested */
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_ClearResultOneOfCase(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0 *message);
+
+#pragma mark - GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry
+
+typedef GPB_ENUM(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry_FieldNumber) {
+  GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry_FieldNumber_KeyId = 1,
+  GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry_FieldNumber_RemainingBudget = 2,
+};
+
+GPB_FINAL @interface GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry : GPBMessage
+
+/** ID of the key */
+@property(nonatomic, readwrite) uint32_t keyId;
+
+/**
+ * Credits left of the key's total budget. Absent when the key has no
+ * budget (or does not exist). Zero means the key can no longer sign.
+ **/
+@property(nonatomic, readwrite) uint64_t remainingBudget;
+
+@property(nonatomic, readwrite) BOOL hasRemainingBudget;
+@end
+
+#pragma mark - GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets
+
+typedef GPB_ENUM(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets_FieldNumber) {
+  GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets : GPBMessage
+
+/** One entry per requested key */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
 
 #pragma mark - GetIdentityBalanceResponse
 

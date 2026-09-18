@@ -10,6 +10,9 @@ pub struct DPPStateTransitionSerializationVersions {
     pub identity_create_from_addresses_state_transition: FeatureVersionBounds,
     pub identity_create_state_transition: FeatureVersionBounds,
     pub identity_update_state_transition: FeatureVersionBounds,
+    /// `IdentityKeyLimitsUpdate` (protocol version 14); the transition itself is gated by
+    /// `is_allowed`, this only versions its serialization.
+    pub identity_key_limits_update_state_transition: FeatureVersionBounds,
     pub identity_top_up_state_transition: FeatureVersionBounds,
     pub identity_top_up_from_addresses_state_transition: FeatureVersionBounds,
     pub identity_credit_withdrawal_state_transition: FeatureVersionBounds,

@@ -110,7 +110,8 @@ impl DecodedPubkeyRow {
 ///   u8   purpose           (DPP Purpose discriminant, 0 = AUTHENTICATION)
 ///   u8   security_level    (DPP SecurityLevel discriminant, 0 = MASTER)
 ///   u8   read_only         (0 / 1 — any other byte is rejected)
-///   u8   contract_bounds_kind (0 none, 1 SingleContract, 2 SingleContractDocumentType)
+///   u8   contract_bounds_kind (0 none, 1 SingleContract, 2 SingleContractDocumentType,
+///                             3 ContractGroup)
 ///   u16  pubkey_len
 ///   u8[pubkey_len]  pubkey_bytes  (compressed pubkey, or 20-byte HASH160)
 ///   if contract_bounds_kind != 0:
@@ -180,9 +181,9 @@ pub(crate) fn parse_pubkey_rows(bytes: &[u8]) -> Result<Vec<DecodedPubkeyRow>, S
             }
         };
         let contract_bounds_kind = fixed[8];
-        if contract_bounds_kind > 2 {
+        if contract_bounds_kind > 3 {
             return Err(format!(
-                "pubkey blob row {i} contractBoundsKind must be 0, 1 or 2, got {contract_bounds_kind}"
+                "pubkey blob row {i} contractBoundsKind must be 0, 1, 2 or 3, got {contract_bounds_kind}"
             ));
         }
         let pubkey_len = u16::from_be_bytes([fixed[9], fixed[10]]) as usize;
@@ -539,10 +540,34 @@ mod tests {
     #[test]
     fn rejects_invalid_bounds_kind() {
         let mut rows = vec![base_master()];
-        rows[0].bounds = Some((3, [1u8; 32], None));
-        // encode() writes kind byte from bounds.0 = 3, then a 32-byte id.
+        // 3 is the contract group kind; 4 is the first kind that names nothing.
+        rows[0].bounds = Some((4, [1u8; 32], None));
+        // encode() writes kind byte from bounds.0 = 4, then a 32-byte id.
         let err = parse_pubkey_rows(&encode(&rows)).unwrap_err();
         assert!(err.contains("contractBoundsKind"), "{err}");
+    }
+
+    #[test]
+    fn should_round_trip_the_contract_group_bounds_kind() {
+        let contract_group_id = [0x47u8; 32];
+        let rows = vec![Row {
+            key_id: 2,
+            key_type: KEY_TYPE_ECDSA,
+            purpose: PURPOSE_AUTH,
+            security_level: SEC_HIGH,
+            read_only: 0,
+            pubkey: vec![4u8; 33],
+            bounds: Some((3, contract_group_id, None)),
+        }];
+        let decoded = parse_pubkey_rows(&encode(&rows)).expect("parse");
+        assert_eq!(decoded[0].contract_bounds_kind, 3);
+        assert_eq!(decoded[0].contract_bounds_id, Some(contract_group_id));
+        // A group bound carries an id and never a document type.
+        assert!(decoded[0].contract_bounds_document_type.is_none());
+        let ffi = decoded[0].to_ffi();
+        assert_eq!(ffi.contract_bounds_kind, 3);
+        assert!(!ffi.contract_bounds_id.is_null());
+        assert!(ffi.contract_bounds_document_type.is_null());
     }
 
     #[test]

@@ -113,6 +113,10 @@ impl DocumentTypeV1 {
                 admit_index_preallocated: false,
                 // SKIP IF ABSENT: also a generation-3 keyword; not in this grammar.
                 admit_index_skip_if_absent: false,
+                // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 rule; below it
+                // the parser demands an explicit countable `countable`, as the frozen
+                // v1 and v2 meta-schemas do.
+                admit_range_countable_implies_countable: false,
             },
             platform_version,
         )

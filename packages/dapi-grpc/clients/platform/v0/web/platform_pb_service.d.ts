@@ -58,6 +58,15 @@ type PlatformgetIdentityContractNonce = {
   readonly responseType: typeof platform_pb.GetIdentityContractNonceResponse;
 };
 
+type PlatformgetIdentityKeysRemainingBudgets = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentityKeysRemainingBudgetsRequest;
+  readonly responseType: typeof platform_pb.GetIdentityKeysRemainingBudgetsResponse;
+};
+
 type PlatformgetIdentityBalance = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -597,6 +606,7 @@ export class Platform {
   static readonly getIdentitiesContractKeys: PlatformgetIdentitiesContractKeys;
   static readonly getIdentityNonce: PlatformgetIdentityNonce;
   static readonly getIdentityContractNonce: PlatformgetIdentityContractNonce;
+  static readonly getIdentityKeysRemainingBudgets: PlatformgetIdentityKeysRemainingBudgets;
   static readonly getIdentityBalance: PlatformgetIdentityBalance;
   static readonly getIdentitiesBalances: PlatformgetIdentitiesBalances;
   static readonly getIdentityBalanceAndRevision: PlatformgetIdentityBalanceAndRevision;
@@ -743,6 +753,15 @@ export class PlatformClient {
   getIdentityContractNonce(
     requestMessage: platform_pb.GetIdentityContractNonceRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityContractNonceResponse|null) => void
+  ): UnaryResponse;
+  getIdentityKeysRemainingBudgets(
+    requestMessage: platform_pb.GetIdentityKeysRemainingBudgetsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityKeysRemainingBudgetsResponse|null) => void
+  ): UnaryResponse;
+  getIdentityKeysRemainingBudgets(
+    requestMessage: platform_pb.GetIdentityKeysRemainingBudgetsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityKeysRemainingBudgetsResponse|null) => void
   ): UnaryResponse;
   getIdentityBalance(
     requestMessage: platform_pb.GetIdentityBalanceRequest,

@@ -19,6 +19,8 @@ pub mod data_contracts_latest_versions;
 pub mod evonode_status;
 /// Groups
 pub mod groups;
+/// Remaining budgets of identity keys
+pub mod identity_keys_remaining_budgets;
 /// Identity token balance
 pub mod identity_token_balance;
 /// Token contract info

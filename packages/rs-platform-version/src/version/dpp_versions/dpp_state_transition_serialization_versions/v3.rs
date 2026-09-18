@@ -32,6 +32,11 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
+        identity_key_limits_update_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
         identity_top_up_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,

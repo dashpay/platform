@@ -161,6 +161,8 @@ where
                 }
 
                 if retry_additional_error {
+                    // This rejection does not establish a health failure. Use
+                    // a short flat exclusion, never the exponential health ladder.
                     // A node can retain rejected transaction hashes. Never
                     // resend this rejection to the same node, including when
                     // the caller disabled banning or the address is unknown.
@@ -172,9 +174,14 @@ where
                                 .get_live_addresses()
                                 .iter()
                                 .any(|candidate| candidate != address)
-                                && address_list.ban_with_reason(address, Some(error.to_string()))
+                                && address_list.ban_for(
+                                    address,
+                                    Duration::from_secs(2),
+                                    Some(error.to_string()),
+                                )
                         });
                     if !excluded || address_list.get_live_addresses().is_empty() {
+                        tracing::debug!(node = ?error.address, "DPNS failover stopped: no safely excluded alternative");
                         let mut final_error = error;
                         final_error.retries = total_retries;
                         return Err(final_error);

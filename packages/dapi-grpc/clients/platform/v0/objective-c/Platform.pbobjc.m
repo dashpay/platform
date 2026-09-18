@@ -301,6 +301,12 @@ GPBObjCClassDeclaration(GetIdentityContractNonceRequest);
 GPBObjCClassDeclaration(GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0);
 GPBObjCClassDeclaration(GetIdentityContractNonceResponse);
 GPBObjCClassDeclaration(GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0);
+GPBObjCClassDeclaration(GetIdentityKeysRemainingBudgetsRequest);
+GPBObjCClassDeclaration(GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0);
+GPBObjCClassDeclaration(GetIdentityKeysRemainingBudgetsResponse);
+GPBObjCClassDeclaration(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0);
+GPBObjCClassDeclaration(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry);
+GPBObjCClassDeclaration(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets);
 GPBObjCClassDeclaration(GetIdentityKeysRequest);
 GPBObjCClassDeclaration(GetIdentityKeysRequest_GetIdentityKeysRequestV0);
 GPBObjCClassDeclaration(GetIdentityKeysResponse);
@@ -1857,6 +1863,370 @@ void GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_ClearRe
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - GetIdentityKeysRemainingBudgetsRequest
+
+@implementation GetIdentityKeysRemainingBudgetsRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetIdentityKeysRemainingBudgetsRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0 *v0;
+} GetIdentityKeysRemainingBudgetsRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0),
+        .number = GetIdentityKeysRemainingBudgetsRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentityKeysRemainingBudgetsRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityKeysRemainingBudgetsRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityKeysRemainingBudgetsRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetIdentityKeysRemainingBudgetsRequest_ClearVersionOneOfCase(GetIdentityKeysRemainingBudgetsRequest *message) {
+  GPBDescriptor *descriptor = [GetIdentityKeysRemainingBudgetsRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0
+
+@implementation GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0
+
+@dynamic identityId;
+@dynamic keyIdsArray, keyIdsArray_Count;
+@dynamic prove;
+
+typedef struct GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *identityId;
+  GPBUInt32Array *keyIdsArray;
+} GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identityId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0_FieldNumber_IdentityId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0__storage_, identityId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "keyIdsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0_FieldNumber_KeyIdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0__storage_, keyIdsArray),
+        .flags = (GPBFieldFlags)(GPBFieldRepeated | GPBFieldPacked),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0_FieldNumber_Prove,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityKeysRemainingBudgetsRequest_GetIdentityKeysRemainingBudgetsRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentityKeysRemainingBudgetsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentityKeysRemainingBudgetsResponse
+
+@implementation GetIdentityKeysRemainingBudgetsResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetIdentityKeysRemainingBudgetsResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0 *v0;
+} GetIdentityKeysRemainingBudgetsResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0),
+        .number = GetIdentityKeysRemainingBudgetsResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentityKeysRemainingBudgetsResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityKeysRemainingBudgetsResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityKeysRemainingBudgetsResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetIdentityKeysRemainingBudgetsResponse_ClearVersionOneOfCase(GetIdentityKeysRemainingBudgetsResponse *message) {
+  GPBDescriptor *descriptor = [GetIdentityKeysRemainingBudgetsResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0
+
+@implementation GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic keysRemainingBudgets;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets *keysRemainingBudgets;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "keysRemainingBudgets",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets),
+        .number = GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_FieldNumber_KeysRemainingBudgets,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0__storage_, keysRemainingBudgets),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentityKeysRemainingBudgetsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_ClearResultOneOfCase(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry
+
+@implementation GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry
+
+@dynamic keyId;
+@dynamic hasRemainingBudget, remainingBudget;
+
+typedef struct GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t keyId;
+  uint64_t remainingBudget;
+} GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "keyId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry_FieldNumber_KeyId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry__storage_, keyId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "remainingBudget",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry_FieldNumber_RemainingBudget,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry__storage_, remainingBudget),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets
+
+@implementation GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets
+
+@dynamic entriesArray, entriesArray_Count;
+
+typedef struct GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *entriesArray;
+} GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "entriesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeyRemainingBudgetEntry),
+        .number = GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets_FieldNumber_EntriesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets__storage_, entriesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0_KeysRemainingBudgets__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentityKeysRemainingBudgetsResponse_GetIdentityKeysRemainingBudgetsResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetIdentityBalanceResponse
 
 @implementation GetIdentityBalanceResponse

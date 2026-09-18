@@ -1121,3 +1121,136 @@ fn executed_transition_result_proof_roundtrips() {
         );
     }
 }
+
+/// `validate_shielded_proof` v1 refuses a key bound to a contract group before it verifies
+/// proofs of possession or the bundle, and before the Orchard sighash preimage is built.
+#[test]
+fn should_refuse_a_key_bound_to_a_contract_group_before_verifying_the_proof() {
+    use crate::execution::validation::state_transition::processor::traits::shielded_proof::StateTransitionShieldedProofValidationV0;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::prelude::Identifier;
+    use dpp::state_transition::StateTransition;
+
+    let version = PlatformVersion::latest();
+    let bound_key = IdentityPublicKeyInCreationV0 {
+        id: 1,
+        key_type: KeyType::ECDSA_HASH160,
+        purpose: Purpose::AUTHENTICATION,
+        security_level: SecurityLevel::HIGH,
+        contract_bounds: Some(ContractBounds::ContractGroup {
+            id: Identifier::from([0x73; 32]),
+        }),
+        data: vec![0x72; 20].into(),
+        read_only: false,
+        signature: Default::default(),
+    };
+    let st: StateTransition =
+        transition(vec![master_key(), bound_key.into()], vec![action(30)]).into();
+    let result = st
+        .validate_shielded_proof(version)
+        .expect("a refusal is a consensus error, not an internal one");
+    assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+    assert_eq!(result.errors[0].code(), 10535);
+
+    // Without the group bound the same transition gets past the refusal and fails later, on
+    // its placeholder proofs of possession.
+    let st: StateTransition = transition(vec![master_key()], vec![action(30)]).into();
+    let result = st
+        .validate_shielded_proof(version)
+        .expect("expected a consensus result");
+    assert!(
+        result.errors.iter().all(|error| error.code() != 10535),
+        "{:?}",
+        result.errors
+    );
+}
+
+/// `validate_shielded_proof` v1 refuses a key that carries a budget or an expiry before the
+/// Orchard sighash preimage is built: the preimage lists the key fields it binds, the limits are
+/// not among them, and when every key is hash based there is no proof of possession that would
+/// bind them instead. A version 1 key without limits holds nothing the preimage misses, so it is
+/// accepted.
+#[test]
+fn should_refuse_a_key_with_limits_before_verifying_the_proof() {
+    use crate::execution::validation::state_transition::processor::traits::shielded_proof::StateTransitionShieldedProofValidationV0;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
+    use dpp::state_transition::StateTransition;
+
+    let version = PlatformVersion::latest();
+    let version_1_key = |total_budget, expires_at| IdentityPublicKeyInCreationV1 {
+        id: 1,
+        key_type: KeyType::ECDSA_HASH160,
+        purpose: Purpose::AUTHENTICATION,
+        security_level: SecurityLevel::HIGH,
+        contract_bounds: None,
+        read_only: false,
+        data: vec![0x72; 20].into(),
+        total_budget,
+        expires_at,
+        signature: Default::default(),
+    };
+    let errors_for = |key: IdentityPublicKeyInCreationV1| {
+        let st: StateTransition =
+            transition(vec![master_key(), key.into()], vec![action(30)]).into();
+        st.validate_shielded_proof(version)
+            .expect("a refusal is a consensus error, not an internal one")
+            .errors
+    };
+
+    // Either limit is enough to be refused.
+    for key in [
+        version_1_key(Some(1_000), None),
+        version_1_key(None, Some(2_000)),
+        version_1_key(Some(1_000), Some(2_000)),
+    ] {
+        let errors = errors_for(key);
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(errors[0].code(), 10538);
+    }
+
+    // Without limits the version 1 key gets past the refusal and the transition fails later, on
+    // its placeholder proofs of possession, like one made of version 0 keys.
+    let errors = errors_for(version_1_key(None, None));
+    assert!(
+        errors.iter().all(|error| error.code() != 10538),
+        "{errors:?}"
+    );
+
+    // Why the refusal has to exist: the preimage does not see the limits.
+    let identity_id = [7u8; 32];
+    let fallback = dpp::address_funds::PlatformAddress::P2pkh([9u8; 20]);
+    let preimage =
+        |key: dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation| {
+            dpp::shielded::identity_create_from_shielded_extra_sighash_data(
+                &identity_id,
+                1_000,
+                &fallback,
+                &[key],
+                version,
+            )
+            .expect("expected a preimage")
+        };
+    assert_eq!(
+        preimage(version_1_key(Some(1_000), Some(2_000)).into()),
+        preimage(version_1_key(None, None).into())
+    );
+
+    // Why a version 1 key without limits is safe to accept: it binds the same bytes as the
+    // version 0 key with the same fields, so there is nothing a relay could change about it.
+    let version_0_key = IdentityPublicKeyInCreationV0 {
+        id: 1,
+        key_type: KeyType::ECDSA_HASH160,
+        purpose: Purpose::AUTHENTICATION,
+        security_level: SecurityLevel::HIGH,
+        contract_bounds: None,
+        read_only: false,
+        data: vec![0x72; 20].into(),
+        signature: Default::default(),
+    };
+    assert_eq!(
+        preimage(version_1_key(None, None).into()),
+        preimage(version_0_key.into())
+    );
+}

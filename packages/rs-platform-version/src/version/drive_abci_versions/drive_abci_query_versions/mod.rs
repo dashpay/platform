@@ -115,6 +115,7 @@ pub struct DriveAbciQueryIdentityVersions {
     pub keys: FeatureVersionBounds,
     pub identity_nonce: FeatureVersionBounds,
     pub identity_contract_nonce: FeatureVersionBounds,
+    pub keys_remaining_budgets: FeatureVersionBounds,
     pub balance: FeatureVersionBounds,
     pub identities_balances: FeatureVersionBounds,
     pub balance_and_revision: FeatureVersionBounds,

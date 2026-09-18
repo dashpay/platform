@@ -1,5 +1,6 @@
 use super::signature::ContractBoundedKeyNonBatchErrorWasm;
 use super::signature::ContractBoundedKeyOutOfBoundsErrorWasm;
+use crate::errors::consensus::basic::identity::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationErrorWasm;
 use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm,
     InvalidSignaturePublicKeyPurposeErrorWasm, JsonSchemaErrorWasm,
@@ -36,6 +37,7 @@ use crate::errors::consensus::state::identity::{
 };
 use dpp::consensus::basic::decode::VersionError;
 use dpp::consensus::basic::BasicError::{
+    ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError,
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
@@ -95,6 +97,19 @@ use dpp::consensus::state::contract_group::{
 use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
 use dpp::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
+use dpp::consensus::basic::identity::{
+    IdentityKeyLimitsUpdateEmptyError, IdentityPublicKeyLimitsNotAllowedError,
+    IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError,
+    InvalidIdentityPublicKeyBudgetError,
+};
+use dpp::consensus::signature::{
+    PublicKeyBudgetExhaustedError, PublicKeyExpiredError,
+    PublicKeyWithLimitsCannotUpdateKeyLimitsError,
+};
+use dpp::consensus::state::identity::identity_public_key_already_expired_error::IdentityPublicKeyAlreadyExpiredError;
+use dpp::consensus::state::identity::identity_public_key_limit_not_raised_error::IdentityPublicKeyLimitNotRaisedError;
+use dpp::consensus::state::identity::identity_public_key_limit_not_set_error::IdentityPublicKeyLimitNotSetError;
+use dpp::consensus::state::identity::identity_public_key_budget_exceeded_error::IdentityPublicKeyBudgetExceededError;
 use dpp::consensus::state::identity::identity_to_freeze_does_not_exist_error::IdentityToFreezeDoesNotExistError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use dpp::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
@@ -527,6 +542,18 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::ContractGroupAdminNotFoundError(e) => {
             generic_consensus_error!(ContractGroupAdminNotFoundError, e).into()
         }
+        StateError::IdentityPublicKeyBudgetExceededError(e) => {
+            generic_consensus_error!(IdentityPublicKeyBudgetExceededError, e).into()
+        }
+        StateError::IdentityPublicKeyAlreadyExpiredError(e) => {
+            generic_consensus_error!(IdentityPublicKeyAlreadyExpiredError, e).into()
+        }
+        StateError::IdentityPublicKeyLimitNotSetError(e) => {
+            generic_consensus_error!(IdentityPublicKeyLimitNotSetError, e).into()
+        }
+        StateError::IdentityPublicKeyLimitNotRaisedError(e) => {
+            generic_consensus_error!(IdentityPublicKeyLimitNotRaisedError, e).into()
+        }
     }
 }
 
@@ -682,6 +709,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         IdentityAssetLockTransactionTooManyInputsError(e) => {
             IdentityAssetLockTransactionTooManyInputsErrorWasm::from(e).into()
+        }
+        ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError(e) => {
+            ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationErrorWasm::from(e).into()
         }
         InvalidInstantAssetLockProofError(e) => {
             InvalidInstantAssetLockProofErrorWasm::from(e).into()
@@ -1064,6 +1094,22 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::InvalidContractGroupDescriptionLengthError(e) => {
             generic_consensus_error!(InvalidContractGroupDescriptionLengthError, e).into()
         }
+        BasicError::IdentityPublicKeyLimitsNotAllowedError(e) => {
+            generic_consensus_error!(IdentityPublicKeyLimitsNotAllowedError, e).into()
+        }
+        BasicError::InvalidIdentityPublicKeyBudgetError(e) => {
+            generic_consensus_error!(InvalidIdentityPublicKeyBudgetError, e).into()
+        }
+        BasicError::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(e) => {
+            generic_consensus_error!(
+                IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError,
+                e
+            )
+            .into()
+        }
+        BasicError::IdentityKeyLimitsUpdateEmptyError(e) => {
+            generic_consensus_error!(IdentityKeyLimitsUpdateEmptyError, e).into()
+        }
     }
 }
 
@@ -1105,6 +1151,15 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         }
         SignatureError::UncompressedPublicKeyNotAllowedError(err) => {
             UncompressedPublicKeyNotAllowedErrorWasm::from(err).into()
+        }
+        SignatureError::PublicKeyBudgetExhaustedError(e) => {
+            generic_consensus_error!(PublicKeyBudgetExhaustedError, e).into()
+        }
+        SignatureError::PublicKeyExpiredError(e) => {
+            generic_consensus_error!(PublicKeyExpiredError, e).into()
+        }
+        SignatureError::PublicKeyWithLimitsCannotUpdateKeyLimitsError(e) => {
+            generic_consensus_error!(PublicKeyWithLimitsCannotUpdateKeyLimitsError, e).into()
         }
     }
 }

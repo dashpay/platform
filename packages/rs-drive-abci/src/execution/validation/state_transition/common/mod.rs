@@ -4,6 +4,7 @@ pub mod validate_identity_exists;
 pub mod validate_identity_public_key_contract_bounds;
 pub mod validate_identity_public_key_ids_dont_exist_in_state;
 pub mod validate_identity_public_key_ids_exist_in_state;
+pub mod validate_identity_public_keys_limits;
 pub mod validate_non_masternode_identity_exists;
 pub mod validate_not_disabling_last_master_key;
 pub mod validate_state_transition_identity_signed;

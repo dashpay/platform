@@ -11,6 +11,7 @@ use dpp::state_transition::data_contract_create_transition::{
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dpp::state_transition::identity_key_limits_update_transition::v0::IdentityKeyLimitsUpdateTransitionV0;
 use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
 use dpp::state_transition::StateTransitionHasUserFeeIncrease;
@@ -19,6 +20,23 @@ impl BumpIdentityNonceActionV0 {
     /// from borrowed shield from identity
     pub fn from_borrowed_shield_from_identity(value: &ShieldFromIdentityTransitionV0) -> Self {
         let ShieldFromIdentityTransitionV0 {
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
+        } = value;
+        BumpIdentityNonceActionV0 {
+            identity_id: *identity_id,
+            identity_nonce: *nonce,
+            user_fee_increase: *user_fee_increase,
+        }
+    }
+
+    /// from borrowed identity key limits update
+    pub fn from_borrowed_identity_key_limits_update(
+        value: &IdentityKeyLimitsUpdateTransitionV0,
+    ) -> Self {
+        let IdentityKeyLimitsUpdateTransitionV0 {
             identity_id,
             nonce,
             user_fee_increase,

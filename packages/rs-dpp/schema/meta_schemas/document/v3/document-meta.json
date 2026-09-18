@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL THE RELEASE CARRYING PROTOCOL V14 SHIPS — FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties, the requiredSince property keyword (the contract version a property is required from), and the timeRange index transform, and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once the release carrying protocol v14 ships, mutating it would change historical validation results and break consensus replay. After release, any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties, the requiredSince property keyword (the contract version a property is required from), and the timeRange index transform, and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "documentProperties": {
@@ -575,7 +575,7 @@
           },
           "rangeCountable": {
             "type": "boolean",
-            "description": "When true, the property-name level becomes a ProvableCountTree and value trees become CountTrees so range-count queries on the indexed property are O(log n). Requires `countable` to be \"countable\" or \"countableAllowingOffset\"."
+            "description": "When true, the property-name level becomes a ProvableCountTree and value trees become CountTrees so range-count queries on the indexed property are O(log n). Implies `countable: \"countable\"` when `countable` is omitted, as the doctype-level `rangeCountable` implies `documentsCountable`; an explicit `\"countableAllowingOffset\"` is kept, and an explicit `\"notCountable\"` is rejected as a contradiction."
           },
           "summable": {
             "type": "string",
@@ -585,7 +585,7 @@
           },
           "rangeSummable": {
             "type": "boolean",
-            "description": "When true, the property-name level becomes a ProvableSumTree (or ProvableCountProvableSumTree when paired with `rangeCountable: true`) so range-sum queries on the indexed property are O(log n) via the `AggregateSumOnRange` proof primitive. Requires `summable` to be set."
+            "description": "When true, the property-name level becomes a ProvableSumTree (or ProvableCountProvableSumTree when paired with `rangeCountable: true`) so range-sum queries on the indexed property are O(log n) via the `AggregateSumOnRange` proof primitive. Requires `summable` to be set; `averageable` satisfies this, since it implies `summable`."
           },
           "averageable": {
             "type": "string",
@@ -637,11 +637,11 @@
           },
           "rankedSummable": {
             "type": "boolean",
-            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's sum of the `summable` property, so \"top / bottom K groups by sum\" queries are O(log n + k) with proofs. Requires `rangeSummable: true`. Adds the Sum ranking axis only."
+            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's sum of the `summable` property, so \"top / bottom K groups by sum\" queries are O(log n + k) with proofs. Requires `rangeSummable: true` (or `rangeAverageable: true`, which implies it). Adds the Sum ranking axis only."
           },
           "rankedAverageable": {
             "type": "boolean",
-            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's average (count + sum pair) of the `averageable` property, so \"top / bottom K groups by average\" queries are O(log n + k) with proofs. Requires `rangeAverageable: true` (which itself implies `rangeCountable` + `rangeSummable`). Adds the Avg ranking axis only — it does NOT imply `rankedCountable` or `rankedSummable`; each ranking axis costs its own secondary tree and is opted into separately."
+            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's average (count + sum pair) of the `averageable` property, so \"top / bottom K groups by average\" queries are O(log n + k) with proofs. Requires `rangeAverageable: true` (which itself implies `rangeCountable` + `rangeSummable`), or the explicit `rangeCountable: true` + `rangeSummable: true` pair. Adds the Avg ranking axis only — it does NOT imply `rankedCountable` or `rankedSummable`; each ranking axis costs its own secondary tree and is opted into separately."
           },
           "timeRange": {
             "type": "object",
@@ -697,12 +697,17 @@
           "name"
         ],
         "dependentRequired": {
-          "rangeCountable": ["countable"],
-          "rangeSummable": ["summable"],
           "rangeAverageable": ["averageable"]
         },
-        "$comment": "The ranked prerequisites are value-sensitive, unlike the range* rows above: `dependentRequired` fires on key *presence*, so listing them there would make an explicit `\"rankedCountable\": false` — a written-out opt-out, which the structural parser accepts as such — demand a `rangeCountable` the index does not need. The range* rows keep presence semantics because that is what they shipped with in v2 and changing them would move historical validation results.",
+        "$comment": "Every prerequisite here is sugar-aware, matching the structural parser, which expands `averageable` into `countable` + `summable` and `rangeAverageable` into `rangeCountable` + `rangeSummable` before it checks the same prerequisites on the resolved flags. `rangeSummable` accepts `averageable` in place of `summable`, and each `ranked*` flag accepts `rangeAverageable` in place of its own range axis (`rankedAverageable` also accepts the explicit `rangeCountable` + `rangeSummable` pair). They are `if`/`then` pairs rather than `dependentRequired` rows only because `dependentRequired` cannot express the alternative. `rangeCountable` has no row at all: it implies `countable`, as it does at the doctype level, and the parser promotes an omitted `countable`. The remaining range rows keep the presence semantics they shipped with in v2 (an explicit `\"rangeSummable\": false` still needs a `summable` or an `averageable`); the ranked pairs are value-sensitive so that an explicit `\"rankedCountable\": false`, a written-out opt-out the structural parser accepts as such, demands nothing.",
         "allOf": [
+          {
+            "if": {
+              "required": ["rangeSummable"],
+              "not": { "required": ["averageable"] }
+            },
+            "then": { "required": ["summable"] }
+          },
           {
             "if": {
               "properties": {
@@ -710,21 +715,24 @@
                   "anyOf": [{ "const": true }, { "type": "object" }]
                 }
               },
-              "required": ["rankedCountable"]
+              "required": ["rankedCountable"],
+              "not": { "required": ["rangeAverageable"] }
             },
             "then": { "required": ["rangeCountable"] }
           },
           {
             "if": {
               "properties": { "rankedSummable": { "const": true } },
-              "required": ["rankedSummable"]
+              "required": ["rankedSummable"],
+              "not": { "required": ["rangeAverageable"] }
             },
             "then": { "required": ["rangeSummable"] }
           },
           {
             "if": {
               "properties": { "rankedAverageable": { "const": true } },
-              "required": ["rankedAverageable"]
+              "required": ["rankedAverageable"],
+              "not": { "required": ["rangeCountable", "rangeSummable"] }
             },
             "then": { "required": ["rangeAverageable"] }
           }
@@ -826,7 +834,7 @@
     },
     "rangeSummable": {
       "type": "boolean",
-      "description": "When true, the primary key tree uses a ProvableSumTree (or ProvableCountProvableSumTree paired with rangeCountable: true) enabling O(log n) range-sum queries over the primary axis. Requires `documentsSummable` to be set. Rarely useful — range-sum on the primary key with no where-clause filter is unusual; most callers want per-index `rangeSummable` instead. Set this only when you need a provable global range-sum tree."
+      "description": "When true, the primary key tree uses a ProvableSumTree (or ProvableCountProvableSumTree paired with rangeCountable: true) enabling O(log n) range-sum queries over the primary axis. Requires `documentsSummable` to be set; `documentsAverageable` satisfies this, since it implies `documentsSummable`. Rarely useful — range-sum on the primary key with no where-clause filter is unusual; most callers want per-index `rangeSummable` instead. Set this only when you need a provable global range-sum tree."
     },
     "documentsAverageable": {
       "type": "string",
@@ -968,8 +976,17 @@
     "additionalProperties"
   ],
   "dependentRequired": {
-    "rangeSummable": ["documentsSummable"],
     "rangeAverageable": ["documentsAverageable"]
   },
+  "allOf": [
+    {
+      "$comment": "`documentsAverageable` is sugar for `documentsCountable` + `documentsSummable`, so it satisfies `rangeSummable`'s prerequisite exactly as `documentsSummable` does; an `if`/`then` pair because `dependentRequired` cannot express the alternative, with the presence semantics the row shipped with in v2.",
+      "if": {
+        "required": ["rangeSummable"],
+        "not": { "required": ["documentsAverageable"] }
+      },
+      "then": { "required": ["documentsSummable"] }
+    }
+  ],
   "additionalProperties": false
 }

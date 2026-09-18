@@ -7,6 +7,7 @@ use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
 };
 use crate::types::evonode_status::EvoNodeStatus;
+use crate::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use crate::types::CurrentQuorumsInfo;
 use crate::Error;
 use dapi_grpc::platform::v0::ResponseMetadata;
@@ -871,6 +872,49 @@ impl FromUnproved<platform::GetContractGroupInfoRequest> for ContractGroupInfo {
         };
 
         Ok((info, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetIdentityKeysRemainingBudgetsRequest>
+    for IdentityKeysRemainingBudgets
+{
+    type Request = platform::GetIdentityKeysRemainingBudgetsRequest;
+    type Response = platform::GetIdentityKeysRemainingBudgetsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_identity_keys_remaining_budgets_response::get_identity_keys_remaining_budgets_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_identity_keys_remaining_budgets_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let budgets = match v0.result {
+            Some(V0Result::KeysRemainingBudgets(budgets)) => Some(
+                budgets
+                    .entries
+                    .into_iter()
+                    .map(|entry| (entry.key_id, entry.remaining_budget))
+                    .collect(),
+            ),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved remaining budgets, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((budgets, metadata))
     }
 }
 

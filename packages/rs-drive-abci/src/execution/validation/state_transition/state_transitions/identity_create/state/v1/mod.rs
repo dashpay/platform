@@ -1,4 +1,5 @@
 use crate::execution::validation::state_transition::common::validate_identity_public_key_contract_bounds::validate_identity_public_keys_contract_bounds;
+use crate::execution::validation::state_transition::common::validate_identity_public_keys_limits::validate_identity_public_keys_limits;
 use dpp::block::block_info::BlockInfo;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
@@ -81,6 +82,12 @@ impl IdentityCreateStateTransitionStateValidationV1 for IdentityCreateTransition
                 platform_version,
             )?
             .errors,
+        );
+
+        // A key must not already be expired in the block that registers it
+        key_state_validation_result.add_errors(
+            validate_identity_public_keys_limits(self.public_keys(), block_info, platform_version)?
+                .errors,
         );
 
         if key_state_validation_result.is_valid() {

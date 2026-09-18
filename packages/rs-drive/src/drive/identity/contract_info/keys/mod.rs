@@ -1,4 +1,7 @@
-use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInfo::ContractBased;
+use crate::drive::contract::DataContractFetchInfo;
+use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInfo::{
+    ContractBased, ContractGroupBased,
+};
 use crate::drive::identity::contract_info::ContractInfoStructure;
 use crate::drive::identity::IdentityRootStructure;
 use crate::drive::{Drive, RootTree};
@@ -8,6 +11,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::{KeyID, Purpose};
@@ -18,6 +22,7 @@ use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
 mod add_potential_contract_info_for_contract_bounded_key;
 mod refresh_potential_contract_info_key_references;
@@ -125,19 +130,68 @@ pub enum IdentityDataContractKeyApplyInfo {
         document_type_keys: BTreeMap<String, Vec<(KeyID, Purpose)>>,
         contract_keys: Vec<(KeyID, Purpose)>,
     },
-    // ContractFamilyBased {
-    //     contracts_owner_id: Identifier,
-    //     family_keys: Vec<KeyID>,
-    // },
+    /// Keys bound to a contract group. The group id is the contract-info group key, next to
+    /// the contract ids: same level, same alias machinery, distinct hash domain.
+    ContractGroupBased {
+        contract_group_id: Identifier,
+        keys: Vec<(KeyID, Purpose)>,
+    },
 }
 
 impl IdentityDataContractKeyApplyInfo {
     fn root_id(&self) -> [u8; 32] {
         match self {
             ContractBased { contract_id, .. } => contract_id.to_buffer(),
-            // ContractFamilyBased {
-            //     contracts_owner_id, ..
-            // } => contracts_owner_id.to_buffer(),
+            ContractGroupBased {
+                contract_group_id, ..
+            } => contract_group_id.to_buffer(),
+        }
+    }
+
+    /// Resolves what the bounds point at, billing the read: the contract for a contract bound
+    /// (returned, since the storage rule comes from its config), or nothing for a contract group
+    /// bound (the group must exist; its keys use a fixed storage rule). Runs in estimation mode
+    /// as well, so the estimate bills the same read the apply path does.
+    fn fetch_bound_root_with_fee(
+        &self,
+        drive: &Drive,
+        epoch: &Epoch,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(FeeResult, Option<Arc<DataContractFetchInfo>>), Error> {
+        match self {
+            ContractBased { contract_id, .. } => {
+                let (fee, contract) = drive.get_contract_with_fetch_info_and_fee(
+                    contract_id.to_buffer(),
+                    Some(epoch),
+                    true,
+                    transaction,
+                    platform_version,
+                )?;
+                let fee = fee.ok_or(Error::Identity(
+                    IdentityError::IdentityKeyDataContractNotFound,
+                ))?;
+                let contract = contract.ok_or(Error::Identity(
+                    IdentityError::IdentityKeyDataContractNotFound,
+                ))?;
+                Ok((fee, Some(contract)))
+            }
+            ContractGroupBased {
+                contract_group_id, ..
+            } => {
+                let (fee, info) = drive.fetch_contract_group_info_with_fee(
+                    *contract_group_id,
+                    epoch,
+                    transaction,
+                    platform_version,
+                )?;
+                if info.is_none() {
+                    return Err(Error::Identity(IdentityError::IdentityKeyBoundsError(
+                        "Contract group for key bounds not found",
+                    )));
+                }
+                Ok((fee, None))
+            }
         }
     }
 
@@ -155,7 +209,7 @@ impl IdentityDataContractKeyApplyInfo {
                 contract_keys,
                 ..
             } => (document_type_keys, contract_keys),
-            // ContractFamilyBased { family_keys, .. } => (BTreeMap::new(), family_keys),
+            ContractGroupBased { keys, .. } => (BTreeMap::new(), keys),
         }
     }
     #[allow(clippy::too_many_arguments)]
@@ -169,7 +223,30 @@ impl IdentityDataContractKeyApplyInfo {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
-        let contract_id = contract_bounds.identifier().to_buffer();
+        let (contract_id, document_type_name) = match contract_bounds {
+            ContractBounds::ContractGroup {
+                id: contract_group_id,
+            } => {
+                // Only authentication keys may be bound to a group (consensus refuses the
+                // rest). Nothing of the group is needed to build the apply info, so it is not
+                // read here: `fetch_bound_root_with_fee` checks that the group exists and
+                // bills that one read when the references are written.
+                if purpose != Purpose::AUTHENTICATION {
+                    return Err(Error::Identity(IdentityError::IdentityKeyBoundsError(
+                        "only authentication keys can be bound to a contract group",
+                    )));
+                }
+                return Ok(ContractGroupBased {
+                    contract_group_id: *contract_group_id,
+                    keys: vec![(key_id, purpose)],
+                });
+            }
+            ContractBounds::SingleContract { id } => (id.to_buffer(), None),
+            ContractBounds::SingleContractDocumentType {
+                id,
+                document_type_name,
+            } => (id.to_buffer(), Some(document_type_name)),
+        };
         // we are getting with fetch info to add the cost to the drive operations
         let maybe_contract_fetch_info = drive.get_contract_with_fetch_info_and_add_to_operations(
             contract_id,
@@ -185,17 +262,14 @@ impl IdentityDataContractKeyApplyInfo {
             )));
         };
         let contract = &contract_fetch_info.contract;
-        match contract_bounds {
-            ContractBounds::SingleContract { .. } => Ok(ContractBased {
+        match document_type_name {
+            None => Ok(ContractBased {
                 contract_id: contract.id(),
                 document_type_keys: Default::default(),
                 contract_keys: vec![(key_id, purpose)],
             }),
-            ContractBounds::SingleContractDocumentType {
-                document_type_name: document_type,
-                ..
-            } => {
-                let document_type = contract.document_type_for_name(document_type)?;
+            Some(document_type_name) => {
+                let document_type = contract.document_type_for_name(document_type_name)?;
                 Ok(ContractBased {
                     contract_id: contract.id(),
                     document_type_keys: BTreeMap::from([(
@@ -204,10 +278,7 @@ impl IdentityDataContractKeyApplyInfo {
                     )]),
                     contract_keys: vec![],
                 })
-            } // ContractBounds::MultipleContractsOfSameOwner { .. } => Ok(ContractFamilyBased {
-              //     contracts_owner_id: contract.owner_id(),
-              //     family_keys: vec![key_id],
-              // }),
+            }
         }
     }
 }
@@ -219,7 +290,34 @@ mod tests {
         identity_contract_info_group_keys_path_vec,
         identity_contract_info_group_path_key_purpose_vec,
     };
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use grovedb::reference_path::ReferencePathType::SiblingReference;
+
+    /// The group of a group bound is read, checked and billed once, by
+    /// `fetch_bound_root_with_fee` when the references are written. Building the apply info
+    /// must not read it a second time.
+    #[test]
+    fn should_not_read_the_contract_group_when_building_the_apply_info() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract_group_id = Identifier::from([0x61; 32]);
+        let mut drive_operations = vec![];
+        let apply_info = IdentityDataContractKeyApplyInfo::new_from_single_key(
+            7,
+            Purpose::AUTHENTICATION,
+            &ContractBounds::ContractGroup {
+                id: contract_group_id,
+            },
+            &drive,
+            &Epoch::new(0).expect("expected epoch 0"),
+            None,
+            &mut drive_operations,
+            platform_version,
+        )
+        .expect("expected the apply info of a group bound");
+        assert!(drive_operations.is_empty(), "{drive_operations:?}");
+        assert_eq!(apply_info.root_id(), contract_group_id.to_buffer());
+    }
 
     fn alias_insert(path: Vec<Vec<u8>>, key_id: KeyID) -> LowLevelDriveOperation {
         LowLevelDriveOperation::insert_for_known_path_key_element(

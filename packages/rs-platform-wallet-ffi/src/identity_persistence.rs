@@ -280,6 +280,10 @@ pub struct IdentityKeyEntryFFI {
     //     both the `id` and the heap-allocated UTF-8 doc-type
     //     C-string are meaningful. Doc-type string is released by
     //     [`free_identity_key_entry_ffi`].
+    //   * `contract_bounds_kind == 3`: `ContractGroup`; the 32-byte
+    //     `id` is the contract group id, doc-type pointer is null.
+    //     The client must persist the kind itself: an id without a
+    //     doc-type name is otherwise indistinguishable from kind 1.
     //
     // Keeping the kind tag inline (vs. always nulling fields) lets
     // the Swift side switch on a single discriminant without
@@ -699,6 +703,7 @@ impl IdentityKeyEntryFFI {
                     Ok(c) => (2u8, id.to_buffer(), c.into_raw() as *const c_char),
                     Err(_) => (1u8, id.to_buffer(), ptr::null()),
                 },
+                Some(ContractBounds::ContractGroup { id }) => (3u8, id.to_buffer(), ptr::null()),
                 None => (0u8, [0u8; 32], ptr::null()),
             };
 
@@ -1236,6 +1241,37 @@ mod tests {
         assert!(ffi.disabled_at_is_some);
         assert_eq!(ffi.disabled_at, 1_700_000_000);
         assert_eq!(ffi.contract_bounds_kind, 0);
+        assert!(ffi.contract_bounds_document_type.is_null());
+        unsafe { free_identity_key_entry_ffi(&mut ffi) };
+    }
+
+    #[test]
+    fn should_flatten_contract_group_bounds_as_kind_3() {
+        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+        let contract_group_id = Identifier::from([0x47; 32]);
+        let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: Some(ContractBounds::ContractGroup {
+                id: contract_group_id,
+            }),
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0x01; 33]),
+            disabled_at: None,
+        });
+        let entry = IdentityKeyEntry {
+            identity_id: Identifier::from([1u8; 32]),
+            key_id: 1,
+            public_key,
+            public_key_hash: [0x11; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
+        assert_eq!(ffi.contract_bounds_kind, 3);
+        assert_eq!(ffi.contract_bounds_id, [0x47; 32]);
         assert!(ffi.contract_bounds_document_type.is_null());
         unsafe { free_identity_key_entry_ffi(&mut ffi) };
     }

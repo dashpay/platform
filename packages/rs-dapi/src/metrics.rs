@@ -551,6 +551,7 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getIdentitiesContractKeys",
                 "getIdentityNonce",
                 "getIdentityContractNonce",
+                "getIdentityKeysRemainingBudgets",
                 "getIdentityBalance",
                 "getIdentitiesBalances",
                 "getIdentityBalanceAndRevision",

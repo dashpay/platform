@@ -8,7 +8,8 @@ use {
             identity_transfer_keys_path_vec,
             key::fetch::KeyKindRequestType::{AllKeysOfKindRequest, CurrentKeyOfKindRequest},
             key::fetch::KeyRequestType::{
-                AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, SearchKey, SpecificKeys,
+                AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, ContractGroupBoundKey,
+                SearchKey, SpecificKeys,
             },
         },
         query::{Query, QueryItem},
@@ -81,6 +82,8 @@ pub enum KeyRequestType {
     ContractBoundKey([u8; 32], Purpose, KeyKindRequestType),
     /// Search for contract bound keys
     ContractDocumentTypeBoundKey([u8; 32], String, Purpose, KeyKindRequestType),
+    /// Search for keys bound to a contract group
+    ContractGroupBoundKey([u8; 32], Purpose, KeyKindRequestType),
     /// Get Current Authentication Master Key
     LatestAuthenticationMasterKey,
 }
@@ -687,7 +690,9 @@ impl IdentityKeysRequest {
             SearchKey(_) => Err(Error::Fee(FeeError::OperationNotAllowed(
                 "You can not get costs for requesting search key",
             ))),
-            ContractBoundKey(_, _, key_kind) | ContractDocumentTypeBoundKey(_, _, _, key_kind) => {
+            ContractBoundKey(_, _, key_kind)
+            | ContractDocumentTypeBoundKey(_, _, _, key_kind)
+            | ContractGroupBoundKey(_, _, key_kind) => {
                 match key_kind {
                     CurrentKeyOfKindRequest => {
                         // not accessible
@@ -727,6 +732,24 @@ impl IdentityKeysRequest {
         IdentityKeysRequest {
             identity_id,
             request_type: SearchKey(purpose_btree_map),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[cfg(feature = "server")]
+    /// Make a request for the current authentication key bound to a contract group
+    pub fn new_contract_group_authentication_keys_query(
+        identity_id: [u8; 32],
+        contract_group_id: [u8; 32],
+    ) -> Self {
+        IdentityKeysRequest {
+            identity_id,
+            request_type: ContractGroupBoundKey(
+                contract_group_id,
+                Purpose::AUTHENTICATION,
+                CurrentKeyOfKindRequest,
+            ),
             limit: None,
             offset: None,
         }
@@ -914,10 +937,13 @@ impl IdentityKeysRequest {
                     },
                 }
             }
-            ContractBoundKey(contract_id, purpose, key_request_type) => {
+            // A contract id and a contract group id are both 32-byte group keys of the same
+            // contract-info level, so the two requests build the same query.
+            ContractBoundKey(group_key, purpose, key_request_type)
+            | ContractGroupBoundKey(group_key, purpose, key_request_type) => {
                 let query_keys_path = identity_contract_info_group_path_key_purpose_vec(
                     &identity_id,
-                    &contract_id,
+                    &group_key,
                     purpose,
                 );
                 let query = match key_request_type {

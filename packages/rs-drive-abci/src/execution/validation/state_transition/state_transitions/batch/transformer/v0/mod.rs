@@ -313,6 +313,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
                 owner_id,
                 transitions,
                 user_fee_increase,
+                ..Default::default()
             }
             .into();
             Ok(ConsensusValidationResult::new_with_data_and_errors(

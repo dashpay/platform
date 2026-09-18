@@ -4,6 +4,8 @@ pub mod identity_create;
 pub mod identity_credit_transfer;
 /// identity credit withdrawal
 pub mod identity_credit_withdrawal;
+/// identity key limits update
+pub mod identity_key_limits_update;
 /// identity topup
 pub mod identity_topup;
 /// identity update

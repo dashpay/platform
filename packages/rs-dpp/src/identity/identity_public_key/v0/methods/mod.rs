@@ -10,45 +10,13 @@ use dashcore::hashes::Hash;
 use dashcore::key::Secp256k1;
 use dashcore::secp256k1::SecretKey;
 use dashcore::{Network, PublicKey as ECDSAPublicKey};
-use platform_value::Bytes20;
+use platform_value::{BinaryData, Bytes20};
 #[cfg(feature = "bls-signatures")]
 use {crate::bls_signatures, dashcore::blsful::Bls12381G2Impl};
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
     /// Get the original public key hash
     fn public_key_hash(&self) -> Result<[u8; 20], ProtocolError> {
-        if self.data.is_empty() {
-            return Err(ProtocolError::EmptyPublicKeyDataError);
-        }
-
-        match self.key_type {
-            KeyType::ECDSA_SECP256K1 => {
-                let key = match self.data.len() {
-                    // TODO: We need to update schema and tests for 65 len keys
-                    65 | 33 => ECDSAPublicKey::from_slice(self.data.as_slice())
-                        .map_err(|e| anyhow!("unable to create pub key - {}", e))?,
-                    _ => {
-                        return Err(ProtocolError::ParsingError(format!(
-                            "the key length is invalid: {} Allowed sizes: 33 or 65 bytes for ecdsa key",
-                            self.data.len()
-                        )));
-                    }
-                };
-                Ok(key.pubkey_hash().to_byte_array())
-            }
-            KeyType::BLS12_381 => {
-                if self.data.len() != 48 {
-                    Err(ProtocolError::ParsingError(format!(
-                        "the key length is invalid: {} Allowed sizes: 48 bytes for bls key",
-                        self.data.len()
-                    )))
-                } else {
-                    Ok(ripemd160_sha256(self.data.as_slice()))
-                }
-            }
-            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
-                Ok(Bytes20::from_vec(self.data.to_vec())?.into_buffer())
-            }
-        }
+        public_key_hash_for_key_data(self.key_type, &self.data)
     }
 
     fn validate_private_key_bytes(
@@ -56,69 +24,122 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
         private_key_bytes: &[u8; 32],
         network: Network,
     ) -> Result<bool, ProtocolError> {
-        match self.key_type {
-            KeyType::ECDSA_SECP256K1 => {
-                let secp = Secp256k1::new();
-                let secret_key = match SecretKey::from_byte_array(private_key_bytes) {
-                    Ok(secret_key) => secret_key,
-                    Err(_) => return Ok(false),
-                };
-                let private_key = dashcore::PrivateKey::new(secret_key, network);
+        validate_private_key_bytes_for_key_data(
+            self.key_type,
+            &self.data,
+            private_key_bytes,
+            network,
+        )
+    }
+}
 
-                Ok(private_key.public_key(&secp).to_bytes() == self.data.as_slice())
-            }
-            KeyType::BLS12_381 => {
-                #[cfg(feature = "bls-signatures")]
-                {
-                    let private_key: Option<bls_signatures::SecretKey<Bls12381G2Impl>> =
-                        bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(
-                            private_key_bytes,
-                        )
-                        .into();
-                    if private_key.is_none() {
-                        return Ok(false);
-                    }
-                    let private_key = private_key.expect("expected private key");
+/// The public key hash for a key of the given type and data. Shared by every key version.
+pub(in crate::identity::identity_public_key) fn public_key_hash_for_key_data(
+    key_type: KeyType,
+    data: &BinaryData,
+) -> Result<[u8; 20], ProtocolError> {
+    if data.is_empty() {
+        return Err(ProtocolError::EmptyPublicKeyDataError);
+    }
 
-                    Ok(private_key.public_key().0.to_compressed() == self.data.as_slice())
+    match key_type {
+        KeyType::ECDSA_SECP256K1 => {
+            let key = match data.len() {
+                // TODO: We need to update schema and tests for 65 len keys
+                65 | 33 => ECDSAPublicKey::from_slice(data.as_slice())
+                    .map_err(|e| anyhow!("unable to create pub key - {}", e))?,
+                _ => {
+                    return Err(ProtocolError::ParsingError(format!(
+                        "the key length is invalid: {} Allowed sizes: 33 or 65 bytes for ecdsa key",
+                        data.len()
+                    )));
                 }
-                #[cfg(not(feature = "bls-signatures"))]
-                return Err(ProtocolError::NotSupported(
-                    "Converting a private key to a bls public key is not supported without the bls-signatures feature".to_string(),
-                ));
+            };
+            Ok(key.pubkey_hash().to_byte_array())
+        }
+        KeyType::BLS12_381 => {
+            if data.len() != 48 {
+                Err(ProtocolError::ParsingError(format!(
+                    "the key length is invalid: {} Allowed sizes: 48 bytes for bls key",
+                    data.len()
+                )))
+            } else {
+                Ok(ripemd160_sha256(data.as_slice()))
             }
-            KeyType::ECDSA_HASH160 => {
-                let secp = Secp256k1::new();
-                let secret_key = match SecretKey::from_byte_array(private_key_bytes) {
-                    Ok(secret_key) => secret_key,
-                    Err(_) => return Ok(false),
-                };
-                let private_key = dashcore::PrivateKey::new(secret_key, network);
+        }
+        KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
+            Ok(Bytes20::from_vec(data.to_vec())?.into_buffer())
+        }
+    }
+}
 
+/// Verifies that the private key bytes match a key of the given type and data. Shared by every
+/// key version.
+pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_key_data(
+    key_type: KeyType,
+    data: &BinaryData,
+    private_key_bytes: &[u8; 32],
+    network: Network,
+) -> Result<bool, ProtocolError> {
+    match key_type {
+        KeyType::ECDSA_SECP256K1 => {
+            let secp = Secp256k1::new();
+            let secret_key = match SecretKey::from_byte_array(private_key_bytes) {
+                Ok(secret_key) => secret_key,
+                Err(_) => return Ok(false),
+            };
+            let private_key = dashcore::PrivateKey::new(secret_key, network);
+
+            Ok(private_key.public_key(&secp).to_bytes() == data.as_slice())
+        }
+        KeyType::BLS12_381 => {
+            #[cfg(feature = "bls-signatures")]
+            {
+                let private_key: Option<bls_signatures::SecretKey<Bls12381G2Impl>> =
+                    bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(private_key_bytes)
+                        .into();
+                if private_key.is_none() {
+                    return Ok(false);
+                }
+                let private_key = private_key.expect("expected private key");
+
+                Ok(private_key.public_key().0.to_compressed() == data.as_slice())
+            }
+            #[cfg(not(feature = "bls-signatures"))]
+            return Err(ProtocolError::NotSupported(
+                "Converting a private key to a bls public key is not supported without the bls-signatures feature".to_string(),
+            ));
+        }
+        KeyType::ECDSA_HASH160 => {
+            let secp = Secp256k1::new();
+            let secret_key = match SecretKey::from_byte_array(private_key_bytes) {
+                Ok(secret_key) => secret_key,
+                Err(_) => return Ok(false),
+            };
+            let private_key = dashcore::PrivateKey::new(secret_key, network);
+
+            Ok(
+                ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).as_slice()
+                    == data.as_slice(),
+            )
+        }
+        KeyType::EDDSA_25519_HASH160 => {
+            #[cfg(feature = "ed25519-dalek")]
+            {
+                let key_pair = ed25519_dalek::SigningKey::from_bytes(private_key_bytes);
                 Ok(
-                    ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice())
-                        .as_slice()
-                        == self.data.as_slice(),
+                    ripemd160_sha256(key_pair.verifying_key().to_bytes().as_slice()).as_slice()
+                        == data.as_slice(),
                 )
             }
-            KeyType::EDDSA_25519_HASH160 => {
-                #[cfg(feature = "ed25519-dalek")]
-                {
-                    let key_pair = ed25519_dalek::SigningKey::from_bytes(private_key_bytes);
-                    Ok(
-                        ripemd160_sha256(key_pair.verifying_key().to_bytes().as_slice()).as_slice()
-                            == self.data.as_slice(),
-                    )
-                }
-                #[cfg(not(feature = "ed25519-dalek"))]
-                return Err(ProtocolError::NotSupported(
-                    "Converting a private key to a eddsa hash 160 is not supported without the ed25519-dalek feature".to_string(),
-                ));
-            }
-            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::NotSupported(
-                "Converting a private key to a script hash is not supported".to_string(),
-            )),
+            #[cfg(not(feature = "ed25519-dalek"))]
+            return Err(ProtocolError::NotSupported(
+                "Converting a private key to a eddsa hash 160 is not supported without the ed25519-dalek feature".to_string(),
+            ));
         }
+        KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::NotSupported(
+            "Converting a private key to a script hash is not supported".to_string(),
+        )),
     }
 }
 

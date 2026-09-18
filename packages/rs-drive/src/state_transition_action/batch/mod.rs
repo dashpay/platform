@@ -3,6 +3,8 @@ use crate::state_transition_action::batch::v0::BatchTransitionActionV0;
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::drive::contract_groups::types::ContractGroupMembershipsForContract;
+use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::identity::SecurityLevel;
 use dpp::platform_value::Identifier;
@@ -17,6 +19,18 @@ pub mod v0;
 
 #[cfg(test)]
 mod tests;
+
+/// A contract's group memberships as the batch transformer read them, with the fee of that
+/// read. The fee travels with the data, like a contract's fetch info: the transformer does not
+/// bill it, the check that uses the answer does, so a batch signed by an ordinary key pays
+/// nothing for it.
+#[derive(Debug, Clone, Default)]
+pub struct ResolvedContractGroupMemberships {
+    /// The groups the contract, its document types and its tokens belong to
+    pub memberships: ContractGroupMembershipsForContract,
+    /// What reading them cost
+    pub fee: FeeResult,
+}
 
 /// documents batch transition action
 #[derive(Debug, Clone, From)]
@@ -72,6 +86,29 @@ impl BatchTransitionAction {
     pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             BatchTransitionAction::V0(transition) => transition.user_fee_increase,
+        }
+    }
+
+    /// The group memberships the transformer resolved for a contract the batch touches
+    pub fn contract_group_memberships(
+        &self,
+        contract_id: &Identifier,
+    ) -> Option<&ResolvedContractGroupMemberships> {
+        match self {
+            BatchTransitionAction::V0(v0) => v0.contract_group_memberships.get(contract_id),
+        }
+    }
+
+    /// Records the group memberships of a contract the batch touches
+    pub fn set_contract_group_memberships(
+        &mut self,
+        contract_id: Identifier,
+        resolved: ResolvedContractGroupMemberships,
+    ) {
+        match self {
+            BatchTransitionAction::V0(v0) => {
+                v0.contract_group_memberships.insert(contract_id, resolved);
+            }
         }
     }
 }

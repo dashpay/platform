@@ -192,7 +192,7 @@ pub struct AccountSpecFFI {
 ///
 /// `contract_bounds_*` mirror the [`IdentityKeyEntryFFI`]
 /// projection of DPP's `ContractBounds` enum (kind tag: 0=none,
-/// 1=SingleContract, 2=SingleContractDocumentType). Including them
+/// 1=SingleContract, 2=SingleContractDocumentType, 3=ContractGroup). Including them
 /// here closes the persist↔restore round-trip — without it, scoped
 /// DashPay keys (registered with `SingleContractDocumentType`) come
 /// back as unbounded on cold restart.
@@ -212,12 +212,12 @@ pub struct IdentityKeyRestoreFFI {
     pub data: *const u8,
     pub data_len: usize,
     /// ContractBounds discriminant: 0=none, 1=SingleContract,
-    /// 2=SingleContractDocumentType. Mirrors the encoding in
+    /// 2=SingleContractDocumentType, 3=ContractGroup. Mirrors the encoding in
     /// [`crate::identity_persistence::IdentityKeyEntryFFI`].
     pub contract_bounds_kind: u8,
-    /// 32-byte contract identifier. Zeroed when
-    /// `contract_bounds_kind == 0`; otherwise the contract id the
-    /// key is bound to.
+    /// 32-byte identifier. Zeroed when `contract_bounds_kind == 0`;
+    /// otherwise the contract id the key is bound to, or the contract
+    /// group id when `contract_bounds_kind == 3`.
     pub contract_bounds_id: [u8; 32],
     /// NUL-terminated UTF-8 doc-type name. Non-null iff
     /// `contract_bounds_kind == 2`. Swift-owned (released by the

@@ -60,6 +60,10 @@ use crate::consensus::state::document::document_not_for_sale_error::DocumentNotF
 use crate::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
 use crate::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
+use crate::consensus::state::identity::identity_public_key_already_expired_error::IdentityPublicKeyAlreadyExpiredError;
+use crate::consensus::state::identity::identity_public_key_budget_exceeded_error::IdentityPublicKeyBudgetExceededError;
+use crate::consensus::state::identity::identity_public_key_limit_not_raised_error::IdentityPublicKeyLimitNotRaisedError;
+use crate::consensus::state::identity::identity_public_key_limit_not_set_error::IdentityPublicKeyLimitNotSetError;
 use crate::consensus::state::identity::identity_to_freeze_does_not_exist_error::IdentityToFreezeDoesNotExistError;
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
 use crate::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
@@ -424,6 +428,20 @@ pub enum StateError {
 
     #[error(transparent)]
     ContractGroupAdminNotFoundError(ContractGroupAdminNotFoundError),
+
+    // Authentication key limits (protocol version 14).
+    #[error(transparent)]
+    IdentityPublicKeyBudgetExceededError(IdentityPublicKeyBudgetExceededError),
+
+    #[error(transparent)]
+    IdentityPublicKeyAlreadyExpiredError(IdentityPublicKeyAlreadyExpiredError),
+
+    // Identity key limits update (protocol version 14).
+    #[error(transparent)]
+    IdentityPublicKeyLimitNotSetError(IdentityPublicKeyLimitNotSetError),
+
+    #[error(transparent)]
+    IdentityPublicKeyLimitNotRaisedError(IdentityPublicKeyLimitNotRaisedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -435,6 +453,7 @@ impl From<StateError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
     use platform_value::Identifier;
 
     /// `StateError` is encoded by variant position, so inserting a variant
@@ -571,7 +590,7 @@ mod tests {
             )),
             100
         );
-        // Contract groups (protocol version 14): the tail of the enum.
+        // Contract groups (protocol version 14).
         let group_id = Identifier::from([1u8; 32]);
         let identity_id = Identifier::from([2u8; 32]);
         assert_eq!(
@@ -597,6 +616,32 @@ mod tests {
                 ContractGroupAdminNotFoundError::new(group_id, identity_id)
             )),
             104
+        );
+        // Authentication key limits (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::IdentityPublicKeyBudgetExceededError(
+                IdentityPublicKeyBudgetExceededError::new(identity_id, 1, 2, 3)
+            )),
+            105
+        );
+        assert_eq!(
+            discriminant_of(StateError::IdentityPublicKeyAlreadyExpiredError(
+                IdentityPublicKeyAlreadyExpiredError::new(1, 2, 3)
+            )),
+            106
+        );
+        // Identity key limits update (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::IdentityPublicKeyLimitNotSetError(
+                IdentityPublicKeyLimitNotSetError::new(1, KeyLimit::Budget)
+            )),
+            107
+        );
+        assert_eq!(
+            discriminant_of(StateError::IdentityPublicKeyLimitNotRaisedError(
+                IdentityPublicKeyLimitNotRaisedError::new(1, KeyLimit::Expiry, 2, 3)
+            )),
+            108
         );
     }
 }

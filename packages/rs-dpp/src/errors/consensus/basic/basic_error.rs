@@ -56,6 +56,9 @@ use crate::consensus::basic::document::{
     MissingDocumentTransitionTypeError, MissingDocumentTypeError,
     MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
+use crate::consensus::basic::identity::ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError;
+use crate::consensus::basic::identity::IdentityKeyLimitsUpdateEmptyError;
+use crate::consensus::basic::identity::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError;
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
@@ -65,19 +68,20 @@ use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     IdentityAssetLockTransactionOutputNotFoundError,
     IdentityAssetLockTransactionTooManyInputsError, IdentityCreditTransferToSelfError,
-    InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
-    InvalidAssetLockTransactionOutputReturnSizeError,
+    IdentityPublicKeyLimitsNotAllowedError, InvalidAssetLockProofCoreChainHeightError,
+    InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidCreditWithdrawalTransitionCoreFeeError,
     InvalidCreditWithdrawalTransitionOutputScriptError,
     InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityCreditTransferAmountError, InvalidIdentityCreditWithdrawalTransitionAmountError,
-    InvalidIdentityKeySignatureError, InvalidIdentityPublicKeyDataError,
-    InvalidIdentityPublicKeySecurityLevelError, InvalidIdentityUpdateTransitionDisableKeysError,
-    InvalidIdentityUpdateTransitionEmptyError, InvalidInstantAssetLockProofError,
-    InvalidInstantAssetLockProofSignatureError, InvalidKeyPurposeForContractBoundsError,
-    MissingMasterPublicKeyError, NotImplementedCreditWithdrawalTransitionPoolingError,
-    TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
+    InvalidIdentityKeySignatureError, InvalidIdentityPublicKeyBudgetError,
+    InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
+    InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
+    InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
+    InvalidKeyPurposeForContractBoundsError, MissingMasterPublicKeyError,
+    NotImplementedCreditWithdrawalTransitionPoolingError, TooManyMasterPublicKeyError,
+    WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
@@ -744,6 +748,28 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidContractGroupDescriptionLengthError(InvalidContractGroupDescriptionLengthError),
+
+    // Contract group bounds on identity keys (protocol version 14).
+    #[error(transparent)]
+    ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError(
+        ContractGroupBoundKeyNotAllowedInShieldedIdentityCreationError,
+    ),
+
+    // Authentication key limits (protocol version 14).
+    #[error(transparent)]
+    IdentityPublicKeyLimitsNotAllowedError(IdentityPublicKeyLimitsNotAllowedError),
+
+    #[error(transparent)]
+    InvalidIdentityPublicKeyBudgetError(InvalidIdentityPublicKeyBudgetError),
+
+    #[error(transparent)]
+    IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(
+        IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError,
+    ),
+
+    // Identity key limits update (protocol version 14).
+    #[error(transparent)]
+    IdentityKeyLimitsUpdateEmptyError(IdentityKeyLimitsUpdateEmptyError),
 }
 
 impl From<BasicError> for ConsensusError {

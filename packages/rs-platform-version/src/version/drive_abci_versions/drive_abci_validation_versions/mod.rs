@@ -119,6 +119,8 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub max_asset_lock_usage_attempts: u16,
     pub identity_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
+    /// `IdentityKeyLimitsUpdate` (protocol version 14): every gate is `None` before V10.
+    pub identity_key_limits_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition_purpose_matches_requirements: FeatureVersion,
@@ -157,6 +159,9 @@ pub struct DriveAbciStateTransitionValidationVersions {
 pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub asset_locks: DriveAbciAssetLockValidationVersions,
     pub validate_identity_public_key_contract_bounds: FeatureVersion,
+    /// Rejects a public key in creation whose expiry is not after the block time. Public keys
+    /// cannot carry an expiry before protocol version 14, so earlier tables keep it `None`.
+    pub validate_identity_public_keys_limits: OptionalFeatureVersion,
     pub validate_identity_public_key_ids_dont_exist_in_state: FeatureVersion,
     pub validate_identity_public_key_ids_exist_in_state: FeatureVersion,
     pub validate_state_transition_identity_signed: FeatureVersion,

@@ -18,6 +18,8 @@ service Platform {
       returns (GetIdentityNonceResponse);
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest)
       returns (GetIdentityContractNonceResponse);
+  rpc getIdentityKeysRemainingBudgets(GetIdentityKeysRemainingBudgetsRequest)
+      returns (GetIdentityKeysRemainingBudgetsResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
       returns (GetIdentityBalanceResponse);
   rpc getIdentitiesBalances(GetIdentitiesBalancesRequest)
@@ -271,6 +273,40 @@ message GetIdentityContractNonceResponse {
   }
 
   oneof version { GetIdentityContractNonceResponseV0 v0 = 1; }
+}
+
+// What is left of the budgets of keys of one identity. A key may carry a
+// total budget (protocol version 14); the key itself never changes, so what
+// remains of it is tracked next to it and read with this query.
+message GetIdentityKeysRemainingBudgetsRequest {
+  message GetIdentityKeysRemainingBudgetsRequestV0 {
+    bytes identity_id = 1;        // ID of the identity
+    repeated uint32 key_ids = 2;  // IDs of the keys to look up, at least one
+    bool prove = 3;               // Flag to request a proof as the response
+  }
+  oneof version { GetIdentityKeysRemainingBudgetsRequestV0 v0 = 1; }
+}
+
+message GetIdentityKeysRemainingBudgetsResponse {
+  message GetIdentityKeysRemainingBudgetsResponseV0 {
+    message KeyRemainingBudgetEntry {
+      uint32 key_id = 1; // ID of the key
+      // Credits left of the key's total budget. Absent when the key has no
+      // budget (or does not exist). Zero means the key can no longer sign.
+      optional uint64 remaining_budget = 2 [ jstype = JS_STRING ];
+    }
+
+    message KeysRemainingBudgets {
+      repeated KeyRemainingBudgetEntry entries = 1; // One entry per requested key
+    }
+
+    oneof result {
+      KeysRemainingBudgets keys_remaining_budgets = 1; // The remaining budgets
+      Proof proof = 2; // Proof of the remaining budgets, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetIdentityKeysRemainingBudgetsResponseV0 v0 = 1; }
 }
 
 message GetIdentityBalanceResponse {

@@ -647,6 +647,183 @@ export namespace GetIdentityContractNonceResponse {
   }
 }
 
+export class GetIdentityKeysRemainingBudgetsRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0 | undefined;
+  setV0(value?: GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0): void;
+
+  getVersionCase(): GetIdentityKeysRemainingBudgetsRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetIdentityKeysRemainingBudgetsRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetIdentityKeysRemainingBudgetsRequest): GetIdentityKeysRemainingBudgetsRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetIdentityKeysRemainingBudgetsRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetIdentityKeysRemainingBudgetsRequest;
+  static deserializeBinaryFromReader(message: GetIdentityKeysRemainingBudgetsRequest, reader: jspb.BinaryReader): GetIdentityKeysRemainingBudgetsRequest;
+}
+
+export namespace GetIdentityKeysRemainingBudgetsRequest {
+  export type AsObject = {
+    v0?: GetIdentityKeysRemainingBudgetsRequest.GetIdentityKeysRemainingBudgetsRequestV0.AsObject,
+  }
+
+  export class GetIdentityKeysRemainingBudgetsRequestV0 extends jspb.Message {
+    getIdentityId(): Uint8Array | string;
+    getIdentityId_asU8(): Uint8Array;
+    getIdentityId_asB64(): string;
+    setIdentityId(value: Uint8Array | string): void;
+
+    clearKeyIdsList(): void;
+    getKeyIdsList(): Array<number>;
+    setKeyIdsList(value: Array<number>): void;
+    addKeyIds(value: number, index?: number): number;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentityKeysRemainingBudgetsRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentityKeysRemainingBudgetsRequestV0): GetIdentityKeysRemainingBudgetsRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentityKeysRemainingBudgetsRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentityKeysRemainingBudgetsRequestV0;
+    static deserializeBinaryFromReader(message: GetIdentityKeysRemainingBudgetsRequestV0, reader: jspb.BinaryReader): GetIdentityKeysRemainingBudgetsRequestV0;
+  }
+
+  export namespace GetIdentityKeysRemainingBudgetsRequestV0 {
+    export type AsObject = {
+      identityId: Uint8Array | string,
+      keyIdsList: Array<number>,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetIdentityKeysRemainingBudgetsResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0 | undefined;
+  setV0(value?: GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0): void;
+
+  getVersionCase(): GetIdentityKeysRemainingBudgetsResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetIdentityKeysRemainingBudgetsResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetIdentityKeysRemainingBudgetsResponse): GetIdentityKeysRemainingBudgetsResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetIdentityKeysRemainingBudgetsResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetIdentityKeysRemainingBudgetsResponse;
+  static deserializeBinaryFromReader(message: GetIdentityKeysRemainingBudgetsResponse, reader: jspb.BinaryReader): GetIdentityKeysRemainingBudgetsResponse;
+}
+
+export namespace GetIdentityKeysRemainingBudgetsResponse {
+  export type AsObject = {
+    v0?: GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.AsObject,
+  }
+
+  export class GetIdentityKeysRemainingBudgetsResponseV0 extends jspb.Message {
+    hasKeysRemainingBudgets(): boolean;
+    clearKeysRemainingBudgets(): void;
+    getKeysRemainingBudgets(): GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets | undefined;
+    setKeysRemainingBudgets(value?: GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetIdentityKeysRemainingBudgetsResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentityKeysRemainingBudgetsResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentityKeysRemainingBudgetsResponseV0): GetIdentityKeysRemainingBudgetsResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentityKeysRemainingBudgetsResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentityKeysRemainingBudgetsResponseV0;
+    static deserializeBinaryFromReader(message: GetIdentityKeysRemainingBudgetsResponseV0, reader: jspb.BinaryReader): GetIdentityKeysRemainingBudgetsResponseV0;
+  }
+
+  export namespace GetIdentityKeysRemainingBudgetsResponseV0 {
+    export type AsObject = {
+      keysRemainingBudgets?: GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeysRemainingBudgets.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class KeyRemainingBudgetEntry extends jspb.Message {
+      getKeyId(): number;
+      setKeyId(value: number): void;
+
+      hasRemainingBudget(): boolean;
+      clearRemainingBudget(): void;
+      getRemainingBudget(): string;
+      setRemainingBudget(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): KeyRemainingBudgetEntry.AsObject;
+      static toObject(includeInstance: boolean, msg: KeyRemainingBudgetEntry): KeyRemainingBudgetEntry.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: KeyRemainingBudgetEntry, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): KeyRemainingBudgetEntry;
+      static deserializeBinaryFromReader(message: KeyRemainingBudgetEntry, reader: jspb.BinaryReader): KeyRemainingBudgetEntry;
+    }
+
+    export namespace KeyRemainingBudgetEntry {
+      export type AsObject = {
+        keyId: number,
+        remainingBudget: string,
+      }
+    }
+
+    export class KeysRemainingBudgets extends jspb.Message {
+      clearEntriesList(): void;
+      getEntriesList(): Array<GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry>;
+      setEntriesList(value: Array<GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry>): void;
+      addEntries(value?: GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry, index?: number): GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): KeysRemainingBudgets.AsObject;
+      static toObject(includeInstance: boolean, msg: KeysRemainingBudgets): KeysRemainingBudgets.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: KeysRemainingBudgets, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): KeysRemainingBudgets;
+      static deserializeBinaryFromReader(message: KeysRemainingBudgets, reader: jspb.BinaryReader): KeysRemainingBudgets;
+    }
+
+    export namespace KeysRemainingBudgets {
+      export type AsObject = {
+        entriesList: Array<GetIdentityKeysRemainingBudgetsResponse.GetIdentityKeysRemainingBudgetsResponseV0.KeyRemainingBudgetEntry.AsObject>,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      KEYS_REMAINING_BUDGETS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetIdentityBalanceResponse extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;

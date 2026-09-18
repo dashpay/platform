@@ -127,3 +127,13 @@ carries its cursor; `limit` defaults to and is capped by 100) and
 `getContractGroupsForContract`, each with a `prove` flag. `rs-drive-proof-verifier` verifies
 the responses into `ContractGroupInfo`, `ContractGroupMembersPage` and
 `ContractGroupMembershipsForContract`, which implement `Fetch` and `FetchUnproved` in `rs-sdk`.
+
+## Keys bound to a group
+
+An identity's AUTHENTICATION key may carry `contractBounds` of type `contractGroup`
+naming a group. The key may then sign batch members whose contract, document type or
+token is a member of the group; consensus reads the memberships of each distinct
+contract the batch touches once and bills each read once. The group must exist when the
+key is registered, any identity may bind a key to any group, and encryption and
+decryption keys cannot be group-bound. `IdentityCreateFromShieldedPool` refuses
+group-bound keys. The rules and errors are in `contract-bound-authentication-keys.md`.

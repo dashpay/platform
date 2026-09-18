@@ -18,6 +18,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                     verify_asset_lock_is_not_spent_and_has_enough_balance: 0,
                 },
                 validate_identity_public_key_contract_bounds: 0,
+                validate_identity_public_keys_limits: None,
                 validate_identity_public_key_ids_dont_exist_in_state: 0,
                 validate_identity_public_key_ids_exist_in_state: 0,
                 validate_state_transition_identity_signed: 0,
@@ -43,6 +44,15 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
+            identity_key_limits_update_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
             identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
                 advanced_structure: None,

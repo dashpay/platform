@@ -89,6 +89,9 @@ impl StateTransitionFactoryWasm {
                 | StateTransition::IdentityTopUpFromShieldedPool(_) => Err(JsValue::from_str(
                     "shielded transitions are not yet supported in wasm-dpp StateTransitionFactory",
                 )),
+                StateTransition::IdentityKeyLimitsUpdate(_) => Err(JsValue::from_str(
+                    "identity key limits update transitions are not supported in wasm-dpp StateTransitionFactory; use wasm-dpp2",
+                )),
             },
             Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
                 StateTransitionError::InvalidStateTransitionError {

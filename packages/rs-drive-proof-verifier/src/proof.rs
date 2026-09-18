@@ -39,6 +39,7 @@ pub mod document_split_sum;
 /// Lights up alongside grovedb PR 670; see the file's docs.
 pub mod document_sum;
 pub mod groups;
+pub mod identity_keys_remaining_budgets;
 pub mod identity_token_balance;
 pub mod token_contract_info;
 pub mod token_direct_purchase;
@@ -1152,9 +1153,11 @@ impl FromProof<platform::GetAddressesTrunkStateRequest> for GroveTrunkQueryResul
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, trunk_result) =
-            Drive::verify_address_funds_trunk_query(&proof.grovedb_proof, platform_version)
-                .map_drive_error(proof, mtd)?;
+        let (root_hash, trunk_result) = Drive::verify_address_funds_trunk_query(
+            supported_grovedb_proof_bytes(proof, platform_version)?,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_signature(proof, mtd, &root_hash, provider)?;
 
@@ -6666,6 +6669,40 @@ mod tests {
                     GetRecentAddressBalanceChangesResponseV0,
                     GetRecentAddressBalanceChangesResponse
                 )
+            );
+            // The trunk response carries its proof directly rather than in a
+            // `result` oneof, so it cannot use `legacy_response!`. Without the
+            // gate a V0 envelope reaches GroveDB's V0 trunk verifier, whose
+            // `count == 0` fast path skips the value-hash chain and lets a
+            // prover present the address tree as empty.
+            use platform::get_addresses_trunk_state_response::{
+                GetAddressesTrunkStateResponseV0, Version as TrunkStateVersion,
+            };
+            let legacy_trunk_state_response = || platform::GetAddressesTrunkStateResponse {
+                version: Some(TrunkStateVersion::V0(GetAddressesTrunkStateResponseV0 {
+                    proof: Some(legacy_proof()),
+                    metadata: Some(ResponseMetadata::default()),
+                })),
+            };
+            assert_rejects_legacy_envelope!(
+                GroveTrunkQueryResult,
+                platform::GetAddressesTrunkStateRequest,
+                request!(
+                    get_addresses_trunk_state_request,
+                    GetAddressesTrunkStateRequestV0,
+                    GetAddressesTrunkStateRequest {}
+                ),
+                legacy_trunk_state_response()
+            );
+            assert_rejects_legacy_envelope!(
+                PlatformAddressTrunkState,
+                platform::GetAddressesTrunkStateRequest,
+                request!(
+                    get_addresses_trunk_state_request,
+                    GetAddressesTrunkStateRequestV0,
+                    GetAddressesTrunkStateRequest {}
+                ),
+                legacy_trunk_state_response()
             );
             assert_rejects_legacy_envelope!(
                 PrefundedSpecializedBalance,

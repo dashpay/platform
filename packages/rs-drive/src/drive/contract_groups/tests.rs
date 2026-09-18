@@ -4,7 +4,12 @@ use crate::drive::contract_groups::paths::{
 use crate::drive::contract_groups::types::{
     ContractGroupMembersPage, ContractGroupMembersQuery, ContractGroupMembershipsForContract,
 };
+use crate::drive::identity::key::fetch::{
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyKindRequestType, KeyRequestType,
+};
 use crate::drive::{Drive, RootTree};
+use crate::error::identity::IdentityError;
+use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
 use dpp::block::block_info::BlockInfo;
@@ -13,8 +18,16 @@ use dpp::contract_group::{
     ContractGroupRegistration,
 };
 use dpp::identifier::Identifier;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::contract_bounds::ContractBounds;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::BinaryData;
 use dpp::version::PlatformVersion;
 use grovedb_path::SubtreePath;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 fn identity(seed: u8) -> Identifier {
@@ -712,4 +725,262 @@ fn should_page_document_types_past_a_contract_with_no_entries_left() {
         collected, expected,
         "a limit of one must still reach every entry"
     );
+}
+
+fn key_bound_to_contract_group(
+    key_id: KeyID,
+    purpose: Purpose,
+    security_level: SecurityLevel,
+    contract_group_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> IdentityPublicKey {
+    let mut rng = StdRng::seed_from_u64(key_id as u64 + 900);
+    IdentityPublicKeyV0 {
+        id: key_id,
+        purpose,
+        security_level,
+        contract_bounds: Some(ContractBounds::ContractGroup {
+            id: contract_group_id,
+        }),
+        key_type: KeyType::ECDSA_SECP256K1,
+        read_only: false,
+        data: BinaryData::new(
+            KeyType::ECDSA_SECP256K1
+                .random_public_key_data(&mut rng, platform_version)
+                .expect("expected a random key"),
+        ),
+        disabled_at: None,
+    }
+    .into()
+}
+
+fn group_bound_keys_request(
+    identity_id: Identifier,
+    contract_group_id: Identifier,
+    kind: KeyKindRequestType,
+) -> IdentityKeysRequest {
+    IdentityKeysRequest {
+        identity_id: identity_id.to_buffer(),
+        request_type: KeyRequestType::ContractGroupBoundKey(
+            contract_group_id.to_buffer(),
+            Purpose::AUTHENTICATION,
+            kind,
+        ),
+        limit: None,
+        offset: None,
+    }
+}
+
+#[test]
+fn should_store_and_fetch_an_authentication_key_bound_to_a_contract_group() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract_group_id = generate_contract_group_id(&identity(1), 1);
+    drive
+        .insert_contract_group(
+            contract_group_id,
+            &single_owner_info(identity(1), "wallet"),
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to register the group");
+
+    let mut new_identity = Identity::random_identity(3, Some(4791), platform_version)
+        .expect("expected a random identity");
+    let bound_key = key_bound_to_contract_group(
+        7,
+        Purpose::AUTHENTICATION,
+        SecurityLevel::HIGH,
+        contract_group_id,
+        platform_version,
+    );
+    new_identity.add_public_key(bound_key.clone());
+
+    let estimated = drive
+        .add_new_identity(
+            new_identity.clone(),
+            false,
+            &BlockInfo::default(),
+            false,
+            None,
+            platform_version,
+        )
+        .expect("expected to estimate the identity");
+    let actual = drive
+        .add_new_identity(
+            new_identity.clone(),
+            false,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to insert the identity");
+    assert!(
+        estimated.processing_fee >= actual.processing_fee
+            && estimated.storage_fee >= actual.storage_fee,
+        "estimate {:?} must cover actual {:?}",
+        estimated,
+        actual
+    );
+
+    // The current key of the group, through the alias, and the listing, which skips the alias.
+    let current = drive
+        .fetch_identity_keys::<KeyIDIdentityPublicKeyPairVec>(
+            IdentityKeysRequest::new_contract_group_authentication_keys_query(
+                new_identity.id().to_buffer(),
+                contract_group_id.to_buffer(),
+            ),
+            None,
+            platform_version,
+        )
+        .expect("expected the current key");
+    assert_eq!(current, vec![(7, bound_key.clone())]);
+    let all = drive
+        .fetch_identity_keys::<KeyIDIdentityPublicKeyPairVec>(
+            group_bound_keys_request(
+                new_identity.id(),
+                contract_group_id,
+                KeyKindRequestType::AllKeysOfKindRequest,
+            ),
+            None,
+            platform_version,
+        )
+        .expect("expected every key of the group");
+    assert_eq!(all, vec![(7, bound_key)]);
+
+    // Another group holds nothing for this identity.
+    let other = drive.fetch_identity_keys::<KeyIDIdentityPublicKeyPairVec>(
+        group_bound_keys_request(
+            new_identity.id(),
+            generate_contract_group_id(&identity(1), 2),
+            KeyKindRequestType::AllKeysOfKindRequest,
+        ),
+        None,
+        platform_version,
+    );
+    assert!(
+        other.map(|keys| keys.is_empty()).unwrap_or(true),
+        "no keys are bound to a group the identity never named"
+    );
+}
+
+#[test]
+fn should_refuse_a_key_bound_to_a_missing_contract_group_or_with_another_purpose() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract_group_id = generate_contract_group_id(&identity(1), 1);
+    drive
+        .insert_contract_group(
+            contract_group_id,
+            &single_owner_info(identity(1), "wallet"),
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to register the group");
+
+    for (case, purpose, security_level, group) in [
+        (
+            "missing group",
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            generate_contract_group_id(&identity(1), 9),
+        ),
+        (
+            "encryption key",
+            Purpose::ENCRYPTION,
+            SecurityLevel::MEDIUM,
+            contract_group_id,
+        ),
+    ] {
+        let mut new_identity = Identity::random_identity(3, Some(81), platform_version)
+            .expect("expected a random identity");
+        new_identity.add_public_key(key_bound_to_contract_group(
+            7,
+            purpose,
+            security_level,
+            group,
+            platform_version,
+        ));
+        let result = drive.add_new_identity(
+            new_identity,
+            false,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(Error::Identity(IdentityError::IdentityKeyBoundsError(_)))
+            ),
+            "{case}: {result:?}"
+        );
+    }
+}
+
+#[test]
+fn should_keep_a_disabled_group_bound_key_reachable_through_the_group_request() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract_group_id = generate_contract_group_id(&identity(1), 1);
+    drive
+        .insert_contract_group(
+            contract_group_id,
+            &single_owner_info(identity(1), "wallet"),
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to register the group");
+    let mut new_identity = Identity::random_identity(3, Some(515), platform_version)
+        .expect("expected a random identity");
+    new_identity.add_public_key(key_bound_to_contract_group(
+        7,
+        Purpose::AUTHENTICATION,
+        SecurityLevel::HIGH,
+        contract_group_id,
+        platform_version,
+    ));
+    drive
+        .add_new_identity(
+            new_identity.clone(),
+            false,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to insert the identity");
+
+    drive
+        .disable_identity_keys(
+            new_identity.id().to_buffer(),
+            vec![7],
+            1_000,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to disable the bound key");
+
+    let current = drive
+        .fetch_identity_keys::<KeyIDIdentityPublicKeyPairVec>(
+            IdentityKeysRequest::new_contract_group_authentication_keys_query(
+                new_identity.id().to_buffer(),
+                contract_group_id.to_buffer(),
+            ),
+            None,
+            platform_version,
+        )
+        .expect("expected the current key");
+    assert_eq!(current.len(), 1);
+    assert_eq!(current[0].1.disabled_at(), Some(1_000));
 }

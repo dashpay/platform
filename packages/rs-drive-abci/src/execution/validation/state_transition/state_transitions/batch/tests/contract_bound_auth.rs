@@ -50,7 +50,9 @@ async fn should_enforce_contract_bounds_in_execution_and_preserve_paid_failure_n
             _ => ContractBounds::SingleContract { id: dashpay.id() },
         };
         let mut stored_key = signing_key.clone();
-        let IdentityPublicKey::V0(ref mut key) = stored_key;
+        let IdentityPublicKey::V0(ref mut key) = stored_key else {
+            panic!("expected a version 0 key")
+        };
         key.contract_bounds = Some(bounds);
         if case == "disabled" {
             key.disabled_at = Some(99);
@@ -257,7 +259,9 @@ async fn should_reject_non_batch_use_of_a_bound_authentication_key() {
         .load_dashpay(version)
         .unwrap();
     let mut stored_key = signing_key.clone();
-    let IdentityPublicKey::V0(ref mut key) = stored_key;
+    let IdentityPublicKey::V0(ref mut key) = stored_key else {
+        panic!("expected a version 0 key")
+    };
     key.contract_bounds = Some(ContractBounds::SingleContract { id: dashpay.id() });
     identity.add_public_key(stored_key);
     platform
@@ -343,7 +347,9 @@ async fn should_bound_token_operations_to_the_bound_contract() {
         let (mut identity, signer, signing_key) =
             setup_identity_without_adding_it(234, dash_to_credits!(0.1));
         let mut stored_key = signing_key.clone();
-        let IdentityPublicKey::V0(ref mut key) = stored_key;
+        let IdentityPublicKey::V0(ref mut key) = stored_key else {
+            panic!("expected a version 0 key")
+        };
         key.contract_bounds = Some(ContractBounds::SingleContract {
             id: if bound_to_token_contract {
                 contract.id()

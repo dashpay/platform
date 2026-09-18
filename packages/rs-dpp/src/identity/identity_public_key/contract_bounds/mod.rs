@@ -1,6 +1,8 @@
+#[cfg(feature = "state-transitions")]
+use crate::contract_group::ContractGroupMember;
 use crate::identifier::Identifier;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
-    SingleContract, SingleContractDocumentType,
+    ContractGroup, SingleContract, SingleContractDocumentType,
 };
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
@@ -12,6 +14,8 @@ use crate::state_transition::batch_transition::batched_transition::document_tran
 use crate::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use serde::{Deserialize, Serialize};
@@ -20,10 +24,12 @@ pub type ContractBoundsType = u8;
 
 /// A contract bounds is the bounds that the key has influence on.
 /// For authentication keys the bounds mean that the keys can only be used to sign
-/// within the specified contract.
+/// within the specified contract, or within the members of the specified contract group.
 /// For encryption decryption this tells clients to only use these keys for specific
 /// contracts.
 ///
+/// New variants go last: the bincode tag is the declaration index, and every stored identity
+/// key carries one.
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[repr(u8)]
 #[derive(
@@ -52,9 +58,28 @@ pub enum ContractBounds {
         id: Identifier,
         document_type_name: String,
     } = 1,
-    // /// this key can only be used within contracts owned by a specified owner
-    // #[serde(rename = "multipleContractsOfSameOwner")]
-    // MultipleContractsOfSameOwner { owner_id: Identifier } = 2,
+    /// this key can only be used within the members of a contract group: the contracts,
+    /// document types and tokens the group holds when the key signs (protocol version 14)
+    #[serde(rename = "contractGroup")]
+    ContractGroup { id: Identifier } = 2,
+}
+
+/// What authorizing one batch member with a contract-bound AUTHENTICATION key needs.
+#[cfg(feature = "state-transitions")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BatchedTransitionBoundsCheck {
+    /// The member lies inside the bounds.
+    Allowed,
+    /// The member lies outside the bounds.
+    Denied,
+    /// The bounds name a contract group. The member lies inside them when its contract holds
+    /// this membership in the group, or is a whole-contract member of the group. Only state can
+    /// answer that; consensus reads the contract's memberships and bills the read.
+    RequiresContractGroupMembership {
+        contract_group_id: Identifier,
+        contract_id: Identifier,
+        member: ContractGroupMember,
+    },
 }
 
 impl ContractBounds {
@@ -72,6 +97,9 @@ impl ContractBounds {
                 id: Identifier::from_bytes(identifier.as_slice())?,
                 document_type_name: document_type,
             },
+            2 => ContractGroup {
+                id: Identifier::from_bytes(identifier.as_slice())?,
+            },
             _ => {
                 return Err(ProtocolError::InvalidKeyContractBoundsError(format!(
                     "unrecognized contract bounds type: {}",
@@ -86,7 +114,7 @@ impl ContractBounds {
         match self {
             SingleContract { .. } => 0,
             SingleContractDocumentType { .. } => 1,
-            // MultipleContractsOfSameOwner { .. } => 2,
+            ContractGroup { .. } => 2,
         }
     }
 
@@ -94,8 +122,9 @@ impl ContractBounds {
         match str {
             "singleContract" => Ok(0),
             "documentType" => Ok(1),
+            "contractGroup" => Ok(2),
             _ => Err(ProtocolError::DecodingError(String::from(
-                "Expected type to be one of none, singleContract or singleContractDocumentType",
+                "Expected type to be one of singleContract, documentType or contractGroup",
             ))),
         }
     }
@@ -104,16 +133,33 @@ impl ContractBounds {
         match self {
             SingleContract { .. } => "singleContract",
             SingleContractDocumentType { .. } => "documentType",
-            // MultipleContractsOfSameOwner { .. } => "multipleContractsOfSameOwner",
+            ContractGroup { .. } => "contractGroup",
         }
     }
 
-    /// Gets the identifier
+    /// Gets the identifier: the contract id, or the contract group id for a group bound. Use
+    /// [`Self::contract_id`] or [`Self::contract_group_id`] when the kind matters.
     pub fn identifier(&self) -> &Identifier {
         match self {
             SingleContract { id } => id,
             SingleContractDocumentType { id, .. } => id,
-            // MultipleContractsOfSameOwner { owner_id } => owner_id,
+            ContractGroup { id } => id,
+        }
+    }
+
+    /// The bound contract id, when the bounds name one contract.
+    pub fn contract_id(&self) -> Option<&Identifier> {
+        match self {
+            SingleContract { id } | SingleContractDocumentType { id, .. } => Some(id),
+            ContractGroup { .. } => None,
+        }
+    }
+
+    /// The bound contract group id, when the bounds name a contract group.
+    pub fn contract_group_id(&self) -> Option<&Identifier> {
+        match self {
+            SingleContract { .. } | SingleContractDocumentType { .. } => None,
+            ContractGroup { id } => Some(id),
         }
     }
 
@@ -125,21 +171,28 @@ impl ContractBounds {
                 document_type_name: document_type,
                 ..
             } => Some(document_type),
-            // MultipleContractsOfSameOwner { .. } => None,
+            ContractGroup { .. } => None,
         }
     }
 
-    /// Whether a batch member is inside these bounds. Consensus uses this to authorize a batch
-    /// signed by a contract-bound AUTHENTICATION key. Token operations are contract-wide, so a
-    /// document-type bound never covers them.
+    /// What authorizing `transition` with a key carrying these bounds needs. Consensus uses this
+    /// to authorize a batch signed by a contract-bound AUTHENTICATION key. Token operations are
+    /// contract-wide, so a document-type bound never covers them. A contract group bound is
+    /// answered by state: the member's contract must hold the returned membership, or be a
+    /// whole-contract member of the group.
     #[cfg(feature = "state-transitions")]
-    pub fn allows_batched_transition(&self, transition: BatchedTransitionRef<'_>) -> bool {
+    pub fn check_batched_transition(
+        &self,
+        transition: BatchedTransitionRef<'_>,
+    ) -> BatchedTransitionBoundsCheck {
+        use BatchedTransitionBoundsCheck::{Allowed, Denied, RequiresContractGroupMembership};
+        let allowed_if = |inside: bool| if inside { Allowed } else { Denied };
         match (self, transition) {
             (SingleContract { id }, BatchedTransitionRef::Document(document)) => {
-                document.data_contract_id() == *id
+                allowed_if(document.data_contract_id() == *id)
             }
             (SingleContract { id }, BatchedTransitionRef::Token(token)) => {
-                token.data_contract_id() == *id
+                allowed_if(token.data_contract_id() == *id)
             }
             (
                 SingleContractDocumentType {
@@ -147,63 +200,29 @@ impl ContractBounds {
                     document_type_name,
                 },
                 BatchedTransitionRef::Document(document),
-            ) => {
+            ) => allowed_if(
                 document.data_contract_id() == *id
-                    && document.document_type_name() == document_type_name.as_str()
+                    && document.document_type_name() == document_type_name.as_str(),
+            ),
+            (SingleContractDocumentType { .. }, BatchedTransitionRef::Token(_)) => Denied,
+            (ContractGroup { id }, BatchedTransitionRef::Document(document)) => {
+                RequiresContractGroupMembership {
+                    contract_group_id: *id,
+                    contract_id: document.data_contract_id(),
+                    member: ContractGroupMember::DocumentType(
+                        document.document_type_name().to_string(),
+                    ),
+                }
             }
-            (SingleContractDocumentType { .. }, BatchedTransitionRef::Token(_)) => false,
+            (ContractGroup { id }, BatchedTransitionRef::Token(token)) => {
+                RequiresContractGroupMembership {
+                    contract_group_id: *id,
+                    contract_id: token.data_contract_id(),
+                    member: ContractGroupMember::Token(token.base().token_contract_position()),
+                }
+            }
         }
     }
-    //
-    // /// Gets the cbor value
-    // pub fn to_cbor_value(&self) -> CborValue {
-    //     let mut pk_map = CborCanonicalMap::new();
-    //
-    //     let contract_bounds_type = self.contract_bounds_type();
-    //     pk_map.insert("type", self.contract_bounds_type_string());
-    //
-    //     pk_map.insert("identifier", self.identifier().to_buffer_vec());
-    //
-    //     if contract_bounds_type == 1 {
-    //         pk_map.insert("documentType", self.document_type().unwrap().clone());
-    //     }
-    //     pk_map.to_value_sorted()
-    // }
-    //
-    // /// Gets the cbor value
-    // pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
-    //     let key_value_map = cbor_value.as_map().ok_or_else(|| {
-    //         ProtocolError::DecodingError(String::from(
-    //             "Expected identity public key to be a key value map",
-    //         ))
-    //     })?;
-    //
-    //     let contract_bounds_type_string =
-    //         key_value_map.as_string("type", "Contract bounds must have a type")?;
-    //     let contract_bounds_type =
-    //         Self::contract_bounds_type_from_str(contract_bounds_type_string.as_str())?;
-    //     let contract_bounds_identifier = if contract_bounds_type > 0 {
-    //         key_value_map.as_vec(
-    //             "identifier",
-    //             "Contract bounds must have an identifier if it is not type 0",
-    //         )?
-    //     } else {
-    //         vec![]
-    //     };
-    //     let contract_bounds_document_type = if contract_bounds_type == 2 {
-    //         key_value_map.as_string(
-    //             "documentType",
-    //             "Contract bounds must have a document type if it is type 2",
-    //         )?
-    //     } else {
-    //         String::new()
-    //     };
-    //     ContractBounds::new_from_type(
-    //         contract_bounds_type,
-    //         contract_bounds_identifier,
-    //         contract_bounds_document_type,
-    //     )
-    // }
 }
 
 #[cfg(test)]
@@ -237,6 +256,41 @@ mod core_tests {
         assert_eq!(bounds.contract_bounds_type_string(), "documentType");
         assert_eq!(bounds.identifier().as_bytes(), id_bytes.as_slice());
         assert_eq!(bounds.document_type().map(String::as_str), Some("myDoc"));
+    }
+
+    #[test]
+    fn should_build_contract_group_bounds_from_type_two() {
+        let id_bytes = vec![0xEEu8; 32];
+        let bounds = ContractBounds::new_from_type(2, id_bytes.clone(), "ignored".to_string())
+            .expect("expected to construct ContractGroup");
+        assert!(matches!(bounds, ContractBounds::ContractGroup { .. }));
+        assert_eq!(bounds.contract_bounds_type(), 2);
+        assert_eq!(bounds.contract_bounds_type_string(), "contractGroup");
+        assert_eq!(bounds.identifier().as_bytes(), id_bytes.as_slice());
+        assert_eq!(
+            bounds.contract_group_id().map(|id| id.as_slice()),
+            Some(id_bytes.as_slice())
+        );
+        assert!(bounds.contract_id().is_none());
+        assert!(bounds.document_type().is_none());
+        assert_eq!(
+            ContractBounds::contract_bounds_type_from_str("contractGroup").unwrap(),
+            2
+        );
+    }
+
+    #[test]
+    fn should_expose_the_contract_id_only_for_contract_bounds() {
+        let id = Identifier::from([0x12u8; 32]);
+        let single = ContractBounds::SingleContract { id };
+        let typed = ContractBounds::SingleContractDocumentType {
+            id,
+            document_type_name: "note".to_string(),
+        };
+        assert_eq!(single.contract_id(), Some(&id));
+        assert_eq!(typed.contract_id(), Some(&id));
+        assert!(single.contract_group_id().is_none());
+        assert!(typed.contract_group_id().is_none());
     }
 
     // -- new_from_type: invalid type --
@@ -363,6 +417,29 @@ mod tests {
     }
 
     #[test]
+    fn should_round_trip_contract_group_bounds_through_json() {
+        let id = Identifier::from([0xEFu8; 32]);
+        let bounds = ContractBounds::ContractGroup { id };
+
+        let json = bounds.to_json().expect("to_json should succeed");
+        assert_eq!(json["$type"].as_str().unwrap(), "contractGroup");
+        assert_eq!(
+            json["id"].as_str().unwrap(),
+            id.to_string(platform_value::string_encoding::Encoding::Base58)
+        );
+        assert!(json.get("documentTypeName").is_none());
+
+        let restored = ContractBounds::from_json(json).expect("from_json should succeed");
+        assert_eq!(bounds, restored);
+
+        let obj = bounds.to_object().expect("to_object should succeed");
+        assert_eq!(
+            ContractBounds::from_object(obj).expect("from_object"),
+            bounds
+        );
+    }
+
+    #[test]
     fn contract_bounds_value_round_trip() {
         let id = Identifier::from([0x55u8; 32]);
         let bounds = ContractBounds::SingleContractDocumentType {
@@ -378,7 +455,8 @@ mod tests {
 
 #[cfg(all(test, feature = "state-transitions"))]
 mod batched_transition_tests {
-    use super::ContractBounds;
+    use super::{BatchedTransitionBoundsCheck, ContractBounds};
+    use crate::contract_group::ContractGroupMember;
     use crate::identifier::Identifier;
     use crate::state_transition::batch_transition::batched_transition::{
         document_create_transition::DocumentCreateTransitionV0,
@@ -433,13 +511,29 @@ mod batched_transition_tests {
         };
         for document in documents() {
             let member = BatchedTransitionRef::Document(&document);
-            assert!(bounds.allows_batched_transition(member), "{document:?}");
-            assert!(!foreign.allows_batched_transition(member), "{document:?}");
+            assert_eq!(
+                bounds.check_batched_transition(member),
+                BatchedTransitionBoundsCheck::Allowed,
+                "{document:?}"
+            );
+            assert_eq!(
+                foreign.check_batched_transition(member),
+                BatchedTransitionBoundsCheck::Denied,
+                "{document:?}"
+            );
         }
         for token in tokens() {
             let member = BatchedTransitionRef::Token(&token);
-            assert!(bounds.allows_batched_transition(member), "{token:?}");
-            assert!(!foreign.allows_batched_transition(member), "{token:?}");
+            assert_eq!(
+                bounds.check_batched_transition(member),
+                BatchedTransitionBoundsCheck::Allowed,
+                "{token:?}"
+            );
+            assert_eq!(
+                foreign.check_batched_transition(member),
+                BatchedTransitionBoundsCheck::Denied,
+                "{token:?}"
+            );
         }
     }
 
@@ -455,17 +549,53 @@ mod batched_transition_tests {
         };
         for document in documents() {
             let member = BatchedTransitionRef::Document(&document);
-            assert!(bounds.allows_batched_transition(member), "{document:?}");
-            assert!(
-                !other_type.allows_batched_transition(member),
+            assert_eq!(
+                bounds.check_batched_transition(member),
+                BatchedTransitionBoundsCheck::Allowed,
+                "{document:?}"
+            );
+            assert_eq!(
+                other_type.check_batched_transition(member),
+                BatchedTransitionBoundsCheck::Denied,
                 "{document:?}"
             );
         }
         for token in tokens() {
             let member = BatchedTransitionRef::Token(&token);
-            assert!(
-                !bounds.allows_batched_transition(member),
+            assert_eq!(
+                bounds.check_batched_transition(member),
+                BatchedTransitionBoundsCheck::Denied,
                 "token operations are contract-wide: {token:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_defer_contract_group_bounds_to_state_with_the_member_to_look_up() {
+        let group_id = Identifier::from([7; 32]);
+        let bounds = ContractBounds::ContractGroup { id: group_id };
+        for document in documents() {
+            let member = BatchedTransitionRef::Document(&document);
+            assert_eq!(
+                bounds.check_batched_transition(member),
+                BatchedTransitionBoundsCheck::RequiresContractGroupMembership {
+                    contract_group_id: group_id,
+                    contract_id: Identifier::from([0; 32]),
+                    member: ContractGroupMember::DocumentType(String::new()),
+                },
+                "{document:?}"
+            );
+        }
+        for token in tokens() {
+            let member = BatchedTransitionRef::Token(&token);
+            assert_eq!(
+                bounds.check_batched_transition(member),
+                BatchedTransitionBoundsCheck::RequiresContractGroupMembership {
+                    contract_group_id: group_id,
+                    contract_id: Identifier::from([0; 32]),
+                    member: ContractGroupMember::Token(0),
+                },
+                "{token:?}"
             );
         }
     }
