@@ -48,7 +48,7 @@ impl TokenBurnFromPoolTransitionActionStateValidationV0 for TokenBurnFromPoolTra
     /// Runs the transparent burn's authorization (group action included, with the actions digest
     /// as a group parameter), then the pool spend checks (paused, anchor, nullifiers, balance)
     /// and verifies the spend bundle whose value balance is `+amount`, bound to the token, the
-    /// burner and the amount.
+    /// burner (the batch owner, or the proposer of a group action) and the amount.
     fn validate_state_v0(
         &self,
         platform: &PlatformStateRef,
@@ -231,9 +231,16 @@ impl TokenBurnFromPoolTransitionActionStateValidationV0 for TokenBurnFromPoolTra
             ));
         }
 
+        // A group action's bundle is proven once by the proposer and submitted unchanged by every
+        // other signer (the digest check above pins it), so the sighash binds the proposer rather
+        // than the batch owner. A direct burn's proposer is the batch owner.
+        let burner_id = match self.base().original_group_action() {
+            Some(original_group_action) => original_group_action.proposer_id(),
+            None => owner_id,
+        };
         let extra_sighash_data = token_burn_from_pool_extra_sighash_data(
             &token_id_bytes,
-            &owner_id.to_buffer(),
+            &burner_id.to_buffer(),
             self.amount(),
             platform_version,
         )?;

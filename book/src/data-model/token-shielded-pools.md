@@ -79,7 +79,7 @@ fees, so unlike the credit pool nothing is carved from the bundle's value balanc
 | `TokenUnshield` | spends and outputs | `+amount` | `token_id, owner_id, recipient_id, amount` | Notes are spent; `amount` is credited to `recipient_id`; change comes back as new notes. |
 | `TokenShieldedTransfer` | spends and outputs | `0` | `token_id, owner_id` | Notes are spent and recreated; the pool balance is unchanged. |
 | `TokenMintToPool` | outputs only | `-amount` | none | An authorized minter (manual minting rules, group actions supported) mints `amount` into new notes; the supply and the pool balance grow. |
-| `TokenBurnFromPool` | spends and outputs | `+amount` | `token_id, owner_id, amount` | An authorized burner (manual burning rules) spends notes and destroys `amount`; the supply and the pool balance shrink. |
+| `TokenBurnFromPool` | spends and outputs | `+amount` | `token_id, burner_id, amount` | An authorized burner (manual burning rules, group actions supported) spends notes and destroys `amount`; the supply and the pool balance shrink. `burner_id` is the batch owner, or the proposer of a group action. |
 | `TokenClaimToPool` | outputs only | `-amount` | none | A distribution claim released into new notes instead of the claimant's balance; a perpetual claim names the cycle-aligned moment it claims up to so the amount is predictable. |
 | `TokenDirectPurchaseToPool` | outputs only | `-token_count` | none | The buyer pays credits at the direct purchase price and the tokens are minted into new notes. |
 
@@ -97,8 +97,12 @@ name an anchor the pool has recorded.
 
 A mint or burn into the pool that goes through a group action stores
 `TokenEvent::MintToPool` / `TokenEvent::BurnFromPool` with a digest of the serialized actions
-(`serialized_actions_digest`), so every signer commits to exactly the same notes. No token
-history document is written for pool operations: shielded activity is not recorded publicly.
+(`serialized_actions_digest`), so every signer commits to exactly the same notes. A burn's
+bundle is therefore proven once, by the proposer: the digest covers the spend authorization
+signatures, so the sighash cannot depend on which signer's batch carries the bundle. It binds
+the group action's proposer as `burner_id` (the batch owner for a direct burn) and every other
+signer submits the proposer's bundle unchanged. No token history document is written for pool
+operations: shielded activity is not recorded publicly.
 
 ## Documents paid from the pool
 
