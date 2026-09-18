@@ -343,6 +343,26 @@
              responseClass:[GetDataContractHistoryResponse class]];
 }
 
+#pragma mark getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest) returns (GetDataContractsLatestVersionsResponse)
+
+- (void)getDataContractsLatestVersionsWithRequest:(GetDataContractsLatestVersionsRequest *)request handler:(void(^)(GetDataContractsLatestVersionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetDataContractsLatestVersionsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetDataContractsLatestVersionsWithRequest:(GetDataContractsLatestVersionsRequest *)request handler:(void(^)(GetDataContractsLatestVersionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getDataContractsLatestVersions"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetDataContractsLatestVersionsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getDataContractsLatestVersionsWithMessage:(GetDataContractsLatestVersionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getDataContractsLatestVersions"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetDataContractsLatestVersionsResponse class]];
+}
+
 #pragma mark getDataContracts(GetDataContractsRequest) returns (GetDataContractsResponse)
 
 - (void)getDataContractsWithRequest:(GetDataContractsRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler{
@@ -357,6 +377,26 @@
 }
 - (GRPCUnaryProtoCall *)getDataContractsWithMessage:(GetDataContractsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getDataContracts"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetDataContractsResponse class]];
+}
+
+#pragma mark getDataContractsByRange(GetDataContractsByRangeRequest) returns (GetDataContractsResponse)
+
+- (void)getDataContractsByRangeWithRequest:(GetDataContractsByRangeRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetDataContractsByRangeWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetDataContractsByRangeWithRequest:(GetDataContractsByRangeRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getDataContractsByRange"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetDataContractsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getDataContractsByRangeWithMessage:(GetDataContractsByRangeRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getDataContractsByRange"
                    message:message
            responseHandler:handler
                callOptions:callOptions

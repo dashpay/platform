@@ -79,9 +79,19 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetDataContractHistoryRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetDataContractHistoryResponse.FromString,
                 )
+        self.getDataContractsLatestVersions = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getDataContractsLatestVersions',
+                request_serializer=platform__pb2.GetDataContractsLatestVersionsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetDataContractsLatestVersionsResponse.FromString,
+                )
         self.getDataContracts = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDataContracts',
                 request_serializer=platform__pb2.GetDataContractsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetDataContractsResponse.FromString,
+                )
+        self.getDataContractsByRange = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getDataContractsByRange',
+                request_serializer=platform__pb2.GetDataContractsByRangeRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetDataContractsResponse.FromString,
                 )
         self.getDocumentHistory = channel.unary_unary(
@@ -398,7 +408,19 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getDataContractsLatestVersions(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getDataContracts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getDataContractsByRange(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -754,9 +776,19 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetDataContractHistoryRequest.FromString,
                     response_serializer=platform__pb2.GetDataContractHistoryResponse.SerializeToString,
             ),
+            'getDataContractsLatestVersions': grpc.unary_unary_rpc_method_handler(
+                    servicer.getDataContractsLatestVersions,
+                    request_deserializer=platform__pb2.GetDataContractsLatestVersionsRequest.FromString,
+                    response_serializer=platform__pb2.GetDataContractsLatestVersionsResponse.SerializeToString,
+            ),
             'getDataContracts': grpc.unary_unary_rpc_method_handler(
                     servicer.getDataContracts,
                     request_deserializer=platform__pb2.GetDataContractsRequest.FromString,
+                    response_serializer=platform__pb2.GetDataContractsResponse.SerializeToString,
+            ),
+            'getDataContractsByRange': grpc.unary_unary_rpc_method_handler(
+                    servicer.getDataContractsByRange,
+                    request_deserializer=platform__pb2.GetDataContractsByRangeRequest.FromString,
                     response_serializer=platform__pb2.GetDataContractsResponse.SerializeToString,
             ),
             'getDocumentHistory': grpc.unary_unary_rpc_method_handler(
@@ -1221,6 +1253,23 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
+    def getDataContractsLatestVersions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDataContractsLatestVersions',
+            platform__pb2.GetDataContractsLatestVersionsRequest.SerializeToString,
+            platform__pb2.GetDataContractsLatestVersionsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
     def getDataContracts(request,
             target,
             options=(),
@@ -1233,6 +1282,23 @@ class Platform(object):
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDataContracts',
             platform__pb2.GetDataContractsRequest.SerializeToString,
+            platform__pb2.GetDataContractsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getDataContractsByRange(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDataContractsByRange',
+            platform__pb2.GetDataContractsByRangeRequest.SerializeToString,
             platform__pb2.GetDataContractsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

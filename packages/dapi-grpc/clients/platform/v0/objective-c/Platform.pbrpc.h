@@ -40,6 +40,9 @@
 @class GetDataContractHistoryResponse;
 @class GetDataContractRequest;
 @class GetDataContractResponse;
+@class GetDataContractsByRangeRequest;
+@class GetDataContractsLatestVersionsRequest;
+@class GetDataContractsLatestVersionsResponse;
 @class GetDataContractsRequest;
 @class GetDataContractsResponse;
 @class GetDocumentHistoryRequest;
@@ -218,9 +221,17 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getDataContractHistoryWithMessage:(GetDataContractHistoryRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest) returns (GetDataContractsLatestVersionsResponse)
+
+- (GRPCUnaryProtoCall *)getDataContractsLatestVersionsWithMessage:(GetDataContractsLatestVersionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 #pragma mark getDataContracts(GetDataContractsRequest) returns (GetDataContractsResponse)
 
 - (GRPCUnaryProtoCall *)getDataContractsWithMessage:(GetDataContractsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getDataContractsByRange(GetDataContractsByRangeRequest) returns (GetDataContractsResponse)
+
+- (GRPCUnaryProtoCall *)getDataContractsByRangeWithMessage:(GetDataContractsByRangeRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)
 
@@ -533,11 +544,25 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetDataContractHistoryWithRequest:(GetDataContractHistoryRequest *)request handler:(void(^)(GetDataContractHistoryResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
+#pragma mark getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest) returns (GetDataContractsLatestVersionsResponse)
+
+- (void)getDataContractsLatestVersionsWithRequest:(GetDataContractsLatestVersionsRequest *)request handler:(void(^)(GetDataContractsLatestVersionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetDataContractsLatestVersionsWithRequest:(GetDataContractsLatestVersionsRequest *)request handler:(void(^)(GetDataContractsLatestVersionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
 #pragma mark getDataContracts(GetDataContractsRequest) returns (GetDataContractsResponse)
 
 - (void)getDataContractsWithRequest:(GetDataContractsRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetDataContractsWithRequest:(GetDataContractsRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getDataContractsByRange(GetDataContractsByRangeRequest) returns (GetDataContractsResponse)
+
+- (void)getDataContractsByRangeWithRequest:(GetDataContractsByRangeRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetDataContractsByRangeWithRequest:(GetDataContractsByRangeRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)
