@@ -97,12 +97,19 @@ impl DocumentTypeV1 {
                 admit_history: document_type_schema_version >= 2,
                 admit_count_indexes: platform_version.protocol_version >= 12,
                 meta_schema_method_name: "DocumentTypeV1::try_from_schema (document_type_schema)",
+                // Meta-schema v1 and v2 both carry the `dependentRequired`
+                // rows tying each `range*` flag to its aggregate keyword; v0
+                // has no aggregate keywords at all.
+                literal_aggregate_prerequisites: document_type_schema_version >= 1,
                 // RANKED: generation 1 predates the ranked aggregates entirely
                 // — its index grammar has no `ranked*` keywords, and it
                 // therefore has no ranked key ceiling to enforce. Both
                 // admissions are always `false` below generation 3; see the
                 // shared mapping `IndexGrammarAdmissions::for_schema_generation`.
                 admit_ranked: false,
+                // No ranked keywords in this grammar, so no ranked
+                // prerequisites to restate either.
+                literal_ranked_prerequisites: false,
                 ranked_index_key_length_check: common::no_ranked_index_key_length_check,
                 ranked_index_structure_check: common::no_ranked_index_structure_check,
                 // TIME RANGE: also a generation-3 keyword; not in this grammar.

@@ -21,7 +21,9 @@
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
-use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index::{
+    Index, RANKED_AVERAGEABLE, RANKED_COUNTABLE, RANKED_SUMMABLE,
+};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
@@ -179,6 +181,19 @@ pub(super) struct ParserGeneration {
     /// unknown `document_type_schema`. Differs per generation, so it is a
     /// parameter rather than a constant.
     pub meta_schema_method_name: &'static str,
+    /// Whether this generation's document meta-schema carries the
+    /// `dependentRequired` rows that tie each `range*` flag to the aggregate
+    /// keyword it ranges over (`rangeCountable` → `countable` and friends at
+    /// the index level, `rangeSummable` → `documentsSummable` and friends at
+    /// the doctype level). True for meta-schema v1, v2 and v3; v0 has no
+    /// aggregate keywords at all.
+    ///
+    /// Deliberately its own field rather than a read of `admit_count_indexes`:
+    /// what it describes is a property of the *meta-schema* a generation
+    /// validates against, and a future generation could admit the keywords
+    /// under a meta-schema whose rules had been relaxed. See
+    /// [`validate_literal_aggregate_prerequisites`].
+    pub literal_aggregate_prerequisites: bool,
 
     // ---- RANKED: generation-3 additions ----
     // Every field below exists only because generation 3 does. Drop them
@@ -188,6 +203,17 @@ pub(super) struct ParserGeneration {
     /// [`Index::try_from_value_map`], which rejects them as unknown keys when
     /// this is `false`.
     pub admit_ranked: bool,
+    /// Whether this generation's document meta-schema carries the
+    /// value-sensitive `if`/`then` prerequisites tying each `ranked*` flag to
+    /// its range axis. True for meta-schema v3 only.
+    ///
+    /// Separate from `admit_ranked` for the same reason
+    /// `literal_aggregate_prerequisites` is separate from
+    /// `admit_count_indexes`: admitting the grammar and enforcing v3's
+    /// literal-key rule are different questions, and a v4 meta-schema that
+    /// made the rule sugar-aware would admit the keywords while wanting this
+    /// off.
+    pub literal_ranked_prerequisites: bool,
     /// See [`RankedIndexKeyLengthCheck`].
     pub ranked_index_key_length_check: RankedIndexKeyLengthCheck,
     /// See [`RankedIndexStructureCheck`].
@@ -343,11 +369,18 @@ fn raw_key<'a>(map: &'a [(Value, Value)], key: &str) -> Option<&'a Value> {
 }
 
 /// Build the error a missing literal aggregate flag raises.
+///
+/// `uses_sugar` says whether the offending object declares its layout with
+/// `averageable` / `rangeAverageable`. When it does, the desugaring is the
+/// whole explanation for the error and the author needs to hear it; when it
+/// does not — a plain `rangeSummable` with no `summable`, say — the same
+/// paragraph would be noise pointing at a keyword the contract never used.
 fn missing_literal_aggregate_flag_error(
     document_type_name: &str,
     index_name: Option<&str>,
     present_key: &str,
     missing_key: &str,
+    uses_sugar: bool,
 ) -> ProtocolError {
     let location = match index_name {
         Some(index_name) => {
@@ -355,11 +388,16 @@ fn missing_literal_aggregate_flag_error(
         }
         None => format!("document type \"{document_type_name}\""),
     };
+    let why = if uses_sugar {
+        " The document meta-schema tests the object exactly as authored, before `averageable` \
+         / `rangeAverageable` are expanded into their `countable` + `summable` longhand, so the \
+         sugar does not satisfy this prerequisite."
+    } else {
+        ""
+    };
     consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(format!(
         "{location}: `{present_key}` requires `{missing_key}` to be written out on the same \
-         object. The document meta-schema tests the object exactly as authored, before \
-         `averageable` / `rangeAverageable` are expanded into their `countable` + `summable` \
-         longhand, so the sugar does not satisfy this prerequisite — spell `{missing_key}` out"
+         object.{why} Add an explicit `{missing_key}`"
     )))
 }
 
@@ -398,12 +436,19 @@ fn missing_literal_aggregate_flag_error(
 pub(super) fn validate_literal_aggregate_prerequisites(
     document_type_name: &str,
     schema_map: &[(Value, Value)],
-    admit_count_indexes: bool,
-    admit_ranked: bool,
+    literal_aggregate_prerequisites: bool,
+    literal_ranked_prerequisites: bool,
 ) -> Result<(), ProtocolError> {
+    /// Does this object declare an aggregate layout through the sugar? Only
+    /// used to decide how much of the error message is relevant.
+    fn uses_sugar(map: &[(Value, Value)], averageable_key: &str, range_key: &str) -> bool {
+        raw_key(map, averageable_key).is_some() || raw_key(map, range_key).is_some()
+    }
+
     // Meta-schema top level: `"dependentRequired": {"rangeSummable":
     // ["documentsSummable"], "rangeAverageable": ["documentsAverageable"]}`.
-    if admit_count_indexes {
+    if literal_aggregate_prerequisites {
+        let sugar = uses_sugar(schema_map, DOCUMENTS_AVERAGEABLE, RANGE_AVERAGEABLE);
         for (present_key, missing_key) in [
             (RANGE_SUMMABLE, DOCUMENTS_SUMMABLE),
             (RANGE_AVERAGEABLE, DOCUMENTS_AVERAGEABLE),
@@ -416,6 +461,7 @@ pub(super) fn validate_literal_aggregate_prerequisites(
                     None,
                     present_key,
                     missing_key,
+                    sugar,
                 ));
             }
         }
@@ -432,10 +478,11 @@ pub(super) fn validate_literal_aggregate_prerequisites(
             continue;
         };
         let index_name = raw_key(index_map, "name").and_then(|name| name.as_text());
+        let sugar = uses_sugar(index_map, "averageable", "rangeAverageable");
 
         // Index level: the same presence-semantics `dependentRequired` rows,
-        // unchanged since meta-schema v2.
-        if admit_count_indexes {
+        // unchanged since meta-schema v1.
+        if literal_aggregate_prerequisites {
             for (present_key, missing_key) in [
                 ("rangeCountable", "countable"),
                 ("rangeSummable", "summable"),
@@ -449,6 +496,7 @@ pub(super) fn validate_literal_aggregate_prerequisites(
                         index_name,
                         present_key,
                         missing_key,
+                        sugar,
                     ));
                 }
             }
@@ -460,11 +508,11 @@ pub(super) fn validate_literal_aggregate_prerequisites(
         // `rankedCountable` matches its level-addressed object form too
         // (`{"const": true}` vs `{"anyOf": [{"const": true}, {"type":
         // "object"}]}` in the meta-schema).
-        if admit_ranked {
+        if literal_ranked_prerequisites {
             for (present_key, missing_key, object_form_counts) in [
-                ("rankedCountable", "rangeCountable", true),
-                ("rankedSummable", "rangeSummable", false),
-                ("rankedAverageable", "rangeAverageable", false),
+                (RANKED_COUNTABLE, "rangeCountable", true),
+                (RANKED_SUMMABLE, "rangeSummable", false),
+                (RANKED_AVERAGEABLE, "rangeAverageable", false),
             ] {
                 let asks_for_ranking = match raw_key(index_map, present_key) {
                     Some(Value::Bool(true)) => true,
@@ -477,6 +525,7 @@ pub(super) fn validate_literal_aggregate_prerequisites(
                         index_name,
                         present_key,
                         missing_key,
+                        sugar,
                     ));
                 }
             }
@@ -675,8 +724,8 @@ pub(super) fn parse_document_type_core(
         validate_literal_aggregate_prerequisites(
             ctx.name,
             schema_map,
-            ctx.generation.admit_count_indexes,
-            ctx.generation.admit_ranked,
+            ctx.generation.literal_aggregate_prerequisites,
+            ctx.generation.literal_ranked_prerequisites,
         )?;
     }
 

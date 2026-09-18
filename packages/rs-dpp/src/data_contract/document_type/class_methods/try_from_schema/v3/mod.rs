@@ -281,6 +281,10 @@ fn try_from_schema_generation_3(
             // generation is far past that boundary.
             admit_count_indexes: true,
             meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
+            // Meta-schema v3 keeps v2's `dependentRequired` rows verbatim and
+            // adds the value-sensitive ranked `if`/`then` pairs.
+            literal_aggregate_prerequisites: true,
+            literal_ranked_prerequisites: true,
             // RANKED / TIME RANGE: the keyword admissions that make this
             // generation 3, read from the shared generation → admission
             // mapping so the registration-cost re-parse can never drift
@@ -1972,6 +1976,79 @@ mod tests {
         index_entry.push((Value::Text("rangeSummable".to_string()), Value::Bool(true)));
         parse_with(schema_with_index_entry(index_entry), pv14(), true)
             .expect("the six-flag longhand registers, exactly as it did on devnet");
+    }
+
+    /// The **minimum** an author has to add to the short form: the
+    /// `dependentRequired` chain stops one step in, because `rangeSummable` is
+    /// never written and so its row never fires.
+    ///
+    /// Running this end to end under `full_validation` is the point — in a
+    /// build with the `validation` feature it proves the *meta-schema* accepts
+    /// this spelling, which is what makes it safe to recommend in the book, and
+    /// it is the guard against the literal gate drifting into over-rejection.
+    #[test]
+    fn two_added_flags_are_enough_for_both_validators() {
+        let mut index_entry = sugar_short_form_index_entry();
+        index_entry.push((
+            Value::Text("countable".to_string()),
+            Value::Text("countable".to_string()),
+        ));
+        index_entry.push((Value::Text("rangeCountable".to_string()), Value::Bool(true)));
+        let schema = schema_with_index_entry(index_entry);
+
+        literal_prerequisites(&schema).expect("no literal prerequisite is left unsatisfied");
+        let v2 = parse_with(schema, pv14(), true)
+            .expect("`countable` + `rangeCountable` is all the short form is missing");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// The doctype-level `dependentRequired` rows — `rangeSummable` →
+    /// `documentsSummable`, `rangeAverageable` → `documentsAverageable` — the
+    /// other half of the gate. The meta-schema has no
+    /// `rangeCountable` → `documentsCountable` row at the doctype level, and
+    /// neither does the gate.
+    #[test]
+    fn doctype_level_range_flags_demand_their_aggregate() {
+        let mut schema_map = schema_with_index_entry(sugar_short_form_index_entry())
+            .to_map()
+            .expect("document type schema is an object")
+            .clone();
+        schema_map.push((
+            Value::Text("rangeAverageable".to_string()),
+            Value::Bool(true),
+        ));
+        let schema = Value::Map(schema_map);
+        let error = literal_prerequisites(&schema)
+            .expect_err("a doctype-level rangeAverageable demands documentsAverageable");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("documentsAverageable") && msg.contains("test_doc"),
+            "the error must name the missing doctype flag and the document type; got {msg}"
+        );
+    }
+
+    /// A generation whose meta-schema does not carry these rules must not
+    /// inherit them. This is the property the two dedicated `ParserGeneration`
+    /// fields exist to protect: a future generation built on a meta-schema that
+    /// made the prerequisites sugar-aware turns them off here rather than
+    /// having them implied by the grammar admissions.
+    #[test]
+    fn gate_is_inert_for_a_generation_whose_meta_schema_lacks_the_rules() {
+        let schema = schema_with_index_entry(sugar_short_form_index_entry());
+        let schema_map = schema.to_map().expect("document type schema is an object");
+        super::super::common::validate_literal_aggregate_prerequisites(
+            "test_doc", schema_map, false, false,
+        )
+        .expect("both rule families switched off leaves nothing to enforce");
+        super::super::common::validate_literal_aggregate_prerequisites(
+            "test_doc", schema_map, true, false,
+        )
+        .expect("the ranked prerequisites are meta-schema v3's alone");
     }
 
     /// The SDK-facing entry point must reach the same verdict as consensus.

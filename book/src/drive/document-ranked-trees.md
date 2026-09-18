@@ -100,7 +100,7 @@ The document meta-schema enforces the same prerequisites, but it cannot use the 
 
 The `range*` rows keep their presence semantics because that is what they shipped with in v2, and changing them would move historical validation results.
 
-One asymmetry is worth knowing when authoring: **the meta-schema demands the literal key, the parser accepts the effect.** The meta-schema tests the index object exactly as authored, *before* `averageable` / `rangeAverageable` are expanded into their `countable` + `summable` longhand, so the sugar satisfies no literal prerequisite. `rankedAverageable: true` needs a literal `rangeAverageable: true` even though the parser is satisfied by the explicit longhand — and, the other way round, `rankedCountable: true` needs a literal `rangeCountable: true` even though `rangeAverageable` already puts the count axis in effect. An index that opts into more than one ranking axis therefore has to write every flag it depends on out; there is no shorter spelling that both layers accept.
+One asymmetry is worth knowing when authoring: **the meta-schema demands the literal key, the parser accepts the effect.** The meta-schema tests the index object exactly as authored, *before* `averageable` / `rangeAverageable` are expanded into their `countable` + `summable` longhand, so the sugar satisfies no literal prerequisite. `rankedAverageable: true` needs a literal `rangeAverageable: true` even though the parser is satisfied by the explicit longhand — and, the other way round, `rankedCountable: true` needs a literal `rangeCountable: true` even though `rangeAverageable` already puts the count axis in effect. An index that opts into more than one ranking axis therefore has to name each axis's range key literally, and then satisfy whatever `dependentRequired` rows those literal keys pull in.
 
 ```json
 // REJECTED at registration: `"rangeCountable" is a required property, path: /indices/3`
@@ -108,14 +108,14 @@ One asymmetry is worth knowing when authoring: **the meta-schema demands the lit
  "averageable": "rating", "rangeAverageable": true,
  "rankedAverageable": true, "rankedCountable": true}
 
-// ACCEPTED: the same on-disk layout, every prerequisite spelled out
+// ACCEPTED: the same on-disk layout, plus the two keys `rankedCountable` pulls in
 {"name": "storeRating", "properties": [{"storeId": "asc"}],
- "countable": "countable", "summable": "rating", "averageable": "rating",
- "rangeCountable": true, "rangeSummable": true, "rangeAverageable": true,
+ "averageable": "rating", "rangeAverageable": true,
+ "countable": "countable", "rangeCountable": true,
  "rankedAverageable": true, "rankedCountable": true}
 ```
 
-(Adding only `rangeCountable` to the first form does not help: the `dependentRequired` rows fire on key *presence*, so `rangeCountable` then demands a literal `countable`, and so on down the chain.)
+(`rangeCountable` alone is not enough, which is why two keys move rather than one: the `dependentRequired` rows fire on key *presence*, so a literal `rangeCountable` in turn demands a literal `countable`. The chain stops there — `summable` and `rangeSummable` are never written, so their rows never fire, and `rangeAverageable` keeps the sum axis in effect regardless. Spelling all six aggregate flags out registers too; it is simply three keys more than either layer asks for.)
 
 The `averageable` / `rangeAverageable` descriptions in meta-schema v3 present themselves as plain syntactic sugar and say nothing about this. That text is wrong by omission and cannot be corrected where it lives: v3 is frozen for protocol v14, and mutating it would move historical validation results. Treat this section as the correction until a v4 meta-schema exists.
 
