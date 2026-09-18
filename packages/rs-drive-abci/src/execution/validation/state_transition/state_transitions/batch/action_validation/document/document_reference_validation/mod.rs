@@ -19,7 +19,9 @@ pub(crate) trait DocumentReferenceValidation {
     /// Validates the document's `refersTo` references against platform state.
     ///
     /// When `changed_fields` is provided (replace transitions), only references on
-    /// those fields are validated.
+    /// those fields are validated. A reference also counts as changed when a
+    /// property bound to it changed: a `propertyAgreement` referring property
+    /// or an `identityPublicKey` key id property.
     #[allow(clippy::too_many_arguments)]
     fn validate_document_references(
         &self,

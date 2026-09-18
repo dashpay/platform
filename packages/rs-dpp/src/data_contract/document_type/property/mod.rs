@@ -128,7 +128,9 @@ pub enum DocumentPropertyReferenceTarget {
     /// identity id and the named sibling property of the same document type
     /// holds the key id. Identity keys can be disabled but never removed, so
     /// an existing reference can never dangle; at write time the key must
-    /// exist and must not be disabled.
+    /// exist and must not be disabled. The referenced key is the (identity
+    /// id, key id) pair, so a replace that changes either property
+    /// re-validates the reference.
     #[serde(rename = "identityPublicKey")]
     IdentityPublicKey {
         /// The property of the same document type whose value carries the

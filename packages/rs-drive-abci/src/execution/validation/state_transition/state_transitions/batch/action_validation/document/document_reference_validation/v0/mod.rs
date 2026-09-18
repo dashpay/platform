@@ -117,18 +117,27 @@ fn validate_document_type_references_v0(
         };
 
         if let Some(changed) = changed_fields {
-            // A propertyAgreement pair binds the referring property too:
-            // replacing it must re-validate the reference even when the
-            // reference property itself is untouched.
-            let agreement_property_changed = match reference_target {
+            // Some targets bind a sibling property of the same document to
+            // the reference; replacing that sibling must re-validate the
+            // reference even when the reference property itself is untouched:
+            // - a propertyAgreement pair binds each referring property;
+            // - an identityPublicKey reference binds the key id property,
+            //   since the referenced key is the (identity id, key id) pair
+            //   and a freshly written key id must exist and not be disabled.
+            let bound_property_changed = match reference_target {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     property_agreement, ..
                 } => property_agreement
                     .keys()
                     .any(|referring_property| is_changed_field(changed, referring_property)),
-                _ => false,
+                DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
+                    is_changed_field(changed, key_id_property)
+                }
+                DocumentPropertyReferenceTarget::Identity
+                | DocumentPropertyReferenceTarget::Contract
+                | DocumentPropertyReferenceTarget::Token => false,
             };
-            if !is_changed_field(changed, path) && !agreement_property_changed {
+            if !is_changed_field(changed, path) && !bound_property_changed {
                 continue;
             }
         }
