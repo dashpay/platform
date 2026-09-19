@@ -72,18 +72,29 @@ final class OncePerIdentityClaimStore: OncePerIdentityClaimRecording, @unchecked
 /// Recognises Drive's "this identity already claimed" rejection in the error
 /// a claim submission throws.
 ///
-/// The consensus error's numeric code (40722) does not survive the trip: the
-/// FFI hands Swift a `PlatformWalletError` carrying a rendered message, and
-/// rs-drive-abci puts the consensus error's `Display` text in it. So the
-/// match is on that text, which rs-dpp spells "identity '<id>' already
-/// claimed the once-per-identity distribution of token '<id>' at <ms>". The
-/// type name is checked too, in case a path renders the variant rather than
-/// its message.
+/// What reaches Swift today is text: the FFI hands back a
+/// `PlatformWalletError` carrying a rendered message, and rs-drive-abci puts
+/// the consensus error's `Display` text in it, which rs-dpp spells
+/// "identity '<id>' already claimed the once-per-identity distribution of
+/// token '<id>' at <ms>". That phrase is the primary signal, with the type
+/// name as a second one in case a path renders the variant rather than its
+/// message.
 ///
-/// A miss is not fatal in either direction: missing the error only means the
-/// kind stays offered until the next attempt, and the phrase is specific
-/// enough that a false positive would take a deliberately crafted message.
+/// The consensus code is matched as well, for parity with Android. No error
+/// text carries it today, because nothing on the way here renders the code
+/// next to the message, but a plumbing change that starts surfacing it (a
+/// structured FFI detail, a broadcast error that prints its `code`) then
+/// works without a follow-up here.
+///
+/// A miss is not fatal in either direction: missing the rejection only means
+/// the kind stays offered until the next attempt, and a false positive is
+/// guarded against by the signals being specific, the code included.
 enum OncePerIdentityClaimRejection {
+    /// Consensus code of `TokenOncePerIdentityDistributionAlreadyClaimedError`
+    /// (rs-dpp `errors/consensus/codes.rs`), the state error Drive returns
+    /// for a second claim by the same identity.
+    static let alreadyClaimedConsensusCode = "40722"
+
     private static let messageSignals = [
         "already claimed the once-per-identity distribution",
         "tokenonceperidentitydistributionalreadyclaimederror"
@@ -91,6 +102,39 @@ enum OncePerIdentityClaimRejection {
 
     static func isAlreadyClaimed(_ error: Error) -> Bool {
         let message = error.localizedDescription.lowercased()
-        return messageSignals.contains { message.contains($0) }
+        if messageSignals.contains(where: { message.contains($0) }) {
+            return true
+        }
+        return containsStandaloneNumber(alreadyClaimedConsensusCode, in: message)
+    }
+
+    /// Whether `number` occurs in `text` with no digit on either side, the
+    /// equivalent of the regular expression `(?<![0-9])40722(?![0-9])`.
+    ///
+    /// A plain substring test would be wrong: claim errors quote token
+    /// amounts and millisecond timestamps, and a claim time such as
+    /// 1758140722000 contains "40722". Reading that as the already-claimed
+    /// code would record a claim that never happened and hide the kind from
+    /// that identity for good, since the record is never cleared.
+    private static func containsStandaloneNumber(_ number: String, in text: String) -> Bool {
+        var searchStart = text.startIndex
+        while let range = text.range(of: number, range: searchStart..<text.endIndex) {
+            let digitBefore = range.lowerBound > text.startIndex
+                && isASCIIDigit(text[text.index(before: range.lowerBound)])
+            let digitAfter = range.upperBound < text.endIndex
+                && isASCIIDigit(text[range.upperBound])
+            if !digitBefore && !digitAfter {
+                return true
+            }
+            // Overlapping occurrences matter as little here as anywhere, but
+            // stepping one character keeps a later standalone match findable
+            // after a rejected one.
+            searchStart = text.index(after: range.lowerBound)
+        }
+        return false
+    }
+
+    private static func isASCIIDigit(_ character: Character) -> Bool {
+        character.isASCII && character.isNumber
     }
 }

@@ -392,7 +392,7 @@ final class TokenClaimResolverTests: XCTestCase {
     }
 
     /// Drive's rejection is recognised from the message, which is all the
-    /// FFI hands back for a consensus error.
+    /// FFI hands back for a consensus error today.
     func testAlreadyClaimedRejectionIsRecognisedFromTheMessage() {
         let rejection = PlatformWalletError.unknown(
             """
@@ -414,6 +414,56 @@ final class TokenClaimResolverTests: XCTestCase {
             OncePerIdentityClaimRejection.isAlreadyClaimed(
                 PlatformWalletError.unknown(
                     "Token claim failed: Token claim error: no current rewards"
+                )
+            )
+        )
+    }
+
+    /// The consensus code counts as a signal too, for parity with Android,
+    /// but only where it stands as a number of its own.
+    func testAlreadyClaimedRejectionIsRecognisedFromTheConsensusCode() {
+        let recognised = [
+            "Token claim failed: consensus error 40722: claim rejected",
+            "Token claim failed: code=40722",
+            "Token claim failed: broadcast rejected (code 40722)"
+        ]
+        for message in recognised {
+            XCTAssertTrue(
+                OncePerIdentityClaimRejection.isAlreadyClaimed(
+                    PlatformWalletError.unknown(message)
+                ),
+                "should recognise the standalone code in: \(message)"
+            )
+        }
+    }
+
+    /// The digits of the code inside a longer number are not the code. Claim
+    /// errors quote millisecond timestamps and token amounts, and reading one
+    /// of those as the rejection would record a claim that never happened and
+    /// hide the kind from that identity permanently.
+    func testDigitsOfTheConsensusCodeInsideALongerNumberAreNotTheCode() {
+        let notRecognised = [
+            "Token mint past max supply: 1758140722000",
+            "Token claim failed: amount 4072299",
+            "Token claim failed: identity balance 407220 is too low",
+            "Token claim failed: at 40722000"
+        ]
+        for message in notRecognised {
+            XCTAssertFalse(
+                OncePerIdentityClaimRejection.isAlreadyClaimed(
+                    PlatformWalletError.unknown(message)
+                ),
+                "should not read a longer number as the code in: \(message)"
+            )
+        }
+
+        // The same message with the code standing on its own still counts,
+        // so the guard above is about digit boundaries and not about the
+        // words around them.
+        XCTAssertTrue(
+            OncePerIdentityClaimRejection.isAlreadyClaimed(
+                PlatformWalletError.unknown(
+                    "Token claim failed: 40722 at 1758140722000"
                 )
             )
         )

@@ -40,6 +40,15 @@ class OncePerIdentityClaimStore(
         const val ALREADY_CLAIMED_ERROR_CODE = 40722
 
         /**
+         * The code as a number of its own. Error texts carry amounts and
+         * millisecond timestamps, and a claim time such as 1758140722000
+         * contains the digits, so a plain substring match would take an
+         * unrelated failure for a spent claim and hide the kind for good.
+         */
+        private val ALREADY_CLAIMED_CODE_PATTERN =
+            Regex("(?<![0-9])$ALREADY_CLAIMED_ERROR_CODE(?![0-9])")
+
+        /**
          * True when [error] is the already-claimed rejection. The native
          * layer surfaces consensus errors as text, so match the code and the
          * message rs-dpp renders for it.
@@ -48,7 +57,7 @@ class OncePerIdentityClaimStore(
             val message = generateSequence(error) { it.cause }
                 .mapNotNull { it.message }
                 .joinToString(" ")
-            return message.contains(ALREADY_CLAIMED_ERROR_CODE.toString()) ||
+            return ALREADY_CLAIMED_CODE_PATTERN.containsMatchIn(message) ||
                 message.contains("already claimed the once-per-identity distribution")
         }
 

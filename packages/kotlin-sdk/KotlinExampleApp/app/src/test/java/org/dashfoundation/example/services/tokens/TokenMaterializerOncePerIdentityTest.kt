@@ -140,10 +140,23 @@ class TokenMaterializerOncePerIdentityTest {
                 ),
             ),
         )
+        assertTrue(
+            OncePerIdentityClaimStore.isAlreadyClaimed(IllegalStateException("code=40722")),
+        )
         assertFalse(
             OncePerIdentityClaimStore.isAlreadyClaimed(
                 IllegalStateException("Token mint past max supply"),
             ),
+        )
+        // The digits inside a longer number are not the code: a timestamp or an
+        // amount in an unrelated failure must not read as a spent claim.
+        assertFalse(
+            OncePerIdentityClaimStore.isAlreadyClaimed(
+                IllegalStateException("Token mint past max supply: 1758140722000"),
+            ),
+        )
+        assertFalse(
+            OncePerIdentityClaimStore.isAlreadyClaimed(IllegalStateException("amount 4072299")),
         )
     }
 
