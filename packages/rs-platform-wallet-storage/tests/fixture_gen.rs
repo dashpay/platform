@@ -91,17 +91,20 @@ fn first_external_info(byte: u8) -> key_wallet::AddressInfo {
 /// be asserted to preserve both the height column and the blob's own context.
 fn one_tx_record() -> key_wallet::managed_account::transaction_record::TransactionRecord {
     use dashcore::hashes::Hash;
-    use dashcore::{BlockHash, Transaction, Txid};
+    use dashcore::{BlockHash, Transaction, TxOut};
     use key_wallet::managed_account::transaction_record::{
         TransactionDirection, TransactionRecord,
     };
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
-    let mut record = TransactionRecord::new(
+    TransactionRecord::new(
         Transaction {
             version: 3,
             lock_time: 0,
             input: vec![],
-            output: vec![],
+            output: vec![TxOut {
+                value: 150_000,
+                script_pubkey: first_external_info(FIXTURE_WALLET).address.script_pubkey(),
+            }],
             special_transaction_payload: None,
         },
         AccountType::Standard {
@@ -118,9 +121,7 @@ fn one_tx_record() -> key_wallet::managed_account::transaction_record::Transacti
         Vec::new(),
         Vec::new(),
         150_000,
-    );
-    record.txid = Txid::from_byte_array([0x7E; 32]);
-    record
+    )
 }
 
 fn identity_entry() -> IdentityEntry {
@@ -251,7 +252,7 @@ fn seed_base_shaped_rows(conn: &rusqlite::Connection) {
     let address = first_external_info(FIXTURE_WALLET).address;
     let record = one_tx_record();
     let record_blob = blob::encode(&record).expect("encode transaction record");
-    let txid = [0x7Eu8; 32];
+    let txid = <dashcore::Txid as dashcore::hashes::Hash>::to_byte_array(record.txid);
     conn.execute(
         "INSERT INTO core_transactions \
              (wallet_id, txid, height, block_hash, block_time, finalized, record_blob) \

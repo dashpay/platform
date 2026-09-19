@@ -125,11 +125,19 @@ fn c1_load_populates_keyless_wallet_payload() {
             )),
         "BIP44 account must be in the manifest"
     );
-    // Core state now lives inside the assembled `core_wallet_info`: the single
-    // confirmed 777_000-duff UTXO restores as the wallet balance and the sync
-    // watermark carries over.
-    assert_eq!(slice.wallet_info.balance.total(), 777_000);
-    assert_eq!(slice.wallet_info.metadata.last_processed_height, 50);
+    // Legacy financial rows remain archived while the engine rescans from birth.
+    assert_eq!(slice.wallet_info.balance.total(), 0);
+    assert_eq!(slice.wallet_info.metadata.last_processed_height, 6);
+    assert_eq!(slice.wallet_info.metadata.synced_height, 6);
+    let archived_value: i64 = p2
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT value FROM core_utxos WHERE wallet_id = ?1",
+            [w.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(archived_value, 777_000);
 }
 
 /// Empty DB → empty `wallets`, no error (the `load()` doctest contract).

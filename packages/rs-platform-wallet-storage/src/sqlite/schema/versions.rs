@@ -127,6 +127,7 @@ impl Domain {
 pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     let PlatformWalletChangeSet {
         core,
+        core_wallet_snapshot,
         identities,
         identity_keys,
         contacts,
@@ -157,7 +158,7 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     }
 
     let mut out = Vec::new();
-    if present(core) {
+    if present(core) || core_wallet_snapshot.is_some() {
         out.push(Domain::Core);
     }
     if present(identities) {

@@ -91,6 +91,7 @@ impl PlatformWalletInfo {
     ) -> Result<(), ApplyError> {
         let PlatformWalletChangeSet {
             core,
+            core_wallet_snapshot: _,
             identities,
             identity_keys,
             contacts,

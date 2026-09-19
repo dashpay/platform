@@ -5,8 +5,8 @@
 A wallet's **public** state has to survive a restart. This schema is the
 on-disk shape of that state: one SQLite file holding many wallets, every
 per-wallet row anchored to a `wallet_id`, so a client can reload its UTXOs,
-identities, contacts, balances, and sync watermarks without re-scanning the
-chain.
+identities, contacts, balances, and sync watermarks. Databases predating full
+Core snapshots require one Core rescan while preserving accounts and Platform data.
 
 ## What it stores — and the boundary
 
@@ -54,7 +54,9 @@ erDiagram
     WALLETS ||--o{ CORE_TRANSACTIONS : "records"
     WALLETS ||--o{ CORE_UTXOS : "owns"
     WALLETS ||--o{ CORE_INSTANT_LOCKS : "holds"
+    WALLETS ||--o| CORE_WALLET_SNAPSHOTS : "restores"
     WALLETS ||--o| CORE_SYNC_STATE : "tracks"
+    WALLETS ||--o| CORE_WALLET_SNAPSHOTS : "restores"
 
     WALLETS {
         BLOB wallet_id PK "32-byte WalletId"
@@ -80,6 +82,7 @@ erDiagram
         INTEGER block_time "NULL on height-only rows and while unconfirmed"
         INTEGER finalized "0 | 1; always 0 on height-only rows"
         BLOB record_blob "NULL for height-only UTXO rows"
+        BLOB account_records_blob "per-account slices; NULL for legacy or height-only rows"
     }
 
     CORE_UTXOS {
@@ -90,13 +93,20 @@ erDiagram
         INTEGER is_sweep_placeholder "1 until funding arrives"
         INTEGER spent "0 | 1"
         BLOB spent_in_txid "set by apply_sweep for an unresolved held input; else NULL"
-        INTEGER winner_mined_height "V007: sweep winner's mined height; NULL when unstamped or materialised"
+        INTEGER winner_mined_height "block-spend evidence; NULL when no mined spend is known"
     }
 
     CORE_INSTANT_LOCKS {
         BLOB wallet_id PK
         BLOB txid PK
         BLOB islock_blob "bincode-encoded InstantLock"
+    }
+
+    CORE_WALLET_SNAPSHOTS {
+        BLOB wallet_id PK "one row per wallet; cascading wallet FK"
+        INTEGER format_version "snapshot codec version"
+        BLOB layout_marker "canonical empty upstream account layout"
+        BLOB snapshot_blob "bounded bincode-serde ManagedWalletInfo"
     }
 
     CORE_SYNC_STATE {
@@ -392,6 +402,13 @@ the disagreement costs: under `LoadPolicy::Strict` it aborts the load, under
 Repairing the drifted columns is a writer's job, on the next write of that
 row.
 
+`account_records_blob` stores the account-local record slices needed by
+restart restoration. Partial updates merge by account and preserve sibling
+slices. Legacy rows retain a NULL blob and are reconstructed from owned input
+and output addresses after the account pools are restored; ambiguous ownership
+fails the wallet load. Payload-only key-account involvement is recovered through
+the transaction matcher, including provider records retained after finality.
+
 - PK: `(wallet_id, txid)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 - Index: `idx_core_transactions_height(wallet_id, height)`.
@@ -419,18 +436,18 @@ network-final spender of a coin it knows is wallet-relevant, so its view of
 link. A delivery through `spent_utxos` onto a placeholder materialises it
 the same way instead of marking it in place.
 
-`winner_mined_height` (V007) stamps that claim with the mined height of the
-winner named in `spent_in_txid`, and decides the placeholder's lifetime
-rather than its existence. A block-context sweep stamps the winner's own
+`winner_mined_height` (V007) retains block-spend evidence, including an observed
+spend with no transaction record or `spent_in_txid`. A block-context sweep stamps the winner's own
 height and `collect_finalized_tombstones` evicts the row once
 `min(chainlock_height, synced_height)` reaches it — upstream's
 `prune_finalized_observed_spends` boundary verbatim. An InstantSend-locked
 winner that is not yet mined leaves it NULL: the lock alone settles the
 input, but it carries no height to key a lifetime on, so the row resolves
 only through proof (the funding upsert materialising it, a later
-block-context sweep re-stamping it, or a release). The funding upsert
-clears the stamp, because a materialised row is the wallet's own coin held
-spent and is permanently outside the collector's reach.
+block-context sweep re-stamping it, or a release). Funding materialisation
+preserves the stamp while the coin remains spent, so restoration retains the
+block-spend evidence. Materialised rows are outside the collector's reach.
+A release clears the stamp together with the spent flag.
 
 - PK: `(wallet_id, outpoint)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
@@ -847,3 +864,15 @@ table-rebuild migration, as V004 does.
 | V016 | `V016__identity_keys_null_scope_requires_existing_identity.rs` | Recreates the `identity_keys` null-scope trigger pair (see Triggers above) to also reject a NULL-scoped key naming an identity that does not exist at all, closing the gap where V008's guard caught only the wallet-owned case. |
 | V017 | `V017__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |
 | V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
+| V019 | `V019__core_account_records.rs` | Adds nullable per-account transaction slices to SQL projections. |
+| V020 | `V020__core_wallet_snapshots.rs` | Adds versioned complete Core wallet snapshots, including a serialization-layout marker. |
+
+### Core restart state
+
+`core_wallet_snapshots` is authoritative for the Core engine. Its public wallet
+state is committed atomically with SQL projections and checked for wallet ID,
+network, codec version, serialization layout, and size on load. The layout
+marker detects upstream Cargo-feature differences before decoding the payload.
+Signing keys remain outside this table. Without a snapshot, the engine starts
+at the wallet birthday for a Core rescan; saved accounts, address pools, and
+Platform rows remain available. Core projections are retained for SQL queries.

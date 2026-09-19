@@ -74,10 +74,59 @@ fn seed_corrupt_chain_lock(persister: &SqlitePersister, wallet: &WalletId) {
     .expect("plant corrupt chain lock");
 }
 
+/// Persist a supported snapshot envelope before corrupting its active payload.
+fn seed_corrupt_core_snapshot(persister: &SqlitePersister, wallet: &WalletId) {
+    ensure_wallet_meta(persister, wallet);
+    let mut snapshot =
+        key_wallet::wallet::ManagedWalletInfo::new(key_wallet::Network::Testnet, *wallet);
+    snapshot.metadata.synced_height = 11;
+    persister
+        .store(
+            *wallet,
+            PlatformWalletChangeSet {
+                core_wallet_snapshot: Some(snapshot),
+                ..Default::default()
+            },
+        )
+        .expect("seed active Core snapshot");
+    let conn = persister.lock_conn_for_test();
+    assert_eq!(
+        conn.execute(
+            "UPDATE core_wallet_snapshots SET snapshot_blob = X'FF' WHERE wallet_id = ?1",
+            params![wallet.as_slice()],
+        )
+        .expect("corrupt active Core snapshot"),
+        1,
+    );
+}
+
+fn assert_fresh_core_rescan(info: &key_wallet::wallet::ManagedWalletInfo) {
+    assert_eq!(
+        info.metadata.synced_height,
+        info.metadata.birth_height.saturating_sub(1)
+    );
+    assert_eq!(
+        info.metadata.last_processed_height,
+        info.metadata.synced_height
+    );
+    assert!(info.metadata.last_applied_chain_lock.is_none());
+    assert_eq!(info.balance, key_wallet::WalletCoreBalance::default());
+    assert!(info
+        .accounts
+        .all_accounts()
+        .iter()
+        .all(|account| account.transactions().is_empty()));
+    assert!(info
+        .accounts
+        .all_funding_accounts()
+        .iter()
+        .all(|account| account.utxos.is_empty()));
+}
+
 /// Seed one blob-bearing `core_transactions` row, then drift its typed
 /// `height` column away from the height inside the blob.
 fn seed_drifted_transaction(persister: &SqlitePersister, wallet: &WalletId) {
-    ensure_wallet_meta(persister, wallet);
+    seed_registered_wallet(persister, *wallet, 0x7A);
     let mut cs = PlatformWalletChangeSet::default();
     cs.core = Some(CoreChangeSet {
         records: vec![confirmed_record()],
@@ -95,7 +144,7 @@ fn seed_drifted_transaction(persister: &SqlitePersister, wallet: &WalletId) {
 }
 
 fn drifted_txid() -> Txid {
-    Txid::from_byte_array([0x7Au8; 32])
+    confirmed_record().txid
 }
 
 /// A record whose blob says height 300, so a drifted typed column is
@@ -107,7 +156,7 @@ fn confirmed_record() -> key_wallet::managed_account::transaction_record::Transa
         TransactionDirection, TransactionRecord,
     };
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
-    let mut record = TransactionRecord::new(
+    TransactionRecord::new(
         Transaction {
             version: 3,
             lock_time: 0,
@@ -129,9 +178,7 @@ fn confirmed_record() -> key_wallet::managed_account::transaction_record::Transa
         Vec::new(),
         Vec::new(),
         100,
-    );
-    record.txid = drifted_txid();
-    record
+    )
 }
 
 /// Register a deterministic keyless wallet and return its BIP44 external
@@ -328,7 +375,7 @@ fn seed_asset_lock_status_drift(
 }
 
 #[test]
-fn account_registration_drift_is_strictly_fatal_and_recovery_drops_only_that_row() {
+fn account_registration_drift_rejects_strict_load_and_keeps_recovery_core_empty() {
     let wallet = wid(0x3E);
     let outpoint = dashcore::OutPoint::new(Txid::from_byte_array([0x3E; 32]), 0);
     let seed = |persister: &SqlitePersister| {
@@ -378,19 +425,19 @@ fn account_registration_drift_is_strictly_fatal_and_recovery_drops_only_that_row
     let (recovery, _tmp, _path) = fresh_recovery_persister(seed);
     let state = recovery
         .load()
-        .expect("recovery drops only the drifted row");
+        .expect("recovery preserves valid accounts for a fresh Core rescan");
     let loaded = &state.wallets[&wallet];
-    assert!(loaded.wallet.accounts.standard_bip44_accounts.is_empty());
+    assert_fresh_core_rescan(&loaded.wallet_info);
+    assert!(!loaded
+        .wallet
+        .accounts
+        .standard_bip44_accounts
+        .contains_key(&0));
     assert!(loaded
         .wallet
         .accounts
         .standard_bip32_accounts
         .contains_key(&0));
-    assert!(loaded.wallet.accounts.coinjoin_accounts.contains_key(&0));
-    let fallback = &loaded.wallet_info.accounts.standard_bip32_accounts[&0];
-    assert!(fallback.utxos.contains_key(&outpoint));
-    assert_eq!(fallback.balance.total(), 7_000);
-    assert_eq!(loaded.wallet_info.balance.total(), 7_000);
     let degradation = recovery.last_load_degradation();
     assert_eq!(
         degradation.by_site.get(&LoadSite::AccountRegistrationDrift),
@@ -398,14 +445,15 @@ fn account_registration_drift_is_strictly_fatal_and_recovery_drops_only_that_row
     );
     assert_eq!(
         degradation.by_site.get(&LoadSite::OrphanedUtxoOwner),
-        Some(&2)
+        Some(&1)
     );
     assert_eq!(
         degradation.by_site.get(&LoadSite::UnresolvedUtxoAddress),
         Some(&1)
     );
+    assert!(degradation.wallets_degraded.is_empty());
     assert_eq!(degradation.by_site.len(), 3);
-    assert_eq!(degradation.total, 4);
+    assert_eq!(degradation.total, 3);
 }
 
 #[test]
@@ -505,17 +553,16 @@ fn unresolved_and_undecodable_addresses_are_counted_separately() {
         let conn = strict.lock_conn_for_test();
         let bad_script = [0x6A_u8];
         conn.execute(
-            "INSERT INTO core_address_pool \
-                (wallet_id, account_type, account_index, key_class, pool_type, \
-                 address_index, script, used) \
-             VALUES (?1, 'standard_bip44', 0, 0, 0, 0, ?2, 1)",
-            params![wallet.as_slice(), bad_script.as_slice()],
-        )
-        .expect("plant undecodable pool script");
-        conn.execute(
             "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
              VALUES (?1, ?2, 0, ?3, 1)",
-            params![wallet.as_slice(), &[0xFF_u8; 36], bad_script.as_slice()],
+            params![
+                wallet.as_slice(),
+                platform_wallet_storage::sqlite::schema::blob::encode_outpoint(
+                    &dashcore::OutPoint::new(Txid::from_byte_array([0xFF; 32]), 0)
+                )
+                .unwrap(),
+                bad_script.as_slice()
+            ],
         )
         .expect("plant undecodable UTXO script");
 
@@ -526,9 +573,10 @@ fn unresolved_and_undecodable_addresses_are_counted_separately() {
                 dashcore::Network::Testnet,
                 dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(hash)),
             );
-            let mut outpoint = [0_u8; 36];
-            outpoint[..4].copy_from_slice(&index.to_le_bytes());
-            outpoint[4] = 1;
+            let outpoint = platform_wallet_storage::sqlite::schema::blob::encode_outpoint(
+                &dashcore::OutPoint::new(Txid::from_byte_array([1; 32]), index),
+            )
+            .unwrap();
             conn.execute(
                 "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
                  VALUES (?1, ?2, 0, ?3, 1)",
@@ -542,9 +590,10 @@ fn unresolved_and_undecodable_addresses_are_counted_separately() {
         }
     });
 
-    persister
+    let state = persister
         .load()
         .expect("recovery must skip undecodable scripts");
+    assert_fresh_core_rescan(&state.wallets[&wallet].wallet_info);
     let degradation = persister.last_load_degradation();
     assert_eq!(
         degradation.by_site.get(&LoadSite::UnresolvedUtxoAddress),
@@ -552,10 +601,10 @@ fn unresolved_and_undecodable_addresses_are_counted_separately() {
     );
     assert_eq!(
         degradation.by_site.get(&LoadSite::UndecodableAddressScript),
-        Some(&2)
+        Some(&1)
     );
     assert_eq!(degradation.by_site.len(), 2);
-    assert_eq!(degradation.total, 900 + 2);
+    assert_eq!(degradation.total, 900 + 1);
 }
 
 #[test]
@@ -584,18 +633,18 @@ fn identity_scan_state_contradiction_is_counted_by_recovery_load() {
     assert_only_site(&persister, LoadSite::IdentityScanStateContradiction, 1);
 }
 
-// ── (a) chain-lock blob ─────────────────────────────────────────────────
+// ── (a) authoritative Core snapshot ─────────────────────────────────────
 
 #[test]
-fn corrupt_chain_lock_blob_is_fatal_under_strict() {
+fn corrupt_core_snapshot_is_fatal_under_strict() {
     let wallet = wid(0x20);
     let (persister, _tmp, _path) = fresh_persister();
-    seed_corrupt_chain_lock(&persister, &wallet);
+    seed_corrupt_core_snapshot(&persister, &wallet);
 
     let err = typed(
         persister
             .load()
-            .expect_err("a corrupt chain lock must abort a strict load"),
+            .expect_err("a corrupt active Core snapshot must abort a strict load"),
     );
     assert!(
         matches!(err, WalletStorageError::BincodeDecode { .. }),
@@ -608,62 +657,59 @@ fn corrupt_chain_lock_blob_is_fatal_under_strict() {
 }
 
 #[test]
-fn corrupt_chain_lock_blob_is_tolerated_in_recovery() {
+fn corrupt_core_snapshot_is_isolated_in_recovery() {
     let wallet = wid(0x21);
     let (persister, _tmp, _path) =
-        fresh_recovery_persister(|strict| seed_corrupt_chain_lock(strict, &wallet));
+        fresh_recovery_persister(|strict| seed_corrupt_core_snapshot(strict, &wallet));
 
     let state = persister.load().expect("recovery must complete the load");
-    let loaded = state.wallets.get(&wallet).expect("wallet must rehydrate");
     assert!(
-        loaded
-            .wallet_info
-            .metadata
-            .last_applied_chain_lock
-            .is_none(),
-        "the undecodable chain lock must be dropped, not guessed at"
+        !state.wallets.contains_key(&wallet),
+        "damaged active state must not become a partial wallet"
     );
+    assert_only_site(&persister, LoadSite::WalletRehydration, 1);
     assert_eq!(
-        loaded.wallet_info.metadata.synced_height, 11,
-        "the rest of the sync state must survive"
+        persister
+            .last_load_degradation()
+            .wallets_degraded
+            .get(&wallet),
+        Some(&"bincode_decode")
     );
-    assert_only_site(&persister, LoadSite::ChainLockBlob, 1);
 }
 
-// ── (c) core-transaction typed-column drift ─────────────────────────────
+// ── (c) archived Core rows do not replace full wallet snapshots ─────────
 
 #[test]
-fn core_transaction_column_drift_is_fatal_under_strict() {
+fn archived_core_corruption_does_not_block_a_strict_legacy_rescan() {
     let wallet = wid(0x22);
     let (persister, _tmp, _path) = fresh_persister();
     seed_drifted_transaction(&persister, &wallet);
+    seed_corrupt_chain_lock(&persister, &wallet);
 
-    let err = typed(
-        persister
-            .load()
-            .expect_err("typed columns disagreeing with the blob must abort a strict load"),
-    );
-    assert!(
-        matches!(
-            err,
-            WalletStorageError::CoreTransactionEntryMismatch {
-                typed_height: Some(999),
-                blob_height: Some(300),
-                ..
-            }
-        ),
-        "expected CoreTransactionEntryMismatch, got {err:?}"
-    );
+    let state = persister
+        .load()
+        .expect("archived financial rows are not installed into Core");
+    assert_fresh_core_rescan(&state.wallets[&wallet].wallet_info);
+    assert!(!persister.is_degraded());
+    assert_eq!(persister.last_load_degradation().total, 0);
+    assert_eq!(transaction_row(&persister, &wallet).1, Some(999));
 }
 
 #[test]
-fn core_transaction_column_drift_is_tolerated_in_recovery() {
+fn archived_core_corruption_does_not_degrade_a_recovery_legacy_rescan() {
     let wallet = wid(0x23);
-    let (persister, _tmp, _path) =
-        fresh_recovery_persister(|strict| seed_drifted_transaction(strict, &wallet));
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        seed_drifted_transaction(strict, &wallet);
+        seed_corrupt_chain_lock(strict, &wallet);
+    });
 
-    persister.load().expect("recovery must complete the load");
-    assert_only_site(&persister, LoadSite::CoreTransactionColumnDrift, 1);
+    let state = persister
+        .load()
+        .expect("recovery must complete the fresh rescan load");
+    assert_fresh_core_rescan(&state.wallets[&wallet].wallet_info);
+    assert!(!persister.is_degraded());
+    assert_eq!(persister.last_load_degradation().total, 0);
+    assert_eq!(transaction_row(&persister, &wallet).1, Some(999));
 }
 
 #[test]
@@ -832,7 +878,14 @@ fn seed_conflicting_used_address_owner(persister: &SqlitePersister, wallet: &Wal
     conn.execute(
         "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
          VALUES (?1, ?2, 1000, ?3, 1)",
-        params![wallet.as_slice(), &[0x11u8; 36][..], script.as_slice()],
+        params![
+            wallet.as_slice(),
+            platform_wallet_storage::sqlite::schema::blob::encode_outpoint(
+                &dashcore::OutPoint::new(Txid::from_byte_array([0x11; 32]), 0)
+            )
+            .unwrap(),
+            script.as_slice()
+        ],
     )
     .expect("seed spent utxo carrying the same script");
 }
@@ -949,7 +1002,7 @@ fn load_unowned_identities_adds_to_the_load_snapshot_instead_of_replacing_it() {
     let wallet = wid(0x2C);
     let identity_id = [0x5Cu8; 32];
     let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
-        seed_corrupt_chain_lock(strict, &wallet);
+        seed_corrupt_core_snapshot(strict, &wallet);
         seed_self_contradictory_unowned_identity(strict, &identity_id);
     });
 
@@ -960,7 +1013,10 @@ fn load_unowned_identities_adds_to_the_load_snapshot_instead_of_replacing_it() {
 
     let degradation = persister.last_load_degradation();
     assert_eq!(
-        degradation.by_site.get(&LoadSite::ChainLockBlob).copied(),
+        degradation
+            .by_site
+            .get(&LoadSite::WalletRehydration)
+            .copied(),
         Some(1),
         "the load()'s own tally must survive: {:?}",
         degradation.by_site
@@ -1042,21 +1098,22 @@ fn get_core_tx_record_drift_leaves_the_load_snapshot_alone() {
 fn a_repaired_database_reloads_clean() {
     let wallet = wid(0x2F);
     let (persister, _tmp, _path) =
-        fresh_recovery_persister(|strict| seed_corrupt_chain_lock(strict, &wallet));
+        fresh_recovery_persister(|strict| seed_corrupt_core_snapshot(strict, &wallet));
 
     persister.load().expect("first recovery load");
-    assert_only_site(&persister, LoadSite::ChainLockBlob, 1);
+    assert_only_site(&persister, LoadSite::WalletRehydration, 1);
 
     {
         let conn = persister.lock_conn_for_test();
         conn.execute(
-            "UPDATE core_sync_state SET last_applied_chain_lock = NULL WHERE wallet_id = ?1",
+            "DELETE FROM core_wallet_snapshots WHERE wallet_id = ?1",
             params![wallet.as_slice()],
         )
-        .expect("repair the undecodable chain lock");
+        .expect("discard the damaged checkpoint so Core can rescan");
     }
 
-    persister.load().expect("reload after repair");
+    let state = persister.load().expect("reload after repair");
+    assert_fresh_core_rescan(&state.wallets[&wallet].wallet_info);
     let degradation = persister.last_load_degradation();
     assert!(
         !persister.is_degraded(),
@@ -1081,11 +1138,11 @@ fn a_repaired_database_reloads_clean() {
 fn a_failed_load_leaves_no_stale_verdict() {
     let tolerated = wid(0x01);
     let (persister, _tmp, _path) =
-        fresh_recovery_persister(|strict| seed_corrupt_chain_lock(strict, &tolerated));
+        fresh_recovery_persister(|strict| seed_corrupt_core_snapshot(strict, &tolerated));
 
     persister
         .load()
-        .expect("an undecodable chain lock is tolerable under Recovery");
+        .expect("an undecodable snapshot isolates its wallet under Recovery");
     let first = persister.last_load_degradation();
     assert!(
         first.degraded,
@@ -1136,39 +1193,33 @@ fn degraded_flag_is_false_on_a_clean_load() {
 fn degraded_counts_are_per_load_not_cumulative() {
     let wallet = wid(0x27);
     let (persister, _tmp, _path) =
-        fresh_recovery_persister(|strict| seed_corrupt_chain_lock(strict, &wallet));
+        fresh_recovery_persister(|strict| seed_corrupt_core_snapshot(strict, &wallet));
 
     persister.load().expect("first recovery load");
-    assert_only_site(&persister, LoadSite::ChainLockBlob, 1);
+    assert_only_site(&persister, LoadSite::WalletRehydration, 1);
     persister.load().expect("second recovery load");
     assert_only_site(
         &persister,
-        LoadSite::ChainLockBlob,
+        LoadSite::WalletRehydration,
         1, // replaced, not summed — otherwise a repaired DB could never read clean
     );
 }
 
-/// Seed one healthy wallet and one whose single UNSPENT UTXO carries a bare
-/// `OP_RETURN` — a valid script that is not an address. That decode is
-/// deliberately fail-hard (it is the balance source), so the sick wallet is
-/// genuinely unrehydratable; the question is only who else it takes with it.
+/// Seed a healthy wallet and an active address pool that disagrees with its key.
 fn seed_healthy_and_sick_wallets(strict: &SqlitePersister, healthy: WalletId, sick: WalletId) {
     seed_registered_wallet(strict, healthy, 0x51);
     seed_registered_wallet(strict, sick, 0x52);
     let conn = strict.lock_conn_for_test();
-    // The outpoint must be genuinely encoded, or the row fails its bincode
-    // decode first and the fixture never reaches the script at all.
-    let outpoint = dashcore::OutPoint::new(Txid::from_byte_array([0x52; 32]), 0);
     conn.execute(
-        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
-         VALUES (?1, ?2, 5000, ?3, 0)",
+        "INSERT INTO core_address_pool \
+            (wallet_id, account_type, account_index, key_class, pool_type, address_index, script, used) \
+         VALUES (?1, 'standard_bip44', 0, 0, 0, 0, ?2, 0)",
         params![
             sick.as_slice(),
-            platform_wallet_storage::sqlite::schema::blob::encode_outpoint(&outpoint).unwrap(),
             [0x6A_u8].as_slice()
         ],
     )
-    .expect("plant an unspent utxo whose script is not an address");
+    .expect("plant an active pool script that cannot match its registered account");
 }
 
 #[test]
@@ -1250,7 +1301,7 @@ fn unknown_pool_account_labels_fail_strict_and_isolate_the_wallet_in_recovery() 
 /// ATTRIBUTED, not merely counted — a wallet missing from the result is
 /// otherwise indistinguishable from a wallet that never existed.
 #[test]
-fn one_wallets_undecodable_unspent_script_does_not_take_its_sibling_down() {
+fn one_wallets_corrupt_address_pool_does_not_take_its_sibling_down() {
     let healthy = wid(0x51);
     let sick = wid(0x52);
     let (persister, _tmp, _path) =
@@ -1277,7 +1328,7 @@ fn one_wallets_undecodable_unspent_script_does_not_take_its_sibling_down() {
     );
     assert_eq!(
         degradation.wallets_degraded.get(&sick).copied(),
-        Some("address_decode"),
+        Some("blob_decode"),
         "the dropped wallet must name itself and its cause: {:?}",
         degradation.wallets_degraded
     );
@@ -1307,7 +1358,12 @@ fn the_isolation_boundary_reports_the_original_cause_under_strict() {
             .expect_err("strict must still refuse a file it cannot fully rebuild"),
     );
     assert!(
-        matches!(err, WalletStorageError::AddressDecode { .. }),
+        matches!(
+            err,
+            WalletStorageError::BlobDecode {
+                reason: "persisted Core account address disagrees with its account key"
+            }
+        ),
         "strict must surface the original cause, not the boundary wrapper: {err:?}"
     );
 }
