@@ -32,7 +32,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 token_burn_transition: 0,
                 token_mint_transition: 0,
                 token_transfer_transition: 0,
-                documents_batch_transition: 0,
+                documents_batch_transition: 1, // changed: also deletes the lapsed contract suspensions the batch action carries
                 identity_create_transition: 0,
                 identity_create_from_addresses_transition: 0,
                 identity_credit_transfer_transition: 0,
@@ -41,6 +41,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 identity_top_up_from_addresses_transition: 0,
                 identity_update_transition: 1,
                 identity_key_limits_update_transition: 0,
+                contract_user_moderation_transition: 0,
                 masternode_vote_transition: 0,
                 bump_identity_data_contract_nonce: 0,
                 bump_identity_nonce: 0,

@@ -15,6 +15,7 @@ pub struct DriveVerifyMethodVersions {
     pub identity: DriveVerifyIdentityMethodVersions,
     pub group: DriveVerifyGroupMethodVersions,
     pub contract_group: DriveVerifyContractGroupMethodVersions,
+    pub contract_moderation: DriveVerifyContractModerationMethodVersions,
     pub token: DriveVerifyTokenMethodVersions,
     pub single_document: DriveVerifySingleDocumentMethodVersions,
     pub system: DriveVerifySystemMethodVersions,
@@ -31,6 +32,14 @@ pub struct DriveVerifyContractGroupMethodVersions {
     pub verify_contract_group_info: FeatureVersion,
     pub verify_contract_group_members: FeatureVersion,
     pub verify_contract_group_memberships_for_contract: FeatureVersion,
+}
+
+/// Versions for the contract moderation proof verifiers: one identity's status on a contract
+/// (banned, suspended until, or neither) and one page of a contract's banlist or suspensions.
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyContractModerationMethodVersions {
+    pub verify_contract_moderation_status: FeatureVersion,
+    pub verify_contract_moderation_entries: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

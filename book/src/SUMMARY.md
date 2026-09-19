@@ -55,6 +55,7 @@
 
 - [Data Contracts](data-model/data-contracts.md)
 - [Contract Groups](data-model/contract-groups.md)
+- [Contract Moderation](data-model/contract-moderation.md)
 - [Documents](data-model/documents.md)
 - [Identities](data-model/identities.md)
 - [Key Budgets and Expiry](data-model/key-limits.md)

@@ -23,6 +23,8 @@ use dapi_grpc::platform::v0::{
     GetContestedResourcesRequest, GetContestedResourcesResponse, GetContractGroupInfoRequest,
     GetContractGroupInfoResponse, GetContractGroupMembersRequest, GetContractGroupMembersResponse,
     GetContractGroupsForContractRequest, GetContractGroupsForContractResponse,
+    GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
+    GetContractModerationStatusRequest, GetContractModerationStatusResponse,
     GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest,
     GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse,
     GetDataContractsByRangeRequest, GetDataContractsLatestVersionsRequest,
@@ -441,6 +443,30 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_contract_group_info,
             "get_contract_group_info",
+        )
+        .await
+    }
+
+    async fn get_contract_moderation_status(
+        &self,
+        request: Request<GetContractModerationStatusRequest>,
+    ) -> Result<Response<GetContractModerationStatusResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_moderation_status,
+            "get_contract_moderation_status",
+        )
+        .await
+    }
+
+    async fn get_contract_moderation_entries(
+        &self,
+        request: Request<GetContractModerationEntriesRequest>,
+    ) -> Result<Response<GetContractModerationEntriesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_moderation_entries,
+            "get_contract_moderation_entries",
         )
         .await
     }

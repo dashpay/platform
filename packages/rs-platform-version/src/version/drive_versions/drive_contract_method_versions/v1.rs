@@ -1,7 +1,8 @@
 use crate::version::drive_versions::drive_contract_method_versions::{
     DriveContractApplyMethodVersions, DriveContractCostsMethodVersions,
     DriveContractGetMethodVersions, DriveContractInsertMethodVersions, DriveContractMethodVersions,
-    DriveContractProveMethodVersions, DriveContractUpdateMethodVersions,
+    DriveContractModerationMethodVersions, DriveContractProveMethodVersions,
+    DriveContractUpdateMethodVersions,
 };
 
 pub const DRIVE_CONTRACT_METHOD_VERSIONS_V1: DriveContractMethodVersions =
@@ -41,5 +42,17 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V1: DriveContractMethodVersions =
             get_contract_with_fetch_info: 0,
             get_contracts_with_fetch_info: 0,
             get_system_or_user_contract_with_fee: 0,
+        },
+        moderation: DriveContractModerationMethodVersions {
+            add_contract_ban: 0,
+            remove_contract_ban: 0,
+            add_contract_suspension: 0,
+            remove_contract_suspension: 0,
+            fetch_contract_moderation_status: 0,
+            fetch_contract_moderation_entries: 0,
+            prove_contract_moderation_status: 0,
+            prove_contract_moderation_entries: 0,
+            insert_contract_moderation_trees: 0,
+            add_estimation_costs_for_contract_moderation_trees: 0,
         },
     };

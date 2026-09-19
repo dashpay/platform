@@ -8,6 +8,7 @@ pub use address_inputs::fetch_inputs_with_nonce;
 pub mod broadcast;
 pub(crate) mod broadcast_identity;
 pub mod broadcast_request;
+pub mod contract_user_moderation;
 #[cfg(feature = "shielded")]
 pub mod identity_create_from_shielded_pool;
 /// Shielded pool to an existing identity's balance.

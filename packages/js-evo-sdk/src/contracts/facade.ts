@@ -107,4 +107,68 @@ export class ContractsFacade {
     const w = await this.sdk.getWasmSdkConnected();
     return w.contractUpdate(options);
   }
+
+  /**
+   * Puts an identity on a moderated contract's banlist (protocol version 14). Signed by the
+   * contract owner or a moderator the contract's config names, with a CRITICAL authentication
+   * key. A banned identity cannot act on the contract at the document level.
+   */
+  async banUser(options: wasm.ContractModerationOptions): Promise<wasm.ContractModerationResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractBanUser(options);
+  }
+
+  /** Takes an identity off a moderated contract's banlist. */
+  async unbanUser(options: wasm.ContractModerationOptions): Promise<wasm.ContractModerationResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractUnbanUser(options);
+  }
+
+  /**
+   * Suspends an identity on a moderated contract until the block time `until` (milliseconds),
+   * replacing a suspension it already carries. The suspension is swept by the identity's first
+   * document transition after it lapses.
+   */
+  async suspendUser(options: wasm.ContractModerationOptions): Promise<wasm.ContractModerationResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractSuspendUser(options);
+  }
+
+  /** Takes an identity off a moderated contract's suspension list, lapsed or not. */
+  async unsuspendUser(options: wasm.ContractModerationOptions): Promise<wasm.ContractModerationResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractUnsuspendUser(options);
+  }
+
+  /**
+   * One identity's status on a moderated contract: whether it is banned, and until when it is
+   * suspended. Every list named must be one the contract keeps.
+   */
+  async moderationStatus(query: wasm.ContractModerationStatusQuery): Promise<wasm.ContractModerationStatus> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractModerationStatus(query);
+  }
+
+  async moderationStatusWithProof(
+    query: wasm.ContractModerationStatusQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractModerationStatus>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractModerationStatusWithProofInfo(query);
+  }
+
+  /**
+   * One page of a moderated contract's banlist or suspension list, in identity id order. Pass
+   * the page's `nextStartAfter` as the next query's `startAfter`; a page without one (it holds fewer entries than the limit) is the last.
+   */
+  async moderationEntries(query: wasm.ContractModerationEntriesQuery): Promise<wasm.ContractModerationEntriesPage> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractModerationEntries(query);
+  }
+
+  async moderationEntriesWithProof(
+    query: wasm.ContractModerationEntriesQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractModerationEntriesPage>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractModerationEntriesWithProofInfo(query);
+  }
 }

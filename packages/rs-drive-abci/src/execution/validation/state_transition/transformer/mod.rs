@@ -187,6 +187,14 @@ impl StateTransitionActionTransformer for StateTransition {
                 execution_context,
                 tx,
             ),
+            StateTransition::ContractUserModeration(st) => st.transform_into_action(
+                platform,
+                block_info,
+                remaining_address_input_balances,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
             StateTransition::IdentityTopUp(st) => {
                 let signable_bytes = self.signable_bytes()?;
                 st.transform_into_action_for_identity_top_up_transition(

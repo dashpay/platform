@@ -1,5 +1,6 @@
 use crate::drive::RootTree;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::moderation::ContractModerationList;
 
 use crate::drive::votes::paths::{ACTIVE_POLLS_TREE_KEY, CONTESTED_RESOURCE_TREE_KEY};
 use dpp::data_contract::DataContract;
@@ -169,5 +170,48 @@ pub fn contract_keeping_history_storage_time_reference_path(
 /// The key under a contract's root subtree (`[64, id]`) that holds the contract's version
 /// number as a four-byte big-endian item, written beside the contract from protocol
 /// version 14. Keys `0` (the contract, or its history subtree) and `1` (the documents) are
-/// the other children of that subtree.
+/// the other children of that subtree, and a moderated contract also has `3` (its banlist)
+/// and `4` (its suspension list).
 pub const CONTRACT_VERSION_KEY: u8 = 2;
+
+/// The key under a contract's root subtree (`[64, id]`) of the banlist a moderated contract
+/// keeps (protocol version 14): `identity id -> Item([])`. Present only when the contract's
+/// config declares a banlist.
+pub const CONTRACT_BANLIST_KEY: u8 = 3;
+
+/// The key under a contract's root subtree (`[64, id]`) of the suspension list a moderated
+/// contract keeps (protocol version 14): `identity id -> Item(until, u64 big-endian
+/// milliseconds)`. Present only when the contract's config declares a suspension list.
+pub const CONTRACT_SUSPENSIONS_KEY: u8 = 4;
+
+/// The tree key of a moderation list.
+pub fn contract_moderation_list_key(list: ContractModerationList) -> &'static [u8; 1] {
+    match list {
+        ContractModerationList::Banlist => &[CONTRACT_BANLIST_KEY],
+        ContractModerationList::Suspensions => &[CONTRACT_SUSPENSIONS_KEY],
+    }
+}
+
+/// `[64, contract id, 3]` or `[64, contract id, 4]`: the tree of one moderation list.
+pub fn contract_moderation_list_path(
+    contract_id: &[u8],
+    list: ContractModerationList,
+) -> [&[u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        contract_id,
+        contract_moderation_list_key(list),
+    ]
+}
+
+/// `[64, contract id, 3]` or `[64, contract id, 4]`: the tree of one moderation list.
+pub fn contract_moderation_list_path_vec(
+    contract_id: &[u8],
+    list: ContractModerationList,
+) -> Vec<Vec<u8>> {
+    vec![
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
+        contract_id.to_vec(),
+        contract_moderation_list_key(list).to_vec(),
+    ]
+}

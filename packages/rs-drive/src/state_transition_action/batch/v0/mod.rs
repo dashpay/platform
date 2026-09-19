@@ -5,7 +5,7 @@ use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::fee::Credits;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use dpp::identifier::Identifier;
 use dpp::prelude::UserFeeIncrease;
@@ -33,6 +33,11 @@ pub struct BatchTransitionActionV0 {
     /// The contract owner sponsoring the batch's gas, resolved by the batch transformer from
     /// protocol version 14 (see `ResolvedGasSponsor`)
     pub gas_sponsor: Option<ResolvedGasSponsor>,
+
+    /// The suspensions the transformer found lapsed for the owner on the contracts the batch
+    /// touches, as `(contract id, identity id)` (protocol version 14). Each is deleted when
+    /// the batch executes: the first document transition after a suspension lapses sweeps it.
+    pub lapsed_suspensions: BTreeSet<(Identifier, Identifier)>,
 }
 
 impl BatchTransitionActionV0 {

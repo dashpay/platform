@@ -116,11 +116,19 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 transform_into_action: 0,
             },
             contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
-                basic_structure: Some(1),
+                basic_structure: Some(2), // changed: validates the contract moderation declaration of a config V2
                 advanced_structure: None,
                 identity_signatures: None,
                 nonce: Some(0),
                 state: 1, // changed: runs data_contract_reference_validation on the updated contract's refersTo declarations
+                transform_into_action: 0,
+            },
+            contract_user_moderation_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: Some(0),
+                advanced_structure: None,
+                identity_signatures: Some(0),
+                nonce: Some(0),
+                state: 0,
                 transform_into_action: 0,
             },
             data_contract_reference_validation: 0,

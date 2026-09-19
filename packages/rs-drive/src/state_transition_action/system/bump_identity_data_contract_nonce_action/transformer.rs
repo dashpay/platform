@@ -4,6 +4,7 @@ use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
+use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
@@ -234,6 +235,18 @@ impl BumpIdentityDataContractNonceAction {
         match value {
             DataContractUpdateTransitionAction::V0(v0) => {
                 BumpIdentityDataContractNonceActionV0::from_data_contract_update_action(v0).into()
+            }
+        }
+    }
+
+    /// from borrowed contract user moderation transition
+    pub fn from_borrowed_contract_user_moderation_transition(
+        value: &ContractUserModerationTransition,
+    ) -> Self {
+        match value {
+            ContractUserModerationTransition::V0(v0) => {
+                BumpIdentityDataContractNonceActionV0::from_borrowed_contract_user_moderation(v0)
+                    .into()
             }
         }
     }

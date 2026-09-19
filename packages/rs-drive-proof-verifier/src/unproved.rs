@@ -3,6 +3,10 @@ use crate::types::contract_groups::{
     memberships_from_response, ContractGroupInfo, ContractGroupMembersPage,
     ContractGroupMembershipsForContract,
 };
+use crate::types::contract_moderation::{
+    entries_from_response, lists_from_request, ContractModerationEntries,
+    ContractModerationListStatuses, ContractModerationStatus,
+};
 use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
 };
@@ -872,6 +876,89 @@ impl FromUnproved<platform::GetContractGroupInfoRequest> for ContractGroupInfo {
         };
 
         Ok((info, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractModerationStatusRequest> for ContractModerationListStatuses {
+    type Request = platform::GetContractModerationStatusRequest;
+    type Response = platform::GetContractModerationStatusResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_moderation_status_response::get_contract_moderation_status_response_v0::Result as V0Result;
+
+        // The response holds a flat status; which of its fields were actually read is what the
+        // request named, so only those lists are reported.
+        let request: Self::Request = request.into();
+        let platform::get_contract_moderation_status_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let lists = lists_from_request(&request_v0.lists)?;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_moderation_status_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let status = match v0.result {
+            Some(V0Result::Status(status)) => Some(ContractModerationListStatuses::from_status(
+                &lists,
+                &ContractModerationStatus {
+                    banned: status.banned,
+                    suspended_until: status.suspended_until,
+                },
+            )),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract moderation status, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((status, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractModerationEntriesRequest> for ContractModerationEntries {
+    type Request = platform::GetContractModerationEntriesRequest;
+    type Response = platform::GetContractModerationEntriesResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_moderation_entries_response::get_contract_moderation_entries_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_moderation_entries_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let entries = match v0.result {
+            Some(V0Result::Entries(entries)) => Some(entries_from_response(entries.entries)?),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract moderation entries, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((entries, metadata))
     }
 }
 

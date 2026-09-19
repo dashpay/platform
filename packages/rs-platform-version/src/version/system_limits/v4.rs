@@ -5,7 +5,8 @@ use crate::version::system_limits::SystemLimits;
 /// time-range overlap-factor cap, adds the time-range TTL pair, and raises
 /// the GroveDB proof envelope floor (the TTL and floor fields joined this
 /// table in place while protocol version 14 was unreleased, rather than
-/// spawning a new version; it shipped with 4.2 and is now frozen):
+/// spawning a new version). The table stays editable in place until 4.2
+/// (protocol version 14) is live on mainnet, and is frozen after:
 ///
 /// * `max_time_range_ttl_seconds` is set to one week: the ceiling on the
 ///   `ttl` a `timeRange` index transform may declare. The cap is what makes
@@ -42,6 +43,9 @@ use crate::version::system_limits::SystemLimits;
 ///   its owner, and a group's name and description are capped at 64 and 256 characters. The
 ///   `max_contract_group_size` limit was renamed `max_group_member_count` at the same time; it
 ///   bounds the members of a change-control `Group` inside a contract, not a contract group.
+/// * Contract moderation (protocol version 14): a moderated data contract may name at most 16
+///   moderator identities, its owner counted when named. A suspension runs until at most
+///   2^53 - 1 milliseconds of block time, the largest value JSON clients read exactly.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -65,6 +69,8 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_contract_group_admins: 16,
     max_contract_group_name_length: 64,
     max_contract_group_description_length: 256,
+    max_contract_moderators: 16,
+    max_contract_suspension_until: 9_007_199_254_740_991,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is
