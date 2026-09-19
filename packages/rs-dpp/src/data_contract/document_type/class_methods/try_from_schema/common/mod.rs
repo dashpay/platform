@@ -1420,6 +1420,11 @@ fn parse_token_costs(
                         .map(|int| int.try_into())
                         .transpose()?
                         .unwrap_or(DocumentActionTokenEffect::TransferTokenToContractOwner);
+                    // Whether a transition may skip the token payment and have its signer pay
+                    // the gas in credits instead (the v3 meta-schema admits the flag)
+                    let optional = action_cost
+                        .get_optional_bool("optional")?
+                        .unwrap_or_default();
 
                     #[cfg(feature = "validation")]
                     if ctx.full_validation {
@@ -1479,6 +1484,7 @@ fn parse_token_costs(
                         token_amount,
                         effect,
                         gas_fees_paid_by,
+                        optional,
                     })
                 })
                 .transpose()

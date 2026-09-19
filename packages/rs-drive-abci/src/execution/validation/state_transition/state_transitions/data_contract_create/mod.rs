@@ -1026,6 +1026,7 @@ mod tests {
                         token_amount: 5,
                         effect: DocumentActionTokenEffect::BurnToken,
                         gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                        optional: false,
                     }));
                     let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
                     let schema = document_type.schema_mut();
@@ -1132,6 +1133,7 @@ mod tests {
                         token_amount: 5,
                         effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                         gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                        optional: false,
                     }));
                     let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
                     let schema = document_type.schema_mut();
@@ -1362,6 +1364,7 @@ mod tests {
                         token_amount: 5,
                         effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                         gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                        optional: false,
                     }));
                     let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
                     let schema = document_type.schema_mut();
@@ -2684,6 +2687,7 @@ mod tests {
                         token_amount: 5,
                         effect: DocumentActionTokenEffect::BurnToken,
                         gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                        optional: false,
                     }));
                     let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
                     let schema = document_type.schema_mut();
@@ -2798,6 +2802,7 @@ mod tests {
                         token_amount: 5,
                         effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                         gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                        optional: false,
                     }));
                     let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
                     let schema = document_type.schema_mut();
@@ -2927,6 +2932,7 @@ mod tests {
                         token_amount: 5,
                         effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                         gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                        optional: false,
                     }));
                     let gas_fees_paid_by_int: u8 = GasFeesPaidBy::DocumentOwner.into();
                     let schema = document_type.schema_mut();

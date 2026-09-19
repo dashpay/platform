@@ -32,7 +32,11 @@ impl DocumentBaseTransitionActionV0 {
         let document_type = data_contract
             .contract
             .document_type_borrowed_for_name(value.document_type_name().as_str())?;
-        let document_action_token_cost = get_token_cost(document_type);
+        // An optional token cost is waived by leaving the token payment info out: the action is
+        // then paid for in credits by its signer, like one without a token cost, and offers no
+        // gas sponsorship. Only a v3 meta-schema contract (protocol version 14) carries the flag.
+        let document_action_token_cost = get_token_cost(document_type)
+            .filter(|cost| !(cost.optional && value.token_payment_info_ref().is_none()));
         let token_cost = document_action_token_cost.map(
             |DocumentActionTokenCost {
                  contract_id,
