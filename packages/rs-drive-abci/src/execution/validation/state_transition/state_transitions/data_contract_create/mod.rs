@@ -1561,6 +1561,10 @@ mod tests {
 
         mod pre_programmed_distribution {
             use super::*;
+            use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
+            use crate::rpc::core::MockCoreRPCLike;
+            use crate::test::helpers::setup::TempPlatform;
+            use dpp::data_contract::accessors::v1::DataContractV1Setters;
             use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
             use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
             use drive::drive::Drive;
@@ -1735,6 +1739,190 @@ mod tests {
                 .1;
 
                 assert_eq!(verified_pre_programmed_distributions, distributions);
+            }
+
+            const RELEASE_TIME: TimestampMillis = 1700000000000;
+
+            /// Processes the creation of the basic token contract given one token per entry
+            /// of `releases`. Each token releases its amounts at `RELEASE_TIME`, the first to
+            /// the contract owner and the others to further identities. Returns the
+            /// processing result, committed, and the token ids.
+            async fn process_create_with_tokens_releasing(
+                releases: &[&[TokenAmount]],
+                platform: &mut TempPlatform<MockCoreRPCLike>,
+                platform_version: &PlatformVersion,
+            ) -> (StateTransitionsProcessingResult, Vec<[u8; 32]>) {
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) = setup_identity(platform, 958, dash_to_credits!(1.0));
+
+                let recipient_count = releases.iter().map(|amounts| amounts.len()).max();
+                let mut recipients = vec![identity.id()];
+                for seed in 1..recipient_count.unwrap_or_default() {
+                    let (recipient, _, _) =
+                        setup_identity(platform, 958 + seed as u64, dash_to_credits!(0.1));
+                    recipients.push(recipient.id());
+                }
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                let base_token_configuration = data_contract
+                    .tokens()
+                    .get(&0)
+                    .expect("expected first token")
+                    .clone();
+
+                for (position, amounts) in releases.iter().enumerate() {
+                    let mut token_configuration = base_token_configuration.clone();
+                    token_configuration.set_base_supply(0);
+                    token_configuration
+                        .distribution_rules_mut()
+                        .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                            TokenPreProgrammedDistributionV0 {
+                                distributions: BTreeMap::from([(
+                                    RELEASE_TIME,
+                                    recipients
+                                        .iter()
+                                        .copied()
+                                        .zip(amounts.iter().copied())
+                                        .collect(),
+                                )]),
+                            },
+                        )));
+                    data_contract.add_token(position as u16, token_configuration);
+                }
+
+                let data_contract_id = DataContract::generate_data_contract_id_v0(identity.id(), 1);
+                let token_ids = (0..releases.len())
+                    .map(|position| {
+                        calculate_token_id(data_contract_id.as_bytes(), position as u16)
+                    })
+                    .collect();
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .await
+                    .expect("expect to create data contract create transition");
+
+                let data_contract_create_serialized_transition = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[data_contract_create_serialized_transition],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                (processing_result, token_ids)
+            }
+
+            /// Every token releasing at one time keeps its references under one shared
+            /// release-time tree, which the create has to queue once however many of the
+            /// contract's tokens release at that time.
+            #[tokio::test]
+            async fn should_create_contract_whose_tokens_share_a_pre_programmed_release_time() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let (processing_result, token_ids) = process_create_with_tokens_releasing(
+                    &[&[10], &[20]],
+                    &mut platform,
+                    platform_version,
+                )
+                .await;
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                );
+
+                for (token_id, release_amount) in token_ids.into_iter().zip([10, 20]) {
+                    let fetched_distributions = platform
+                        .drive
+                        .fetch_token_pre_programmed_distributions(
+                            token_id,
+                            None,
+                            None,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch pre-programmed distributions");
+
+                    assert_eq!(
+                        fetched_distributions
+                            .get(&RELEASE_TIME)
+                            .map(|release| release.values().copied().collect::<Vec<_>>()),
+                        Some(vec![release_amount])
+                    );
+                }
+            }
+
+            /// A release is stored as a sum tree, so neither an amount above `i64::MAX` nor
+            /// amounts totalling more can be written. Nothing validated them, so the create
+            /// failed inside Drive as an internal error instead of being rejected.
+            #[tokio::test]
+            async fn should_reject_contract_with_pre_programmed_release_over_the_limit() {
+                let platform_version = PlatformVersion::latest();
+                let over_limit_releases: [&[TokenAmount]; 2] = [
+                    &[i64::MAX as TokenAmount + 1],
+                    &[i64::MAX as TokenAmount, 1],
+                ];
+
+                for over_limit_release in over_limit_releases {
+                    let mut platform = TestPlatformBuilder::new()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let (processing_result, _) = process_create_with_tokens_releasing(
+                        &[&[10], over_limit_release],
+                        &mut platform,
+                        platform_version,
+                    )
+                    .await;
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::UnpaidConsensusError(
+                            ConsensusError::BasicError(
+                                BasicError::PreProgrammedDistributionAmountOverLimitError(error)
+                            )
+                        )] if error.token_position() == 1 && error.timestamp() == RELEASE_TIME
+                    );
+                }
             }
         }
 

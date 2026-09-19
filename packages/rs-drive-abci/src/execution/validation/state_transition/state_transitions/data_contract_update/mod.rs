@@ -2968,6 +2968,195 @@ mod tests {
                 assert_eq!(token_balance, None);
             }
         }
+
+        /// Registers a contract without tokens, then processes a data contract
+        /// update that adds one token per entry of `releases`. Each token
+        /// releases its amounts at time 100, the first to the contract owner and
+        /// the others to further identities.
+        async fn process_update_adding_tokens_releasing(
+            releases: &[&[TokenAmount]],
+            protocol_version: ProtocolVersion,
+        ) -> StateTransitionsProcessingResult {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a known protocol version");
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            let recipient_count = releases.iter().map(|amounts| amounts.len()).max();
+            let mut recipients = vec![identity.id()];
+            for seed in 1..recipient_count.unwrap_or_default() {
+                let (recipient, _, _) =
+                    setup_identity(&mut platform, 958 + seed as u64, dash_to_credits!(0.1));
+                recipients.push(recipient.id());
+            }
+
+            let platform_state = platform.state.load();
+
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity.id());
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            for (position, amounts) in releases.iter().enumerate() {
+                let mut token_configuration =
+                    TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+                token_configuration
+                    .conventions_mut()
+                    .localizations_mut()
+                    .insert(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "credit".to_string(),
+                            plural_form: "credits".to_string(),
+                        }),
+                    );
+                token_configuration
+                    .distribution_rules_mut()
+                    .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                        TokenPreProgrammedDistributionV0 {
+                            distributions: BTreeMap::from([(
+                                100,
+                                recipients
+                                    .iter()
+                                    .copied()
+                                    .zip(amounts.iter().copied())
+                                    .collect(),
+                            )]),
+                        },
+                    )));
+                updated_data_contract.add_token(position as u16, token_configuration);
+            }
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract update transition");
+
+            let update_bytes = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .platform
+                .process_raw_state_transitions(
+                    &[update_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition")
+        }
+
+        /// Every token releasing at one time keeps its references under one
+        /// shared release-time tree, which the update has to queue once however
+        /// many of the added tokens release at that time.
+        #[tokio::test]
+        async fn should_add_tokens_sharing_a_pre_programmed_release_time_by_update() {
+            let processing_result = process_update_adding_tokens_releasing(
+                &[&[445], &[445]],
+                PlatformVersion::latest().protocol_version,
+            )
+            .await;
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        /// A release is stored as a sum tree, so neither an amount above
+        /// `i64::MAX` nor amounts totalling more can be written. Nothing
+        /// validated them, so the update failed inside Drive as an internal
+        /// error instead of being rejected and paid for.
+        #[tokio::test]
+        async fn should_reject_update_adding_token_with_pre_programmed_release_over_the_limit() {
+            let over_limit_releases: [&[TokenAmount]; 2] = [
+                &[i64::MAX as TokenAmount + 1],
+                &[i64::MAX as TokenAmount, 1],
+            ];
+
+            for over_limit_release in over_limit_releases {
+                let processing_result = process_update_adding_tokens_releasing(
+                    &[&[445], over_limit_release],
+                    PlatformVersion::latest().protocol_version,
+                )
+                .await;
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::BasicError(
+                            BasicError::PreProgrammedDistributionAmountOverLimitError(error)
+                        ),
+                        ..
+                    }] if error.token_position() == 1 && error.timestamp() == 100
+                );
+            }
+        }
+
+        /// Before protocol version 14 an update wrote no distribution storage,
+        /// so it admitted a release whose amounts each fit but total over the
+        /// limit. That is shipped behaviour and stays; it is why the check only
+        /// covers the tokens an update adds.
+        #[tokio::test]
+        async fn should_still_add_token_with_pre_programmed_release_total_over_the_limit_on_protocol_version_13(
+        ) {
+            let processing_result =
+                process_update_adding_tokens_releasing(&[&[i64::MAX as TokenAmount, 1]], 13).await;
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        /// A single amount over the limit never got that far, not even before
+        /// protocol version 14: the fee estimation of an update takes the
+        /// contract insert path, which refuses the amount as an internal error.
+        #[tokio::test]
+        async fn should_still_fail_update_adding_token_with_pre_programmed_amount_over_the_limit_on_protocol_version_13(
+        ) {
+            let processing_result =
+                process_update_adding_tokens_releasing(&[&[i64::MAX as TokenAmount + 1]], 13).await;
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::InternalError(_)]
+            );
+        }
     }
 
     mod keyword_updates {

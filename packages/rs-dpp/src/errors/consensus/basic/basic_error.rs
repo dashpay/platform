@@ -32,11 +32,12 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError,
     InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError,
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
-    NonContiguousContractTokenPositionsError, RedundantDocumentPaidForByTokenWithContractId,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
-    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
-    UnknownTradeModeError, UnknownTransferableTypeError,
+    NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError,
+    RedundantDocumentPaidForByTokenWithContractId, SystemPropertyIndexAlreadyPresentError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
+    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
+    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
+    UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
@@ -777,6 +778,10 @@ pub enum BasicError {
     InvalidTokenOncePerIdentityDistributionAmountError(
         InvalidTokenOncePerIdentityDistributionAmountError,
     ),
+
+    // Pre-programmed distribution amounts (protocol version 14).
+    #[error(transparent)]
+    PreProgrammedDistributionAmountOverLimitError(PreProgrammedDistributionAmountOverLimitError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -791,7 +796,7 @@ mod tests {
 
     /// `BasicError` is bincode-encoded positionally, so a variant inserted anywhere but the tail
     /// shifts the wire discriminant of every variant after it. These are the frozen
-    /// discriminants of the last two variants: a new variant goes after them, and gets its own
+    /// discriminants of the last variants: a new variant goes after them, and gets its own
     /// line here.
     fn discriminant_of(error: BasicError) -> u32 {
         let bytes = bincode::encode_to_vec(error, bincode::config::standard())
@@ -811,7 +816,7 @@ mod tests {
             )),
             186
         );
-        // Once-per-identity token distribution (protocol version 14): the tail of the enum.
+        // Once-per-identity token distribution (protocol version 14).
         assert_eq!(
             discriminant_of(
                 BasicError::InvalidTokenOncePerIdentityDistributionAmountError(
@@ -819,6 +824,13 @@ mod tests {
                 )
             ),
             187
+        );
+        // Pre-programmed distribution amounts (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::PreProgrammedDistributionAmountOverLimitError(
+                PreProgrammedDistributionAmountOverLimitError::new(0, 100)
+            )),
+            188
         );
     }
 }
