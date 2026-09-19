@@ -13,34 +13,19 @@ use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityWithdrawalTransactionQueueMethodVersions,
 };
 
-/// V2 is protocol version 14's identity-method table. It differs from V1 in
-/// its withdrawal methods:
+/// V3 is protocol version 15's identity-method table. It differs from V2 in
+/// one slot:
 ///
-/// * `withdrawals.document.find_withdrawal_documents_by_status_and_transaction_indices`
-///   0 -> 1, selecting the v1 withdrawal-by-transaction-index query builder
-///   that carries the transaction-index `In` clause in
-///   `InternalClauses.in_clauses` instead of smuggling it through
-///   `equal_clauses`. The two builders lower to the identical grovedb path
-///   query (pinned by `withdrawal_in_clause_placement_equivalence` in
-///   rs-drive's query tests), so this is a structural version bump, not a
-///   behavior change; v0 stays byte-frozen for protocol versions up to 13.
-/// * `withdrawals.calculate_current_withdrawal_limit` 0 -> 1: the daily
-///   maximum derives from the total credits Platform held a day ago (the
-///   relative daily withdrawal limit) instead of the current total. The
-///   `max_daily_withdrawal_amount` cap applies to that day-old base; credit
-///   inflows from the active window are added after the cap so matching
-///   deposit-withdraw cycles do not consume the capped budget.
-/// * `withdrawals.record_total_credits_history` and
-///   `withdrawals.fetch_total_credits_in_platform_a_day_ago` `None -> Some(0)`:
-///   the per-block total credits history under the withdrawals tree that the
-///   lagged limit reads; the subtree does not exist before v14, so V1 keeps
-///   both slots `None`.
-/// * `withdrawals.record_credit_inflows` `None -> Some(0)`: every credit mint
-///   (asset locks, epoch Core rewards) is recorded in the credit inflows sum
-///   tree so the daily withdrawal limit counts net outflow instead of gross —
-///   a deposit -> withdraw cycle no longer consumes the budget of other users.
-///   The subtree does not exist before v14, so V1 keeps the slot `None`.
-pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
+/// * `update.credit_storage_refunds_to_owners` `None -> Some(0)`: the
+///   primitive that credits each recorded owner of a storage refund and
+///   reports the amount whose owner has no balance element, so a block
+///   lifecycle path (or, later, the state transition refund path) can route
+///   that amount to the current epoch's processing pool instead of halting.
+///   No key or permission is consulted on any route: a frozen but existing
+///   owner is credited, an owner without a balance is settled into the pool.
+///   Nothing before v15 settles refunds outside a state transition, so V1 and
+///   V2 keep the slot `None`.
+pub const DRIVE_IDENTITY_METHOD_VERSIONS_V3: DriveIdentityMethodVersions =
     DriveIdentityMethodVersions {
         fetch: DriveIdentityFetchMethodVersions {
             public_key_hashes: DriveIdentityFetchPublicKeyHashesMethodVersions {
@@ -136,7 +121,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
             apply_balance_change_from_fee_to_identity: 0,
             remove_from_identity_balance: 0,
             refresh_identity_key_reference_operations: 0,
-            credit_storage_refunds_to_owners: None,
+            credit_storage_refunds_to_owners: Some(0), // new in v15: credits recorded refund owners, reports the unrouted amount for the processing pool
         },
         insert: DriveIdentityInsertMethodVersions {
             add_new_identity: 0,

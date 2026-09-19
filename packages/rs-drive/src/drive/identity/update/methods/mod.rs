@@ -4,6 +4,7 @@ mod add_new_unique_keys_to_identity;
 mod add_to_identity_balance;
 mod add_to_previous_balance;
 mod apply_balance_change_from_fee_to_identity;
+mod credit_storage_refunds_to_owners_operations;
 mod disable_identity_keys;
 pub(crate) mod merge_identity_nonce;
 mod re_enable_identity_keys;
