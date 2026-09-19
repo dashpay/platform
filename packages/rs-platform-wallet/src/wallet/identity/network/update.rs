@@ -271,6 +271,17 @@ impl IdentityWallet {
     /// **not** look up the identity in the internal `IdentityManager`. The
     /// caller supplies the `Identity`, master key ID, and a `Signer` directly.
     ///
+    /// Keys in `add_public_keys` may be `IdentityPublicKey::V1` carrying a
+    /// `total_budget` and/or `expires_at` (protocol version 14). The
+    /// transition builder turns each key into the matching
+    /// `IdentityPublicKeyInCreation` version, so a V1 key is registered
+    /// with its limits inside the signed bytes and a V0 key is registered
+    /// exactly as before. The consensus rules on limits (AUTHENTICATION
+    /// purpose and a level below MASTER, non-zero budget, expiry in the
+    /// future) are not re-checked here: Platform validates them and the
+    /// caller receives the chain's error. See
+    /// `docs/protocol/authentication-key-limits.md`.
+    ///
     /// Returns the [`StateTransitionProofResult`] from the broadcast so callers
     /// can inspect proof-verified outcomes (e.g. updated keys, balance).
     pub async fn update_identity_with_signer<S: Signer<IdentityPublicKey>>(
@@ -318,5 +329,116 @@ impl IdentityWallet {
             .await?;
 
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! `update_identity_with_signer` hands its `add_public_keys` straight to
+    //! `IdentityUpdateTransition::try_from_identity_with_signer`; the network
+    //! round trip around that call is not unit-testable, so these tests pin
+    //! the builder step: a V1 key with limits must reach the transition as a
+    //! V1 key in creation, with the limits inside the signed bytes, while a
+    //! V0 key stays V0.
+
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+    use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
+    use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+    use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV1Getters;
+    use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+    use dpp::state_transition::StateTransition;
+    use dpp::version::PlatformVersion;
+    use simple_signer::signer::SimpleSigner;
+
+    /// A deterministic secp256k1 key pair for the master key that signs the
+    /// update and for the key being added (the added key signs its own
+    /// witness because ECDSA_SECP256K1 is a unique key type).
+    fn keypair(seed: u8) -> ([u8; 32], Vec<u8>) {
+        let secret = [seed; 32];
+        let secp = dashcore::secp256k1::Secp256k1::new();
+        let sk = dashcore::secp256k1::SecretKey::from_slice(&secret).expect("valid scalar");
+        let pk = dashcore::secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        (secret, pk.serialize().to_vec())
+    }
+
+    fn auth_key(id: u32, level: SecurityLevel, data: Vec<u8>) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: level,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: data.into(),
+            disabled_at: None,
+        })
+    }
+
+    async fn build_update(add_public_keys: Vec<IdentityPublicKey>) -> IdentityUpdateTransition {
+        let (master_secret, master_pub) = keypair(0x11);
+        let master = auth_key(0, SecurityLevel::MASTER, master_pub);
+
+        let mut identity = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        identity.add_public_key(master.clone());
+
+        let mut signer = SimpleSigner::default();
+        signer.add_identity_public_key(master, master_secret);
+        for key in &add_public_keys {
+            // Every added key in this module is derived from `keypair(0x22)`.
+            signer.add_identity_public_key(key.clone(), keypair(0x22).0);
+        }
+
+        let transition = IdentityUpdateTransition::try_from_identity_with_signer(
+            &identity,
+            &0,
+            add_public_keys,
+            vec![],
+            1,
+            0,
+            &signer,
+            PlatformVersion::latest(),
+            None,
+        )
+        .await
+        .expect("identity update builds");
+
+        match transition {
+            StateTransition::IdentityUpdate(update) => update,
+            other => panic!("expected an IdentityUpdate, got {}", other.name()),
+        }
+    }
+
+    #[tokio::test]
+    async fn limited_key_is_registered_as_a_v1_key_in_creation() {
+        let (_, session_pub) = keypair(0x22);
+        let session = auth_key(5, SecurityLevel::HIGH, session_pub)
+            .with_limits(Some(10_000_000_000), Some(1_800_000_000_000));
+        assert!(matches!(session, IdentityPublicKey::V1(_)));
+
+        let update = build_update(vec![session]).await;
+
+        let [added] = update.public_keys_to_add() else {
+            panic!("expected exactly one added key");
+        };
+        assert!(matches!(added, IdentityPublicKeyInCreation::V1(_)));
+        assert_eq!(added.total_budget(), Some(10_000_000_000));
+        assert_eq!(added.expires_at(), Some(1_800_000_000_000));
+    }
+
+    #[tokio::test]
+    async fn unlimited_key_stays_a_v0_key_in_creation() {
+        let (_, plain_pub) = keypair(0x22);
+        let plain = auth_key(5, SecurityLevel::HIGH, plain_pub);
+
+        let update = build_update(vec![plain]).await;
+
+        let [added] = update.public_keys_to_add() else {
+            panic!("expected exactly one added key");
+        };
+        assert!(matches!(added, IdentityPublicKeyInCreation::V0(_)));
+        assert!(!added.has_limits());
     }
 }

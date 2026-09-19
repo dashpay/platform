@@ -15,7 +15,9 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use dpp::state_transition::public_key_in_creation::accessors::{
+    IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV1Getters,
+};
 use dpp::state_transition::StateTransition;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
@@ -52,6 +54,17 @@ pub struct ParsedIdentityUpdatePublicKeyFFI {
     pub contract_bounds_kind: u8,
     pub contract_bounds_id: [u8; 32],
     pub contract_bounds_document_type: *mut c_char,
+    /// Whether the key is registered with a `total_budget` (protocol
+    /// version 14, `IdentityPublicKeyInCreation::V1`).
+    pub has_total_budget: bool,
+    /// Credits the key may take from the identity over its lifetime, when
+    /// `has_total_budget`.
+    pub total_budget: u64,
+    /// Whether the key is registered with an `expires_at`.
+    pub has_expires_at: bool,
+    /// Block time in milliseconds from which the key can no longer sign,
+    /// when `has_expires_at`.
+    pub expires_at: u64,
 }
 
 /// Owned C representation of the inspectable parts of a parsed
@@ -85,7 +98,7 @@ fn parse_identity_update_transition_bytes(
 > {
     // Tolerates Yappr's tagless framing next to standard tagged bytes — see
     // the shared helper for the ordering heuristic.
-    let state_transition =
+    let (state_transition, _tagged_bytes) =
         crate::parse_state_transition::deserialize_transition_with_flexible_framing(
             bytes,
             &[(IDENTITY_UPDATE_VARIANT_TAG, "IdentityUpdate")],
@@ -188,6 +201,10 @@ pub(crate) fn project_parsed_identity_update(
             contract_bounds_kind,
             contract_bounds_id,
             contract_bounds_document_type,
+            has_total_budget: public_key.total_budget().is_some(),
+            total_budget: public_key.total_budget().unwrap_or_default(),
+            has_expires_at: public_key.expires_at().is_some(),
+            expires_at: public_key.expires_at().unwrap_or_default(),
         });
     }
 

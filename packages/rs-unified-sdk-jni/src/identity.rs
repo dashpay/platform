@@ -37,6 +37,7 @@ use jni::objects::{JByteArray, JClass, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
+use platform_wallet_ffi::derive_connect_key::ConnectDerivedKeyFFI;
 use platform_wallet_ffi::error::platform_wallet_ffi_result_free;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_discovery::DiscoveredIdentityIdsFFI;
@@ -477,6 +478,95 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
         build.unwrap_or_else(|_| {
             let _ = env.exception_clear();
             crate::support::throw_sdk_exception(env, 99, "keypair marshalling failed");
+            ptr::null_mut()
+        })
+    })
+}
+
+/// DashPay Connect key derivation at the DIP-13 sub-feature paths
+/// (`m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose']`,
+/// dashpay/dips#191). Thin marshaler over
+/// `dash_sdk_derive_connect_key_with_resolver`: resolver-keyed and pure
+/// like its slot-derive siblings, so it is safe from persistence-callback
+/// context. Returns `[privateKey: byte[32], publicKey: byte[33]]`; the
+/// Rust-side key is zeroized before return and Kotlin owns the copy.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_deriveConnectKeyWithResolver(
+    mut env: JNIEnv,
+    _class: JClass,
+    network_ord: jint,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    sub_feature: jint,
+    identity_id: JByteArray,
+    leaf: JByteArray,
+    purpose: jint,
+) -> jni::sys::jobjectArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if sub_feature < 0 {
+            throw_sdk_exception(env, 1, "subFeature must be non-negative");
+            return ptr::null_mut();
+        }
+        if !(0..=2).contains(&purpose) {
+            throw_sdk_exception(
+                env,
+                1,
+                "purpose must be 0 (none), 1 (ENCRYPTION) or 2 (DECRYPTION)",
+            );
+            return ptr::null_mut();
+        }
+        if resolver_handle == 0 {
+            throw_sdk_exception(env, 1, "resolverHandle must be non-zero");
+            return ptr::null_mut();
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let Some(identity) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let Some(leaf) = read_id32(env, &leaf, "leaf") else {
+            return ptr::null_mut();
+        };
+
+        let mut out = ConnectDerivedKeyFFI::empty();
+        let result = unsafe {
+            platform_wallet_ffi::dash_sdk_derive_connect_key_with_resolver(
+                net_from_ord(network_ord),
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                sub_feature as u32,
+                identity.as_ptr(),
+                leaf.as_ptr(),
+                purpose as u32,
+                &mut out as *mut ConnectDerivedKeyFFI,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            unsafe { platform_wallet_ffi::dash_sdk_derive_connect_key_free(&mut out) };
+            return ptr::null_mut();
+        }
+
+        // Copy both halves before the free wipes the inline buffers; the
+        // private copy is zeroized on drop.
+        let scalar = zeroize::Zeroizing::new(out.private_key_bytes);
+        let pubkey = out.public_key_bytes;
+        unsafe { platform_wallet_ffi::dash_sdk_derive_connect_key_free(&mut out) };
+
+        let build = (|| -> Result<jni::sys::jobjectArray, jni::errors::Error> {
+            let priv_arr = env.byte_array_from_slice(&*scalar)?;
+            let pub_arr = env.byte_array_from_slice(&pubkey)?;
+            let byte_array_class = env.find_class("[B")?;
+            let result =
+                env.new_object_array(2, byte_array_class, jni::objects::JObject::null())?;
+            env.set_object_array_element(&result, 0, priv_arr)?;
+            env.set_object_array_element(&result, 1, pub_arr)?;
+            Ok(result.into_raw())
+        })();
+        build.unwrap_or_else(|_| {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 99, "connect key marshalling failed");
             ptr::null_mut()
         })
     })

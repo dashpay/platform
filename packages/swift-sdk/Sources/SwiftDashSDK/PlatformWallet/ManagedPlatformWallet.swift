@@ -164,7 +164,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// Rust avoids the prior pubkey-derivation pass inside
     /// `platform_wallet_register_identity_with_signer` that fails on
     /// watch-only wallets where Rust has no in-process xpriv loaded.
-    public struct IdentityPubkey: Sendable {
+    public struct IdentityPubkey: Sendable, Equatable {
         public let keyId: UInt32
         public let keyType: KeyType
         public let purpose: KeyPurpose
@@ -232,7 +232,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// Inspectable fields of a parsed raw `IdentityUpdateTransition`.
     /// The keys intentionally reuse `IdentityPubkey` so callers can
     /// validate and hand them back to `updateIdentity(...)` unchanged.
-    public struct ParsedIdentityUpdateTransition: Sendable {
+    public struct ParsedIdentityUpdateTransition: Sendable, Equatable {
         public let identityId: Identifier
         public let addPublicKeys: [IdentityPubkey]
         public let disablePublicKeyIds: [UInt32]
@@ -248,49 +248,154 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         }
     }
 
-    /// Inspectable fields of a token direct purchase parsed out of a
-    /// raw `BatchTransition`. Carries everything `tokenPurchase(...)`
-    /// needs to rebuild the purchase after user approval, plus what
-    /// the user must see before approving.
-    public struct ParsedTokenPurchaseTransition: Sendable {
-        /// The identity whose credits pay for the purchase.
-        public let ownerId: Identifier
-        /// The data contract defining the token.
-        public let dataContractId: Identifier
-        /// The token being bought.
-        public let tokenId: Identifier
-        /// Position of the token within the contract.
-        public let tokenContractPosition: UInt16
-        /// How many tokens the dApp asks to buy.
-        public let tokenCount: UInt64
-        /// Credits the owner would agree to pay in total.
-        public let totalAgreedPrice: UInt64
-
-        public init(
-            ownerId: Identifier,
+    /// One transition inside a parsed `BatchTransition`, in batch order.
+    ///
+    /// `action` is the rs-dpp action name (`Create`, `Replace`, `Delete`,
+    /// `Transfer`, `Purchase`, `UpdatePrice`, `IndexOnlyDelete` for
+    /// documents; `Burn`, `Mint`, `Transfer`, `Freeze`, `Unfreeze`,
+    /// `DestroyFrozenFunds`, `Claim`, `EmergencyAction`, `ConfigUpdate`,
+    /// `DirectPurchase`, `SetPriceForDirectPurchase` for tokens).
+    public enum ParsedBatchedTransition: Sendable, Equatable {
+        /// A document transition within `dataContractId` / `documentType`.
+        /// `amount` is a purchase price or an update-price value;
+        /// `recipientId` is a transfer's new owner.
+        case document(
+            dataContractId: Identifier,
+            documentType: String,
+            documentId: Identifier,
+            action: String,
+            amount: UInt64?,
+            recipientId: Identifier?
+        )
+        /// A token transition on `tokenId` at `tokenContractPosition` of
+        /// `dataContractId`. `amount` is the transferred / minted / burned
+        /// token count or a direct purchase's total agreed price;
+        /// `recipientId` is a transfer's recipient, a mint's issued-to
+        /// identity, or the frozen identity of a freeze / unfreeze /
+        /// destroy. Interpret both against `action`: a `Freeze` sheet
+        /// says "freeze the tokens of X", not "send to X".
+        case token(
             dataContractId: Identifier,
             tokenId: Identifier,
             tokenContractPosition: UInt16,
-            tokenCount: UInt64,
-            totalAgreedPrice: UInt64
-        ) {
-            self.ownerId = ownerId
-            self.dataContractId = dataContractId
-            self.tokenId = tokenId
-            self.tokenContractPosition = tokenContractPosition
-            self.tokenCount = tokenCount
-            self.totalAgreedPrice = totalAgreedPrice
+            action: String,
+            amount: UInt64?,
+            recipientId: Identifier?
+        )
+
+        /// The data contract the transition acts within.
+        public var dataContractId: Identifier {
+            switch self {
+            case .document(let id, _, _, _, _, _), .token(let id, _, _, _, _, _):
+                return id
+            }
+        }
+
+        /// The rs-dpp action name.
+        public var action: String {
+            switch self {
+            case .document(_, _, _, let action, _, _), .token(_, _, _, let action, _, _):
+                return action
+            }
         }
     }
 
-    /// One parsed `dash-st:` state transition, discriminated by case
-    /// so callers branch on the payload instead of on thrown errors.
-    public enum ParsedStateTransition: Sendable {
-        /// DashConnect key registration (`IdentityUpdateTransition`).
+    /// Inspectable fields of a parsed `BatchTransition`.
+    public struct ParsedBatchTransition: Sendable, Equatable {
+        /// The identity whose keys sign and whose credits pay.
+        public let ownerId: Identifier
+        /// One entry per batched transition, in order.
+        public let transitions: [ParsedBatchedTransition]
+
+        public init(ownerId: Identifier, transitions: [ParsedBatchedTransition]) {
+            self.ownerId = ownerId
+            self.transitions = transitions
+        }
+    }
+
+    /// Inspectable fields of a parsed `IdentityCreditTransferTransition`.
+    public struct ParsedCreditTransferTransition: Sendable, Equatable {
+        public let identityId: Identifier
+        public let recipientId: Identifier
+        public let amount: UInt64
+
+        public init(identityId: Identifier, recipientId: Identifier, amount: UInt64) {
+            self.identityId = identityId
+            self.recipientId = recipientId
+            self.amount = amount
+        }
+    }
+
+    /// Inspectable fields of a parsed `DataContractCreateTransition` or
+    /// `DataContractUpdateTransition`.
+    public struct ParsedDataContractTransition: Sendable, Equatable {
+        public let contractId: Identifier
+        public let ownerId: Identifier
+        /// Document type names the contract defines, as the contract
+        /// orders them.
+        public let documentTypeNames: [String]
+
+        public init(contractId: Identifier, ownerId: Identifier, documentTypeNames: [String]) {
+            self.contractId = contractId
+            self.ownerId = ownerId
+            self.documentTypeNames = documentTypeNames
+        }
+    }
+
+    /// The typed summary of one parsed state transition, discriminated
+    /// by kind so callers branch on the payload instead of on thrown
+    /// errors. Kinds this SDK has no describer for arrive as `.other`.
+    public enum ParsedStateTransitionKind: Sendable, Equatable {
+        /// Key registration / revocation (`IdentityUpdateTransition`).
         case identityUpdate(ParsedIdentityUpdateTransition)
-        /// dApp token purchase (a `BatchTransition` carrying exactly
-        /// one `TokenDirectPurchase`).
-        case tokenPurchase(ParsedTokenPurchaseTransition)
+        /// Document and token operations (`BatchTransition`).
+        case batch(ParsedBatchTransition)
+        /// `IdentityCreditTransferTransition`.
+        case creditTransfer(ParsedCreditTransferTransition)
+        /// `DataContractCreateTransition`.
+        case dataContractCreate(ParsedDataContractTransition)
+        /// `DataContractUpdateTransition`.
+        case dataContractUpdate(ParsedDataContractTransition)
+        /// Any other kind; see `ParsedStateTransition.kindName`.
+        case other
+    }
+
+    /// One parsed state transition (a `dash-st:` payload or a DashPay
+    /// Connect `sign` request), decoded whatever its kind.
+    ///
+    /// `serialized` holds the bytes that actually decoded, always in
+    /// tagged DPP framing (the variant tag is prepended when the input
+    /// arrived tagless); after approval, sign these rather than the
+    /// input so what was shown is what is signed. A `sign` request must
+    /// arrive with `isSigned == false` and `ownerId` equal to the
+    /// wallet's own identity; both checks are the caller's.
+    public struct ParsedStateTransition: Sendable, Equatable {
+        /// rs-dpp `StateTransition::name()`, e.g. `IdentityUpdate`,
+        /// `DocumentsBatch([Create, TokenTransfer])`, `MasternodeVote`.
+        public let kindName: String
+        /// The identity the transition acts for; `nil` for the
+        /// asset-lock-funded and shielded kinds, which name none.
+        public let ownerId: Identifier?
+        /// Whether the transition already carries a signature.
+        public let isSigned: Bool
+        /// The decoded bytes, tagged.
+        public let serialized: Data
+        /// The typed summary.
+        public let kind: ParsedStateTransitionKind
+
+        public init(
+            kindName: String,
+            ownerId: Identifier?,
+            isSigned: Bool,
+            serialized: Data,
+            kind: ParsedStateTransitionKind
+        ) {
+            self.kindName = kindName
+            self.ownerId = ownerId
+            self.isSigned = isSigned
+            self.serialized = serialized
+            self.kind = kind
+        }
     }
 
     /// Result of a successful identity registration.
@@ -1252,16 +1357,22 @@ extension ManagedPlatformWallet {
 
         var row = IdentityKeyPreviewFFI()
 
-        let result = self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
-            let walletPtr = walletBytes.bindMemory(to: UInt8.self).baseAddress!
-            return dash_sdk_derive_identity_key_at_slot_with_resolver(
-                network.ffiValue,
-                walletPtr,
-                resolver.handle,
-                identityIndex,
-                keyId,
-                &row
-            )
+        // `withExtendedLifetime` pins the resolver across the synchronous
+        // FFI call so ARC cannot deallocate its `passUnretained` ctx while
+        // Rust is still calling back into it (same rationale as
+        // `coreAddressPrivateKey`).
+        let result = withExtendedLifetime(resolver) {
+            self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
+                let walletPtr = walletBytes.bindMemory(to: UInt8.self).baseAddress!
+                return dash_sdk_derive_identity_key_at_slot_with_resolver(
+                    network.ffiValue,
+                    walletPtr,
+                    resolver.handle,
+                    identityIndex,
+                    keyId,
+                    &row
+                )
+            }
         }
         defer { dash_sdk_derive_identity_key_at_slot_free(&row) }
 
@@ -1292,6 +1403,132 @@ extension ManagedPlatformWallet {
             publicKeyHex: pubHex,
             privateKeyWIF: wif,
             privateKeyData: pkData
+        )
+    }
+
+    /// A DashPay Connect key derived at a DIP-13 sub-feature path (see
+    /// `deriveConnectKey(subFeature:identityId:leaf:purpose:)`).
+    public struct ConnectDerivedKey: Sendable, Equatable {
+        /// 33-byte compressed secp256k1 public key.
+        public let publicKeyData: Data
+        /// 32-byte private scalar. Hand it to the Keychain (or encrypt it
+        /// to the app) and drop this value as soon as possible.
+        public let privateKeyData: Data
+
+        public init(publicKeyData: Data, privateKeyData: Data) {
+            self.publicKeyData = publicKeyData
+            self.privateKeyData = privateKeyData
+        }
+    }
+
+    /// DIP-13 sub-features DashPay Connect v2 keys live under
+    /// (`m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose']`).
+    /// Registered by the DIP-13 amendment dashpay/dips#191.
+    public enum ConnectSubFeature: UInt32, Sendable {
+        /// Session authentication key: the leaf is the connect request id
+        /// (`hash256` of the app's ephemeral public key); no purpose level.
+        case sessionAuthentication = 6
+        /// App encryption key pair: the leaf is the id of the data
+        /// contract the key is bound to; the purpose level is
+        /// `ConnectKeyPurpose.encryption` (1') or `.decryption` (2').
+        case appEncryption = 7
+    }
+
+    /// The trailing `purpose'` level of the app-encryption path: the DPP
+    /// purpose discriminant of the half being derived. Only these two
+    /// exist in the DIP-13 amendment, so the type makes any other value
+    /// (in particular `0`, which would collide with the FFI's "no purpose
+    /// level") unrepresentable.
+    public enum ConnectKeyPurpose: UInt32, Sendable {
+        case encryption = 1
+        case decryption = 2
+
+        /// The DPP `KeyPurpose` the derived half is registered under.
+        public var keyPurpose: KeyPurpose {
+            switch self {
+            case .encryption: return .encryption
+            case .decryption: return .decryption
+            }
+        }
+    }
+
+    /// Derive a DashPay Connect key at
+    /// `m/9'/coin'/5'/<subFeature>'/0'/<identityId>'/<leaf>'[/<purpose>']`
+    /// from this wallet's seed, resolved on demand through the
+    /// `MnemonicResolver` (the mnemonic never lives in a Swift `String`
+    /// outside the resolver trampoline; see `deriveIdentityAuthKeyAtSlot`).
+    ///
+    /// `identityId` and `leaf` are DIP-14 256-bit hardened children, so
+    /// nothing wallet-local is an input and two devices restored from one
+    /// seed derive the same key. `purpose`, when given, appends one more
+    /// hardened child: the encryption sub-feature uses `.encryption` and
+    /// `.decryption` to split its pair; the authentication sub-feature
+    /// takes `nil` (no purpose level at all).
+    ///
+    /// - Parameters:
+    ///   - subFeature: `.sessionAuthentication` or `.appEncryption`.
+    ///   - identityId: the identity's 32-byte id.
+    ///   - leaf: the 32-byte request id or bound contract id.
+    ///   - purpose: the half of an encryption pair to derive, or `nil`.
+    ///   - network: the wallet's network, which selects the coin type.
+    ///   - storage: defaults to a fresh `WalletStorage()`; overridable
+    ///     for tests. Used by the resolver vtable.
+    @MainActor
+    public func deriveConnectKey(
+        subFeature: ConnectSubFeature,
+        identityId: Identifier,
+        leaf: Data,
+        purpose: ConnectKeyPurpose? = nil,
+        network: Network,
+        storage: WalletStorage = WalletStorage()
+    ) throws -> ConnectDerivedKey {
+        guard self.walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be 32 bytes, got \(self.walletId.count)"
+            )
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
+        }
+        guard leaf.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "leaf must be 32 bytes, got \(leaf.count)"
+            )
+        }
+        let resolver = MnemonicResolver(storage: storage)
+
+        var out = ConnectDerivedKeyFFI()
+        defer { dash_sdk_derive_connect_key_free(&out) }
+
+        // `withExtendedLifetime` pins the resolver across the synchronous
+        // FFI call so ARC cannot deallocate its `passUnretained` ctx while
+        // Rust is still calling back into it.
+        let result = withExtendedLifetime(resolver) {
+            self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
+                identityId.withUnsafeBytes { identityBytes -> PlatformWalletFFIResult in
+                    leaf.withUnsafeBytes { leafBytes -> PlatformWalletFFIResult in
+                        dash_sdk_derive_connect_key_with_resolver(
+                            network.ffiValue,
+                            walletBytes.bindMemory(to: UInt8.self).baseAddress!,
+                            resolver.handle,
+                            subFeature.rawValue,
+                            identityBytes.bindMemory(to: UInt8.self).baseAddress!,
+                            leafBytes.bindMemory(to: UInt8.self).baseAddress!,
+                            purpose?.rawValue ?? 0,
+                            &out
+                        )
+                    }
+                }
+            }
+        }
+        try result.check()
+
+        // Copy out of the inline tuples: the deferred free zeroizes them.
+        return ConnectDerivedKey(
+            publicKeyData: Self.tupleData(out.public_key_bytes),
+            privateKeyData: Self.tupleData(out.private_key_bytes)
         )
     }
 
@@ -3378,21 +3615,19 @@ extension ManagedPlatformWallet {
     }
 
     /// Parse a raw DPP state transition handed to the wallet by a dApp
-    /// (DashConnect `dash-st:` link / QR) without signing or
-    /// broadcasting it, reporting which supported kind it found.
-    /// Accepts both standard tagged bytes and Yappr's tagless framing.
+    /// (a DashConnect `dash-st:` link / QR or a DashPay Connect `sign`
+    /// request) without signing or broadcasting it. Every kind decodes;
+    /// the result carries a typed summary for identity updates, batches,
+    /// credit transfers and data contract create / update, and `.other`
+    /// with the raw kind name for everything else, so the approval
+    /// sheet can describe what is asked and the user decides. Accepts
+    /// both standard tagged bytes and Yappr's tagless framing; the
+    /// returned `serialized` bytes are always tagged.
     ///
-    /// Supported kinds: an `IdentityUpdateTransition` (DashConnect key
-    /// registration) and a `BatchTransition` carrying exactly one
-    /// `TokenDirectPurchase` (a dApp token purchase). Anything else —
-    /// including multi-transition or mixed batches, which a user
-    /// cannot meaningfully approve as one prompt — throws with a
-    /// message naming what was found.
-    ///
-    /// The wallet never signs bytes a web page handed it. After the
-    /// user approves the parsed intent, rebuild and sign the
-    /// operation through the normal path: `tokenPurchase(...)` for
-    /// `.tokenPurchase`, `updateIdentity(...)` for `.identityUpdate`.
+    /// The wallet never signs bytes a web page handed it blind. A
+    /// `sign` request must be unsigned and for the wallet's own
+    /// identity; check `isSigned` and `ownerId` before showing the
+    /// sheet, then sign `serialized` after approval.
     public func parseStateTransition(_ bytes: Data) throws -> ParsedStateTransition {
         guard !bytes.isEmpty else {
             throw PlatformWalletError.deserialization(
@@ -3415,31 +3650,161 @@ extension ManagedPlatformWallet {
         try result.check()
         defer { platform_wallet_parse_state_transition_free(&out) }
 
-        switch out.kind {
+        return try Self.makeParsedStateTransition(from: out)
+    }
+
+    /// Copy a fixed-size C byte tuple — how Swift imports a `uint8_t[N]`
+    /// field — out of an FFI struct into `Data`. The tuples are plain
+    /// bytes, so the value's raw representation is exactly the array it
+    /// stands for, and `Data` copies before the FFI free wipes the source.
+    fileprivate static func tupleData<Tuple>(_ tuple: Tuple) -> Data {
+        Swift.withUnsafeBytes(of: tuple) { Data($0) }
+    }
+
+    // `internal` so the projection can be covered directly from a
+    // hand-built C struct; every production caller reaches it through
+    // a live FFI parse.
+    static func makeParsedStateTransition(
+        from ffi: ParsedStateTransitionFFI
+    ) throws -> ParsedStateTransition {
+        let kind: ParsedStateTransitionKind
+        switch ffi.kind {
         case 1: // PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE
-            return .identityUpdate(
-                try Self.makeParsedIdentityUpdateTransition(from: out.identity_update)
+            kind = .identityUpdate(
+                try makeParsedIdentityUpdateTransition(from: ffi.identity_update)
             )
-        case 2: // PARSED_STATE_TRANSITION_KIND_TOKEN_DIRECT_PURCHASE
-            let purchase = out.token_direct_purchase
-            var ownerTuple = purchase.owner_id
-            var contractTuple = purchase.data_contract_id
-            var tokenTuple = purchase.token_id
-            return .tokenPurchase(
-                ParsedTokenPurchaseTransition(
-                    ownerId: Swift.withUnsafeBytes(of: &ownerTuple) { Data($0) },
-                    dataContractId: Swift.withUnsafeBytes(of: &contractTuple) { Data($0) },
-                    tokenId: Swift.withUnsafeBytes(of: &tokenTuple) { Data($0) },
-                    tokenContractPosition: purchase.token_contract_position,
-                    tokenCount: purchase.token_count,
-                    totalAgreedPrice: purchase.total_agreed_price
+        case 2: // PARSED_STATE_TRANSITION_KIND_BATCH
+            kind = .batch(try makeParsedBatchTransition(from: ffi.batch))
+        case 3: // PARSED_STATE_TRANSITION_KIND_CREDIT_TRANSFER
+            kind = .creditTransfer(
+                ParsedCreditTransferTransition(
+                    identityId: tupleData(ffi.credit_transfer.identity_id),
+                    recipientId: tupleData(ffi.credit_transfer.recipient_id),
+                    amount: ffi.credit_transfer.amount
                 )
+            )
+        case 4: // PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_CREATE
+            kind = .dataContractCreate(
+                try makeParsedDataContractTransition(from: ffi.data_contract)
+            )
+        case 5: // PARSED_STATE_TRANSITION_KIND_DATA_CONTRACT_UPDATE
+            kind = .dataContractUpdate(
+                try makeParsedDataContractTransition(from: ffi.data_contract)
+            )
+        case 255: // PARSED_STATE_TRANSITION_KIND_OTHER
+            kind = .other
+        default:
+            throw PlatformWalletError.deserialization(
+                "Unknown parsed state-transition kind \(ffi.kind)"
+            )
+        }
+
+        guard let kindNamePtr = ffi.kind_name,
+              let kindName = String(validatingCString: kindNamePtr) else {
+            throw PlatformWalletError.deserialization(
+                "Parsed state transition is missing a valid UTF-8 kind name"
+            )
+        }
+
+        let ownerId: Identifier? = ffi.has_owner_id ? tupleData(ffi.owner_id) : nil
+
+        let serialized: Data
+        if let serializedPtr = ffi.serialized, ffi.serialized_len > 0 {
+            serialized = Data(bytes: serializedPtr, count: Int(ffi.serialized_len))
+        } else {
+            serialized = Data()
+        }
+
+        return ParsedStateTransition(
+            kindName: kindName,
+            ownerId: ownerId,
+            isSigned: ffi.is_signed,
+            serialized: serialized,
+            kind: kind
+        )
+    }
+
+    private static func makeParsedBatchTransition(
+        from ffi: ParsedBatchFFI
+    ) throws -> ParsedBatchTransition {
+        let ownerId = tupleData(ffi.owner_id)
+
+        var transitions: [ParsedBatchedTransition] = []
+        if let pointer = ffi.transitions, ffi.transitions_count > 0 {
+            let buffer = UnsafeBufferPointer(start: pointer, count: Int(ffi.transitions_count))
+            transitions = try buffer.enumerated().map { index, entry in
+                try makeParsedBatchedTransition(from: entry, index: index)
+            }
+        }
+        return ParsedBatchTransition(ownerId: ownerId, transitions: transitions)
+    }
+
+    static func makeParsedBatchedTransition(
+        from entry: ParsedBatchedTransitionFFI,
+        index: Int
+    ) throws -> ParsedBatchedTransition {
+        guard let actionPtr = entry.action,
+              let action = String(validatingCString: actionPtr) else {
+            throw PlatformWalletError.deserialization(
+                "Batched transition \(index) is missing a valid UTF-8 action name"
+            )
+        }
+        let dataContractId = tupleData(entry.data_contract_id)
+        let amount: UInt64? = entry.has_amount ? entry.amount : nil
+        let recipientId: Identifier? = entry.has_recipient ? tupleData(entry.recipient_id) : nil
+
+        switch entry.family {
+        case 0: // PARSED_BATCHED_TRANSITION_FAMILY_DOCUMENT
+            guard let documentTypePtr = entry.document_type,
+                  let documentType = String(validatingCString: documentTypePtr) else {
+                throw PlatformWalletError.deserialization(
+                    "Batched document transition \(index) is missing a valid UTF-8 document type"
+                )
+            }
+            return .document(
+                dataContractId: dataContractId,
+                documentType: documentType,
+                documentId: tupleData(entry.document_id),
+                action: action,
+                amount: amount,
+                recipientId: recipientId
+            )
+        case 1: // PARSED_BATCHED_TRANSITION_FAMILY_TOKEN
+            return .token(
+                dataContractId: dataContractId,
+                tokenId: tupleData(entry.token_id),
+                tokenContractPosition: entry.token_contract_position,
+                action: action,
+                amount: amount,
+                recipientId: recipientId
             )
         default:
             throw PlatformWalletError.deserialization(
-                "Unknown parsed state-transition kind \(out.kind)"
+                "Unknown batched transition family \(entry.family) at index \(index)"
             )
         }
+    }
+
+    private static func makeParsedDataContractTransition(
+        from ffi: ParsedDataContractFFI
+    ) throws -> ParsedDataContractTransition {
+        var names: [String] = []
+        if let pointer = ffi.document_type_names, ffi.document_type_names_count > 0 {
+            let buffer = UnsafeBufferPointer(start: pointer, count: Int(ffi.document_type_names_count))
+            names = try buffer.enumerated().map { index, namePtr in
+                guard let namePtr, let name = String(validatingCString: namePtr) else {
+                    throw PlatformWalletError.deserialization(
+                        "Data contract document type name \(index) is not valid UTF-8"
+                    )
+                }
+                return name
+            }
+        }
+        return ParsedDataContractTransition(
+            contractId: tupleData(ffi.contract_id),
+            ownerId: tupleData(ffi.owner_id),
+            documentTypeNames: names
+        )
     }
 
     private static func makeParsedIdentityUpdateTransition(
@@ -3477,7 +3842,7 @@ extension ManagedPlatformWallet {
         )
     }
 
-    private static func makeParsedIdentityPubkey(
+    static func makeParsedIdentityPubkey(
         from entry: ParsedIdentityUpdatePublicKeyFFI,
         index: Int
     ) throws -> IdentityPubkey {
@@ -3509,7 +3874,9 @@ extension ManagedPlatformWallet {
             securityLevel: securityLevel,
             pubkeyBytes: pubkeyBytes,
             readOnly: entry.read_only,
-            contractBounds: contractBounds
+            contractBounds: contractBounds,
+            totalBudget: entry.has_total_budget ? entry.total_budget : nil,
+            expiresAt: entry.has_expires_at ? entry.expires_at : nil
         )
     }
 

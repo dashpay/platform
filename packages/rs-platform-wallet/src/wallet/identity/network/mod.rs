@@ -86,9 +86,11 @@ pub use dpns_marketplace::{
     DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
 };
 pub use identity_handle::{
+    connect_key_derivation_path, derive_connect_keypair_from_master,
     derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_key_hash_from_master,
     derive_identity_auth_keypair, identity_auth_derivation_path_for_type, DerivedIdentityAuthKey,
-    IdentityWallet, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+    IdentityWallet, CONNECT_SUB_FEATURE_APP_ENCRYPTION, CONNECT_SUB_FEATURE_SESSION_AUTHENTICATION,
+    IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 
 // Helpers declared on `identity_handle.rs` that siblings reach
