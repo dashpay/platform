@@ -15,6 +15,7 @@ use crate::error::contract::DataContractError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -200,9 +201,10 @@ impl Drive {
 
     /// operations for updating a contract.
     ///
-    /// The v1 operations, plus the perpetual and pre-programmed distribution
-    /// storage of every token the update adds: the same storage
-    /// `insert_contract` creates for a token present at registration. v1
+    /// The v1 operations, plus the perpetual, pre-programmed and
+    /// once-per-identity distribution storage of every token the update adds:
+    /// the same storage `insert_contract` creates for a token present at
+    /// registration. v1
     /// created none of it, so the first claim on such a token wrote its claim
     /// record under a tree that did not exist and failed as an internal error,
     /// leaving the distribution unclaimable.
@@ -275,6 +277,23 @@ impl Drive {
                     platform_version,
                 )?;
             }
+
+            // The once-per-identity claims subtree, as `insert_contract` creates it for the
+            // tokens of a new contract; without it every claim would insert under a path
+            // that does not exist.
+            if configuration
+                .distribution_rules()
+                .once_per_identity_distribution()
+                .is_some()
+            {
+                self.add_once_per_identity_distribution(
+                    token_id.to_buffer(),
+                    estimated_costs_only_with_layer_info,
+                    &mut batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
         }
 
         Ok(batch_operations)
@@ -294,6 +313,9 @@ mod tests {
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Setters;
+    use dpp::data_contract::associated_token::token_once_per_identity_distribution::v0::TokenOncePerIdentityDistributionV0;
+    use dpp::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
     use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
@@ -430,6 +452,100 @@ mod tests {
             &mut vec![],
             &platform_version.drive,
         )
+    }
+
+    /// A token added by an update whose rules carry a once-per-identity distribution gets its
+    /// claims subtree, so a claim can be recorded under it; a later update that adds nothing
+    /// leaves the existing subtree alone.
+    #[test]
+    fn should_create_once_per_identity_distribution_storage_for_token_added_by_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract without tokens");
+
+        let mut token_config = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+        );
+        token_config
+            .distribution_rules_mut()
+            .set_once_per_identity_distribution(Some(TokenOncePerIdentityDistribution::V0(
+                TokenOncePerIdentityDistributionV0 { amount: 100 },
+            )));
+        contract.set_tokens(BTreeMap::from([(0, token_config)]));
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update adding the token should succeed");
+
+        let token_id = contract.token_id(0).expect("expected the token id");
+        let claimant = Identifier::random();
+
+        let operations = drive
+            .mark_once_per_identity_release_as_distributed_operations(
+                token_id.to_buffer(),
+                claimant.to_buffer(),
+                1_000,
+                &BlockInfo::default(),
+                &mut None,
+                platform_version,
+            )
+            .expect("expected the claim operations");
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("the claim must insert under the token's claims subtree");
+
+        assert_eq!(
+            drive
+                .fetch_once_per_identity_distribution_claim(
+                    token_id.to_buffer(),
+                    claimant,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the claim"),
+            Some(1_000)
+        );
+
+        // The token now belongs to the original contract, so its subtree is not added again.
+        contract.increment_version();
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("a later update should leave the claims subtree alone");
     }
 
     #[test]
