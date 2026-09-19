@@ -284,6 +284,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     cost, and too small a token balance stays a rejection. Contracts up to
 ///     v13 cannot carry the flag, so the waiver is inert before this version.
 ///
+/// 13. **Tokens added by a contract update are set up like registered ones**:
+///     `update_contract` v2 (`DRIVE_CONTRACT_METHOD_VERSIONS_V4`) creates the
+///     perpetual, pre-programmed and once-per-identity distribution storage
+///     of a token the update adds, and mints its base supply to the token's
+///     `newTokensDestinationIdentity`, or to the contract owner without one,
+///     with the total supply starting at the base supply. v1 did neither: a
+///     claim on such a token failed as an internal error, and the token sat at
+///     a total supply of zero with nobody holding any of it. Nothing is minted
+///     retroactively for a token an update added under an earlier version.
+///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
 ///   `is_allowed`, and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` is the first
