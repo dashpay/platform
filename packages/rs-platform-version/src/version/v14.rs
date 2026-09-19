@@ -254,6 +254,30 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     so such a contract registered and every claim on it failed as an
 ///     internal error, since no cycle can be computed from a zero step. Block
 ///     and time minimums are unchanged.
+/// 11. **Pre-programmed distribution amounts are bounded**:
+///     `TokenPreProgrammedDistribution::validate_amounts` rejects a release
+///     whose amounts total more than `i64::MAX` with the new
+///     `PreProgrammedDistributionAmountOverLimitError` (code 10277). It runs
+///     on contract create (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`'s create
+///     `basic_structure` 2) and, for the tokens an update adds, on contract
+///     update (`CONTRACT_VERSIONS_V6`'s `validate_update` 1). A release is
+///     stored as a sum tree, so up to v13 such a create passed validation and
+///     failed inside Drive as an internal error: never paid for, and stripped
+///     from every proposal. An update failed the same way on a single amount
+///     over the limit (its fee estimation takes the insert path), but was
+///     accepted when only the total overflowed, since it wrote no distribution
+///     storage; from v14 it writes it (`update_contract` 2) and would fail.
+///     Tokens a contract already has are not judged, so a contract holding
+///     such a token stays updatable.
+/// 12. **Tokens of one contract sharing a pre-programmed release time**:
+///     `DRIVE_TOKEN_METHOD_VERSIONS_V2` bumps
+///     `add_pre_programmed_distributions` to 1, which queues the release-time
+///     tree the tokens share once instead of once per token. Queued twice,
+///     the batch is refused as an internal error by a node with
+///     `batching_consistency_verification` on; the default is off, and there
+///     GroveDB folds the identical inserts, so the stored state is unchanged
+///     and only the processing fee drops, by the existence read the later
+///     tokens no longer make.
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
