@@ -117,7 +117,9 @@ pub enum DocumentOperationType<'a> {
     },
     /// Removes a bounded chunk of the retained revisions of an already deleted
     /// keep-history document, dropping the history subtree and the lifecycle
-    /// record with the terminal chunk.
+    /// record with the terminal chunk. Whether the type allows erasure and who
+    /// may start one are decided in transition validation, like a delete's
+    /// ownership; this operation assumes both.
     EraseDocument {
         /// The document id
         document_id: Identifier,

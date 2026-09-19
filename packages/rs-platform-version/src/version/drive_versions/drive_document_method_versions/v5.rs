@@ -12,7 +12,8 @@ use super::{
 /// references and records a lifecycle entry while the retained revisions stay
 /// readable; an erase removes those revisions a chunk at a time. The delete
 /// wrappers, the primary-storage removal estimate and the lifecycle read are
-/// the generations that know that layout.
+/// the generations that know that layout, and the insert generation never lets
+/// a caller's override write over a deleted document's retained revisions.
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
@@ -37,6 +38,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.delete
         },
         insert: DriveDocumentInsertMethodVersions {
+            add_document_for_contract_operations: 2,
             add_document_to_primary_storage: 1,
             add_reference_for_index_level_for_contract_operations: 1,
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.insert

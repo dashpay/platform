@@ -3444,8 +3444,9 @@ mod tests {
     /// An erase acts on a document that was already deleted, so the by-id
     /// proof shows the same absence whether or not it ran. The classifier must
     /// report that as affected state, while a delete over the very same proof
-    /// stays execution-proved: presence before and absence after do bind a
-    /// delete's execution.
+    /// keeps the classification generation 0 gives a delete: a document's
+    /// absence by id is read as the delete's outcome, which is what the SDK's
+    /// strict wait relies on.
     #[test]
     fn verify_batch_document_erase_is_affected_state_not_execution_proved() {
         use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};

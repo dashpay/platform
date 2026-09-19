@@ -115,6 +115,9 @@ impl Drive {
             // history would silently merge a new document into a deleted one's
             // record, so it is refused here rather than only in transition
             // validation: this is the guard that covers writers outside it.
+            // Only the update path asks to write without checks, and its
+            // document holds the id already, so its history is meant to exist;
+            // the insert path always lets this check run.
             // A dry run skips the probe, which reports the tree as absent, and
             // pays for it as a fixed cost so estimation and execution agree.
             if !created && !insert_without_check {

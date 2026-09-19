@@ -28,6 +28,11 @@ use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::convert::TryFrom;
 
+/// Client-side constructors and signing helpers of a batch transition. The
+/// trait is not selected by the version tables; it is the API every batch
+/// wire format shares, so it reads a batch through the accessor view that
+/// knows every format: a format 2 batch must see its own transitions to
+/// compute the key its signature needs.
 pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV1 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]

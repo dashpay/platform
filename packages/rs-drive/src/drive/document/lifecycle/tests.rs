@@ -478,6 +478,56 @@ fn should_refuse_to_create_a_document_whose_revisions_are_still_retained() {
     assert_eq!(visible_document_count(&drive, &contract), 1);
 }
 
+/// `override_document` tells the writer the caller has already checked the
+/// primary-key entry, so it may skip that check on the current pointer. A
+/// deleted document has no current pointer but still retains its revisions,
+/// and nothing the caller checked says so; the retained-history refusal must
+/// therefore hold whatever the caller claims about the pointer.
+#[test]
+fn should_refuse_to_create_over_retained_revisions_even_when_the_caller_overrides() {
+    let owner = [14u8; 32];
+    let (drive, contract, id) = setup_history(2, owner);
+    delete(&drive, &contract, id, Identifier::new(owner), 5_000);
+
+    let version = latest();
+    let document_type = document_type_of(&contract);
+    let mut document =
+        json_document_to_document(PERSON, Some(owner.into()), document_type, version).unwrap();
+    document.set_revision(Some(1));
+
+    let error = drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            true,
+            BlockInfo::default_with_time(6_000),
+            true,
+            None,
+            version,
+            None,
+        )
+        .expect_err("an override must not merge a new document into a deleted one's history");
+    assert!(matches!(
+        error,
+        Error::Drive(DriveError::CorruptedDocumentAlreadyExists(_))
+    ));
+    assert_eq!(
+        history_metadata(&drive, &contract, id).remaining_revisions,
+        2,
+        "the refused write must leave the retained history untouched"
+    );
+    assert!(matches!(
+        lifecycle_of(&drive, &contract, id),
+        DocumentLifecycleState::Deleted(_)
+    ));
+}
+
 #[test]
 fn should_refuse_to_drop_a_history_subtree_while_a_revision_survives() {
     let owner = [13u8; 32];

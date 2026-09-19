@@ -74,6 +74,17 @@ fn should_preserve_released_keep_history_validation_versions() {
             0,
             "the keep-history delete branch must not be selected at protocol {protocol}"
         );
+        let released_insert_generation = if protocol == 14 { 1 } else { 0 };
+        assert_eq!(
+            version
+                .drive
+                .methods
+                .document
+                .insert
+                .add_document_for_contract_operations,
+            released_insert_generation,
+            "document insert at protocol {protocol}"
+        );
         assert_eq!(
             version
                 .dpp
@@ -179,6 +190,16 @@ fn should_activate_keep_history_validation_at_protocol_15() {
             .delete_document_for_contract_operations,
         1,
         "protocol 15 selects the keep-history delete branch"
+    );
+    assert_eq!(
+        version
+            .drive
+            .methods
+            .document
+            .insert
+            .add_document_for_contract_operations,
+        2,
+        "protocol 15 selects the insert that never writes over retained revisions"
     );
     assert_eq!(
         version
