@@ -254,7 +254,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     so such a contract registered and every claim on it failed as an
 ///     internal error, since no cycle can be computed from a zero step. Block
 ///     and time minimums are unchanged.
-///
 /// 11. **Gas paid by the contract owner**: a token-paid document action's
 ///     `gasFeesPaidBy` (offered by the document type's token cost, asked for by
 ///     the transition's `$tokenPaymentInfo`) is acted on. Both values were
@@ -274,7 +273,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     validates the state of a sponsored batch whose signer is under the fee
 ///     minimum in full, on the first check and on every recheck (mempool
 ///     policy, not consensus).
-///
 /// 12. **Optional token costs**: a document type's token cost may declare
 ///     `optional: true` (v3 meta-schema). A transition that leaves
 ///     `$tokenPaymentInfo` out then pays no token and its signer pays the gas
@@ -283,8 +281,32 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     payment info present the token is charged exactly as for a required
 ///     cost, and too small a token balance stays a rejection. Contracts up to
 ///     v13 cannot carry the flag, so the waiver is inert before this version.
+/// 13. **Pre-programmed distribution amounts are bounded**:
+///     `TokenPreProgrammedDistribution::validate_amounts` rejects a release
+///     whose amounts total more than `i64::MAX` with the new
+///     `PreProgrammedDistributionAmountOverLimitError` (code 10277). It runs
+///     on contract create (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`'s create
+///     `basic_structure` 2) and, for the tokens an update adds, on contract
+///     update (`CONTRACT_VERSIONS_V6`'s `validate_update` 1). A release is
+///     stored as a sum tree, so up to v13 such a create passed validation and
+///     failed inside Drive as an internal error: never paid for, and stripped
+///     from every proposal. An update failed the same way on a single amount
+///     over the limit (its fee estimation takes the insert path), but was
+///     accepted when only the total overflowed, since it wrote no distribution
+///     storage; from v14 it writes it (`update_contract` 2) and would fail.
+///     Tokens a contract already has are not judged, so a contract holding
+///     such a token stays updatable.
+/// 14. **Tokens of one contract sharing a pre-programmed release time**:
+///     `DRIVE_TOKEN_METHOD_VERSIONS_V2` bumps
+///     `add_pre_programmed_distributions` to 1, which queues the release-time
+///     tree the tokens share once instead of once per token. Queued twice,
+///     the batch is refused as an internal error by a node with
+///     `batching_consistency_verification` on; the default is off, and there
+///     GroveDB folds the identical inserts, so the stored state is unchanged
+///     and only the processing fee drops, by the existence read the later
+///     tokens no longer make.
 ///
-/// 13. **Tokens added by a contract update are set up like registered ones**:
+/// 15. **Tokens added by a contract update are set up like registered ones**:
 ///     `update_contract` v2 (`DRIVE_CONTRACT_METHOD_VERSIONS_V4`) creates the
 ///     perpetual, pre-programmed and once-per-identity distribution storage
 ///     of a token the update adds, and mints its base supply to the token's

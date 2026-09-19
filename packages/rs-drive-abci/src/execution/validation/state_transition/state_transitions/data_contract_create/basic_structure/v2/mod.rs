@@ -9,6 +9,8 @@ use dpp::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdat
 use dpp::consensus::ConsensusError;
 use dpp::contract_group::ContractGroupMember;
 use dpp::dashcore::Network;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::identifier::Identifier;
 use dpp::state_transition::data_contract_create_transition::accessors::{
     DataContractCreateTransitionAccessorsV0, DataContractCreateTransitionAccessorsV1,
@@ -101,6 +103,25 @@ impl DataContractCreateStateTransitionBasicStructureValidationV2 for DataContrac
         // Contract groups (version 1 transitions; a version 0 transition carries none).
         if let Some(error) = contract_group_basic_structure_error(self, platform_version) {
             return Ok(SimpleConsensusValidationResult::new_with_error(error));
+        }
+
+        // Drive stores every pre-programmed release as a sum tree of its recipients' amounts.
+        // A release totalling more than `i64::MAX` passed every check and then failed inside
+        // Drive as an internal error, which nobody pays for and which only makes the
+        // transition disappear from every proposal.
+        for (token_contract_position, token_configuration) in self.data_contract().tokens() {
+            let Some(distribution) = token_configuration
+                .distribution_rules()
+                .pre_programmed_distribution()
+            else {
+                continue;
+            };
+
+            let validation_result =
+                distribution.validate_amounts(*token_contract_position, platform_version)?;
+            if !validation_result.is_valid() {
+                return Ok(validation_result);
+            }
         }
 
         Ok(SimpleConsensusValidationResult::new())
@@ -233,15 +254,27 @@ fn contract_group_basic_structure_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
     use assert_matches::assert_matches;
+    use dpp::balances::credits::TokenAmount;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::ConsensusError;
+    use dpp::data_contract::accessors::v1::DataContractV1Setters;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
+    use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+    use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::platform_value::platform_value;
     use dpp::prelude::IdentityNonce;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use platform_version::version::PlatformVersion;
     use platform_version::TryIntoPlatformVersioned;
+    use std::collections::BTreeMap;
 
     fn create_transition_with_required_since(
         required_since: u32,
@@ -318,5 +351,116 @@ mod tests {
                 BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
             )] if e.details().contains("cannot carry requiredSince 2")
         );
+    }
+
+    /// A create transition whose contract has one token per entry of `releases`, each
+    /// releasing its amounts at time 100, one recipient per amount.
+    fn create_transition_with_pre_programmed_releases(
+        releases: &[&[TokenAmount]],
+        platform_version: &PlatformVersion,
+    ) -> DataContractCreateTransition {
+        let identity_nonce = IdentityNonce::default();
+
+        let mut data_contract =
+            get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                .data_contract_owned();
+
+        for (position, amounts) in releases.iter().enumerate() {
+            let mut configuration = TokenConfiguration::V0(
+                TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+            );
+            configuration.conventions_mut().localizations_mut().insert(
+                "en".to_string(),
+                TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                    should_capitalize: true,
+                    singular_form: "test".to_string(),
+                    plural_form: "tests".to_string(),
+                }),
+            );
+            let release = amounts
+                .iter()
+                .enumerate()
+                .map(|(recipient, amount)| (Identifier::from([recipient as u8 + 1; 32]), *amount))
+                .collect::<BTreeMap<_, _>>();
+            configuration
+                .distribution_rules_mut()
+                .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                    TokenPreProgrammedDistributionV0 {
+                        distributions: BTreeMap::from([(100, release)]),
+                    },
+                )));
+            data_contract.add_token(position as u16, configuration);
+        }
+
+        DataContractCreateTransitionV0 {
+            data_contract: data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract"),
+            identity_nonce,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into()
+    }
+
+    #[test]
+    fn should_reject_a_pre_programmed_release_totalling_over_the_limit() {
+        let platform_version = PlatformVersion::latest();
+        let over_limit_releases: [&[TokenAmount]; 2] = [
+            &[i64::MAX as TokenAmount + 1],
+            &[i64::MAX as TokenAmount, 1],
+        ];
+
+        for over_limit_release in over_limit_releases {
+            // The second token is the offending one
+            let transition = create_transition_with_pre_programmed_releases(
+                &[&[445], over_limit_release],
+                platform_version,
+            );
+
+            let result = transition
+                .validate_basic_structure(Network::Testnet, platform_version)
+                .expect("failed to validate basic structure");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::PreProgrammedDistributionAmountOverLimitError(e)
+                )] if e.token_position() == 1 && e.timestamp() == 100
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_a_pre_programmed_release_totalling_the_limit() {
+        let platform_version = PlatformVersion::latest();
+
+        let transition = create_transition_with_pre_programmed_releases(
+            &[&[i64::MAX as TokenAmount - 1, 1]],
+            platform_version,
+        );
+
+        let result = transition
+            .validate_basic_structure(Network::Testnet, platform_version)
+            .expect("failed to validate basic structure");
+
+        assert!(result.is_valid(), "unexpected errors: {:?}", result.errors);
+    }
+
+    /// Protocol version 13 runs basic structure v1, which is shipped and keeps admitting the
+    /// release. The create then fails inside Drive as an internal error, as it always has.
+    #[test]
+    fn should_still_accept_a_release_total_over_the_limit_on_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+
+        let transition =
+            create_transition_with_pre_programmed_releases(&[&[u64::MAX]], platform_version);
+
+        let result = transition
+            .validate_basic_structure(Network::Testnet, platform_version)
+            .expect("failed to validate basic structure");
+
+        assert!(result.is_valid(), "unexpected errors: {:?}", result.errors);
     }
 }
