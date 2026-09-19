@@ -270,7 +270,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     v1 charges whoever was admitted. The batch's signer only funds the
 ///     principal, and its minimum balance pre-check v1
 ///     (`identity_minimum_balance_pre_check`) asks no more of a batch that
-///     requests sponsorship. A failed batch is never sponsored.
+///     requests sponsorship. A failed batch is never sponsored, so check tx
+///     validates the state of a sponsored batch whose signer is under the fee
+///     minimum in full (mempool policy, not consensus).
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in

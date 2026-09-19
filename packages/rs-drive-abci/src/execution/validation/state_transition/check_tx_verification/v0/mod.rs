@@ -267,6 +267,22 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
             }
 
+            // A signer who got through the pre-check on a request for gas sponsorship alone
+            // could not pay for a failed batch, and a failed batch is never sponsored. Such a
+            // batch is validated like a block would, state included, so that what a proposer
+            // would execute for free never reaches the mempool.
+            let relies_on_gas_sponsor_to_pay = match maybe_identity.as_ref() {
+                Some(identity) => {
+                    state_transition.relies_on_gas_sponsor_to_pay(identity, platform_version)?
+                }
+                None => false,
+            };
+            let validation_mode = if relies_on_gas_sponsor_to_pay {
+                ValidationMode::Validator
+            } else {
+                ValidationMode::CheckTx
+            };
+
             // For address-based state transitions that transfer or withdraw, we have a balance pre-check
             // that validates addresses have enough remaining balance after the input amounts to cover fees.
             if state_transition.has_addresses_minimum_balance_pre_check_validation() {
@@ -301,7 +317,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     platform,
                     &remaining_address_balances,
                     maybe_identity.as_ref(),
-                    ValidationMode::CheckTx,
+                    validation_mode,
                     &mut state_transition_execution_context,
                     proof_verifier,
                 )?;
@@ -336,12 +352,14 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 None
             };
 
-            let action = if state_transition.validates_full_state_on_check_tx() {
+            let action = if state_transition.validates_full_state_on_check_tx()
+                || relies_on_gas_sponsor_to_pay
+            {
                 // Validating structure
                 let result = state_transition.validate_state(
                     action,
                     platform,
-                    ValidationMode::CheckTx,
+                    validation_mode,
                     platform.state.last_block_info(),
                     &mut state_transition_execution_context,
                     None,
@@ -367,7 +385,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     platform,
                     &remaining_address_balances,
                     maybe_identity.as_ref(),
-                    ValidationMode::CheckTx,
+                    validation_mode,
                     &mut state_transition_execution_context,
                     proof_verifier,
                 )?;

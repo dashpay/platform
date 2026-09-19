@@ -38,53 +38,8 @@ impl StateTransitionIdentityEstimatedFeeValidation for BatchTransition {
         identity_known_balance: Credits,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        let purchases_amount = match self.all_document_purchases_amount() {
-            Ok(purchase_amount) => purchase_amount.unwrap_or_default(),
-            Err(ProtocolError::Overflow(e)) => {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    ConsensusError::BasicError(BasicError::OverflowError(OverflowError::new(
-                        e.to_owned(),
-                    ))),
-                ))
-            }
-            // Other errors shouldn't happen
-            Err(e) => return Err(e),
-        };
-
-        // If we added documents that had a conflicting index we need to put up a collateral that voters can draw on
-        let conflicting_indices_collateral_amount =
-            match self.all_conflicting_index_collateral_voting_funds() {
-                Ok(collateral_amount) => collateral_amount.unwrap_or_default(),
-                Err(ProtocolError::Overflow(e)) => {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        ConsensusError::BasicError(BasicError::OverflowError(OverflowError::new(
-                            e.to_owned(),
-                        ))),
-                    ))
-                }
-                // Other errors shouldn't happen
-                Err(e) => return Err(e),
-            };
-
         let base_fees = self.calculate_min_required_fee(platform_version)?;
-
-        // This is just the needed balance to pass this validation step, most likely the actual fees are smaller
-        let needed_balance = purchases_amount
-            .saturating_add(conflicting_indices_collateral_amount)
-            .saturating_add(base_fees);
-
-        if identity_known_balance < needed_balance {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                IdentityInsufficientBalanceError::new(
-                    self.owner_id(),
-                    identity_known_balance,
-                    needed_balance,
-                )
-                .into(),
-            ));
-        }
-
-        Ok(SimpleConsensusValidationResult::new())
+        self.validate_estimated_principal_and_fees(identity_known_balance, base_fees)
     }
 }
 
@@ -121,6 +76,16 @@ impl BatchTransition {
         &self,
         identity_known_balance: Credits,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        self.validate_estimated_principal_and_fees(identity_known_balance, 0)
+    }
+
+    /// The balance has to cover the principal of the batch (document purchases and the
+    /// collateral of contested creates) plus `base_fees`.
+    fn validate_estimated_principal_and_fees(
+        &self,
+        identity_known_balance: Credits,
+        base_fees: Credits,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let purchases_amount = match self.all_document_purchases_amount() {
             Ok(purchase_amount) => purchase_amount.unwrap_or_default(),
             Err(ProtocolError::Overflow(e)) => {
@@ -130,9 +95,11 @@ impl BatchTransition {
                     ))),
                 ))
             }
+            // Other errors shouldn't happen
             Err(e) => return Err(e),
         };
 
+        // If we added documents that had a conflicting index we need to put up a collateral that voters can draw on
         let conflicting_indices_collateral_amount =
             match self.all_conflicting_index_collateral_voting_funds() {
                 Ok(collateral_amount) => collateral_amount.unwrap_or_default(),
@@ -143,10 +110,14 @@ impl BatchTransition {
                         ))),
                     ))
                 }
+                // Other errors shouldn't happen
                 Err(e) => return Err(e),
             };
 
-        let needed_balance = purchases_amount.saturating_add(conflicting_indices_collateral_amount);
+        // This is just the needed balance to pass this validation step, most likely the actual fees are smaller
+        let needed_balance = purchases_amount
+            .saturating_add(conflicting_indices_collateral_amount)
+            .saturating_add(base_fees);
 
         if identity_known_balance < needed_balance {
             return Ok(SimpleConsensusValidationResult::new_with_error(

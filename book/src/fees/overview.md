@@ -201,14 +201,22 @@ and a batch that prefers falls back to the signer's balance. Execution v1 then
 charges whoever fee validation admitted. A batch that fails validation is never
 sponsored: its signer pays for the work that ran, and a request the document
 type does not offer is a paid rejection (`GasFeesPaidByNotAllowedError`,
-40129). Storage refunds still go to whoever paid the storage originally, so a
-sponsored document refunds its owner when it is deleted: the sponsor bounds
-that exposure through the tokens it hands out.
+40129). Storage refunds still go to the document's owner, whoever paid the
+storage: a sponsored document refunds its owner when it is deleted or replaced
+by a smaller one, even when the sponsor pays for that transition too. Each
+token the sponsor hands out is therefore worth up to the storage fee of the
+largest document the type allows, so a document type that offers sponsorship
+should bound its documents' size (`maxLength`, `maxItems`) and price the
+action accordingly.
 
 The signer's minimum balance pre-check runs before the contracts are loaded;
 its v1 asks a batch that requests sponsorship for its principal only
 (purchases, contest collateral) and leaves the gas to fee validation, so an
-identity without credits can act on tokens it was given.
+identity without credits can act on tokens it was given. Such a signer
+could not pay for a failed batch, and a failed batch is never sponsored, so
+check tx validates the batch of a signer under the fee minimum against the
+state in full, as it does a masternode vote: what nobody could be charged for
+is refused there instead of being executed for free by a proposer.
 
 ## FeeResult
 
