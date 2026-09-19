@@ -13,8 +13,9 @@ import org.junit.Test
  * [TokenMaterializer] coverage for the `oncePerIdentityDistribution` block
  * (protocol version 14): the raw block lands in
  * [TokenEntity.oncePerIdentityDistribution], flips `hasDistribution`, and
- * [TokenOncePerIdentityDistribution.parse] reads the u64 amount back as a
- * decimal string whether the contract encoded it as a number or a string.
+ * [TokenOncePerIdentityDistribution.parse] reads the amount back as a
+ * decimal string whether the contract encoded it as a number or a string,
+ * and only inside the protocol's 1 to i64::MAX range.
  */
 class TokenMaterializerOncePerIdentityTest {
 
@@ -59,20 +60,30 @@ class TokenMaterializerOncePerIdentityTest {
     }
 
     @Test
-    fun `amounts above Long MAX_VALUE survive verbatim as number and as string`() {
-        val huge = "18446744073709551615" // UInt64.max
+    fun `the largest protocol amount survives verbatim as number and as string`() {
+        val max = Long.MAX_VALUE.toString() // i64::MAX, the most rs-dpp admits
 
-        val asNumber = parseSingleToken(block(huge))
+        val asNumber = parseSingleToken(block(max))
         assertEquals(
-            huge,
+            max,
             TokenOncePerIdentityDistribution.parse(asNumber.oncePerIdentityDistribution)?.amount,
         )
 
-        val asString = parseSingleToken(block("\"$huge\""))
+        val asString = parseSingleToken(block("\"$max\""))
         assertEquals(
-            huge,
+            max,
             TokenOncePerIdentityDistribution.parse(asString.oncePerIdentityDistribution)?.amount,
         )
+    }
+
+    @Test
+    fun `parse rejects amounts outside the protocol range`() {
+        // rs-dpp admits 1..=i64::MAX, so nothing else can come from a contract on chain.
+        assertNull(TokenOncePerIdentityDistribution.parse("""{"amount":0}"""))
+        assertNull(TokenOncePerIdentityDistribution.parse("""{"amount":"9223372036854775808"}"""))
+        assertNull(TokenOncePerIdentityDistribution.parse("""{"amount":"18446744073709551615"}"""))
+        assertNull(TokenOncePerIdentityDistribution.parse("""{"amount":"18446744073709551616"}"""))
+        assertEquals("1", TokenOncePerIdentityDistribution.parse("""{"amount":1}""")?.amount)
     }
 
     @Test
@@ -109,6 +120,31 @@ class TokenMaterializerOncePerIdentityTest {
         assertNull(TokenOncePerIdentityDistribution.parse("not json"))
         assertNull(TokenOncePerIdentityDistribution.parse(""))
         assertNull(TokenOncePerIdentityDistribution.parse(null))
+    }
+
+    @Test
+    fun `already-claimed rejection is recognised by code and by message`() {
+        assertTrue(
+            OncePerIdentityClaimStore.isAlreadyClaimed(
+                IllegalStateException("consensus error 40722: claim rejected"),
+            ),
+        )
+        assertTrue(
+            OncePerIdentityClaimStore.isAlreadyClaimed(
+                RuntimeException(
+                    "claim failed",
+                    IllegalStateException(
+                        "Token claim error: identity 'a' already claimed the " +
+                            "once-per-identity distribution of token 'b' at 100",
+                    ),
+                ),
+            ),
+        )
+        assertFalse(
+            OncePerIdentityClaimStore.isAlreadyClaimed(
+                IllegalStateException("Token mint past max supply"),
+            ),
+        )
     }
 
     @Test

@@ -249,9 +249,20 @@ fun TokenActionPermissionsScreen(
                     val resolvedToken = remember(currentToken, livePaused) {
                         livePaused?.let { currentToken.copy(isPaused = it) } ?: currentToken
                     }
-                    val rows = remember(resolvedToken, identity, contract) {
-                        TokenActionResolver.resolve(resolvedToken, identity, contract)
-                            .filter { !it.permission.isHidden }
+                    val claimStore = container.oncePerIdentityClaimStore
+                    val oncePerIdentityClaimed by remember(
+                        resolvedToken.id, identity.identityId,
+                    ) {
+                        claimStore.observe(
+                            identity.networkRaw, resolvedToken.id, identity.identityId,
+                        )
+                    }.collectAsStateWithLifecycle(initialValue = false)
+                    val rows = remember(
+                        resolvedToken, identity, contract, oncePerIdentityClaimed,
+                    ) {
+                        TokenActionResolver.resolve(
+                            resolvedToken, identity, contract, oncePerIdentityClaimed,
+                        ).filter { !it.permission.isHidden }
                     }
                     rows.forEach { row ->
                         val allowed = row.permission.isAllowed

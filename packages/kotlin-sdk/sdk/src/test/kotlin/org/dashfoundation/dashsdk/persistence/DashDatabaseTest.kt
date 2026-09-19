@@ -233,14 +233,15 @@ class DashDatabaseTest {
     }
 
     @Test
-    fun schemaIsAtVersion13WithTheSweepHoldIndexes() = runTest {
+    fun schemaIsAtVersion14WithTheSweepHoldIndexes() = runTest {
         // The sweep-hold columns land in ONE migration (10 → 11), with the
         // two `pending_inputs` indexes the sweep's claimed-row lookup
         // (`spendingTxid`) and the end-of-round collector
         // (`walletId, isSweptTombstone, winnerMinedHeight`) rely on.
-        // 11 → 12 adds the identity key usage limits columns on top, and
-        // 12 → 13 the contract bounds kind.
-        assertEquals(13, db.openHelper.readableDatabase.version)
+        // 11 → 12 adds the identity key usage limits columns on top,
+        // 12 → 13 the contract bounds kind, and 13 → 14 the token
+        // once-per-identity distribution block.
+        assertEquals(14, db.openHelper.readableDatabase.version)
         val indexes = mutableSetOf<String>()
         db.openHelper.readableDatabase.query("PRAGMA index_list('pending_inputs')").use { c ->
             val nameColumn = c.getColumnIndexOrThrow("name")
@@ -264,6 +265,27 @@ class DashDatabaseTest {
                 if (c.getString(name) != "contractBoundsKind") continue
                 found = true
                 assertEquals("INTEGER", c.getString(type))
+                assertEquals(0, c.getInt(notNull))
+                assertTrue(c.isNull(default))
+            }
+        }
+        assertTrue(found)
+    }
+
+    @Test
+    fun shouldHaveANullableOncePerIdentityDistributionColumnOnTokens() = runTest {
+        // Version 14 (13 → 14): nullable with no default, so a row written
+        // before it reads back NULL until its block is backfilled.
+        var found = false
+        db.openHelper.readableDatabase.query("PRAGMA table_info('tokens')").use { c ->
+            val name = c.getColumnIndexOrThrow("name")
+            val type = c.getColumnIndexOrThrow("type")
+            val notNull = c.getColumnIndexOrThrow("notnull")
+            val default = c.getColumnIndexOrThrow("dflt_value")
+            while (c.moveToNext()) {
+                if (c.getString(name) != "oncePerIdentityDistribution") continue
+                found = true
+                assertEquals("TEXT", c.getString(type))
                 assertEquals(0, c.getInt(notNull))
                 assertTrue(c.isNull(default))
             }

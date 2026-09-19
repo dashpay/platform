@@ -41,6 +41,29 @@ object TokenMaterializer {
         }
     }
 
+    /**
+     * Schema version 14 added `tokens.oncePerIdentityDistribution`, and the
+     * migration can only add the column: rows materialized by an earlier
+     * build keep a NULL block (and `hasDistribution = false`) although the
+     * contract JSON stored beside them may carry one. Re-read the block from
+     * each stored contract and fill it in where it is missing. Unlike
+     * [materialize] this never rewrites the rest of the row, so live columns
+     * such as `isPaused` keep their value. Returns the rows filled in.
+     */
+    suspend fun backfillOncePerIdentityDistributions(
+        contracts: List<DataContractEntity>,
+        dao: TokenDao,
+    ): Int {
+        var filled = 0
+        for (contract in contracts) {
+            for (token in parse(contract)) {
+                val block = token.oncePerIdentityDistribution ?: continue
+                filled += dao.backfillOncePerIdentityDistribution(token.id, block)
+            }
+        }
+        return filled
+    }
+
     /** Pure parse of [contract]'s tokens map into entity rows. */
     fun parse(contract: DataContractEntity): List<TokenEntity> {
         val root = try {

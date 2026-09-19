@@ -196,8 +196,8 @@ object AuthorizedActionTakers {
  * [TokenMaterializer] persists in
  * [org.dashfoundation.dashsdk.persistence.entities.TokenEntity.oncePerIdentityDistribution]
  * (`{"$formatVersion":"0","amount":<u64>}`, the amount a JSON number or a
- * decimal string). [amount] stays a decimal string because u64 values
- * overflow Long.
+ * decimal string). [amount] is a decimal string like every other raw token
+ * amount in the app.
  */
 data class TokenOncePerIdentityDistribution(val amount: String) {
 
@@ -212,18 +212,18 @@ data class TokenOncePerIdentityDistribution(val amount: String) {
             }
         }
 
-        /** Null when the block carries no non-negative integer `amount`. */
+        /**
+         * Null when the block carries no `amount` the protocol admits: an
+         * integer from 1 to `i64::MAX`, the range rs-dpp validates at
+         * registration, so nothing else can come from a contract on chain.
+         */
         fun parse(obj: JsonObject): TokenOncePerIdentityDistribution? {
             // Tolerate the enum-wrapped rendering the pre-programmed
             // resolver also accepts; rs-dpp itself emits the flat shape.
             val body = (obj["V0"] as? JsonObject) ?: obj
             val content = (body["amount"] as? JsonPrimitive)?.content ?: return null
-            val amount = try {
-                java.math.BigInteger(content)
-            } catch (_: NumberFormatException) {
-                return null
-            }
-            if (amount.signum() < 0) return null
+            val amount = TokenAmounts.parseRaw(content)?.toULong() ?: return null
+            if (amount == 0UL || amount > Long.MAX_VALUE.toULong()) return null
             return TokenOncePerIdentityDistribution(amount.toString())
         }
     }
