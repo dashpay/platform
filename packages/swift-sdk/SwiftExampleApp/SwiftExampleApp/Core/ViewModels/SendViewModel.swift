@@ -380,6 +380,25 @@ class SendViewModel: ObservableObject {
         }
     }
 
+    static let coreFundingAccountIndex: UInt32 = 0
+
+    /// Balance of the BIP44 account used by the Core send builder.
+    static func coreFundingBalance(_ balances: [PlatformWalletManager.AccountBalance]) -> UInt64 {
+        balances.first {
+            $0.typeTag == 0 && $0.standardTag == 0 && $0.index == coreFundingAccountIndex
+        }?.confirmed ?? 0
+    }
+
+    /// The estimate is a UI preflight; Rust checks the finalized transaction fee.
+    func canSend(coreBalance: UInt64) -> Bool {
+        guard canSend else { return false }
+        guard detectedFlow == .coreToCore else { return true }
+        let (required, overflow) = coreSendTotalDuffs.addingReportingOverflow(
+            estimatedFee ?? SendFlow.coreToCore.estimatedFee
+        )
+        return !overflow && coreBalance >= required
+    }
+
     /// Determine which fund sources are available based on destination and balances.
     func availableSources(
         coreBalance: UInt64,
@@ -496,6 +515,12 @@ class SendViewModel: ObservableObject {
         modelContext: ModelContext
     ) async {
         guard let flow = detectedFlow else { return }
+        if flow == .coreToCore && !canSend(coreBalance: Self.coreFundingBalance(
+            walletManager.accountBalances(for: wallet.walletId)
+        )) {
+            error = "BIP44 account 0 cannot cover the recipients and estimated fee"
+            return
+        }
 
         isSending = true
         error = nil
@@ -535,7 +560,7 @@ class SendViewModel: ObservableObject {
                 let signedTx = try builder.finalizeAtomic(
                     wallet: platformWallet,
                     accountType: .bip44,
-                    accountIndex: senderAccountIndex
+                    accountIndex: Self.coreFundingAccountIndex
                 )
                 // Core acceptance, rather than a successful peer socket write,
                 // is the boundary for showing payment success.

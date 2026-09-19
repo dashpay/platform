@@ -5,6 +5,8 @@ use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
@@ -13,6 +15,60 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
+
+/// Return the last certified Core height to keep when adding a contact account.
+/// DIP-15 records height `H` so recovery resumes at `H + 1`; locally rotated
+/// relationships fall back to wallet birth because their original `H` is gone.
+pub(super) fn contact_scan_checkpoint(
+    info: &crate::wallet::PlatformWalletInfo,
+    owner: &Identifier,
+    contact: &Identifier,
+) -> u32 {
+    let birth_checkpoint = info.core_wallet.birth_height().saturating_sub(1);
+    let Some(managed) = info.identity_manager.managed_identity(owner) else {
+        return birth_checkpoint;
+    };
+    let dashpay = managed.dashpay();
+
+    let mut requests = Vec::with_capacity(2);
+    if let Some(established) = dashpay.established_contacts().get(contact) {
+        requests.push(&established.outgoing_request);
+        requests.push(&established.incoming_request);
+    }
+    requests.extend(dashpay.sent_contact_requests().get(contact));
+    requests.extend(dashpay.incoming_contact_requests().get(contact));
+    let request_checkpoint = (!requests.is_empty()
+        && requests
+            .iter()
+            .all(|request| request.account_reference >> 28 == 0))
+    .then(|| {
+        requests
+            .iter()
+            .map(|request| request.core_height_created_at)
+            .min()
+            .unwrap_or(0)
+    });
+
+    request_checkpoint
+        .unwrap_or(birth_checkpoint)
+        .max(birth_checkpoint)
+}
+
+fn add_managed_contact_account(
+    info: &mut crate::wallet::PlatformWalletInfo,
+    wallet: &key_wallet::Wallet,
+    account_type: AccountType,
+    scan_checkpoint: u32,
+) -> key_wallet::Result<()> {
+    let previous_checkpoint = info.core_wallet.synced_height();
+    // Upstream adds the account, bumps the scanner generation, and rewinds to
+    // wallet birth. Under this same manager write lock, restore only the range
+    // certified for the new account while preserving any deeper pending scan.
+    info.add_managed_account(wallet, account_type)?;
+    info.core_wallet
+        .update_synced_height(previous_checkpoint.min(scan_checkpoint));
+    Ok(())
+}
 
 /// Build the persistence round for a newly registered DashPay account
 /// (`DashpayReceivingFunds` / `DashpayExternalAccount`): the
@@ -203,9 +259,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             is_watch_only: false,
         };
 
-        // DashPay accounts are funds-bearing; use the typed
-        // `insert_funds_bearing_account` API exposed by the post-split
-        // collection rather than wrapping in `OwnedManagedCoreAccount`.
+        // Build the initial funds-bearing state for persistence. The live
+        // insertion below goes through `ManagedAccountOperations` so upstream
+        // also invalidates the wallet's prior filter-scan generation.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
 
         // Persist the registration BEFORE the in-memory inserts: a store
@@ -227,6 +283,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let (wallet, info) = wm
             .get_wallet_mut_and_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let scan_checkpoint = contact_scan_checkpoint(info, our_identity_id, contact_identity_id);
 
         // Mirror the restored shape: the immutable `wallet.accounts`
         // collection holds the Account (like `build_wallet_start_state`
@@ -239,14 +296,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "Failed to add contact account to wallet: {e}"
                 ))
             })?;
-        info.core_wallet
-            .accounts
-            .insert_funds_bearing_account(managed)
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to register contact account: {e}"
-                ))
-            })?;
+        add_managed_contact_account(info, wallet, account_type, scan_checkpoint).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to register contact account: {e}"
+            ))
+        })?;
+        if let Some(managed) = info.identity_manager.managed_identity_mut(our_identity_id) {
+            if managed
+                .dashpay()
+                .established_contacts()
+                .contains_key(contact_identity_id)
+            {
+                managed
+                    .dashpay_rescan_triggered_mut()
+                    .insert(*contact_identity_id);
+            }
+        }
 
         tracing::info!(
             our_identity = %our_identity_id,
@@ -534,8 +599,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             is_watch_only: true,
         };
 
-        // DashpayExternalAccount is funds-bearing; insert via the
-        // typed `insert_funds` API after the upstream split.
+        // Build the initial funds-bearing state for persistence. The live
+        // insertion below goes through `ManagedAccountOperations` so upstream
+        // also invalidates the wallet's prior filter-scan generation.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
 
         // Persist the registration BEFORE the in-memory inserts (same
@@ -562,6 +628,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     self.wallet_id,
                 )))
             })?;
+        let scan_checkpoint = contact_scan_checkpoint(info, our_identity_id, &contact_identity_id);
 
         // (a) Insert Account into the immutable wallet account collection so the
         //     xpub is accessible by `send_payment`.
@@ -574,16 +641,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )))
             })?;
 
-        // (b) Insert ManagedCoreFundsAccount for address-pool tracking.
-        info.core_wallet
-            .accounts
-            .insert_funds_bearing_account(managed)
-            .map_err(|e| {
-                Transient(PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to register external contact account: {}",
-                    e
-                )))
-            })?;
+        // (b) Insert the managed account and invalidate prior filter coverage.
+        add_managed_contact_account(info, wallet, account_type, scan_checkpoint).map_err(|e| {
+            Transient(PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to register external contact account: {}",
+                e
+            )))
+        })?;
 
         tracing::info!(
             our_identity = %our_identity_id,
