@@ -154,6 +154,31 @@ internal object IdentityNative {
     ): Array<ByteArray>
 
     /**
+     * DashPay Connect key derivation at the DIP-13 sub-feature paths
+     * `m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose']`
+     * (dashpay/dips#191). Bridges `dash_sdk_derive_connect_key_with_resolver`,
+     * a pure resolver-keyed derive like the slot derives above.
+     *
+     * @param subFeature 6 (session authentication; [leaf] is the request
+     *   id) or 7 (app encryption; [leaf] is the bound contract's id).
+     * @param identityId the identity's 32-byte id (a DIP-14 hardened child).
+     * @param leaf the 32-byte leaf (a DIP-14 hardened child).
+     * @param purpose 0 for no purpose level (session authentication), or
+     *   the half of an encryption pair as one more hardened child: 1
+     *   ENCRYPTION, 2 DECRYPTION. Anything else throws.
+     * @return `[privateKey(32), publicKey(33)]`.
+     */
+    external fun deriveConnectKeyWithResolver(
+        networkOrd: Int,
+        walletId: ByteArray,
+        resolverHandle: Long,
+        subFeature: Int,
+        identityId: ByteArray,
+        leaf: ByteArray,
+        purpose: Int,
+    ): Array<ByteArray>
+
+    /**
      * Register a new identity funded from the wallet's Core balance. The
      * single FFI entry point the registration coordinator's body invokes.
      *
