@@ -10,11 +10,8 @@ impl TokenConfiguration {
         &self,
         change_item: &TokenConfigurationChangeItem,
     ) -> AuthorizedActionTakers {
-        match self {
-            TokenConfiguration::V0(v0) => {
-                v0.controlling_action_takers_for_configuration_item(change_item)
-            }
-        }
+        self.as_v0()
+            .controlling_action_takers_for_configuration_item(change_item)
     }
 
     /// Returns the authorized action takers for a specific `TokenConfigurationChangeItem`.
@@ -28,10 +25,7 @@ impl TokenConfiguration {
         &self,
         change_item: &TokenConfigurationChangeItem,
     ) -> AuthorizedActionTakers {
-        match self {
-            TokenConfiguration::V0(v0) => {
-                v0.authorized_action_takers_for_configuration_item(change_item)
-            }
-        }
+        self.as_v0()
+            .authorized_action_takers_for_configuration_item(change_item)
     }
 }

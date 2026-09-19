@@ -59,6 +59,13 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub token_claim_transition: FeatureVersion,
     pub token_direct_purchase_transition: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition: FeatureVersion,
+    pub token_shield_transition: FeatureVersion,
+    pub token_unshield_transition: FeatureVersion,
+    pub token_shielded_transfer_transition: FeatureVersion,
+    pub token_mint_to_pool_transition: FeatureVersion,
+    pub token_burn_from_pool_transition: FeatureVersion,
+    pub token_claim_to_pool_transition: FeatureVersion,
+    pub token_direct_purchase_to_pool_transition: FeatureVersion,
     pub identity_credit_transfer_to_addresses_transition: FeatureVersion,
     pub address_funds_transfer_transition: FeatureVersion,
     pub address_credit_withdrawal_transition: FeatureVersion,
@@ -71,6 +78,9 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub identity_create_from_shielded_pool_transition: FeatureVersion,
     pub shield_from_identity_transition: FeatureVersion,
     pub identity_top_up_from_shielded_pool_transition: FeatureVersion,
+    pub token_shielded_transfer_with_shielded_fee_transition: FeatureVersion,
+    pub token_unshield_with_shielded_fee_transition: FeatureVersion,
+    pub token_purchase_from_shielded_pool_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

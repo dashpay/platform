@@ -203,7 +203,7 @@ impl DocumentSetPriceTransitionBuilder {
             identity_public_key,
             identity_contract_nonce,
             self.user_fee_increase.unwrap_or_default(),
-            self.token_payment_info,
+            self.token_payment_info.clone(),
             signer,
             platform_version,
             self.state_transition_creation_options,

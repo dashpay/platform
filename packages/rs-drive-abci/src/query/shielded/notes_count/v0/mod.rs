@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::response_metadata::CheckpointUsed;
+use crate::query::shielded::ShieldedPoolSelector;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_shielded_notes_count_request::GetShieldedNotesCountRequestV0;
 use dapi_grpc::platform::v0::get_shielded_notes_count_response::{
@@ -10,7 +11,7 @@ use dapi_grpc::platform::v0::get_shielded_notes_count_response::{
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::{shielded_credit_pool_path_vec, SHIELDED_NOTES_KEY};
+use drive::drive::shielded::paths::SHIELDED_NOTES_KEY;
 use drive::grovedb::{PathQuery, Query, SizedQuery};
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -28,16 +29,20 @@ impl<C> Platform<C> {
     ///   `query_shielded_pool_state_v0`.
     pub(super) fn query_shielded_notes_count_v0(
         &self,
-        GetShieldedNotesCountRequestV0 { prove }: GetShieldedNotesCountRequestV0,
+        GetShieldedNotesCountRequestV0 { prove, token_id }: GetShieldedNotesCountRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetShieldedNotesCountResponseV0>, Error> {
+        let pool = match ShieldedPoolSelector::from_request(token_id, platform_version) {
+            Ok(pool) => pool,
+            Err(error) => return Ok(QueryValidationResult::new_with_error(error)),
+        };
         let response = if prove {
             // Single-key query lands on the notes CommitmentTree element
             // (no subquery), so the proof carries the serialized element
             // whose `total_count` is hashed into the root.
             let path_query = PathQuery {
-                path: shielded_credit_pool_path_vec(),
+                path: pool.pool_path_vec(),
                 query: SizedQuery {
                     query: Query::new_single_key(vec![SHIELDED_NOTES_KEY]),
                     limit: Some(1),
@@ -60,9 +65,20 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
-            let total_notes_count =
-                self.drive
-                    .shielded_pool_notes_count(None, &mut vec![], platform_version)?;
+            let total_notes_count = match pool {
+                ShieldedPoolSelector::Credit => {
+                    self.drive
+                        .shielded_pool_notes_count(None, &mut vec![], platform_version)?
+                }
+                ShieldedPoolSelector::Token(token_id) => {
+                    self.drive.token_shielded_pool_notes_count(
+                        &token_id,
+                        None,
+                        &mut vec![],
+                        platform_version,
+                    )?
+                }
+            };
 
             GetShieldedNotesCountResponseV0 {
                 result: Some(

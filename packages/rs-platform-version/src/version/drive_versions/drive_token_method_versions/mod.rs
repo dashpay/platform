@@ -1,6 +1,7 @@
 use versioned_feature_core::FeatureVersion;
 
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveTokenMethodVersions {
@@ -71,4 +72,17 @@ pub struct DriveTokenUpdateMethodVersions {
     pub unfreeze: FeatureVersion,
     pub apply_status: FeatureVersion,
     pub perpetual_distribution_next_event_for_identity_id: FeatureVersion,
+    /// Creates the per-token shielded pool subtree when a token with `has_shielded_pool` is
+    /// registered.
+    pub create_token_shielded_pool_trees: FeatureVersion,
+    /// Identity token balance -> token shielded pool.
+    pub shield: FeatureVersion,
+    /// Token shielded pool -> identity token balance.
+    pub unshield: FeatureVersion,
+    /// Pool-internal token transfer.
+    pub shielded_transfer: FeatureVersion,
+    /// Mint straight into the token shielded pool (supply and pool balance both grow).
+    pub mint_to_pool: FeatureVersion,
+    /// Burn notes held in the token shielded pool (pool balance and supply both shrink).
+    pub burn_from_pool: FeatureVersion,
 }

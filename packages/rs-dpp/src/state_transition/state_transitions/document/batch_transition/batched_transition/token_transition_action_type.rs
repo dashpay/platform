@@ -45,6 +45,27 @@ pub enum TokenTransitionActionType {
 
     /// Indicates that the transition sets or updates the price for direct token purchases.
     SetPriceForDirectPurchase,
+
+    /// Indicates tokens moving from an identity balance into the token's shielded pool.
+    Shield,
+
+    /// Indicates a mint straight into the token's shielded pool.
+    MintToPool,
+
+    /// Indicates a burn of notes held in the token's shielded pool.
+    BurnFromPool,
+
+    /// Indicates a distribution claim paid into the token's shielded pool.
+    ClaimToPool,
+
+    /// Indicates a direct purchase paid into the token's shielded pool.
+    DirectPurchaseToPool,
+
+    /// Indicates tokens moving from the token's shielded pool to an identity balance.
+    Unshield,
+
+    /// Indicates a transfer inside the token's shielded pool.
+    ShieldedTransfer,
 }
 
 impl fmt::Display for TokenTransitionActionType {
@@ -61,6 +82,13 @@ impl fmt::Display for TokenTransitionActionType {
             TokenTransitionActionType::ConfigUpdate => "ConfigUpdate",
             TokenTransitionActionType::DirectPurchase => "DirectPurchase",
             TokenTransitionActionType::SetPriceForDirectPurchase => "SetPriceForDirectPurchase",
+            TokenTransitionActionType::Shield => "Shield",
+            TokenTransitionActionType::Unshield => "Unshield",
+            TokenTransitionActionType::ShieldedTransfer => "ShieldedTransfer",
+            TokenTransitionActionType::MintToPool => "MintToPool",
+            TokenTransitionActionType::BurnFromPool => "BurnFromPool",
+            TokenTransitionActionType::ClaimToPool => "ClaimToPool",
+            TokenTransitionActionType::DirectPurchaseToPool => "DirectPurchaseToPool",
         };
         write!(f, "{}", action_str)
     }
@@ -86,6 +114,15 @@ impl TokenTransitionActionTypeGetter for TokenTransition {
                 TokenTransitionActionType::SetPriceForDirectPurchase
             }
             TokenTransition::DirectPurchase(_) => TokenTransitionActionType::DirectPurchase,
+            TokenTransition::Shield(_) => TokenTransitionActionType::Shield,
+            TokenTransition::Unshield(_) => TokenTransitionActionType::Unshield,
+            TokenTransition::ShieldedTransfer(_) => TokenTransitionActionType::ShieldedTransfer,
+            TokenTransition::MintToPool(_) => TokenTransitionActionType::MintToPool,
+            TokenTransition::BurnFromPool(_) => TokenTransitionActionType::BurnFromPool,
+            TokenTransition::ClaimToPool(_) => TokenTransitionActionType::ClaimToPool,
+            TokenTransition::DirectPurchaseToPool(_) => {
+                TokenTransitionActionType::DirectPurchaseToPool
+            }
         }
     }
 }
@@ -111,6 +148,17 @@ impl TryFrom<&str> for TokenTransitionActionType {
             "direct_purchase" | "directPurchase" => Ok(TokenTransitionActionType::DirectPurchase),
             "set_price_for_direct_purchase" | "setPriceForDirectPurchase" => {
                 Ok(TokenTransitionActionType::SetPriceForDirectPurchase)
+            }
+            "shield" => Ok(TokenTransitionActionType::Shield),
+            "unshield" => Ok(TokenTransitionActionType::Unshield),
+            "shielded_transfer" | "shieldedTransfer" => {
+                Ok(TokenTransitionActionType::ShieldedTransfer)
+            }
+            "mint_to_pool" | "mintToPool" => Ok(TokenTransitionActionType::MintToPool),
+            "burn_from_pool" | "burnFromPool" => Ok(TokenTransitionActionType::BurnFromPool),
+            "claim_to_pool" | "claimToPool" => Ok(TokenTransitionActionType::ClaimToPool),
+            "direct_purchase_to_pool" | "directPurchaseToPool" => {
+                Ok(TokenTransitionActionType::DirectPurchaseToPool)
             }
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown token transition action type {action_type}"

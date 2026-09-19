@@ -17,8 +17,20 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<u64, Error> {
         let pool_path = shielded_credit_pool_path();
+        self.pool_notes_count_v0(&pool_path, transaction, drive_operations, platform_version)
+    }
+
+    /// Counts the notes in the commitment tree of the pool at `pool_path`, whichever shielded
+    /// pool (credit or token) it is.
+    pub(in crate::drive) fn pool_notes_count_v0(
+        &self,
+        pool_path: &[&[u8]],
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<u64, Error> {
         self.grove_commitment_tree_count(
-            (&pool_path).into(),
+            pool_path.into(),
             &[SHIELDED_NOTES_KEY],
             transaction,
             drive_operations,

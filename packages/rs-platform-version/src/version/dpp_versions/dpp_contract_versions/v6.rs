@@ -111,5 +111,10 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
     token_versions: TokenVersions {
         // 1: an epoch-based perpetual distribution needs an interval of at least one epoch.
         validate_structure_interval: 1,
+        token_configuration_format: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
     },
 };

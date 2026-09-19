@@ -174,4 +174,19 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V1: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
+        token_shielded_transfer_with_shielded_fee_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        token_unshield_with_shielded_fee_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        token_purchase_from_shielded_pool_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
     };

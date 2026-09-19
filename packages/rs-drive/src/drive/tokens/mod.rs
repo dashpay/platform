@@ -32,6 +32,11 @@ pub mod mint;
 #[cfg(feature = "server")]
 pub mod mint_many;
 
+/// Per-token shielded pools: creation, cost estimation and the shield / unshield /
+/// shielded-transfer operations.
+#[cfg(feature = "server")]
+pub mod shielded_pool;
+
 /// Manages system-level operations and utilities.
 #[cfg(feature = "server")]
 pub mod system;

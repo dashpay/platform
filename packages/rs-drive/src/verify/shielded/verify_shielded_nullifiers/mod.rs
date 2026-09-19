@@ -1,5 +1,6 @@
 mod v0;
 
+use crate::drive::shielded::paths::token_shielded_pool_nullifiers_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -30,6 +31,40 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_shielded_nullifiers".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}
+
+impl Drive {
+    /// Verifies a proof of nullifier spent statuses in a TOKEN shielded pool. Same versioning
+    /// as [`Drive::verify_shielded_nullifiers`].
+    #[allow(clippy::type_complexity)]
+    pub fn verify_token_shielded_pool_nullifiers(
+        proof: &[u8],
+        token_id: [u8; 32],
+        nullifiers: &[Vec<u8>],
+        verify_subset_of_proof: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Vec<(Vec<u8>, bool)>), Error> {
+        match platform_version
+            .drive
+            .methods
+            .verify
+            .shielded
+            .verify_shielded_nullifiers
+        {
+            0 => Self::verify_pool_nullifiers_v0(
+                proof,
+                token_shielded_pool_nullifiers_path_vec(token_id),
+                nullifiers,
+                verify_subset_of_proof,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "verify_token_shielded_pool_nullifiers".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

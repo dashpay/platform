@@ -50,6 +50,37 @@ impl VerifiedTokenBalanceWasm {
 impl_wasm_type_info!(VerifiedTokenBalanceWasm, VerifiedTokenBalance);
 impl_wasm_conversions_serde!(VerifiedTokenBalanceWasm, VerifiedTokenBalance);
 
+// --- VerifiedTokenShieldedPoolBalance ---
+
+/// The proven total balance of a token's shielded pool, returned by the pool transitions that
+/// only create notes (mint, claim and purchase into the pool).
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dpp")]
+#[wasm_bindgen(js_name = "VerifiedTokenShieldedPoolBalance")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifiedTokenShieldedPoolBalanceWasm {
+    #[wasm_bindgen(getter_with_clone, js_name = "tokenId")]
+    pub token_id: IdentifierWasm,
+    pub(super) balance: u64,
+}
+
+#[wasm_bindgen(js_class = VerifiedTokenShieldedPoolBalance)]
+impl VerifiedTokenShieldedPoolBalanceWasm {
+    #[wasm_bindgen(getter)]
+    pub fn balance(&self) -> JsValue {
+        BigInt::from(self.balance).into()
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedTokenShieldedPoolBalanceWasm,
+    VerifiedTokenShieldedPoolBalance
+);
+impl_wasm_conversions_serde!(
+    VerifiedTokenShieldedPoolBalanceWasm,
+    VerifiedTokenShieldedPoolBalance
+);
+
 // --- VerifiedTokenIdentityInfo ---
 
 #[wasm_bindgen(js_name = "VerifiedTokenIdentityInfo")]

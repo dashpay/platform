@@ -97,6 +97,7 @@ mod tests {
         let request = GetMostRecentShieldedAnchorRequest {
             version: Some(RequestVersion::V0(GetMostRecentShieldedAnchorRequestV0 {
                 prove: false,
+                token_id: None,
             })),
         };
 
@@ -132,6 +133,7 @@ mod tests {
         let request = GetMostRecentShieldedAnchorRequest {
             version: Some(RequestVersion::V0(GetMostRecentShieldedAnchorRequestV0 {
                 prove: true,
+                token_id: None,
             })),
         };
 

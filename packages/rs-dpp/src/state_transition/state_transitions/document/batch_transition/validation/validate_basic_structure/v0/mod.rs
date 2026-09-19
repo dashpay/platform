@@ -9,6 +9,16 @@ use crate::state_transition::batch_transition::batched_transition::DocumentIndex
 use crate::identity::identity_nonce::MISSING_IDENTITY_REVISIONS_FILTER;
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use crate::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+use crate::consensus::basic::token::InvalidTokenAmountError;
+use crate::consensus::ConsensusError;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
+use crate::state_transition::state_transitions::shielded::common_validation::{
+    validate_actions_count, validate_anchor_not_zero, validate_encrypted_note_sizes,
+    validate_proof_not_empty,
+};
+use crate::tokens::token_payment_info::v1::TokenShieldedPayment;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 use crate::state_transition::batch_transition::validation::find_duplicates_by_id::find_duplicates_by_id;
 use crate::state_transition::batch_transition::BatchTransition;
 use crate::validation::SimpleConsensusValidationResult;
@@ -31,6 +41,13 @@ use crate::state_transition::batch_transition::token_mint_transition::validate_s
 use crate::state_transition::batch_transition::token_claim_transition::validate_structure::TokenClaimTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_direct_purchase_transition::validate_structure::TokenDirectPurchaseTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::validate_structure::TokenSetPriceForDirectPurchaseTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_shield_transition::validate_structure::TokenShieldTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_mint_to_pool_transition::validate_structure::TokenMintToPoolTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_burn_from_pool_transition::validate_structure::TokenBurnFromPoolTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_claim_to_pool_transition::validate_structure::TokenClaimToPoolTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_direct_purchase_to_pool_transition::validate_structure::TokenDirectPurchaseToPoolTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_shielded_transfer_transition::validate_structure::TokenShieldedTransferTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_unshield_transition::validate_structure::TokenUnshieldTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_unfreeze_transition::validate_structure::TokenUnfreezeTransitionStructureValidation;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
@@ -103,6 +120,21 @@ impl BatchTransition {
                     result.add_error(BasicError::NonceOutOfBoundsError(
                         NonceOutOfBoundsError::new(transition.identity_contract_nonce()),
                     ));
+                }
+
+                // A shielded token payment (`TokenPaymentInfo::V1`) carries an Orchard spend
+                // bundle: the same stateless checks the token pool transitions run. The amount
+                // it pays is matched against the document type's token cost in the transformer.
+                if let Some(TokenPaymentInfo::V1(payment_info)) =
+                    transition.base().token_payment_info_ref()
+                {
+                    let payment_result = validate_shielded_token_payment_structure(
+                        payment_info.shielded_payment(),
+                        platform_version,
+                    );
+                    if !payment_result.is_valid() {
+                        result.merge(payment_result);
+                    }
                 }
 
                 // The indexOnlyDelete kind joined the wire at PV14. Old
@@ -219,6 +251,27 @@ impl BatchTransition {
                 ) => {
                     set_price_for_direct_purchase_transition.validate_structure(platform_version)?
                 }
+                TokenTransition::Shield(shield_transition) => {
+                    shield_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::Unshield(unshield_transition) => {
+                    unshield_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::ShieldedTransfer(shielded_transfer_transition) => {
+                    shielded_transfer_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::MintToPool(mint_to_pool_transition) => {
+                    mint_to_pool_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::BurnFromPool(burn_from_pool_transition) => {
+                    burn_from_pool_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::ClaimToPool(claim_to_pool_transition) => {
+                    claim_to_pool_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::DirectPurchaseToPool(direct_purchase_to_pool_transition) => {
+                    direct_purchase_to_pool_transition.validate_structure(platform_version)?
+                }
             };
 
             if !consensus_result.is_valid() {
@@ -260,6 +313,45 @@ impl BatchTransition {
 
         Ok(result)
     }
+}
+
+/// The stateless checks of a document's shielded token payment bundle: a non-zero amount within
+/// the token amount bound, a bounded action count, note sizes, a non-empty proof and a non-zero
+/// anchor. The proof itself is verified against state, where its cost can be charged.
+fn validate_shielded_token_payment_structure(
+    payment: &TokenShieldedPayment,
+    platform_version: &PlatformVersion,
+) -> SimpleConsensusValidationResult {
+    if payment.amount > MAX_DISTRIBUTION_PARAM || payment.amount == 0 {
+        return SimpleConsensusValidationResult::new_with_error(ConsensusError::BasicError(
+            BasicError::InvalidTokenAmountError(InvalidTokenAmountError::new(
+                MAX_DISTRIBUTION_PARAM,
+                payment.amount,
+            )),
+        ));
+    }
+
+    let result = validate_actions_count(
+        &payment.actions,
+        platform_version
+            .system_limits
+            .max_shielded_transition_actions,
+    );
+    if !result.is_valid() {
+        return result;
+    }
+
+    let result = validate_encrypted_note_sizes(&payment.actions);
+    if !result.is_valid() {
+        return result;
+    }
+
+    let result = validate_proof_not_empty(&payment.proof);
+    if !result.is_valid() {
+        return result;
+    }
+
+    validate_anchor_not_zero(&payment.anchor)
 }
 
 #[cfg(test)]

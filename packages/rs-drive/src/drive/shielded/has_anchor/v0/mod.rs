@@ -19,9 +19,27 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
         let anchors_path = shielded_credit_pool_anchors_path();
+        self.has_anchor_in_pool_v0(
+            &anchors_path,
+            anchor,
+            transaction,
+            drive_operations,
+            platform_version,
+        )
+    }
 
+    /// O(1) anchor membership lookup in the anchors tree at `anchors_path`, whichever shielded
+    /// pool (credit or token) it belongs to.
+    pub(in crate::drive) fn has_anchor_in_pool_v0(
+        &self,
+        anchors_path: &[&[u8]],
+        anchor: &[u8; 32],
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
         self.grove_has_raw(
-            (&anchors_path).into(),
+            anchors_path.into(),
             anchor,
             DirectQueryType::StatefulDirectQuery,
             transaction,

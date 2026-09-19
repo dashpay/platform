@@ -138,6 +138,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V7: DriveAbciMethodVersions = DriveAbciMeth
         // the `[52, "M"]` subtree they read does not exist on v11.
         record_shielded_pool_anchor: None,
         prune_shielded_pool_anchors: None,
+        record_token_shielded_pool_anchors: None,
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 0,

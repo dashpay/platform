@@ -229,6 +229,7 @@ mod tests {
                     )),
                     token_cost: None,
                     gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                    shielded_token_payment: None,
                 }),
             }),
         );

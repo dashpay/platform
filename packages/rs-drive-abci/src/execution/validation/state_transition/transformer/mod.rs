@@ -13,6 +13,9 @@ use crate::execution::validation::state_transition::shield::StateTransitionShiel
 use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
 use crate::execution::validation::state_transition::shielded_transfer::StateTransitionShieldedTransferTransitionActionTransformer;
 use crate::execution::validation::state_transition::shielded_withdrawal::StateTransitionShieldedWithdrawalTransitionActionTransformer;
+use crate::execution::validation::state_transition::token_purchase_from_shielded_pool::StateTransitionTokenPurchaseFromShieldedPoolTransitionActionTransformer;
+use crate::execution::validation::state_transition::token_shielded_transfer_with_shielded_fee::StateTransitionTokenShieldedTransferWithShieldedFeeTransitionActionTransformer;
+use crate::execution::validation::state_transition::token_unshield_with_shielded_fee::StateTransitionTokenUnshieldWithShieldedFeeTransitionActionTransformer;
 use crate::execution::validation::state_transition::unshield::StateTransitionUnshieldTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
@@ -267,6 +270,18 @@ impl StateTransitionActionTransformer for StateTransition {
             }
             StateTransition::IdentityTopUpFromShieldedPool(st) => st
                 .transform_into_action_for_identity_top_up_from_shielded_pool_transition(
+                    platform, tx,
+                ),
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => st
+                .transform_into_action_for_token_shielded_transfer_with_shielded_fee_transition(
+                    platform, tx,
+                ),
+            StateTransition::TokenUnshieldWithShieldedFee(st) => st
+                .transform_into_action_for_token_unshield_with_shielded_fee_transition(
+                    platform, tx,
+                ),
+            StateTransition::TokenPurchaseFromShieldedPool(st) => st
+                .transform_into_action_for_token_purchase_from_shielded_pool_transition(
                     platform, tx,
                 ),
             StateTransition::ShieldFromAssetLock(st) => {

@@ -42,6 +42,8 @@ impl Drive {
         Ok(TotalTokensBalance {
             total_tokens_in_platform,
             total_identity_token_balances,
+            // Token shielded pools do not exist before protocol version 15.
+            total_token_shielded_pool_balances: 0,
         })
     }
 }

@@ -24,10 +24,10 @@ use dpp::state_transition::batch_transition::token_claim_transition::v0::TokenCl
 use dpp::ProtocolError;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
+use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::v0::TokenClaimTransitionActionV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, TimestampMillis, UserFeeIncrease};
-use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
@@ -189,253 +189,300 @@ impl TokenClaimTransitionActionV0 {
             }
         };
 
-        let token_config = base_action.token_configuration()?;
-
-        let (amount, distribution_info) = match distribution_type {
-            TokenDistributionType::PreProgrammed => {
-                let Some(pre_programmed_distribution) = token_config
-                    .distribution_rules()
-                    .pre_programmed_distribution()
-                else {
-                    let bump_action =
-                        BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                            base,
-                            owner_id,
-                            user_fee_increase,
-                        );
-                    let batched_action =
-                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-                    return Ok((
-                        ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action,
-                            vec![ConsensusError::StateError(
-                                StateError::InvalidTokenClaimPropertyMismatch(
-                                    InvalidTokenClaimPropertyMismatch::new(
-                                        "pre programmed distribution",
-                                        base.token_id(),
-                                    ),
-                                ),
-                            )],
-                        ),
-                        fee_result,
-                    ));
-                };
-
-                // We need to find the oldest pre-programmed distribution that wasn't yet claimed
-                // for this identity
-
-                let times = pre_programmed_distribution.distributions();
-
-                let mut last_paid_time_operations = vec![];
-
-                let last_paid_moment = drive
-                    .fetch_pre_programmed_distribution_last_paid_time_ms_operations(
-                        base.token_id().to_buffer(),
+        let (amount, distribution_info) = match resolve_token_claim(
+            drive,
+            owner_id,
+            base,
+            &base_action,
+            *distribution_type,
+            None,
+            block_info,
+            transaction,
+            &mut fee_result,
+            platform_version,
+        )? {
+            Ok(resolved) => resolved,
+            Err(consensus_error) => {
+                let bump_action =
+                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                        base,
                         owner_id,
-                        &mut last_paid_time_operations,
-                        transaction,
-                        platform_version,
-                    )?;
-
-                let last_paid_time_fee_result = Drive::calculate_fee(
-                    None,
-                    Some(last_paid_time_operations),
-                    &block_info.epoch,
-                    drive.config.epochs_per_era,
-                    platform_version,
-                    None,
-                )?;
-
-                fee_result.checked_add_assign(last_paid_time_fee_result)?;
-
-                let distributions_in_past_for_owner: BTreeMap<TimestampMillis, TokenAmount> = times
-                    .iter()
-                    .filter_map(|(timestamp, distribution)| {
-                        if timestamp > &block_info.time_ms {
-                            // Don't get the ones in the future
-                            None
-                        } else {
-                            distribution
-                                .get(&owner_id)
-                                .map(|amount| (*timestamp, *amount))
-                        }
-                    })
-                    .collect();
-
-                let distribution_after_last_paid: Option<(TimestampMillis, TokenAmount)> =
-                    if let Some(last_paid) = last_paid_moment {
-                        // Find the earliest distribution after the last paid moment
-                        distributions_in_past_for_owner
-                            .range((last_paid + 1)..)
-                            .next()
-                            .map(|(timestamp, amount)| (*timestamp, *amount))
-                    } else {
-                        // If never paid, take the earliest available distribution
-                        distributions_in_past_for_owner
-                            .first_key_value()
-                            .map(|(timestamp, amount)| (*timestamp, *amount))
-                    };
-
-                let Some((payout_time, amount)) = distribution_after_last_paid else {
-                    let bump_action =
-                        BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                            base,
-                            owner_id,
-                            user_fee_increase,
-                        );
-                    let batched_action =
-                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-                    return Ok((
-                        ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action,
-                            vec![ConsensusError::StateError(
-                                StateError::InvalidTokenClaimNoCurrentRewards(
-                                    InvalidTokenClaimNoCurrentRewards::new(
-                                        value.base().token_id(),
-                                        owner_id,
-                                        RewardDistributionMoment::TimeBasedMoment(
-                                            block_info.time_ms,
-                                        ),
-                                        last_paid_moment
-                                            .map(RewardDistributionMoment::TimeBasedMoment),
-                                    ),
-                                ),
-                            )],
-                        ),
-                        fee_result,
-                    ));
-                };
-
-                (
-                    amount,
-                    TokenDistributionInfo::PreProgrammed(payout_time, owner_id),
-                )
+                        user_fee_increase,
+                    );
+                let batched_action =
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+                return Ok((
+                    ConsensusValidationResult::new_with_data_and_errors(
+                        batched_action,
+                        vec![consensus_error],
+                    ),
+                    fee_result,
+                ));
             }
-            TokenDistributionType::Perpetual => {
-                // we need to validate that we have a perpetual distribution
-                let Some(perpetual_distribution) =
-                    token_config.distribution_rules().perpetual_distribution()
-                else {
-                    let bump_action =
-                        BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                            base,
-                            owner_id,
-                            user_fee_increase,
-                        );
-                    let batched_action =
-                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+        };
 
-                    return Ok((
-                        ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action,
-                            vec![ConsensusError::StateError(
-                                StateError::InvalidTokenClaimPropertyMismatch(
-                                    InvalidTokenClaimPropertyMismatch::new(
-                                        "perpetual distribution",
-                                        value.base().token_id(),
-                                    ),
-                                ),
-                            )],
-                        ),
-                        fee_result,
-                    ));
-                };
-
-                // Let's start by checking that we have a valid claimant
-                let wrong_claimant_error = match perpetual_distribution.distribution_recipient() {
-                    TokenDistributionRecipient::ContractOwner
-                        if base_action.data_contract_fetch_info().contract.owner_id()
-                            != owner_id =>
-                    {
-                        Some(base_action.data_contract_fetch_info().contract.owner_id())
-                    }
-                    TokenDistributionRecipient::Identity(identifier) if identifier != owner_id => {
-                        Some(identifier)
-                    }
-                    _ => None,
-                };
-
-                if let Some(expected_claimant) = wrong_claimant_error {
-                    let bump_action =
-                        BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                            base,
-                            owner_id,
-                            user_fee_increase,
-                        );
-                    let batched_action =
-                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-                    return Ok((
-                        ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action,
-                            vec![ConsensusError::StateError(
-                                StateError::InvalidTokenClaimWrongClaimant(
-                                    InvalidTokenClaimWrongClaimant::new(
-                                        value.base().token_id(),
-                                        expected_claimant,
-                                        owner_id,
-                                    ),
-                                ),
-                            )],
-                        ),
-                        fee_result,
-                    ));
+        Ok((
+            BatchedTransitionAction::TokenAction(TokenTransitionAction::ClaimAction(
+                TokenClaimTransitionActionV0 {
+                    base: base_action,
+                    amount,
+                    distribution_info,
+                    public_note: public_note.clone(),
                 }
+                .into(),
+            ))
+            .into(),
+            fee_result,
+        ))
+    }
+}
 
-                let mut last_paid_time_operations = vec![];
+/// Resolves what a claim of `distribution_type` by `owner_id` pays out right now: the amount and
+/// the distribution info to mark as distributed, or the consensus error that rejects the claim.
+/// Shared by `TokenClaim` (`claim_up_to = None`, the current interval) and `TokenClaimToPool`,
+/// whose bundle must prove the exact amount, so the client names the cycle-aligned moment the
+/// perpetual claim pays out to. Read costs are added to `fee_result`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn resolve_token_claim(
+    drive: &Drive,
+    owner_id: Identifier,
+    base: &TokenBaseTransition,
+    base_action: &TokenBaseTransitionAction,
+    distribution_type: TokenDistributionType,
+    claim_up_to: Option<u64>,
+    block_info: &BlockInfo,
+    transaction: TransactionArg,
+    fee_result: &mut FeeResult,
+    platform_version: &PlatformVersion,
+) -> Result<Result<(TokenAmount, TokenDistributionInfo), ConsensusError>, Error> {
+    let token_config = base_action.token_configuration()?;
 
-                let last_paid_moment = drive
-                    .fetch_perpetual_distribution_last_paid_moment_operations(
-                        base.token_id().to_buffer(),
-                        owner_id,
-                        perpetual_distribution.distribution_type(),
-                        &mut last_paid_time_operations,
-                        transaction,
-                        platform_version,
-                    )?;
+    let (amount, distribution_info) = match distribution_type {
+        TokenDistributionType::PreProgrammed => {
+            let Some(pre_programmed_distribution) = token_config
+                .distribution_rules()
+                .pre_programmed_distribution()
+            else {
+                return Ok(Err(ConsensusError::StateError(
+                    StateError::InvalidTokenClaimPropertyMismatch(
+                        InvalidTokenClaimPropertyMismatch::new(
+                            "pre programmed distribution",
+                            base.token_id(),
+                        ),
+                    ),
+                )));
+            };
 
-                // if the token has never been paid then we use the token creation
+            // We need to find the oldest pre-programmed distribution that wasn't yet claimed
+            // for this identity
 
-                let contract_creation_moment = perpetual_distribution
-                    .distribution_type()
-                    .contract_creation_moment(&base_action.data_contract_fetch_info().contract)
-                    .ok_or(Error::Drive(DriveError::ContractDoesNotHaveAStartMoment(
-                        base_action.data_contract_fetch_info().contract.id(),
-                    )))?;
+            let times = pre_programmed_distribution.distributions();
 
-                let contract_creation_cycle_start = contract_creation_moment
-                    .cycle_start(perpetual_distribution.distribution_type().interval())?;
+            let mut last_paid_time_operations = vec![];
 
-                let start_from_moment_for_distribution =
-                    last_paid_moment.unwrap_or(contract_creation_cycle_start);
-
-                let last_paid_time_fee_result = Drive::calculate_fee(
-                    None,
-                    Some(last_paid_time_operations),
-                    &block_info.epoch,
-                    drive.config.epochs_per_era,
+            let last_paid_moment = drive
+                .fetch_pre_programmed_distribution_last_paid_time_ms_operations(
+                    base.token_id().to_buffer(),
+                    owner_id,
+                    &mut last_paid_time_operations,
+                    transaction,
                     platform_version,
-                    None,
                 )?;
 
-                fee_result.checked_add_assign(last_paid_time_fee_result)?;
+            let last_paid_time_fee_result = Drive::calculate_fee(
+                None,
+                Some(last_paid_time_operations),
+                &block_info.epoch,
+                drive.config.epochs_per_era,
+                platform_version,
+                None,
+            )?;
 
-                let current_cycle_moment = perpetual_distribution.current_interval(block_info);
+            fee_result.checked_add_assign(last_paid_time_fee_result)?;
 
-                // We need to get the max cycles allowed
-                let max_cycles = platform_version.system_limits.max_token_redemption_cycles;
-                let max_cycle_moment = perpetual_distribution
-                    .distribution_type()
-                    .max_cycle_moment(
-                        start_from_moment_for_distribution,
-                        current_cycle_moment,
-                        max_cycles,
-                        platform_version,
-                    )?;
+            let distributions_in_past_for_owner: BTreeMap<TimestampMillis, TokenAmount> = times
+                .iter()
+                .filter_map(|(timestamp, distribution)| {
+                    if timestamp > &block_info.time_ms {
+                        // Don't get the ones in the future
+                        None
+                    } else {
+                        distribution
+                            .get(&owner_id)
+                            .map(|amount| (*timestamp, *amount))
+                    }
+                })
+                .collect();
 
-                let (recipient, amount) = match perpetual_distribution.distribution_recipient() {
+            let distribution_after_last_paid: Option<(TimestampMillis, TokenAmount)> =
+                if let Some(last_paid) = last_paid_moment {
+                    // Find the earliest distribution after the last paid moment
+                    distributions_in_past_for_owner
+                        .range((last_paid + 1)..)
+                        .next()
+                        .map(|(timestamp, amount)| (*timestamp, *amount))
+                } else {
+                    // If never paid, take the earliest available distribution
+                    distributions_in_past_for_owner
+                        .first_key_value()
+                        .map(|(timestamp, amount)| (*timestamp, *amount))
+                };
+
+            let Some((payout_time, amount)) = distribution_after_last_paid else {
+                return Ok(Err(ConsensusError::StateError(
+                    StateError::InvalidTokenClaimNoCurrentRewards(
+                        InvalidTokenClaimNoCurrentRewards::new(
+                            base.token_id(),
+                            owner_id,
+                            RewardDistributionMoment::TimeBasedMoment(block_info.time_ms),
+                            last_paid_moment.map(RewardDistributionMoment::TimeBasedMoment),
+                        ),
+                    ),
+                )));
+            };
+
+            (
+                amount,
+                TokenDistributionInfo::PreProgrammed(payout_time, owner_id),
+            )
+        }
+        TokenDistributionType::Perpetual => {
+            // we need to validate that we have a perpetual distribution
+            let Some(perpetual_distribution) =
+                token_config.distribution_rules().perpetual_distribution()
+            else {
+                return Ok(Err(ConsensusError::StateError(
+                    StateError::InvalidTokenClaimPropertyMismatch(
+                        InvalidTokenClaimPropertyMismatch::new(
+                            "perpetual distribution",
+                            base.token_id(),
+                        ),
+                    ),
+                )));
+            };
+
+            // Let's start by checking that we have a valid claimant
+            let wrong_claimant_error = match perpetual_distribution.distribution_recipient() {
+                TokenDistributionRecipient::ContractOwner
+                    if base_action.data_contract_fetch_info().contract.owner_id() != owner_id =>
+                {
+                    Some(base_action.data_contract_fetch_info().contract.owner_id())
+                }
+                TokenDistributionRecipient::Identity(identifier) if identifier != owner_id => {
+                    Some(identifier)
+                }
+                _ => None,
+            };
+
+            if let Some(expected_claimant) = wrong_claimant_error {
+                return Ok(Err(ConsensusError::StateError(
+                    StateError::InvalidTokenClaimWrongClaimant(
+                        InvalidTokenClaimWrongClaimant::new(
+                            base.token_id(),
+                            expected_claimant,
+                            owner_id,
+                        ),
+                    ),
+                )));
+            }
+
+            let mut last_paid_time_operations = vec![];
+
+            let last_paid_moment = drive.fetch_perpetual_distribution_last_paid_moment_operations(
+                base.token_id().to_buffer(),
+                owner_id,
+                perpetual_distribution.distribution_type(),
+                &mut last_paid_time_operations,
+                transaction,
+                platform_version,
+            )?;
+
+            // if the token has never been paid then we use the token creation
+
+            let contract_creation_moment = perpetual_distribution
+                .distribution_type()
+                .contract_creation_moment(&base_action.data_contract_fetch_info().contract)
+                .ok_or(Error::Drive(DriveError::ContractDoesNotHaveAStartMoment(
+                    base_action.data_contract_fetch_info().contract.id(),
+                )))?;
+
+            let contract_creation_cycle_start = contract_creation_moment
+                .cycle_start(perpetual_distribution.distribution_type().interval())?;
+
+            let start_from_moment_for_distribution =
+                last_paid_moment.unwrap_or(contract_creation_cycle_start);
+
+            let last_paid_time_fee_result = Drive::calculate_fee(
+                None,
+                Some(last_paid_time_operations),
+                &block_info.epoch,
+                drive.config.epochs_per_era,
+                platform_version,
+                None,
+            )?;
+
+            fee_result.checked_add_assign(last_paid_time_fee_result)?;
+
+            let current_cycle_moment = perpetual_distribution.current_interval(block_info);
+            // A claim into the pool names the moment it claims up to, so the amount its
+            // bundle proves is predictable; it must be cycle aligned and not in the future.
+            let current_cycle_moment = match claim_up_to {
+                None => current_cycle_moment,
+                Some(raw) => {
+                    let interval = perpetual_distribution.distribution_type().interval();
+                    let requested = match interval {
+                        RewardDistributionMoment::BlockBasedMoment(_) => {
+                            RewardDistributionMoment::BlockBasedMoment(raw)
+                        }
+                        RewardDistributionMoment::TimeBasedMoment(_) => {
+                            RewardDistributionMoment::TimeBasedMoment(raw)
+                        }
+                        RewardDistributionMoment::EpochBasedMoment(_) => {
+                            match EpochIndex::try_from(raw) {
+                                Ok(epoch_index) => {
+                                    RewardDistributionMoment::EpochBasedMoment(epoch_index)
+                                }
+                                Err(_) => {
+                                    return Ok(Err(ConsensusError::StateError(
+                                        StateError::InvalidTokenClaimPropertyMismatch(
+                                            InvalidTokenClaimPropertyMismatch::new(
+                                                "claim up to moment",
+                                                base.token_id(),
+                                            ),
+                                        ),
+                                    )));
+                                }
+                            }
+                        }
+                    };
+                    if requested > current_cycle_moment
+                        || requested != requested.cycle_start(interval)?
+                    {
+                        return Ok(Err(ConsensusError::StateError(
+                            StateError::InvalidTokenClaimPropertyMismatch(
+                                InvalidTokenClaimPropertyMismatch::new(
+                                    "claim up to moment",
+                                    base.token_id(),
+                                ),
+                            ),
+                        )));
+                    }
+                    requested
+                }
+            };
+
+            // We need to get the max cycles allowed
+            let max_cycles = platform_version.system_limits.max_token_redemption_cycles;
+            let max_cycle_moment = perpetual_distribution
+                .distribution_type()
+                .max_cycle_moment(
+                    start_from_moment_for_distribution,
+                    current_cycle_moment,
+                    max_cycles,
+                    platform_version,
+                )?;
+
+            let (recipient, amount) = match perpetual_distribution.distribution_recipient() {
                     TokenDistributionRecipient::ContractOwner => (
                         TokenDistributionResolvedRecipient::ContractOwnerIdentity(
                             base_action.data_contract_fetch_info().contract.owner_id(),
@@ -533,55 +580,26 @@ impl TokenClaimTransitionActionV0 {
                     }
                 };
 
-                if amount == 0 {
-                    let bump_action =
-                        BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                            base,
+            if amount == 0 {
+                return Ok(Err(ConsensusError::StateError(
+                    StateError::InvalidTokenClaimNoCurrentRewards(
+                        InvalidTokenClaimNoCurrentRewards::new(
+                            base.token_id(),
                             owner_id,
-                            user_fee_increase,
-                        );
-                    let batched_action =
-                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-                    return Ok((
-                        ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action,
-                            vec![ConsensusError::StateError(
-                                StateError::InvalidTokenClaimNoCurrentRewards(
-                                    InvalidTokenClaimNoCurrentRewards::new(
-                                        value.base().token_id(),
-                                        owner_id,
-                                        current_cycle_moment,
-                                        last_paid_moment,
-                                    ),
-                                ),
-                            )],
+                            current_cycle_moment,
+                            last_paid_moment,
                         ),
-                        fee_result,
-                    ));
-                }
-
-                (
-                    amount,
-                    TokenDistributionInfo::Perpetual(max_cycle_moment, recipient),
-                )
+                    ),
+                )));
             }
-        };
 
-        Ok((
-            BatchedTransitionAction::TokenAction(TokenTransitionAction::ClaimAction(
-                TokenClaimTransitionActionV0 {
-                    base: base_action,
-                    amount,
-                    distribution_info,
-                    public_note: public_note.clone(),
-                }
-                .into(),
-            ))
-            .into(),
-            fee_result,
-        ))
-    }
+            (
+                amount,
+                TokenDistributionInfo::Perpetual(max_cycle_moment, recipient),
+            )
+        }
+    };
+    Ok(Ok((amount, distribution_info)))
 }
 
 #[cfg(test)]

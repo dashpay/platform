@@ -56,6 +56,7 @@
 - [Data Contracts](data-model/data-contracts.md)
 - [Documents](data-model/documents.md)
 - [Identities](data-model/identities.md)
+- [Token Shielded Pools](data-model/token-shielded-pools.md)
 
 # Drive
 

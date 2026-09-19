@@ -403,10 +403,10 @@ impl ExtendedDocumentV0 {
             property_names::DATA_CONTRACT_ID.to_string(),
             Value::Identifier(self.data_contract_id.to_buffer()),
         );
-        if let Some(token_payment_info) = self.token_payment_info {
+        if let Some(token_payment_info) = &self.token_payment_info {
             object.insert(
                 property_names::TOKEN_PAYMENT_INFO.to_string(),
-                token_payment_info.try_into()?,
+                token_payment_info.clone().try_into()?,
             );
         }
         Ok(object)

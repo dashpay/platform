@@ -4,11 +4,18 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use dpp::state_transition::StateTransition;
+use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
 use dpp::version::feature_initial_protocol_versions::{
     ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION,
     IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
     SHIELDED_POOL_INITIAL_PROTOCOL_VERSION, SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+    TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
 };
 use dpp::version::PlatformVersion;
 
@@ -37,6 +44,9 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)
@@ -59,7 +69,61 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error> {
         match self {
-            StateTransition::Batch(st) => st.validate_is_allowed(platform, platform_version),
+            StateTransition::Batch(st) => {
+                // Token shielded pools (the batch transitions that use them and a document token
+                // cost paid from one) are a
+                // protocol-version feature, not a table-versioned validator, so the gate is
+                // applied to the batch as a whole before its own `is_allowed` runs.
+                if platform_version.protocol_version < TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+                {
+                    if let Some(transition) =
+                        st.transitions_iter()
+                            .find_map(|transition| match transition {
+                                BatchedTransitionRef::Token(TokenTransition::Shield(_)) => {
+                                    Some("TokenShield")
+                                }
+                                BatchedTransitionRef::Token(TokenTransition::Unshield(_)) => {
+                                    Some("TokenUnshield")
+                                }
+                                BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(
+                                    _,
+                                )) => Some("TokenShieldedTransfer"),
+                                BatchedTransitionRef::Token(TokenTransition::MintToPool(_)) => {
+                                    Some("TokenMintToPool")
+                                }
+                                BatchedTransitionRef::Token(TokenTransition::BurnFromPool(_)) => {
+                                    Some("TokenBurnFromPool")
+                                }
+                                BatchedTransitionRef::Token(TokenTransition::ClaimToPool(_)) => {
+                                    Some("TokenClaimToPool")
+                                }
+                                BatchedTransitionRef::Token(
+                                    TokenTransition::DirectPurchaseToPool(_),
+                                ) => Some("TokenDirectPurchaseToPool"),
+                                BatchedTransitionRef::Document(document_transition)
+                                    if document_transition
+                                        .base()
+                                        .token_payment_info_ref()
+                                        .as_ref()
+                                        .is_some_and(|info| info.shielded_payment().is_some()) =>
+                                {
+                                    Some("DocumentShieldedTokenPayment")
+                                }
+                                _ => None,
+                            })
+                    {
+                        return Ok(ConsensusValidationResult::new_with_errors(vec![
+                            StateTransitionNotActiveError::new(
+                                transition,
+                                platform_version.protocol_version,
+                                TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                            )
+                            .into(),
+                        ]));
+                    }
+                }
+                st.validate_is_allowed(platform, platform_version)
+            }
             StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
@@ -109,6 +173,23 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                             self.state_transition_type().to_string(),
                             platform_version.protocol_version,
                             IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                        )
+                        .into(),
+                    ]))
+                }
+            }
+            StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_) => {
+                if platform_version.protocol_version >= TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+                {
+                    Ok(ConsensusValidationResult::new())
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(vec![
+                        StateTransitionNotActiveError::new(
+                            self.state_transition_type().to_string(),
+                            platform_version.protocol_version,
+                            TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
                         )
                         .into(),
                     ]))

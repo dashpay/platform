@@ -27,10 +27,11 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError,
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
     NonContiguousContractTokenPositionsError, RedundantDocumentPaidForByTokenWithContractId,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
-    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
-    UnknownTradeModeError, UnknownTransferableTypeError,
+    SystemPropertyIndexAlreadyPresentError, TokenShieldedPoolIncompatibleRulesError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
+    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
+    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
+    UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
@@ -716,6 +717,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     DataContractInvalidRequiredFieldsUpdateError(DataContractInvalidRequiredFieldsUpdateError),
+
+    #[error(transparent)]
+    TokenShieldedPoolIncompatibleRulesError(TokenShieldedPoolIncompatibleRulesError),
 }
 
 impl From<BasicError> for ConsensusError {

@@ -7,6 +7,9 @@ pub mod shield_from_identity_transition;
 pub mod shield_transition;
 pub mod shielded_transfer_transition;
 pub mod shielded_withdrawal_transition;
+pub mod token_purchase_from_shielded_pool_transition;
+pub mod token_shielded_transfer_with_shielded_fee_transition;
+pub mod token_unshield_with_shielded_fee_transition;
 pub mod unshield_transition;
 
 pub use address_witness::{AddressWitnessWasm, input_witnesses_from_js_options};
@@ -18,6 +21,9 @@ pub use shield_from_identity_transition::ShieldFromIdentityTransitionWasm;
 pub use shield_transition::ShieldTransitionWasm;
 pub use shielded_transfer_transition::ShieldedTransferTransitionWasm;
 pub use shielded_withdrawal_transition::ShieldedWithdrawalTransitionWasm;
+pub use token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransitionWasm;
+pub use token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransitionWasm;
+pub use token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransitionWasm;
 pub use unshield_transition::UnshieldTransitionWasm;
 
 use crate::error::WasmDppResult;

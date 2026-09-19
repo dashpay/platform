@@ -2,6 +2,7 @@ use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v10;
+pub mod v11;
 pub mod v2;
 pub mod v3;
 pub mod v4;
@@ -139,6 +140,9 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub update_checkpoints: OptionalFeatureVersion,
     pub record_shielded_pool_anchor: OptionalFeatureVersion,
     pub prune_shielded_pool_anchors: OptionalFeatureVersion,
+    /// Records the anchor of every token shielded pool a block touched and prunes that
+    /// pool's anchors older than the retention window. `None` before token pools exist.
+    pub record_token_shielded_pool_anchors: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -42,6 +42,11 @@ pub struct DPPStateTransitionSerializationVersions {
     pub identity_create_from_shielded_pool_state_transition: FeatureVersionBounds,
     pub shield_from_identity_state_transition: FeatureVersionBounds,
     pub identity_top_up_from_shielded_pool_state_transition: FeatureVersionBounds,
+    /// The identity-less token pool transitions (token pool bundle + credit pool fee bundle);
+    /// activation is gated by `TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION`.
+    pub token_shielded_transfer_with_shielded_fee_state_transition: FeatureVersionBounds,
+    pub token_unshield_with_shielded_fee_state_transition: FeatureVersionBounds,
+    pub token_purchase_from_shielded_pool_state_transition: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

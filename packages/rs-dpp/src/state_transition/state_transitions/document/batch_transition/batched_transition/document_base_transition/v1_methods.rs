@@ -6,7 +6,7 @@ impl DocumentBaseTransitionV1Methods for DocumentBaseTransition {
     fn token_payment_info(&self) -> Option<TokenPaymentInfo> {
         match self {
             DocumentBaseTransition::V0(_) => None,
-            DocumentBaseTransition::V1(v1) => v1.token_payment_info,
+            DocumentBaseTransition::V1(v1) => v1.token_payment_info.clone(),
         }
     }
 

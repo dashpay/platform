@@ -15,7 +15,15 @@ impl Drive {
     pub(in crate::drive) fn update_total_balance_op_v0(
         new_total_balance: u64,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let pool_path = shielded_credit_pool_path_vec();
+        Self::update_total_balance_op_in_pool_v0(shielded_credit_pool_path_vec(), new_total_balance)
+    }
+
+    /// Builds the total balance update for the pool at `pool_path`, whichever shielded pool
+    /// (credit or token) it is.
+    pub(in crate::drive) fn update_total_balance_op_in_pool_v0(
+        pool_path: Vec<Vec<u8>>,
+        new_total_balance: u64,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let balance_i64 = i64::try_from(new_total_balance).map_err(|_| {
             Error::Drive(DriveError::CorruptedDriveState(
                 "shielded pool total balance exceeds i64::MAX".to_string(),

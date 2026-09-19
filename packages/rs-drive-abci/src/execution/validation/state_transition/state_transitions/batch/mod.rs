@@ -217,7 +217,7 @@ impl StateTransitionStateValidation for BatchTransition {
         &self,
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
-        _validation_mode: ValidationMode,
+        validation_mode: ValidationMode,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -247,6 +247,7 @@ impl StateTransitionStateValidation for BatchTransition {
                     &platform.into(),
                     block_info,
                     execution_context,
+                    validation_mode,
                     tx,
                     platform_version,
                 )

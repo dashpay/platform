@@ -208,6 +208,21 @@ impl StateTransitionStateValidation for StateTransition {
                     "identity top up from shielded pool should not have state validation",
                 )))
             }
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "token shielded transfer with shielded fee should not have state validation",
+                )))
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "token unshield with shielded fee should not have state validation",
+                )))
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "token purchase from shielded pool should not have state validation",
+                )))
+            }
             StateTransition::ShieldFromAssetLock(_) => {
                 Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "shield from asset lock should not have state validation",
@@ -286,6 +301,9 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_) => false,

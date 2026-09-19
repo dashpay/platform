@@ -100,6 +100,9 @@ pub enum StateTransitionProofResult {
     ),
     VerifiedAssetLockConsumed(StoredAssetLockInfo),
     VerifiedShieldedNullifiers(Vec<(Vec<u8>, bool)>),
+    /// The proven total balance of a token's shielded pool (token id, balance). Returned by the
+    /// pool transitions that only create notes (mint, claim and purchase into the pool).
+    VerifiedTokenShieldedPoolBalance(Identifier, TokenAmount),
     VerifiedShieldedNullifiersWithAddressInfos(
         Vec<(Vec<u8>, bool)>,
         #[cfg_attr(
