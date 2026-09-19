@@ -33,6 +33,7 @@ use crate::execution::validation::state_transition::processor::is_allowed::State
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
+use crate::execution::validation::state_transition::batch::BatchTransitionCheckTxStateValidatingTransformer;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 use dpp::address_funds::PlatformAddress;
@@ -40,16 +41,29 @@ use dpp::fee::Credits;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::AddressNonce;
 
+#[allow(clippy::too_many_arguments)]
 fn transform_into_action_for_check_tx<C: CoreRPCLike>(
     state_transition: &StateTransition,
     platform: &PlatformRef<C>,
     remaining_address_balances: &Option<BTreeMap<PlatformAddress, (AddressNonce, Credits)>>,
     signer_identity: Option<&PartialIdentity>,
     validation_mode: ValidationMode,
+    // Whether a batch is validated against the state as a block would, which the validation
+    // mode of check tx leaves to the block (see `relies_on_gas_sponsor_to_pay`)
+    validate_batch_against_state: bool,
     execution_context: &mut StateTransitionExecutionContext,
     proof_verifier: &CheckTxProofVerifier,
 ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
     match state_transition {
+        StateTransition::Batch(transition) if validate_batch_against_state => transition
+            .transform_into_action_validating_against_state_for_check_tx(
+                platform,
+                platform.state.last_block_info(),
+                signer_identity,
+                validation_mode,
+                execution_context,
+                None,
+            ),
         StateTransition::ShieldFromAssetLock(transition) => transition
             .transform_into_action_for_shield_from_asset_lock_transition(
                 platform,
@@ -270,17 +284,13 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             // A signer who got through the pre-check on a request for gas sponsorship alone
             // could not pay for a failed batch, and a failed batch is never sponsored. Such a
             // batch is validated like a block would, state included, so that what a proposer
-            // would execute for free never reaches the mempool.
+            // would execute for free never reaches the mempool. The validation mode stays
+            // `CheckTx`: it names where validation runs, not how deep it goes.
             let relies_on_gas_sponsor_to_pay = match maybe_identity.as_ref() {
                 Some(identity) => {
                     state_transition.relies_on_gas_sponsor_to_pay(identity, platform_version)?
                 }
                 None => false,
-            };
-            let validation_mode = if relies_on_gas_sponsor_to_pay {
-                ValidationMode::Validator
-            } else {
-                ValidationMode::CheckTx
             };
 
             // For address-based state transitions that transfer or withdraw, we have a balance pre-check
@@ -317,7 +327,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     platform,
                     &remaining_address_balances,
                     maybe_identity.as_ref(),
-                    validation_mode,
+                    ValidationMode::CheckTx,
+                    relies_on_gas_sponsor_to_pay,
                     &mut state_transition_execution_context,
                     proof_verifier,
                 )?;
@@ -359,7 +370,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 let result = state_transition.validate_state(
                     action,
                     platform,
-                    validation_mode,
+                    ValidationMode::CheckTx,
                     platform.state.last_block_info(),
                     &mut state_transition_execution_context,
                     None,
@@ -385,7 +396,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     platform,
                     &remaining_address_balances,
                     maybe_identity.as_ref(),
-                    validation_mode,
+                    ValidationMode::CheckTx,
+                    relies_on_gas_sponsor_to_pay,
                     &mut state_transition_execution_context,
                     proof_verifier,
                 )?;
@@ -528,12 +540,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                     None => false,
                 };
-                let validation_mode = if relies_on_gas_sponsor_to_pay {
-                    ValidationMode::Validator
-                } else {
-                    ValidationMode::RecheckTx
-                };
-
                 let state_transition_action_result = transform_into_action_for_check_tx(
                     state_transition,
                     platform,
@@ -541,7 +547,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     // A recheck does not run advanced structure validation, the only consumer
                     // of what the transformer resolves for the signer, and loads no signer keys.
                     None,
-                    validation_mode,
+                    ValidationMode::RecheckTx,
+                    relies_on_gas_sponsor_to_pay,
                     &mut state_transition_execution_context,
                     proof_verifier,
                 )?;
@@ -559,7 +566,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     let result = state_transition.validate_state(
                         Some(action),
                         platform,
-                        validation_mode,
+                        ValidationMode::RecheckTx,
                         platform.state.last_block_info(),
                         &mut state_transition_execution_context,
                         None,

@@ -22,7 +22,6 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionTransformerV0;
-use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformStateRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
@@ -48,7 +47,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         signer_identity: Option<&PartialIdentity>,
-        validation_mode: ValidationMode,
+        validate_against_state: bool,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -60,7 +59,7 @@ impl DocumentsBatchStateTransitionStateValidationV2 for BatchTransition {
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         signer_identity: Option<&PartialIdentity>,
-        validation_mode: ValidationMode,
+        validate_against_state: bool,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -78,7 +77,7 @@ impl DocumentsBatchStateTransitionStateValidationV2 for BatchTransition {
         let mut validation_result = self.try_into_action_v0(
             platform,
             block_info,
-            validation_mode.should_validate_batch_valid_against_state(),
+            validate_against_state,
             tx,
             execution_context,
         )?;
