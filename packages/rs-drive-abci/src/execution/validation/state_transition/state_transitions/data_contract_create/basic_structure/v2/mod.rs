@@ -126,7 +126,8 @@ impl DataContractCreateStateTransitionBasicStructureValidationV2 for DataContrac
         }
 
         // Contract moderation: a config that declares it must be well formed (at least one
-        // list, moderators within the limit and not naming the owner).
+        // list, a non-empty moderator set within the limit). That the named moderators exist
+        // is checked against the state.
         if let Some(moderation) = self.data_contract().config().moderation() {
             let result = moderation.validate(&self.data_contract().owner_id(), platform_version)?;
             if !result.is_valid() {

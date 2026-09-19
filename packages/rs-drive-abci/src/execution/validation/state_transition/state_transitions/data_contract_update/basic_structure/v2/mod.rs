@@ -19,9 +19,10 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
 
 impl DataContractUpdateStateTransitionBasicStructureValidationV2 for DataContractUpdateTransition {
     /// Generation 2 (protocol version 14): generation 1, and a config that declares
-    /// moderation must be well formed (at least one list, moderators within the limit and
-    /// not naming the owner). Whether a list may be turned off is judged against the stored
-    /// contract by the state validation's config update rules.
+    /// moderation must be well formed (at least one list, a non-empty moderator set within
+    /// the limit). Whether a list may be turned off is judged against the stored contract by
+    /// the state validation's config update rules, and that a newly named moderator exists
+    /// by the state validation too.
     fn validate_basic_structure_v2(
         &self,
         network_type: Network,

@@ -22,20 +22,23 @@ use std::fmt;
 
 /// Who may send a `ContractUserModeration` transition for the contract.
 ///
-/// The contract owner always may. A moderator set is fixed in the config and changed only by a
-/// contract update.
+/// The contract owner always may, named or not. A moderator set is fixed in the config and
+/// changed only by a contract update.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted)]
 pub enum ContractModerators {
     /// Only the contract owner moderates.
     #[default]
     ContractOwner,
     /// The contract owner and a fixed set of identities moderate. Non-empty, at most
-    /// `SystemLimits::max_contract_moderators`, the owner not among them.
+    /// `SystemLimits::max_contract_moderators`. The owner may be named in the set, and then
+    /// counts toward that limit; naming it changes nothing about who may moderate, only who
+    /// is on the team (see `ContractModerationConfig::team`).
     OwnerAndIdentities(BTreeSet<Identifier>),
 }
 
 impl ContractModerators {
-    /// The identities that moderate besides the owner. Empty for `ContractOwner`.
+    /// The identities the set names, the owner among them only when it is named. `None` for
+    /// `ContractOwner`.
     pub fn identity_ids(&self) -> Option<&BTreeSet<Identifier>> {
         match self {
             ContractModerators::ContractOwner => None,
@@ -43,7 +46,7 @@ impl ContractModerators {
         }
     }
 
-    /// Whether `identity_id` is one of the moderator identities named besides the owner.
+    /// Whether `identity_id` is one of the identities the set names.
     pub fn names(&self, identity_id: &Identifier) -> bool {
         self.identity_ids()
             .is_some_and(|ids| ids.contains(identity_id))
@@ -226,9 +229,21 @@ impl ContractModerationConfig {
         self.may_moderate(owner_id, identity_id)
     }
 
+    /// The moderation team: the identities the contract names, as written. The owner is on it
+    /// only when the set names it; a contract that names nobody (`ContractOwner`) has the owner
+    /// alone. This is who shares what the team earns, not who may moderate (`may_moderate`,
+    /// which the owner always passes).
+    pub fn team(&self, owner_id: &Identifier) -> BTreeSet<Identifier> {
+        match self.moderators.identity_ids() {
+            Some(ids) => ids.clone(),
+            None => BTreeSet::from([*owner_id]),
+        }
+    }
+
     /// The pure-data rules of the declaration: at least one list is kept, and a moderator set
-    /// is non-empty, within `SystemLimits::max_contract_moderators`, and does not name the
-    /// owner.
+    /// is non-empty and within `SystemLimits::max_contract_moderators` (a named owner counts).
+    /// Whether the named identities exist is state validation, done by the contract create
+    /// and update transitions.
     pub fn validate(
         &self,
         owner_id: &Identifier,
@@ -252,7 +267,8 @@ impl ContractModerationConfig {
     #[inline(always)]
     fn validate_v0(
         &self,
-        owner_id: &Identifier,
+        // The owner may be named like anybody else, so no rule reads it any more.
+        _owner_id: &Identifier,
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
         if !self.banlist && !self.suspensions {
@@ -280,14 +296,6 @@ impl ContractModerationConfig {
                         ids.len(),
                         max
                     ))
-                    .into(),
-                );
-            }
-            if ids.contains(owner_id) {
-                return SimpleConsensusValidationResult::new_with_error(
-                    InvalidContractModerationConfigError::new(
-                        "the contract owner is named as a moderator identity".to_string(),
-                    )
                     .into(),
                 );
             }
@@ -425,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_the_owner_among_the_moderators() {
+    fn should_accept_the_owner_among_the_moderators() {
         let owner = Identifier::from([9; 32]);
         let config = ContractModerationConfig {
             banlist: true,
@@ -435,7 +443,56 @@ mod tests {
         let result = config
             .validate(&owner, PlatformVersion::latest())
             .expect("validate");
-        assert!(!result.is_valid());
+        assert!(result.is_valid(), "{:?}", result.errors);
+        // Naming the owner changes nothing about who may moderate or who is protected.
+        assert!(config.may_moderate(&owner, &owner));
+        assert!(config.is_owner_or_moderator(&owner, &owner));
+    }
+
+    #[test]
+    fn should_count_a_named_owner_toward_the_moderator_limit() {
+        let platform_version = PlatformVersion::latest();
+        let max = platform_version.system_limits.max_contract_moderators as u8;
+        let owner = Identifier::from([1; 32]);
+        let config = |count: u8| ContractModerationConfig {
+            banlist: true,
+            suspensions: false,
+            moderators: ContractModerators::OwnerAndIdentities(set(
+                &(1..=count).collect::<Vec<u8>>()
+            )),
+        };
+        assert!(config(max)
+            .validate(&owner, platform_version)
+            .expect("validate")
+            .is_valid());
+        assert!(!config(max + 1)
+            .validate(&owner, platform_version)
+            .expect("validate")
+            .is_valid());
+    }
+
+    #[test]
+    fn should_name_the_team_as_the_set_is_written() {
+        let owner = Identifier::from([9; 32]);
+        let config = |moderators| ContractModerationConfig {
+            banlist: true,
+            suspensions: false,
+            moderators,
+        };
+        // The owner is named: it is on the team with the others.
+        assert_eq!(
+            config(ContractModerators::OwnerAndIdentities(set(&[9, 1]))).team(&owner),
+            set(&[1, 9])
+        );
+        // The owner is not named: it moderates, but is not on the team.
+        let unnamed = config(ContractModerators::OwnerAndIdentities(set(&[1, 2])));
+        assert_eq!(unnamed.team(&owner), set(&[1, 2]));
+        assert!(unnamed.may_moderate(&owner, &owner));
+        // Nobody is named: the owner alone.
+        assert_eq!(
+            config(ContractModerators::ContractOwner).team(&owner),
+            set(&[9])
+        );
     }
 
     #[test]

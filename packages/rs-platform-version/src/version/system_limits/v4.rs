@@ -44,7 +44,7 @@ use crate::version::system_limits::SystemLimits;
 ///   `max_contract_group_size` limit was renamed `max_group_member_count` at the same time; it
 ///   bounds the members of a change-control `Group` inside a contract, not a contract group.
 /// * Contract moderation (protocol version 14): a moderated data contract may name at most 16
-///   moderator identities besides its owner.
+///   moderator identities, its owner counted when named.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB

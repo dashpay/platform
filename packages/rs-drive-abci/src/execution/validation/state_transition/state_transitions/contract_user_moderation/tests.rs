@@ -63,6 +63,7 @@ const CONTRACT_SUSPENSION_NOT_IN_FUTURE: u32 = 41106;
 const CONTRACT_USER_BANNED: u32 = 41107;
 const CONTRACT_USER_SUSPENDED: u32 = 41108;
 const CONTRACT_MODERATION_TARGET_NOT_FOUND: u32 = 41109;
+const CONTRACT_MODERATOR_IDENTITY_NOT_FOUND: u32 = 41110;
 
 const CRITICAL_KEY_ID: KeyID = 1;
 const DOCUMENT_TYPE: &str = "niceDocument";
@@ -124,6 +125,10 @@ struct Setup {
     rng: RefCell<StdRng>,
 }
 
+/// Stands for `Setup::moderator` in a config handed to `Setup::new`, which is built before the
+/// actors exist. `Setup` swaps it for the real identity: a named moderator must exist.
+const THE_MODERATOR: Identifier = Identifier::new([7; 32]);
+
 fn moderation(banlist: bool, suspensions: bool, moderator: Identifier) -> ContractModerationConfig {
     ContractModerationConfig {
         banlist,
@@ -157,6 +162,14 @@ impl Setup {
             platform_version.protocol_version,
         )
         .data_contract_owned();
+        let moderation = moderation.map(|mut moderation| {
+            if let ContractModerators::OwnerAndIdentities(ids) = &mut moderation.moderators {
+                if ids.remove(&THE_MODERATOR) {
+                    ids.insert(moderator.id());
+                }
+            }
+            moderation
+        });
         contract.set_config(contract.config().clone().with_moderation(moderation));
 
         let mut setup = Self {
@@ -428,7 +441,7 @@ fn unsuspend_action(identity_id: Identifier) -> ContractUserModerationAction {
 
 #[tokio::test]
 async fn should_ban_a_user_refuse_its_documents_and_let_them_through_again_after_an_unban() {
-    let setup = Setup::new(Some(moderation(true, true, Identifier::from([7; 32])))).await;
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
     let user_id = setup.user.id();
 
     let transaction = setup.platform.drive.grove.start_transaction();
@@ -469,7 +482,7 @@ async fn should_ban_a_user_refuse_its_documents_and_let_them_through_again_after
 
 #[tokio::test]
 async fn should_suspend_until_a_block_time_and_sweep_the_suspension_once_it_lapsed() {
-    let setup = Setup::new(Some(moderation(true, true, Identifier::from([7; 32])))).await;
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
     let user_id = setup.user.id();
     let until = BLOCK_TIME_MS + 10_000;
 
@@ -560,7 +573,7 @@ async fn should_let_a_named_moderator_moderate_and_refuse_everyone_else() {
 
 #[tokio::test]
 async fn should_refuse_a_list_the_contract_does_not_keep_and_an_unmoderated_contract() {
-    let setup = Setup::new(Some(moderation(true, false, Identifier::from([7; 32])))).await;
+    let setup = Setup::new(Some(moderation(true, false, THE_MODERATOR))).await;
     let user_id = setup.user.id();
     let transaction = setup.platform.drive.grove.start_transaction();
     let suspend = setup
@@ -590,7 +603,7 @@ async fn should_refuse_a_list_the_contract_does_not_keep_and_an_unmoderated_cont
 
 #[tokio::test]
 async fn should_refuse_actions_that_do_not_fit_the_targets_status() {
-    let setup = Setup::new(Some(moderation(true, true, Identifier::from([7; 32])))).await;
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
     let user_id = setup.user.id();
     let transaction = setup.platform.drive.grove.start_transaction();
 
@@ -663,7 +676,7 @@ async fn should_enable_moderation_by_a_contract_update_and_never_turn_a_list_off
     moderated.set_config(moderated.config().clone().with_moderation(Some(moderation(
         true,
         true,
-        Identifier::from([7; 32]),
+        setup.moderator.id(),
     ))));
     let transaction = setup.platform.drive.grove.start_transaction();
     let update = setup.contract_update(moderated.clone()).await;
@@ -680,7 +693,7 @@ async fn should_enable_moderation_by_a_contract_update_and_never_turn_a_list_off
     narrowed.set_config(narrowed.config().clone().with_moderation(Some(moderation(
         true,
         false,
-        Identifier::from([7; 32]),
+        setup.moderator.id(),
     ))));
     let update = setup.contract_update(narrowed).await;
     let execution = setup.process(&update, &transaction);
@@ -773,7 +786,7 @@ async fn should_not_admit_a_moderated_contract_before_protocol_version_14() {
 
 #[tokio::test]
 async fn should_prove_only_the_edited_list_and_leave_the_other_unknown() {
-    let setup = Setup::new(Some(moderation(true, true, Identifier::from([7; 32])))).await;
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
     let user_id = setup.user.id();
 
     let transaction = setup.platform.drive.grove.start_transaction();
@@ -805,7 +818,7 @@ async fn should_prove_only_the_edited_list_and_leave_the_other_unknown() {
 
 #[tokio::test]
 async fn should_let_an_entry_be_lifted_from_an_identity_an_update_made_moderator() {
-    let mut setup = Setup::new(Some(moderation(true, true, Identifier::from([7; 32])))).await;
+    let mut setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
     let user_id = setup.user.id();
 
     let transaction = setup.platform.drive.grove.start_transaction();
@@ -843,4 +856,131 @@ async fn should_let_an_entry_be_lifted_from_an_identity_an_update_made_moderator
     assert_success(&setup.process(&unban, &transaction));
     let allowed = setup.create_document(&setup.user).await;
     assert_success(&setup.process(&allowed, &transaction));
+}
+
+#[tokio::test]
+async fn should_refuse_a_contract_naming_a_moderator_that_does_not_exist() {
+    let mut setup = Setup::new(None).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let unknown = Identifier::from([0x77; 32]);
+
+    // A second contract of the owner, naming an identity nobody created.
+    setup.contract.set_config(
+        setup
+            .contract
+            .config()
+            .clone()
+            .with_moderation(Some(moderation(true, true, unknown))),
+    );
+    let create = setup
+        .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+        .await;
+    assert_paid_with_code(
+        &setup.process(&create, &transaction),
+        CONTRACT_MODERATOR_IDENTITY_NOT_FOUND,
+    );
+}
+
+#[tokio::test]
+async fn should_refuse_an_update_adding_a_moderator_that_does_not_exist() {
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let unknown = Identifier::from([0x77; 32]);
+
+    let mut widened = setup.contract.clone();
+    widened.set_version(2);
+    widened.set_config(
+        widened
+            .config()
+            .clone()
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: true,
+                suspensions: true,
+                moderators: ContractModerators::OwnerAndIdentities(
+                    [setup.moderator.id(), unknown].into_iter().collect(),
+                ),
+            })),
+    );
+    let update = setup.contract_update(widened).await;
+    assert_paid_with_code(
+        &setup.process(&update, &transaction),
+        CONTRACT_MODERATOR_IDENTITY_NOT_FOUND,
+    );
+}
+
+#[tokio::test]
+async fn should_accept_an_update_that_keeps_the_existing_moderators() {
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+
+    // Same moderators, plus the user: only the user is new.
+    let mut widened = setup.contract.clone();
+    widened.set_version(2);
+    widened.set_config(
+        widened
+            .config()
+            .clone()
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: true,
+                suspensions: true,
+                moderators: ContractModerators::OwnerAndIdentities(
+                    [setup.moderator.id(), setup.user.id()]
+                        .into_iter()
+                        .collect(),
+                ),
+            })),
+    );
+    let update = setup.contract_update(widened).await;
+    assert_success(&setup.process(&update, &transaction));
+
+    // And an update that leaves the moderators as they are.
+    let mut unchanged = setup.contract.clone();
+    unchanged.set_version(3);
+    unchanged.set_config(
+        unchanged
+            .config()
+            .clone()
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: true,
+                suspensions: true,
+                moderators: ContractModerators::OwnerAndIdentities(
+                    [setup.moderator.id(), setup.user.id()]
+                        .into_iter()
+                        .collect(),
+                ),
+            })),
+    );
+    let update = setup.contract_update(unchanged).await;
+    assert_success(&setup.process(&update, &transaction));
+}
+
+#[tokio::test]
+async fn should_accept_the_owner_named_among_the_moderators() {
+    let mut setup = Setup::new(None).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let owner_id = setup.owner.id();
+    let user_id = setup.user.id();
+    let named = ContractModerationConfig {
+        banlist: true,
+        suspensions: true,
+        moderators: ContractModerators::OwnerAndIdentities(
+            [owner_id, setup.moderator.id()].into_iter().collect(),
+        ),
+    };
+
+    let mut moderated = setup.contract.clone();
+    moderated.set_version(2);
+    moderated.set_config(moderated.config().clone().with_moderation(Some(named)));
+    let update = setup.contract_update(moderated.clone()).await;
+    assert_success(&setup.process(&update, &transaction));
+    setup.contract = moderated;
+
+    // Naming the owner changes nothing about its authority or its protection.
+    let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
+    assert_success(&setup.process(&ban, &transaction));
+    let ban_owner = setup.moderate(&setup.moderator, ban_action(owner_id)).await;
+    assert_paid_with_code(
+        &setup.process(&ban_owner, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+    );
 }

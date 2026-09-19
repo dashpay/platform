@@ -13,7 +13,7 @@ use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShie
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
-    ContractModerationTargetNotFoundError,
+    ContractModerationTargetNotFoundError, ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
     ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
     IdentityNotContractModeratorError,
@@ -503,6 +503,9 @@ pub enum StateError {
 
     #[error(transparent)]
     ContractModerationTargetNotFoundError(ContractModerationTargetNotFoundError),
+
+    #[error(transparent)]
+    ContractModeratorIdentityNotFoundError(ContractModeratorIdentityNotFoundError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -753,8 +756,8 @@ mod tests {
             )),
             113
         );
-        // Contract moderation (protocol version 14): its first variant and the tail of the
-        // enum.
+        // Contract moderation (protocol version 14): its first variant and the last two, the
+        // tail of the enum.
         assert_eq!(
             discriminant_of(StateError::ContractModerationNotEnabledError(
                 ContractModerationNotEnabledError::new(
@@ -769,6 +772,12 @@ mod tests {
                 ContractModerationTargetNotFoundError::new(group_id, identity_id)
             )),
             123
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModeratorIdentityNotFoundError(
+                ContractModeratorIdentityNotFoundError::new(group_id, identity_id)
+            )),
+            124
         );
     }
 }

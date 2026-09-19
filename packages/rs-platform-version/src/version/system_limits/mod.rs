@@ -104,8 +104,9 @@ pub struct SystemLimits {
     pub max_contract_group_name_length: u16,
     /// Maximum length, in characters, of a contract group description.
     pub max_contract_group_description_length: u16,
-    /// Maximum number of moderator identities a moderated data contract may name besides its
-    /// owner (`DataContractConfigV2::moderation`). Contract moderation exists from protocol
+    /// Maximum number of moderator identities a moderated data contract may name
+    /// (`DataContractConfigV2::moderation`); the owner counts when it is named, and moderates
+    /// without being named. Contract moderation exists from protocol
     /// version 14; read by the contract's `validate_moderation_config` v0 and never reached
     /// before.
     pub max_contract_moderators: u16,
