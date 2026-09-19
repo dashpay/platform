@@ -38,6 +38,14 @@ sealed class DashSdkError(
      */
     open val userMessage: String get() = message.orEmpty()
 
+    /**
+     * The consensus error Platform rejected the operation with, when the
+     * native layer reported one; `null` for every other failure. Branch on
+     * its code instead of matching [message].
+     */
+    val consensusError: PlatformConsensusError?
+        get() = (cause as? DashSDKException)?.consensusError
+
     class InvalidParameter(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
 
@@ -211,8 +219,8 @@ sealed class DashSdkError(
          * Distinct from [CoreInsufficientFunds] (22), which is the atomic
          * Core-send selector rather than the asset-lock builder. The shortfall
          * figures travel in [message] as `available {n} duffs, required {n}
-         * duffs` — the native result is ABI-frozen to code + message, so there
-         * are no structured fields to read.
+         * duffs`: the native result has no fields for them, so there is
+         * nothing structured to read.
          *
          * Raised by
          * [shieldedFundFromCoinJoinDrain][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedFundFromCoinJoinDrain]
