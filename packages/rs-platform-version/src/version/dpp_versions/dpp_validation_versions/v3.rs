@@ -26,6 +26,7 @@ pub const DPP_VALIDATION_VERSIONS_V3: DPPValidationVersions = DPPValidationVersi
         validate_update: 0,
         contested_index_limit: 1,
         unique_index_limit: 10,
+        validate_contested_index_parameters: None,
     },
     voting: VotingValidationVersions {
         allow_other_contenders_time_mainnet_ms: 604_800_000, // 1 week in ms
