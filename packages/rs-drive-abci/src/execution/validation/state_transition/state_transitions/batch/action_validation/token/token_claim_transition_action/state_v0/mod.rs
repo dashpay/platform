@@ -4,6 +4,7 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::TokenMintPastMaxSupplyError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionInfo;
 use dpp::prelude::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::{TokenClaimTransitionAction, TokenClaimTransitionActionAccessorsV0};
@@ -53,7 +54,27 @@ impl TokenClaimTransitionActionStateValidationV0 for TokenClaimTransitionAction 
         let contract = &self.data_contract_fetch_info_ref().contract;
         let token_configuration = contract.expected_token_configuration(self.token_position())?;
 
-        if let Some(max_supply) = token_configuration.max_supply() {
+        // A once-per-identity claim is paid once and in full. The supply lives in a sum item, so
+        // `i64::MAX` is a ceiling even without a configured max supply: a mint that saturates
+        // there would credit less than the amount while still spending the identity's only
+        // claim and recording the full amount in history. The ceiling therefore bounds this
+        // kind like a max supply does. The other kinds keep saturating, as they always have.
+        let max_supply = if matches!(
+            self.distribution_info(),
+            TokenDistributionInfo::OncePerIdentity(..)
+        ) {
+            Some(
+                token_configuration
+                    .max_supply()
+                    .map_or(i64::MAX as u64, |max_supply| {
+                        max_supply.min(i64::MAX as u64)
+                    }),
+            )
+        } else {
+            token_configuration.max_supply()
+        };
+
+        if let Some(max_supply) = max_supply {
             // We have a max supply, let's get the current supply
             let (token_total_supply, fee) = platform.drive.fetch_token_total_supply_with_cost(
                 self.token_id().to_buffer(),

@@ -1,3 +1,4 @@
+use crate::version::fee::data_contract_registration::v3::FEE_DATA_CONTRACT_REGISTRATION_VERSION3;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::fee::vote_resolution_fund_fees::v2::VOTE_RESOLUTION_FUND_FEES_VERSION2;
 use crate::version::fee::FeeVersion;
@@ -7,5 +8,7 @@ pub const FEE_VERSION3: FeeVersion = FeeVersion {
     // Contested contributions use the active protocol, so unchanged storage
     // rates retain the historical fee_version_number inherited from FEE_VERSION2.
     vote_resolution_fund_fees: VOTE_RESOLUTION_FUND_FEES_VERSION2,
+    // Tokens with a once-per-identity distribution pay a registration surcharge.
+    data_contract_registration: FEE_DATA_CONTRACT_REGISTRATION_VERSION3,
     ..FEE_VERSION2
 };

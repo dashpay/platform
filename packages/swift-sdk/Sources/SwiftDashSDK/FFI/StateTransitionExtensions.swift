@@ -2152,6 +2152,8 @@ extension SDK {
                     distributionTypeEnum = DashSDKTokenDistributionType(1) // Perpetual = 1
                 case "preprogrammed":
                     distributionTypeEnum = DashSDKTokenDistributionType(0) // PreProgrammed = 0
+                case "onceperidentity":
+                    distributionTypeEnum = DashSDKTokenDistributionType(2) // OncePerIdentity = 2
                 default:
                     continuation.resume(throwing: SDKError.invalidParameter("Invalid distribution type: \(distributionType)"))
                     return
