@@ -933,13 +933,15 @@ mod tests {
 
         /// The waiver of an optional token cost has no version gate of its own: it rests on no
         /// contract carrying the flag before protocol version 14, because every earlier document
-        /// meta-schema (v0 to v2) closes the token cost object to unknown keys. This pins that.
+        /// meta-schema (v0 to v2) closes the token cost object to unknown keys. This pins both
+        /// sides of that gate: refused up to version 13, admitted from version 14.
         #[test]
-        fn token_cost_optional_flag_is_rejected_before_protocol_version_14() {
+        fn token_cost_optional_flag_is_admitted_from_protocol_version_14_only() {
             use crate::consensus::basic::BasicError;
             use crate::consensus::ConsensusError;
             use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
             use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+            use crate::data_contract::document_type::accessors::DocumentTypeV1Getters;
             use crate::version::PlatformVersion;
 
             let token_configurations = BTreeMap::from([(
@@ -974,6 +976,41 @@ mod tests {
                 PlatformVersion::get(13).expect("expected protocol version 13"),
             )
             .expect("expected a required token cost to parse at protocol version 13");
+
+            // Version 14 is the first to admit the flag (the v3 document meta-schema).
+            let document_type = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                    },
+                    "tokenCost": {
+                        "create": {
+                            "tokenPosition": 0_u64,
+                            "amount": 3_u64,
+                            "optional": true,
+                        },
+                    },
+                    "additionalProperties": false,
+                }),
+                None,
+                &token_configurations,
+                &default_config(),
+                true,
+                &mut vec![],
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+            )
+            .expect("expected the flag to be admitted at protocol version 14");
+            assert!(
+                document_type
+                    .document_creation_token_cost()
+                    .expect("expected a creation token cost")
+                    .optional
+            );
 
             for protocol_version in 1..=13 {
                 let platform_version =
