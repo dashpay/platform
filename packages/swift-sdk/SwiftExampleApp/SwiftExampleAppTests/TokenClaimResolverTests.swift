@@ -128,6 +128,14 @@ final class TokenClaimResolverTests: XCTestCase {
             TokenActionResolver.resolveClaim(token: token, identity: identity, claims: claims),
             .denied(reason: "Token has no distribution schedule")
         )
+        XCTAssertEqual(
+            TokenActionResolver.claimableDistributions(
+                token: token,
+                identity: identity,
+                claims: claims
+            ),
+            []
+        )
         XCTAssertNil(
             TokenActionResolver.preferredClaimDistribution(
                 token: token,
@@ -150,6 +158,14 @@ final class TokenClaimResolverTests: XCTestCase {
             .allowed
         )
         XCTAssertEqual(
+            TokenActionResolver.claimableDistributions(
+                token: token,
+                identity: identity,
+                claims: claims
+            ),
+            [.oncePerIdentity]
+        )
+        XCTAssertEqual(
             TokenActionResolver.preferredClaimDistribution(
                 token: token,
                 identity: identity,
@@ -161,9 +177,9 @@ final class TokenClaimResolverTests: XCTestCase {
 
     /// The regression this suite exists for: with a perpetual distribution
     /// alongside, a stranger is eligible only for the once-per-identity kind,
-    /// so that is what the form must start on. Preselecting Perpetual by
-    /// declaration order sends a claim Drive rejects as the wrong claimant,
-    /// at the user's expense.
+    /// so that is the only kind the form may offer and the one it must start
+    /// on. Offering Perpetual by declaration order sends a claim Drive
+    /// rejects as the wrong claimant, at the user's expense.
     func testStrangerPrefersOncePerIdentityOverPerpetual() throws {
         let context = try makeContext()
         let owner = makeIdentity(byte: 0x03, in: context)
@@ -181,6 +197,15 @@ final class TokenClaimResolverTests: XCTestCase {
             .allowed
         )
         XCTAssertEqual(
+            TokenActionResolver.claimableDistributions(
+                token: token,
+                identity: stranger,
+                claims: claims
+            ),
+            [.oncePerIdentity],
+            "the perpetual payout is pinned to the owner, so it is not on offer here"
+        )
+        XCTAssertEqual(
             TokenActionResolver.preferredClaimDistribution(
                 token: token,
                 identity: stranger,
@@ -190,7 +215,8 @@ final class TokenClaimResolverTests: XCTestCase {
         )
     }
 
-    /// The pinned recipient keeps Drive's ordering: perpetual first.
+    /// The pinned recipient is eligible for both kinds and keeps Drive's
+    /// ordering: perpetual first.
     func testDesignatedRecipientPrefersPerpetual() throws {
         let context = try makeContext()
         let owner = makeIdentity(byte: 0x05, in: context)
@@ -205,6 +231,14 @@ final class TokenClaimResolverTests: XCTestCase {
         XCTAssertEqual(
             TokenActionResolver.resolveClaim(token: token, identity: owner, claims: claims),
             .allowed
+        )
+        XCTAssertEqual(
+            TokenActionResolver.claimableDistributions(
+                token: token,
+                identity: owner,
+                claims: claims
+            ),
+            [.perpetual, .oncePerIdentity]
         )
         XCTAssertEqual(
             TokenActionResolver.preferredClaimDistribution(
@@ -233,6 +267,14 @@ final class TokenClaimResolverTests: XCTestCase {
             .allowed
         )
         XCTAssertEqual(
+            TokenActionResolver.claimableDistributions(
+                token: token,
+                identity: recipient,
+                claims: claims
+            ),
+            [.preProgrammed, .oncePerIdentity]
+        )
+        XCTAssertEqual(
             TokenActionResolver.preferredClaimDistribution(
                 token: token,
                 identity: recipient,
@@ -242,8 +284,8 @@ final class TokenClaimResolverTests: XCTestCase {
         )
     }
 
-    /// An identity absent from the schedule falls back to the universal
-    /// kind rather than to the pre-programmed one it is not listed in.
+    /// An identity absent from the schedule is offered the universal kind
+    /// only, never the pre-programmed one it is not listed in.
     func testUnlistedIdentityPrefersOncePerIdentityOverPreProgrammed() throws {
         let context = try makeContext()
         let recipient = makeIdentity(byte: 0x07, in: context)
@@ -255,6 +297,14 @@ final class TokenClaimResolverTests: XCTestCase {
         )
         let claims = StubClaimStore()
 
+        XCTAssertEqual(
+            TokenActionResolver.claimableDistributions(
+                token: token,
+                identity: stranger,
+                claims: claims
+            ),
+            [.oncePerIdentity]
+        )
         XCTAssertEqual(
             TokenActionResolver.preferredClaimDistribution(
                 token: token,
@@ -277,6 +327,14 @@ final class TokenClaimResolverTests: XCTestCase {
         XCTAssertEqual(
             TokenActionResolver.resolveClaim(token: token, identity: identity, claims: claims),
             .denied(reason: "Already claimed the once-per-identity distribution")
+        )
+        XCTAssertEqual(
+            TokenActionResolver.claimableDistributions(
+                token: token,
+                identity: identity,
+                claims: claims
+            ),
+            []
         )
         XCTAssertNil(
             TokenActionResolver.preferredClaimDistribution(
@@ -302,6 +360,14 @@ final class TokenClaimResolverTests: XCTestCase {
             .allowed
         )
         XCTAssertEqual(
+            TokenActionResolver.claimableDistributions(
+                token: token,
+                identity: other,
+                claims: claims
+            ),
+            [.oncePerIdentity]
+        )
+        XCTAssertEqual(
             TokenActionResolver.preferredClaimDistribution(
                 token: token,
                 identity: other,
@@ -312,7 +378,8 @@ final class TokenClaimResolverTests: XCTestCase {
     }
 
     /// Spending the single claim does not take away an eligibility the
-    /// identity holds through another kind.
+    /// identity holds through another kind, and only the spent kind leaves
+    /// the list.
     func testAlreadyClaimedDesignatedRecipientStaysAllowedOnPerpetual() throws {
         let context = try makeContext()
         let owner = makeIdentity(byte: 0x0C, in: context)
@@ -330,6 +397,14 @@ final class TokenClaimResolverTests: XCTestCase {
             .allowed
         )
         XCTAssertEqual(
+            TokenActionResolver.claimableDistributions(
+                token: token,
+                identity: owner,
+                claims: claims
+            ),
+            [.perpetual]
+        )
+        XCTAssertEqual(
             TokenActionResolver.preferredClaimDistribution(
                 token: token,
                 identity: owner,
@@ -340,8 +415,11 @@ final class TokenClaimResolverTests: XCTestCase {
     }
 
     /// A stranger whose single claim is spent loses the only eligibility it
-    /// had, and is told which one rather than being handed the perpetual
-    /// kind's "not the designated recipient" reason.
+    /// had: nothing is left to offer, and the denial names the kind rather
+    /// than falling through to the perpetual kind's "not the designated
+    /// recipient" reason. Offering the perpetual kind as a fallback would
+    /// send a claim that pays the pinned recipient, which Drive rejects at
+    /// this identity's expense.
     func testAlreadyClaimedStrangerIsDeniedEvenWithPerpetualPresent() throws {
         let context = try makeContext()
         let owner = makeIdentity(byte: 0x0D, in: context)
@@ -359,6 +437,22 @@ final class TokenClaimResolverTests: XCTestCase {
         XCTAssertEqual(
             TokenActionResolver.resolveClaim(token: token, identity: stranger, claims: claims),
             .denied(reason: "Already claimed the once-per-identity distribution")
+        )
+        XCTAssertEqual(
+            TokenActionResolver.claimableDistributions(
+                token: token,
+                identity: stranger,
+                claims: claims
+            ),
+            [],
+            "the perpetual kind is not a fallback: it pays the pinned recipient"
+        )
+        XCTAssertNil(
+            TokenActionResolver.preferredClaimDistribution(
+                token: token,
+                identity: stranger,
+                claims: claims
+            )
         )
     }
 

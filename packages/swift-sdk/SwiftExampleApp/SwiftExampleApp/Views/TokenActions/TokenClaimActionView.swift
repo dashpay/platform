@@ -5,13 +5,12 @@ import SwiftDashSDK
 /// Form for claiming a token distribution payout.
 ///
 /// Inputs: distribution-type picker (`Perpetual` / `PreProgrammed` /
-/// `OncePerIdentity`) driven by which distributions the token has and
-/// which of them this identity can claim, plus an optional public note.
-/// The picker starts on the kind the identity is eligible for rather than
-/// on the token's first, because Drive charges for a claim it rejects.
-/// When only one is available the picker auto-selects it and is disabled;
-/// when none is, the form refuses to submit. Claim is not group-gated, so
-/// there's no group-action banner.
+/// `OncePerIdentity`) listing only the kinds this identity can claim, not
+/// every kind the token declares, plus an optional public note. Drive
+/// charges for a claim it rejects, so a kind that pays someone else is not
+/// an option worth offering. When only one is available the picker
+/// auto-selects it and is disabled; when none is, the form refuses to
+/// submit. Claim is not group-gated, so there's no group-action banner.
 struct TokenClaimActionView: View {
     let token: PersistentToken
     let identity: PersistentIdentity
@@ -52,11 +51,13 @@ struct TokenClaimActionView: View {
         self.token = token
         self.identity = identity
         self.claims = claims
-        // Start on the kind this identity can actually claim, which is not
+        // Start on the first kind this identity can claim, which is not
         // always the first kind the token declares: see
         // `TokenActionResolver.preferredClaimDistribution`. It returns nil
-        // only when nothing fits, and `.perpetual` then keeps the picker
-        // valid; submission is gated by `availableDistributions`.
+        // when the identity can claim nothing, and `.perpetual` is then a
+        // placeholder that keeps the Picker's selection valid; nothing can
+        // be submitted, because `canSubmit` requires the selected kind to
+        // be in `availableDistributions`, which is empty in that case.
         self._selectedDistribution = State(
             initialValue: TokenActionResolver.preferredClaimDistribution(
                 token: token,
@@ -136,20 +137,22 @@ struct TokenClaimActionView: View {
         return walletManager.wallet(for: walletId)
     }
 
+    /// What this identity can actually claim, not what the token declares.
+    /// A kind it is not eligible for is not an option the picker should
+    /// offer: submitting one is a rejection Drive charges for.
     private var availableDistributions: [TokenDistributionType] {
-        var types: [TokenDistributionType] = []
-        if token.perpetualDistribution != nil {
-            types.append(.perpetual)
-        }
-        if token.preProgrammedDistribution != nil {
-            types.append(.preProgrammed)
-        }
-        // An identity gets one claim of this kind ever, so once it is spent
-        // the option is gone for this identity rather than merely ineligible.
-        if token.oncePerIdentityDistribution != nil && !oncePerIdentityClaimed {
-            types.append(.oncePerIdentity)
-        }
-        return types
+        let claimable = TokenActionResolver.claimableDistributions(
+            token: token,
+            identity: identity,
+            claims: claims
+        )
+        // An identity gets one claim of the once-per-identity kind ever. The
+        // resolver reads that from the same store, but the filter is on the
+        // view's own state so the picker updates the moment a claim lands in
+        // this session, without depending on when the store's write becomes
+        // visible.
+        guard oncePerIdentityClaimed else { return claimable }
+        return claimable.filter { $0 != .oncePerIdentity }
     }
 
     private var canSubmit: Bool {

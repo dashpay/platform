@@ -605,45 +605,54 @@ enum TokenActionResolver {
         return !claims.hasClaimed(token: token, identity: identity)
     }
 
+    /// The distribution kinds this identity could actually claim, in Drive's
+    /// claim order (perpetual, then pre-programmed, then once-per-identity).
+    ///
+    /// A kind the token declares is not a kind this identity can claim: a
+    /// perpetual payout goes to the contract's pinned recipient and a
+    /// pre-programmed one to the identities its schedule names, so offering
+    /// either to anyone else buys a rejection at the user's expense. The
+    /// list is therefore what the token declares narrowed by who is asking,
+    /// and it is empty when the answer is "nothing".
+    ///
+    /// Shares its eligibility rules with `resolveClaim` so what the claim row
+    /// allows and what the form offers cannot drift apart.
+    static func claimableDistributions(
+        token: PersistentToken,
+        identity: PersistentIdentity,
+        claims: OncePerIdentityClaimReading = OncePerIdentityClaimStore.shared
+    ) -> [TokenDistributionType] {
+        var claimable: [TokenDistributionType] = []
+        if token.perpetualDistribution != nil,
+           isPinnedDistributionRecipient(token: token, identity: identity) {
+            claimable.append(.perpetual)
+        }
+        if token.preProgrammedDistribution != nil,
+           isPreProgrammedRecipient(token: token, identity: identity) {
+            claimable.append(.preProgrammed)
+        }
+        if canClaimOncePerIdentity(token: token, identity: identity, claims: claims) {
+            claimable.append(.oncePerIdentity)
+        }
+        return claimable
+    }
+
     /// Which distribution kind a claim form should start on for this
     /// identity, or nil when there is nothing it could claim.
     ///
-    /// Drive's claim ordering (perpetual, then pre-programmed, then
-    /// once-per-identity) only applies among the kinds the identity is
-    /// actually eligible for. Preselecting a kind on eligibility the
-    /// identity does not have costs a real fee: a stranger to a token with
-    /// an owner-paid perpetual distribution plus a once-per-identity one
-    /// would otherwise open the form on Perpetual and have Drive reject the
-    /// claim as the wrong claimant.
-    ///
-    /// Falling back to the first kind the token declares is the old
-    /// behaviour, kept for when no kind is known to fit: the form still
-    /// needs a valid picker value, and its own submit gate keeps an
-    /// impossible claim from being sent.
-    ///
-    /// Shares its eligibility rules with `resolveClaim` so the row's
-    /// permission and the form's default cannot drift apart.
+    /// The first kind in `claimableDistributions`, so the form starts on the
+    /// one Drive would settle first among those the identity is eligible
+    /// for. Preselecting a kind on eligibility the identity does not have
+    /// costs a real fee: a stranger to a token with an owner-paid perpetual
+    /// distribution plus a once-per-identity one would otherwise open the
+    /// form on Perpetual and have Drive reject the claim as the wrong
+    /// claimant.
     static func preferredClaimDistribution(
         token: PersistentToken,
         identity: PersistentIdentity,
         claims: OncePerIdentityClaimReading = OncePerIdentityClaimStore.shared
     ) -> TokenDistributionType? {
-        let hasPerpetual = token.perpetualDistribution != nil
-        let hasPreProgrammed = token.preProgrammedDistribution != nil
-
-        if hasPerpetual, isPinnedDistributionRecipient(token: token, identity: identity) {
-            return .perpetual
-        }
-        if hasPreProgrammed, isPreProgrammedRecipient(token: token, identity: identity) {
-            return .preProgrammed
-        }
-        if canClaimOncePerIdentity(token: token, identity: identity, claims: claims) {
-            return .oncePerIdentity
-        }
-
-        if hasPerpetual { return .perpetual }
-        if hasPreProgrammed { return .preProgrammed }
-        return nil
+        claimableDistributions(token: token, identity: identity, claims: claims).first
     }
 
     static func resolveClaim(

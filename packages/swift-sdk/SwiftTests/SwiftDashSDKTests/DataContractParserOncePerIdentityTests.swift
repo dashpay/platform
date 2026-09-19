@@ -14,11 +14,15 @@ import SwiftData
 /// }
 /// ```
 ///
-/// `amount` is a protocol `u64` that rs-dpp's
-/// `validate_once_per_identity_distribution` narrows to `1 ... i64::MAX`, so
-/// it arrives as a JSON number up to 2^53 - 1 and as a decimal string above
-/// that. Both must land on the model as the same exact decimal string, and
-/// anything outside the range must read as "no distribution".
+/// `amount` is a protocol `u64`, so it arrives as a JSON number up to
+/// 2^53 - 1 and as a decimal string above that. Both must land on the model
+/// as the same exact decimal string, and a value the carrier cannot hold
+/// must read as "no distribution".
+///
+/// Which amounts a contract may actually declare (1 to `i64::MAX`) is
+/// rs-dpp's rule, enforced at registration, so these tests do not assert it:
+/// the parser reads what is on the wire and does not keep a second copy of a
+/// protocol constant.
 ///
 /// Unlike the perpetual and pre-programmed kinds this one has no column on
 /// `PersistentToken`: `DashSchemaV5` is frozen, and a new stored property
@@ -33,17 +37,17 @@ final class DataContractParserOncePerIdentityTests: XCTestCase {
 
     private let contractId = Data(repeating: 0xEF, count: 32)
 
-    /// 9223372036854775807 == `Int64.max`, the largest amount rs-dpp's
-    /// `validate_once_per_identity_distribution` admits. Above 2^53 - 1, so
-    /// it also exercises the decimal-string encoding.
-    private let maxAmount = "9223372036854775807"
-
-    /// One past the protocol's ceiling.
-    private let aboveMaxAmount = "9223372036854775808"
-
-    /// `UInt64.max`: fits the wire type, but no contract on chain can carry
-    /// it.
+    /// 18446744073709551615 == `UInt64.max`, the largest amount the wire
+    /// type holds. Far above 2^53 - 1, so it only ever arrives as a decimal
+    /// string.
     private let uInt64MaxAmount = "18446744073709551615"
+
+    /// One past `UInt64.max`: no longer a `u64`, so nothing can carry it.
+    private let aboveUInt64MaxAmount = "18446744073709551616"
+
+    /// One past `Int64.max`. Still a `u64`, so the parser takes it even
+    /// though rs-dpp would not have let a contract declare it.
+    private let aboveInt64MaxAmount = "9223372036854775808"
 
     private func makeContext() throws -> ModelContext {
         let container = try DashModelContainer.createInMemory()
@@ -149,27 +153,26 @@ final class DataContractParserOncePerIdentityTests: XCTestCase {
         XCTAssertEqual(distribution.amount, "12345")
     }
 
-    /// The largest amount the protocol admits survives with every digit
-    /// intact, as a JSON string and as a JSON number: no truncation, no
-    /// overflow, no round trip through a floating-point type.
-    func testLargestProtocolAmountPreservedVerbatim() throws {
+    /// An amount above `Int64.max` survives with every digit intact: no
+    /// truncation, no overflow, no round trip through a floating-point type.
+    /// The carrier is a `u64`, so `UInt64.max` itself reads back verbatim.
+    func testAmountAboveInt64MaxPreservedVerbatim() throws {
         let context = try makeContext()
 
-        let asString = try parseSingleToken(
+        let token = try parseSingleToken(
             tokenDict: tokenDict(oncePerIdentity: [
                 "$formatVersion": "0",
-                "amount": maxAmount
+                "amount": uInt64MaxAmount
             ]),
             in: context
         )
         XCTAssertEqual(
-            try XCTUnwrap(asString.oncePerIdentityDistribution).amount,
-            maxAmount
+            try XCTUnwrap(token.oncePerIdentityDistribution).amount,
+            uInt64MaxAmount
         )
-        XCTAssertGreaterThan(
-            try XCTUnwrap(Int64(maxAmount)),
-            1 << 53,
-            "fixture must exceed the exactly-representable JSON number range"
+        XCTAssertNil(
+            Int64(uInt64MaxAmount),
+            "fixture must exceed Int64.max for this test to mean anything"
         )
 
         let numericContext = try makeContext()
@@ -182,21 +185,20 @@ final class DataContractParserOncePerIdentityTests: XCTestCase {
         )
         XCTAssertEqual(
             try XCTUnwrap(asNumber.oncePerIdentityDistribution).amount,
-            maxAmount
+            String(Int64.max)
         )
     }
 
-    /// An amount the protocol cannot carry reads as "no once-per-identity
-    /// distribution" rather than as a claimable one. rs-dpp admits
-    /// `1 ... i64::MAX`, so a bigger value never came from a contract the
-    /// chain accepted.
-    func testAmountAboveProtocolMaximumIsRejected() throws {
+    /// An amount the `u64` carrier cannot hold reads as "no once-per-identity
+    /// distribution" rather than as a claimable one, because there is no
+    /// exact value to report.
+    func testAmountAboveTheCarrierTypeIsRejected() throws {
         let context = try makeContext()
 
         let token = try parseSingleToken(
             tokenDict: tokenDict(oncePerIdentity: [
                 "$formatVersion": "0",
-                "amount": aboveMaxAmount
+                "amount": aboveUInt64MaxAmount
             ]),
             in: context
         )
@@ -311,29 +313,26 @@ final class DataContractParserOncePerIdentityTests: XCTestCase {
         XCTAssertEqual(
             DataContractParser.parseOncePerIdentityDistribution([
                 "$formatVersion": "0",
-                "amount": maxAmount
+                "amount": uInt64MaxAmount
             ])?.amount,
-            maxAmount
+            uInt64MaxAmount
         )
     }
 
-    /// Everything outside the protocol's `1 ... i64::MAX` range is refused,
-    /// so iOS never reports a distribution Android's `TokenAmounts.parseRaw`
-    /// would reject. The lenient `stringifyDistributionAmount` used by the
-    /// pre-programmed schedule would have accepted most of these.
-    func testParseOncePerIdentityDistributionRejectsOutOfRangeAmounts() throws {
+    /// An `amount` the `u64` carrier cannot hold is refused, so iOS never
+    /// reports a distribution whose amount it could not state exactly. The
+    /// lenient `stringifyDistributionAmount` used by the pre-programmed
+    /// schedule would have accepted most of these.
+    func testParseOncePerIdentityDistributionRejectsAmountsTheCarrierCannotHold() throws {
         let rejected: [(String, Any)] = [
-            ("zero, which rs-dpp refuses because every claim would be a no-op", 0),
-            ("zero as a string", "0"),
             ("negative number", -1),
             ("negative string", "-1"),
             ("fractional number", 1.5),
             ("fractional string", "1.5"),
             ("non-numeric string", "abc"),
             ("empty string", ""),
-            ("one past Int64.max", aboveMaxAmount),
-            ("UInt64.max, which fits the wire type but not the rules", uInt64MaxAmount),
-            ("boolean, which bridges to NSNumber and would read as 1", true)
+            ("one past UInt64.max", aboveUInt64MaxAmount),
+            ("boolean, which bridges to NSNumber and would read as 0 or 1", true)
         ]
         for (description, amount) in rejected {
             XCTAssertNil(
@@ -342,16 +341,25 @@ final class DataContractParserOncePerIdentityTests: XCTestCase {
             )
         }
 
-        // The edges of the accepted range still pass, and a non-canonical
-        // spelling of one normalises rather than being handed back verbatim.
-        XCTAssertEqual(
-            DataContractParser.parseOncePerIdentityDistribution(["amount": 1])?.amount,
-            "1"
-        )
-        XCTAssertEqual(
-            DataContractParser.parseOncePerIdentityDistribution(["amount": "0005"])?.amount,
-            "5"
-        )
+        // Everything the carrier can hold is read back, including values
+        // rs-dpp's own rule would not let a contract declare: that rule is
+        // enforced at registration, not mirrored here.
+        let accepted: [(Any, String)] = [
+            (0, "0"),
+            (1, "1"),
+            (aboveInt64MaxAmount, aboveInt64MaxAmount),
+            (uInt64MaxAmount, uInt64MaxAmount),
+            // A non-canonical spelling normalises rather than being handed
+            // back verbatim.
+            ("0005", "5")
+        ]
+        for (amount, expected) in accepted {
+            XCTAssertEqual(
+                DataContractParser.parseOncePerIdentityDistribution(["amount": amount])?.amount,
+                expected,
+                "should accept \(amount)"
+            )
+        }
     }
 
     // MARK: - 4. The decode is paid once per contract payload
