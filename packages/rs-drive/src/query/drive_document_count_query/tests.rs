@@ -4665,3 +4665,213 @@ mod at_chain_value_tree_counts {
         drop(drive);
     }
 }
+
+/// A range-outer carrier-aggregate COUNT proof (G8 shape) is produced
+/// with `SizedQuery::limit = Some(MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT)`
+/// when the request leaves the limit unset. That limit is part of the
+/// path query the proof commits to, so a verifier must rebuild the
+/// path query with the same value: with more outer keys than the cap
+/// the prover truncates the outer walk and abridges the rest of the
+/// tree, and a verifier that expects an unbounded walk (`limit: None`)
+/// runs into the abridged region and rejects an honest proof.
+///
+/// This is the round trip the SDK's `RangeAggregateCarrierProof` arm
+/// performs. It pins three things:
+///
+/// 1. The dispatcher lowers an unset limit to the cap (not `None`).
+/// 2. Verifying with the cap succeeds and returns exactly `cap`
+///    entries even though more outer keys match.
+/// 3. Verifying the same bytes with `limit: None` fails — the shape
+///    of the client-side bug this guards against.
+#[test]
+fn test_range_outer_carrier_proof_verifies_with_capped_limit_not_none() {
+    use crate::config::DriveConfig;
+    use crate::query::drive_document_count_query::drive_dispatcher::{
+        DocumentCountRequest, DocumentCountResponse,
+    };
+    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+
+    let cap = MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT;
+    // Strictly more outer keys than the cap, so the prover's
+    // truncation is load-bearing. Equal-or-fewer keys would produce a
+    // complete proof that verifies under either limit and mask the
+    // mismatch.
+    let outer_keys = u64::from(cap) + 2;
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    let platform_version = PlatformVersion::latest();
+
+    let factory = DataContractFactory::new(platform_version.protocol_version)
+        .expect("expected to create factory");
+    let document_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "bucket": {"type": "integer", "minimum": 0, "maximum": 1000000, "position": 0},
+            "score": {"type": "integer", "minimum": 0, "maximum": 1000000, "position": 1},
+        },
+        "indices": [{
+            "name": "byBucketScore",
+            "properties": [{"bucket": "asc"}, {"score": "asc"}],
+            "countable": "countableAllowingOffset",
+            "rangeCountable": true,
+        }],
+        "additionalProperties": false,
+    });
+    let schemas = platform_value!({ "bucketed": document_schema });
+    let data_contract = factory
+        .create_with_value_config(
+            dpp::tests::utils::generate_random_identifier_struct(),
+            0,
+            schemas,
+            None,
+            None,
+        )
+        .expect("expected to create data contract")
+        .data_contract_owned();
+
+    drive
+        .apply_contract(
+            &data_contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+
+    let document_type = data_contract
+        .document_type_for_name("bucketed")
+        .expect("bucketed doc type exists");
+
+    // One document per distinct `bucket` in 1..=outer_keys; every
+    // score is positive so the inner `score > 0` range matches each.
+    for bucket in 1..=outer_keys {
+        let mut properties = StdBTreeMap::new();
+        properties.insert("bucket".to_string(), Value::U64(bucket));
+        properties.insert("score".to_string(), Value::U64(bucket * 10));
+        let document: Document = DocumentV0 {
+            contract_version: None,
+            id: Identifier::from([bucket as u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &data_contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert bucketed document");
+    }
+
+    let where_clauses = || {
+        vec![
+            WhereClause {
+                field: "bucket".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::U64(0),
+            },
+            WhereClause {
+                field: "score".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::U64(0),
+            },
+        ]
+    };
+
+    let drive_config = DriveConfig::default();
+    let request = DocumentCountRequest {
+        contract: &data_contract,
+        document_type,
+        where_clauses: where_clauses(),
+        order_clauses: Vec::new(),
+        mode: CountMode::GroupByRange,
+        // Unset: the dispatcher must lower this to the carrier cap.
+        limit: None,
+        prove: true,
+        drive_config: &drive_config,
+        resolved_time_ranges: vec![],
+    };
+    let proof_bytes = match drive
+        .execute_document_count_request(request, None, platform_version)
+        .expect("dispatcher should serve the G8 carrier shape")
+    {
+        DocumentCountResponse::Proof(p) => p,
+        other => panic!("expected Proof response, got {other:?}"),
+    };
+
+    // Rebuild the count query the way the SDK verifier does.
+    let clauses = where_clauses();
+    let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &clauses,
+        &[],
+    )
+    .expect("byBucketScore covers the two-range G8 shape");
+    let count_query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "bucketed".to_string(),
+        index,
+        where_clauses: clauses,
+    };
+
+    // The limit the dispatcher actually used: verification succeeds
+    // and yields exactly `cap` entries, one per walked outer key.
+    let (_root_hash, entries) = count_query
+        .verify_carrier_aggregate_count_proof(&proof_bytes, Some(cap), true, platform_version)
+        .expect("an honest G8 proof must verify with the dispatcher's capped limit");
+    assert_eq!(
+        entries.len(),
+        usize::from(cap),
+        "the outer walk is capped at MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT"
+    );
+    // Ascending walk from the range floor: the first `cap` buckets,
+    // one document each. Pins `left_to_right = true` on both sides.
+    let expected: Vec<(Vec<u8>, u64)> = (1..=u64::from(cap))
+        .map(|bucket| {
+            let key = document_type
+                .serialize_value_for_key("bucket", &Value::U64(bucket), platform_version)
+                .expect("bucket serializes as an index key");
+            (key, 1)
+        })
+        .collect();
+    assert_eq!(
+        entries, expected,
+        "one entry per walked bucket, in walk order"
+    );
+
+    // The client-side bug: reconstructing with `None` expects an
+    // unbounded outer walk and runs into the abridged region. The
+    // exact grovedb wording is not part of the contract; rejection is.
+    count_query
+        .verify_carrier_aggregate_count_proof(&proof_bytes, None, true, platform_version)
+        .expect_err("a proof produced with a capped outer walk must not verify as unbounded");
+}
