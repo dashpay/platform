@@ -70,5 +70,6 @@ pub const CONTRACT_VERSIONS_V5: DPPContractVersions = DPPContractVersions {
     },
     token_versions: TokenVersions {
         validate_structure_interval: 0,
+        validate_pre_programmed_distribution_amounts: 0,
     },
 };

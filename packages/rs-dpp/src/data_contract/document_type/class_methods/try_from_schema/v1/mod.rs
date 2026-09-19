@@ -866,6 +866,200 @@ mod tests {
             );
         }
 
+        // ---------- Token cost: optional flag ----------
+        #[test]
+        fn token_cost_optional_flag_parses_and_defaults_to_required() {
+            use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+            use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+            use crate::data_contract::document_type::accessors::DocumentTypeV1Getters;
+            use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
+            use crate::version::PlatformVersion;
+
+            // The flag is admitted by the v3 document meta-schema (protocol version 14).
+            let platform_version = PlatformVersion::latest();
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                },
+                "tokenCost": {
+                    "create": {
+                        "tokenPosition": 0_u64,
+                        "amount": 3_u64,
+                        "gasFeesPaidBy": 1_u64,
+                        "optional": true,
+                    },
+                    "delete": {
+                        "tokenPosition": 0_u64,
+                        "amount": 1_u64,
+                    }
+                },
+                "additionalProperties": false,
+            });
+            let token_configurations = BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]);
+
+            let document_type = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                schema,
+                None,
+                &token_configurations,
+                &default_config(),
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected the document type to parse");
+
+            let create = document_type
+                .document_creation_token_cost()
+                .expect("expected a creation token cost");
+            assert!(create.optional);
+            assert_eq!(create.gas_fees_paid_by, GasFeesPaidBy::ContractOwner);
+            assert_eq!(create.token_amount, 3);
+            let delete = document_type
+                .document_deletion_token_cost()
+                .expect("expected a deletion token cost");
+            assert!(
+                !delete.optional,
+                "a token cost is required unless it says otherwise"
+            );
+        }
+
+        /// The waiver of an optional token cost has no version gate of its own: it rests on no
+        /// contract carrying the flag before protocol version 14, because every earlier document
+        /// meta-schema (v0 to v2) closes the token cost object to unknown keys. This pins both
+        /// sides of that gate: refused up to version 13, admitted from version 14.
+        #[test]
+        fn token_cost_optional_flag_is_admitted_from_protocol_version_14_only() {
+            use crate::consensus::basic::BasicError;
+            use crate::consensus::ConsensusError;
+            use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+            use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+            use crate::data_contract::document_type::accessors::DocumentTypeV1Getters;
+            use crate::version::PlatformVersion;
+
+            let token_configurations = BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]);
+
+            // The flag alone is what is refused: without it the same cost parses at version 13.
+            DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                    },
+                    "tokenCost": {
+                        "create": {
+                            "tokenPosition": 0_u64,
+                            "amount": 3_u64,
+                        },
+                    },
+                    "additionalProperties": false,
+                }),
+                None,
+                &token_configurations,
+                &default_config(),
+                true,
+                &mut vec![],
+                PlatformVersion::get(13).expect("expected protocol version 13"),
+            )
+            .expect("expected a required token cost to parse at protocol version 13");
+
+            // Version 14 is the first to admit the flag (the v3 document meta-schema).
+            let document_type = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                    },
+                    "tokenCost": {
+                        "create": {
+                            "tokenPosition": 0_u64,
+                            "amount": 3_u64,
+                            "optional": true,
+                        },
+                    },
+                    "additionalProperties": false,
+                }),
+                None,
+                &token_configurations,
+                &default_config(),
+                true,
+                &mut vec![],
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+            )
+            .expect("expected the flag to be admitted at protocol version 14");
+            assert!(
+                document_type
+                    .document_creation_token_cost()
+                    .expect("expected a creation token cost")
+                    .optional
+            );
+
+            for protocol_version in 1..=13 {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected the platform version");
+                let schema = platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                    },
+                    "tokenCost": {
+                        "create": {
+                            "tokenPosition": 0_u64,
+                            "amount": 3_u64,
+                            "optional": true,
+                        },
+                    },
+                    "additionalProperties": false,
+                });
+
+                let error = DocumentTypeV1::try_from_schema(
+                    Identifier::new([1; 32]),
+                    1,
+                    default_config().version(),
+                    "doc",
+                    schema,
+                    None,
+                    &token_configurations,
+                    &default_config(),
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect_err("expected the flag to be refused");
+
+                assert!(
+                    matches!(
+                        &error,
+                        ProtocolError::ConsensusError(consensus_error)
+                            if matches!(
+                                consensus_error.as_ref(),
+                                ConsensusError::BasicError(BasicError::JsonSchemaError(_))
+                            )
+                    ),
+                    "protocol version {protocol_version}: expected the meta-schema to refuse \
+                     the flag, got {error:?}"
+                );
+            }
+        }
+
         // ---------- Token cost: InvalidTokenPositionError ----------
         #[test]
         fn token_cost_with_unknown_position_and_no_contract_id_errors() {

@@ -6,8 +6,8 @@ before(async () => {
 });
 
 const OWNER_ID = '11111111111111111111111111111111';
-const CONTRACT_ID = '22222222222222222222222222222222';
-const TARGET_ID = '33333333333333333333333333333333';
+const CONTRACT_ID = 'H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1';
+const TARGET_ID = '2QjL594djCH2NyDsn45vd6yQjEDHupMKo7CEGVTHtQxU';
 
 interface ModerationOptions {
   action?: 'ban' | 'unban' | 'suspend' | 'unsuspend';

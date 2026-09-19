@@ -254,6 +254,57 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     so such a contract registered and every claim on it failed as an
 ///     internal error, since no cycle can be computed from a zero step. Block
 ///     and time minimums are unchanged.
+/// 11. **Gas paid by the contract owner**: a token-paid document action's
+///     `gasFeesPaidBy` (offered by the document type's token cost, asked for by
+///     the transition's `$tokenPaymentInfo`) is acted on. Both values were
+///     carried but ignored up to v13, where the signer always paid. Batch
+///     transform v2 resolves one payer for the batch (`GasFeesPaidBy::resolve`)
+///     and reads the contract owner's balance into the action; batch advanced
+///     structure v1 refuses a request the document type does not offer
+///     (`GasFeesPaidByNotAllowedError`, 40129) or a batch naming two payers
+///     (`InconsistentGasFeesPaidByInBatchError`, 40130); `validate_fees_of_event`
+///     v1 judges the fee against the sponsor's balance, refusing an insisting
+///     batch unpaid when it falls short (`GasSponsorInsufficientBalanceError`,
+///     40222) and handing a preferring one back to the signer; `execute_event`
+///     v1 charges whoever was admitted. The batch's signer only funds the
+///     principal, and its minimum balance pre-check v1
+///     (`identity_minimum_balance_pre_check`) asks no more of a batch that
+///     requests sponsorship. A failed batch is never sponsored, so check tx
+///     validates the state of a sponsored batch whose signer is under the fee
+///     minimum in full, on the first check and on every recheck (mempool
+///     policy, not consensus).
+/// 12. **Optional token costs**: a document type's token cost may declare
+///     `optional: true` (v3 meta-schema). A transition that leaves
+///     `$tokenPaymentInfo` out then pays no token and its signer pays the gas
+///     in credits, as on an action without a token cost (the base action
+///     transformer waives the cost, and no sponsorship applies). With the
+///     payment info present the token is charged exactly as for a required
+///     cost, and too small a token balance stays a rejection. Contracts up to
+///     v13 cannot carry the flag, so the waiver is inert before this version.
+/// 13. **Pre-programmed distribution amounts are bounded**:
+///     `TokenPreProgrammedDistribution::validate_amounts` rejects a release
+///     whose amounts total more than `i64::MAX` with the new
+///     `PreProgrammedDistributionAmountOverLimitError` (code 10277). It runs
+///     on contract create (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`'s create
+///     `basic_structure` 2) and, for the tokens an update adds, on contract
+///     update (`CONTRACT_VERSIONS_V6`'s `validate_update` 1). A release is
+///     stored as a sum tree, so up to v13 such a create passed validation and
+///     failed inside Drive as an internal error: never paid for, and stripped
+///     from every proposal. An update failed the same way on a single amount
+///     over the limit (its fee estimation takes the insert path), but was
+///     accepted when only the total overflowed, since it wrote no distribution
+///     storage; from v14 it writes it (`update_contract` 2) and would fail.
+///     Tokens a contract already has are not judged, so a contract holding
+///     such a token stays updatable.
+/// 14. **Tokens of one contract sharing a pre-programmed release time**:
+///     `DRIVE_TOKEN_METHOD_VERSIONS_V2` bumps
+///     `add_pre_programmed_distributions` to 1, which queues the release-time
+///     tree the tokens share once instead of once per token. Queued twice,
+///     the batch is refused as an internal error by a node with
+///     `batching_consistency_verification` on; the default is off, and there
+///     GroveDB folds the identical inserts, so the stored state is unchanged
+///     and only the processing fee drops, by the existence read the later
+///     tokens no longer make.
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
@@ -336,7 +387,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
-    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
     system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
@@ -349,7 +400,7 @@ mod tests {
     use crate::version::v13::PLATFORM_V13;
 
     #[test]
-    fn should_halve_only_the_contested_document_fee_at_protocol_14() {
+    fn should_change_only_the_contested_document_and_once_per_identity_fees_at_protocol_14() {
         for protocol_version in 1..14 {
             let version = PlatformVersion::get(protocol_version).expect("known protocol version");
             assert_eq!(
@@ -366,6 +417,17 @@ mod tests {
         expected_fees
             .vote_resolution_fund_fees
             .contested_document_vote_resolution_fund_required_amount = 10_000_000_000;
+        // The once-per-identity token distribution exists from protocol version 14 on, and a
+        // token that uses it pays the surcharge of the other distribution kinds.
+        assert_eq!(
+            expected_fees
+                .data_contract_registration
+                .token_uses_once_per_identity_distribution_fee,
+            0
+        );
+        expected_fees
+            .data_contract_registration
+            .token_uses_once_per_identity_distribution_fee = 10_000_000_000;
         assert_eq!(PLATFORM_V14.fee_version, expected_fees);
     }
 

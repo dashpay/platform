@@ -91,8 +91,8 @@ impl VerifiedContractModerationStatusWasm {
     #[wasm_bindgen(js_name = toObject)]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
         Ok(js_obj(&[
-            ("contractId", self.contract_id.clone().into()),
-            ("identityId", self.identity_id.clone().into()),
+            ("contractId", self.contract_id.into()),
+            ("identityId", self.identity_id.into()),
             ("banned", JsValue::from_bool(self.banned)),
             (
                 "suspendedUntil",

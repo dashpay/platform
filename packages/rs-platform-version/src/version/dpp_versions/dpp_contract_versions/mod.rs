@@ -59,6 +59,9 @@ pub struct DocumentTypeVersions {
 #[derive(Clone, Debug, Default)]
 pub struct TokenVersions {
     pub validate_structure_interval: FeatureVersion,
+    /// `TokenPreProgrammedDistribution::validate_amounts`. Called from protocol version 14 on
+    /// (data contract create `basic_structure` v2 and `DataContract::validate_update` v1).
+    pub validate_pre_programmed_distribution_amounts: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

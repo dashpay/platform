@@ -35,11 +35,12 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError,
     InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError,
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
-    NonContiguousContractTokenPositionsError, RedundantDocumentPaidForByTokenWithContractId,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
-    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
-    UnknownTradeModeError, UnknownTransferableTypeError,
+    NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError,
+    RedundantDocumentPaidForByTokenWithContractId, SystemPropertyIndexAlreadyPresentError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
+    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
+    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
+    UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
@@ -119,7 +120,8 @@ use crate::consensus::basic::token::{
     InvalidTokenDistributionEpochIntervalTooShortError,
     InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
     InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenIdError,
-    InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError,
+    InvalidTokenNoteTooBigError, InvalidTokenOncePerIdentityDistributionAmountError,
+    InvalidTokenPositionError, MissingDefaultLocalizationError,
     TokenNoteOnlyAllowedWhenProposerError, TokenPricingScheduleEmptyError,
     TokenTransferToOurselfError,
 };
@@ -774,6 +776,16 @@ pub enum BasicError {
     #[error(transparent)]
     IdentityKeyLimitsUpdateEmptyError(IdentityKeyLimitsUpdateEmptyError),
 
+    // Once-per-identity token distribution (protocol version 14).
+    #[error(transparent)]
+    InvalidTokenOncePerIdentityDistributionAmountError(
+        InvalidTokenOncePerIdentityDistributionAmountError,
+    ),
+
+    // Pre-programmed distribution amounts (protocol version 14).
+    #[error(transparent)]
+    PreProgrammedDistributionAmountOverLimitError(PreProgrammedDistributionAmountOverLimitError),
+
     // Contract moderation (protocol version 14).
     #[error(transparent)]
     InvalidContractModerationConfigError(InvalidContractModerationConfigError),
@@ -785,5 +797,50 @@ pub enum BasicError {
 impl From<BasicError> for ConsensusError {
     fn from(error: BasicError) -> Self {
         Self::BasicError(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `BasicError` is bincode-encoded positionally, so a variant inserted anywhere but the tail
+    /// shifts the wire discriminant of every variant after it. These are the frozen
+    /// discriminants of the last variants: a new variant goes after them, and gets its own
+    /// line here.
+    fn discriminant_of(error: BasicError) -> u32 {
+        let bytes = bincode::encode_to_vec(error, bincode::config::standard())
+            .expect("expected to encode the basic error");
+        let (discriminant, _): (u32, usize) =
+            bincode::decode_from_slice(&bytes, bincode::config::standard())
+                .expect("expected to decode the discriminant");
+        discriminant
+    }
+
+    #[test]
+    fn basic_error_tail_discriminants_are_frozen() {
+        // Identity key limits update (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::IdentityKeyLimitsUpdateEmptyError(
+                IdentityKeyLimitsUpdateEmptyError::new(1)
+            )),
+            186
+        );
+        // Once-per-identity token distribution (protocol version 14).
+        assert_eq!(
+            discriminant_of(
+                BasicError::InvalidTokenOncePerIdentityDistributionAmountError(
+                    InvalidTokenOncePerIdentityDistributionAmountError::new(0, 1)
+                )
+            ),
+            187
+        );
+        // Pre-programmed distribution amounts (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::PreProgrammedDistributionAmountOverLimitError(
+                PreProgrammedDistributionAmountOverLimitError::new(0, 100)
+            )),
+            188
+        );
     }
 }

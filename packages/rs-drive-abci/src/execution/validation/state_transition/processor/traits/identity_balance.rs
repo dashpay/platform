@@ -33,6 +33,18 @@ pub(crate) trait StateTransitionIdentityBalanceValidationV0 {
     fn has_identity_minimum_balance_pre_check_validation(&self) -> bool {
         true
     }
+
+    /// Whether the signer got through the minimum balance pre-check only because the batch asks
+    /// the contract owner to pay its gas: their own balance does not cover the fee minimum that
+    /// pays for a failed batch, and a failed batch is never sponsored. Check tx validates such a
+    /// batch against the state in full, like a masternode vote, on the first check and on every
+    /// recheck, so that a transition nobody can be charged for is kept out of the mempool rather
+    /// than executed for free by a proposer.
+    fn relies_on_gas_sponsor_to_pay(
+        &self,
+        identity: &PartialIdentity,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error>;
 }
 
 impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
@@ -54,9 +66,32 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             StateTransition::IdentityCreditWithdrawal(st) => st
                 .validate_estimated_fee(balance, platform_version)
                 .map_err(Error::Protocol),
-            StateTransition::Batch(st) => st
-                .validate_estimated_fee(balance, platform_version)
-                .map_err(Error::Protocol),
+            StateTransition::Batch(st) => match platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .identity_minimum_balance_pre_check
+            {
+                0 => st
+                    .validate_estimated_fee(balance, platform_version)
+                    .map_err(Error::Protocol),
+                // A batch asking the contract owner to pay its gas cannot be judged before its
+                // contracts are loaded: the signer only has to fund the principal here, and fee
+                // validation judges the gas against whoever ends up paying it.
+                1 if st.requests_gas_sponsorship() => st
+                    .validate_estimated_principal(balance)
+                    .map_err(Error::Protocol),
+                1 => st
+                    .validate_estimated_fee(balance, platform_version)
+                    .map_err(Error::Protocol),
+                version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                    method: "documents batch transition: identity minimum balance pre check"
+                        .to_string(),
+                    known_versions: vec![0, 1],
+                    received: version,
+                })),
+            },
             StateTransition::IdentityCreditTransferToAddresses(st) => st
                 .validate_estimated_fee(balance, platform_version)
                 .map_err(Error::Protocol),
@@ -96,6 +131,38 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
                 Ok(SimpleConsensusValidationResult::new())
             }
         }
+    }
+
+    fn relies_on_gas_sponsor_to_pay(
+        &self,
+        identity: &PartialIdentity,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        let StateTransition::Batch(st) = self else {
+            return Ok(false);
+        };
+        // Pre-check v0 asks every batch for the fee minimum, so no signer relies on a sponsor.
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition
+            .identity_minimum_balance_pre_check
+            == 0
+            || !st.requests_gas_sponsorship()
+        {
+            return Ok(false);
+        }
+        let balance =
+            identity
+                .balance
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expected to have a balance on identity for the gas sponsorship check",
+                )))?;
+        Ok(!st
+            .validate_estimated_fee(balance, platform_version)
+            .map_err(Error::Protocol)?
+            .is_valid())
     }
 
     fn has_identity_minimum_balance_pre_check_validation(&self) -> bool {

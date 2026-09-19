@@ -32,7 +32,11 @@ impl DocumentBaseTransitionActionV0 {
         let document_type = data_contract
             .contract
             .document_type_borrowed_for_name(value.document_type_name().as_str())?;
-        let document_action_token_cost = get_token_cost(document_type);
+        // An optional token cost is waived by leaving the token payment info out: the action is
+        // then paid for in credits by its signer, like one without a token cost, and offers no
+        // gas sponsorship. Only a v3 meta-schema contract (protocol version 14) carries the flag.
+        let document_action_token_cost = get_token_cost(document_type)
+            .filter(|cost| !(cost.optional && value.token_payment_info_ref().is_none()));
         let token_cost = document_action_token_cost.map(
             |DocumentActionTokenCost {
                  contract_id,
@@ -105,6 +109,12 @@ impl DocumentBaseTransitionActionV0 {
             .as_ref()
             .map(|token_payment_info| token_payment_info.gas_fees_paid_by())
             .unwrap_or(GasFeesPaidBy::DocumentOwner);
+        // Both sides of the gas question travel on the action; from protocol version 14 the
+        // batch's advanced structure validation refuses a request the offer does not cover and
+        // the execution event charges whoever `GasFeesPaidBy::resolve` names.
+        let contract_gas_fees_paid_by = document_action_token_cost
+            .map(|cost| cost.gas_fees_paid_by)
+            .unwrap_or(GasFeesPaidBy::DocumentOwner);
         Ok(DocumentBaseTransitionActionV0 {
             id: value.id(),
             identity_contract_nonce: value.identity_contract_nonce(),
@@ -112,6 +122,7 @@ impl DocumentBaseTransitionActionV0 {
             data_contract,
             token_cost,
             gas_fees_paid_by,
+            contract_gas_fees_paid_by,
         }
         .into())
     }

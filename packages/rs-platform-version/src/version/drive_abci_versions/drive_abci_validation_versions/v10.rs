@@ -205,6 +205,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     },
                 },
                 is_allowed: 0,
+                // PROTOCOL_VERSION_14: a batch that asks the contract owner to pay its gas
+                // only has to fund its principal (purchases, contest collateral) itself.
+                identity_minimum_balance_pre_check: 1,
                 document_create_transition_structure_validation: 1,
                 // Reject deletes on legacy keep-history types as paid consensus errors.
                 // Protocols through 13 retain the original internal-error outcome.

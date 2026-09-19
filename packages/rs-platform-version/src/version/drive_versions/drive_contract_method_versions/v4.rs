@@ -14,9 +14,17 @@ use crate::version::drive_versions::drive_contract_method_versions::{
 ///   `getDataContractsLatestVersions` read and prove a contract's version without the contract
 ///   bytes. Contracts stored before this version get their item on the first block of protocol
 ///   version 14 (`Drive::add_version_items_to_all_contracts`).
-/// * `insert.insert_contract` and `update.update_contract` are bumped to `2`: a contract whose
-///   config declares moderation gets its banlist (`[64, id] / 3`) and suspension list
-///   (`[64, id] / 4`) trees created at insertion, or by the update that turns a list on.
+/// * `update.update_contract` is bumped to `2`. The v2 contract update creates the perpetual
+///   and pre-programmed distribution storage of a token the update adds, as the contract
+///   insert always has for a token present at registration. v1 created none of it, so a claim
+///   on such a token failed as an internal error and the distribution was unclaimable. There
+///   is no backfill for tokens added by an update before this version: mainnet has none
+///   (checked at block 436796, where no contract update ever carried a token and every
+///   token's contract is still at version 1).
+/// * `insert.insert_contract` is bumped to `2`, and the v2 contract update does the same for
+///   an update: a contract whose config declares moderation gets its banlist (`[64, id] / 3`)
+///   and suspension list (`[64, id] / 4`) trees created at insertion, or by the update that
+///   turns a list on.
 /// * The `moderation` table is new: the ban and suspension entry writers, readers and provers.
 pub const DRIVE_CONTRACT_METHOD_VERSIONS_V4: DriveContractMethodVersions =
     DriveContractMethodVersions {

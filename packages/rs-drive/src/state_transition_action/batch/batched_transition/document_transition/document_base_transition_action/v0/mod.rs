@@ -24,8 +24,11 @@ pub struct DocumentBaseTransitionActionV0 {
     pub data_contract: Arc<DataContractFetchInfo>,
     /// Token cost with the token_id coming first
     pub token_cost: Option<(Identifier, DocumentActionTokenEffect, TokenAmount)>,
-    /// Who pays the gas fees
+    /// Who the transition's token payment info asks to pay the gas
     pub gas_fees_paid_by: GasFeesPaidBy,
+    /// Who the document type's token cost offers to pay the gas: `DocumentOwner` when the action
+    /// has no token cost, since only a token payment can be sponsored
+    pub contract_gas_fees_paid_by: GasFeesPaidBy,
 }
 
 /// document base transition action accessors v0
@@ -55,4 +58,11 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
 
     /// Token cost
     fn token_cost(&self) -> Option<(Identifier, DocumentActionTokenEffect, TokenAmount)>;
+
+    /// Who the transition's token payment info asks to pay the gas
+    fn gas_fees_paid_by(&self) -> GasFeesPaidBy;
+
+    /// Who the document type's token cost offers to pay the gas (`DocumentOwner` without a
+    /// token cost)
+    fn contract_gas_fees_paid_by(&self) -> GasFeesPaidBy;
 }
