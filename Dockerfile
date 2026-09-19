@@ -387,6 +387,7 @@ COPY --parents \
     packages/rs-platform-serialization-derive \
     packages/rs-platform-version \
     packages/rs-platform-versioning \
+    packages/rs-platform-query-wire \
     packages/rs-platform-value-convertible \
     packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
@@ -515,6 +516,7 @@ COPY --parents \
     packages/rs-platform-serialization-derive \
     packages/rs-platform-version \
     packages/rs-platform-versioning \
+    packages/rs-platform-query-wire \
     packages/rs-platform-value-convertible \
     packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
@@ -681,6 +683,7 @@ COPY --parents \
     packages/rs-platform-serialization-derive \
     packages/rs-platform-version \
     packages/rs-platform-versioning \
+    packages/rs-platform-query-wire \
     packages/rs-platform-value-convertible \
     packages/rs-platform-wallet-ffi \
     packages/rs-unified-sdk-ffi \
@@ -939,6 +942,7 @@ COPY --parents \
     packages/rs-platform-serialization-derive \
     packages/rs-platform-version \
     packages/rs-platform-versioning \
+    packages/rs-platform-query-wire \
     packages/rs-platform-value-convertible \
     packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \

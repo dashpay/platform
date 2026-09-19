@@ -13,7 +13,6 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
-use crate::query::document_query::v1::conversions;
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
@@ -41,6 +40,7 @@ use drive::query::{
     SubQueryResult, MAX_SUB_QUERIES,
 };
 use drive::util::grove_operations::GroveDBToUse;
+use platform_query_wire::proto_conversions as conversions;
 use std::sync::Arc;
 
 /// A sub-query's wire fields decoded into drive's typed forms, before
@@ -152,11 +152,11 @@ impl<C> Platform<C> {
 
         let where_clauses = match conversions::where_clauses_from_proto(proto_where_clauses) {
             Ok(c) => c,
-            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e.into())),
         };
         let order_by_clauses = match conversions::order_clauses_from_proto(proto_order_by) {
             Ok(c) => c,
-            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e.into())),
         };
 
         // Every contract the composition touches, fetched once: the
@@ -211,11 +211,11 @@ impl<C> Platform<C> {
             };
             let where_clauses = match conversions::where_clauses_from_proto(proto.where_clauses) {
                 Ok(c) => c,
-                Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+                Err(e) => return Ok(QueryValidationResult::new_with_error(e.into())),
             };
             let order_by = match conversions::order_clauses_from_proto(proto.order_by) {
                 Ok(c) => c,
-                Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+                Err(e) => return Ok(QueryValidationResult::new_with_error(e.into())),
             };
             let binding = proto.bind.map(|bind| SubQueryBinding {
                 source: match bind.source {

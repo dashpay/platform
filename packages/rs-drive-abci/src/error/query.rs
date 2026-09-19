@@ -5,6 +5,7 @@ use dpp::ProtocolError;
 use drive::error::proof::ProofError;
 use drive::error::query::QuerySyntaxError as SyntaxError;
 use drive::error::Error as DriveError;
+use platform_query_wire::proto_conversions::DecodeError as WireDecodeError;
 use prost::DecodeError;
 use tenderdash_abci::proto::abci::ResponseException;
 
@@ -71,10 +72,56 @@ pub enum QueryError {
     ResourceExhausted(String),
 }
 
+/// Wire-decode failures from the shared `platform-query-wire` decoders.
+/// `InvalidArgument` is malformed wire input; `Unsupported` is a well-formed
+/// shape the decoder deliberately refuses (e.g. `ORDER BY` on aggregate
+/// keys) and surfaces as `QuerySyntaxError::Unsupported`, the same variant
+/// the v1 handler's `not_yet_implemented` path uses. Both carry the message
+/// string through unchanged.
+impl From<WireDecodeError> for QueryError {
+    fn from(error: WireDecodeError) -> Self {
+        match error {
+            WireDecodeError::InvalidArgument(msg) => QueryError::InvalidArgument(msg),
+            WireDecodeError::Unsupported(msg) => QueryError::Query(SyntaxError::Unsupported(msg)),
+        }
+    }
+}
+
 impl From<QueryError> for ResponseException {
     fn from(value: QueryError) -> Self {
         Self {
             error: value.to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shared decoder's two variants map onto distinct `QueryError`
+    /// surfaces and the message text is preserved verbatim. A decoder that
+    /// later reclassifies a malformed shape as `Unsupported` (or vice versa)
+    /// changes what clients see, so the mapping is pinned here.
+    #[test]
+    fn wire_decode_error_mapping_preserves_variant_and_message() {
+        let invalid: QueryError = WireDecodeError::InvalidArgument("bad where".to_string()).into();
+        assert!(
+            matches!(&invalid, QueryError::InvalidArgument(msg) if msg == "bad where"),
+            "unexpected: {invalid:?}"
+        );
+
+        let unsupported: QueryError = WireDecodeError::Unsupported(
+            "ORDER BY on aggregate keys is not yet implemented".to_string(),
+        )
+        .into();
+        assert!(
+            matches!(
+                &unsupported,
+                QueryError::Query(SyntaxError::Unsupported(msg))
+                    if msg == "ORDER BY on aggregate keys is not yet implemented"
+            ),
+            "unexpected: {unsupported:?}"
+        );
     }
 }

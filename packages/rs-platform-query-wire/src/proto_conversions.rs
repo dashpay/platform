@@ -1,21 +1,26 @@
-//! Wire-protobuf → drive type conversions for the v1 document
+//! Wire-protobuf → drive type conversions for the `getDocuments`
 //! query surface.
 //!
-//! Lives next to the v1 handler because rs-drive-abci is the only
-//! crate that needs the proto-decode direction (the SDK ships the
-//! inverse direction in
-//! `rs-sdk/src/platform/documents/document_query.rs`). Keeping the
-//! two directions in their respective crates avoids forcing
-//! `dapi-grpc` into rs-drive's dependency graph just to host shared
-//! conversion code.
+//! This is the **single** proto-decode implementation, shared by:
+//! - rs-drive-abci's v1 request handler (server side — decodes the
+//!   incoming request before routing/execution), and
+//! - client-side proof verifiers (they rebuild the rich query from the
+//!   wire request so a proved response can be verified against exactly
+//!   what was asked).
+//!
+//! Both directions living on one implementation is the point: the
+//! bytes the server decodes and the bytes the verifier decodes must
+//! agree clause-for-clause, or a proof could verify against a
+//! different query than the server answered.
 //!
 //! Conversion contract:
-//! - Every fallible case maps to [`QueryError::InvalidArgument`]
-//!   (malformed wire input, **not** future capability). The v1
-//!   handler distinguishes this from
-//!   [`QuerySyntaxError::Unsupported`] (valid request shape, server
-//!   capability not yet wired) — see `v1/mod.rs`'s
-//!   `not_yet_implemented` helper.
+//! - Every fallible case maps to [`DecodeError::InvalidArgument`]
+//!   (malformed wire input, **not** future capability), except the
+//!   aggregate `ORDER BY` target which maps to
+//!   [`DecodeError::Unsupported`] (valid request shape, server
+//!   capability not yet wired). rs-drive-abci maps these onto its
+//!   `QueryError::InvalidArgument` / `QuerySyntaxError::Unsupported`
+//!   respectively, preserving its historical error surface.
 //! - Conversion is schema-agnostic. `DocumentFieldValue` variants
 //!   map 1:1 to `dpp::platform_value::Value` variants without
 //!   consulting the document type's schema. The schema-driven
@@ -26,7 +31,6 @@
 //!   identifier, and so on. The wire layer just names the
 //!   primitive; the schema decides the indexed type.
 
-use crate::error::query::QueryError;
 use dapi_grpc::platform::v0::get_documents_request::{
     document_field_value,
     get_documents_request_v1::{select, Select as ProtoSelect},
@@ -43,14 +47,34 @@ use drive::query::{
     OrderClause, SelectFunction, SelectProjection, TimeRangeSelector, WhereClause, WhereOperator,
 };
 
+/// Decode failure of a wire query message.
+///
+/// Deliberately not a server or client error type: rs-drive-abci
+/// maps it onto its `QueryError`, and client-side consumers map it
+/// onto their own error surface, each preserving its own error
+/// contract.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DecodeError {
+    /// Malformed wire input — bad discriminant, missing oneof arm,
+    /// over-deep list nesting. No future protocol version would make
+    /// this input valid.
+    #[error("{0}")]
+    InvalidArgument(String),
+    /// Well-formed wire input naming a capability the decode target
+    /// cannot represent yet (e.g. `ORDER BY` on an aggregate key).
+    /// The wording signals future capability, not malformed request.
+    #[error("{0}")]
+    Unsupported(String),
+}
+
 /// Map a wire-level [`ProtoWhereOperator`] discriminant onto
 /// drive's [`WhereOperator`]. Unknown discriminants are wire-level
 /// garbage (no future protocol value would map a malformed integer
 /// to a valid behavior), so they surface as
-/// [`QueryError::InvalidArgument`] — not `not_yet_implemented`.
-pub(super) fn where_operator_from_proto(op: i32) -> Result<WhereOperator, QueryError> {
+/// [`DecodeError::InvalidArgument`] — not `not_yet_implemented`.
+pub fn where_operator_from_proto(op: i32) -> Result<WhereOperator, DecodeError> {
     let proto_op = ProtoWhereOperator::try_from(op).map_err(|_| {
-        QueryError::InvalidArgument(format!(
+        DecodeError::InvalidArgument(format!(
             "unknown WhereOperator discriminant: {} (valid values: 0..=11, see \
              `get_documents_request::WhereOperator`)",
             op
@@ -73,7 +97,7 @@ pub(super) fn where_operator_from_proto(op: i32) -> Result<WhereOperator, QueryE
         // `is_time_range_clause` / `time_range_clause_from_proto`), so it must
         // never reach this mapping.
         ProtoWhereOperator::InTimeRange => {
-            return Err(QueryError::InvalidArgument(
+            return Err(DecodeError::InvalidArgument(
                 "IN_TIME_RANGE where clauses are resolved from block time before \
                  operator conversion and must not be mixed into normal clause decoding"
                     .to_string(),
@@ -86,7 +110,7 @@ pub(super) fn where_operator_from_proto(op: i32) -> Result<WhereOperator, QueryE
 /// (`operator == IN_TIME_RANGE`). The v1 handler partitions these out and
 /// resolves them from authoritative block time via
 /// [`time_range_clause_from_proto`].
-pub(super) fn is_time_range_clause(clause: &ProtoWhereClause) -> bool {
+pub fn is_time_range_clause(clause: &ProtoWhereClause) -> bool {
     clause.operator == ProtoWhereOperator::InTimeRange as i32
 }
 
@@ -111,25 +135,25 @@ pub(super) fn is_time_range_clause(clause: &ProtoWhereClause) -> bool {
 ///   a better message than the resolver's no-such-grid miss). A zero
 ///   `phase` IS the canonical spelling of a phaseless grid, matching the
 ///   contract grammar where `phase` is an omittable key.
-pub(super) fn time_range_clause_from_proto(
+pub fn time_range_clause_from_proto(
     clause: ProtoWhereClause,
-) -> Result<(String, TimeRangeSelector, Option<TimeRangeGridSpec>), QueryError> {
+) -> Result<(String, TimeRangeSelector, Option<TimeRangeGridSpec>), DecodeError> {
     let field = clause.field;
     if clause.value.is_some() {
-        return Err(QueryError::InvalidArgument(format!(
+        return Err(DecodeError::InvalidArgument(format!(
             "IN_TIME_RANGE clause on field '{}' must not set `value`: the operand is the \
              typed `time_range` selection",
             field
         )));
     }
     let selection = clause.time_range.ok_or_else(|| {
-        QueryError::InvalidArgument(format!(
+        DecodeError::InvalidArgument(format!(
             "IN_TIME_RANGE clause on field '{}' has no `time_range` selection set",
             field
         ))
     })?;
     let proto_selector = ProtoTimeRangeSelector::try_from(selection.selector).map_err(|_| {
-        QueryError::InvalidArgument(format!(
+        DecodeError::InvalidArgument(format!(
             "unknown TimeRangeSelection.Selector discriminant on field '{}': {} (valid \
              values: NEWEST = 0, OLDEST = 1, BY_START = 2)",
             field, selection.selector
@@ -142,14 +166,14 @@ pub(super) fn time_range_clause_from_proto(
             TimeRangeSelector::ByStart { start_ms }
         }
         (ProtoTimeRangeSelector::ByStart, None) => {
-            return Err(QueryError::InvalidArgument(format!(
+            return Err(DecodeError::InvalidArgument(format!(
                 "IN_TIME_RANGE BY_START on field '{}' requires `start_ms` naming the \
                  window's start (a millisecond timestamp on the grid)",
                 field
             )))
         }
         (ProtoTimeRangeSelector::Newest | ProtoTimeRangeSelector::Oldest, Some(_)) => {
-            return Err(QueryError::InvalidArgument(format!(
+            return Err(DecodeError::InvalidArgument(format!(
                 "IN_TIME_RANGE on field '{}': `start_ms` is only meaningful with \
                  BY_START; the relative selectors resolve their window from block time",
                 field
@@ -160,7 +184,7 @@ pub(super) fn time_range_clause_from_proto(
         .grid
         .map(|grid| {
             if grid.range == 0 || grid.step == 0 {
-                return Err(QueryError::InvalidArgument(format!(
+                return Err(DecodeError::InvalidArgument(format!(
                     "IN_TIME_RANGE grid on field '{}' must carry the contract's declared \
                      `range` and `step` (non-zero seconds); a zero phase is the canonical \
                      spelling of a phaseless grid",
@@ -190,7 +214,7 @@ pub(super) fn time_range_clause_from_proto(
 /// operand is always concrete; empty where-clauses are expressed
 /// by an empty `where_clauses` field at the request level, not by
 /// sending an empty `DocumentFieldValue`.
-pub(super) fn value_from_proto(value: ProtoDocumentFieldValue) -> Result<Value, QueryError> {
+pub fn value_from_proto(value: ProtoDocumentFieldValue) -> Result<Value, DecodeError> {
     value_from_proto_at_depth(value, 0)
 }
 
@@ -201,9 +225,9 @@ pub(super) fn value_from_proto(value: ProtoDocumentFieldValue) -> Result<Value, 
 fn value_from_proto_at_depth(
     value: ProtoDocumentFieldValue,
     depth: u8,
-) -> Result<Value, QueryError> {
+) -> Result<Value, DecodeError> {
     let variant = value.variant.ok_or_else(|| {
-        QueryError::InvalidArgument(
+        DecodeError::InvalidArgument(
             "DocumentFieldValue has no variant set; a where-clause operand must \
              be a concrete value"
                 .to_string(),
@@ -218,7 +242,7 @@ fn value_from_proto_at_depth(
         document_field_value::Variant::BytesValue(b) => Value::Bytes(b),
         document_field_value::Variant::List(list) => {
             if depth >= 1 {
-                return Err(QueryError::InvalidArgument(
+                return Err(DecodeError::InvalidArgument(
                     "nested DocumentFieldValue.list is not supported; the v1 \
                      query surface accepts at most one level of nesting \
                      (`IN` / `BETWEEN*` candidate lists of scalars)"
@@ -242,23 +266,23 @@ fn value_from_proto_at_depth(
 
 /// Map a wire [`ProtoWhereClause`] onto drive's structured
 /// [`WhereClause`]. Errors surface as
-/// [`QueryError::InvalidArgument`] for both operator-discriminant
+/// [`DecodeError::InvalidArgument`] for both operator-discriminant
 /// and value-shape failures.
-pub(super) fn where_clause_from_proto(clause: ProtoWhereClause) -> Result<WhereClause, QueryError> {
+pub fn where_clause_from_proto(clause: ProtoWhereClause) -> Result<WhereClause, DecodeError> {
     let operator = where_operator_from_proto(clause.operator)?;
     // `time_range` is IN_TIME_RANGE's operand and those clauses are
     // partitioned out before this conversion (see `is_time_range_clause`),
     // so on any clause reaching here a set `time_range` is a malformed mix
     // of the two operand kinds.
     if clause.time_range.is_some() {
-        return Err(QueryError::InvalidArgument(format!(
+        return Err(DecodeError::InvalidArgument(format!(
             "WhereClause on field '{}' sets `time_range`, which is only valid with the \
              IN_TIME_RANGE operator",
             clause.field
         )));
     }
     let value = clause.value.ok_or_else(|| {
-        QueryError::InvalidArgument(format!(
+        DecodeError::InvalidArgument(format!(
             "WhereClause on field '{}' has no value set; every clause must carry a \
              concrete `DocumentFieldValue`",
             clause.field
@@ -278,9 +302,9 @@ pub(super) fn where_clause_from_proto(clause: ProtoWhereClause) -> Result<WhereC
 /// `QueryValidationResult::new_with_error` so the caller sees the
 /// rejection on the same response shape as a downstream validation
 /// failure.
-pub(super) fn where_clauses_from_proto(
+pub fn where_clauses_from_proto(
     clauses: Vec<ProtoWhereClause>,
-) -> Result<Vec<WhereClause>, QueryError> {
+) -> Result<Vec<WhereClause>, DecodeError> {
     clauses.into_iter().map(where_clause_from_proto).collect()
 }
 
@@ -291,16 +315,14 @@ pub(super) fn where_clauses_from_proto(
 /// (aggregate function applied to a field — wire-only, rejected
 /// at routing time with `Unsupported("ORDER BY on aggregate …")`).
 /// Unset (`None`) is rejected as malformed wire input.
-pub(super) fn order_clause_from_proto(clause: ProtoOrderClause) -> Result<OrderClause, QueryError> {
+pub fn order_clause_from_proto(clause: ProtoOrderClause) -> Result<OrderClause, DecodeError> {
     let ascending = clause.ascending;
     match clause.target {
         Some(order_clause::Target::Field(field)) => Ok(OrderClause { field, ascending }),
-        Some(order_clause::Target::Aggregate(_)) => Err(QueryError::Query(
-            drive::error::query::QuerySyntaxError::Unsupported(
-                "ORDER BY on aggregate keys is not yet implemented".to_string(),
-            ),
+        Some(order_clause::Target::Aggregate(_)) => Err(DecodeError::Unsupported(
+            "ORDER BY on aggregate keys is not yet implemented".to_string(),
         )),
-        None => Err(QueryError::InvalidArgument(
+        None => Err(DecodeError::InvalidArgument(
             "OrderClause has no target set; every clause must carry either a \
              `field` (plain column name) or an `aggregate` (aggregate-function \
              ordering target)"
@@ -312,9 +334,9 @@ pub(super) fn order_clause_from_proto(clause: ProtoOrderClause) -> Result<OrderC
 /// Plural form of [`order_clause_from_proto`] for the request-level
 /// `repeated OrderClause` field. Returns the first error
 /// encountered.
-pub(super) fn order_clauses_from_proto(
+pub fn order_clauses_from_proto(
     clauses: Vec<ProtoOrderClause>,
-) -> Result<Vec<OrderClause>, QueryError> {
+) -> Result<Vec<OrderClause>, DecodeError> {
     clauses.into_iter().map(order_clause_from_proto).collect()
 }
 
@@ -331,11 +353,11 @@ pub(super) fn order_clauses_from_proto(
 /// drive's [`HavingAggregateFunction`]. Unknown discriminants are
 /// wire-level garbage (no future protocol value would map a
 /// malformed integer to a valid behavior), so they surface as
-/// [`QueryError::InvalidArgument`].
+/// [`DecodeError::InvalidArgument`].
 #[allow(dead_code)]
-fn having_function_from_proto(function: i32) -> Result<HavingAggregateFunction, QueryError> {
+fn having_function_from_proto(function: i32) -> Result<HavingAggregateFunction, DecodeError> {
     let proto = having_aggregate::Function::try_from(function).map_err(|_| {
-        QueryError::InvalidArgument(format!(
+        DecodeError::InvalidArgument(format!(
             "unknown HavingAggregate.Function discriminant: {} (valid values: 0..=2, see \
              `get_documents_request::having_aggregate::Function`)",
             function
@@ -352,9 +374,9 @@ fn having_function_from_proto(function: i32) -> Result<HavingAggregateFunction, 
 /// drive's [`HavingOperator`]. Same error contract as
 /// [`having_function_from_proto`].
 #[allow(dead_code)]
-fn having_operator_from_proto(operator: i32) -> Result<HavingOperator, QueryError> {
+fn having_operator_from_proto(operator: i32) -> Result<HavingOperator, DecodeError> {
     let proto = having_clause::Operator::try_from(operator).map_err(|_| {
-        QueryError::InvalidArgument(format!(
+        DecodeError::InvalidArgument(format!(
             "unknown HavingClause.Operator discriminant: {} (valid values: 0..=10, see \
              `get_documents_request::having_clause::Operator`)",
             operator
@@ -384,7 +406,7 @@ fn having_operator_from_proto(operator: i32) -> Result<HavingOperator, QueryErro
 #[allow(dead_code)]
 fn having_aggregate_from_proto(
     aggregate: ProtoHavingAggregate,
-) -> Result<HavingAggregate, QueryError> {
+) -> Result<HavingAggregate, DecodeError> {
     Ok(HavingAggregate {
         function: having_function_from_proto(aggregate.function)?,
         field: aggregate.field,
@@ -393,7 +415,7 @@ fn having_aggregate_from_proto(
 
 /// Map a wire [`ProtoHavingClause`] onto drive's structured
 /// [`HavingClause`]. Errors surface as
-/// [`QueryError::InvalidArgument`] for any wire-level
+/// [`DecodeError::InvalidArgument`] for any wire-level
 /// malformation: unknown discriminant on the aggregate function or
 /// operator; missing aggregate; missing right operand (oneof unset
 /// on the wire); inner value-shape failures on the literal-value
@@ -406,11 +428,9 @@ fn having_aggregate_from_proto(
 /// LIMIT n [OFFSET m]` — which arrives as an `OrderClause` and never
 /// reaches here.
 #[allow(dead_code)]
-pub(super) fn having_clause_from_proto(
-    clause: ProtoHavingClause,
-) -> Result<HavingClause, QueryError> {
+pub fn having_clause_from_proto(clause: ProtoHavingClause) -> Result<HavingClause, DecodeError> {
     let aggregate = clause.aggregate.ok_or_else(|| {
-        QueryError::InvalidArgument(
+        DecodeError::InvalidArgument(
             "HavingClause has no aggregate set; every clause must carry an \
              aggregate function + field operand"
                 .to_string(),
@@ -419,7 +439,7 @@ pub(super) fn having_clause_from_proto(
     let aggregate = having_aggregate_from_proto(aggregate)?;
     let operator = having_operator_from_proto(clause.operator)?;
     let right = clause.right.ok_or_else(|| {
-        QueryError::InvalidArgument(
+        DecodeError::InvalidArgument(
             "HavingClause has no right operand set; every clause must carry a \
              concrete `DocumentFieldValue` (`right.value`)"
                 .to_string(),
@@ -439,9 +459,9 @@ pub(super) fn having_clause_from_proto(
 /// level `repeated HavingClause` field. Returns an error on the
 /// first malformed clause.
 #[allow(dead_code)]
-pub(super) fn having_clauses_from_proto(
+pub fn having_clauses_from_proto(
     clauses: Vec<ProtoHavingClause>,
-) -> Result<Vec<HavingClause>, QueryError> {
+) -> Result<Vec<HavingClause>, DecodeError> {
     clauses.into_iter().map(having_clause_from_proto).collect()
 }
 
@@ -449,10 +469,10 @@ pub(super) fn having_clauses_from_proto(
 /// [`SelectFunction`]. Unknown discriminants are wire-level
 /// garbage (no future protocol value would map a malformed
 /// integer to a valid behavior), so they surface as
-/// [`QueryError::InvalidArgument`].
-fn select_function_from_proto(function: i32) -> Result<SelectFunction, QueryError> {
+/// [`DecodeError::InvalidArgument`].
+fn select_function_from_proto(function: i32) -> Result<SelectFunction, DecodeError> {
     let proto = select::Function::try_from(function).map_err(|_| {
-        QueryError::InvalidArgument(format!(
+        DecodeError::InvalidArgument(format!(
             "unknown Select.Function discriminant: {} (valid values: 0..=5, see \
              `get_documents_request::get_documents_request_v1::select::Function`)",
             function
@@ -478,7 +498,7 @@ fn select_function_from_proto(function: i32) -> Result<SelectFunction, QueryErro
 /// empty `field`, `SUM`/`AVG` require non-empty) are checked at
 /// routing time in `validate_and_route`, not here, so the
 /// converter only enforces well-formed proto.
-pub(super) fn select_from_proto(select: ProtoSelect) -> Result<SelectProjection, QueryError> {
+pub fn select_from_proto(select: ProtoSelect) -> Result<SelectProjection, DecodeError> {
     Ok(SelectProjection {
         function: select_function_from_proto(select.function)?,
         field: select.field,
