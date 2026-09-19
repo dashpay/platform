@@ -165,14 +165,28 @@ Your software version: {}, latest supported protocol version: {}."#,
 
 #[cfg(test)]
 mod tests {
+    use crate::config::{PlatformConfig, PlatformTestConfig, SCHEDULED_EVENT_HOST_FAULT_MESSAGE};
+    use crate::error::execution::ExecutionError;
+    use crate::error::Error;
     use crate::platform_types::block_proposal::v0::BlockProposal;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
+    use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
-    use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::core_types::validator::v0::ValidatorV0;
+    use dpp::core_types::validator_set::v0::ValidatorSetV0;
+    use dpp::core_types::validator_set::ValidatorSet;
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::system_data_contracts::SystemDataContract;
     use dpp::version::PlatformVersion;
+    use indexmap::IndexMap;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+    use std::collections::BTreeMap;
     use std::sync::Arc;
     use tenderdash_abci::proto::version::Consensus;
 
@@ -318,6 +332,126 @@ mod tests {
                 .get(SystemDataContract::DPNS.id().to_buffer(), false)
                 .is_none(),
             "the uncommitted definition must not be visible to committed-state readers"
+        );
+    }
+
+    /// The one validator the synthetic state below knows about, which is also the proposer of
+    /// every proposal these tests build.
+    const SCHEDULED_EVENT_TEST_PROPOSER: [u8; 32] = [7u8; 32];
+
+    /// A platform at the latest protocol version, one committed block in, with the
+    /// scheduled-event host fault armed or not. Unlike the cache tests above, the unarmed case
+    /// has to run the proposal through to the end, so the state carries what the closing
+    /// per-block events need: an epoch 0 with its proposers tree (the block fee processing
+    /// writes to it) and one validator set holding the proposer (the validator set update
+    /// compares it against the block's).
+    fn platform_with_scheduled_event_host_fault(
+        scheduled_event_host_fault: bool,
+    ) -> TempPlatform<MockCoreRPCLike> {
+        let platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    scheduled_event_host_fault,
+                    ..PlatformTestConfig::default_minimal_verifications()
+                },
+                ..Default::default()
+            })
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state_with_activation_info(1_000_000, 1);
+
+        // The genesis time is normally persisted at finalize block, which these tests do not
+        // reach; the epoch calculation needs it.
+        platform.drive.set_genesis_time(1_000_000);
+        fast_forward_to_block(&platform, 1_100_000, 100, 42, 0, true);
+
+        let mut rng = StdRng::seed_from_u64(1);
+        let pro_tx_hash = ProTxHash::from_byte_array(SCHEDULED_EVENT_TEST_PROPOSER);
+        let quorum_hash = QuorumHash::from_byte_array([3u8; 32]);
+        let validator_set = ValidatorSet::V0(ValidatorSetV0 {
+            quorum_hash,
+            quorum_index: None,
+            core_height: 42,
+            members: BTreeMap::from([(
+                pro_tx_hash,
+                ValidatorV0 {
+                    pro_tx_hash,
+                    public_key: Some(SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key()),
+                    node_ip: "192.168.0.1".to_string(),
+                    node_id: PubkeyHash::from_byte_array([5u8; 20]),
+                    core_port: 10,
+                    platform_http_port: 20,
+                    platform_p2p_port: 30,
+                    is_banned: false,
+                },
+            )]),
+            threshold_public_key: SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key(),
+        });
+        let mut state = platform.state.load().as_ref().clone();
+        state.set_validator_sets(IndexMap::from([(quorum_hash, validator_set)]));
+        state.set_current_validator_set_quorum_hash(quorum_hash);
+        platform.state.store(Arc::new(state));
+        platform
+    }
+
+    /// The scheduled-event host fault is a whole-proposal failure, not a per-transition
+    /// result and not a rejected proposal: `run_block_proposal` returns `Err` carrying the
+    /// injected message, and it does so for a proposal with no transactions at all. That is
+    /// the class every node reproduces and no transaction removal can route around.
+    #[test]
+    fn should_fail_the_whole_proposal_at_the_scheduled_event_point_when_the_host_fault_is_armed() {
+        let platform = platform_with_scheduled_event_host_fault(true);
+        let platform_state = platform.state.load();
+        let transaction = platform.drive.grove.start_transaction();
+        let raw = vec![];
+
+        let mut proposal = proposal_at(
+            101,
+            1_200_000,
+            42,
+            PlatformVersion::latest().protocol_version as u64,
+            &raw,
+        );
+        proposal.proposer_pro_tx_hash = SCHEDULED_EVENT_TEST_PROPOSER;
+        let result =
+            platform.run_block_proposal(proposal, false, &platform_state, &transaction, None);
+
+        assert!(
+            matches!(
+                &result,
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(message)))
+                    if *message == SCHEDULED_EVENT_HOST_FAULT_MESSAGE
+            ),
+            "an armed scheduled-event host fault must fail the whole proposal with the injected error, got {:?}",
+            result.map(|outcome| outcome.is_valid())
+        );
+    }
+
+    /// With the hook unarmed the same empty proposal runs through to a valid outcome: the hook
+    /// adds nothing to the block loop until it is switched on.
+    #[test]
+    fn should_not_fail_the_proposal_at_the_scheduled_event_point_when_unarmed() {
+        let platform = platform_with_scheduled_event_host_fault(false);
+        let platform_state = platform.state.load();
+        let transaction = platform.drive.grove.start_transaction();
+        let raw = vec![];
+
+        let mut proposal = proposal_at(
+            101,
+            1_200_000,
+            42,
+            PlatformVersion::latest().protocol_version as u64,
+            &raw,
+        );
+        proposal.proposer_pro_tx_hash = SCHEDULED_EVENT_TEST_PROPOSER;
+        let outcome = platform
+            .run_block_proposal(proposal, false, &platform_state, &transaction, None)
+            .expect("an unarmed hook must not fail the proposal");
+
+        assert!(
+            outcome.is_valid(),
+            "an empty proposal must be valid with the hook unarmed, errors: {:?}",
+            outcome.errors
         );
     }
 

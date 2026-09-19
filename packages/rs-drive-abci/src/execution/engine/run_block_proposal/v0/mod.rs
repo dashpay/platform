@@ -6,6 +6,8 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 use crate::abci::AbciError;
+#[cfg(feature = "testing-config")]
+use crate::config::SCHEDULED_EVENT_HOST_FAULT_MESSAGE;
 use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
@@ -314,6 +316,19 @@ where
             Some(transaction),
             platform_version,
         )?;
+
+        // Scheduled-event integration point: due contract jobs run here, after the DAO events
+        // and before the ordinary state transitions. A defect in this phase that every node
+        // reproduces cannot be routed around by dropping a transaction: it fires before any
+        // transaction is looked at, on empty blocks too. The hook below stands in for such a
+        // defect so the failure class and its recovery can be rehearsed. Compiled out of
+        // production builds.
+        #[cfg(feature = "testing-config")]
+        if self.config.testing_configs.scheduled_event_host_fault {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                SCHEDULED_EVENT_HOST_FAULT_MESSAGE,
+            )));
+        }
 
         // Process transactions
         let state_transitions_result = self.process_raw_state_transitions(
