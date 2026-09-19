@@ -12,7 +12,10 @@
 //!     .await?;
 //! ```
 
+use crate::platform::Fetch;
+use dash_context_provider::ContextProvider;
 use dpp::data_contract::config::moderation::ContractModerationListStatuses;
+use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -23,6 +26,7 @@ use dpp::state_transition::contract_user_moderation_transition::{
     ContractUserModerationAction, ContractUserModerationTransition,
 };
 use dpp::state_transition::proof_result::StateTransitionProofResult;
+use std::sync::Arc;
 
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
@@ -206,6 +210,21 @@ impl ModerateContractUser for Identity {
         )
         .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+
+        // The proof of a ban covers every list the contract keeps, which the verifier reads
+        // from the contract through the context provider. A provider that does not fetch on
+        // demand would refuse a result the network already accepted, so the contract is
+        // fetched and registered with it before anything is paid for.
+        if matches!(action, ContractUserModerationAction::Ban { .. }) {
+            let contract = DataContract::fetch(sdk, contract_id)
+                .await?
+                .ok_or_else(|| {
+                    Error::Generic(format!("data contract {contract_id} does not exist"))
+                })?;
+            if let Some(provider) = sdk.context_provider() {
+                provider.register_data_contract(Arc::new(contract));
+            }
+        }
 
         state_transition
             .broadcast_and_wait_for_affected_state(sdk, settings)

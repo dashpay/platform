@@ -338,6 +338,11 @@ impl WasmSdk {
         let action = moderation_action_from_parts(action, identity_id, parsed.until)
             .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
 
+        // The proof of a ban covers every list the contract keeps, which the verifier reads
+        // from the contract, so the contract is resolved and cached before anything is paid
+        // for; a cold cache would otherwise refuse a result the network already accepted.
+        self.get_or_fetch_contract(contract_id).await?;
+
         let status = identity
             .moderate_contract_user(
                 self.inner_sdk(),

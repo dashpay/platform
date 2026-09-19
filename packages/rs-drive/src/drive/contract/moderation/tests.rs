@@ -11,7 +11,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
-    ContractModerationConfig, ContractModerationList, ContractModerationStatus, ContractModerators,
+    ContractModerationConfig, ContractModerationList, ContractModerationListStatuses,
+    ContractModerationStatus, ContractModerators,
 };
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
@@ -88,7 +89,12 @@ fn assert_status(
     )
     .expect("expected to verify the status proof");
     assert_eq!(proved_root, root_hash(drive, platform_version));
-    assert_eq!(proved, expected, "proved status of {}", identity_id);
+    assert_eq!(
+        proved,
+        ContractModerationListStatuses::from_status(lists, &expected),
+        "proved status of {}",
+        identity_id
+    );
 }
 
 /// Fetches, proves and verifies one entries page and checks all three agree.
@@ -656,4 +662,43 @@ fn should_refund_the_first_moderator_when_another_replaces_the_suspension() {
             .is_none(),
         "the replacing moderator paid for no storage"
     );
+}
+
+#[test]
+fn should_say_nothing_about_a_list_the_status_proof_does_not_cover() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = moderated_contract(true, true);
+    insert(&drive, &contract, platform_version);
+    let target = identity(0x61);
+    drive
+        .add_contract_ban(
+            contract.id(),
+            target,
+            contract.owner_id(),
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to ban");
+
+    // A proof over the suspension list alone verifies, and its result leaves the banlist
+    // unknown rather than reporting the banned identity as not banned.
+    let lists = [ContractModerationList::Suspensions];
+    let proof = drive
+        .prove_contract_moderation_status(contract.id(), target, &lists, None, platform_version)
+        .expect("expected a status proof");
+    let (_, proved) = Drive::verify_contract_moderation_status(
+        &proof,
+        contract.id(),
+        target,
+        &lists,
+        platform_version,
+    )
+    .expect("expected to verify the status proof");
+    assert_eq!(proved.banned(), None);
+    assert_eq!(proved.suspended_until(), Some(None));
+    assert!(!proved.is_barred_on_queried_lists_at(0));
+    assert_eq!(proved.0.len(), 1);
 }

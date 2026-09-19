@@ -118,7 +118,9 @@ mod tests {
     use crate::query::tests::setup_platform;
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::config::moderation::ContractModerationStatus;
+    use dpp::data_contract::config::moderation::{
+        ContractModerationListStatuses, ContractModerationStatus,
+    };
     use dpp::identifier::Identifier;
     use drive::drive::Drive;
 
@@ -320,7 +322,10 @@ mod tests {
                 version,
             )
             .expect("expected the proof to verify");
-            assert_eq!(proved, expected);
+            assert_eq!(
+                proved,
+                ContractModerationListStatuses::from_status(&lists, &expected)
+            );
         }
     }
 }

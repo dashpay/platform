@@ -4,7 +4,9 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
-use dpp::data_contract::config::moderation::{ContractModerationList, ContractModerationStatus};
+use dpp::data_contract::config::moderation::{
+    ContractModerationList, ContractModerationListStatuses,
+};
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 
@@ -22,7 +24,8 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Ok((RootHash, ContractModerationStatus))` with the root hash and the status.
+    /// * `Ok((RootHash, ContractModerationListStatuses))` with the root hash and the identity's
+    ///   status on each of `lists`, and nothing about a list that was not proved.
     /// * `Err(Error)` when the proof is not valid for the query or holds unexpected elements.
     pub fn verify_contract_moderation_status(
         proof: &[u8],
@@ -30,7 +33,7 @@ impl Drive {
         identity_id: Identifier,
         lists: &[ContractModerationList],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, ContractModerationStatus), Error> {
+    ) -> Result<(RootHash, ContractModerationListStatuses), Error> {
         match platform_version
             .drive
             .methods

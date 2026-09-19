@@ -57,7 +57,7 @@ impl FromProof<GetContractModerationStatusRequest> for ContractModerationListSta
             .clone();
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
-        let (root_hash, status) = Drive::verify_contract_moderation_status(
+        let (root_hash, statuses) = Drive::verify_contract_moderation_status(
             supported_grovedb_proof_bytes(&proof, platform_version)?,
             contract_id,
             identity_id,
@@ -69,12 +69,8 @@ impl FromProof<GetContractModerationStatusRequest> for ContractModerationListSta
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
 
         // An absent entry is a status too: the identity is not on that list. Only the lists
-        // queried were proved, so only they are reported.
-        Ok((
-            Some(ContractModerationListStatuses::from_status(&lists, &status)),
-            metadata,
-            proof,
-        ))
+        // queried were proved, and the verifier reports only those.
+        Ok((Some(statuses), metadata, proof))
     }
 }
 

@@ -223,7 +223,8 @@ impl ContractModerationConfig {
         self.moderators.may_moderate(owner_id, identity_id)
     }
 
-    /// Whether `identity_id` is the owner or a named moderator, and so can never be a target.
+    /// Whether `identity_id` is the owner or a named moderator and cannot be put on a list.
+    /// An entry the identity already carries may still be removed.
     pub fn is_owner_or_moderator(&self, owner_id: &Identifier, identity_id: &Identifier) -> bool {
         self.may_moderate(owner_id, identity_id)
     }

@@ -4,7 +4,9 @@ use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
-use dpp::data_contract::config::moderation::{ContractModerationList, ContractModerationStatus};
+use dpp::data_contract::config::moderation::{
+    ContractModerationList, ContractModerationListStatuses, ContractModerationStatus,
+};
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, GroveDb};
@@ -16,7 +18,7 @@ impl Drive {
         identity_id: Identifier,
         lists: &[ContractModerationList],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, ContractModerationStatus), Error> {
+    ) -> Result<(RootHash, ContractModerationListStatuses), Error> {
         if lists.is_empty() {
             return Err(Error::Proof(ProofError::IncorrectProof(
                 "a contract moderation status proof needs at least one list".to_string(),
@@ -65,6 +67,11 @@ impl Drive {
             }
         }
 
-        Ok((root_hash, status))
+        // Only `lists` were proved: the result says nothing about a list that was not, rather
+        // than reporting it as empty.
+        Ok((
+            root_hash,
+            ContractModerationListStatuses::from_status(lists, &status),
+        ))
     }
 }

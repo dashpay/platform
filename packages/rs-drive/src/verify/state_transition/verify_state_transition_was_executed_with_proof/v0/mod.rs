@@ -30,9 +30,7 @@ use dpp::state_transition::identity_create_transition::accessors::IdentityCreate
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
-use dpp::data_contract::config::moderation::{
-    ContractModerationList, ContractModerationListStatuses,
-};
+use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
@@ -1178,15 +1176,14 @@ impl Drive {
                         vec![ContractModerationList::Suspensions]
                     }
                 };
-                let (root_hash, status) = Drive::verify_contract_moderation_status(
+                // Only `lists` are proved: the verifier says nothing about the rest.
+                let (root_hash, statuses) = Drive::verify_contract_moderation_status(
                     proof,
                     contract_id,
                     identity_id,
                     &lists,
                     platform_version,
                 )?;
-                // Only `lists` were proved: the rest of `status` is unknown, not empty.
-                let statuses = ContractModerationListStatuses::from_status(&lists, &status);
                 let as_expected = match transition.action() {
                     // Banned, and no suspension left behind on a contract that keeps them.
                     ContractUserModerationAction::Ban { .. } => {

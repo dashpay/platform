@@ -151,6 +151,7 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::DefaultForPlatformVersion;
 
@@ -227,5 +228,161 @@ mod tests {
 
         assert!(refusal.is_none());
         assert!(execution_context.operations_slice().is_empty());
+    }
+
+    /// One batch with two creates and one delete by a banned signer: the creates are refused,
+    /// each with its own nonce bump, and the delete is kept for the transformer to carry on
+    /// with. The batch cap is 1 at every protocol version, so this partition cannot be
+    /// reached through the pipeline yet; it is pinned here on the gate itself.
+    #[tokio::test]
+    async fn should_refuse_each_barred_operation_and_keep_the_deletions_of_one_batch() {
+        use crate::execution::validation::state_transition::tests::setup_identity;
+        use dpp::dash_to_credits;
+        use dpp::data_contract::document_type::random_document::{
+            CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+        };
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::platform_value::Bytes32;
+        use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+        use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+        use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceActionAccessorsV0;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, signer, key) = setup_identity(&mut platform, 31, dash_to_credits!(1));
+        let contract = moderated_contract(platform_version.protocol_version);
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+        platform
+            .drive
+            .add_contract_ban(
+                contract.id(),
+                identity.id(),
+                contract.owner_id(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to ban");
+
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("expected the document type");
+        let mut rng = StdRng::seed_from_u64(3);
+        let mut batches = vec![];
+        for nonce in 1..=3u64 {
+            let entropy = Bytes32::random_with_rng(&mut rng);
+            let document = document_type
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::MinDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+            let batch = if nonce == 2 {
+                BatchTransition::new_document_deletion_transition_from_document(
+                    document,
+                    document_type,
+                    &key,
+                    nonce,
+                    0,
+                    None,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+            } else {
+                BatchTransition::new_document_creation_transition_from_document(
+                    document,
+                    document_type,
+                    entropy.0,
+                    &key,
+                    nonce,
+                    0,
+                    None,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+            }
+            .expect("expected a batch");
+            batches.push(batch);
+        }
+        let transitions: Vec<&DocumentTransition> = batches
+            .iter()
+            .flat_map(|batch| match batch {
+                StateTransition::Batch(batch) => batch.transitions_iter().collect::<Vec<_>>(),
+                _ => vec![],
+            })
+            .filter_map(|transition| match transition {
+                BatchedTransitionRef::Document(document_transition) => Some(document_transition),
+                BatchedTransitionRef::Token(_) => None,
+            })
+            .collect();
+        let document_type_name = transitions[0].base().document_type_name();
+        let document_transitions = BTreeMap::from([(document_type_name, transitions.clone())]);
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("execution context");
+
+        let refusal = BatchTransition::contract_moderation_gate(
+            &platform.drive,
+            &BlockInfo::default(),
+            &contract,
+            identity.id(),
+            &document_transitions,
+            &mut BTreeSet::new(),
+            &mut execution_context,
+            None,
+            platform_version,
+        )
+        .expect("expected the gate to run")
+        .expect("expected the banned signer to be refused");
+
+        // Two refused creates, one bump and one error each; the one delete kept.
+        let refused_actions = refusal.refused.data.as_deref().unwrap_or_default();
+        assert_eq!(refused_actions.len(), 2);
+        assert_eq!(refusal.refused.errors.len(), 2);
+        let bumped_nonces: BTreeSet<u64> = refused_actions
+            .iter()
+            .map(|action| match action {
+                BatchedTransitionAction::BumpIdentityDataContractNonce(bump) => {
+                    bump.identity_contract_nonce()
+                }
+                other => panic!("expected a nonce bump, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(bumped_nonces, BTreeSet::from([1, 3]));
+        let kept: Vec<u64> = refusal
+            .deletions
+            .values()
+            .flatten()
+            .map(|transition| transition.base().identity_contract_nonce())
+            .collect();
+        assert_eq!(kept, vec![2]);
+        // The status read was billed once for the whole batch.
+        assert_eq!(execution_context.operations_slice().len(), 1);
     }
 }
