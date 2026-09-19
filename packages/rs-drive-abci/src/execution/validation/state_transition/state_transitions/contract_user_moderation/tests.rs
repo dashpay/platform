@@ -15,8 +15,10 @@ use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
-    ContractModerationConfig, ContractModerationList, ContractModerationStatus, ContractModerators,
+    ContractModerationConfig, ContractModerationList, ContractModerationListStatus,
+    ContractModerationStatus, ContractModerators,
 };
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
 };
@@ -354,7 +356,10 @@ impl Setup {
     }
 
     /// Proves the committed state for `transition` and checks the proof shows its outcome.
-    fn assert_execution_proved(&self, transition: &StateTransition) -> ContractModerationStatus {
+    fn assert_execution_proved(
+        &self,
+        transition: &StateTransition,
+    ) -> ContractModerationListStatus {
         let platform_version = PlatformVersion::latest();
         let proof = self
             .platform
@@ -374,7 +379,7 @@ impl Setup {
         .expect("expected the proof to verify");
         match outcome {
             StateTransitionProofOutcome::AffectedState(
-                StateTransitionProofResult::VerifiedContractModerationStatus(_, _, status),
+                StateTransitionProofResult::VerifiedContractModerationListStatus(_, _, status),
             ) => status,
             other => panic!("expected a moderation status, got {other:?}"),
         }
@@ -433,8 +438,10 @@ async fn should_ban_a_user_refuse_its_documents_and_let_them_through_again_after
     let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
     assert_success(&setup.process(&ban, &transaction));
     setup.commit(transaction);
-    let proved = setup.assert_execution_proved(&ban);
-    assert!(proved.banned);
+    assert_eq!(
+        setup.assert_execution_proved(&ban),
+        ContractModerationListStatus::Banlist { banned: true }
+    );
 
     // The mempool refuses the banned user's documents, paid, before a block does.
     let refused = setup.create_document(&setup.user).await;
@@ -454,8 +461,10 @@ async fn should_ban_a_user_refuse_its_documents_and_let_them_through_again_after
     let after = setup.create_document(&setup.user).await;
     assert_success(&setup.process(&after, &transaction));
     setup.commit(transaction);
-    let proved = setup.assert_execution_proved(&unban);
-    assert!(!proved.banned);
+    assert_eq!(
+        setup.assert_execution_proved(&unban),
+        ContractModerationListStatus::Banlist { banned: false }
+    );
 }
 
 #[tokio::test]
@@ -471,8 +480,10 @@ async fn should_suspend_until_a_block_time_and_sweep_the_suspension_once_it_laps
     assert_success(&setup.process(&suspend, &transaction));
     setup.commit(transaction);
     assert_eq!(
-        setup.assert_execution_proved(&suspend).suspended_until,
-        Some(until)
+        setup.assert_execution_proved(&suspend),
+        ContractModerationListStatus::Suspensions {
+            suspended_until: Some(until)
+        }
     );
 
     let refused = setup.create_document(&setup.user).await;
@@ -704,4 +715,132 @@ async fn should_not_be_active_before_protocol_version_14() {
         ),
         "expected the transition to be inactive before protocol version 14, got {execution:?}"
     );
+}
+
+#[tokio::test]
+async fn should_not_admit_a_moderated_contract_before_protocol_version_14() {
+    let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+    let mut setup = Setup::new_at(None, platform_version).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let declaration = moderation(true, true, setup.moderator.id());
+
+    // A version 2 config is bytes a binary from before protocol version 14 cannot decode, so
+    // neither a create nor an update carrying one may be admitted there.
+    let assert_inactive = |execution: StateTransitionExecutionResult, name: &str| {
+        assert!(
+            matches!(
+                &execution,
+                StateTransitionExecutionResult::InternalError(message)
+                    if message.contains(name) && message.contains("not active")
+            ),
+            "expected {name} to be inactive before protocol version 14, got {execution:?}"
+        );
+    };
+
+    let mut moderated = setup.contract.clone();
+    moderated.set_version(2);
+    moderated.set_config(
+        moderated
+            .config()
+            .clone()
+            .with_moderation(Some(declaration)),
+    );
+    let update = setup.contract_update(moderated.clone()).await;
+    assert_inactive(setup.process(&update, &transaction), "DataContractUpdate");
+
+    setup.contract = moderated;
+    let create = setup
+        .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+        .await;
+    assert_inactive(setup.process(&create, &transaction), "DataContractCreate");
+
+    // Nothing was stored: the contract on disk still declares no moderation.
+    let stored = setup
+        .platform
+        .drive
+        .fetch_contract(
+            setup.contract.id().to_buffer(),
+            None,
+            None,
+            Some(&transaction),
+            platform_version,
+        )
+        .unwrap()
+        .expect("expected to fetch the contract")
+        .expect("expected the contract to exist");
+    assert!(stored.contract.config().moderation().is_none());
+}
+
+#[tokio::test]
+async fn should_prove_only_the_edited_list_and_leave_the_other_unknown() {
+    let setup = Setup::new(Some(moderation(true, true, Identifier::from([7; 32])))).await;
+    let user_id = setup.user.id();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let suspend = setup
+        .moderate(
+            &setup.owner,
+            suspend_action(user_id, BLOCK_TIME_MS + 10_000),
+        )
+        .await;
+    assert_success(&setup.process(&suspend, &transaction));
+    let unsuspend = setup
+        .moderate(&setup.owner, unsuspend_action(user_id))
+        .await;
+    assert_success(&setup.process(&unsuspend, &transaction));
+    let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
+    assert_success(&setup.process(&ban, &transaction));
+    setup.commit(transaction);
+
+    // The proof of the unsuspend holds the suspension entry alone. It must not read as "not
+    // banned": the identity is banned in the very state the proof was made from.
+    assert_eq!(
+        setup.assert_execution_proved(&unsuspend),
+        ContractModerationListStatus::Suspensions {
+            suspended_until: None
+        }
+    );
+    assert!(setup.status(user_id, None).banned);
+}
+
+#[tokio::test]
+async fn should_let_an_entry_be_lifted_from_an_identity_an_update_made_moderator() {
+    let mut setup = Setup::new(Some(moderation(true, true, Identifier::from([7; 32])))).await;
+    let user_id = setup.user.id();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
+    assert_success(&setup.process(&ban, &transaction));
+
+    // The banned user becomes a moderator: its ban stays, and still binds it.
+    let mut promoted = setup.contract.clone();
+    promoted.set_version(2);
+    promoted.set_config(
+        promoted
+            .config()
+            .clone()
+            .with_moderation(Some(moderation(true, true, user_id))),
+    );
+    let update = setup.contract_update(promoted.clone()).await;
+    assert_success(&setup.process(&update, &transaction));
+    setup.contract = promoted;
+    let refused = setup.create_document(&setup.user).await;
+    assert_paid_with_code(&setup.process(&refused, &transaction), CONTRACT_USER_BANNED);
+
+    // A moderator still cannot be put on a list, but the entry it already carries can be
+    // lifted without demoting it first.
+    let suspend = setup
+        .moderate(
+            &setup.owner,
+            suspend_action(user_id, BLOCK_TIME_MS + 10_000),
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process(&suspend, &transaction),
+        CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+    );
+    let unban = setup.moderate(&setup.owner, unban_action(user_id)).await;
+    assert_success(&setup.process(&unban, &transaction));
+    let allowed = setup.create_document(&setup.user).await;
+    assert_success(&setup.process(&allowed, &transaction));
 }

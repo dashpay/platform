@@ -115,7 +115,14 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
                 IdentityNotContractModeratorError::new(contract_id, moderator_id).into(),
             );
         }
-        if moderation.is_owner_or_moderator(&owner_id, &target_id) {
+        // The owner and the moderators cannot be put on a list. They can be taken off one: a
+        // contract update may name as moderator an identity that already carries an entry, and
+        // without the removal that entry could only be lifted by demoting the moderator first.
+        let adds_an_entry = matches!(
+            action,
+            ContractUserModerationAction::Ban { .. } | ContractUserModerationAction::Suspend { .. }
+        );
+        if adds_an_entry && moderation.is_owner_or_moderator(&owner_id, &target_id) {
             return refuse(
                 ContractModerationTargetNotAllowedError::new(contract_id, target_id).into(),
             );

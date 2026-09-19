@@ -12,7 +12,7 @@
 //!     .await?;
 //! ```
 
-use dpp::data_contract::config::moderation::ContractModerationStatus;
+use dpp::data_contract::config::moderation::ContractModerationListStatus;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -31,15 +31,18 @@ use crate::{Error, Sdk};
 
 use super::waitable::Waitable;
 
-/// The target identity's status on the contract, as the proof of the moderation shows it.
+/// The target identity's entry on the list a moderation edited, as the proof of the moderation
+/// shows it. The proof holds that one entry: it says nothing about the contract's other list,
+/// so an identity shown as no longer suspended may still be banned. Fetch
+/// `ContractModerationStatus` for the whole picture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModeratedUserStatus {
     /// The moderated contract
     pub contract_id: Identifier,
     /// The moderated identity
     pub identity_id: Identifier,
-    /// Its status after the moderation
-    pub status: ContractModerationStatus,
+    /// Its status on the edited list after the moderation
+    pub status: ContractModerationListStatus,
 }
 
 impl TryFrom<StateTransitionProofResult> for ModeratedUserStatus {
@@ -47,7 +50,7 @@ impl TryFrom<StateTransitionProofResult> for ModeratedUserStatus {
 
     fn try_from(value: StateTransitionProofResult) -> Result<Self, Self::Error> {
         match value {
-            StateTransitionProofResult::VerifiedContractModerationStatus(
+            StateTransitionProofResult::VerifiedContractModerationListStatus(
                 contract_id,
                 identity_id,
                 status,

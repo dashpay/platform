@@ -29,7 +29,9 @@ use dpp::state_transition::identity_create_from_addresses_transition::accessors:
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
-use dpp::data_contract::config::moderation::ContractModerationList;
+use dpp::data_contract::config::moderation::{
+    ContractModerationList, ContractModerationListStatus,
+};
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
@@ -53,7 +55,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractModerationStatus, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractModerationListStatus, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1166,15 +1168,26 @@ impl Drive {
                     &[list],
                     platform_version,
                 )?;
-                let as_expected = match transition.action() {
-                    ContractUserModerationAction::Ban { .. } => status.banned,
-                    ContractUserModerationAction::Unban { .. } => !status.banned,
-                    ContractUserModerationAction::Suspend { until, .. } => {
-                        status.suspended_until == Some(until)
-                    }
-                    ContractUserModerationAction::Unsuspend { .. } => {
-                        status.suspended_until.is_none()
-                    }
+                // Only `list` was proved: the rest of `status` is unknown, not empty.
+                let list_status = ContractModerationListStatus::from_status(list, &status);
+                let as_expected = match (transition.action(), list_status) {
+                    (
+                        ContractUserModerationAction::Ban { .. },
+                        ContractModerationListStatus::Banlist { banned },
+                    ) => banned,
+                    (
+                        ContractUserModerationAction::Unban { .. },
+                        ContractModerationListStatus::Banlist { banned },
+                    ) => !banned,
+                    (
+                        ContractUserModerationAction::Suspend { until, .. },
+                        ContractModerationListStatus::Suspensions { suspended_until },
+                    ) => suspended_until == Some(until),
+                    (
+                        ContractUserModerationAction::Unsuspend { .. },
+                        ContractModerationListStatus::Suspensions { suspended_until },
+                    ) => suspended_until.is_none(),
+                    _ => false,
                 };
                 if !as_expected {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!(
@@ -1186,7 +1199,7 @@ impl Drive {
                 }
                 Ok((
                     root_hash,
-                    VerifiedContractModerationStatus(contract_id, identity_id, status),
+                    VerifiedContractModerationListStatus(contract_id, identity_id, list_status),
                 ))
             }
             StateTransition::IdentityKeyLimitsUpdate(transition) => {

@@ -342,6 +342,50 @@ impl ContractModerationStatus {
     }
 }
 
+/// What one of a contract's moderation lists says about one identity, and nothing about the
+/// other list. It is what the proof of a moderation transition's execution shows: that proof
+/// holds the edited entry only, so the other list stays unknown rather than being reported as
+/// empty (an identity unsuspended a moment ago may well be banned).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "list", rename_all = "camelCase")]
+pub enum ContractModerationListStatus {
+    /// The banlist entry
+    #[serde(rename_all = "camelCase")]
+    Banlist {
+        /// The identity is on the banlist.
+        banned: bool,
+    },
+    /// The suspension list entry
+    #[serde(rename_all = "camelCase")]
+    Suspensions {
+        /// The identity is on the suspension list, until this block time in milliseconds. A
+        /// lapsed suspension still appears here until it is swept.
+        suspended_until: Option<TimestampMillis>,
+    },
+}
+
+impl ContractModerationListStatus {
+    /// The part of a full `status` that `list` holds.
+    pub fn from_status(list: ContractModerationList, status: &ContractModerationStatus) -> Self {
+        match list {
+            ContractModerationList::Banlist => Self::Banlist {
+                banned: status.banned,
+            },
+            ContractModerationList::Suspensions => Self::Suspensions {
+                suspended_until: status.suspended_until,
+            },
+        }
+    }
+
+    /// The list this status was read from.
+    pub fn list(&self) -> ContractModerationList {
+        match self {
+            Self::Banlist { .. } => ContractModerationList::Banlist,
+            Self::Suspensions { .. } => ContractModerationList::Suspensions,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

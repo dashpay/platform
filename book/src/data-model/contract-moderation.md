@@ -9,7 +9,7 @@ An application that stores user content needs a way to keep an abusive identity 
 Three facts define a contract's moderation:
 
 1. **The contract declares it.** `DataContractConfigV2::moderation` is an optional `ContractModerationConfig { banlist, suspensions, moderators }`. At least one list must be kept. A list may be turned on later by a contract update, and once on it can never be turned off: its tree may hold entries. The moderators may be changed by an update at any time.
-2. **The owner moderates, alone or with a fixed set.** `ContractModerators` is `ContractOwner` or `OwnerAndIdentities(set)`: at most `SystemLimits::max_contract_moderators` (16) identities, none of them the owner. Moderators act alone: there is no threshold and no vote. Neither the owner nor a moderator can be moderated.
+2. **The owner moderates, alone or with a fixed set.** `ContractModerators` is `ContractOwner` or `OwnerAndIdentities(set)`: at most `SystemLimits::max_contract_moderators` (16) identities, none of them the owner. Moderators act alone: there is no threshold and no vote. Neither the owner nor a moderator can be banned or suspended. An entry one of them already carries can still be lifted: a contract update may name as moderator an identity that is banned or suspended, the entry keeps binding it, and the owner or another moderator unbans or unsuspends it without demoting it first (never the identity itself: a moderation cannot target its own signer).
 3. **A ban lasts until an unban; a suspension lasts until a block time.** A suspension names the block time, in milliseconds, at which it lapses. A lapsed suspension is not deleted by the clock: the first document transition of the identity that runs at or after that time executes normally and, in the same execution, sweeps the stale entry. An explicit unsuspend deletes it too. A ban supersedes a suspension: banning a suspended identity removes the suspension, and suspending a banned identity is refused.
 
 ## The Types
@@ -36,7 +36,7 @@ pub struct ContractModerationStatus {
 }
 ```
 
-The config is `DataContractConfig::V2`, a new variant of the config's own bincode enum inside the contract. A V2 config whose `moderation` is `None` is lowered to V1 before storage (`config_valid_for_platform_version`), so an unmoderated contract keeps the bytes it had before. A V2 config that declares moderation is never lowered: lowering would silently drop the declaration, and a node whose platform version admits no V2 refuses it at deserialization instead. The JSON shape of the moderators is a flat `{"$type": "contractOwner"}` or `{"$type": "ownerAndIdentities", "identities": [...]}`, the style of `AuthorizedActionTakers`.
+The config is `DataContractConfig::V2`, a new variant of the config's own bincode enum inside the contract. A V2 config whose `moderation` is `None` is lowered to V1 before storage (`config_valid_for_platform_version`), so an unmoderated contract keeps the bytes it had before. A V2 config that declares moderation is never lowered: lowering would silently drop the declaration. A contract create or update carrying a V2 config is active from protocol version 14 only (`StateTransition::active_version_range`): before that a node rejects it at decoding, unpaid, exactly as a binary that cannot decode the V2 discriminant does, so upgraded and older nodes agree on every block before activation. The JSON shape of the moderators is a flat `{"$type": "contractOwner"}` or `{"$type": "ownerAndIdentities", "identities": [...]}`, the style of `AuthorizedActionTakers`.
 
 ## The Transition
 
@@ -69,7 +69,7 @@ It is signed like a contract update: a CRITICAL authentication key without contr
 |---|---|---|
 | Basic structure (unpaid) | the target is not the signer | 10463 |
 | Signature and nonce | CRITICAL key, contract nonce | existing |
-| Transform (state, paid) | the contract exists; it keeps the list the action edits; the signer is the owner or a moderator; the target is neither and exists; the action fits the target's status | 41100-41106, 41109 |
+| Transform (state, paid) | the contract exists; it keeps the list the action edits; the signer is the owner or a moderator; the target of a ban or a suspend is neither; the target exists; the action fits the target's status | 41100-41106, 41109 |
 
 The transform reads the contract and the target's status and refuses, paid, by bumping the signer's contract nonce. The action carries the status as read, so Drive edits the lists without reading them again, and the mempool, which transforms without a state validation stage, refuses with the same codes as a block. A suspend must end after the block time (41106). Suspending an identity that carries a suspension replaces it, longer or shorter.
 
@@ -112,7 +112,7 @@ The writers, readers and provers live in `packages/rs-drive/src/drive/contract/m
 - `getContractModerationStatus(contract_id, identity_id, lists, prove)`: the identity's status on the lists named.
 - `getContractModerationEntries(contract_id, list, start_after, limit, prove)`: one page of a list.
 
-Both have `Fetch` and `FetchUnproved` impls in the Rust SDK (`platform::contract_moderation`), wasm-sdk functions and `contracts.moderationStatus` / `contracts.moderationEntries` on the JavaScript SDK. The proof of a moderation transition's execution is the edited entry, present or absent, and is classified as affected state: an earlier or later moderation leaving the same entry verifies just the same.
+Both have `Fetch` and `FetchUnproved` impls in the Rust SDK (`platform::contract_moderation`), wasm-sdk functions and `contracts.moderationStatus` / `contracts.moderationEntries` on the JavaScript SDK. The proof of a moderation transition's execution is the edited entry, present or absent, and is classified as affected state: an earlier or later moderation leaving the same entry verifies just the same. Its result, `VerifiedContractModerationListStatus`, is a `ContractModerationListStatus` of that one list (`Banlist { banned }` or `Suspensions { suspended_until }`), not a full status: the other list was not proved, so it is left unknown rather than reported as empty. An identity whose unsuspend was just proved may be banned; the status query answers that.
 
 ## Versioning Touchpoints
 
@@ -125,5 +125,5 @@ Group-based moderators (`AuthorizedActionTakers::Group` through group actions), 
 ## Tests
 
 - `packages/rs-dpp/src/data_contract/config/moderation/mod.rs` and `config/methods/validate_update/v2`: the declaration's rules and the update rules.
-- `packages/rs-drive/src/drive/contract/moderation/tests.rs`: tree creation on insert and update, every writer with estimation, status and page proofs, paging.
-- `packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/contract_user_moderation/tests.rs`: the whole pipeline, including the mempool refusal, the lapse sweep, the moderator set, every refusal code, enabling by update, and inactivity before protocol version 14.
+- `packages/rs-drive/src/drive/contract/moderation/tests.rs`: tree creation on insert and update, every writer with estimation, status and page proofs, paging, and the refund going to the first moderator after another one replaces its suspension.
+- `packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/contract_user_moderation/tests.rs`: the whole pipeline, including the mempool refusal, the lapse sweep, the moderator set, every refusal code, enabling by update, lifting the entry of an identity an update made moderator, the per-list execution proof, and inactivity of the transition and of a moderated contract create or update before protocol version 14.

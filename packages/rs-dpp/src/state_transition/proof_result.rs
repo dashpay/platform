@@ -1,7 +1,7 @@
 use crate::address_funds::PlatformAddress;
 use crate::asset_lock::StoredAssetLockInfo;
 use crate::balances::credits::TokenAmount;
-use crate::data_contract::config::moderation::ContractModerationStatus;
+use crate::data_contract::config::moderation::ContractModerationListStatus;
 use crate::data_contract::group::GroupSumPower;
 use crate::data_contract::DataContract;
 use crate::document::Document;
@@ -129,9 +129,10 @@ pub enum StateTransitionProofResult {
     /// STRICT merged multi-root GroveDB proof. A light/SDK client can cryptographically confirm both
     /// that the identity was created and that the funding nullifiers were consumed.
     VerifiedIdentityWithShieldedNullifiers(Identity, Vec<(Vec<u8>, bool)>),
-    /// Returned by `ContractUserModeration`: the target identity's status on the contract
-    /// (contract id, identity id, status) after the moderation.
-    VerifiedContractModerationStatus(Identifier, Identifier, ContractModerationStatus),
+    /// Returned by `ContractUserModeration`: the target identity's entry on the list the
+    /// moderation edited (contract id, identity id, that list's status) after the moderation.
+    /// The proof holds that one entry, so it says nothing about the contract's other list.
+    VerifiedContractModerationListStatus(Identifier, Identifier, ContractModerationListStatus),
 }
 
 /// A verified state-transition proof result, tagged with the guarantee the

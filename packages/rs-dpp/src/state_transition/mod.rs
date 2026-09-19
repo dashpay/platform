@@ -61,6 +61,7 @@ use crate::consensus::ConsensusError;
 pub use traits::*;
 
 use crate::address_funds::PlatformAddress;
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::fee::Credits;
 #[cfg(any(
@@ -910,6 +911,24 @@ fn active_version_range_for_keys_in_creation(
     }
 }
 
+/// The active range of a transition carrying `contract`: from protocol version 14 when its
+/// config is version 2 (the format that can declare moderation), otherwise whatever the
+/// contract's own format admits. Binaries from before protocol version 14 cannot decode a
+/// version 2 config, so an earlier version must reject the transition without charging as they
+/// do; admitting it would also store a moderated contract whose list trees the earlier storage
+/// writer never creates.
+fn active_version_range_for_contract(
+    contract: &DataContractInSerializationFormat,
+) -> RangeInclusive<ProtocolVersion> {
+    if matches!(contract.config(), DataContractConfig::V2(_)) {
+        return 14..=LATEST_VERSION;
+    }
+    match contract {
+        DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
+        DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
+    }
+}
+
 impl StateTransition {
     #[allow(unused_variables)]
     pub fn deserialize_from_bytes_untrusted_in_version(
@@ -956,19 +975,13 @@ impl StateTransition {
                     // The embedded contract format alone would admit it at 9 and above, where
                     // the group data would be silently dropped.
                     DataContractCreateTransition::V1(_) => 14..=LATEST_VERSION,
-                    DataContractCreateTransition::V0(_) => {
-                        match data_contract_create_transition.data_contract() {
-                            DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
-                            DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
-                        }
-                    }
+                    DataContractCreateTransition::V0(_) => active_version_range_for_contract(
+                        data_contract_create_transition.data_contract(),
+                    ),
                 }
             }
             StateTransition::DataContractUpdate(data_contract_update_transition) => {
-                match data_contract_update_transition.data_contract() {
-                    DataContractInSerializationFormat::V0(_) => ALL_VERSIONS,
-                    DataContractInSerializationFormat::V1(_) => 9..=LATEST_VERSION,
-                }
+                active_version_range_for_contract(data_contract_update_transition.data_contract())
             }
             StateTransition::Batch(batch_transition) => match batch_transition {
                 BatchTransition::V0(_) => ALL_VERSIONS,

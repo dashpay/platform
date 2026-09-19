@@ -803,6 +803,7 @@ impl From<BasicError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_value::Identifier;
 
     /// `BasicError` is bincode-encoded positionally, so a variant inserted anywhere but the tail
     /// shifts the wire discriminant of every variant after it. These are the frozen
@@ -835,12 +836,25 @@ mod tests {
             ),
             187
         );
-        // Pre-programmed distribution amounts (protocol version 14): the tail of the enum.
+        // Pre-programmed distribution amounts (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::PreProgrammedDistributionAmountOverLimitError(
                 PreProgrammedDistributionAmountOverLimitError::new(0, 100)
             )),
             188
+        );
+        // Contract moderation (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::InvalidContractModerationConfigError(
+                InvalidContractModerationConfigError::new("reason".to_string())
+            )),
+            189
+        );
+        assert_eq!(
+            discriminant_of(BasicError::ContractModerationSelfTargetError(
+                ContractModerationSelfTargetError::new(Identifier::from([1; 32]))
+            )),
+            190
         );
     }
 }

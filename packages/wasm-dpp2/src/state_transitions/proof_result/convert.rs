@@ -6,7 +6,7 @@ use super::address_funds::{
     VerifiedAddressInfosWasm, VerifiedIdentityFullWithAddressInfosWasm,
     VerifiedIdentityWithAddressInfosWasm,
 };
-use super::data_contract::{VerifiedContractModerationStatusWasm, VerifiedDataContractWasm};
+use super::data_contract::{VerifiedContractModerationListStatusWasm, VerifiedDataContractWasm};
 use super::document::VerifiedDocumentsWasm;
 use super::helpers::{
     action_status_to_string, build_address_infos_map, build_nullifier_map, doc_to_wasm,
@@ -31,6 +31,7 @@ use super::voting::{VerifiedMasternodeVoteWasm, VerifiedNextDistributionWasm};
 use crate::IdentifierWasm;
 use crate::error::WasmDppResult;
 use crate::utils::JsMapExt;
+use dpp::data_contract::config::moderation::ContractModerationListStatus;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use js_sys::{BigInt, Map};
 use wasm_bindgen::JsValue;
@@ -70,7 +71,7 @@ export type StateTransitionProofResultType =
   | VerifiedShieldedNullifiersWithAddressInfos
   | VerifiedShieldedNullifiersWithWithdrawalDocument
   | VerifiedIdentityWithShieldedNullifiers
-  | VerifiedContractModerationStatus;
+  | VerifiedContractModerationListStatus;
 "#;
 
 #[wasm_bindgen]
@@ -321,17 +322,26 @@ pub fn convert_proof_result(
         )
         .into(),
 
-        StateTransitionProofResult::VerifiedContractModerationStatus(
+        StateTransitionProofResult::VerifiedContractModerationListStatus(
             contract_id,
             identity_id,
             status,
-        ) => VerifiedContractModerationStatusWasm {
-            contract_id: contract_id.into(),
-            identity_id: identity_id.into(),
-            banned: status.banned,
-            suspended_until: status.suspended_until,
+        ) => {
+            let (list, banned, suspended_until) = match status {
+                ContractModerationListStatus::Banlist { banned } => ("banlist", Some(banned), None),
+                ContractModerationListStatus::Suspensions { suspended_until } => {
+                    ("suspensions", None, suspended_until)
+                }
+            };
+            VerifiedContractModerationListStatusWasm {
+                contract_id: contract_id.into(),
+                identity_id: identity_id.into(),
+                list: list.to_string(),
+                banned,
+                suspended_until,
+            }
+            .into()
         }
-        .into(),
     };
 
     Ok(js_value.into())

@@ -8,6 +8,7 @@ use crate::drive::Drive;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
     ContractModerationConfig, ContractModerationList, ContractModerationStatus, ContractModerators,
@@ -569,4 +570,68 @@ fn should_page_entries_with_a_cursor_and_bound_the_limit() {
     assert!(drive
         .prove_contract_moderation_entries(contract_id, &zero, None, platform_version)
         .is_err());
+}
+
+#[test]
+fn should_refund_the_first_moderator_when_another_replaces_the_suspension() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = moderated_contract(false, true);
+    insert(&drive, &contract, platform_version);
+    let contract_id = contract.id();
+    let first_moderator = identity(0x51);
+    let second_moderator = identity(0x52);
+    let target = identity(0x53);
+
+    let fee = drive
+        .add_contract_suspension(
+            contract_id,
+            target,
+            10,
+            false,
+            first_moderator,
+            &BlockInfo::default_with_epoch(Epoch::new(0).expect("epoch 0")),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to suspend");
+    assert!(fee.storage_fee > 0, "a suspension stores an entry");
+
+    // Another moderator, a later epoch. The entry keeps its size, so the replacement stores
+    // nothing new, and the storage stays the first moderator's.
+    let later = BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch 3"));
+    let fee = drive
+        .add_contract_suspension(
+            contract_id,
+            target,
+            20,
+            true,
+            second_moderator,
+            &later,
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to replace the suspension");
+    assert_eq!(
+        fee.storage_fee, 0,
+        "a fixed-size replacement stores nothing"
+    );
+
+    let fee = drive
+        .remove_contract_suspension(contract_id, target, &later, true, None, platform_version)
+        .expect("expected to unsuspend");
+    assert!(
+        fee.fee_refunds
+            .calculate_refunds_amount_for_identity(first_moderator)
+            .is_some(),
+        "the moderator that paid for the entry gets the storage back"
+    );
+    assert!(
+        fee.fee_refunds
+            .calculate_refunds_amount_for_identity(second_moderator)
+            .is_none(),
+        "the replacing moderator paid for no storage"
+    );
 }

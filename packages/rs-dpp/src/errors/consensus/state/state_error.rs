@@ -753,5 +753,22 @@ mod tests {
             )),
             113
         );
+        // Contract moderation (protocol version 14): its first variant and the tail of the
+        // enum.
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationNotEnabledError(
+                ContractModerationNotEnabledError::new(
+                    group_id,
+                    crate::data_contract::config::moderation::ContractModerationList::Banlist,
+                )
+            )),
+            114
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationTargetNotFoundError(
+                ContractModerationTargetNotFoundError::new(group_id, identity_id)
+            )),
+            123
+        );
     }
 }

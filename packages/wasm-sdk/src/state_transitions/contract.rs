@@ -6,6 +6,7 @@ use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::data_contract::config::moderation::ContractModerationListStatus;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::IdentityPublicKey;
@@ -267,14 +268,22 @@ export interface ContractModerationOptions {
 }
 
 /**
- * The moderated identity's status on the contract after a moderation, as its proof shows it.
+ * The moderated identity's entry on the list the moderation edited, as its proof shows it.
+ * The proof holds that one entry and says nothing about the contract's other list: after an
+ * unsuspend `banned` is undefined (unknown), not false. Use `getContractModerationStatus` for
+ * the identity's whole status.
  */
 export interface ContractModerationResult {
   contractId: Identifier;
   identityId: Identifier;
-  /** The identity is on the banlist */
-  banned: boolean;
-  /** The block time, in milliseconds, until which the identity is suspended */
+  /** The list the moderation edited, the only one this result describes */
+  list: 'banlist' | 'suspensions';
+  /** Set when `list` is `banlist`: the identity is on the banlist */
+  banned?: boolean;
+  /**
+   * When `list` is `suspensions`: the block time, in milliseconds, until which the identity
+   * is suspended; undefined when it is not suspended
+   */
   suspendedUntil?: bigint;
 }
 "#;
@@ -353,9 +362,19 @@ impl WasmSdk {
             "identityId",
             IdentifierWasm::from(status.identity_id).into(),
         )?;
-        set("banned", status.status.banned.into())?;
-        if let Some(until) = status.status.suspended_until {
-            set("suspendedUntil", js_sys::BigInt::from(until).into())?;
+        // Only the edited list is proved, so only its field is set: the other one stays
+        // undefined (unknown) rather than reading as "not banned" or "not suspended".
+        match status.status {
+            ContractModerationListStatus::Banlist { banned } => {
+                set("list", "banlist".into())?;
+                set("banned", banned.into())?;
+            }
+            ContractModerationListStatus::Suspensions { suspended_until } => {
+                set("list", "suspensions".into())?;
+                if let Some(until) = suspended_until {
+                    set("suspendedUntil", js_sys::BigInt::from(until).into())?;
+                }
+            }
         }
         Ok(JsValue::from(result).into())
     }

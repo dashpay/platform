@@ -103,8 +103,9 @@ impl DataContractConfig {
     /// A V1 config is lowered to V0 where the platform version admits no V1. A V2 config that
     /// declares no moderation is lowered to V1, so an unmoderated contract keeps the bytes it
     /// had before protocol version 14; a V2 config that declares moderation is never lowered,
-    /// because lowering would silently drop the declaration (a node whose platform version
-    /// admits no V2 refuses it at deserialization instead).
+    /// because lowering would silently drop the declaration (a contract create or update
+    /// carrying a V2 config is inactive before protocol version 14, see
+    /// `StateTransition::active_version_range`, so it never gets this far there).
     pub fn config_valid_for_platform_version(
         self,
         platform_version: &PlatformVersion,

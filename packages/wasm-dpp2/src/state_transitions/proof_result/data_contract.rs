@@ -70,30 +70,41 @@ impl VerifiedDataContractWasm {
 
 impl_wasm_type_info!(VerifiedDataContractWasm, VerifiedDataContract);
 
-/// `VerifiedContractModerationStatus` proof-result wrapper: the target identity's status on the
-/// contract after a moderation transition.
-#[wasm_bindgen(js_name = "VerifiedContractModerationStatus")]
+/// `VerifiedContractModerationListStatus` proof-result wrapper: the target identity's entry on
+/// the list a moderation transition edited. The proof holds that one entry, so the other list
+/// is unknown: `banned` is undefined unless `list` is `banlist`.
+#[wasm_bindgen(js_name = "VerifiedContractModerationListStatus")]
 #[derive(Clone)]
-pub struct VerifiedContractModerationStatusWasm {
+pub struct VerifiedContractModerationListStatusWasm {
     #[wasm_bindgen(getter_with_clone, js_name = "contractId")]
     pub contract_id: crate::IdentifierWasm,
     #[wasm_bindgen(getter_with_clone, js_name = "identityId")]
     pub identity_id: crate::IdentifierWasm,
-    /// The identity is on the banlist
-    pub banned: bool,
-    /// The block time, in milliseconds, until which the identity is suspended
+    /// The list the moderation edited: `banlist` or `suspensions`
+    #[wasm_bindgen(getter_with_clone)]
+    pub list: String,
+    /// When `list` is `banlist`: the identity is on the banlist
+    pub banned: Option<bool>,
+    /// When `list` is `suspensions`: the block time, in milliseconds, until which the identity
+    /// is suspended
     #[wasm_bindgen(js_name = "suspendedUntil")]
     pub suspended_until: Option<u64>,
 }
 
-#[wasm_bindgen(js_class = VerifiedContractModerationStatus)]
-impl VerifiedContractModerationStatusWasm {
+#[wasm_bindgen(js_class = VerifiedContractModerationListStatus)]
+impl VerifiedContractModerationListStatusWasm {
     #[wasm_bindgen(js_name = toObject)]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
         Ok(js_obj(&[
             ("contractId", self.contract_id.into()),
             ("identityId", self.identity_id.into()),
-            ("banned", JsValue::from_bool(self.banned)),
+            ("list", JsValue::from_str(&self.list)),
+            (
+                "banned",
+                self.banned
+                    .map(JsValue::from_bool)
+                    .unwrap_or(JsValue::UNDEFINED),
+            ),
             (
                 "suspendedUntil",
                 self.suspended_until
@@ -114,7 +125,13 @@ impl VerifiedContractModerationStatusWasm {
                 "identityId",
                 JsValue::from_str(&self.identity_id.to_base58()),
             ),
-            ("banned", JsValue::from_bool(self.banned)),
+            ("list", JsValue::from_str(&self.list)),
+            (
+                "banned",
+                self.banned
+                    .map(JsValue::from_bool)
+                    .unwrap_or(JsValue::UNDEFINED),
+            ),
             (
                 "suspendedUntil",
                 self.suspended_until
@@ -126,6 +143,6 @@ impl VerifiedContractModerationStatusWasm {
 }
 
 impl_wasm_type_info!(
-    VerifiedContractModerationStatusWasm,
-    VerifiedContractModerationStatus
+    VerifiedContractModerationListStatusWasm,
+    VerifiedContractModerationListStatus
 );
