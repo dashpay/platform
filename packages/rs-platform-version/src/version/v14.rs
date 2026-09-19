@@ -270,7 +270,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     v1 charges whoever was admitted. The batch's signer only funds the
 ///     principal, and its minimum balance pre-check v1
 ///     (`identity_minimum_balance_pre_check`) asks no more of a batch that
-///     requests sponsorship. A failed batch is never sponsored.
+///     requests sponsorship. A failed batch is never sponsored, so check tx
+///     validates the state of a sponsored batch whose signer is under the fee
+///     minimum in full, on the first check and on every recheck (mempool
+///     policy, not consensus).
 ///
 /// 12. **Optional token costs**: a document type's token cost may declare
 ///     `optional: true` (v3 meta-schema). A transition that leaves
@@ -362,7 +365,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
-    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
     system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
@@ -375,7 +378,7 @@ mod tests {
     use crate::version::v13::PLATFORM_V13;
 
     #[test]
-    fn should_halve_only_the_contested_document_fee_at_protocol_14() {
+    fn should_change_only_the_contested_document_and_once_per_identity_fees_at_protocol_14() {
         for protocol_version in 1..14 {
             let version = PlatformVersion::get(protocol_version).expect("known protocol version");
             assert_eq!(
@@ -392,6 +395,17 @@ mod tests {
         expected_fees
             .vote_resolution_fund_fees
             .contested_document_vote_resolution_fund_required_amount = 10_000_000_000;
+        // The once-per-identity token distribution exists from protocol version 14 on, and a
+        // token that uses it pays the surcharge of the other distribution kinds.
+        assert_eq!(
+            expected_fees
+                .data_contract_registration
+                .token_uses_once_per_identity_distribution_fee,
+            0
+        );
+        expected_fees
+            .data_contract_registration
+            .token_uses_once_per_identity_distribution_fee = 10_000_000_000;
         assert_eq!(PLATFORM_V14.fee_version, expected_fees);
     }
 

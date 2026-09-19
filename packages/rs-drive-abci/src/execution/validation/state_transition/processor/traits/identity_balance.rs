@@ -33,6 +33,18 @@ pub(crate) trait StateTransitionIdentityBalanceValidationV0 {
     fn has_identity_minimum_balance_pre_check_validation(&self) -> bool {
         true
     }
+
+    /// Whether the signer got through the minimum balance pre-check only because the batch asks
+    /// the contract owner to pay its gas: their own balance does not cover the fee minimum that
+    /// pays for a failed batch, and a failed batch is never sponsored. Check tx validates such a
+    /// batch against the state in full, like a masternode vote, on the first check and on every
+    /// recheck, so that a transition nobody can be charged for is kept out of the mempool rather
+    /// than executed for free by a proposer.
+    fn relies_on_gas_sponsor_to_pay(
+        &self,
+        identity: &PartialIdentity,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error>;
 }
 
 impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
@@ -116,6 +128,38 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
                 Ok(SimpleConsensusValidationResult::new())
             }
         }
+    }
+
+    fn relies_on_gas_sponsor_to_pay(
+        &self,
+        identity: &PartialIdentity,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        let StateTransition::Batch(st) = self else {
+            return Ok(false);
+        };
+        // Pre-check v0 asks every batch for the fee minimum, so no signer relies on a sponsor.
+        if platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition
+            .identity_minimum_balance_pre_check
+            == 0
+            || !st.requests_gas_sponsorship()
+        {
+            return Ok(false);
+        }
+        let balance =
+            identity
+                .balance
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expected to have a balance on identity for the gas sponsorship check",
+                )))?;
+        Ok(!st
+            .validate_estimated_fee(balance, platform_version)
+            .map_err(Error::Protocol)?
+            .is_valid())
     }
 
     fn has_identity_minimum_balance_pre_check_validation(&self) -> bool {

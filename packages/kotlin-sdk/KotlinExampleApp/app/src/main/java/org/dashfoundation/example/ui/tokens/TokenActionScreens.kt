@@ -657,6 +657,7 @@ private fun ClaimForm(
                                 when (dist) {
                                     TokenDistributionType.PERPETUAL -> "Perpetual"
                                     TokenDistributionType.PRE_PROGRAMMED -> "Pre-Programmed"
+                                    TokenDistributionType.ONCE_PER_IDENTITY -> "Once per identity"
                                 },
                             )
                         }

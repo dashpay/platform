@@ -10,7 +10,9 @@ use super::*;
 
 mod gas_sponsorship_tests {
     use super::*;
-    use crate::execution::check_tx::CheckTxLevel::FirstTimeCheck;
+    use crate::execution::check_tx::CheckTxLevel;
+    use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
+    use crate::execution::validation::state_transition::tests::setup_identity_without_adding_it;
     use crate::platform_types::platform::PlatformRef;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{
         SuccessfulExecution, UnpaidConsensusError,
@@ -22,9 +24,12 @@ mod gas_sponsorship_tests {
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Setters;
     use dpp::data_contract::document_type::accessors::{
-        DocumentTypeV0MutGetters, DocumentTypeV1Setters,
+        DocumentTypeV0MutGetters, DocumentTypeV1Getters, DocumentTypeV1Setters,
     };
     use dpp::data_contract::DataContract;
+    use dpp::document::Document;
+    use dpp::identity::accessors::IdentitySettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::prelude::Identifier;
     use dpp::state_transition::StateTransition;
@@ -49,9 +54,12 @@ mod gas_sponsorship_tests {
 
     struct Sponsorship {
         platform: TempPlatform<MockCoreRPCLike>,
+        platform_version: &'static PlatformVersion,
         contract: DataContract,
         gold_token_id: Identifier,
         contract_owner: Identity,
+        contract_owner_signer: SimpleSigner,
+        contract_owner_key: IdentityPublicKey,
         user: Identity,
         user_signer: SimpleSigner,
         user_key: IdentityPublicKey,
@@ -66,35 +74,73 @@ mod gas_sponsorship_tests {
             user_credits: Credits,
             user_gold: TokenAmount,
         ) -> Self {
-            Self::build(offered, false, owner_credits, user_credits, user_gold)
+            Self::build(
+                PlatformVersion::latest(),
+                offered,
+                false,
+                owner_credits,
+                user_credits,
+                user_gold,
+                None,
+            )
         }
 
-        /// The same game with an optional creation cost: a transition may leave the token
-        /// payment out and pay credits instead
+        /// The same game with optional creation and deletion costs: a transition may leave the
+        /// token payment out and pay credits instead
         fn with_optional_cost(
             offered: GasFeesPaidBy,
             owner_credits: Credits,
             user_credits: Credits,
             user_gold: TokenAmount,
         ) -> Self {
-            Self::build(offered, true, owner_credits, user_credits, user_gold)
+            Self::build(
+                PlatformVersion::latest(),
+                offered,
+                true,
+                owner_credits,
+                user_credits,
+                user_gold,
+                None,
+            )
         }
 
+        /// Like `new`, on a chain running `platform_version`, with creation and deletion costs
+        /// that are `optional`, and with `user_key_budget` as the budget of the user's signing
+        /// key.
         fn build(
+            platform_version: &'static PlatformVersion,
             offered: GasFeesPaidBy,
             optional: bool,
             owner_credits: Credits,
             user_credits: Credits,
             user_gold: TokenAmount,
+            user_key_budget: Option<Credits>,
         ) -> Self {
-            let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
-                .with_latest_protocol_version()
+                .with_initial_protocol_version(platform_version.protocol_version)
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
-            let (contract_owner, _, _) = setup_identity(&mut platform, 958, owner_credits);
-            let (user, user_signer, user_key) = setup_identity(&mut platform, 234, user_credits);
+            let (contract_owner, contract_owner_signer, contract_owner_key) =
+                setup_identity(&mut platform, 958, owner_credits);
+            // The transitions are signed with the key as the signer knows it, without limits:
+            // validators enforce the ones of the key in Drive.
+            let (mut user, user_signer, user_key) =
+                setup_identity_without_adding_it(234, user_credits);
+            if user_key_budget.is_some() {
+                user.add_public_key(user_key.clone().with_limits(user_key_budget, None));
+            }
+            platform
+                .drive
+                .add_new_identity(
+                    user.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add the user");
 
             let data_contract_id =
                 DataContract::generate_data_contract_id_v0(contract_owner.id(), 1);
@@ -119,6 +165,15 @@ mod gas_sponsorship_tests {
                         gas_fees_paid_by: offered,
                         optional,
                     }));
+                    let deletion_token_cost = document_type
+                        .document_deletion_token_cost()
+                        .expect("expected the card game to charge for a deletion");
+                    document_type.set_document_deletion_token_cost(Some(
+                        DocumentActionTokenCost {
+                            optional,
+                            ..deletion_token_cost
+                        },
+                    ));
                     let offered_int: u8 = offered.into();
                     let schema = document_type.schema_mut();
                     let token_cost = schema
@@ -135,7 +190,13 @@ mod gas_sponsorship_tests {
                     if optional {
                         creation_token_cost
                             .set_value("optional", true.into())
-                            .expect("expected to mark the cost optional");
+                            .expect("expected to mark the creation cost optional");
+                        token_cost
+                            .get_mut("delete")
+                            .expect("expected to get the deletion token cost")
+                            .expect("expected the deletion token cost to be set")
+                            .set_value("optional", true.into())
+                            .expect("expected to mark the deletion cost optional");
                     }
                 }),
                 None,
@@ -149,9 +210,12 @@ mod gas_sponsorship_tests {
 
             Self {
                 platform,
+                platform_version,
                 contract,
                 gold_token_id,
                 contract_owner,
+                contract_owner_signer,
+                contract_owner_key,
                 user,
                 user_signer,
                 user_key,
@@ -160,16 +224,57 @@ mod gas_sponsorship_tests {
 
         /// The user's card creation, asking `requested` for the gas
         async fn card_creation(&self, requested: GasFeesPaidBy) -> StateTransition {
-            self.card_creation_paying(Some(requested)).await
+            self.card_creation_by(
+                &self.user,
+                &self.user_key,
+                &self.user_signer,
+                Some(requested),
+            )
+            .await
         }
 
         /// The user's card creation without any token payment info
         async fn card_creation_without_token_payment(&self) -> StateTransition {
-            self.card_creation_paying(None).await
+            self.card_creation_by(&self.user, &self.user_key, &self.user_signer, None)
+                .await
         }
 
-        async fn card_creation_paying(&self, requested: Option<GasFeesPaidBy>) -> StateTransition {
-            let platform_version = PlatformVersion::latest();
+        /// The user's deletion of the card they created, without any token payment info
+        async fn card_deletion_without_token_payment(&self) -> StateTransition {
+            let (document, _) = self.card_of(&self.user);
+            BatchTransition::new_document_deletion_transition_from_document(
+                document,
+                self.contract
+                    .document_type_for_name("card")
+                    .expect("expected the card document type"),
+                &self.user_key,
+                3,
+                0,
+                None,
+                &self.user_signer,
+                self.platform_version,
+                None,
+            )
+            .await
+            .expect("expected a batch transition")
+        }
+
+        /// The contract owner's own card creation, asking `requested` for the gas
+        async fn card_creation_by_the_contract_owner(
+            &self,
+            requested: GasFeesPaidBy,
+        ) -> StateTransition {
+            self.card_creation_by(
+                &self.contract_owner,
+                &self.contract_owner_key,
+                &self.contract_owner_signer,
+                Some(requested),
+            )
+            .await
+        }
+
+        /// The card `creator` creates, always the same one, with the entropy of its id
+        fn card_of(&self, creator: &Identity) -> (Document, Bytes32) {
             let mut rng = StdRng::seed_from_u64(433);
             let card_document_type = self
                 .contract
@@ -179,21 +284,34 @@ mod gas_sponsorship_tests {
             let mut document = card_document_type
                 .random_document_with_identifier_and_entropy(
                     &mut rng,
-                    self.user.id(),
+                    creator.id(),
                     entropy,
                     DocumentFieldFillType::DoNotFillIfNotRequired,
                     DocumentFieldFillSize::AnyDocumentFillSize,
-                    platform_version,
+                    self.platform_version,
                 )
                 .expect("expected a random document");
             document.set("attack", 4.into());
             document.set("defense", 7.into());
+            (document, entropy)
+        }
+
+        async fn card_creation_by(
+            &self,
+            creator: &Identity,
+            key: &IdentityPublicKey,
+            signer: &SimpleSigner,
+            requested: Option<GasFeesPaidBy>,
+        ) -> StateTransition {
+            let (document, entropy) = self.card_of(creator);
 
             BatchTransition::new_document_creation_transition_from_document(
                 document,
-                card_document_type,
+                self.contract
+                    .document_type_for_name("card")
+                    .expect("expected the card document type"),
                 entropy.0,
-                &self.user_key,
+                key,
                 2,
                 0,
                 requested.map(|gas_fees_paid_by| {
@@ -205,8 +323,8 @@ mod gas_sponsorship_tests {
                         gas_fees_paid_by,
                     })
                 }),
-                &self.user_signer,
-                platform_version,
+                signer,
+                self.platform_version,
                 None,
             )
             .await
@@ -218,7 +336,7 @@ mod gas_sponsorship_tests {
             transition: &StateTransition,
             tx: &drive::grovedb::Transaction,
         ) -> StateTransitionExecutionResult {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let state = self.platform.state.load();
             let result = self
                 .platform
@@ -239,7 +357,11 @@ mod gas_sponsorship_tests {
         }
 
         fn check_tx(&self, transition: &StateTransition) -> Vec<u32> {
-            let platform_version = PlatformVersion::latest();
+            self.check_tx_at(transition, FirstTimeCheck)
+        }
+
+        fn check_tx_at(&self, transition: &StateTransition, level: CheckTxLevel) -> Vec<u32> {
+            let platform_version = self.platform_version;
             let state = self.platform.state.load();
             let platform_ref = PlatformRef {
                 drive: &self.platform.drive,
@@ -251,7 +373,7 @@ mod gas_sponsorship_tests {
                 .serialize_to_bytes()
                 .expect("expected to serialize");
             self.platform
-                .check_tx(&raw, FirstTimeCheck, &platform_ref, platform_version)
+                .check_tx(&raw, level, &platform_ref, platform_version)
                 .expect("expected to check the transaction")
                 .errors
                 .iter()
@@ -262,11 +384,7 @@ mod gas_sponsorship_tests {
         fn credits(&self, identity: &Identity, tx: &drive::grovedb::Transaction) -> Credits {
             self.platform
                 .drive
-                .fetch_identity_balance(
-                    identity.id().to_buffer(),
-                    Some(tx),
-                    PlatformVersion::latest(),
-                )
+                .fetch_identity_balance(identity.id().to_buffer(), Some(tx), self.platform_version)
                 .expect("expected to fetch the balance")
                 .expect("expected a balance")
         }
@@ -278,7 +396,7 @@ mod gas_sponsorship_tests {
                     self.gold_token_id.to_buffer(),
                     identity.id().to_buffer(),
                     Some(tx),
-                    PlatformVersion::latest(),
+                    self.platform_version,
                 )
                 .expect("expected to fetch the token balance")
                 .unwrap_or_default()
@@ -474,6 +592,179 @@ mod gas_sponsorship_tests {
         );
     }
 
+    #[tokio::test]
+    async fn should_keep_an_unfunded_users_failing_sponsored_creation_out_of_the_mempool() {
+        // The user has no credits and too little gold. A failed batch is never sponsored, so
+        // nobody could be charged for this one: check tx validates it against the state in
+        // full, as it does a masternode vote, instead of leaving the failure to a proposer.
+        let setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            0,
+            CARD_COST - 1,
+        );
+        let transition = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        assert_eq!(
+            setup.check_tx(&transition),
+            vec![IDENTITY_DOES_NOT_HAVE_ENOUGH_TOKEN_BALANCE]
+        );
+
+        // A user who can pay for their own failure is admitted as before, and pays for it in
+        // the block (`should_make_the_signer_pay_for_a_sponsored_creation_that_fails`).
+        let setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            CARD_COST - 1,
+        );
+        let transition = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+    }
+
+    #[tokio::test]
+    async fn should_keep_an_unfunded_users_sponsored_creation_on_recheck() {
+        let setup = Sponsorship::new(GasFeesPaidBy::ContractOwner, dash_to_credits!(0.1), 0, 15);
+        let transition = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        assert_eq!(setup.check_tx_at(&transition, Recheck), Vec::<u32>::new());
+    }
+
+    #[tokio::test]
+    async fn should_drop_an_unfunded_users_sponsored_creation_on_recheck_once_its_gold_is_spent() {
+        // Admitted while the user held the gold, which another of their transitions then spent.
+        // Nobody could be charged for the failure in a block, so the recheck validates the state
+        // in full as the first time check did, and the batch leaves the mempool.
+        let setup = Sponsorship::new(GasFeesPaidBy::ContractOwner, dash_to_credits!(0.1), 0, 15);
+        let transition = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+
+        setup
+            .platform
+            .drive
+            .remove_from_identity_token_balance(
+                setup.gold_token_id.to_buffer(),
+                setup.user.id().to_buffer(),
+                15,
+                &BlockInfo::default(),
+                true,
+                None,
+                setup.platform_version,
+                None,
+            )
+            .expect("expected to spend the gold");
+
+        assert_eq!(
+            setup.check_tx_at(&transition, Recheck),
+            vec![IDENTITY_DOES_NOT_HAVE_ENOUGH_TOKEN_BALANCE]
+        );
+
+        // A user who can pay for their own failure is rechecked as before: the batch stays and
+        // they pay for it in the block.
+        let setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            CARD_COST - 1,
+        );
+        let transition = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        assert_eq!(setup.check_tx_at(&transition, Recheck), Vec::<u32>::new());
+    }
+
+    #[tokio::test]
+    async fn should_let_a_contract_owner_who_insists_pay_for_their_own_creation() {
+        // The signer is never their own sponsor: the contract owner simply pays as the signer.
+        let setup = Sponsorship::new(GasFeesPaidBy::ContractOwner, dash_to_credits!(0.1), 0, 0);
+        add_tokens_to_identity(
+            &setup.platform,
+            setup.gold_token_id,
+            setup.contract_owner.id(),
+            15,
+        );
+        let transition = setup
+            .card_creation_by_the_contract_owner(GasFeesPaidBy::ContractOwner)
+            .await;
+        assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+
+        let tx = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&transition, &tx);
+
+        assert_matches!(result, SuccessfulExecution { .. });
+        let fee = total_fee(&result);
+        assert_eq!(
+            setup.credits(&setup.contract_owner, &tx),
+            dash_to_credits!(0.1) - fee
+        );
+    }
+
+    #[tokio::test]
+    async fn should_not_spend_a_key_budget_on_a_fee_the_contract_owner_paid() {
+        let budget = dash_to_credits!(0.05);
+        let setup = Sponsorship::build(
+            PlatformVersion::latest(),
+            GasFeesPaidBy::ContractOwner,
+            false,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+            Some(budget),
+        );
+        let transition = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        let tx = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&transition, &tx);
+
+        assert_matches!(result, SuccessfulExecution { .. });
+        let fee = total_fee(&result);
+        assert_eq!(
+            setup.credits(&setup.contract_owner, &tx),
+            dash_to_credits!(0.1) - fee
+        );
+        assert_eq!(setup.credits(&setup.user, &tx), dash_to_credits!(0.1));
+        let remaining_budget = setup
+            .platform
+            .drive
+            .fetch_identity_key_remaining_budget(
+                setup.user.id().to_buffer(),
+                setup.user_key.id(),
+                Some(&tx),
+                PlatformVersion::latest(),
+            )
+            .expect("expected to fetch the remaining budget");
+        assert_eq!(
+            remaining_budget,
+            Some(budget),
+            "the creation moved nothing out of the identity, and the sponsor paid the fee"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_ignore_who_is_asked_to_pay_the_gas_at_protocol_version_13() {
+        // Up to protocol version 13 both sides of the field were carried and never read: the
+        // signer pays whatever the transition asks for and whatever the document type offers.
+        let platform_version =
+            PlatformVersion::get(13).expect("expected protocol version 13 to exist");
+        for offered in [GasFeesPaidBy::ContractOwner, GasFeesPaidBy::DocumentOwner] {
+            let setup = Sponsorship::build(
+                platform_version,
+                offered,
+                false,
+                dash_to_credits!(0.1),
+                dash_to_credits!(0.1),
+                15,
+                None,
+            );
+            let transition = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+            let tx = setup.platform.drive.grove.start_transaction();
+            let result = setup.process(&transition, &tx);
+
+            assert_matches!(result, SuccessfulExecution { .. });
+            let fee = total_fee(&result);
+            assert_eq!(setup.credits(&setup.user, &tx), dash_to_credits!(0.1) - fee);
+            assert_eq!(
+                setup.credits(&setup.contract_owner, &tx),
+                dash_to_credits!(0.1)
+            );
+        }
+    }
+
     // ---------- Optional token costs ----------
 
     #[tokio::test]
@@ -577,6 +868,61 @@ mod gas_sponsorship_tests {
         assert_eq!(
             setup.credits(&setup.contract_owner, &tx),
             dash_to_credits!(0.1)
+        );
+    }
+
+    #[tokio::test]
+    async fn should_let_a_user_skip_an_optional_token_payment_on_a_deletion_too() {
+        // The waiver is the same for every action: the user creates a card and deletes it
+        // without paying a token for either, on their own credits.
+        let setup = Sponsorship::with_optional_cost(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            0,
+        );
+        let creation = setup.card_creation_without_token_payment().await;
+        let tx = setup.platform.drive.grove.start_transaction();
+        assert_matches!(setup.process(&creation, &tx), SuccessfulExecution { .. });
+        setup
+            .platform
+            .drive
+            .grove
+            .commit_transaction(tx)
+            .unwrap()
+            .expect("expected to commit the creation");
+
+        let deletion = setup.card_deletion_without_token_payment().await;
+        assert_eq!(setup.check_tx(&deletion), Vec::<u32>::new());
+        let tx = setup.platform.drive.grove.start_transaction();
+        assert_matches!(setup.process(&deletion, &tx), SuccessfulExecution { .. });
+        assert_eq!(
+            setup.credits(&setup.contract_owner, &tx),
+            dash_to_credits!(0.1),
+            "the contract owner pays for neither"
+        );
+
+        // A required deletion cost still asks for the payment
+        let setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+        );
+        let creation = setup.card_creation(GasFeesPaidBy::DocumentOwner).await;
+        let tx = setup.platform.drive.grove.start_transaction();
+        assert_matches!(setup.process(&creation, &tx), SuccessfulExecution { .. });
+        setup
+            .platform
+            .drive
+            .grove
+            .commit_transaction(tx)
+            .unwrap()
+            .expect("expected to commit the creation");
+        let deletion = setup.card_deletion_without_token_payment().await;
+        assert_eq!(
+            setup.check_tx(&deletion),
+            vec![REQUIRED_TOKEN_PAYMENT_INFO_NOT_SET]
         );
     }
 }

@@ -3194,3 +3194,34 @@ fn should_refuse_a_batch_that_names_two_payers() {
     .expect_err("expected the mixed batch to be refused");
     assert_eq!(error.code(), 40130);
 }
+
+#[test]
+fn should_not_let_a_failed_transition_name_a_payer() {
+    // The transformer replaced one member by a nonce bump: the batch still resolves to the
+    // sponsor the other member named (the execution event then drops that sponsor), rather
+    // than hiding the member's own error behind an inconsistency.
+    let contract = test_dpns_contract_info();
+    let contract_owner = contract.contract.owner_id();
+    assert_eq!(
+        batch_of(vec![
+            create_asking(
+                &contract,
+                GasFeesPaidBy::ContractOwner,
+                GasFeesPaidBy::ContractOwner
+            ),
+            BatchedTransitionAction::BumpIdentityDataContractNonce(make_bump_action()),
+        ])
+        .resolve_gas_payer(),
+        Ok(GasPayer::ContractOwner {
+            identity_id: contract_owner,
+            strict: true
+        })
+    );
+    assert_eq!(
+        batch_of(vec![
+            BatchedTransitionAction::BumpIdentityDataContractNonce(make_bump_action())
+        ])
+        .resolve_gas_payer(),
+        Ok(GasPayer::DocumentOwner)
+    );
+}

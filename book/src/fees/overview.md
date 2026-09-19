@@ -130,6 +130,9 @@ to prevent namespace squatting:
 | Unique index | 1,000,000,000 | 0.01 Dash |
 | Contested index | 100,000,000,000 | 1.0 Dash |
 | Token registration | 10,000,000,000 | 0.1 Dash |
+| Token uses a perpetual distribution | 10,000,000,000 | 0.1 Dash |
+| Token uses a pre-programmed distribution | 10,000,000,000 | 0.1 Dash |
+| Token uses a once-per-identity distribution (protocol version 14+) | 10,000,000,000 | 0.1 Dash |
 | Search keyword | 10,000,000,000 | 0.1 Dash |
 
 Before protocol version 9, all registration fees were zero.
@@ -198,14 +201,24 @@ and a batch that prefers falls back to the signer's balance. Execution v1 then
 charges whoever fee validation admitted. A batch that fails validation is never
 sponsored: its signer pays for the work that ran, and a request the document
 type does not offer is a paid rejection (`GasFeesPaidByNotAllowedError`,
-40129). Storage refunds still go to whoever paid the storage originally, so a
-sponsored document refunds its owner when it is deleted: the sponsor bounds
-that exposure through the tokens it hands out.
+40129). Storage refunds still go to the document's owner, whoever paid the
+storage: a sponsored document refunds its owner when it is deleted or replaced
+by a smaller one, even when the sponsor pays for that transition too. Each
+token the sponsor hands out is therefore worth up to the storage fee of the
+largest document the type allows, so a document type that offers sponsorship
+should bound its documents' size (`maxLength`, `maxItems`) and price the
+action accordingly.
 
 The signer's minimum balance pre-check runs before the contracts are loaded;
 its v1 asks a batch that requests sponsorship for its principal only
 (purchases, contest collateral) and leaves the gas to fee validation, so an
-identity without credits can act on tokens it was given.
+identity without credits can act on tokens it was given. Such a signer
+could not pay for a failed batch, and a failed batch is never sponsored, so
+check tx validates the batch of a signer under the fee minimum against the
+state in full, on the first check and on every recheck, as it does a
+masternode vote: what nobody could be charged for is refused there, or leaves
+the mempool once the tokens it counted on are spent, instead of being executed
+for free by a proposer.
 
 ### Optional token costs
 
@@ -344,6 +357,7 @@ Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The
 | `rs-platform-version/src/version/fee/signature/v1.rs` | Signature verification costs |
 | `rs-platform-version/src/version/fee/state_transition_min_fees/v1.rs` | Minimum fees per transition |
 | `rs-platform-version/src/version/fee/data_contract_registration/v2.rs` | Contract registration fees |
+| `rs-platform-version/src/version/fee/data_contract_registration/v3.rs` | Protocol version 14 addition: once-per-identity distribution surcharge |
 | `rs-drive/src/fees/op.rs` | LowLevelDriveOperation and cost calculation |
 | `rs-dpp/src/fee/fee_result/mod.rs` | FeeResult, BalanceChangeForIdentity |
 | `rs-dpp/src/fee/epoch/distribution.rs` | Epoch distribution table and refund logic |

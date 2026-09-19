@@ -69,10 +69,12 @@ impl BatchTransitionActionV0 {
                         }
                     }
                 }
-                // Token transitions are never sponsored, and a transition that already failed
-                // is paid for by its signer.
-                BatchedTransitionAction::TokenAction(_)
-                | BatchedTransitionAction::BumpIdentityDataContractNonce(_) => None,
+                // Token transitions are never sponsored.
+                BatchedTransitionAction::TokenAction(_) => None,
+                // A transition that already failed names no payer of its own: the execution
+                // event drops the sponsor of a batch that carries one, so its signer pays, and
+                // the error that replaced it must not be masked by an inconsistency here.
+                BatchedTransitionAction::BumpIdentityDataContractNonce(_) => continue,
             };
             match payer {
                 None => payer = Some(transition_payer),

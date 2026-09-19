@@ -99,9 +99,6 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
             ));
         }
 
-        // A contract-bound AUTHENTICATION key may only act inside its contract (and document
-        // type), or inside the members of its contract group. The signer is authenticated, so
-        // an out-of-bounds member is a paid failure.
         // Every transition's request to have the contract owner pay its gas must be one its
         // document type's token cost offers, and a batch names one payer for all of them. Both
         // sides travel on the action, so this reads no state.
@@ -122,6 +119,9 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
             ));
         }
 
+        // A contract-bound AUTHENTICATION key may only act inside its contract (and document
+        // type), or inside the members of its contract group. The signer is authenticated, so
+        // an out-of-bounds member is a paid failure.
         if signing_key.purpose() == Purpose::AUTHENTICATION {
             if let Some(bounds) = signing_key.contract_bounds() {
                 let mut out_of_bounds = false;

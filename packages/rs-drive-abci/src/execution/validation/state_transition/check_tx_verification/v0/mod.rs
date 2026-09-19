@@ -267,6 +267,22 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
             }
 
+            // A signer who got through the pre-check on a request for gas sponsorship alone
+            // could not pay for a failed batch, and a failed batch is never sponsored. Such a
+            // batch is validated like a block would, state included, so that what a proposer
+            // would execute for free never reaches the mempool.
+            let relies_on_gas_sponsor_to_pay = match maybe_identity.as_ref() {
+                Some(identity) => {
+                    state_transition.relies_on_gas_sponsor_to_pay(identity, platform_version)?
+                }
+                None => false,
+            };
+            let validation_mode = if relies_on_gas_sponsor_to_pay {
+                ValidationMode::Validator
+            } else {
+                ValidationMode::CheckTx
+            };
+
             // For address-based state transitions that transfer or withdraw, we have a balance pre-check
             // that validates addresses have enough remaining balance after the input amounts to cover fees.
             if state_transition.has_addresses_minimum_balance_pre_check_validation() {
@@ -301,7 +317,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     platform,
                     &remaining_address_balances,
                     maybe_identity.as_ref(),
-                    ValidationMode::CheckTx,
+                    validation_mode,
                     &mut state_transition_execution_context,
                     proof_verifier,
                 )?;
@@ -336,12 +352,14 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 None
             };
 
-            let action = if state_transition.validates_full_state_on_check_tx() {
+            let action = if state_transition.validates_full_state_on_check_tx()
+                || relies_on_gas_sponsor_to_pay
+            {
                 // Validating structure
                 let result = state_transition.validate_state(
                     action,
                     platform,
-                    ValidationMode::CheckTx,
+                    validation_mode,
                     platform.state.last_block_info(),
                     &mut state_transition_execution_context,
                     None,
@@ -367,7 +385,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     platform,
                     &remaining_address_balances,
                     maybe_identity.as_ref(),
-                    ValidationMode::CheckTx,
+                    validation_mode,
                     &mut state_transition_execution_context,
                     proof_verifier,
                 )?;
@@ -486,6 +504,36 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                 }
 
+                let maybe_identity = if state_transition.uses_identity_in_state() {
+                    if let Some(owner_id) = state_transition.owner_id() {
+                        platform.drive.fetch_identity_with_balance(
+                            owner_id.to_buffer(),
+                            None,
+                            platform_version,
+                        )?
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                // What the first time check decided for a signer who relies on a gas sponsor
+                // holds on every recheck: the tokens or the state the batch depends on may have
+                // been spent since it was admitted, and nobody could be charged for its failure,
+                // so its state is validated in full again.
+                let relies_on_gas_sponsor_to_pay = match maybe_identity.as_ref() {
+                    Some(identity) => {
+                        state_transition.relies_on_gas_sponsor_to_pay(identity, platform_version)?
+                    }
+                    None => false,
+                };
+                let validation_mode = if relies_on_gas_sponsor_to_pay {
+                    ValidationMode::Validator
+                } else {
+                    ValidationMode::RecheckTx
+                };
+
                 let state_transition_action_result = transform_into_action_for_check_tx(
                     state_transition,
                     platform,
@@ -493,7 +541,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     // A recheck does not run advanced structure validation, the only consumer
                     // of what the transformer resolves for the signer, and loads no signer keys.
                     None,
-                    ValidationMode::RecheckTx,
+                    validation_mode,
                     &mut state_transition_execution_context,
                     proof_verifier,
                 )?;
@@ -507,18 +555,26 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
                 let action = state_transition_action_result.into_data()?;
 
-                let maybe_identity = if state_transition.uses_identity_in_state() {
-                    if let Some(owner_id) = state_transition.owner_id() {
-                        platform.drive.fetch_identity_with_balance(
-                            owner_id.to_buffer(),
-                            None,
-                            platform_version,
-                        )?
-                    } else {
-                        None
+                let action = if relies_on_gas_sponsor_to_pay {
+                    let result = state_transition.validate_state(
+                        Some(action),
+                        platform,
+                        validation_mode,
+                        platform.state.last_block_info(),
+                        &mut state_transition_execution_context,
+                        None,
+                    )?;
+
+                    if !result.is_valid() {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
                     }
+                    result.into_data()?
                 } else {
-                    None
+                    action
                 };
 
                 let execution_event = ExecutionEvent::create_from_state_transition_action(

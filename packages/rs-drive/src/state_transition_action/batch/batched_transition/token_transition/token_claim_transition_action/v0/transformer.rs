@@ -9,11 +9,13 @@ use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::token::{InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimWrongClaimant};
+use dpp::consensus::state::token::{InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimWrongClaimant, TokenOncePerIdentityDistributionAlreadyClaimedError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_key::{TokenDistributionInfo, TokenDistributionType};
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
+use dpp::data_contract::associated_token::token_once_per_identity_distribution::accessors::v0::TokenOncePerIdentityDistributionV0Methods;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::{TokenPerpetualDistributionV0Accessors, TokenPerpetualDistributionV0Methods};
@@ -566,6 +568,93 @@ impl TokenClaimTransitionActionV0 {
                     TokenDistributionInfo::Perpetual(max_cycle_moment, recipient),
                 )
             }
+            TokenDistributionType::OncePerIdentity => {
+                // The claimant is whoever signs the claim; the distribution has no configured
+                // recipient. The amount is fixed by the token configuration, so the only state
+                // read is whether this identity already claimed.
+                let Some(once_per_identity_distribution) = token_config
+                    .distribution_rules()
+                    .once_per_identity_distribution()
+                else {
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                            base,
+                            owner_id,
+                            user_fee_increase,
+                        );
+                    let batched_action =
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                    return Ok((
+                        ConsensusValidationResult::new_with_data_and_errors(
+                            batched_action,
+                            vec![ConsensusError::StateError(
+                                StateError::InvalidTokenClaimPropertyMismatch(
+                                    InvalidTokenClaimPropertyMismatch::new(
+                                        "once per identity distribution",
+                                        base.token_id(),
+                                    ),
+                                ),
+                            )],
+                        ),
+                        fee_result,
+                    ));
+                };
+
+                let mut claim_operations = vec![];
+
+                let already_claimed_at = drive
+                    .fetch_once_per_identity_distribution_claim_operations(
+                        base.token_id().to_buffer(),
+                        owner_id,
+                        &mut claim_operations,
+                        transaction,
+                        platform_version,
+                    )?;
+
+                let claim_fee_result = Drive::calculate_fee(
+                    None,
+                    Some(claim_operations),
+                    &block_info.epoch,
+                    drive.config.epochs_per_era,
+                    platform_version,
+                    None,
+                )?;
+
+                fee_result.checked_add_assign(claim_fee_result)?;
+
+                if let Some(claimed_at_ms) = already_claimed_at {
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                            base,
+                            owner_id,
+                            user_fee_increase,
+                        );
+                    let batched_action =
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                    return Ok((
+                        ConsensusValidationResult::new_with_data_and_errors(
+                            batched_action,
+                            vec![ConsensusError::StateError(
+                                StateError::TokenOncePerIdentityDistributionAlreadyClaimedError(
+                                    TokenOncePerIdentityDistributionAlreadyClaimedError::new(
+                                        base.token_id(),
+                                        owner_id,
+                                        claimed_at_ms,
+                                    ),
+                                ),
+                            )],
+                        ),
+                        fee_result,
+                    ));
+                }
+
+                (
+                    once_per_identity_distribution.amount(),
+                    TokenDistributionInfo::OncePerIdentity(block_info.time_ms, owner_id),
+                )
+            }
         };
 
         Ok((
@@ -831,7 +920,8 @@ mod tests {
         let id = Identifier::from([0xEE; 32]);
         let info = TokenDistributionInfo::PreProgrammed(1_000, id);
         let recipient = match &info {
-            TokenDistributionInfo::PreProgrammed(_, identifier) => {
+            TokenDistributionInfo::PreProgrammed(_, identifier)
+            | TokenDistributionInfo::OncePerIdentity(_, identifier) => {
                 TokenDistributionRecipient::Identity(*identifier)
             }
             TokenDistributionInfo::Perpetual(_, resolved_recipient) => resolved_recipient.into(),
@@ -847,7 +937,8 @@ mod tests {
             TokenDistributionResolvedRecipient::ContractOwnerIdentity(id),
         );
         let recipient = match &info {
-            TokenDistributionInfo::PreProgrammed(_, identifier) => {
+            TokenDistributionInfo::PreProgrammed(_, identifier)
+            | TokenDistributionInfo::OncePerIdentity(_, identifier) => {
                 TokenDistributionRecipient::Identity(*identifier)
             }
             TokenDistributionInfo::Perpetual(_, resolved_recipient) => resolved_recipient.into(),
@@ -863,7 +954,8 @@ mod tests {
             TokenDistributionResolvedRecipient::Identity(id),
         );
         let recipient = match &info {
-            TokenDistributionInfo::PreProgrammed(_, identifier) => {
+            TokenDistributionInfo::PreProgrammed(_, identifier)
+            | TokenDistributionInfo::OncePerIdentity(_, identifier) => {
                 TokenDistributionRecipient::Identity(*identifier)
             }
             TokenDistributionInfo::Perpetual(_, resolved_recipient) => resolved_recipient.into(),
@@ -879,7 +971,8 @@ mod tests {
             TokenDistributionResolvedRecipient::Evonode(id),
         );
         let recipient = match &info {
-            TokenDistributionInfo::PreProgrammed(_, identifier) => {
+            TokenDistributionInfo::PreProgrammed(_, identifier)
+            | TokenDistributionInfo::OncePerIdentity(_, identifier) => {
                 TokenDistributionRecipient::Identity(*identifier)
             }
             TokenDistributionInfo::Perpetual(_, resolved_recipient) => resolved_recipient.into(),
@@ -888,6 +981,22 @@ mod tests {
             recipient,
             TokenDistributionRecipient::EvonodesByParticipation
         );
+    }
+
+    #[test]
+    fn distribution_info_once_per_identity_recipient_is_the_claimant() {
+        // Mirrors `TokenClaimTransitionActionV0::recipient` for the OncePerIdentity variant:
+        // the claimant recorded in the info is the recipient.
+        let id = Identifier::from([0x4D; 32]);
+        let info = TokenDistributionInfo::OncePerIdentity(1_700_000_000_000, id);
+        let recipient = match &info {
+            TokenDistributionInfo::PreProgrammed(_, identifier)
+            | TokenDistributionInfo::OncePerIdentity(_, identifier) => {
+                TokenDistributionRecipient::Identity(*identifier)
+            }
+            TokenDistributionInfo::Perpetual(_, resolved_recipient) => resolved_recipient.into(),
+        };
+        assert_eq!(recipient, TokenDistributionRecipient::Identity(id));
     }
 
     /// Reimplements the closure passed to `rewards_in_interval` inside the
