@@ -366,12 +366,20 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// remaining budget with it, or moves its expiry later; it only ever loosens limits. Signed by a
 /// MASTER key or by a CRITICAL key without limits (`DRIVE_ABCI_VALIDATION_VERSIONS_V10` turns
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
+///
+/// **The app-connect system contract** (`SystemDataContract::AppConnect`, `app_connect: 1` in
+/// `SYSTEM_DATA_CONTRACT_VERSIONS_V3`): a new persisted system contract carrying the
+/// wallet-to-app login handshake, the wallet's encrypted `loginKeyResponse` and the app's
+/// `appManifest`. Fresh chains register it at genesis (`create_genesis_state` v2); chains
+/// upgrading from 13 receive it from `transition_to_version_14`, which inserts it beside the
+/// DashPay v2 and withdrawals v2 rewrites. Below 14 it does not exist in state and the system
+/// contract cache reports it absent.
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; create_genesis_state v2 registers the app-connect contract
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
@@ -393,7 +401,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status; the app-connect contract is new (registered at genesis by create_genesis_state v2, inserted on upgrade by transition_to_version_14)
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.

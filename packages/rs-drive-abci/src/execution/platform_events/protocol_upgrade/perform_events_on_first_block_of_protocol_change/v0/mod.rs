@@ -734,7 +734,7 @@ impl<C> Platform<C> {
 
         // App-connect contract: the wallet's encrypted login key response and the app's
         // manifest get one system contract id on every network from this version. Fresh
-        // chains register it at genesis (`create_genesis_state` v1).
+        // chains register it at genesis (`create_genesis_state` v2).
         let app_connect_contract =
             load_system_data_contract(SystemDataContract::AppConnect, platform_version)?;
 
