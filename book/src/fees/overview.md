@@ -215,8 +215,10 @@ its v1 asks a batch that requests sponsorship for its principal only
 identity without credits can act on tokens it was given. Such a signer
 could not pay for a failed batch, and a failed batch is never sponsored, so
 check tx validates the batch of a signer under the fee minimum against the
-state in full, as it does a masternode vote: what nobody could be charged for
-is refused there instead of being executed for free by a proposer.
+state in full, on the first check and on every recheck, as it does a
+masternode vote: what nobody could be charged for is refused there, or leaves
+the mempool once the tokens it counted on are spent, instead of being executed
+for free by a proposer.
 
 ## FeeResult
 

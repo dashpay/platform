@@ -506,6 +506,7 @@ mod gas_sponsorship_tests {
             dash_to_credits!(0.1)
         );
     }
+
     #[tokio::test]
     async fn should_keep_an_unfunded_users_failing_sponsored_creation_out_of_the_mempool() {
         // The user has no credits and too little gold. A failed batch is never sponsored, so
@@ -538,6 +539,47 @@ mod gas_sponsorship_tests {
     #[tokio::test]
     async fn should_keep_an_unfunded_users_sponsored_creation_on_recheck() {
         let setup = Sponsorship::new(GasFeesPaidBy::ContractOwner, dash_to_credits!(0.1), 0, 15);
+        let transition = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        assert_eq!(setup.check_tx_at(&transition, Recheck), Vec::<u32>::new());
+    }
+
+    #[tokio::test]
+    async fn should_drop_an_unfunded_users_sponsored_creation_on_recheck_once_its_gold_is_spent() {
+        // Admitted while the user held the gold, which another of their transitions then spent.
+        // Nobody could be charged for the failure in a block, so the recheck validates the state
+        // in full as the first time check did, and the batch leaves the mempool.
+        let setup = Sponsorship::new(GasFeesPaidBy::ContractOwner, dash_to_credits!(0.1), 0, 15);
+        let transition = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+
+        setup
+            .platform
+            .drive
+            .remove_from_identity_token_balance(
+                setup.gold_token_id.to_buffer(),
+                setup.user.id().to_buffer(),
+                15,
+                &BlockInfo::default(),
+                true,
+                None,
+                setup.platform_version,
+                None,
+            )
+            .expect("expected to spend the gold");
+
+        assert_eq!(
+            setup.check_tx_at(&transition, Recheck),
+            vec![IDENTITY_DOES_NOT_HAVE_ENOUGH_TOKEN_BALANCE]
+        );
+
+        // A user who can pay for their own failure is rechecked as before: the batch stays and
+        // they pay for it in the block.
+        let setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            CARD_COST - 1,
+        );
         let transition = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
         assert_eq!(setup.check_tx_at(&transition, Recheck), Vec::<u32>::new());
     }

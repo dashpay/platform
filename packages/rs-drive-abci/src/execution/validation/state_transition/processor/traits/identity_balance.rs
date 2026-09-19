@@ -37,8 +37,9 @@ pub(crate) trait StateTransitionIdentityBalanceValidationV0 {
     /// Whether the signer got through the minimum balance pre-check only because the batch asks
     /// the contract owner to pay its gas: their own balance does not cover the fee minimum that
     /// pays for a failed batch, and a failed batch is never sponsored. Check tx validates such a
-    /// batch against the state in full, like a masternode vote, so that a transition nobody can
-    /// be charged for is kept out of the mempool rather than executed for free by a proposer.
+    /// batch against the state in full, like a masternode vote, on the first check and on every
+    /// recheck, so that a transition nobody can be charged for is kept out of the mempool rather
+    /// than executed for free by a proposer.
     fn relies_on_gas_sponsor_to_pay(
         &self,
         identity: &PartialIdentity,
