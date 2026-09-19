@@ -1,0 +1,28 @@
+[package]
+name = "dashvm-validation"
+version.workspace = true
+rust-version.workspace = true
+edition = "2021"
+authors = ["Dash Core Team"]
+license = "MIT"
+description = "Deterministic admission, structural bounding and logical-stack instrumentation of DashVM contract modules and bundles"
+
+[dependencies]
+# Pinned to the wasm-tools line Wasmtime 36 ships with, so the validator that admits a module
+# and the engine that runs it agree on the binary format down to the patch level.
+wasmparser = { version = "=0.236.0", default-features = false, features = [
+  "std",
+  "validate",
+  "features",
+] }
+wasm-encoder = { version = "=0.236.0", default-features = false, features = [
+  "std",
+  "wasmparser",
+] }
+sha2 = { version = "0.10" }
+thiserror = { version = "2.0.17" }
+platform-version = { path = "../rs-platform-version" }
+
+[dev-dependencies]
+wat = { version = "=1.236.0", default-features = false }
+wasmprinter = { version = "=0.236.0", default-features = false }
