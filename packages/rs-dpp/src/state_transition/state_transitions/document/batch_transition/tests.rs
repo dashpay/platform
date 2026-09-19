@@ -30,14 +30,13 @@ mod batch_transition_tests {
         TokenTransitionActionType, TokenTransitionActionTypeGetter,
     };
     use crate::state_transition::batch_transition::batched_transition::{
-        BatchedTransition, BatchedTransitionMutRef, BatchedTransitionRef, BatchedTransitionV1,
-        DocumentTransitionV1,
+        BatchedTransition, BatchedTransitionMutRef, BatchedTransitionRef,
     };
     use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
     use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
     use crate::state_transition::batch_transition::{
-        BatchTransition, BatchTransitionV0, BatchTransitionV1, BatchTransitionV2,
+        BatchTransitionV0, BatchTransitionV1,
     };
     use crate::state_transition::StateTransitionLike;
     use crate::state_transition::StateTransition;
@@ -1186,166 +1185,5 @@ mod batch_transition_tests {
         let second = iter.next().unwrap();
         assert!(matches!(second, BatchedTransitionRef::Token(_)));
         assert!(iter.next().is_none());
-    }
-
-    // -----------------------------------------------------------------------
-    // Batch format 2: the only format whose document shell carries an erase
-    // -----------------------------------------------------------------------
-
-    fn make_erase_transition(nonce: u64) -> DocumentTransitionV1 {
-        use crate::state_transition::batch_transition::batched_transition::document_erase_transition::DocumentEraseTransitionV0;
-        use crate::state_transition::batch_transition::batched_transition::DocumentEraseTransition;
-
-        DocumentTransitionV1::Erase(DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
-            base: make_base_transition(nonce),
-        }))
-    }
-
-    fn make_batch_v2(transitions: Vec<BatchedTransitionV1>) -> BatchTransitionV2 {
-        BatchTransitionV2 {
-            owner_id: Identifier::new([0x03; 32]),
-            transitions,
-            user_fee_increase: 0,
-            signature_public_key_id: 0,
-            signature: BinaryData::default(),
-        }
-    }
-
-    #[test]
-    fn should_see_every_format_through_the_format_aware_view_and_only_the_old_ones_through_the_shipped_view(
-    ) {
-        use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV1;
-
-        let v0 = BatchTransition::V0(make_batch_v0(vec![make_delete_transition(1)]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![
-            BatchedTransition::Document(make_delete_transition(1)),
-            BatchedTransition::Token(make_token_burn_transition(2, 5)),
-        ]));
-        let v2 = BatchTransition::V2(make_batch_v2(vec![
-            BatchedTransitionV1::Document(make_erase_transition(1)),
-            BatchedTransitionV1::Token(make_token_burn_transition(2, 5)),
-        ]));
-
-        for (batch, expected_len) in [(&v0, 1), (&v1, 2), (&v2, 2)] {
-            assert_eq!(batch.transitions_len_v1(), expected_len);
-            assert_eq!(batch.transitions_iter_v1().count(), expected_len);
-            assert!(batch.first_transition_v1().is_some());
-            assert!(batch.contains_document_transition_v1());
-        }
-        assert!(v2.contains_token_transition_v1());
-        assert!(v2
-            .first_transition_v1()
-            .expect("first")
-            .as_transition_erase()
-            .is_some());
-
-        // The shipped view cannot represent an erase, so it reports a format 2
-        // batch as empty: a shipped generation that ever received one would
-        // refuse it as a batch without transitions instead of dropping items.
-        assert_eq!(v0.transitions_len(), 1);
-        assert_eq!(v1.transitions_len(), 2);
-        assert_eq!(v2.transitions_len(), 0);
-        assert!(v2.transitions_are_empty());
-        assert!(v2.transitions_iter().next().is_none());
-        assert!(v2.first_transition().is_none());
-        assert!(!v2.contains_document_transition());
-        assert!(!v2.contains_token_transition());
-    }
-
-    #[test]
-    fn should_round_trip_a_format_2_batch_with_an_erase_through_bytes() {
-        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
-
-        let batch = BatchTransition::V2(make_batch_v2(vec![
-            BatchedTransitionV1::Document(make_erase_transition(1)),
-            BatchedTransitionV1::Document(DocumentTransitionV1::Delete(
-                DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
-                    base: make_base_transition(2),
-                }),
-            )),
-        ]));
-
-        let bytes = batch.serialize_to_bytes().expect("serialize");
-        let recovered =
-            BatchTransition::deserialize_from_bytes_untrusted(&bytes).expect("deserialize");
-
-        assert_eq!(recovered, batch);
-    }
-
-    /// Formats 1 and 2 lay out their items identically except for the kinds
-    /// their document shells know, so relabeling a format 2 batch as format 1
-    /// shows exactly what software that only knows format 1 would do with the
-    /// same items: it decodes every shipped kind and refuses an erase.
-    #[test]
-    fn should_refuse_an_erase_in_the_bytes_of_a_format_1_batch() {
-        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
-
-        let relabel_as_format_1 = |batch: BatchTransition| {
-            let mut bytes = batch.serialize_to_bytes().expect("serialize");
-            assert_eq!(bytes[0], 2, "the first byte is the batch format");
-            bytes[0] = 1;
-            BatchTransition::deserialize_from_bytes_untrusted(&bytes)
-        };
-
-        let delete_only = relabel_as_format_1(BatchTransition::V2(make_batch_v2(vec![
-            BatchedTransitionV1::Document(DocumentTransitionV1::Delete(
-                DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
-                    base: make_base_transition(2),
-                }),
-            )),
-        ])))
-        .expect("a delete decodes in format 1");
-        assert!(matches!(delete_only, BatchTransition::V1(_)));
-        assert_eq!(delete_only.transitions_len(), 1);
-
-        let with_erase = relabel_as_format_1(BatchTransition::V2(make_batch_v2(vec![
-            BatchedTransitionV1::Document(make_erase_transition(1)),
-        ])));
-        assert!(
-            with_erase.is_err(),
-            "format 1 has no erase kind, so the bytes must not decode"
-        );
-    }
-
-    #[test]
-    fn should_refuse_to_downcast_an_erase_to_the_shipped_shells() {
-        let erase = BatchedTransitionV1::Document(make_erase_transition(1));
-        let delete = BatchedTransitionV1::Document(DocumentTransitionV1::Delete(
-            DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
-                base: make_base_transition(2),
-            }),
-        ));
-
-        assert!(BatchedTransition::try_from(erase).is_err());
-        assert!(matches!(
-            BatchedTransition::try_from(delete),
-            Ok(BatchedTransition::Document(DocumentTransition::Delete(_)))
-        ));
-    }
-
-    #[test]
-    fn should_upcast_and_set_shipped_transitions_on_a_format_2_batch() {
-        let mut batch = BatchTransition::V2(make_batch_v2(vec![BatchedTransitionV1::Document(
-            make_erase_transition(1),
-        )]));
-
-        batch.set_transitions(vec![BatchedTransition::Document(make_delete_transition(7))]);
-        batch.set_identity_contract_nonce(9);
-
-        let BatchTransition::V2(batch) = batch else {
-            panic!("the format does not change");
-        };
-        assert!(matches!(
-            batch.transitions.as_slice(),
-            [BatchedTransitionV1::Document(DocumentTransitionV1::Delete(
-                _
-            ))]
-        ));
-        assert_eq!(
-            batch.transitions[0]
-                .borrow_as_ref()
-                .identity_contract_nonce(),
-            9
-        );
     }
 }

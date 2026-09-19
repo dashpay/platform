@@ -14,8 +14,6 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 pub mod batched_transition;
 /// v0
 pub mod v0;
-/// v1
-pub mod v1;
 
 #[cfg(test)]
 mod tests;

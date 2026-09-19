@@ -3039,3 +3039,90 @@ fn should_stamp_fetched_contract_version_on_replace_conversion() {
             .expect("owned replace conversion");
     assert_eq!(owned.contract_version(), Some(STAMP_TEST_CONTRACT_VERSION));
 }
+
+// ============================================================
+// Erase action inside the batch action
+// ============================================================
+
+mod erase_action {
+    use super::*;
+    use crate::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::v0::DocumentEraseTransitionActionV0;
+    use crate::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::DocumentEraseTransitionAction;
+    use crate::state_transition_action::batch::v0::BatchTransitionActionV0;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::identity::SecurityLevel;
+
+    fn erase() -> BatchedTransitionAction {
+        BatchedTransitionAction::DocumentAction(DocumentTransitionAction::EraseAction(
+            DocumentEraseTransitionAction::V0(DocumentEraseTransitionActionV0 {
+                base: test_document_base(),
+            }),
+        ))
+    }
+
+    fn delete() -> BatchedTransitionAction {
+        BatchedTransitionAction::DocumentAction(DocumentTransitionAction::DeleteAction(
+            DocumentDeleteTransitionAction::V0(DocumentDeleteTransitionActionV0 {
+                base: test_document_base(),
+            }),
+        ))
+    }
+
+    fn batch(transitions: Vec<BatchedTransitionAction>) -> BatchTransitionAction {
+        BatchTransitionAction::V0(BatchTransitionActionV0 {
+            owner_id: Identifier::from([0x11; 32]),
+            transitions,
+            user_fee_increase: 10,
+        })
+    }
+
+    /// An erase is signed like any other action on its document type: the
+    /// key it demands is the one the type demands, exactly as for a delete.
+    #[test]
+    fn should_require_the_erased_types_security_level() {
+        let domain_level = test_dpns_contract_info()
+            .contract
+            .document_type_for_name("domain")
+            .expect("the DPNS contract has a domain type")
+            .security_level_requirement();
+        assert_ne!(
+            domain_level,
+            SecurityLevel::MASTER,
+            "the test needs a type whose requirement spans more than one level"
+        );
+
+        let expected: Vec<SecurityLevel> = (SecurityLevel::CRITICAL as u8..=domain_level as u8)
+            .map(|level| SecurityLevel::try_from(level).unwrap())
+            .collect();
+        assert_eq!(
+            batch(vec![erase()])
+                .combined_security_level_requirement()
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            batch(vec![erase()])
+                .combined_security_level_requirement()
+                .unwrap(),
+            batch(vec![delete()])
+                .combined_security_level_requirement()
+                .unwrap(),
+            "an erase and a delete of the same type demand the same key"
+        );
+    }
+
+    /// The credits a batch commits up front decide whether the signer can
+    /// afford it; an erase commits none, so its presence changes no sum.
+    #[test]
+    fn should_commit_no_credits_up_front() {
+        let erase_only = batch(vec![erase()]);
+        assert_eq!(erase_only.all_purchases_amount().unwrap(), None);
+        assert_eq!(
+            erase_only
+                .all_conflicting_index_collateral_voting_funds()
+                .unwrap(),
+            None
+        );
+        assert_eq!(erase_only.all_used_balances().unwrap(), None);
+    }
+}

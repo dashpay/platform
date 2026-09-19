@@ -2609,8 +2609,7 @@ mod test_suite {
     use drive::drive::Drive;
     use simple_signer::signer::SimpleSigner;
     use std::sync::Arc;
-    use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV1;
-    use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRefV1;
+    use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
     use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
     use dpp::state_transition::proof_result::StateTransitionProofResult;
     use dpp::state_transition::StateTransition;
@@ -2983,22 +2982,20 @@ mod test_suite {
                 };
 
                 // --- Extract TokenTransition from claim_transition ---
-                let StateTransition::Batch(batch) = claim_transition else {
-                    return Err("expected a batch transition".to_string());
+                let StateTransition::Batch(BatchTransition::V1(batch_v1)) = claim_transition else {
+                    return Err("expected BatchTransition::V1".to_string());
                 };
 
                 // Assume only one transition was in the batch
-                if batch.transitions_len_v1() != 1 {
+                let [batched_transition] = batch_v1.transitions.as_slice() else {
                     return Err(format!(
                         "expected exactly one batched transition, got {}",
-                        batch.transitions_len_v1()
+                        batch_v1.transitions.len()
                     ));
-                }
+                };
 
-                let Some(BatchedTransitionRefV1::Token(token_transition)) =
-                    batch.first_transition_v1()
-                else {
-                    return Err("expected a token transition".to_string());
+                let BatchedTransition::Token(token_transition) = batched_transition else {
+                    return Err("expected BatchedTransition::Token".to_string());
                 };
 
                 // --- Now build expected document ---

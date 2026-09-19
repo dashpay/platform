@@ -19,7 +19,7 @@ use crate::document::Document;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
 use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenSetPriceForDirectPurchaseTransition};
-use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
+use crate::state_transition::batch_transition::batched_transition::{DocumentEraseTransition, DocumentPurchaseTransition, DocumentTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
@@ -261,6 +261,10 @@ impl BatchTransitionResolversV0 for TokenTransition {
     }
 
     fn as_transition_purchase(&self) -> Option<&DocumentPurchaseTransition> {
+        None
+    }
+
+    fn as_transition_erase(&self) -> Option<&DocumentEraseTransition> {
         None
     }
 

@@ -215,14 +215,6 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     /// (PROTOCOL_VERSION_12+) passes `Some(epoch)` and bills via
     /// `execution_context.add_operation`.
     pub fetch_documents_for_transitions_knowing_contract_and_document_type: FeatureVersion,
-    /// Versions
-    /// `fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type`,
-    /// the sibling helper that reads transitions through the shell that knows
-    /// every batch wire format. Active from protocol version 15; earlier
-    /// versions only see the shell of wire formats 0 and 1 and use the helper
-    /// above.
-    pub fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type:
-        OptionalFeatureVersion,
     /// Versions the `fetch_document_with_id` helper. Same v0 vs v1
     /// semantics as
     /// `fetch_documents_for_transitions_knowing_contract_and_document_type`.

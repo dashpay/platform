@@ -1,6 +1,3 @@
-use crate::state_transition::batch_transition::batched_transition::{
-    DocumentTransitionRefV1, DocumentTransitionV1,
-};
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
 use crate::ProtocolError;
 
@@ -32,29 +29,7 @@ impl DocumentTransitionActionTypeGetter for DocumentTransition {
             DocumentTransition::UpdatePrice(_) => DocumentTransitionActionType::UpdatePrice,
             DocumentTransition::Purchase(_) => DocumentTransitionActionType::Purchase,
             DocumentTransition::IndexOnlyDelete(_) => DocumentTransitionActionType::IndexOnlyDelete,
-        }
-    }
-}
-
-impl DocumentTransitionActionTypeGetter for DocumentTransitionV1 {
-    fn action_type(&self) -> DocumentTransitionActionType {
-        self.borrow_as_ref().action_type()
-    }
-}
-
-impl DocumentTransitionActionTypeGetter for DocumentTransitionRefV1<'_> {
-    fn action_type(&self) -> DocumentTransitionActionType {
-        match self {
-            DocumentTransitionRefV1::Create(_) => DocumentTransitionActionType::Create,
-            DocumentTransitionRefV1::Delete(_) => DocumentTransitionActionType::Delete,
-            DocumentTransitionRefV1::Replace(_) => DocumentTransitionActionType::Replace,
-            DocumentTransitionRefV1::Transfer(_) => DocumentTransitionActionType::Transfer,
-            DocumentTransitionRefV1::UpdatePrice(_) => DocumentTransitionActionType::UpdatePrice,
-            DocumentTransitionRefV1::Purchase(_) => DocumentTransitionActionType::Purchase,
-            DocumentTransitionRefV1::IndexOnlyDelete(_) => {
-                DocumentTransitionActionType::IndexOnlyDelete
-            }
-            DocumentTransitionRefV1::Erase(_) => DocumentTransitionActionType::Erase,
+            DocumentTransition::Erase(_) => DocumentTransitionActionType::Erase,
         }
     }
 }

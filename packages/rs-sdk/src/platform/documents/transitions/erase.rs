@@ -8,7 +8,7 @@ use dpp::document::{Document, INITIAL_REVISION};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
-use dpp::state_transition::batch_transition::methods::v2::DocumentsBatchTransitionMethodsV2;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -141,8 +141,8 @@ impl DocumentEraseTransitionBuilder {
             identity_contract_nonce,
             user_fee_increase,
             signer,
-            creation_options,
             platform_version,
+            creation_options,
         )
         .await?;
 
@@ -185,10 +185,10 @@ impl DocumentEraseTransitionBuilder {
         let batch_feature_version = creation_options
             .and_then(|options| options.batch_feature_version)
             .unwrap_or(serialization.batch_state_transition.default_current_version);
-        if batch_feature_version != 2 {
+        if !matches!(batch_feature_version, 0 | 1) {
             return Err(Error::Protocol(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentEraseTransitionBuilder::sign".to_string(),
-                known_versions: vec![2],
+                known_versions: vec![0, 1],
                 received: batch_feature_version,
             }));
         }
@@ -420,7 +420,7 @@ mod tests {
     #[test]
     fn should_sign_with_the_settings_fee_increase_unless_set_explicitly() {
         let options = StateTransitionCreationOptions {
-            batch_feature_version: Some(2),
+            batch_feature_version: Some(1),
             ..Default::default()
         };
         let settings = PutSettings {
@@ -455,13 +455,13 @@ mod tests {
         let current = PlatformVersion::latest();
         DocumentEraseTransitionBuilder::check_erase_is_constructible(None, current)
             .expect("protocol 15 constructs erases");
-        for unsupported in [0, 1] {
+        for shipped in [0, 1] {
             let options = StateTransitionCreationOptions {
-                batch_feature_version: Some(unsupported),
+                batch_feature_version: Some(shipped),
                 ..Default::default()
             };
             DocumentEraseTransitionBuilder::check_erase_is_constructible(Some(&options), current)
-                .expect_err("a pre-erase batch generation is refused before nonce reservation");
+                .expect("both shipped batch wire formats carry an erase");
         }
         let unknown_batch = StateTransitionCreationOptions {
             batch_feature_version: Some(9),

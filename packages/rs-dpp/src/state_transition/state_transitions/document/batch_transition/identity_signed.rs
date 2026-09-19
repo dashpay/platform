@@ -7,7 +7,6 @@ impl StateTransitionIdentitySigned for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.signature_public_key_id(),
             BatchTransition::V1(transition) => transition.signature_public_key_id(),
-            BatchTransition::V2(transition) => transition.signature_public_key_id(),
         }
     }
 
@@ -15,7 +14,6 @@ impl StateTransitionIdentitySigned for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.set_signature_public_key_id(key_id),
             BatchTransition::V1(transition) => transition.set_signature_public_key_id(key_id),
-            BatchTransition::V2(transition) => transition.set_signature_public_key_id(key_id),
         }
     }
 
@@ -23,7 +21,6 @@ impl StateTransitionIdentitySigned for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.security_level_requirement(purpose),
             BatchTransition::V1(transition) => transition.security_level_requirement(purpose),
-            BatchTransition::V2(transition) => transition.security_level_requirement(purpose),
         }
     }
 
@@ -31,7 +28,6 @@ impl StateTransitionIdentitySigned for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.purpose_requirement(),
             BatchTransition::V1(transition) => transition.purpose_requirement(),
-            BatchTransition::V2(transition) => transition.purpose_requirement(),
         }
     }
 }

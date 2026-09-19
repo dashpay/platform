@@ -7,7 +7,6 @@ use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 mod v0;
-mod v1;
 
 impl StateTransitionIsAllowedValidationV0 for BatchTransition {
     fn has_is_allowed_validation(&self) -> Result<bool, Error> {
@@ -28,10 +27,9 @@ impl StateTransitionIsAllowedValidationV0 for BatchTransition {
             .is_allowed
         {
             0 => Ok(v0::validate_is_allowed_v0(self, platform)),
-            1 => Ok(v1::validate_is_allowed_v1(self, platform)),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "StateTransition::validate_is_allowed".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }

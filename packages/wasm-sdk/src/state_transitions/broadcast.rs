@@ -7,7 +7,7 @@ use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use crate::settings::{parse_put_settings, PutSettingsJs};
 use dash_sdk::dpp::platform_value::Identifier;
-use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV1;
+use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
@@ -22,7 +22,7 @@ use wasm_dpp2::StateTransitionWasm;
 fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Identifier> {
     match state_transition {
         StateTransition::Batch(batch_transition) => batch_transition
-            .transitions_iter_v1()
+            .transitions_iter()
             .map(|transition| transition.data_contract_id())
             .collect(),
         _ => BTreeSet::new(),

@@ -1,6 +1,7 @@
 use derive_more::From;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
+use state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
 use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
 
@@ -84,10 +85,8 @@ use crate::state_transition::address_funding_from_asset_lock_transition::{
 use crate::state_transition::address_funds_transfer_transition::{
     AddressFundsTransferTransition, AddressFundsTransferTransitionSignable,
 };
-use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV1;
-use crate::state_transition::batch_transition::batched_transition::{
-    BatchedTransitionRefV1, DocumentTransitionRefV1,
-};
+use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionSignable};
@@ -897,7 +896,6 @@ impl StateTransition {
             StateTransition::Batch(batch_transition) => match batch_transition {
                 BatchTransition::V0(_) => ALL_VERSIONS,
                 BatchTransition::V1(_) => 9..=LATEST_VERSION,
-                BatchTransition::V2(_) => 15..=LATEST_VERSION,
             },
             StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
@@ -975,55 +973,47 @@ impl StateTransition {
             Self::DataContractUpdate(_) => "DataContractUpdate".to_string(),
             Self::Batch(batch_transition) => {
                 let mut document_transition_types = vec![];
-                for transition in batch_transition.transitions_iter_v1() {
+                for transition in batch_transition.transitions_iter() {
                     let document_transition_name = match transition {
-                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::Create(_)) => {
-                            "Create"
-                        }
-                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::Replace(_)) => {
-                            "Replace"
-                        }
-                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::Delete(_)) => {
-                            "Delete"
-                        }
-                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::Transfer(_)) => {
+                        BatchedTransitionRef::Document(DocumentTransition::Create(_)) => "Create",
+                        BatchedTransitionRef::Document(DocumentTransition::Replace(_)) => "Replace",
+                        BatchedTransitionRef::Document(DocumentTransition::Delete(_)) => "Delete",
+                        BatchedTransitionRef::Document(DocumentTransition::Transfer(_)) => {
                             "Transfer"
                         }
-                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::UpdatePrice(
-                            _,
-                        )) => "UpdatePrice",
-                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::Purchase(_)) => {
+                        BatchedTransitionRef::Document(DocumentTransition::UpdatePrice(_)) => {
+                            "UpdatePrice"
+                        }
+                        BatchedTransitionRef::Document(DocumentTransition::Purchase(_)) => {
                             "Purchase"
                         }
-                        BatchedTransitionRefV1::Document(
-                            DocumentTransitionRefV1::IndexOnlyDelete(_),
-                        ) => "IndexOnlyDelete",
-                        BatchedTransitionRefV1::Document(DocumentTransitionRefV1::Erase(_)) => {
-                            "Erase"
+                        BatchedTransitionRef::Document(DocumentTransition::IndexOnlyDelete(_)) => {
+                            "IndexOnlyDelete"
                         }
-                        BatchedTransitionRefV1::Token(TokenTransition::Transfer(_)) => {
+                        BatchedTransitionRef::Document(DocumentTransition::Erase(_)) => "Erase",
+                        BatchedTransitionRef::Token(TokenTransition::Transfer(_)) => {
                             "TokenTransfer"
                         }
-                        BatchedTransitionRefV1::Token(TokenTransition::Mint(_)) => "TokenMint",
-                        BatchedTransitionRefV1::Token(TokenTransition::Burn(_)) => "TokenBurn",
-                        BatchedTransitionRefV1::Token(TokenTransition::Freeze(_)) => "TokenFreeze",
-                        BatchedTransitionRefV1::Token(TokenTransition::Unfreeze(_)) => {
+                        BatchedTransitionRef::Token(TokenTransition::Mint(_)) => "TokenMint",
+                        BatchedTransitionRef::Token(TokenTransition::Burn(_)) => "TokenBurn",
+                        BatchedTransitionRef::Token(TokenTransition::Freeze(_)) => "TokenFreeze",
+                        BatchedTransitionRef::Token(TokenTransition::Unfreeze(_)) => {
                             "TokenUnfreeze"
                         }
-                        BatchedTransitionRefV1::Token(TokenTransition::DestroyFrozenFunds(_)) => {
+                        BatchedTransitionRef::Token(TokenTransition::DestroyFrozenFunds(_)) => {
                             "TokenDestroyFrozenFunds"
                         }
-                        BatchedTransitionRefV1::Token(TokenTransition::EmergencyAction(_)) => {
+                        BatchedTransitionRef::Token(TokenTransition::EmergencyAction(_)) => {
                             "TokenEmergencyAction"
                         }
-                        BatchedTransitionRefV1::Token(TokenTransition::ConfigUpdate(_)) => {
+                        BatchedTransitionRef::Token(TokenTransition::ConfigUpdate(_)) => {
                             "TokenConfigUpdate"
                         }
-                        BatchedTransitionRefV1::Token(TokenTransition::Claim(_)) => "TokenClaim",
-                        BatchedTransitionRefV1::Token(TokenTransition::DirectPurchase(_)) => {
+                        BatchedTransitionRef::Token(TokenTransition::Claim(_)) => "TokenClaim",
+                        BatchedTransitionRef::Token(TokenTransition::DirectPurchase(_)) => {
                             "TokenDirectPurchase"
                         }
-                        BatchedTransitionRefV1::Token(
+                        BatchedTransitionRef::Token(
                             TokenTransition::SetPriceForDirectPurchase(_),
                         ) => "SetPriceForDirectPurchase",
                     };
@@ -1399,14 +1389,14 @@ impl StateTransition {
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::Batch(st) => {
-                let allow_token_transfer_keys = st.transitions_len_v1() == 1
+                let allow_token_transfer_keys = st.transitions_len() == 1
                     && (st
-                        .first_transition_v1()
+                        .first_transition()
                         .expect("expected first transition with len 1")
                         .as_transition_token_claim()
                         .is_some()
                         || st
-                            .first_transition_v1()
+                            .first_transition()
                             .expect("expected first transition with len 1")
                             .as_transition_token_transfer()
                             .is_some());
@@ -2065,7 +2055,6 @@ impl StateTransitionStructureValidation for StateTransition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_transition::batch_transition::batched_transition::DocumentTransition;
 
     // -----------------------------------------------------------------------
     // StateTransitionSigningOptions tests
@@ -3306,118 +3295,6 @@ mod tests {
             }
             other => panic!("expected StateTransitionIsNotActiveError, got {other:?}"),
         }
-    }
-
-    // --- Batch wire formats. Format 2 is the first shell that can carry an
-    // erase, so it becomes active with the erase kind at protocol version 15
-    // while formats 0 and 1 keep the ranges they shipped with. A format 2
-    // batch must therefore never decode under a released protocol version,
-    // whatever it carries. ---
-    fn sample_batch_v2_st_with_erase() -> StateTransition {
-        use crate::state_transition::batch_transition::batched_transition::document_erase_transition::DocumentEraseTransitionV0;
-        use crate::state_transition::batch_transition::batched_transition::{
-            BatchedTransitionV1, DocumentEraseTransition, DocumentTransitionV1,
-        };
-        use crate::state_transition::batch_transition::BatchTransitionV2;
-
-        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
-            id: Identifier::from([1u8; 32]),
-            identity_contract_nonce: 3,
-            document_type_name: "note".to_string(),
-            data_contract_id: Identifier::from([2u8; 32]),
-        });
-        let erase =
-            DocumentTransitionV1::Erase(DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
-                base,
-            }));
-        StateTransition::Batch(BatchTransition::V2(BatchTransitionV2 {
-            owner_id: Identifier::from([8u8; 32]),
-            transitions: vec![BatchedTransitionV1::Document(erase)],
-            user_fee_increase: 2,
-            signature_public_key_id: 7,
-            signature: BinaryData::new(vec![0xEE; 65]),
-        }))
-    }
-
-    #[test]
-    fn test_active_version_range_batch_wire_formats() {
-        use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
-        use crate::state_transition::batch_transition::BatchTransitionV1;
-
-        assert_eq!(
-            sample_batch_st_with_delete().active_version_range(),
-            ALL_VERSIONS,
-            "format 0 predates protocol version ranges"
-        );
-
-        let StateTransition::Batch(BatchTransition::V0(format_0)) = sample_batch_st_with_delete()
-        else {
-            unreachable!("the sample is a format 0 batch")
-        };
-        let format_1 = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
-            owner_id: format_0.owner_id,
-            transitions: format_0
-                .transitions
-                .into_iter()
-                .map(BatchedTransition::Document)
-                .collect(),
-            user_fee_increase: format_0.user_fee_increase,
-            signature_public_key_id: format_0.signature_public_key_id,
-            signature: format_0.signature,
-        }));
-        assert_eq!(
-            format_1.active_version_range(),
-            9..=LATEST_VERSION,
-            "format 1 arrived with tokens at protocol version 9"
-        );
-
-        assert_eq!(
-            sample_batch_v2_st_with_erase().active_version_range(),
-            15..=LATEST_VERSION,
-            "format 2 arrived with the erase kind at protocol version 15"
-        );
-    }
-
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
-    #[test]
-    fn test_deserialize_format_2_batch_in_version_rejects_released_protocols() {
-        use crate::serialization::PlatformSerializable;
-        use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-
-        let bytes = PlatformSerializable::serialize_to_bytes(&sample_batch_v2_st_with_erase())
-            .expect("serialize succeeds");
-
-        let released = PlatformVersion::get(14).expect("protocol version 14 exists");
-        let err = StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, released)
-            .expect_err("a format 2 batch must not decode under protocol version 14");
-        match err {
-            ProtocolError::StateTransitionError(StateTransitionIsNotActiveError {
-                state_transition_type,
-                active_version_range,
-                current_protocol_version,
-            }) => {
-                assert_eq!(state_transition_type, "DocumentsBatch([Erase])");
-                assert_eq!(active_version_range, 15..=LATEST_VERSION);
-                assert_eq!(current_protocol_version, 14);
-            }
-            other => panic!("expected StateTransitionIsNotActiveError, got {other:?}"),
-        }
-
-        let decoded = StateTransition::deserialize_from_bytes_untrusted_in_version(
-            &bytes,
-            PlatformVersion::latest(),
-        )
-        .expect("a format 2 batch decodes under the latest protocol version");
-        let StateTransition::Batch(batch) = decoded else {
-            panic!("expected a batch, got {decoded:?}");
-        };
-        assert!(matches!(batch, BatchTransition::V2(_)));
-        assert_eq!(batch.transitions_len_v1(), 1);
-        assert_eq!(
-            batch.transitions_len(),
-            0,
-            "the shell of formats 0 and 1 cannot see an erase and reports the batch as empty"
-        );
     }
 
     // -----------------------------------------------------------------------

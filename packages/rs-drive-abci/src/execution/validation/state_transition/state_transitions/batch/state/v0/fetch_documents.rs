@@ -1,4 +1,3 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
@@ -13,7 +12,6 @@ use dpp::platform_value::{Identifier, Value};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
-use dpp::state_transition::batch_transition::batched_transition::DocumentTransitionRefV1;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::query_contested_documents_storage::QueryContestedDocumentsOutcomeV0Methods;
@@ -192,123 +190,6 @@ fn fetch_documents_for_transitions_knowing_contract_and_document_type_v1(
 
     // Diff vs `_v0`: epoch is `Some(...)` and the cost is billed via
     // add_operation on the outer execution_context.
-    let documents_outcome = drive.query_documents(
-        drive_query,
-        Some(epoch),
-        false,
-        transaction,
-        Some(platform_version.protocol_version),
-    )?;
-    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(FeeResult {
-        storage_fee: 0,
-        processing_fee: documents_outcome.cost(),
-        fee_refunds: Default::default(),
-        removed_bytes_from_system: 0,
-    }));
-
-    Ok(ConsensusValidationResult::new_with_data(
-        documents_outcome.documents_owned(),
-    ))
-}
-
-/// Like [`fetch_documents_for_transitions_knowing_contract_and_document_type`],
-/// for transitions viewed through the shell that sees every batch wire format.
-///
-/// The helper has its own version slot, which is dormant at the protocol
-/// versions whose batches only exist in wire formats 0 and 1; those reach the
-/// sibling function.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type(
-    drive: &Drive,
-    contract: &DataContract,
-    document_type: DocumentTypeRef,
-    transitions: &[DocumentTransitionRefV1<'_>],
-    epoch: &Epoch,
-    execution_context: &mut StateTransitionExecutionContext,
-    transaction: TransactionArg,
-    platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
-    match platform_version
-        .drive_abci
-        .validation_and_processing
-        .state_transitions
-        .batch_state_transition
-        .fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type
-    {
-        Some(0) => {
-            fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type_v0(
-                drive,
-                contract,
-                document_type,
-                transitions,
-                epoch,
-                execution_context,
-                transaction,
-                platform_version,
-            )
-        }
-        Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-            method:
-                "fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type"
-                    .to_string(),
-            known_versions: vec![0],
-            received: version,
-        })),
-        None => Err(Error::Execution(ExecutionError::VersionNotActive {
-            method:
-                "fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type"
-                    .to_string(),
-            known_versions: vec![0],
-        })),
-    }
-}
-
-/// Bills like generation 1 of the sibling helper, for transitions of any batch
-/// wire format.
-#[allow(clippy::too_many_arguments)]
-fn fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type_v0(
-    drive: &Drive,
-    contract: &DataContract,
-    document_type: DocumentTypeRef,
-    transitions: &[DocumentTransitionRefV1<'_>],
-    epoch: &Epoch,
-    execution_context: &mut StateTransitionExecutionContext,
-    transaction: TransactionArg,
-    platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
-    if transitions.is_empty() {
-        return Ok(ConsensusValidationResult::new_with_data(vec![]));
-    }
-
-    let ids: Vec<Value> = transitions
-        .iter()
-        .map(|dt| Value::Identifier(dt.get_id().to_buffer()))
-        .collect();
-
-    let drive_query = DriveDocumentQuery {
-        contract,
-        document_type,
-        internal_clauses: InternalClauses {
-            primary_key_in_clause: Some(WhereClause {
-                field: "$id".to_string(),
-                operator: WhereOperator::In,
-                value: Value::Array(ids),
-            }),
-            primary_key_equal_clause: None,
-            in_clauses: Vec::new(),
-            range_clause: None,
-            equal_clauses: Default::default(),
-        },
-        offset: None,
-        limit: Some(transitions.len() as u16),
-        order_by: Default::default(),
-        start_at: None,
-        start_at_included: false,
-        block_time_ms: None,
-        resolved_time_ranges: vec![],
-        sub_queries: vec![],
-    };
-
     let documents_outcome = drive.query_documents(
         drive_query,
         Some(epoch),

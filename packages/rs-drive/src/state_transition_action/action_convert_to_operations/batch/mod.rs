@@ -5,7 +5,6 @@ use dpp::platform_value::Identifier;
 use dpp::version::PlatformVersion;
 
 mod batch_transition;
-mod batch_transition_v1;
 mod document;
 mod token;
 

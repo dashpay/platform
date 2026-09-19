@@ -3,7 +3,6 @@ use versioned_feature_core::FeatureVersion;
 pub mod v1;
 pub mod v2;
 pub mod v3;
-pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPStateTransitionVersions {

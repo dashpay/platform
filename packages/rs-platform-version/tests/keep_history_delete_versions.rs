@@ -87,26 +87,6 @@ fn should_preserve_released_keep_history_validation_versions() {
         );
         assert_eq!(
             version
-                .dpp
-                .state_transition_serialization_versions
-                .batch_state_transition
-                .max_version,
-            1,
-            "batch wire versions at protocol {protocol}"
-        );
-        assert_eq!(
-            version
-                .dpp
-                .state_transitions
-                .documents
-                .documents_batch_transition
-                .validation
-                .validate_base_structure,
-            0,
-            "batch structure validation at protocol {protocol}"
-        );
-        assert_eq!(
-            version
                 .drive
                 .methods
                 .state_transitions
@@ -114,26 +94,6 @@ fn should_preserve_released_keep_history_validation_versions() {
                 .document_delete_transition,
             0,
             "delete action conversion at protocol {protocol}"
-        );
-        assert_eq!(
-            version
-                .drive
-                .methods
-                .verify
-                .state_transition
-                .verify_state_transition_was_executed_with_proof,
-            0,
-            "state transition proof verification at protocol {protocol}"
-        );
-        assert_eq!(
-            version
-                .drive_abci
-                .validation_and_processing
-                .state_transitions
-                .batch_state_transition
-                .transform_into_action,
-            1,
-            "batch action transform at protocol {protocol}"
         );
     }
 }
@@ -203,35 +163,6 @@ fn should_activate_keep_history_validation_at_protocol_15() {
     );
     assert_eq!(
         version
-            .dpp
-            .state_transition_serialization_versions
-            .batch_state_transition
-            .max_version,
-        2,
-        "protocol 15 admits BatchTransitionV2"
-    );
-    assert_eq!(
-        version
-            .dpp
-            .state_transition_serialization_versions
-            .batch_state_transition
-            .default_current_version,
-        2,
-        "protocol 15 constructs BatchTransitionV2"
-    );
-    assert_eq!(
-        version
-            .dpp
-            .state_transitions
-            .documents
-            .documents_batch_transition
-            .validation
-            .validate_base_structure,
-        1,
-        "protocol 15 selects structure validation that admits erase only in V2"
-    );
-    assert_eq!(
-        version
             .drive
             .methods
             .state_transitions
@@ -239,57 +170,6 @@ fn should_activate_keep_history_validation_at_protocol_15() {
             .document_delete_transition,
         1,
         "protocol 15 selects the lifecycle-specific delete operation"
-    );
-    assert_eq!(
-        version
-            .drive
-            .methods
-            .verify
-            .state_transition
-            .verify_state_transition_was_executed_with_proof,
-        1,
-        "protocol 15 selects erase-aware proof verification"
-    );
-    assert_eq!(
-        version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .batch_state_transition
-            .transform_into_action,
-        2,
-        "protocol 15 selects the erase-aware transformer"
-    );
-    assert_eq!(
-        version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .batch_state_transition
-            .advanced_structure,
-        1,
-        "protocol 15 selects erase-aware advanced validation"
-    );
-    assert_eq!(
-        version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .batch_state_transition
-            .state,
-        1,
-        "protocol 15 selects erase-aware state validation"
-    );
-    assert_eq!(
-        version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .batch_state_transition
-            .fetch_documents_for_transitions_knowing_contract_and_document_type,
-        1,
-        "the fetch through the shell of wire formats 0 and 1 is unchanged; the \
-         shell of any format has its own slot"
     );
 
     let bounds = version
@@ -310,6 +190,98 @@ fn should_activate_keep_history_validation_at_protocol_15() {
         chunk, 100,
         "the chunk bounds the work one erase can demand and the balance every \
          erase needs up front; changing it changes both"
+    );
+}
+
+/// The erase kind is appended to the batch's document transition enum and
+/// carried by the shipped batch wire formats, so no batch-level generation
+/// changes with it: the batch wire bounds and every generation that reads a
+/// batch as a whole are the same at protocol 15 as at protocol 14. Only the
+/// per-kind erase slots turn on.
+#[test]
+fn should_carry_the_erase_kind_without_a_new_batch_generation() {
+    let released = PlatformVersion::get(14).unwrap();
+    let current = PlatformVersion::get(15).unwrap();
+
+    let batch_bounds = |version: &PlatformVersion| {
+        let bounds = &version
+            .dpp
+            .state_transition_serialization_versions
+            .batch_state_transition;
+        (
+            bounds.min_version,
+            bounds.max_version,
+            bounds.default_current_version,
+        )
+    };
+    assert_eq!(
+        batch_bounds(current),
+        batch_bounds(released),
+        "the batch wire formats are unchanged; the erase kind rides inside them"
+    );
+    assert_eq!(
+        batch_bounds(current),
+        (0, 1, 1),
+        "the batch default wire format stays 1"
+    );
+
+    let batch_validation = |version: &PlatformVersion| {
+        version
+            .dpp
+            .state_transitions
+            .documents
+            .documents_batch_transition
+            .validation
+            .validate_base_structure
+    };
+    assert_eq!(
+        batch_validation(current),
+        batch_validation(released),
+        "the batch basic-structure generation gates the erase kind by its bounds slot"
+    );
+
+    let batch_generations = |version: &PlatformVersion| {
+        let batch = &version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition;
+        (
+            batch.transform_into_action,
+            batch.advanced_structure,
+            batch.state,
+            batch.revision,
+            batch.is_allowed,
+            batch.fetch_documents_for_transitions_knowing_contract_and_document_type,
+        )
+    };
+    assert_eq!(
+        batch_generations(current),
+        batch_generations(released),
+        "the batch transformer, structure, state, nonce and admission generations are unchanged"
+    );
+
+    let batch_drive = |version: &PlatformVersion| {
+        (
+            version
+                .drive
+                .methods
+                .state_transitions
+                .convert_to_high_level_operations
+                .documents_batch_transition,
+            version.drive.methods.prove.prove_state_transition,
+            version
+                .drive
+                .methods
+                .verify
+                .state_transition
+                .verify_state_transition_was_executed_with_proof,
+        )
+    };
+    assert_eq!(
+        batch_drive(current),
+        batch_drive(released),
+        "the batch conversion, prover and execution-proof verifier are unchanged"
     );
 }
 
@@ -394,13 +366,13 @@ fn should_expose_one_implementation_of_each_new_lifecycle_slot() {
         );
         assert_eq!(
             version
-                .drive_abci
-                .validation_and_processing
-                .state_transitions
-                .batch_state_transition
-                .fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type,
+                .dpp
+                .state_transition_serialization_versions
+                .document_erase_state_transition
+                .as_ref()
+                .map(|bounds| bounds.bounds.default_current_version),
             expected_erase_version,
-            "document fetch through the shell of any wire format at protocol {protocol}"
+            "erase wire bounds at protocol {protocol}"
         );
     }
 }

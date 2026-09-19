@@ -21,9 +21,9 @@ use std::borrow::Cow;
 use std::slice;
 
 use dpp::serialization::PlatformDeserializableUntrusted;
-use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV1;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
-use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRefV1;
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_direct_purchase_transition::v0::v0_methods::TokenDirectPurchaseTransitionV0Methods;
@@ -172,7 +172,7 @@ fn project_parsed_token_direct_purchase(
     batch: &BatchTransition,
     batch_description: &str,
 ) -> Result<ParsedTokenDirectPurchaseFFI, PlatformWalletFFIResult> {
-    let transitions_len = batch.transitions_len_v1();
+    let transitions_len = batch.transitions_len();
     if transitions_len != 1 {
         return Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
@@ -184,8 +184,8 @@ fn project_parsed_token_direct_purchase(
         ));
     }
 
-    let Some(BatchedTransitionRefV1::Token(TokenTransition::DirectPurchase(purchase))) =
-        batch.first_transition_v1()
+    let Some(BatchedTransitionRef::Token(TokenTransition::DirectPurchase(purchase))) =
+        batch.first_transition()
     else {
         return Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,

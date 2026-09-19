@@ -1,7 +1,7 @@
 use dpp::platform_value::Identifier;
 use dpp::prelude::UserFeeIncrease;
 use dpp::ProtocolError;
-use dpp::state_transition::batch_transition::batched_transition::{BatchedTransitionRef, BatchedTransitionRefV1};
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
@@ -9,10 +9,8 @@ use dpp::state_transition::batch_transition::document_base_transition::DocumentB
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
-use crate::state_transition_action::batch::v1::BatchedTransitionActionV1;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
-use crate::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::v0::DocumentEraseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::{BumpIdentityDataContractNonceAction, BumpIdentityDataContractNonceActionV0};
 
@@ -36,52 +34,6 @@ impl BumpIdentityDataContractNonceAction {
                 identity_id,
                 user_fee_increase,
             ),
-        }
-    }
-
-    /// from a borrowed transition of any batch format
-    pub fn from_batched_transition_ref_v1(
-        value: BatchedTransitionRefV1,
-        identity_id: Identifier,
-        user_fee_increase: UserFeeIncrease,
-    ) -> Self {
-        match value {
-            BatchedTransitionRefV1::Document(document) => {
-                Self::from_borrowed_document_base_transition(
-                    document.base(),
-                    identity_id,
-                    user_fee_increase,
-                )
-            }
-            BatchedTransitionRefV1::Token(token) => Self::from_borrowed_token_base_transition(
-                token.base(),
-                identity_id,
-                user_fee_increase,
-            ),
-        }
-    }
-
-    /// helper method for an item of batch action format 1
-    pub fn try_from_borrowed_batched_transition_action_v1(
-        value: &BatchedTransitionActionV1,
-        identity_id: Identifier,
-        user_fee_increase: UserFeeIncrease,
-    ) -> Result<Self, Error> {
-        match value {
-            BatchedTransitionActionV1::Batched(batched_action) => {
-                Self::try_from_borrowed_batched_transition_action(
-                    batched_action,
-                    identity_id,
-                    user_fee_increase,
-                )
-            }
-            BatchedTransitionActionV1::DocumentErase(erase_action) => {
-                Ok(Self::from_borrowed_document_base_transition_action(
-                    erase_action.base(),
-                    identity_id,
-                    user_fee_increase,
-                ))
-            }
         }
     }
 

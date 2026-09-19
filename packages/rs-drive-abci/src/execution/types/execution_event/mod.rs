@@ -290,27 +290,6 @@ impl ExecutionEvent<'_> {
                     )))
                 }
             }
-            StateTransitionAction::BatchActionV1(batch_action) => {
-                let user_fee_increase = action.user_fee_increase();
-                let removed_balance = batch_action.all_used_balances()?;
-                let operations =
-                    action.into_high_level_drive_operations(epoch, platform_version)?;
-                if let Some(identity) = identity {
-                    Ok(ExecutionEvent::Paid {
-                        identity,
-                        removed_balance,
-                        added_to_balance_outputs: None,
-                        operations,
-                        execution_operations: execution_context.operations_consume(),
-                        additional_fixed_fee_cost: None,
-                        user_fee_increase,
-                    })
-                } else {
-                    Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "partial identity should be present for other state transitions",
-                    )))
-                }
-            }
             StateTransitionAction::MasternodeVoteAction(_) => {
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;

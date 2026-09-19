@@ -16,7 +16,7 @@ use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::identity::{Identity, IdentityPublicKey, SecurityLevel};
 use dpp::prelude::IdentityNonce;
-use dpp::state_transition::batch_transition::methods::v2::DocumentsBatchTransitionMethodsV2;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
@@ -252,8 +252,8 @@ impl Fixture {
                 self.nonce,
                 0,
                 &self.owner_signer,
-                None,
                 platform_version,
+                None,
             )
             .await
             .expect("expected an erase transition");
@@ -267,8 +267,8 @@ impl Fixture {
                 self.stranger_nonce,
                 0,
                 &self.stranger_signer,
-                None,
                 platform_version,
+                None,
             )
             .await
             .expect("expected an erase transition");
@@ -347,8 +347,8 @@ impl Fixture {
             nonce,
             0,
             signer,
-            None,
             platform_version,
+            None,
         )
         .await
         .expect("expected an erase transition")
@@ -427,27 +427,27 @@ async fn rewrite_delete_as_erase(
 ) -> StateTransition {
     use dpp::state_transition::batch_transition::batched_transition::document_erase_transition::DocumentEraseTransitionV0;
     use dpp::state_transition::batch_transition::batched_transition::{
-        BatchedTransitionV1, DocumentEraseTransition, DocumentTransitionV1,
+        BatchedTransition, DocumentEraseTransition, DocumentTransition,
     };
     use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
     use dpp::state_transition::batch_transition::BatchTransition;
 
-    let StateTransition::Batch(BatchTransition::V2(mut batch)) = transition else {
-        panic!("expected a v2 batch transition");
+    let StateTransition::Batch(BatchTransition::V1(mut batch)) = transition else {
+        panic!("expected a format 1 batch transition");
     };
-    let BatchedTransitionV1::Document(DocumentTransitionV1::Delete(delete)) =
+    let BatchedTransition::Document(DocumentTransition::Delete(delete)) =
         batch.transitions.remove(0)
     else {
         panic!("expected a single document delete");
     };
     batch
         .transitions
-        .push(BatchedTransitionV1::Document(DocumentTransitionV1::Erase(
+        .push(BatchedTransition::Document(DocumentTransition::Erase(
             DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
                 base: delete.base().clone(),
             }),
         )));
-    let mut rebuilt: StateTransition = BatchTransition::V2(batch).into();
+    let mut rebuilt: StateTransition = BatchTransition::V1(batch).into();
     rebuilt
         .sign_external(
             key,

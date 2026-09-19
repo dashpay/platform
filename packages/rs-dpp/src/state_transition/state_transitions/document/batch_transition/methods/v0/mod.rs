@@ -11,29 +11,23 @@ use crate::identity::SecurityLevel;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
-use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV1;
-use crate::state_transition::batch_transition::batched_transition::{
-    BatchedTransition, BatchedTransitionRefV1,
-};
+use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
-#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
-#[cfg(feature = "state-transition-signing")]
-use crate::tokens::token_payment_info::TokenPaymentInfo;
 use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 use std::convert::TryFrom;
+use crate::state_transition::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionRef};
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+#[cfg(feature = "state-transition-signing")]
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 
-/// Client-side constructors and signing helpers of a batch transition. The
-/// trait is not selected by the version tables; it is the API every batch
-/// wire format shares, so it reads a batch through the accessor view that
-/// knows every format: a format 2 batch must see its own transitions to
-/// compute the key its signature needs.
-pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV1 {
+pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
     async fn new_document_creation_transition_from_document<S: Signer<IdentityPublicKey>>(
@@ -72,6 +66,25 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV1
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         token_payment_info: Option<TokenPaymentInfo>,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Builds a signed erase of one already deleted keep-history document.
+    ///
+    /// The transition carries no token payment: the deletion cost was charged
+    /// when the document was deleted. Whether this erase starts or continues an
+    /// erasure, and how many revisions it removes, are read from committed
+    /// state rather than signed here.
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_document_erase_transition_from_document<S: Signer<IdentityPublicKey>>(
+        document: Document,
+        document_type: DocumentTypeRef<'_>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
@@ -137,14 +150,14 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV1
         let mut highest_security_level = SecurityLevel::lowest_level();
 
         if self
-            .transitions_iter_v1()
-            .any(|transition| matches!(transition, BatchedTransitionRefV1::Token(_)))
+            .transitions_iter()
+            .any(|transition| matches!(transition, BatchedTransitionRef::Token(_)))
         {
             // If we ever have a token transition it will be security level critical and so will the whole state transition
             highest_security_level = SecurityLevel::CRITICAL;
         } else if self
-            .transitions_iter_v1()
-            .any(|transition| matches!(transition, BatchedTransitionRefV1::Document(_)))
+            .transitions_iter()
+            .any(|transition| matches!(transition, BatchedTransitionRef::Document(_)))
         {
             // We know we don't have token transitions at this point
             let get_data_contract_security_level_requirement =
@@ -154,8 +167,8 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV1
                             .to_string(),
                     ),
                 )?;
-            for transition in self.transitions_iter_v1() {
-                if let BatchedTransitionRefV1::Document(document_transition) = transition {
+            for transition in self.transitions_iter() {
+                if let BatchedTransitionRef::Document(document_transition) = transition {
                     let document_type_name = document_transition.base().document_type_name();
                     let data_contract_id = document_transition.base().data_contract_id();
                     let document_security_level = get_data_contract_security_level_requirement(

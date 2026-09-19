@@ -44,9 +44,6 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
             StateTransitionAction::BatchAction(documents_batch_transition) => {
                 documents_batch_transition.into_high_level_drive_operations(epoch, platform_version)
             }
-            StateTransitionAction::BatchActionV1(documents_batch_transition) => {
-                documents_batch_transition.into_high_level_drive_operations(epoch, platform_version)
-            }
             StateTransitionAction::IdentityCreateAction(identity_create_transition) => {
                 identity_create_transition.into_high_level_drive_operations(epoch, platform_version)
             }

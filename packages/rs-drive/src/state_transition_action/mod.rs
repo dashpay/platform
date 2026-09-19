@@ -17,7 +17,6 @@ pub mod shielded;
 use crate::state_transition_action::address_funds::address_credit_withdrawal::AddressCreditWithdrawalTransitionAction;
 use crate::state_transition_action::address_funds::address_funding_from_asset_lock::AddressFundingFromAssetLockTransitionAction;
 use crate::state_transition_action::address_funds::address_funds_transfer::AddressFundsTransferTransitionAction;
-use crate::state_transition_action::batch::v1::BatchTransitionActionV1;
 use crate::state_transition_action::batch::BatchTransitionAction;
 use crate::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
@@ -63,10 +62,6 @@ pub enum StateTransitionAction {
     DataContractUpdateAction(DataContractUpdateTransitionAction),
     /// batch
     BatchAction(BatchTransitionAction),
-    /// batch, in the action format that can carry an erase of a keep-history
-    /// document; produced only for protocol versions whose batch wire format
-    /// carries one
-    BatchActionV1(BatchTransitionActionV1),
     /// identity create
     IdentityCreateAction(IdentityCreateTransitionAction),
     /// identity create from addresses
@@ -130,7 +125,6 @@ impl StateTransitionAction {
             StateTransitionAction::DataContractCreateAction(action) => action.user_fee_increase(),
             StateTransitionAction::DataContractUpdateAction(action) => action.user_fee_increase(),
             StateTransitionAction::BatchAction(action) => action.user_fee_increase(),
-            StateTransitionAction::BatchActionV1(action) => action.user_fee_increase(),
             StateTransitionAction::IdentityCreateAction(action) => action.user_fee_increase(),
             StateTransitionAction::IdentityTopUpAction(action) => action.user_fee_increase(),
             StateTransitionAction::IdentityCreditWithdrawalAction(action) => {
