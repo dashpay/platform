@@ -1543,7 +1543,6 @@ mod tests {
     mod token_tests {
         use super::*;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::UnpaidConsensusError;
-        use crate::platform_types::platform_state::PlatformState;
         use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
         use dpp::balances::credits::TokenAmount;
         use dpp::block::epoch::Epoch;
@@ -2699,24 +2698,22 @@ mod tests {
                 .expect("expected to commit transaction");
         }
 
-        /// Registers a contract without tokens and adds a token at position 0
-        /// through a data contract update, both under `update_protocol_version`.
-        /// Then has the contract owner claim from that token at block height
-        /// 41 / time 200 under `claim_protocol_version`, running the first-block
-        /// protocol change events in between when the two differ. Returns the
-        /// claim's processing result and the owner's resulting token balance.
+        /// Registers a contract without tokens, adds a token at position 0
+        /// through a data contract update, then has the contract owner claim
+        /// from that token at block height 41 / time 200, all under
+        /// `protocol_version`. Returns the claim's processing result and the
+        /// owner's resulting token balance.
         async fn claim_from_token_added_by_update(
-            update_protocol_version: ProtocolVersion,
-            claim_protocol_version: ProtocolVersion,
+            protocol_version: ProtocolVersion,
             distribution_type: TokenDistributionType,
             configure_distribution: impl FnOnce(&mut TokenConfiguration, Identifier),
         ) -> (StateTransitionsProcessingResult, Option<TokenAmount>) {
-            let platform_version = PlatformVersion::get(update_protocol_version)
-                .expect("expected a known protocol version");
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a known protocol version");
             // Genesis state: a claim writes a token history document, so the
             // token history system contract has to be registered.
             let mut platform = TestPlatformBuilder::new()
-                .with_initial_protocol_version(update_protocol_version)
+                .with_initial_protocol_version(protocol_version)
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -2822,31 +2819,6 @@ mod tests {
                 epoch: Epoch::new(0).unwrap(),
             };
 
-            let mut platform_state = PlatformState::clone(&platform_state);
-            if claim_protocol_version != update_protocol_version {
-                let upgraded_platform_version = PlatformVersion::get(claim_protocol_version)
-                    .expect("expected a known protocol version");
-                let transaction = platform.drive.grove.start_transaction();
-                platform
-                    .perform_events_on_first_block_of_protocol_change(
-                        &platform_state,
-                        &claim_block_info,
-                        &transaction,
-                        update_protocol_version,
-                        upgraded_platform_version,
-                    )
-                    .expect("expected the protocol change events to succeed");
-                platform
-                    .drive
-                    .grove
-                    .commit_transaction(transaction)
-                    .unwrap()
-                    .expect("expected to commit the upgrade");
-                platform_state.set_current_protocol_version_in_consensus(claim_protocol_version);
-            }
-            let platform_version = PlatformVersion::get(claim_protocol_version)
-                .expect("expected a known protocol version");
-
             let claim_transition = BatchTransition::new_token_claim_transition(
                 token_id,
                 identity.id(),
@@ -2936,10 +2908,8 @@ mod tests {
 
         #[tokio::test]
         async fn should_claim_perpetual_distribution_of_token_added_by_update() {
-            let latest = PlatformVersion::latest().protocol_version;
             let (processing_result, token_balance) = claim_from_token_added_by_update(
-                latest,
-                latest,
+                PlatformVersion::latest().protocol_version,
                 TokenDistributionType::Perpetual,
                 set_block_based_perpetual_distribution,
             )
@@ -2955,10 +2925,8 @@ mod tests {
 
         #[tokio::test]
         async fn should_claim_pre_programmed_distribution_of_token_added_by_update() {
-            let latest = PlatformVersion::latest().protocol_version;
             let (processing_result, token_balance) = claim_from_token_added_by_update(
-                latest,
-                latest,
+                PlatformVersion::latest().protocol_version,
                 TokenDistributionType::PreProgrammed,
                 set_pre_programmed_distribution,
             )
@@ -2989,53 +2957,15 @@ mod tests {
                     set_pre_programmed_distribution,
                 ),
             ] {
-                let (processing_result, token_balance) = claim_from_token_added_by_update(
-                    13,
-                    13,
-                    distribution_type,
-                    configure_distribution,
-                )
-                .await;
+                let (processing_result, token_balance) =
+                    claim_from_token_added_by_update(13, distribution_type, configure_distribution)
+                        .await;
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
                     [StateTransitionExecutionResult::InternalError(_)]
                 );
                 assert_eq!(token_balance, None);
-            }
-        }
-
-        /// A token added by update before protocol version 14 gets its
-        /// distribution storage on the first block of version 14, so it is
-        /// claimable from then on.
-        #[tokio::test]
-        async fn should_claim_distributions_of_token_added_by_update_before_the_upgrade() {
-            for (distribution_type, configure_distribution, expected_balance) in [
-                (
-                    TokenDistributionType::Perpetual,
-                    set_block_based_perpetual_distribution
-                        as fn(&mut TokenConfiguration, Identifier),
-                    200,
-                ),
-                (
-                    TokenDistributionType::PreProgrammed,
-                    set_pre_programmed_distribution,
-                    445,
-                ),
-            ] {
-                let (processing_result, token_balance) = claim_from_token_added_by_update(
-                    13,
-                    14,
-                    distribution_type,
-                    configure_distribution,
-                )
-                .await;
-
-                assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
-                );
-                assert_eq!(token_balance, Some(expected_balance));
             }
         }
     }

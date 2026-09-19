@@ -789,18 +789,6 @@ impl<C> Platform<C> {
                 platform_version,
             )?;
 
-        // Token distribution storage: before this version a contract update created none of
-        // the perpetual or pre-programmed distribution storage of a token it added, so every
-        // claim on such a token failed as an internal error. `update_contract` v2 creates it
-        // from this version on, but only for the tokens an update adds, so the tokens added
-        // before it get theirs here.
-        self.drive
-            .add_missing_token_distribution_storage_to_all_contracts(
-                block_info,
-                transaction,
-                platform_version,
-            )?;
-
         Ok(())
     }
 }

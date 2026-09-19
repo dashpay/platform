@@ -21,9 +21,9 @@ use crate::version::drive_versions::drive_contract_method_versions::{
 /// storage of a token the update adds, as the contract insert always has for a
 /// token present at registration. v1 created none of it, so a claim on such a
 /// token failed as an internal error and the distribution was unclaimable.
-/// Tokens added by an update before this version get their storage on the first
-/// block of protocol version 14
-/// (`Drive::add_missing_token_distribution_storage_to_all_contracts`).
+/// There is no backfill for tokens added by an update before this version:
+/// mainnet has none (checked at block 436796, where no contract update ever
+/// carried a token and every token's contract is still at version 1).
 pub const DRIVE_CONTRACT_METHOD_VERSIONS_V4: DriveContractMethodVersions =
     DriveContractMethodVersions {
         insert: DriveContractInsertMethodVersions {
