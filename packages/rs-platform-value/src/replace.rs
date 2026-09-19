@@ -1,6 +1,8 @@
 use crate::btreemap_extensions::btreemap_field_replacement::IntegerReplacementType;
 use crate::inner_value_at_path::is_array_path;
 use crate::{Error, ReplacementType, Value, ValueMapHelper};
+use alloc::vec::Vec;
+#[cfg(feature = "std")]
 use std::collections::HashSet;
 
 impl Value {
@@ -311,6 +313,7 @@ impl Value {
             .try_for_each(|path| self.replace_integer_type_at_path(path, replacement_type))
     }
 
+    #[cfg(feature = "std")]
     /// `replace_to_binary_types_when_setting_with_path` will replace a value with a corresponding
     /// binary type (Identifier or Binary Data) if that data is in one of the given paths.
     /// Paths can either be terminal, or can represent an object or an array (with values) where
@@ -382,6 +385,7 @@ impl Value {
         Ok(())
     }
 
+    #[cfg(feature = "std")]
     /// `replace_to_binary_types_when_setting_with_path` will replace a value with a corresponding
     /// binary type (Identifier or Binary Data) if that data is in one of the given paths.
     /// Paths can either be terminal, or can represent an object or an array (with values) where
@@ -890,6 +894,7 @@ mod tests {
     // ===============================================================
 
     #[test]
+    #[cfg(feature = "std")]
     fn replace_root_binary_types_identifier_exact_match() {
         let b58 = base58_of_32_bytes(2);
         let mut value = Value::Text(b58);
@@ -910,6 +915,7 @@ mod tests {
     // ===============================================================
 
     #[test]
+    #[cfg(feature = "std")]
     fn replace_root_binary_types_binary_exact_match() {
         let b58 = base58_of_32_bytes(4);
         let mut value = Value::Text(b58);
@@ -931,6 +937,7 @@ mod tests {
     // ===============================================================
 
     #[test]
+    #[cfg(feature = "std")]
     fn replace_root_binary_types_prefix_based() {
         let b58 = base58_of_32_bytes(6);
         let inner = Value::Map(vec![(Value::Text("sub_id".into()), Value::Text(b58))]);
@@ -953,6 +960,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn replace_root_binary_types_prefix_replaces_sub_path() {
         let b58 = base58_of_32_bytes(6);
         let inner = Value::Map(vec![(Value::Text("sub_id".into()), Value::Text(b58))]);
@@ -978,6 +986,7 @@ mod tests {
     // ===============================================================
 
     #[test]
+    #[cfg(feature = "std")]
     fn replace_root_binary_types_no_match_returns_ok() {
         let mut value = Value::Map(vec![(Value::Text("a".into()), Value::U32(1))]);
         let result = value.replace_to_binary_types_of_root_value_when_setting_at_path(
@@ -993,6 +1002,7 @@ mod tests {
     // ===============================================================
 
     #[test]
+    #[cfg(feature = "std")]
     fn replace_when_setting_with_path_identifier_exact() {
         let b58 = base58_of_32_bytes(11);
         let mut value = Value::Text(b58);
@@ -1012,6 +1022,7 @@ mod tests {
     // ===============================================================
 
     #[test]
+    #[cfg(feature = "std")]
     fn replace_when_setting_with_path_strip_prefix() {
         let b58 = base58_of_32_bytes(15);
         let mut value = Value::Map(vec![(Value::Text("sub_id".into()), Value::Text(b58))]);
@@ -1034,6 +1045,7 @@ mod tests {
     // ===============================================================
 
     #[test]
+    #[cfg(feature = "std")]
     fn replace_when_setting_with_path_binary_strip_prefix() {
         use base64::prelude::*;
         let raw = vec![1u8, 2, 3, 4, 5];
@@ -1055,6 +1067,7 @@ mod tests {
     // ===============================================================
 
     #[test]
+    #[cfg(feature = "std")]
     fn replace_when_setting_with_path_no_match_ok() {
         let mut value = Value::Map(vec![(Value::Text("a".into()), Value::U32(1))]);
         let result = value.replace_to_binary_types_when_setting_with_path(

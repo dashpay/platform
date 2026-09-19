@@ -1,12 +1,13 @@
+use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::borrow::Borrow;
+use core::convert::TryFrom;
+#[cfg(feature = "json")]
+use core::convert::TryInto;
+use core::iter::FromIterator;
 #[cfg(feature = "json")]
 use serde_json::Value as JsonValue;
-use std::borrow::Borrow;
-use std::convert::TryFrom;
-use std::iter::FromIterator;
-
-use std::collections::BTreeMap;
-#[cfg(feature = "json")]
-use std::convert::TryInto;
 
 use crate::value_map::ValueMapHelper;
 use crate::{Error, Identifier, Value};

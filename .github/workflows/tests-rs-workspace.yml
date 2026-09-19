@@ -239,6 +239,19 @@ jobs:
             done
           done
 
+      # The guest alloc-only cut: DashVM guest code consumes platform-value
+      # and platform-serialization with default features off, as no_std +
+      # alloc. wasm32v1-none has no std library at all, so a std leak in that
+      # profile fails to compile here instead of surfacing when a guest is
+      # first built. The alloc_profile integration test runs the same profile
+      # natively and proves it decodes the same bytes as the native path.
+      - name: Check guest alloc-only cut
+        run: |
+          rustup target add wasm32v1-none
+          cargo check -p platform-serialization --no-default-features --target wasm32v1-none --locked
+          cargo check -p platform-value --no-default-features --target wasm32v1-none --locked
+          cargo test -p platform-value --no-default-features --test alloc_profile --locked
+
       - name: Detect immutable structure changes
         if: github.event_name == 'pull_request'
         run: |

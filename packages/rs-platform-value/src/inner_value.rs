@@ -1,9 +1,12 @@
 use crate::value_map::{ValueMap, ValueMapHelper};
 use crate::{BinaryData, Bytes32, Identifier};
 use crate::{Error, Value};
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::cmp::Ordering;
+#[cfg(feature = "std")]
 use indexmap::IndexMap;
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
 
 impl Value {
     pub fn has(&self, key: &str) -> Result<bool, Error> {
@@ -647,6 +650,7 @@ impl Value {
     }
 
     /// Gets the inner index map sorted by a specified property
+    #[cfg(feature = "std")]
     pub fn inner_optional_index_map<'a, T>(
         document_type: &'a [(Value, Value)],
         key: &'a str,
