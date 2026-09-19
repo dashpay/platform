@@ -25,4 +25,5 @@
 /packages/token-history-contract/ @QuantumExplorer @shumkov
 /packages/document-history-contract/ @QuantumExplorer @shumkov
 /packages/keyword-search-contract/ @QuantumExplorer @shumkov
+/packages/app-connect-contract/ @QuantumExplorer @shumkov
 /packages/kotlin-sdk/ @HashEngineering

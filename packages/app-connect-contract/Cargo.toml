@@ -1,0 +1,15 @@
+[package]
+name = "app-connect-contract"
+description = "App Connect data contract schema and tools. The App Connect contract carries the wallet-to-app login handshake: the wallet's encrypted key response and the app's manifest"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+license = "MIT"
+
+[dependencies]
+thiserror = "2.0.12"
+platform-version = { path = "../rs-platform-version" }
+serde_json = { version = "1.0" }
+platform-value = { path = "../rs-platform-value" }
+[dev-dependencies]
+base58 = "0.2.0"

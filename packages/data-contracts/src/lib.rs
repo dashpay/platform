@@ -4,6 +4,9 @@ use serde_json::Value;
 
 use crate::error::Error;
 
+#[cfg(feature = "app-connect")]
+pub use app_connect_contract;
+
 #[cfg(feature = "dashpay")]
 pub use dashpay_contract;
 
@@ -46,6 +49,7 @@ pub enum SystemDataContract {
     TokenHistory = 6,
     KeywordSearch = 7,
     DocumentHistory = 8,
+    AppConnect = 9,
 }
 
 pub struct DataContractSource {
@@ -62,7 +66,7 @@ impl SystemDataContract {
     /// Deliberately kept beside the enum so that adding a variant and adding it here are the
     /// same edit. `assert_every_variant_is_listed` below makes that mechanical rather than
     /// remembered: a new variant makes its match non-exhaustive and the crate stops compiling.
-    pub const ALL: [SystemDataContract; 9] = [
+    pub const ALL: [SystemDataContract; 10] = [
         SystemDataContract::Withdrawals,
         SystemDataContract::MasternodeRewards,
         SystemDataContract::FeatureFlags,
@@ -72,6 +76,7 @@ impl SystemDataContract {
         SystemDataContract::TokenHistory,
         SystemDataContract::KeywordSearch,
         SystemDataContract::DocumentHistory,
+        SystemDataContract::AppConnect,
     ];
 
     /// A new variant must also be added to [`SystemDataContract::ALL`]; this match is where the
@@ -148,6 +153,14 @@ impl SystemDataContract {
             SystemDataContract::DocumentHistory => [
                 88, 18, 140, 208, 179, 231, 242, 57, 225, 203, 4, 210, 245, 95, 136, 92, 160, 167,
                 112, 118, 173, 238, 83, 62, 234, 230, 222, 16, 231, 30, 99, 98,
+            ],
+
+            #[cfg(feature = "app-connect")]
+            SystemDataContract::AppConnect => app_connect_contract::ID_BYTES,
+            #[cfg(not(feature = "app-connect"))]
+            SystemDataContract::AppConnect => [
+                239, 150, 14, 165, 105, 114, 235, 173, 190, 248, 162, 126, 247, 218, 92, 129, 255,
+                75, 179, 138, 2, 150, 151, 69, 126, 36, 218, 66, 183, 155, 84, 183,
             ],
         };
         Identifier::new(bytes)
@@ -258,6 +271,17 @@ impl SystemDataContract {
             SystemDataContract::DocumentHistory => {
                 Err(Error::ContractNotIncluded("document-history"))
             }
+
+            #[cfg(feature = "app-connect")]
+            SystemDataContract::AppConnect => Ok(DataContractSource {
+                id_bytes: app_connect_contract::ID_BYTES,
+                owner_id_bytes: app_connect_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.app_connect as u32,
+                definitions: app_connect_contract::load_definitions(platform_version)?,
+                document_schemas: app_connect_contract::load_documents_schemas(platform_version)?,
+            }),
+            #[cfg(not(feature = "app-connect"))]
+            SystemDataContract::AppConnect => Err(Error::ContractNotIncluded("app-connect")),
         }
     }
 }
