@@ -104,3 +104,228 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::contract_moderation_queries::tests::{
+        ban, store_contract, suspend, BANLIST, SUSPENSIONS,
+    };
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::config::moderation::ContractModerationList;
+    use dpp::identifier::Identifier;
+    use drive::drive::contract::moderation::types::ContractModerationEntry;
+    use drive::drive::Drive;
+
+    fn request(
+        contract_id: Vec<u8>,
+        list: i32,
+        start_after: Option<Vec<u8>>,
+        limit: Option<u32>,
+        prove: bool,
+    ) -> GetContractModerationEntriesRequestV0 {
+        GetContractModerationEntriesRequestV0 {
+            contract_id,
+            list,
+            start_after,
+            limit,
+            prove,
+        }
+    }
+
+    fn assert_invalid_argument(
+        result: QueryValidationResult<GetContractModerationEntriesResponseV0>,
+        needle: &str,
+    ) {
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [QueryError::InvalidArgument(msg)] if msg.contains(needle)
+            ),
+            "expected an invalid argument naming {needle}, got {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn should_refuse_malformed_requests() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let id = vec![1; 32];
+        let query = |request| {
+            platform
+                .query_contract_moderation_entries_v0(request, &state, version)
+                .expect("expected query to succeed")
+        };
+
+        assert_invalid_argument(
+            query(request(vec![0; 8], BANLIST, None, None, false)),
+            "contract_id",
+        );
+        assert_invalid_argument(
+            query(request(id.clone(), 7, None, None, false)),
+            "not a moderation list",
+        );
+        assert_invalid_argument(
+            query(request(id.clone(), BANLIST, Some(vec![0; 8]), None, false)),
+            "start_after",
+        );
+        assert_invalid_argument(
+            query(request(id, BANLIST, None, Some(70_000), false)),
+            "out of bounds",
+        );
+    }
+
+    #[test]
+    fn should_refuse_an_unknown_contract_and_an_unmoderated_one() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let result = platform
+            .query_contract_moderation_entries_v0(
+                request(vec![9; 32], BANLIST, None, None, false),
+                &state,
+                version,
+            )
+            .expect("expected query to succeed");
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::NotFound(_)]
+        ));
+
+        let unmoderated = store_contract(&platform, false, false, version);
+        assert_invalid_argument(
+            platform
+                .query_contract_moderation_entries_v0(
+                    request(unmoderated.id().to_vec(), BANLIST, None, None, false),
+                    &state,
+                    version,
+                )
+                .expect("expected query to succeed"),
+            "is not moderated",
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_list_the_contract_does_not_keep() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = store_contract(&platform, false, true, version);
+        assert_invalid_argument(
+            platform
+                .query_contract_moderation_entries_v0(
+                    request(contract.id().to_vec(), BANLIST, None, None, false),
+                    &state,
+                    version,
+                )
+                .expect("expected query to succeed"),
+            "does not keep",
+        );
+    }
+
+    #[test]
+    fn should_page_and_prove_the_entries() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = store_contract(&platform, true, true, version);
+        let first = Identifier::from([0x21; 32]);
+        let second = Identifier::from([0x22; 32]);
+        let third = Identifier::from([0x23; 32]);
+        for target in [third, first, second] {
+            ban(&platform, &contract, target, version);
+        }
+        suspend(&platform, &contract, second, 1_234, version);
+
+        let entries = |list, start_after: Option<Identifier>, limit| {
+            let result = platform
+                .query_contract_moderation_entries_v0(
+                    request(
+                        contract.id().to_vec(),
+                        list,
+                        start_after.map(|id| id.to_vec()),
+                        limit,
+                        false,
+                    ),
+                    &state,
+                    version,
+                )
+                .expect("expected query to succeed");
+            assert!(result.errors.is_empty(), "{:?}", result.errors);
+            let data = result.data.expect("expected data");
+            assert!(data.metadata.is_some());
+            let Some(get_contract_moderation_entries_response_v0::Result::Entries(page)) =
+                data.result
+            else {
+                panic!("expected entries");
+            };
+            page.entries
+                .into_iter()
+                .map(|entry| (entry.identity_id, entry.until))
+                .collect::<Vec<_>>()
+        };
+
+        // No limit is the default page, in identity id order.
+        assert_eq!(
+            entries(BANLIST, None, None),
+            vec![
+                (first.to_vec(), None),
+                (second.to_vec(), None),
+                (third.to_vec(), None)
+            ]
+        );
+        assert_eq!(
+            entries(BANLIST, None, Some(2)),
+            vec![(first.to_vec(), None), (second.to_vec(), None)]
+        );
+        assert_eq!(
+            entries(BANLIST, Some(second), Some(2)),
+            vec![(third.to_vec(), None)]
+        );
+        assert_eq!(
+            entries(SUSPENSIONS, None, None),
+            vec![(second.to_vec(), Some(1_234))]
+        );
+
+        let result = platform
+            .query_contract_moderation_entries_v0(
+                request(
+                    contract.id().to_vec(),
+                    BANLIST,
+                    Some(first.to_vec()),
+                    Some(2),
+                    true,
+                ),
+                &state,
+                version,
+            )
+            .expect("expected query to succeed");
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let Some(get_contract_moderation_entries_response_v0::Result::Proof(proof)) =
+            result.data.expect("expected data").result
+        else {
+            panic!("expected a proof");
+        };
+        let (_, proved) = Drive::verify_contract_moderation_entries(
+            &proof.grovedb_proof,
+            contract.id(),
+            &ContractModerationEntriesQuery {
+                list: ContractModerationList::Banlist,
+                start_after: Some(first),
+                limit: 2,
+            },
+            version,
+        )
+        .expect("expected the proof to verify");
+        assert_eq!(
+            proved,
+            vec![
+                ContractModerationEntry {
+                    identity_id: second,
+                    until: None
+                },
+                ContractModerationEntry {
+                    identity_id: third,
+                    until: None
+                }
+            ]
+        );
+    }
+}

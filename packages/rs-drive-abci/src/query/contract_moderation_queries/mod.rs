@@ -67,7 +67,99 @@ impl<C> Platform<C> {
                 contract_id
             ))));
         };
-        let _ = contract_fetch_info.contract.owner_id();
         Ok(Ok(moderation.lists().collect()))
+    }
+}
+
+#[cfg(test)]
+pub(super) mod tests {
+    use crate::query::tests::store_data_contract;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::DataContract;
+    use dpp::identifier::Identifier;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::version::PlatformVersion;
+
+    pub const BANLIST: i32 = 0;
+    pub const SUSPENSIONS: i32 = 1;
+
+    /// Stores a contract that keeps the lists asked for (none: an unmoderated contract).
+    pub fn store_contract(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        banlist: bool,
+        suspensions: bool,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let moderation = (banlist || suspensions).then_some(ContractModerationConfig {
+            banlist,
+            suspensions,
+            moderators: ContractModerators::ContractOwner,
+        });
+        contract.set_config(contract.config().clone().with_moderation(moderation));
+        store_data_contract(platform, &contract, platform_version);
+        contract
+    }
+
+    pub fn ban(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        contract: &DataContract,
+        target: Identifier,
+        platform_version: &PlatformVersion,
+    ) {
+        platform
+            .drive
+            .add_contract_ban(
+                contract.id(),
+                target,
+                contract.owner_id(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to ban");
+    }
+
+    pub fn suspend(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        contract: &DataContract,
+        target: Identifier,
+        until: u64,
+        platform_version: &PlatformVersion,
+    ) {
+        platform
+            .drive
+            .add_contract_suspension(
+                contract.id(),
+                target,
+                until,
+                false,
+                contract.owner_id(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to suspend");
+    }
+
+    #[test]
+    fn should_keep_the_list_numbers_of_the_wire_enum() {
+        use super::{list_from_request, ContractModerationList};
+        assert_eq!(
+            list_from_request(BANLIST, "list").unwrap(),
+            ContractModerationList::Banlist
+        );
+        assert_eq!(
+            list_from_request(SUSPENSIONS, "list").unwrap(),
+            ContractModerationList::Suspensions
+        );
+        assert!(list_from_request(7, "list").is_err());
     }
 }

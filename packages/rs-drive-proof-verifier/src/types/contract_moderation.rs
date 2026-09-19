@@ -132,3 +132,150 @@ pub fn entries_from_response(
         .collect::<Result<Vec<_>, Error>>()
         .map(ContractModerationEntries)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn id(seed: u8) -> Identifier {
+        Identifier::from([seed; 32])
+    }
+
+    #[test]
+    fn should_round_trip_every_list_through_its_wire_number() {
+        for list in [
+            ContractModerationList::Banlist,
+            ContractModerationList::Suspensions,
+        ] {
+            assert_eq!(
+                list_from_request(list_to_request(list), "list").expect("expected a list"),
+                list
+            );
+        }
+        let err = list_from_request(7, "list").unwrap_err();
+        assert!(
+            matches!(&err, Error::RequestError { error } if error.contains("list 7")),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn should_parse_the_lists_of_a_status_request() {
+        assert_eq!(
+            lists_from_request(&[1, 0]).expect("expected lists"),
+            vec![
+                ContractModerationList::Suspensions,
+                ContractModerationList::Banlist
+            ]
+        );
+        for (lists, needle) in [
+            (&[][..], "at least one"),
+            (&[0, 0][..], "twice"),
+            (&[0, 9][..], "not a moderation list"),
+        ] {
+            let err = lists_from_request(lists).unwrap_err();
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains(needle)),
+                "{lists:?}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_build_the_entries_query_of_a_request() {
+        assert_eq!(
+            entries_query_from_request(0, None, None).expect("expected a query"),
+            ContractModerationEntriesQuery {
+                list: ContractModerationList::Banlist,
+                start_after: None,
+                limit: DEFAULT_CONTRACT_MODERATION_ENTRIES_LIMIT,
+            }
+        );
+        assert_eq!(
+            entries_query_from_request(1, Some(id(3).as_slice()), Some(5))
+                .expect("expected a query"),
+            ContractModerationEntriesQuery {
+                list: ContractModerationList::Suspensions,
+                start_after: Some(id(3)),
+                limit: 5,
+            }
+        );
+        for (list, start_after, limit, needle) in [
+            (9, None, None, "not a moderation list"),
+            (0, Some(&[1u8; 5][..]), None, "start_after"),
+            (0, None, Some(u16::MAX as u32 + 1), "out of bounds"),
+        ] {
+            let err = entries_query_from_request(list, start_after, limit).unwrap_err();
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains(needle)),
+                "{needle}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_read_the_entries_of_an_unproved_response() {
+        let page = entries_from_response(vec![
+            ContractModerationEntryProto {
+                identity_id: id(1).to_vec(),
+                until: None,
+            },
+            ContractModerationEntryProto {
+                identity_id: id(2).to_vec(),
+                until: Some(99),
+            },
+        ])
+        .expect("expected entries");
+        assert_eq!(
+            page.entries(),
+            &[
+                ContractModerationEntry {
+                    identity_id: id(1),
+                    until: None
+                },
+                ContractModerationEntry {
+                    identity_id: id(2),
+                    until: Some(99)
+                }
+            ]
+        );
+
+        let err = entries_from_response(vec![ContractModerationEntryProto {
+            identity_id: vec![1; 5],
+            until: None,
+        }])
+        .unwrap_err();
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_continue_after_the_last_entry_and_stop_on_an_empty_page() {
+        let query = ContractModerationEntriesQuery {
+            list: ContractModerationList::Suspensions,
+            start_after: None,
+            limit: 2,
+        };
+        let page = ContractModerationEntries(vec![
+            ContractModerationEntry {
+                identity_id: id(1),
+                until: Some(5),
+            },
+            ContractModerationEntry {
+                identity_id: id(2),
+                until: Some(6),
+            },
+        ]);
+        assert_eq!(
+            page.next_query(&query),
+            Some(ContractModerationEntriesQuery {
+                list: ContractModerationList::Suspensions,
+                start_after: Some(id(2)),
+                limit: 2,
+            })
+        );
+        assert_eq!(
+            ContractModerationEntries::default().next_query(&query),
+            None
+        );
+    }
+}

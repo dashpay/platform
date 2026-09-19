@@ -66,3 +66,45 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn should_refuse_a_request_without_a_version() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let result = platform
+            .query_contract_moderation_status(
+                GetContractModerationStatusRequest { version: None },
+                &state,
+                version,
+            )
+            .expect("expected query to succeed");
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::DecodingError(_)]
+        ));
+    }
+
+    #[test]
+    fn should_wrap_the_version_0_response() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let result = platform
+            .query_contract_moderation_status(
+                GetContractModerationStatusRequest {
+                    version: Some(RequestVersion::V0(Default::default())),
+                },
+                &state,
+                version,
+            )
+            .expect("expected query to succeed");
+        // An empty request is refused by the version 0 handler, which proves it was reached.
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(_)]
+        ));
+    }
+}
