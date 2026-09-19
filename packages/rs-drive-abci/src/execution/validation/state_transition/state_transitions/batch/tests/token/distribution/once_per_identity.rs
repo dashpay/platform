@@ -367,6 +367,80 @@ mod once_per_identity_distribution {
         );
     }
 
+    /// Without a configured max supply the supply still can not pass `i64::MAX`, the most a sum
+    /// item holds. A claim that would cross it is rejected whole: a saturated mint would credit
+    /// part of the amount while spending the identity's only claim and recording the full
+    /// amount in history.
+    #[tokio::test]
+    async fn test_token_once_per_identity_distribution_claim_past_the_supply_ceiling_is_rejected() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+
+        let (owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (identity_2, signer_2, key_2) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        // No max supply, and room for one token below the ceiling while a claim pays two.
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_max_supply(None);
+                token_configuration.set_base_supply(i64::MAX as u64 - 1);
+                token_configuration
+                    .distribution_rules_mut()
+                    .set_once_per_identity_distribution(Some(once_per_identity(2)));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let result = claim(
+            &platform,
+            token_id,
+            &contract,
+            &identity_2,
+            &key_2,
+            &signer_2,
+            2,
+            &block_info(100, 41),
+            platform_version,
+        )
+        .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(_)),
+                ..
+            }
+        );
+        assert_eq!(
+            token_balance(&platform, token_id, identity_2.id(), platform_version),
+            None
+        );
+        // Nothing was paid, so the identity's claim is not spent.
+        assert_eq!(
+            platform
+                .drive
+                .fetch_once_per_identity_distribution_claim(
+                    token_id.to_buffer(),
+                    identity_2.id(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the claim"),
+            None
+        );
+    }
+
     #[tokio::test]
     async fn test_token_once_per_identity_distribution_claim_on_token_without_it_is_rejected() {
         let platform_version = PlatformVersion::latest();

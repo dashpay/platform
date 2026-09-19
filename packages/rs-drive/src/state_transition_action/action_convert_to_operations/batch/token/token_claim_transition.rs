@@ -53,14 +53,25 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
                     | TokenDistributionInfo::Perpetual(
                         _,
                         TokenDistributionResolvedRecipient::Evonode(identity),
-                    )
-                    | TokenDistributionInfo::OncePerIdentity(_, identity) => {
+                    ) => {
                         ops.push(TokenOperation(TokenOperationType::TokenMint {
                             token_id: self.token_id(),
                             identity_balance_holder_id: *identity,
                             mint_amount: self.amount(),
                             allow_first_mint: false,
                             allow_saturation: true,
+                        }));
+                    }
+                    // Paid once and in full: state validation rejects a claim the supply
+                    // ceiling can not hold, so this mint never saturates, and if it ever would
+                    // it fails instead of crediting part of an amount recorded as paid.
+                    TokenDistributionInfo::OncePerIdentity(_, identity) => {
+                        ops.push(TokenOperation(TokenOperationType::TokenMint {
+                            token_id: self.token_id(),
+                            identity_balance_holder_id: *identity,
+                            mint_amount: self.amount(),
+                            allow_first_mint: false,
+                            allow_saturation: false,
                         }));
                     }
                 }
