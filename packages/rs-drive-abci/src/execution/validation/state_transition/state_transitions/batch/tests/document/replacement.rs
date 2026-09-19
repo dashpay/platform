@@ -505,8 +505,10 @@ mod replacement_tests {
             // the old value, billing slightly fewer reads than the V3 path
             // Protocol version 14 adds +740 per document write (the contract's version
             // item is one more node to rehash) and the larger DashPay v2 schema
-            // increases byte-billed contract-tree reads.
-            1450220,
+            // increases byte-billed contract-tree reads. The app-connect system
+            // contract registered at a v14 genesis is one more sibling under the
+            // contracts subtree, so every contract-tree read bills more bytes.
+            1498860,
         )
         .await;
     }
