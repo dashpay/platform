@@ -2,6 +2,8 @@ mod fields;
 mod methods;
 pub mod v0;
 pub mod v1;
+#[cfg(all(test, feature = "json-conversion"))]
+mod vectors;
 
 use crate::data_contract::config::v1::{
     DataContractConfigGettersV1, DataContractConfigSettersV1, DataContractConfigV1,
