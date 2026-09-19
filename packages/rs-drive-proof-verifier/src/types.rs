@@ -114,10 +114,29 @@ pub type RetrievedValues<K, I> = IndexMap<K, I>;
 ///
 /// Contains a map of data contract revisions to data contracts.
 pub type DataContractHistory = RetrievedValues<u64, DataContract>;
-/// History of a document.
-///
-/// Contains a map of revision timestamps to documents.
-pub type DocumentHistory = RetrievedValues<u64, Document>;
+pub use drive::query::document_history_drive_query::{
+    DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryState,
+};
+
+/// Ordered document revisions with lifecycle metadata when the storage layout supports it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocumentHistory {
+    /// Entries retain their complete cursor, including edits sharing a timestamp.
+    pub entries: Vec<DocumentHistoryEntry>,
+    /// Absent for the legacy layout through protocol 14 and authenticated by protocol-15 proofs.
+    pub lifecycle: Option<DocumentHistoryLifecycle>,
+}
+/// Verified history with the complete wire response needed for independent verification.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocumentHistoryProofInfo {
+    /// Decoded and verified history page.
+    pub history: DocumentHistory,
+    /// Original metadata and the quorum-signed proof whose GroveDB payload
+    /// carries both underlying GroveDB proofs.
+    pub response:
+        dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV0,
+}
+
 /// Multiple data contracts.
 ///
 /// Mapping between data contract IDs and data contracts.

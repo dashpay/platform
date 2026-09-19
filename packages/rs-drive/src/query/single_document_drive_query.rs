@@ -1,4 +1,7 @@
 use crate::drive::document::paths::contract_document_type_path_vec;
+use crate::query::primary_key_path_query::{
+    primary_key_path_query_target, PrimaryKeyPathQueryTarget,
+};
 use crate::util::common::encode::encode_u64;
 
 use crate::drive::votes;
@@ -63,12 +66,23 @@ impl SingleDocumentDriveQuery {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        if self.document_type_keeps_history
+            && self.block_time_ms.is_some()
+            && primary_key_path_query_target(platform_version)?
+                == PrimaryKeyPathQueryTarget::CurrentDocument
+        {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "point-in-time reads are unavailable for history-keeping document types"
+                    .to_string(),
+            )));
+        }
         match self.contested_status {
             SingleDocumentDriveQueryContestedStatus::NotContested => {
-                Ok(self.construct_non_contested_path_query(true))
+                self.construct_non_contested_path_query(true, platform_version)
             }
             SingleDocumentDriveQueryContestedStatus::MaybeContested => {
-                let non_contested = self.construct_non_contested_path_query(true);
+                let non_contested =
+                    self.construct_non_contested_path_query(true, platform_version)?;
                 let contested = self.construct_contested_path_query(true);
                 PathQuery::merge(
                     vec![&non_contested, &contested],
@@ -83,7 +97,13 @@ impl SingleDocumentDriveQuery {
     }
 
     /// Operations to construct the normal path query.
-    fn construct_non_contested_path_query(&self, with_limit_1: bool) -> PathQuery {
+    fn construct_non_contested_path_query(
+        &self,
+        with_limit_1: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        let uses_current_document = primary_key_path_query_target(platform_version)?
+            == PrimaryKeyPathQueryTarget::CurrentDocument;
         // First we should get the overall document_type_path
         let mut path =
             contract_document_type_path_vec(&self.contract_id, self.document_type_name.as_str());
@@ -93,7 +113,7 @@ impl SingleDocumentDriveQuery {
         let mut query = Query::new();
         query.insert_key(self.document_id.to_vec());
 
-        if self.document_type_keeps_history {
+        if self.document_type_keeps_history && !uses_current_document {
             // if the documents keep history then we should insert a subquery
             if let Some(block_time) = self.block_time_ms {
                 let encoded_block_time = encode_u64(block_time);
@@ -107,7 +127,7 @@ impl SingleDocumentDriveQuery {
 
         let limit = if with_limit_1 { Some(1) } else { None };
 
-        PathQuery::new(path, SizedQuery::new(query, limit, None))
+        Ok(PathQuery::new(path, SizedQuery::new(query, limit, None)))
     }
 
     /// Operations to construct the contested path query.
@@ -134,5 +154,83 @@ impl TryFromPlatformVersioned<SingleDocumentDriveQuery> for PathQuery {
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
         value.construct_path_query(platform_version)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+
+    fn keep_history_query(block_time_ms: Option<u64>) -> SingleDocumentDriveQuery {
+        SingleDocumentDriveQuery {
+            contract_id: [1; 32],
+            document_type_name: "note".to_string(),
+            document_type_keeps_history: true,
+            document_id: [2; 32],
+            block_time_ms,
+            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+        }
+    }
+
+    #[test]
+    fn should_select_keep_history_primary_path_by_query_version() {
+        let query = keep_history_query(None);
+        let legacy = query
+            .construct_path_query(PlatformVersion::get(14).expect("protocol 14"))
+            .expect("legacy query");
+        assert_eq!(
+            legacy.query.query.default_subquery_branch.subquery_path,
+            Some(vec![vec![0]])
+        );
+
+        let current = query
+            .construct_path_query(PlatformVersion::get(15).expect("protocol 15"))
+            .expect("protocol 15 query");
+        assert_eq!(
+            current.query.query.default_subquery_branch.subquery_path,
+            None
+        );
+
+        let legacy_point_in_time = keep_history_query(Some(1000))
+            .construct_path_query(PlatformVersion::get(14).expect("protocol 14"))
+            .expect("legacy point-in-time query");
+        assert!(legacy_point_in_time
+            .query
+            .query
+            .default_subquery_branch
+            .subquery
+            .is_some());
+        assert!(matches!(
+            keep_history_query(Some(1000))
+                .construct_path_query(PlatformVersion::get(15).expect("protocol 15")),
+            Err(Error::Query(QuerySyntaxError::Unsupported(message)))
+                if message == "point-in-time reads are unavailable for history-keeping document types"
+        ));
+    }
+
+    #[test]
+    fn should_reject_unknown_primary_key_path_query_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .primary_key_path_query = 2;
+
+        let mut query = keep_history_query(None);
+        query.document_type_keeps_history = false;
+        let error = query
+            .construct_path_query(&platform_version)
+            .expect_err("unknown path-query versions must fail closed");
+        assert!(matches!(
+            error,
+            Error::Drive(DriveError::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received: 2,
+            }) if method == "primary_key_path_query" && known_versions == vec![0, 1]
+        ));
     }
 }

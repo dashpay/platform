@@ -13,6 +13,7 @@ use drive::util::storage_flags::StorageFlags;
 fn process_and_commit(
     platform: &mut TempPlatform<MockCoreRPCLike>,
     serialized: Vec<u8>,
+    block_info: BlockInfo,
 ) -> StateTransitionExecutionResult {
     let state = platform.state.load();
     let version = state.current_platform_version().unwrap();
@@ -22,7 +23,7 @@ fn process_and_commit(
         .process_raw_state_transitions(
             &[serialized],
             &state,
-            &BlockInfo::default(),
+            &block_info,
             &transaction,
             version,
             false,
@@ -39,26 +40,29 @@ fn process_and_commit(
     result.into_execution_results().remove(0)
 }
 
-/// A persisted v13 contract and document survive the v14 boundary, a repair,
-/// and a subsequent ordinary contract update. Both writes use signed raw
-/// transitions so parser validation, config compatibility and Drive all run.
+/// A contract registered while protocol 13 still accepted keep-history
+/// types that can be deleted, and a document written under v14, survive the
+/// v15 boundary, a repair, and a subsequent ordinary contract update. Both
+/// writes use signed raw transitions so parser validation, config
+/// compatibility and Drive all run.
 #[tokio::test]
 async fn should_repair_legacy_keep_history_contract_after_upgrade() {
-    let old_version = PlatformVersion::get(13).unwrap();
-    let new_version = PlatformVersion::get(14).unwrap();
+    let registered_version = PlatformVersion::get(13).unwrap();
+    let old_version = PlatformVersion::get(14).unwrap();
+    let new_version = PlatformVersion::get(15).unwrap();
     let mut platform = TestPlatformBuilder::new()
-        .with_initial_protocol_version(13)
+        .with_initial_protocol_version(14)
         .build_with_mock_rpc()
         .set_initial_state_structure();
     let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
     let mut contract = json_document_to_contract(
         "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json",
         true,
-        old_version,
+        registered_version,
     )
     .expect("released protocol 13 accepts the legacy schema with full validation");
     contract.set_owner_id(identity.id());
-    contract.set_config(DataContractConfig::default_for_version(old_version).unwrap());
+    contract.set_config(DataContractConfig::default_for_version(registered_version).unwrap());
     platform
         .drive
         .apply_contract(
@@ -99,7 +103,11 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     .await
     .unwrap();
     assert_matches!(
-        process_and_commit(&mut platform, create.serialize_to_bytes().unwrap()),
+        process_and_commit(
+            &mut platform,
+            create.serialize_to_bytes().unwrap(),
+            BlockInfo::default(),
+        ),
         StateTransitionExecutionResult::SuccessfulExecution { .. }
     );
     let query = DriveDocumentQuery::from_sql_expr(
@@ -111,18 +119,34 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     .unwrap();
     let documents_before = platform
         .drive
-        .query_documents(query, None, false, None, None)
+        .query_documents(query, None, false, None, Some(14))
         .unwrap()
         .documents()
         .to_vec();
     assert_eq!(documents_before.len(), 1);
 
     let mut upgraded_state = platform.state.load().as_ref().clone();
-    upgraded_state.set_current_protocol_version_in_consensus(14);
-    upgraded_state.set_next_epoch_protocol_version(14);
+    upgraded_state.set_current_protocol_version_in_consensus(15);
+    upgraded_state.set_next_epoch_protocol_version(15);
+    let migration = platform.drive.grove.start_transaction();
+    platform
+        .perform_events_on_first_block_of_protocol_change(
+            &upgraded_state,
+            &BlockInfo::default(),
+            &migration,
+            14,
+            new_version,
+        )
+        .unwrap();
+    platform
+        .drive
+        .grove
+        .commit_transaction(migration)
+        .value
+        .unwrap();
     platform.state.store(std::sync::Arc::new(upgraded_state));
 
-    // Re-reading the actual stored contract at v14 must bypass the parser's
+    // Re-reading the actual stored contract at v15 must bypass the parser's
     // creation-time rule; do not rely only on the pre-upgrade cached object.
     let fetched = platform
         .drive
@@ -164,7 +188,11 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     .await
     .unwrap();
     assert_matches!(
-        process_and_commit(&mut platform, update.serialize_to_bytes().unwrap()),
+        process_and_commit(
+            &mut platform,
+            update.serialize_to_bytes().unwrap(),
+            BlockInfo::default(),
+        ),
         StateTransitionExecutionResult::SuccessfulExecution { .. },
         "the repair must pass full validation and persist"
     );
@@ -197,7 +225,11 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     .await
     .unwrap();
     assert_matches!(
-        process_and_commit(&mut platform, update.serialize_to_bytes().unwrap()),
+        process_and_commit(
+            &mut platform,
+            update.serialize_to_bytes().unwrap(),
+            BlockInfo::default(),
+        ),
         StateTransitionExecutionResult::SuccessfulExecution { .. }
     );
 
@@ -223,7 +255,7 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     .unwrap();
     let documents_after = platform
         .drive
-        .query_documents(query, None, false, None, None)
+        .query_documents(query, None, false, None, Some(15))
         .unwrap()
         .documents()
         .to_vec();
@@ -231,4 +263,643 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
         documents_before, documents_after,
         "repair must preserve existing documents"
     );
+}
+
+/// A validator that skips protocol 14 crosses both rungs in one block:
+/// the v14 transition (contract version items) and the v15 history
+/// migration, dispatched through the public hook.
+#[test]
+fn should_migrate_history_when_skipping_from_protocol_13_to_15() {
+    use dpp::data_contract::DataContractFactory;
+    use dpp::system_data_contracts::SystemDataContract;
+    use drive::drive::document::paths::document_history_path;
+    use drive::query::document_history_drive_query::{
+        DocumentHistoryDriveQuery, DocumentHistoryFilter, DocumentHistoryState,
+    };
+    use drive::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
+
+    let registered_version = PlatformVersion::get(13).unwrap();
+    let new_version = PlatformVersion::get(15).unwrap();
+    let platform = TestPlatformBuilder::new()
+        .with_initial_protocol_version(13)
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let contract = DataContractFactory::new(registered_version.protocol_version)
+        .unwrap()
+        .create_with_value_config(
+            [7; 32].into(),
+            0,
+            platform_value!({
+                "note": {
+                    "type": "object", "documentsKeepHistory": true, "documentsMutable": true,
+                    "canBeDeleted": false,
+                    "properties": { "message": { "type": "string", "maxLength": 256, "position": 0 } },
+                    "required": ["message"], "additionalProperties": false,
+                    "indices": [{"name": "owner", "properties": [{"$ownerId": "asc"}]}]
+                }
+            }),
+            None,
+            None,
+        )
+        .unwrap()
+        .data_contract_owned();
+    platform
+        .drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            None,
+            registered_version,
+        )
+        .unwrap();
+    let document_type = contract.document_type_for_name("note").unwrap();
+    let mut document = document_type
+        .random_document_with_identifier_and_entropy(
+            &mut StdRng::seed_from_u64(61),
+            [9; 32].into(),
+            Bytes32([3; 32]),
+            DocumentFieldFillType::FillIfNotRequired,
+            DocumentFieldFillSize::AnyDocumentFillSize,
+            registered_version,
+        )
+        .unwrap();
+    document.set_revision(Some(1));
+    platform
+        .drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default_with_time(1000),
+            true,
+            None,
+            registered_version,
+            None,
+        )
+        .unwrap();
+    document.set_revision(Some(2));
+    document.set("message", "edited".into());
+    platform
+        .drive
+        .update_document_for_contract(
+            &document,
+            &contract,
+            document_type,
+            None,
+            BlockInfo::default_with_time(2000),
+            true,
+            None,
+            None,
+            registered_version,
+            None,
+        )
+        .unwrap();
+    let dpns_id = SystemDataContract::DPNS.id().to_buffer();
+    assert_eq!(
+        platform
+            .drive
+            .fetch_contract_version(dpns_id, None, new_version)
+            .unwrap(),
+        None,
+        "a protocol 13 state has no contract version items"
+    );
+
+    let mut upgraded_state = platform.state.load().as_ref().clone();
+    upgraded_state.set_current_protocol_version_in_consensus(15);
+    upgraded_state.set_next_epoch_protocol_version(15);
+    let transaction = platform.drive.grove.start_transaction();
+    platform
+        .perform_events_on_first_block_of_protocol_change(
+            &upgraded_state,
+            &BlockInfo::default_with_time(3000),
+            &transaction,
+            13,
+            new_version,
+        )
+        .expect("a 13 to 15 crossing runs the 14 rung and the 15 migration");
+    platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .value
+        .unwrap();
+
+    // The 14 rung ran: every registered system contract carries its version item.
+    assert!(platform
+        .drive
+        .fetch_contract_version(dpns_id, None, new_version)
+        .unwrap()
+        .is_some());
+    // The 15 rung ran: both retained revisions moved to the history tree and
+    // the primary-key entry now points at the current document.
+    let history_path =
+        document_history_path(contract.id().as_slice(), "note", document.id().as_slice());
+    let mut query = drive::grovedb::Query::new();
+    query.insert_all();
+    let entries = platform
+        .drive
+        .grove
+        .query_raw(
+            &drive::grovedb::PathQuery::new(
+                history_path,
+                drive::grovedb::SizedQuery::new(query, None, None),
+            ),
+            false,
+            true,
+            true,
+            drive::query::QueryResultType::QueryKeyElementPairResultType,
+            None,
+            &new_version.drive.grove_version,
+        )
+        .value
+        .unwrap()
+        .0
+        .to_key_elements();
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().all(|(key, _)| key.len() == 16));
+    let primary_path = vec![
+        vec![drive::drive::RootTree::DataContractDocuments as u8],
+        contract.id().to_vec(),
+        vec![1],
+        b"note".to_vec(),
+        vec![0],
+    ];
+    let primary_entry = platform
+        .drive
+        .grove
+        .get_raw(
+            primary_path.as_slice().into(),
+            document.id().as_slice(),
+            None,
+            &new_version.drive.grove_version,
+        )
+        .value
+        .unwrap();
+    assert!(
+        matches!(primary_entry, drive::grovedb::Element::Reference(..)),
+        "{primary_entry:?}"
+    );
+    let history = platform
+        .drive
+        .fetch_document_history(
+            &DocumentHistoryDriveQuery {
+                contract_id: contract.id().to_buffer(),
+                document_type_name: "note".into(),
+                document_id: document.id().to_buffer(),
+                filter: DocumentHistoryFilter::StartAtTime(0),
+                limit: None,
+            },
+            document_type,
+            None,
+            new_version,
+        )
+        .unwrap();
+    assert_eq!(
+        history
+            .entries
+            .iter()
+            .map(|entry| (entry.time_ms, entry.revision))
+            .collect::<Vec<_>>(),
+        [(1000, 1), (2000, 2)]
+    );
+    let lifecycle = history
+        .lifecycle
+        .expect("the history tree carries a lifecycle");
+    assert_eq!(lifecycle.state, DocumentHistoryState::Active);
+    assert_eq!(lifecycle.remaining_revisions, 2);
+}
+
+#[tokio::test]
+async fn should_retain_replacements_transfers_prices_and_purchases_at_one_timestamp() {
+    for countable in [false, true] {
+        run_history_write_sequence(false, countable).await;
+    }
+}
+
+#[tokio::test]
+async fn should_keep_migrated_and_new_history_writable_through_signed_transitions() {
+    for countable in [false, true] {
+        run_history_write_sequence(true, countable).await;
+    }
+}
+
+async fn run_history_write_sequence(migrated: bool, countable: bool) {
+    use dpp::data_contract::DataContractFactory;
+    use drive::query::document_history_drive_query::{
+        DocumentHistoryDriveQuery, DocumentHistoryFilter,
+    };
+    let version = PlatformVersion::get(15).unwrap();
+    let initial_version = PlatformVersion::get(if migrated { 14 } else { 15 }).unwrap();
+    let mut platform = TestPlatformBuilder::new()
+        .with_initial_protocol_version(initial_version.protocol_version)
+        .build_with_mock_rpc()
+        .set_initial_state_structure();
+    let (owner, owner_signer, owner_key) = setup_identity(&mut platform, 958, dash_to_credits!(1));
+    let (buyer, buyer_signer, buyer_key) = setup_identity(&mut platform, 450, dash_to_credits!(1));
+    let contract = DataContractFactory::new(initial_version.protocol_version).unwrap().create_with_value_config(owner.id(), 0, platform_value!({
+        "note": {
+            "type": "object", "documentsKeepHistory": true, "documentsMutable": true,
+            "canBeDeleted": false, "transferable": 1, "tradeMode": 1, "documentsCountable": countable, "documentsSummable": "amount",
+            "properties": { "message": { "type": "string", "maxLength": 256, "position": 0 }, "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295i64, "position": 1} },
+            "required": ["message", "amount"], "additionalProperties": false,
+            "indices": [{"name": "owner", "properties": [{"$ownerId": "asc"}]}]
+        }
+    }), None, None).unwrap().data_contract_owned();
+    platform
+        .drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            None,
+            initial_version,
+        )
+        .unwrap();
+    let document_type = contract.document_type_for_name("note").unwrap();
+    let mut rng = StdRng::seed_from_u64(937);
+    let entropy = Bytes32::random_with_rng(&mut rng);
+    let mut document = document_type
+        .random_document_with_identifier_and_entropy(
+            &mut rng,
+            owner.id(),
+            entropy,
+            DocumentFieldFillType::DoNotFillIfNotRequired,
+            DocumentFieldFillSize::AnyDocumentFillSize,
+            initial_version,
+        )
+        .unwrap();
+    document.set("amount", 100u64.into());
+    let query = DocumentHistoryDriveQuery {
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "note".into(),
+        document_id: document.id().to_buffer(),
+        filter: DocumentHistoryFilter::StartAtTime(0),
+        limit: None,
+    };
+    for revision in 1..=5 {
+        let write_version = if migrated && revision <= 2 {
+            initial_version
+        } else {
+            version
+        };
+        document.set_revision(Some(revision));
+        let transition = match revision {
+            1 => {
+                BatchTransition::new_document_creation_transition_from_document(
+                    document.clone(),
+                    document_type,
+                    entropy.0,
+                    &owner_key,
+                    1,
+                    0,
+                    None,
+                    &owner_signer,
+                    write_version,
+                    None,
+                )
+                .await
+            }
+            2 => {
+                document.set("message", "replaced".into());
+                document.set("amount", 250u64.into());
+                BatchTransition::new_document_replacement_transition_from_document(
+                    document.clone(),
+                    document_type,
+                    &owner_key,
+                    2,
+                    0,
+                    None,
+                    &owner_signer,
+                    write_version,
+                    None,
+                )
+                .await
+            }
+            3 => {
+                BatchTransition::new_document_transfer_transition_from_document(
+                    document.clone(),
+                    document_type,
+                    buyer.id(),
+                    &owner_key,
+                    3,
+                    0,
+                    None,
+                    &owner_signer,
+                    write_version,
+                    None,
+                )
+                .await
+            }
+            4 => {
+                BatchTransition::new_document_update_price_transition_from_document(
+                    document.clone(),
+                    document_type,
+                    100,
+                    &buyer_key,
+                    1,
+                    0,
+                    None,
+                    &buyer_signer,
+                    write_version,
+                    None,
+                )
+                .await
+            }
+            5 => {
+                BatchTransition::new_document_purchase_transition_from_document(
+                    document.clone(),
+                    document_type,
+                    owner.id(),
+                    100,
+                    &owner_key,
+                    4,
+                    0,
+                    None,
+                    &owner_signer,
+                    write_version,
+                    None,
+                )
+                .await
+            }
+            _ => unreachable!(),
+        }
+        .unwrap();
+        let mut block_info = BlockInfo::default();
+        if migrated {
+            block_info.time_ms = if revision == 1 { 1 } else { 2 };
+        }
+        assert_matches!(
+            process_and_commit(
+                &mut platform,
+                transition.serialize_to_bytes().unwrap(),
+                block_info,
+            ),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        if migrated && revision == 2 {
+            let legacy_history = platform
+                .drive
+                .fetch_document_history(&query, document_type, None, initial_version)
+                .unwrap();
+            let legacy_proof = platform
+                .drive
+                .prove_document_history(&query, document_type, None, initial_version)
+                .unwrap();
+            assert!(legacy_history.lifecycle.is_none());
+            assert_eq!(
+                legacy_history
+                    .entries
+                    .iter()
+                    .map(|entry| entry.revision)
+                    .collect::<Vec<_>>(),
+                vec![1, 2]
+            );
+            let (_, verified_legacy) = drive::drive::Drive::verify_document_history(
+                &query,
+                &legacy_proof,
+                document_type,
+                initial_version,
+            )
+            .unwrap();
+            assert_eq!(verified_legacy, legacy_history);
+
+            let mut upgraded = platform.state.load().as_ref().clone();
+            upgraded.set_current_protocol_version_in_consensus(15);
+            upgraded.set_next_epoch_protocol_version(15);
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &upgraded,
+                    &BlockInfo::default(),
+                    &transaction,
+                    14,
+                    version,
+                )
+                .unwrap();
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .value
+                .unwrap();
+            platform.state.store(std::sync::Arc::new(upgraded));
+        }
+        let primary_read_version = if migrated && revision == 1 {
+            initial_version
+        } else {
+            version
+        };
+        let type_path = vec![
+            vec![drive::drive::RootTree::DataContractDocuments as u8],
+            contract.id().to_vec(),
+            vec![1],
+            b"note".to_vec(),
+        ];
+        let primary = platform
+            .drive
+            .grove
+            .get_raw(
+                type_path.as_slice().into(),
+                &[0],
+                None,
+                &primary_read_version.drive.grove_version,
+            )
+            .value
+            .unwrap();
+        let expected_sum = if revision == 1 { 100 } else { 250 };
+        if countable {
+            assert!(matches!(primary, drive::grovedb::Element::CountSumTree(_, 1, sum, _) if sum == expected_sum), "one live document contributes its current amount after each signed action: {primary:?}");
+        } else {
+            assert!(
+                matches!(primary, drive::grovedb::Element::SumTree(_, sum, _) if sum == expected_sum),
+                "only the current revision contributes to the primary sum: {primary:?}"
+            );
+        }
+        if migrated && revision == 1 {
+            continue;
+        }
+        let history = platform
+            .drive
+            .fetch_document_history(&query, document_type, None, version)
+            .unwrap();
+        let proof = platform
+            .drive
+            .prove_document_history(&query, document_type, None, version)
+            .unwrap();
+        assert_eq!(
+            history.lifecycle.as_ref().unwrap().remaining_revisions,
+            revision
+        );
+        assert_eq!(
+            history
+                .entries
+                .iter()
+                .map(|entry| entry.revision)
+                .collect::<Vec<_>>(),
+            (1..=revision).collect::<Vec<_>>()
+        );
+        if migrated {
+            assert_eq!(
+                history
+                    .entries
+                    .iter()
+                    .map(|entry| entry.time_ms)
+                    .collect::<Vec<_>>(),
+                (1..=revision)
+                    .map(|entry_revision| if entry_revision == 1 { 1 } else { 2 })
+                    .collect::<Vec<_>>()
+            );
+        } else {
+            assert!(history.entries.iter().all(|entry| entry.time_ms == 0));
+        }
+        let (_, verified) =
+            drive::drive::Drive::verify_document_history(&query, &proof, document_type, version)
+                .unwrap();
+        assert_eq!(verified, history);
+        document = history.entries.last().unwrap().document.clone();
+        assert_eq!(
+            document.owner_id(),
+            if [3, 4].contains(&revision) {
+                buyer.id()
+            } else {
+                owner.id()
+            }
+        );
+    }
+
+    if migrated {
+        let fresh_entropy = Bytes32::random_with_rng(&mut rng);
+        let mut fresh_document = document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                owner.id(),
+                fresh_entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                version,
+            )
+            .unwrap();
+        fresh_document.set("amount", 30u64.into());
+        let fresh_query = DocumentHistoryDriveQuery {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "note".into(),
+            document_id: fresh_document.id().to_buffer(),
+            filter: DocumentHistoryFilter::StartAtTime(0),
+            limit: None,
+        };
+
+        for revision in 1..=2 {
+            fresh_document.set_revision(Some(revision));
+            let transition = if revision == 1 {
+                BatchTransition::new_document_creation_transition_from_document(
+                    fresh_document.clone(),
+                    document_type,
+                    fresh_entropy.0,
+                    &owner_key,
+                    5,
+                    0,
+                    None,
+                    &owner_signer,
+                    version,
+                    None,
+                )
+                .await
+            } else {
+                fresh_document.set("message", "fresh replacement".into());
+                fresh_document.set("amount", 50u64.into());
+                BatchTransition::new_document_replacement_transition_from_document(
+                    fresh_document.clone(),
+                    document_type,
+                    &owner_key,
+                    6,
+                    0,
+                    None,
+                    &owner_signer,
+                    version,
+                    None,
+                )
+                .await
+            }
+            .unwrap();
+            assert_matches!(
+                process_and_commit(
+                    &mut platform,
+                    transition.serialize_to_bytes().unwrap(),
+                    BlockInfo::default(),
+                ),
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+
+            let type_path = vec![
+                vec![drive::drive::RootTree::DataContractDocuments as u8],
+                contract.id().to_vec(),
+                vec![1],
+                b"note".to_vec(),
+            ];
+            let primary = platform
+                .drive
+                .grove
+                .get_raw(
+                    type_path.as_slice().into(),
+                    &[0],
+                    None,
+                    &version.drive.grove_version,
+                )
+                .value
+                .unwrap();
+            let expected_sum = if revision == 1 { 280 } else { 300 };
+            if countable {
+                assert!(
+                    matches!(primary, drive::grovedb::Element::CountSumTree(_, 2, sum, _) if sum == expected_sum),
+                    "both migrated and new live documents contribute to count and sum: {primary:?}"
+                );
+            } else {
+                assert!(
+                    matches!(primary, drive::grovedb::Element::SumTree(_, sum, _) if sum == expected_sum),
+                    "both migrated and new current revisions contribute to the primary sum: {primary:?}"
+                );
+            }
+
+            let history = platform
+                .drive
+                .fetch_document_history(&fresh_query, document_type, None, version)
+                .unwrap();
+            let proof = platform
+                .drive
+                .prove_document_history(&fresh_query, document_type, None, version)
+                .unwrap();
+            assert_eq!(
+                history.lifecycle.as_ref().unwrap().remaining_revisions,
+                revision
+            );
+            assert_eq!(
+                history
+                    .entries
+                    .iter()
+                    .map(|entry| entry.revision)
+                    .collect::<Vec<_>>(),
+                (1..=revision).collect::<Vec<_>>()
+            );
+            assert!(history.entries.iter().all(|entry| entry.time_ms == 0));
+            let (_, verified) = drive::drive::Drive::verify_document_history(
+                &fresh_query,
+                &proof,
+                document_type,
+                version,
+            )
+            .unwrap();
+            assert_eq!(verified, history);
+            fresh_document = history.entries.last().unwrap().document.clone();
+            assert_eq!(fresh_document.owner_id(), owner.id());
+        }
+    }
 }

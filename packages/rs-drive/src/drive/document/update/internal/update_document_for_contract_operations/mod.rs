@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::drive::Drive;
 use crate::util::object_size_info::DocumentAndContractInfo;
@@ -105,9 +106,20 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            // v2 (platform v15+): keeps the v1 shared-prefix index fixes
+            // and addresses current keep-history documents directly in the
+            // primary-key tree.
+            2 => self.update_document_for_contract_operations_v2(
+                document_and_contract_info,
+                block_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_document_for_contract_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

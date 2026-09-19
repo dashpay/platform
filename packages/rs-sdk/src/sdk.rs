@@ -57,7 +57,7 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// initial version.
 ///
 /// Mainnet, testnet and regtest seed at protocol version 13, the lowest version
-/// any of those networks still runs. Devnets seed at 14: they are cut from the
+/// any of those networks still runs. Devnets seed at 15: they are cut from the
 /// current development line, and their contracts use index grammar that
 /// version 13 cannot deserialize, so a lower seed would fail the very first
 /// proved request instead of ratcheting (the ratchet only runs after a proof
@@ -71,7 +71,7 @@ pub const fn min_protocol_version(network: Network) -> u32 {
     match network {
         Network::Mainnet => dpp::version::v13::PROTOCOL_VERSION_13,
         Network::Testnet => dpp::version::v13::PROTOCOL_VERSION_13,
-        Network::Devnet => dpp::version::v14::PROTOCOL_VERSION_14,
+        Network::Devnet => dpp::version::v15::PROTOCOL_VERSION_15,
         Network::Regtest => dpp::version::v13::PROTOCOL_VERSION_13,
     }
 }
@@ -2286,7 +2286,7 @@ mod test {
     fn test_per_network_floors() {
         assert_eq!(
             min_protocol_version(Network::Devnet),
-            dpp::version::v14::PROTOCOL_VERSION_14,
+            dpp::version::v15::PROTOCOL_VERSION_15,
             "devnet floor must be the current development version"
         );
         for network in [Network::Mainnet, Network::Testnet, Network::Regtest] {

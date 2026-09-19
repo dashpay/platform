@@ -260,91 +260,92 @@ fn test_setup() {
 #[test]
 fn test_proved_primary_key_cursor_pages_over_history_in_both_directions() {
     // The history-keeping twin of the primary-key cursor test in
-    // query_tests.rs. Here the cursor lookup lands one level below the page
-    // query (`.../0/<id>` with key `[0]`), so the merge point is the page
-    // query's own root layer: the document-id layer must keep the requested
-    // direction in the proof and the cursor must not claim a second slot.
+    // query_tests.rs. The cursor lookup follows the selected primary-key path
+    // generation, and in both layouts the proof must preserve page direction
+    // without letting the cursor claim a second result slot.
     use dpp::document::DocumentV0Getters;
     use dpp::platform_value::string_encoding::Encoding;
     use dpp::prelude::Identifier;
     use drive::query::DriveDocumentQuery;
 
-    let platform_version = PlatformVersion::latest();
-    let (drive, contract) = setup(10, None, 73509, platform_version);
-    let person_document_type = contract
-        .document_type_for_name("person")
-        .expect("contract should have a person document type");
-    let root_hash = drive
-        .grove
-        .root_hash(None, &platform_version.drive.grove_version)
-        .unwrap()
-        .expect("there is always a root hash");
+    for protocol in [14, 15] {
+        let platform_version = PlatformVersion::get(protocol).expect("known protocol version");
+        let (drive, contract) = setup(10, None, 73509, platform_version);
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
 
-    let ids_of = |results: &[Vec<u8>]| -> Vec<Identifier> {
-        results
-            .iter()
-            .map(|bytes| {
-                Document::from_bytes(bytes, person_document_type, platform_version)
-                    .expect("we should be able to deserialize the document")
-                    .id()
-            })
-            .collect()
-    };
-    let build = |query_value: serde_json::Value| {
-        let cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
-            .expect("expected to serialize to cbor");
-        DriveDocumentQuery::from_cbor(
-            cbor.as_slice(),
-            &contract,
-            person_document_type,
-            &drive.config,
-            platform_version,
-        )
-        .expect("query should be built")
-    };
-
-    let (all_results, _, _) = build(json!({
-        "limit": 100,
-        "orderBy": [["$id", "asc"]],
-    }))
-    .execute_raw_results_no_proof(&drive, None, None, platform_version)
-    .expect("query should be executed");
-    let ascending_ids = ids_of(&all_results);
-    assert_eq!(ascending_ids.len(), 10);
-
-    for (ascending, included) in [(true, true), (true, false), (false, true), (false, false)] {
-        let ordered: Vec<Identifier> = if ascending {
-            ascending_ids.clone()
-        } else {
-            ascending_ids.iter().rev().cloned().collect()
+        let ids_of = |results: &[Vec<u8>]| -> Vec<Identifier> {
+            results
+                .iter()
+                .map(|bytes| {
+                    Document::from_bytes(bytes, person_document_type, platform_version)
+                        .expect("we should be able to deserialize the document")
+                        .id()
+                })
+                .collect()
         };
-        let cursor = ordered[3];
-        let expected: Vec<Identifier> = if included {
-            ordered[3..6].to_vec()
-        } else {
-            ordered[4..7].to_vec()
+        let build = |query_value: serde_json::Value| {
+            let cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+                .expect("expected to serialize to cbor");
+            DriveDocumentQuery::from_cbor(
+                cbor.as_slice(),
+                &contract,
+                person_document_type,
+                &drive.config,
+                platform_version,
+            )
+            .expect("query should be built")
         };
-        let cursor_key = if included { "startAt" } else { "startAfter" };
-        let case = format!(
-            "history orderBy $id {} with {cursor_key}",
-            if ascending { "asc" } else { "desc" }
-        );
 
-        let query = build(json!({
-            cursor_key: cursor.to_string(Encoding::Base58),
-            "limit": 3,
-            "orderBy": [["$id", if ascending { "asc" } else { "desc" }]],
-        }));
-        let (results, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, None, platform_version)
-            .expect("query should be executed");
-        assert_eq!(ids_of(&results), expected, "{case}: unproved page");
+        let (all_results, _, _) = build(json!({
+            "limit": 100,
+            "orderBy": [["$id", "asc"]],
+        }))
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+        .expect("query should be executed");
+        let ascending_ids = ids_of(&all_results);
+        assert_eq!(ascending_ids.len(), 10);
 
-        let (proof_root_hash, proof_results, _) = query
-            .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
-            .unwrap_or_else(|e| panic!("{case}: proved page should verify: {e}"));
-        assert_eq!(root_hash, proof_root_hash, "{case}: proof root hash");
-        assert_eq!(results, proof_results, "{case}: proved page");
+        for (ascending, included) in [(true, true), (true, false), (false, true), (false, false)] {
+            let ordered: Vec<Identifier> = if ascending {
+                ascending_ids.clone()
+            } else {
+                ascending_ids.iter().rev().cloned().collect()
+            };
+            let cursor = ordered[3];
+            let expected: Vec<Identifier> = if included {
+                ordered[3..6].to_vec()
+            } else {
+                ordered[4..7].to_vec()
+            };
+            let cursor_key = if included { "startAt" } else { "startAfter" };
+            let case = format!(
+                "protocol {protocol} history orderBy $id {} with {cursor_key}",
+                if ascending { "asc" } else { "desc" }
+            );
+
+            let query = build(json!({
+                cursor_key: cursor.to_string(Encoding::Base58),
+                "limit": 3,
+                "orderBy": [["$id", if ascending { "asc" } else { "desc" }]],
+            }));
+            let (results, _, _) = query
+                .execute_raw_results_no_proof(&drive, None, None, platform_version)
+                .expect("query should be executed");
+            assert_eq!(ids_of(&results), expected, "{case}: unproved page");
+
+            let (proof_root_hash, proof_results, _) = query
+                .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+                .unwrap_or_else(|e| panic!("{case}: proved page should verify: {e}"));
+            assert_eq!(root_hash, proof_root_hash, "{case}: proof root hash");
+            assert_eq!(results, proof_results, "{case}: proved page");
+        }
     }
 }
 
@@ -1751,8 +1752,8 @@ fn test_query_historical_first_platform_version() {
 
 #[cfg(feature = "server")]
 #[test]
-fn test_query_historical_latest_platform_version() {
-    let platform_version = PlatformVersion::latest();
+fn test_query_historical_protocol_14() {
+    let platform_version = PlatformVersion::get(14).unwrap();
     let (drive, contract) = setup(10, None, 73509, platform_version);
 
     let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
@@ -3151,5 +3152,127 @@ fn test_query_historical_latest_platform_version() {
             74, 167, 180, 31, 0, 73, 101, 156, 93, 253, 230, 154, 157, 52, 205, 74, 148, 69, 143,
             223, 85, 165, 216, 188, 121, 29, 94, 15, 126, 126, 39, 199,
         ]
+    );
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn test_query_historical_protocol_15_uses_composite_history() {
+    use drive::drive::RootTree;
+    use drive::grovedb::Element;
+    use drive::query::document_history_drive_query::{
+        DocumentHistoryDriveQuery, DocumentHistoryFilter,
+    };
+
+    let version = PlatformVersion::get(15).unwrap();
+    let (drive, contract) = setup(10, None, 73509, version);
+    let document_type = contract.document_type_for_name("person").unwrap();
+    let root = drive
+        .grove
+        .root_hash(None, &version.drive.grove_version)
+        .value
+        .unwrap();
+    assert_eq!(
+        root,
+        [
+            61, 61, 109, 216, 215, 227, 93, 117, 118, 209, 116, 229, 95, 28, 205, 206, 254, 129,
+            215, 83, 167, 164, 154, 106, 218, 238, 225, 109, 111, 17, 45, 200,
+        ]
+    );
+    let current_query = json!({"orderBy": [["firstName", "asc"]], "limit": 100});
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&current_query, None).unwrap();
+    let (documents, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            document_type,
+            &query_cbor,
+            None,
+            None,
+            Some(15),
+        )
+        .unwrap();
+    assert_eq!(documents.len(), 10);
+    let names: Vec<_> = documents
+        .iter()
+        .map(|bytes| {
+            let document = Document::from_bytes(bytes, document_type, version).unwrap();
+            document
+                .get("firstName")
+                .unwrap()
+                .as_text()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "Adey", "Briney", "Cammi", "Celinda", "Dalia", "Gilligan", "Kevina", "Meta", "Noellyn",
+            "Prissie"
+        ]
+    );
+    let primary_path = vec![
+        vec![RootTree::DataContractDocuments as u8],
+        contract.id().to_vec(),
+        vec![1],
+        b"person".to_vec(),
+        vec![0],
+    ];
+    for bytes in documents {
+        let current = Document::from_bytes(&bytes, document_type, version).unwrap();
+        let pointer = drive
+            .grove
+            .get_raw(
+                primary_path.as_slice().into(),
+                current.id().as_slice(),
+                None,
+                &version.drive.grove_version,
+            )
+            .value
+            .unwrap();
+        assert!(matches!(pointer, Element::Reference(..)));
+        let query = DocumentHistoryDriveQuery {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "person".into(),
+            document_id: current.id().to_buffer(),
+            filter: DocumentHistoryFilter::StartAtTime(0),
+            limit: None,
+        };
+        let page = drive
+            .fetch_document_history(&query, document_type, None, version)
+            .unwrap();
+        let proof = drive
+            .prove_document_history(&query, document_type, None, version)
+            .unwrap();
+        assert_eq!(page.lifecycle.as_ref().unwrap().remaining_revisions, 4);
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|entry| entry.time_ms)
+                .collect::<Vec<_>>(),
+            [0, 15, 100, 1000]
+        );
+        assert_eq!(page.entries.last().unwrap().document, current);
+        let (proved_root, verified) =
+            Drive::verify_document_history(&query, &proof, document_type, version).unwrap();
+        assert_eq!(proved_root, root);
+        assert_eq!(verified, page);
+    }
+    let point_in_time = json!({
+        "where": [["$id", "==", "6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179"]],
+        "blockTime": 300,
+    });
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&point_in_time, None).unwrap();
+    let result = drive.query_documents_cbor_from_contract(
+        &contract,
+        document_type,
+        &query_cbor,
+        None,
+        None,
+        Some(15),
+    );
+    assert!(
+        matches!(result, Err(Error::Query(QuerySyntaxError::Unsupported(message)))
+        if message == "point-in-time reads are unavailable for history-keeping document types")
     );
 }

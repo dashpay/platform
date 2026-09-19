@@ -1,29 +1,26 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
+};
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
-use std::collections::BTreeMap;
 
 impl Drive {
-    /// Fetches the historical revisions of a document that keeps history.
-    #[allow(clippy::too_many_arguments)]
+    /// Fetches a page of a historical document's history in the layout the
+    /// protocol version stores.
     pub fn fetch_document_history(
         &self,
-        contract_id: [u8; 32],
-        document_type_name: &str,
+        query: &DocumentHistoryDriveQuery,
         document_type: DocumentTypeRef,
-        document_id: [u8; 32],
         transaction: TransactionArg,
-        start_at_ms: u64,
-        limit: Option<u16>,
-        offset: Option<u16>,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<u64, Document>, Error> {
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
         match platform_version
             .drive
             .methods
@@ -31,20 +28,27 @@ impl Drive {
             .query
             .fetch_document_history
         {
-            0 => self.fetch_document_history_v0(
-                contract_id,
-                document_type_name,
-                document_type,
-                document_id,
-                transaction,
-                start_at_ms,
-                limit,
-                offset,
-                platform_version,
-            ),
+            0 => {
+                let (start_at_ms, limit) = query.legacy_read()?;
+                let revisions = self.fetch_document_history_v0(
+                    query.contract_id,
+                    &query.document_type_name,
+                    document_type,
+                    query.document_id,
+                    transaction,
+                    start_at_ms,
+                    limit,
+                    None,
+                    platform_version,
+                )?;
+                DocumentHistoryDriveQueryExecutionResult::from_legacy(revisions)
+            }
+            1 => {
+                self.fetch_document_history_v1(query, document_type, transaction, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_document_history".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -52,8 +56,9 @@ impl Drive {
 }
 
 #[cfg(test)]
-mod tests {
+mod legacy_tests {
     use super::*;
+    use crate::query::document_history_drive_query::DocumentHistoryFilter;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -68,7 +73,7 @@ mod tests {
 
     fn setup_history_document() -> (Drive, dpp::prelude::DataContract, dpp::document::Document) {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
             false,
@@ -106,7 +111,243 @@ mod tests {
         document: &dpp::document::Document,
         time_ms: u64,
     ) {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE_NAME)
+            .expect("profile document type");
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: None,
+                    },
+                    contract,
+                    document_type,
+                },
+                true,
+                BlockInfo::default_with_time(time_ms),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("put document");
+    }
+
+    fn time_query(
+        contract: &dpp::prelude::DataContract,
+        document: &dpp::document::Document,
+        start_at_ms: u64,
+        limit: Option<u16>,
+    ) -> DocumentHistoryDriveQuery {
+        DocumentHistoryDriveQuery {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: DOCUMENT_TYPE_NAME.to_string(),
+            document_id: document.id().to_buffer(),
+            filter: DocumentHistoryFilter::StartAtTime(start_at_ms),
+            limit,
+        }
+    }
+
+    fn times(history: &DocumentHistoryDriveQueryExecutionResult) -> Vec<u64> {
+        history.entries.iter().map(|entry| entry.time_ms).collect()
+    }
+
+    #[test]
+    fn should_fetch_document_history_in_time_order_with_pagination() {
+        let (drive, contract, mut document) = setup_history_document();
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE_NAME)
+            .expect("profile document type");
+
+        put_document(&drive, &contract, &document, 1000);
+        document.set("displayName", "Alice 2".into());
+        put_document(&drive, &contract, &document, 2000);
+        document.set("displayName", "Alice 3".into());
+        put_document(&drive, &contract, &document, 3000);
+
+        let history = drive
+            .fetch_document_history(
+                &time_query(&contract, &document, 0, None),
+                document_type,
+                None,
+                platform_version,
+            )
+            .expect("fetch history");
+        assert_eq!(times(&history), vec![1000, 2000, 3000]);
+        // The layout before protocol 15 keeps no lifecycle record.
+        assert_eq!(history.lifecycle, None);
+
+        // The time bound is inclusive on this layout too, although its reader
+        // takes an exclusive one.
+        let page = drive
+            .fetch_document_history(
+                &time_query(&contract, &document, 2000, Some(1)),
+                document_type,
+                None,
+                platform_version,
+            )
+            .expect("fetch page");
+        assert_eq!(times(&page), vec![2000]);
+
+        let last_page = drive
+            .fetch_document_history(
+                &time_query(&contract, &document, 3000, Some(10)),
+                document_type,
+                None,
+                platform_version,
+            )
+            .expect("fetch last page");
+        assert_eq!(times(&last_page), vec![3000]);
+
+        let empty_page = drive
+            .fetch_document_history(
+                &time_query(&contract, &document, 3001, Some(10)),
+                document_type,
+                None,
+                platform_version,
+            )
+            .expect("fetch empty page");
+        assert!(empty_page.entries.is_empty());
+    }
+
+    #[test]
+    fn should_prove_and_verify_document_history() {
+        let (drive, contract, mut document) = setup_history_document();
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE_NAME)
+            .expect("profile document type");
+
+        put_document(&drive, &contract, &document, 1000);
+        document.set("displayName", "Alice 2".into());
+        put_document(&drive, &contract, &document, 2000);
+
+        let query = time_query(&contract, &document, 0, Some(10));
+        let proof = drive
+            .prove_document_history(&query, document_type, None, platform_version)
+            .expect("prove history");
+        let (_root_hash, history) =
+            Drive::verify_document_history(&query, &proof, document_type, platform_version)
+                .expect("verify history");
+        assert_eq!(times(&history), vec![1000, 2000]);
+        assert_eq!(history.lifecycle, None);
+
+        let query = time_query(&contract, &document, 2000, Some(10));
+        let last_page_proof = drive
+            .prove_document_history(&query, document_type, None, platform_version)
+            .expect("prove last page");
+        let (_root_hash, last_page) = Drive::verify_document_history(
+            &query,
+            &last_page_proof,
+            document_type,
+            platform_version,
+        )
+        .expect("verify last history page");
+        assert_eq!(times(&last_page), vec![2000]);
+
+        let query = time_query(&contract, &document, 2001, Some(10));
+        let empty_page_proof = drive
+            .prove_document_history(&query, document_type, None, platform_version)
+            .expect("prove empty page");
+        let (_root_hash, empty_history) = Drive::verify_document_history(
+            &query,
+            &empty_page_proof,
+            document_type,
+            platform_version,
+        )
+        .expect("verify empty history page");
+        assert!(empty_history.entries.is_empty());
+    }
+
+    /// The layout before protocol 15 is keyed by block time only, so a
+    /// revision filter cannot be served from it.
+    #[test]
+    fn should_refuse_revision_filters_before_protocol_15() {
+        let (drive, contract, document) = setup_history_document();
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE_NAME)
+            .expect("profile document type");
+        let mut query = time_query(&contract, &document, 0, None);
+        query.filter = DocumentHistoryFilter::StartAtRevision(1);
+        let error = drive
+            .fetch_document_history(
+                &query,
+                document_type,
+                None,
+                PlatformVersion::get(14).expect("protocol 14"),
+            )
+            .expect_err("revision filters need the protocol 15 layout");
+        assert!(error
+            .to_string()
+            .contains("need the protocol version 15 history layout"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::document::Document;
+    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+    use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
+    use dpp::tests::utils::generate_random_identifier_struct;
+
+    const DOCUMENT_TYPE_NAME: &str = "profile";
+
+    fn setup_history_document(
+        platform_version: &PlatformVersion,
+    ) -> (Drive, dpp::prelude::DataContract, dpp::document::Document) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
+            false,
+            platform_version,
+        )
+        .expect("expected contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE_NAME)
+            .expect("profile document type");
+        let document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(generate_random_identifier_struct()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected document");
+
+        (drive, contract, document)
+    }
+
+    fn put_document(
+        drive: &Drive,
+        contract: &dpp::prelude::DataContract,
+        document: &dpp::document::Document,
+        time_ms: u64,
+        platform_version: &PlatformVersion,
+    ) {
         let document_type = contract
             .document_type_for_name(DOCUMENT_TYPE_NAME)
             .expect("profile document type");
@@ -134,140 +375,71 @@ mod tests {
     }
 
     #[test]
-    fn should_fetch_document_history_in_time_order_with_pagination() {
-        let (drive, contract, mut document) = setup_history_document();
+    fn should_retain_both_replacements_in_the_same_block() {
+        use crate::drive::document::paths::contract_document_type_path_vec;
+        use crate::util::common::encode::encode_u64;
+        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+        use grovedb::query_result_type::{QueryResultElement, QueryResultType};
+        use grovedb::{Element, PathQuery, Query, SizedQuery};
+
         let platform_version = PlatformVersion::latest();
-        let contract_id = contract.id().to_buffer();
-        let document_id = document.id().to_buffer();
+        let (drive, contract, mut document) = setup_history_document(platform_version);
         let document_type = contract
             .document_type_for_name(DOCUMENT_TYPE_NAME)
             .expect("profile document type");
+        document.set_revision(Some(1));
+        put_document(&drive, &contract, &document, 1000, platform_version);
 
-        put_document(&drive, &contract, &document, 1000);
-        document.set("displayName", "Alice 2".into());
-        put_document(&drive, &contract, &document, 2000);
-        document.set("displayName", "Alice 3".into());
-        put_document(&drive, &contract, &document, 3000);
+        for revision in [2, 3] {
+            document.set_revision(Some(revision));
+            document.set("displayName", format!("Revision {revision}").into());
+            drive
+                .update_document_for_contract(
+                    &document,
+                    &contract,
+                    document_type,
+                    Some(document.owner_id().to_buffer()),
+                    BlockInfo::default_with_time(2000),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("replace document in the same block");
+        }
 
-        let history = drive
-            .fetch_document_history(
-                contract_id,
-                DOCUMENT_TYPE_NAME,
-                document_type,
-                document_id,
+        let mut history_path =
+            contract_document_type_path_vec(contract.id().as_slice(), DOCUMENT_TYPE_NAME);
+        history_path.extend([vec![DOCUMENT_HISTORY_TREE_KEY], document.id().to_vec()]);
+        let mut query = Query::new();
+        query.insert_range_from(encode_u64(0)..);
+        let (results, _) = drive
+            .grove_get_path_query(
+                &PathQuery::new(history_path, SizedQuery::new(query, None, None)),
                 None,
-                0,
-                None,
-                None,
-                platform_version,
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut Vec::new(),
+                &platform_version.drive,
             )
-            .expect("fetch history");
+            .expect("read retained revision bodies");
+        let revisions = results
+            .elements
+            .into_iter()
+            .map(|entry| match entry {
+                QueryResultElement::KeyElementPairResultItem((_, Element::Item(bytes, _))) => {
+                    Document::from_bytes(&bytes, document_type, platform_version)
+                        .expect("deserialize retained revision")
+                        .revision()
+                        .expect("mutable document has a revision")
+                }
+                _ => panic!("history must contain document items"),
+            })
+            .collect::<Vec<_>>();
         assert_eq!(
-            history.keys().copied().collect::<Vec<_>>(),
-            vec![1000, 2000, 3000]
+            revisions,
+            vec![1, 2, 3],
+            "every accepted edit must remain readable"
         );
-
-        let page = drive
-            .fetch_document_history(
-                contract_id,
-                DOCUMENT_TYPE_NAME,
-                document_type,
-                document_id,
-                None,
-                1000,
-                Some(1),
-                None,
-                platform_version,
-            )
-            .expect("fetch page");
-        assert_eq!(page.keys().copied().collect::<Vec<_>>(), vec![2000]);
-
-        let empty_page = drive
-            .fetch_document_history(
-                contract_id,
-                DOCUMENT_TYPE_NAME,
-                document_type,
-                document_id,
-                None,
-                3000,
-                Some(10),
-                None,
-                platform_version,
-            )
-            .expect("fetch empty page");
-        assert!(empty_page.is_empty());
-    }
-
-    #[test]
-    fn should_prove_and_verify_document_history() {
-        let (drive, contract, mut document) = setup_history_document();
-        let platform_version = PlatformVersion::latest();
-        let contract_id = contract.id().to_buffer();
-        let document_id = document.id().to_buffer();
-        let document_type = contract
-            .document_type_for_name(DOCUMENT_TYPE_NAME)
-            .expect("profile document type");
-
-        put_document(&drive, &contract, &document, 1000);
-        document.set("displayName", "Alice 2".into());
-        put_document(&drive, &contract, &document, 2000);
-
-        let proof = drive
-            .prove_document_history(
-                contract_id,
-                DOCUMENT_TYPE_NAME,
-                document_id,
-                None,
-                0,
-                Some(10),
-                None,
-                platform_version,
-            )
-            .expect("prove history");
-        let (_root_hash, history) = Drive::verify_document_history(
-            &proof,
-            contract_id,
-            DOCUMENT_TYPE_NAME,
-            document_type,
-            document_id,
-            0,
-            Some(10),
-            None,
-            platform_version,
-        )
-        .expect("verify history");
-
-        let history = history.expect("history exists");
-        assert_eq!(
-            history.keys().copied().collect::<Vec<_>>(),
-            vec![1000, 2000]
-        );
-
-        let empty_page_proof = drive
-            .prove_document_history(
-                contract_id,
-                DOCUMENT_TYPE_NAME,
-                document_id,
-                None,
-                2000,
-                Some(10),
-                None,
-                platform_version,
-            )
-            .expect("prove empty page");
-        let (_root_hash, empty_history) = Drive::verify_document_history(
-            &empty_page_proof,
-            contract_id,
-            DOCUMENT_TYPE_NAME,
-            document_type,
-            document_id,
-            2000,
-            Some(10),
-            None,
-            platform_version,
-        )
-        .expect("verify empty history page");
-
-        assert!(empty_history.expect("empty history page exists").is_empty());
     }
 }
