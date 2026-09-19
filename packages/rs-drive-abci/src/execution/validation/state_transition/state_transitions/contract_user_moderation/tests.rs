@@ -52,6 +52,7 @@ use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
+const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10463;
 const OVERFLOW: u32 = 10700;
 const CONTRACT_MODERATION_NOT_ENABLED: u32 = 41100;
@@ -1004,4 +1005,43 @@ async fn should_refuse_a_suspension_ending_past_the_json_safe_range() {
         .moderate(&setup.owner, suspend_action(user_id, max_until))
         .await;
     assert_success(&setup.process(&latest, &transaction));
+}
+
+#[tokio::test]
+async fn should_charge_the_same_fee_whether_or_not_the_contract_is_cached() {
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let ban = setup
+        .moderate(&setup.owner, ban_action(setup.user.id()))
+        .await;
+    let fee_of = |execution: StateTransitionExecutionResult| match execution {
+        StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => fee_result,
+        other => panic!("expected a successful execution, got {other:?}"),
+    };
+
+    // A node that created the contract holds it in its cache without a fee (the cache refresh
+    // fetches it with no epoch); a node that restarted pulls it from disk, with one. Both
+    // must charge the moderator the same, or their app hashes part.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let warm = fee_of(setup.process(&ban, &transaction));
+    drop(transaction);
+
+    setup.platform.drive.cache.data_contracts.clear();
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let cold = fee_of(setup.process(&ban, &transaction));
+
+    assert_eq!(warm, cold);
+}
+
+#[tokio::test]
+async fn should_refuse_a_contract_that_does_not_exist_and_charge_for_it() {
+    let mut setup = Setup::new(None).await;
+    setup.contract.set_id(Identifier::from([0x66; 32]));
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let ban = setup
+        .moderate(&setup.owner, ban_action(setup.user.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&ban, &transaction),
+        DATA_CONTRACT_NOT_PRESENT,
+    );
 }
