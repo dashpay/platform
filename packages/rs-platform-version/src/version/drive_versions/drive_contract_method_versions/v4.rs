@@ -24,6 +24,13 @@ use crate::version::drive_versions::drive_contract_method_versions::{
 /// There is no backfill for tokens added by an update before this version:
 /// mainnet has none (checked at block 436796, where no contract update ever
 /// carried a token and every token's contract is still at version 1).
+///
+/// The v2 contract update also mints the base supply of a token the update
+/// adds, to the identity the contract insert credits at registration (the
+/// token's new tokens destination identity, else the contract owner), and
+/// starts the token's total supply at that amount. v1 left such a token at a
+/// total supply of zero with nobody holding any of it. Nothing is minted
+/// retroactively for a token added by an update before this version.
 pub const DRIVE_CONTRACT_METHOD_VERSIONS_V4: DriveContractMethodVersions =
     DriveContractMethodVersions {
         insert: DriveContractInsertMethodVersions {
