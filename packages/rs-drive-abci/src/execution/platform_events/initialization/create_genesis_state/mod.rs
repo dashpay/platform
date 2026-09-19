@@ -11,6 +11,7 @@ mod common;
 mod test;
 pub mod v0;
 pub mod v1;
+pub mod v2;
 
 impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
@@ -41,9 +42,16 @@ impl<C> Platform<C> {
                 transaction,
                 platform_version,
             ),
+            // V2 (protocol version 14 and later) also registers the app-connect contract
+            2 => self.create_genesis_state_v2(
+                genesis_core_height,
+                genesis_time,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "create_genesis_state".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }?;

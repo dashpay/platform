@@ -36,7 +36,7 @@ credits per document for a constraint the wallet enforces itself.
 | `contractId` | identifier, `refersTo: contract` | The app's data contract. The reference means the contract must exist when the document is written. |
 | `appEphemeralPubKeyHash` | 20 bytes | `hash160` of the ephemeral public key the app put in its request. It identifies the request, and it is what the app polls for. |
 | `walletEphemeralPubKey` | 33 bytes | The wallet's compressed ephemeral public key. The app combines it with its own ephemeral private key to derive the shared secret. |
-| `encryptedPayload` | 60 to 284 bytes | The private keys the wallet grants the app, encrypted to the shared secret: a 28-byte envelope followed by 32 bytes per key, one to eight keys. |
+| `encryptedPayload` | 60 to 572 bytes | The private keys the wallet grants the app, encrypted to the shared secret: a 28-byte envelope followed by 32 bytes per key, one to seventeen keys (the session key plus up to eight bindings with both purposes). |
 
 All four are required. The single index, `byContractAndEphemeralKey` on
 `(contractId, appEphemeralPubKeyHash)`, lets the app fetch the answers to its request with a
@@ -44,12 +44,14 @@ two-value equality query and a proof.
 
 The index is deliberately **not** unique. The app's ephemeral public key is public (it is in
 the QR code), so a unique index that does not include `$ownerId` would let any observer
-pre-create a row under the request id and block the wallet's write. Instead the app
-authenticates every candidate it gets back: the payload is AES-GCM, and its tag is computed over
-additional data that binds `contractId`, `appEphemeralPubKeyHash` and `walletEphemeralPubKey`,
-so only a row written by the party that holds the shared secret decrypts. A squatter's row fails
-to decrypt, costs the squatter a document fee, and is ignored. Apps must therefore query by
-both index values and try each result rather than assume there is exactly one.
+pre-create a row under the request id and block the wallet's write. Instead the app checks
+every candidate it gets back. The payload is AES-GCM, and its tag is computed over additional
+data that binds `contractId`, `appEphemeralPubKeyHash` and `walletEphemeralPubKey`, so
+decryption filters out rows not written by a party holding the shared secret. A row from a party
+that did compute the secret (anyone who saw the QR can, since `e` is public) is caught by the
+identity check in [The app](#the-app) below. Either way a squatter's row costs the squatter a
+document fee and is ignored. Apps must therefore query by both index values and try each result
+rather than assume there is exactly one.
 
 ### `appManifest`
 
@@ -118,8 +120,9 @@ The app keeps the matching private key in memory until the answer arrives.
 1. Fetches the app contract, then the manifest owned by the contract's owner whose
    `appContractId` matches. Either missing, the request is refused.
 2. Lets the user choose an identity if the wallet holds more than one usable one.
-3. Derives the login key for this app and identity. If a key with that hash is already on the
-   identity and not expired, the request is a retry and the wallet skips to step 6 with it.
+3. Derives the session key for this request (its derivation leaf is the request id, so a
+   different `e` yields a different key). If that key is already on the identity and not
+   expired, the same request was already served: skip to step 6 with it.
 4. For every `encBindings` record, checks the identity for the bound keys it asks for and plans
    to add the missing ones.
 5. Shows the approval sheet: the app's name and URL, the key's lifetime and budget (the wallet's
@@ -134,9 +137,19 @@ The app keeps the matching private key in memory until the answer arrives.
 Polls the `loginKeyResponse` documents whose `contractId` is its own contract and whose
 `appEphemeralPubKeyHash` is `hash160(e)`. For each result the app derives the shared secret from
 `walletEphemeralPubKey` and tries to decrypt the payload; the first one whose authentication tag
-verifies is the wallet's answer, and the rest are discarded. It then confirms each key's public
-half is live on the identity. It is logged in until the key expires or its budget runs out, at
-which point it starts a new `connect`.
+verifies is the candidate answer, and the rest are discarded. The app then reads `$ownerId` from
+that document, verifies that each granted key's public half is a live key on that identity, and
+treats that identity as the logged-in user. It is logged in until the key expires or its budget
+runs out, at which point it starts a new `connect`.
+
+**Residual risk.** ECDH to a public ephemeral key does not authenticate the sender: an observer
+of the QR code can compute the shared secret and answer the request with keys of their own
+identity. The identity check bounds what that achieves. The observer's keys are live only on the
+observer's identity, so the app is logged into the observer's account, never the user's; the
+observer gains nothing about the user and has spent a document fee. That is the standard
+exposure of any unauthenticated pairing. The wallet's approval sheet is the pairing step, and
+the identity the app shows after login is the user's confirmation that it paired with the right
+wallet.
 
 ### Signing outside the login key's scope
 
