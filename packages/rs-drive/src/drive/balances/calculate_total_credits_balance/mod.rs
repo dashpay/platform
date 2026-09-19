@@ -1,6 +1,7 @@
 mod v0;
 mod v1;
 mod v2;
+mod v3;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -12,7 +13,9 @@ use grovedb::TransactionArg;
 impl Drive {
     /// Calculates the total credits balance.
     ///
-    /// This function verifies that the sum tree identity credits + pool credits + refunds are equal to the total credits in the system.
+    /// This function verifies that the sum tree identity credits + pool credits + refunds +
+    /// address credits + shielded credits + contract credits are equal to the total credits
+    /// in the system.
     ///
     /// # Arguments
     ///
@@ -40,9 +43,10 @@ impl Drive {
             0 => self.calculate_total_credits_balance_v0(transaction, drive_version),
             1 => self.calculate_total_credits_balance_v1(transaction, drive_version),
             2 => self.calculate_total_credits_balance_v2(transaction, drive_version),
+            3 => self.calculate_total_credits_balance_v3(transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "calculate_total_credits_balance".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             })),
         }

@@ -316,7 +316,7 @@ mod tests {
                 &platform_version.drive,
             )
             .expect("expected to get root elements");
-        assert_eq!(elements.len(), 17);
+        assert_eq!(elements.len(), 18);
     }
 
     #[test]
@@ -1271,6 +1271,11 @@ mod tests {
     #[test]
     /// Proof sizes differ from v11 by +33/+35 bytes on nodes touching the
     /// shielded pool subtree, which uses `KVValueHashFeatureTypeWithChildHash`.
+    ///
+    /// From protocol v17 the `ContractCredits` root sum tree (key 100) sits
+    /// as the left child of `Misc` (104) at Merk level 4, so the `Misc` proof
+    /// grows by the child hash it now carries and the new key proves at the
+    /// same size as the other level 4 keys under a normal tree parent.
     fn test_initial_state_structure_proper_heights_in_latest_protocol_version() {
         let drive = setup_drive_with_initial_state_structure(None);
 
@@ -1576,7 +1581,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 285);
+        assert_eq!(proof.len(), 319); // 285 before v17: Misc now carries the ContractCredits child hash
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::Versions as u8]);
@@ -1621,5 +1626,26 @@ mod tests {
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 319);
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::ContractCredits as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 285);
     }
 }
