@@ -260,8 +260,8 @@ mod tests {
 
     #[test]
     fn should_create_token_trees_and_initialize_supply_to_zero() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id = [51u8; 32];
         let contract_id = Identifier::from([52u8; 32]);
@@ -295,8 +295,8 @@ mod tests {
 
     #[test]
     fn should_error_on_double_creation_without_allow_already_exists() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id = [53u8; 32];
         let contract_id = Identifier::from([54u8; 32]);
@@ -335,8 +335,8 @@ mod tests {
 
     #[test]
     fn should_succeed_on_double_creation_with_allow_already_exists() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id = [55u8; 32];
         let contract_id = Identifier::from([56u8; 32]);
@@ -393,8 +393,8 @@ mod tests {
     #[test]
     fn should_create_independent_trees_for_different_token_ids() {
         // Multi-token creation under different positions / ids coexists.
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let contract_id = Identifier::from([200u8; 32]);
 
@@ -458,8 +458,8 @@ mod tests {
 
     #[test]
     fn should_respect_start_as_paused_flag() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id_active = [60u8; 32];
         let token_id_paused = [61u8; 32];

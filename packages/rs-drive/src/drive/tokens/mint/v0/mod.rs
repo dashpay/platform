@@ -105,6 +105,7 @@ impl Drive {
                 issuance_amount,
                 allow_first_mint,
                 allow_saturation,
+                &mut None,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

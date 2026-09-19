@@ -1,6 +1,7 @@
 use crate::version::drive_versions::drive_token_method_versions::{
-    DriveTokenDistributionMethodVersions, DriveTokenFetchMethodVersions, DriveTokenMethodVersions,
-    DriveTokenProveMethodVersions, DriveTokenUpdateMethodVersions,
+    DriveTokenDistributionMethodVersions, DriveTokenFetchMethodVersions,
+    DriveTokenLifecycleMethodVersions, DriveTokenMethodVersions, DriveTokenProveMethodVersions,
+    DriveTokenUpdateMethodVersions,
 };
 
 pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenMethodVersions {
@@ -51,6 +52,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         unfreeze: 0,
         apply_status: 0,
         perpetual_distribution_next_event_for_identity_id: 0,
+        set_direct_purchase_price: 0,
     },
     calculate_total_tokens_balance: 0,
     distribution: DriveTokenDistributionMethodVersions {
@@ -58,5 +60,12 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         add_pre_programmed_distributions: 0,
         mark_perpetual_release_as_distributed: 0,
         mark_pre_programmed_release_as_distributed: 0,
+    },
+    lifecycle: DriveTokenLifecycleMethodVersions {
+        fetch_contract_token_lifecycle: None,
+        fetch_token_lifecycles: None,
+        add_to_contract_issued_supply: None,
+        destroy_token_issuer: None,
+        add_estimation_costs_for_token_contract_lifecycles: None,
     },
 };
