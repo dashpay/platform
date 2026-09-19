@@ -33,6 +33,7 @@ use crate::execution::validation::state_transition::processor::is_allowed::State
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
+use crate::execution::validation::state_transition::batch::BatchTransitionCheckTxStateValidatingTransformer;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 use dpp::address_funds::PlatformAddress;
@@ -40,16 +41,29 @@ use dpp::fee::Credits;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::AddressNonce;
 
+#[allow(clippy::too_many_arguments)]
 fn transform_into_action_for_check_tx<C: CoreRPCLike>(
     state_transition: &StateTransition,
     platform: &PlatformRef<C>,
     remaining_address_balances: &Option<BTreeMap<PlatformAddress, (AddressNonce, Credits)>>,
     signer_identity: Option<&PartialIdentity>,
     validation_mode: ValidationMode,
+    // Whether a batch is validated against the state as a block would, which the validation
+    // mode of check tx leaves to the block (see `relies_on_gas_sponsor_to_pay`)
+    validate_batch_against_state: bool,
     execution_context: &mut StateTransitionExecutionContext,
     proof_verifier: &CheckTxProofVerifier,
 ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
     match state_transition {
+        StateTransition::Batch(transition) if validate_batch_against_state => transition
+            .transform_into_action_validating_against_state_for_check_tx(
+                platform,
+                platform.state.last_block_info(),
+                signer_identity,
+                validation_mode,
+                execution_context,
+                None,
+            ),
         StateTransition::ShieldFromAssetLock(transition) => transition
             .transform_into_action_for_shield_from_asset_lock_transition(
                 platform,
@@ -267,6 +281,18 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
             }
 
+            // A signer who got through the pre-check on a request for gas sponsorship alone
+            // could not pay for a failed batch, and a failed batch is never sponsored. Such a
+            // batch is validated like a block would, state included, so that what a proposer
+            // would execute for free never reaches the mempool. The validation mode stays
+            // `CheckTx`: it names where validation runs, not how deep it goes.
+            let relies_on_gas_sponsor_to_pay = match maybe_identity.as_ref() {
+                Some(identity) => {
+                    state_transition.relies_on_gas_sponsor_to_pay(identity, platform_version)?
+                }
+                None => false,
+            };
+
             // For address-based state transitions that transfer or withdraw, we have a balance pre-check
             // that validates addresses have enough remaining balance after the input amounts to cover fees.
             if state_transition.has_addresses_minimum_balance_pre_check_validation() {
@@ -302,6 +328,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     &remaining_address_balances,
                     maybe_identity.as_ref(),
                     ValidationMode::CheckTx,
+                    relies_on_gas_sponsor_to_pay,
                     &mut state_transition_execution_context,
                     proof_verifier,
                 )?;
@@ -336,7 +363,9 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 None
             };
 
-            let action = if state_transition.validates_full_state_on_check_tx() {
+            let action = if state_transition.validates_full_state_on_check_tx()
+                || relies_on_gas_sponsor_to_pay
+            {
                 // Validating structure
                 let result = state_transition.validate_state(
                     action,
@@ -368,6 +397,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     &remaining_address_balances,
                     maybe_identity.as_ref(),
                     ValidationMode::CheckTx,
+                    relies_on_gas_sponsor_to_pay,
                     &mut state_transition_execution_context,
                     proof_verifier,
                 )?;
@@ -486,6 +516,30 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                 }
 
+                let maybe_identity = if state_transition.uses_identity_in_state() {
+                    if let Some(owner_id) = state_transition.owner_id() {
+                        platform.drive.fetch_identity_with_balance(
+                            owner_id.to_buffer(),
+                            None,
+                            platform_version,
+                        )?
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                // What the first time check decided for a signer who relies on a gas sponsor
+                // holds on every recheck: the tokens or the state the batch depends on may have
+                // been spent since it was admitted, and nobody could be charged for its failure,
+                // so its state is validated in full again.
+                let relies_on_gas_sponsor_to_pay = match maybe_identity.as_ref() {
+                    Some(identity) => {
+                        state_transition.relies_on_gas_sponsor_to_pay(identity, platform_version)?
+                    }
+                    None => false,
+                };
                 let state_transition_action_result = transform_into_action_for_check_tx(
                     state_transition,
                     platform,
@@ -494,6 +548,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     // of what the transformer resolves for the signer, and loads no signer keys.
                     None,
                     ValidationMode::RecheckTx,
+                    relies_on_gas_sponsor_to_pay,
                     &mut state_transition_execution_context,
                     proof_verifier,
                 )?;
@@ -507,18 +562,26 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
                 let action = state_transition_action_result.into_data()?;
 
-                let maybe_identity = if state_transition.uses_identity_in_state() {
-                    if let Some(owner_id) = state_transition.owner_id() {
-                        platform.drive.fetch_identity_with_balance(
-                            owner_id.to_buffer(),
-                            None,
-                            platform_version,
-                        )?
-                    } else {
-                        None
+                let action = if relies_on_gas_sponsor_to_pay {
+                    let result = state_transition.validate_state(
+                        Some(action),
+                        platform,
+                        ValidationMode::RecheckTx,
+                        platform.state.last_block_info(),
+                        &mut state_transition_execution_context,
+                        None,
+                    )?;
+
+                    if !result.is_valid() {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
                     }
+                    result.into_data()?
                 } else {
-                    None
+                    action
                 };
 
                 let execution_event = ExecutionEvent::create_from_state_transition_action(

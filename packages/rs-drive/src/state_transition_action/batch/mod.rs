@@ -5,6 +5,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::drive::contract_groups::types::ContractGroupMembershipsForContract;
 use dpp::fee::fee_result::FeeResult;
+use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identity::SecurityLevel;
 use dpp::platform_value::Identifier;
@@ -30,6 +31,46 @@ pub struct ResolvedContractGroupMemberships {
     pub memberships: ContractGroupMembershipsForContract,
     /// What reading them cost
     pub fee: FeeResult,
+}
+
+/// The contract owner a batch asks to pay its gas, with the balance the batch transformer read
+/// for them. Resolved from protocol version 14, and only when the contract owner is not the
+/// batch's own signer: fee validation checks the fee against this balance, and execution charges
+/// this identity instead of the signer when it covers the fee. A batch that failed validation
+/// is never sponsored, whatever it asked for: its signer pays for the work that ran.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolvedGasSponsor {
+    /// The contract owner
+    pub identity_id: Identifier,
+    /// Their balance when the batch was transformed
+    pub balance: Credits,
+    /// Whether the batch insists on the contract owner paying (`GasFeesPaidBy::ContractOwner`):
+    /// then a balance that does not cover the fee refuses the batch unpaid. Otherwise
+    /// (`PreferContractOwner`) the signer pays instead.
+    pub strict: bool,
+}
+
+impl ResolvedGasSponsor {
+    /// Whether the contract owner pays: their balance covers the whole fee. Fee validation and
+    /// execution both decide by this, on the same estimated fee, so they always agree.
+    pub fn covers(&self, required_balance: Credits) -> bool {
+        self.balance >= required_balance
+    }
+}
+
+/// Who pays the gas of a whole batch, as `GasFeesPaidBy::resolve` names it for each of its
+/// transitions
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GasPayer {
+    /// The signer of the batch
+    DocumentOwner,
+    /// The owner of the contract every transition of the batch is on
+    ContractOwner {
+        /// The contract owner
+        identity_id: Identifier,
+        /// Whether any transition insists on the contract owner paying
+        strict: bool,
+    },
 }
 
 /// documents batch transition action
@@ -118,6 +159,29 @@ impl BatchTransitionAction {
     pub fn all_used_balances(&self) -> Result<Option<Credits>, ProtocolError> {
         match self {
             BatchTransitionAction::V0(v0) => v0.all_used_balances(),
+        }
+    }
+
+    /// The contract owner the batch transformer resolved as the gas sponsor, if any
+    pub fn gas_sponsor(&self) -> Option<&ResolvedGasSponsor> {
+        match self {
+            BatchTransitionAction::V0(v0) => v0.gas_sponsor.as_ref(),
+        }
+    }
+
+    /// Records the contract owner who sponsors the batch's gas, with their balance
+    pub fn set_gas_sponsor(&mut self, gas_sponsor: Option<ResolvedGasSponsor>) {
+        match self {
+            BatchTransitionAction::V0(v0) => v0.gas_sponsor = gas_sponsor,
+        }
+    }
+
+    /// Who pays the gas of the batch, or the consensus error explaining why the batch's
+    /// requests cannot be honoured: a transition asking for more than its document type's token
+    /// cost offers, or a batch whose transitions do not all name the same payer.
+    pub fn resolve_gas_payer(&self) -> Result<GasPayer, ConsensusError> {
+        match self {
+            BatchTransitionAction::V0(v0) => v0.resolve_gas_payer(),
         }
     }
 

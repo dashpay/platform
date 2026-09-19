@@ -166,7 +166,7 @@ for each state transition. There are eight variants:
 
 | Variant | Fee Source | Used By |
 |---|---|---|
-| `Paid` | Identity credit balance | Most identity-based transitions |
+| `Paid` | Identity credit balance, or the contract owner's for a sponsored document batch (below) | Most identity-based transitions |
 | `PaidFromAssetLock` | Asset lock transaction value | IdentityCreate, IdentityTopUp |
 | `PaidFromAssetLockWithoutIdentity` | Asset lock (fixed amount) | PartiallyUseAssetLock |
 | `PaidFromAssetLockToPool` | Asset lock value; fee routed to the fee pools | ShieldFromAssetLock |
@@ -178,6 +178,59 @@ for each state transition. There are eight variants:
 Each variant carries the operations to execute and enough context for the fee
 validation and execution pipeline to deduct the correct amount from the correct
 source.
+
+### Gas paid by the contract owner
+
+From protocol version 14 a document action that is paid for with a token can
+have its gas (the storage and processing fee) paid by the contract owner. The
+document type's token cost offers it (`gasFeesPaidBy`: `DocumentOwner`,
+`ContractOwner` or `PreferContractOwner`) and the transition's
+`$tokenPaymentInfo` asks for it with the same enum; `GasFeesPaidBy::resolve`
+in `rs-dpp` names the payer. A document owner can always opt out, can always
+state a preference, and can insist (`ContractOwner`) only on a document type
+that commits to paying. Only a token-paid action can be sponsored, so every
+sponsored transition is backed by a token the contract owner chose to hand out.
+
+The batch transformer (v2) resolves one payer for the whole batch, reads the
+contract owner's balance into the action (`ResolvedGasSponsor`, billed to the
+batch) and the execution event carries it in `Paid.gas_sponsor`. Fee
+validation v1 judges the fee against the sponsor's balance and the signer only
+has to fund `removed_balance`; when the sponsor's balance falls short a batch
+that insists is refused unpaid (`GasSponsorInsufficientBalanceError`, 40222)
+and a batch that prefers falls back to the signer's balance. Execution v1 then
+charges whoever fee validation admitted. A batch that fails validation is never
+sponsored: its signer pays for the work that ran, and a request the document
+type does not offer is a paid rejection (`GasFeesPaidByNotAllowedError`,
+40129). Storage refunds still go to the document's owner, whoever paid the
+storage: a sponsored document refunds its owner when it is deleted or replaced
+by a smaller one, even when the sponsor pays for that transition too. Each
+token the sponsor hands out is therefore worth up to the storage fee of the
+largest document the type allows, so a document type that offers sponsorship
+should bound its documents' size (`maxLength`, `maxItems`) and price the
+action accordingly.
+
+The signer's minimum balance pre-check runs before the contracts are loaded;
+its v1 asks a batch that requests sponsorship for its principal only
+(purchases, contest collateral) and leaves the gas to fee validation, so an
+identity without credits can act on tokens it was given. Such a signer
+could not pay for a failed batch, and a failed batch is never sponsored, so
+check tx validates the batch of a signer under the fee minimum against the
+state in full, on the first check and on every recheck, as it does a
+masternode vote: what nobody could be charged for is refused there, or leaves
+the mempool once the tokens it counted on are spent, instead of being executed
+for free by a proposer.
+
+### Optional token costs
+
+A token cost may declare `optional: true` (v3 meta-schema, protocol version
+14). A transition on such an action may leave `$tokenPaymentInfo` out: it then
+pays no token, its signer pays the gas in credits as on an action without a
+token cost, and no sponsorship applies. With `$tokenPaymentInfo` present the
+token is charged exactly as for a required cost, sponsorship included, and an
+insufficient token balance is a rejection rather than a fallback to credits:
+the client chooses between token and credits before signing. Together with
+contract-owner gas this is the "free usage" pattern: an app hands out tokens,
+a user posts for free while they last, and keeps posting on credits after.
 
 ## FeeResult
 

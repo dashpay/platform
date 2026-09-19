@@ -125,6 +125,8 @@ use dpp::consensus::state::document::referenced_identity_key_not_found_error::Re
 use dpp::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use dpp::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::consensus::state::document::document_immutable_property_changed_error::DocumentImmutablePropertyChangedError;
+use dpp::consensus::state::identity::gas_sponsor_insufficient_balance_error::GasSponsorInsufficientBalanceError;
+use dpp::consensus::state::token::{GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
 use dpp::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
@@ -560,6 +562,15 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::TokenOncePerIdentityDistributionAlreadyClaimedError(e) => {
             generic_consensus_error!(TokenOncePerIdentityDistributionAlreadyClaimedError, e).into()
+        }
+        StateError::GasFeesPaidByNotAllowedError(e) => {
+            generic_consensus_error!(GasFeesPaidByNotAllowedError, e).into()
+        }
+        StateError::InconsistentGasFeesPaidByInBatchError(e) => {
+            generic_consensus_error!(InconsistentGasFeesPaidByInBatchError, e).into()
+        }
+        StateError::GasSponsorInsufficientBalanceError(e) => {
+            generic_consensus_error!(GasSponsorInsufficientBalanceError, e).into()
         }
     }
 }

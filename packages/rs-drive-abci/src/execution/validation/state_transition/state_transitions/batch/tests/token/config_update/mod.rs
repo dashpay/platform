@@ -7,6 +7,15 @@ mod token_config_update_tests {
     use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 
     mod non_group {
+        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+        use dpp::block::epoch::Epoch;
+        use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+        use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+        use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+        use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+        use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+        use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+        use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
         use dpp::state_transition::proof_result::StateTransitionProofResult;
         use drive::drive::Drive;
 
@@ -1381,6 +1390,193 @@ mod token_config_update_tests {
                     .expect("expected token configuration")
                     .main_control_group(),
                 Some(0)
+            );
+        }
+
+        /// Drive only writes a token's perpetual distribution storage when the token is
+        /// created, so a config update must never be able to introduce or change one: the
+        /// change item is refused at structure validation even when the token's
+        /// `perpetual_distribution_rules` authorize the sender. If this gate is ever lifted,
+        /// the config update has to start maintaining that storage, otherwise the claim
+        /// below fails inside the grove batch instead of with a consensus error.
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_setting_perpetual_distribution_is_unsupported() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration
+                        .distribution_rules_mut()
+                        .set_perpetual_distribution_rules(ChangeControlRules::V0(
+                            ChangeControlRulesV0 {
+                                authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
+                                changing_authorized_action_takers_to_no_one_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
+                            },
+                        ));
+                }),
+                None,
+                None,
+                None,
+                platform_version,
+            );
+
+            assert!(contract
+                .expected_token_configuration(0)
+                .expect("expected token configuration")
+                .distribution_rules()
+                .perpetual_distribution()
+                .is_none());
+
+            let config_update_transition = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenConfigurationChangeItem::PerpetualDistribution(Some(
+                    TokenPerpetualDistribution::V0(TokenPerpetualDistributionV0 {
+                        distribution_type: RewardDistributionType::BlockBasedDistribution {
+                            interval: 10,
+                            function: DistributionFunction::FixedAmount { amount: 50 },
+                        },
+                        distribution_recipient: TokenDistributionRecipient::ContractOwner,
+                    }),
+                )),
+                None,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+            let config_update_transition_serialized_transition = config_update_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[config_update_transition_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Refused at basic structure, before the identity contract nonce is bumped.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::UnsupportedFeatureError(_))
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let stored_contract = platform
+                .drive
+                .fetch_contract(
+                    contract.id().to_buffer(),
+                    None,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch contract")
+                .expect("expected contract");
+            assert_eq!(stored_contract.contract.version(), contract.version());
+            assert!(stored_contract
+                .contract
+                .expected_token_configuration(0)
+                .expect("expected token configuration")
+                .distribution_rules()
+                .perpetual_distribution()
+                .is_none());
+
+            fast_forward_to_block(&platform, 10_200_000_000, 40, 42, 1, false);
+
+            let claim_transition = BatchTransition::new_token_claim_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenDistributionType::Perpetual,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+            let claim_serialized_transition = claim_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[claim_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo {
+                        time_ms: 10_200_100_000,
+                        height: 41,
+                        core_height: 42,
+                        epoch: Epoch::new(1).unwrap(),
+                    },
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Nothing was configured, so the claim is an ordinary consensus rejection and
+            // not the internal error a half-applied distribution would produce.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::InvalidTokenClaimPropertyMismatch(_)
+                    ),
+                    ..
+                }]
             );
         }
     }

@@ -70,6 +70,13 @@ pub struct DocumentActionTokenCost {
     pub token_amount: TokenAmount,
     /// The amount
     pub effect: DocumentActionTokenEffect,
-    /// Who is paying for gas fees for this action
+    /// Who the contract owner offers to have pay the gas of this action; the transition's token
+    /// payment info asks with the same enum and `GasFeesPaidBy::resolve` names the payer
+    /// (acted on from protocol version 14)
     pub gas_fees_paid_by: GasFeesPaidBy,
+    /// Whether a transition may leave the token payment info out and pay no token: its signer
+    /// then pays the gas in credits, as for an action without a token cost, and no gas
+    /// sponsorship applies. With the token payment info present the token is charged exactly as
+    /// for a required cost (protocol version 14, the first whose meta-schema admits the flag).
+    pub optional: bool,
 }

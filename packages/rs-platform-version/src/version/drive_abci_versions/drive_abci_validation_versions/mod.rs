@@ -225,6 +225,11 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub fetch_document_with_id: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
     pub is_allowed: FeatureVersion,
+    /// Version of the signer's minimum balance pre-check of a batch, which runs before its data
+    /// contracts are loaded. v0 requires the principal plus a fee minimum per transition from
+    /// the signer; v1 requires only the principal from a batch that asks the contract owner to
+    /// pay its gas, and leaves the gas to fee validation.
+    pub identity_minimum_balance_pre_check: FeatureVersion,
     pub document_create_transition_structure_validation: FeatureVersion,
     pub document_delete_transition_structure_validation: FeatureVersion,
     /// The indexOnly delete-by-values kind (PV14+); 0 in every earlier

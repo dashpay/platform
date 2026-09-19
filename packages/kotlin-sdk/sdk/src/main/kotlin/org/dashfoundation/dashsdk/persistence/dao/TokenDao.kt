@@ -90,6 +90,18 @@ interface TokenDao {
     @Upsert
     suspend fun upsertToken(token: TokenEntity)
 
+    /**
+     * Fill in the once-per-identity block of a row that has none, keeping
+     * [TokenEntity.hasDistribution] in step. Rows written before schema
+     * version 14 have a NULL block even when their contract carries one;
+     * every other column of the row is left alone. Returns the rows changed.
+     */
+    @Query(
+        "UPDATE tokens SET oncePerIdentityDistribution = :block, hasDistribution = 1 " +
+            "WHERE id = :id AND oncePerIdentityDistribution IS NULL",
+    )
+    suspend fun backfillOncePerIdentityDistribution(id: ByteArray, block: String): Int
+
     @Delete
     suspend fun deleteToken(token: TokenEntity)
 
