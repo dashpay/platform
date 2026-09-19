@@ -688,8 +688,9 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            // from protocol version 14 the contract's version item is stored beside the contract
-            24002877830
+            // from protocol version 14 the contract's version item is stored beside the contract,
+            // and the larger DashPay v2 schema adds byte-billed contract bytes
+            24002988740
         );
 
         let check_result = platform
@@ -1353,8 +1354,9 @@ mod tests {
         // Plus we have 24_000_000_000 in base costs
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            // from protocol version 14 the contract's version item is stored beside the contract
-            24005755660
+            // from protocol version 14 the contract's version item is stored beside the contract,
+            // and the larger DashPay v2 schema adds byte-billed contract bytes
+            24005977480
         );
 
         let check_result = platform
@@ -1829,8 +1831,9 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            // from protocol version 14 the contract's version item is stored beside the contract
-            24002877830
+            // from protocol version 14 the contract's version item is stored beside the contract,
+            // and the larger DashPay v2 schema adds byte-billed contract bytes
+            24002988740
         );
 
         platform
@@ -1917,8 +1920,9 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            // from protocol version 14 the contract's version item is stored beside the contract
-            27002932650
+            // from protocol version 14 the contract's version item is stored beside the contract,
+            // and the larger DashPay v2 schema adds byte-billed contract bytes
+            27003059940
         );
 
         let check_result = platform
@@ -2506,8 +2510,9 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            // from protocol version 14 the contract's version item is stored beside the contract
-            24002877830
+            // from protocol version 14 the contract's version item is stored beside the contract,
+            // and the larger DashPay v2 schema adds byte-billed contract bytes
+            24002988740
         );
 
         platform

@@ -8,6 +8,8 @@ use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
 #[cfg(feature = "mock-versions")]
 use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
 #[cfg(feature = "mock-versions")]
+use crate::version::mocks::v4_test::TEST_PLATFORM_V4;
+#[cfg(feature = "mock-versions")]
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use crate::version::system_data_contract_versions::SystemDataContractVersions;
 #[cfg(feature = "mock-versions")]
@@ -67,7 +69,8 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
 // We use OnceLock to be able to modify the version mocks
 pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::new();
 #[cfg(feature = "mock-versions")]
-const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, TEST_PLATFORM_V3];
+pub const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] =
+    &[TEST_PLATFORM_V2, TEST_PLATFORM_V3, TEST_PLATFORM_V4];
 
 pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V14;
 
@@ -83,7 +86,7 @@ impl PlatformVersion {
 
                     // Init default set of test versions
                     let versions = PLATFORM_TEST_VERSIONS
-                        .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+                        .get_or_init(|| Vec::from(DEFAULT_PLATFORM_TEST_VERSIONS));
 
                     return versions.get(test_version as usize - 2).ok_or(
                         PlatformVersionError::UnknownVersionError(format!(
@@ -111,7 +114,7 @@ impl PlatformVersion {
 
                     // Init default set of test versions
                     let versions = PLATFORM_TEST_VERSIONS
-                        .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+                        .get_or_init(|| Vec::from(DEFAULT_PLATFORM_TEST_VERSIONS));
 
                     return versions.get(test_version as usize - 2);
                 }

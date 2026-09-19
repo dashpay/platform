@@ -371,6 +371,20 @@ This is a clever design: tests can exercise version upgrade logic (like
 "what happens when we transition from test version 2 to test version 3?")
 without needing to create real protocol versions.
 
+`TEST_PLATFORM_V4` (`version/mocks/v4_test.rs`) is the latest shipped tables
+with one substitution: its fee schedule is `TEST_FEE_VERSION_DOUBLED_STORAGE`
+(`version/mocks/fee_doubled_storage_test.rs`), the latest schedule with a new
+`fee_version_number` and a doubled storage disk usage rate. No shipped schedule
+carries a number other than 1, so this is the only fee generation that
+exercises the registry lookup, the epoch-change hook, the saved-state round
+trip and the history-driven refund path. Its number sits in the same shifted
+range as the mock protocol versions (`(1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES)
++ 1`), and `FeeVersion::get` resolves that range through the test registry only
+under `mock-versions`: a production node that finds such a number in its saved
+state rejects it instead of falling back to a real schedule. When a new
+protocol version ships, move the mock's base to its table so it keeps tracking
+the latest behaviour.
+
 ## Why Immutable Snapshots?
 
 You might wonder: why not use a mutable configuration object? Why not a
