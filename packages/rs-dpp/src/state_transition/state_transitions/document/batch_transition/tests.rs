@@ -36,7 +36,7 @@ mod batch_transition_tests {
     use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
     use crate::state_transition::batch_transition::{
-        BatchTransitionV0, BatchTransitionV1,
+        BatchTransition, BatchTransitionV0, BatchTransitionV1,
     };
     use crate::state_transition::StateTransitionLike;
     use crate::state_transition::StateTransition;
@@ -1185,5 +1185,78 @@ mod batch_transition_tests {
         let second = iter.next().unwrap();
         assert!(matches!(second, BatchedTransitionRef::Token(_)));
         assert!(iter.next().is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // The erase kind on the wire
+    // -----------------------------------------------------------------------
+
+    fn make_erase_transition(nonce: u64) -> DocumentTransition {
+        use crate::state_transition::batch_transition::batched_transition::document_erase_transition::DocumentEraseTransitionV0;
+        use crate::state_transition::batch_transition::batched_transition::DocumentEraseTransition;
+
+        DocumentTransition::Erase(DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
+            base: make_base_transition(nonce),
+        }))
+    }
+
+    /// The erase kind is appended after every shipped kind, so its bincode
+    /// discriminant is the next one, 7, and every earlier kind keeps its own.
+    /// Pinning the byte keeps a later variant reordering from silently
+    /// changing what old software reads. An erase and a delete over the same
+    /// base encode identically except for that one byte, in both shipped
+    /// batch formats, and the bytes decode back to an erase.
+    #[test]
+    fn should_encode_an_erase_with_the_appended_discriminant_in_both_shipped_formats() {
+        use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
+
+        let delete = make_delete_transition(1);
+        let erase = make_erase_transition(1);
+
+        let format_0 =
+            |transition: DocumentTransition| BatchTransition::V0(make_batch_v0(vec![transition]));
+        let format_1 = |transition: DocumentTransition| {
+            BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Document(transition)]))
+        };
+
+        for (make, format) in [
+            (
+                &format_0 as &dyn Fn(DocumentTransition) -> BatchTransition,
+                0u8,
+            ),
+            (&format_1, 1u8),
+        ] {
+            let delete_bytes = make(delete.clone())
+                .serialize_to_bytes()
+                .expect("serialize");
+            let erase_batch = make(erase.clone());
+            let erase_bytes = erase_batch.serialize_to_bytes().expect("serialize");
+
+            assert_eq!(erase_bytes[0], format, "the first byte is the batch format");
+            assert_eq!(erase_bytes.len(), delete_bytes.len());
+            let differing: Vec<usize> = erase_bytes
+                .iter()
+                .zip(&delete_bytes)
+                .enumerate()
+                .filter(|(_, (a, b))| a != b)
+                .map(|(index, _)| index)
+                .collect();
+            assert_eq!(
+                differing.len(),
+                1,
+                "an erase and a delete differ only in the kind discriminant"
+            );
+            assert_eq!(erase_bytes[differing[0]], 7, "erase is the eighth kind");
+            assert_eq!(delete_bytes[differing[0]], 2, "delete is the third kind");
+
+            let recovered =
+                BatchTransition::deserialize_from_bytes_untrusted(&erase_bytes).expect("decode");
+            assert_eq!(recovered, erase_batch);
+            assert!(recovered
+                .first_transition()
+                .expect("one transition")
+                .as_transition_erase()
+                .is_some());
+        }
     }
 }

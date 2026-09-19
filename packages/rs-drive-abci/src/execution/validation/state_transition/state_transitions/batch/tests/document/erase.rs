@@ -1053,3 +1053,95 @@ async fn should_reject_a_replace_of_a_deleted_document() {
         DocumentLifecycleState::Deleted(_)
     );
 }
+
+/// The erase kind is appended to the shipped batch, so a node that knows it
+/// decodes a format 1 batch carrying one at protocol 14 as well as at 15.
+/// What keeps such a node agreeing with a node that cannot decode the kind is
+/// the basic-structure gate: at protocol 14, where no bounds are published for
+/// the kind, the batch is refused as an unsupported version before any state
+/// is read or any fee is charged.
+#[tokio::test]
+async fn should_refuse_an_erase_at_protocol_14_as_an_unsupported_version() {
+    let released = PlatformVersion::get(14).expect("protocol version 14 exists");
+    assert!(
+        released
+            .dpp
+            .state_transition_serialization_versions
+            .document_erase_state_transition
+            .is_none(),
+        "the test needs a released version that publishes no erase bounds"
+    );
+    let mut platform = TestPlatformBuilder::new()
+        .with_initial_protocol_version(released.protocol_version)
+        .build_with_mock_rpc()
+        .set_initial_state_structure();
+
+    // A deployed keep-history contract, loaded the way protocol 14 loads it.
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json",
+        false,
+        released,
+    )
+    .expect("expected the keep-history note contract");
+    platform
+        .drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            released,
+        )
+        .expect("expected to apply the contract");
+    let (owner, signer, key) = setup_identity(&mut platform, 1003, dash_to_credits!(1.0));
+
+    // The transition itself can only be built by software that knows the
+    // kind; a protocol 14 node receives the bytes from such software.
+    let latest = PlatformVersion::latest();
+    let document_type = contract
+        .document_type_for_name("note")
+        .expect("expected the note document type");
+    let mut rng = StdRng::seed_from_u64(1303);
+    let entropy = Bytes32::random_with_rng(&mut rng);
+    let document = document_type
+        .random_document_with_identifier_and_entropy(
+            &mut rng,
+            owner.id(),
+            entropy,
+            DocumentFieldFillType::FillIfNotRequired,
+            DocumentFieldFillSize::AnyDocumentFillSize,
+            latest,
+        )
+        .expect("expected a random note");
+    let erase = BatchTransition::new_document_erase_transition_from_document(
+        document,
+        document_type,
+        &key,
+        1,
+        0,
+        &signer,
+        latest,
+        None,
+    )
+    .await
+    .expect("expected an erase transition");
+    assert_matches!(
+        erase,
+        StateTransition::Batch(dpp::state_transition::batch_transition::BatchTransition::V1(_)),
+        "the erase rides in the shipped batch format"
+    );
+
+    let result = process(
+        &mut platform,
+        erase.serialize_to_bytes().expect("serialized"),
+    );
+
+    assert_matches!(
+        result,
+        StateTransitionExecutionResult::UnpaidConsensusError(
+            dpp::consensus::ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+        ),
+        "protocol 14 must refuse the erase kind by its version bounds"
+    );
+}

@@ -83,7 +83,7 @@ impl crate::serialization::ValueConvertible for BatchedTransition {}
 pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::batched_transition::{
-        document_create_transition, token_burn_transition,
+        document_create_transition, document_erase_transition, token_burn_transition,
     };
     use document_transition::DocumentTransition;
     use token_transition::TokenTransition;
@@ -128,6 +128,13 @@ pub(crate) mod json_convertible_tests {
         let inner = DocumentTransition::Create(
             document_create_transition::json_convertible_tests::fixture(),
         );
+        assert_umbrella_round_trip(BatchedTransition::Document(inner), "document");
+    }
+
+    #[test]
+    fn umbrella_document_erase() {
+        let inner =
+            DocumentTransition::Erase(document_erase_transition::json_convertible_tests::fixture());
         assert_umbrella_round_trip(BatchedTransition::Document(inner), "document");
     }
 

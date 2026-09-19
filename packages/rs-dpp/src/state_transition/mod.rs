@@ -2562,6 +2562,86 @@ mod tests {
         }))
     }
 
+    fn sample_format_1_batch_st_with_erase() -> StateTransition {
+        use crate::state_transition::batch_transition::batched_transition::document_erase_transition::DocumentEraseTransitionV0;
+        use crate::state_transition::batch_transition::batched_transition::{
+            BatchedTransition, DocumentEraseTransition,
+        };
+        use crate::state_transition::batch_transition::BatchTransitionV1;
+
+        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Identifier::from([1u8; 32]),
+            identity_contract_nonce: 3,
+            document_type_name: "note".to_string(),
+            data_contract_id: Identifier::from([2u8; 32]),
+        });
+        let erase =
+            DocumentTransition::Erase(DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
+                base,
+            }));
+        StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: Identifier::from([8u8; 32]),
+            transitions: vec![BatchedTransition::Document(erase)],
+            user_fee_increase: 2,
+            signature_public_key_id: 7,
+            signature: BinaryData::new(vec![0xEE; 65]),
+        }))
+    }
+
+    /// The erase kind rides in the shipped batch formats, so a format 1 batch
+    /// carrying one keeps format 1's range and decodes under protocol 14 on
+    /// software that knows the kind. Agreement with software that cannot
+    /// decode it comes one step later: the basic-structure check refuses the
+    /// kind wherever the active version publishes no bounds for it.
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[test]
+    fn test_format_1_batch_with_erase_decodes_at_protocol_14_and_is_refused_by_structure() {
+        use crate::consensus::basic::BasicError;
+        use crate::consensus::ConsensusError;
+        use crate::serialization::PlatformSerializable;
+
+        let state_transition = sample_format_1_batch_st_with_erase();
+        assert_eq!(
+            state_transition.active_version_range(),
+            9..=LATEST_VERSION,
+            "format 1 arrived with tokens at protocol version 9; the erase kind does not move it"
+        );
+        let bytes = PlatformSerializable::serialize_to_bytes(&state_transition)
+            .expect("serialize succeeds");
+
+        let released = PlatformVersion::get(14).expect("protocol version 14 exists");
+        let decoded =
+            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, released)
+                .expect("a format 1 batch with an erase decodes under protocol version 14");
+        assert_eq!(decoded.name(), "DocumentsBatch([Erase])");
+        let StateTransition::Batch(batch) = decoded else {
+            panic!("expected a batch, got {decoded:?}");
+        };
+
+        let is_unsupported_version = |error: &ConsensusError| {
+            matches!(
+                error,
+                ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+            )
+        };
+        let result = batch
+            .validate_base_structure(released)
+            .expect("no protocol err");
+        assert!(
+            result.errors.iter().any(is_unsupported_version),
+            "protocol version 14 must refuse the erase kind, got {:?}",
+            result.errors
+        );
+        let result = batch
+            .validate_base_structure(PlatformVersion::latest())
+            .expect("no protocol err");
+        assert!(
+            !result.errors.iter().any(is_unsupported_version),
+            "the latest protocol version must admit the erase kind, got {:?}",
+            result.errors
+        );
+    }
+
     fn sample_batch_st_empty() -> StateTransition {
         StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
             owner_id: Identifier::from([1u8; 32]),

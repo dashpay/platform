@@ -95,6 +95,70 @@ fn should_preserve_released_keep_history_validation_versions() {
             0,
             "delete action conversion at protocol {protocol}"
         );
+        // The batch-level slots the released versions replay with. Pinned
+        // literally so that a change to both protocol 14 and 15 at once still
+        // fails the protocol 15 comparison test below.
+        let batch_bounds = &version
+            .dpp
+            .state_transition_serialization_versions
+            .batch_state_transition;
+        assert_eq!(
+            (
+                batch_bounds.min_version,
+                batch_bounds.max_version,
+                batch_bounds.default_current_version
+            ),
+            (0, 1, 1),
+            "batch wire bounds at protocol {protocol}"
+        );
+        assert_eq!(
+            version
+                .dpp
+                .state_transitions
+                .documents
+                .documents_batch_transition
+                .validation
+                .validate_base_structure,
+            0,
+            "batch structure validation at protocol {protocol}"
+        );
+        let batch = &version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition;
+        assert_eq!(
+            (
+                batch.basic_structure,
+                batch.advanced_structure,
+                batch.state,
+                batch.revision,
+                batch.transform_into_action,
+                batch.failed_per_transition_action,
+                batch.fetch_documents_for_transitions_knowing_contract_and_document_type,
+                batch.fetch_document_with_id,
+                batch.is_allowed,
+                batch.document_reference_validation,
+                batch.document_base_transition_state_validation,
+            ),
+            (0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0),
+            "batch structure, state, nonce, transform, failure, fetch and admission \
+             generations at protocol {protocol}"
+        );
+        assert_eq!(
+            version.drive.methods.prove.prove_state_transition, 0,
+            "state transition prover at protocol {protocol}"
+        );
+        assert_eq!(
+            version
+                .drive
+                .methods
+                .verify
+                .state_transition
+                .verify_state_transition_was_executed_with_proof,
+            0,
+            "state transition proof verification at protocol {protocol}"
+        );
     }
 }
 
@@ -247,18 +311,25 @@ fn should_carry_the_erase_kind_without_a_new_batch_generation() {
             .state_transitions
             .batch_state_transition;
         (
+            batch.basic_structure,
             batch.transform_into_action,
             batch.advanced_structure,
             batch.state,
             batch.revision,
+            batch.failed_per_transition_action,
             batch.is_allowed,
             batch.fetch_documents_for_transitions_knowing_contract_and_document_type,
+            batch.fetch_document_with_id,
+            batch.data_triggers.bindings,
+            batch.document_reference_validation,
+            batch.document_base_transition_state_validation,
         )
     };
     assert_eq!(
         batch_generations(current),
         batch_generations(released),
-        "the batch transformer, structure, state, nonce and admission generations are unchanged"
+        "the batch transformer, structure, state, nonce, failure, fetch, trigger and \
+         admission generations are unchanged"
     );
 
     let batch_drive = |version: &PlatformVersion| {

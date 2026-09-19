@@ -3124,5 +3124,25 @@ mod erase_action {
             None
         );
         assert_eq!(erase_only.all_used_balances().unwrap(), None);
+
+        let purchases = || {
+            vec![
+                BatchedTransitionAction::DocumentAction(make_purchase().into()),
+                BatchedTransitionAction::TokenAction(make_direct_purchase().into()),
+            ]
+        };
+        let without_erase = batch(purchases());
+        let mut with_erase_transitions = vec![erase()];
+        with_erase_transitions.extend(purchases());
+        let with_erase = batch(with_erase_transitions);
+        assert_eq!(
+            with_erase.all_purchases_amount().unwrap(),
+            without_erase.all_purchases_amount().unwrap()
+        );
+        assert_eq!(with_erase.all_purchases_amount().unwrap(), Some(15_000));
+        assert_eq!(
+            with_erase.all_used_balances().unwrap(),
+            without_erase.all_used_balances().unwrap()
+        );
     }
 }
