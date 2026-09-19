@@ -931,6 +931,98 @@ mod tests {
             );
         }
 
+        /// The waiver of an optional token cost has no version gate of its own: it rests on no
+        /// contract carrying the flag before protocol version 14, because every earlier document
+        /// meta-schema (v0 to v2) closes the token cost object to unknown keys. This pins that.
+        #[test]
+        fn token_cost_optional_flag_is_rejected_before_protocol_version_14() {
+            use crate::consensus::basic::BasicError;
+            use crate::consensus::ConsensusError;
+            use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+            use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+            use crate::version::PlatformVersion;
+
+            let token_configurations = BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]);
+
+            // The flag alone is what is refused: without it the same cost parses at version 13.
+            DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                default_config().version(),
+                "doc",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                    },
+                    "tokenCost": {
+                        "create": {
+                            "tokenPosition": 0_u64,
+                            "amount": 3_u64,
+                        },
+                    },
+                    "additionalProperties": false,
+                }),
+                None,
+                &token_configurations,
+                &default_config(),
+                true,
+                &mut vec![],
+                PlatformVersion::get(13).expect("expected protocol version 13"),
+            )
+            .expect("expected a required token cost to parse at protocol version 13");
+
+            for protocol_version in 1..=13 {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected the platform version");
+                let schema = platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "a": {"type": "string", "position": 0, "maxLength": 40_u32},
+                    },
+                    "tokenCost": {
+                        "create": {
+                            "tokenPosition": 0_u64,
+                            "amount": 3_u64,
+                            "optional": true,
+                        },
+                    },
+                    "additionalProperties": false,
+                });
+
+                let error = DocumentTypeV1::try_from_schema(
+                    Identifier::new([1; 32]),
+                    1,
+                    default_config().version(),
+                    "doc",
+                    schema,
+                    None,
+                    &token_configurations,
+                    &default_config(),
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect_err("expected the flag to be refused");
+
+                assert!(
+                    matches!(
+                        &error,
+                        ProtocolError::ConsensusError(consensus_error)
+                            if matches!(
+                                consensus_error.as_ref(),
+                                ConsensusError::BasicError(BasicError::JsonSchemaError(_))
+                            )
+                    ),
+                    "protocol version {protocol_version}: expected the meta-schema to refuse \
+                     the flag, got {error:?}"
+                );
+            }
+        }
+
         // ---------- Token cost: InvalidTokenPositionError ----------
         #[test]
         fn token_cost_with_unknown_position_and_no_contract_id_errors() {
