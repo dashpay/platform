@@ -73,7 +73,7 @@ use crate::consensus::state::identity::missing_transfer_key_error::MissingTransf
 use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError};
+use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError};
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -450,6 +450,12 @@ pub enum StateError {
     #[error(transparent)]
     DocumentImmutablePropertyChangedError(DocumentImmutablePropertyChangedError),
 
+    // Once-per-identity token distribution (protocol version 14).
+    #[error(transparent)]
+    TokenOncePerIdentityDistributionAlreadyClaimedError(
+        TokenOncePerIdentityDistributionAlreadyClaimedError,
+    ),
+
     // Gas paid by the contract owner (protocol version 14).
     #[error(transparent)]
     GasFeesPaidByNotAllowedError(GasFeesPaidByNotAllowedError),
@@ -661,7 +667,7 @@ mod tests {
             )),
             108
         );
-        // Immutable document properties (protocol version 14): the tail of the enum.
+        // Immutable document properties (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::DocumentImmutablePropertyChangedError(
                 DocumentImmutablePropertyChangedError::new(
@@ -671,6 +677,19 @@ mod tests {
                 )
             )),
             109
+        );
+        // Once-per-identity token distribution (protocol version 14).
+        assert_eq!(
+            discriminant_of(
+                StateError::TokenOncePerIdentityDistributionAlreadyClaimedError(
+                    TokenOncePerIdentityDistributionAlreadyClaimedError::new(
+                        group_id,
+                        identity_id,
+                        1
+                    )
+                )
+            ),
+            110
         );
         // Gas paid by the contract owner (protocol version 14): the tail of the enum.
         assert_eq!(
@@ -682,19 +701,19 @@ mod tests {
                     GasFeesPaidBy::DocumentOwner,
                 )
             )),
-            110
+            111
         );
         assert_eq!(
             discriminant_of(StateError::InconsistentGasFeesPaidByInBatchError(
                 InconsistentGasFeesPaidByInBatchError::new(Some(identity_id), None)
             )),
-            111
+            112
         );
         assert_eq!(
             discriminant_of(StateError::GasSponsorInsufficientBalanceError(
                 GasSponsorInsufficientBalanceError::new(identity_id, 1, 2)
             )),
-            112
+            113
         );
     }
 }

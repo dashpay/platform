@@ -130,6 +130,9 @@ to prevent namespace squatting:
 | Unique index | 1,000,000,000 | 0.01 Dash |
 | Contested index | 100,000,000,000 | 1.0 Dash |
 | Token registration | 10,000,000,000 | 0.1 Dash |
+| Token uses a perpetual distribution | 10,000,000,000 | 0.1 Dash |
+| Token uses a pre-programmed distribution | 10,000,000,000 | 0.1 Dash |
+| Token uses a once-per-identity distribution (protocol version 14+) | 10,000,000,000 | 0.1 Dash |
 | Search keyword | 10,000,000,000 | 0.1 Dash |
 
 Before protocol version 9, all registration fees were zero.
@@ -332,6 +335,7 @@ Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The
 | `rs-platform-version/src/version/fee/signature/v1.rs` | Signature verification costs |
 | `rs-platform-version/src/version/fee/state_transition_min_fees/v1.rs` | Minimum fees per transition |
 | `rs-platform-version/src/version/fee/data_contract_registration/v2.rs` | Contract registration fees |
+| `rs-platform-version/src/version/fee/data_contract_registration/v3.rs` | Protocol version 14 addition: once-per-identity distribution surcharge |
 | `rs-drive/src/fees/op.rs` | LowLevelDriveOperation and cost calculation |
 | `rs-dpp/src/fee/fee_result/mod.rs` | FeeResult, BalanceChangeForIdentity |
 | `rs-dpp/src/fee/epoch/distribution.rs` | Epoch distribution table and refund logic |

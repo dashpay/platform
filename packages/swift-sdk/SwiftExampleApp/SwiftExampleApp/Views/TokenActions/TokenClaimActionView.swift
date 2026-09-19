@@ -139,6 +139,7 @@ struct TokenClaimActionView: View {
         switch dist {
         case .perpetual: return "Perpetual"
         case .preProgrammed: return "Pre-Programmed"
+        case .oncePerIdentity: return "Once per identity"
         }
     }
 
