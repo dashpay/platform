@@ -28,6 +28,17 @@ object TokenAmounts {
         null
     }
 
+    /**
+     * Normalize a raw on-chain amount given as a decimal string. Null when it
+     * is not an integer, is negative, or does not fit in a u64.
+     */
+    fun parseRaw(text: String): String? = try {
+        val raw = BigInteger(text.trim())
+        if (raw.signum() >= 0 && raw <= MAX_U64) raw.toString() else null
+    } catch (_: NumberFormatException) {
+        null
+    }
+
     /** Format a raw amount into display units, trimming trailing zeros. */
     fun format(raw: ULong, decimals: Int): String = format(raw.toString(), decimals)
 

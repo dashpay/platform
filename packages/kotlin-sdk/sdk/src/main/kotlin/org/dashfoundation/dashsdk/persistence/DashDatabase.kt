@@ -155,9 +155,15 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * SingleContract on the group id. The persist callback now records the
  * kind the native row carries; a NULL kind (legacy row) keeps the old
  * inference on restore.
+ *
+ * Version 14 (once-per-identity token distribution, protocol version 14):
+ * adds the nullable `tokens.oncePerIdentityDistribution` column holding the
+ * contract's `oncePerIdentityDistribution` block as JSON, so the claim
+ * screen can offer the third distribution kind. NULL for every pre-existing
+ * row; the next contract materialization fills it in.
  */
 @Database(
-    version = 13,
+    version = 14,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -661,6 +667,19 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v13 -> v14: additive nullable `tokens.oncePerIdentityDistribution`,
+         * see the version-14 class doc above. NULL for every pre-existing
+         * row; `TokenMaterializer` fills it on the next contract parse.
+         */
+        val MIGRATION_13_14: Migration = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `tokens` ADD COLUMN `oncePerIdentityDistribution` TEXT",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -681,6 +700,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_10_11,
                     MIGRATION_11_12,
                     MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
                 .build()
 

@@ -41,6 +41,29 @@ object TokenMaterializer {
         }
     }
 
+    /**
+     * Schema version 14 added `tokens.oncePerIdentityDistribution`, and the
+     * migration can only add the column: rows materialized by an earlier
+     * build keep a NULL block (and `hasDistribution = false`) although the
+     * contract JSON stored beside them may carry one. Re-read the block from
+     * each stored contract and fill it in where it is missing. Unlike
+     * [materialize] this never rewrites the rest of the row, so live columns
+     * such as `isPaused` keep their value. Returns the rows filled in.
+     */
+    suspend fun backfillOncePerIdentityDistributions(
+        contracts: List<DataContractEntity>,
+        dao: TokenDao,
+    ): Int {
+        var filled = 0
+        for (contract in contracts) {
+            for (token in parse(contract)) {
+                val block = token.oncePerIdentityDistribution ?: continue
+                filled += dao.backfillOncePerIdentityDistribution(token.id, block)
+            }
+        }
+        return filled
+    }
+
     /** Pure parse of [contract]'s tokens map into entity rows. */
     fun parse(contract: DataContractEntity): List<TokenEntity> {
         val root = try {
@@ -80,6 +103,10 @@ object TokenMaterializer {
         val distributionRules = dict.obj("distributionRules")
         val perpetual = distributionRules?.obj("perpetualDistribution")
         val preProgrammed = distributionRules?.obj("preProgrammedDistribution")
+        // Protocol version 14: a fixed amount every identity may claim once.
+        // Persisted raw like the two blocks above; the amount is read back
+        // through TokenOncePerIdentityDistribution.parse.
+        val oncePerIdentity = distributionRules?.obj("oncePerIdentityDistribution")
         val newTokensDestination = distributionRules?.str("newTokensDestinationIdentity")
             ?.let { Base58.decodeIdentifier(it) }
         val mintingAllowChoosing = distributionRules
@@ -106,7 +133,8 @@ object TokenMaterializer {
             keepsHistoryObj?.boolean(key) ?: keepsHistoryAll ?: true
 
         val now = Date()
-        val hasDistribution = perpetual != null || preProgrammed != null
+        val hasDistribution =
+            perpetual != null || preProgrammed != null || oncePerIdentity != null
         return TokenEntity(
             id = tokenId(contractId, position),
             contractId = contractId,
@@ -138,6 +166,7 @@ object TokenMaterializer {
             emergencyActionRules = emergencyAction?.toJson(),
             perpetualDistribution = perpetual?.toString(),
             preProgrammedDistribution = preProgrammed?.toString(),
+            oncePerIdentityDistribution = oncePerIdentity?.toString(),
             newTokensDestinationIdentity = newTokensDestination,
             mintingAllowChoosingDestination = mintingAllowChoosing,
             distributionChangeRules = distributionChange?.toJson(),
@@ -149,7 +178,7 @@ object TokenMaterializer {
             createdAt = now,
             lastUpdatedAt = now,
             // Capability columns — MUST stay == (rules column != null),
-            // and hasDistribution == (perpetual || preProgrammed).
+            // and hasDistribution == (perpetual || preProgrammed || oncePerIdentity).
             canManuallyMint = manualMinting != null,
             canManuallyBurn = manualBurning != null,
             canFreeze = freeze != null,

@@ -117,6 +117,36 @@ public struct DistributionEvent: Codable, Equatable, Sendable {
     }
 }
 
+// MARK: - Once-Per-Identity Distribution
+
+/// A fixed amount every identity may claim exactly once (protocol
+/// version 14).
+///
+/// rs-dpp serialises it inside a token's `distributionRules` as
+/// `"oncePerIdentityDistribution": {"$formatVersion": "0", "amount": 5000}`.
+///
+/// `amount` is a protocol `u64`, so it is carried as an exact decimal string
+/// here, the same convention the other token amounts use. Values above
+/// 2^53 - 1 arrive as JSON strings because a JSON number that large is not
+/// exactly representable, and a fixed-width or floating-point carrier could
+/// not hand them back digit for digit. rs-dpp narrows what a contract may
+/// declare (1 to `i64::MAX`) and enforces that at registration; this type
+/// carries whatever the wire holds rather than restating the rule.
+///
+/// Unlike `TokenPerpetualDistribution` and `TokenPreProgrammedDistribution`
+/// this value has no column on `PersistentToken`: it is derived from the
+/// owning contract's stored JSON through
+/// `PersistentToken.oncePerIdentityDistribution`.
+public struct TokenOncePerIdentityDistribution: Codable, Equatable, Sendable {
+    /// The amount minted to an identity on its single claim, as an exact
+    /// decimal string.
+    public var amount: String
+
+    public init(amount: String) {
+        self.amount = amount
+    }
+}
+
 // MARK: - Distribution Change Rules
 
 /// Rules governing changes to distribution configuration

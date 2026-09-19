@@ -40,7 +40,9 @@ import org.dashfoundation.example.navigation.TokenAction
 import org.dashfoundation.example.services.tokens.GroupActionRuleEvaluator
 import org.dashfoundation.example.services.tokens.GroupActionRuleEvaluator.BannerState
 import org.dashfoundation.example.services.tokens.ProvenBalances
+import org.dashfoundation.example.services.tokens.OncePerIdentityClaimStore
 import org.dashfoundation.example.services.tokens.TokenActionKind
+import org.dashfoundation.example.services.tokens.TokenActionResolver
 import org.dashfoundation.example.services.tokens.TokenAmounts
 import org.dashfoundation.example.services.tokens.TokenDirectPurchasePricing
 import org.dashfoundation.example.services.tokens.TokenDistributionChangeRules
@@ -594,17 +596,25 @@ private fun ClaimForm(
     navController: NavHostController,
 ) {
     val token = context.token
-    // Perpetual wins when both exist (matches Drive's claim ordering).
-    val available = buildList {
-        if (token.perpetualDistribution != null) add(TokenDistributionType.PERPETUAL)
-        if (token.preProgrammedDistribution != null) add(TokenDistributionType.PRE_PROGRAMMED)
-    }
-    var selectedOrdinal by rememberSaveable {
-        mutableStateOf((available.firstOrNull() ?: TokenDistributionType.PERPETUAL).ordinal)
-    }
-    val selected = TokenDistributionType.entries[selectedOrdinal]
+    val identity = context.identity
+    val claimStore = LocalAppContainer.current.oncePerIdentityClaimStore
+    // Null until the device-local claim memory has loaded, so the default
+    // below is computed once, from the real value.
+    val oncePerIdentityClaimed by remember(token.id, identity.identityId) {
+        claimStore.observe(identity.networkRaw, token.id, identity.identityId)
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val claimed = oncePerIdentityClaimed ?: false
+    val available = TokenActionResolver.claimableDistributions(token, identity, claimed)
+    // The user's pick once made; until then the first kind this identity is
+    // eligible for (`preferredClaimDistribution`). With none, the fallback
+    // only keeps the value valid: `canSubmit` stays false.
+    var pickedOrdinal by rememberSaveable { mutableStateOf<Int?>(null) }
+    val selected = pickedOrdinal?.let { TokenDistributionType.entries[it] }
+        ?.takeIf { it in available }
+        ?: TokenActionResolver.preferredClaimDistribution(token, identity, claimed)
+        ?: TokenDistributionType.PERPETUAL
     var note by rememberSaveable { mutableStateOf("") }
-    val canSubmit = available.contains(selected)
+    val canSubmit = oncePerIdentityClaimed != null && available.contains(selected)
 
     TokenActionScaffold(
         title = "Claim",
@@ -620,15 +630,28 @@ private fun ClaimForm(
             val signer = context.signerHandle ?: return@TokenActionScaffold
             val noteOrNull = note.toPublicNoteOrNull()
             viewModel.submit {
-                wallet.tokens.claim(
-                    identityId = context.identity.identityId,
-                    tokenContractId = token.contractId,
-                    tokenPosition = token.position,
-                    distributionType = selected,
-                    publicNote = noteOrNull,
-                    signingKeyId = TokenActionContext.SIGNING_KEY_ID,
-                    signerHandle = signer,
-                )
+                val oncePerIdentity = selected == TokenDistributionType.ONCE_PER_IDENTITY
+                try {
+                    wallet.tokens.claim(
+                        identityId = identity.identityId,
+                        tokenContractId = token.contractId,
+                        tokenPosition = token.position,
+                        distributionType = selected,
+                        publicNote = noteOrNull,
+                        signingKeyId = TokenActionContext.SIGNING_KEY_ID,
+                        signerHandle = signer,
+                    )
+                } catch (e: Exception) {
+                    // Rejected as already claimed: remember it so the kind
+                    // is not offered to this identity again.
+                    if (oncePerIdentity && OncePerIdentityClaimStore.isAlreadyClaimed(e)) {
+                        claimStore.markClaimed(identity.networkRaw, token.id, identity.identityId)
+                    }
+                    throw e
+                }
+                if (oncePerIdentity) {
+                    claimStore.markClaimed(identity.networkRaw, token.id, identity.identityId)
+                }
             }
         },
     ) {
@@ -646,7 +669,7 @@ private fun ClaimForm(
                     available.forEachIndexed { index, dist ->
                         SegmentedButton(
                             selected = selected == dist,
-                            onClick = { selectedOrdinal = dist.ordinal },
+                            onClick = { pickedOrdinal = dist.ordinal },
                             enabled = available.size > 1,
                             shape = SegmentedButtonDefaults.itemShape(
                                 index = index, count = available.size,
