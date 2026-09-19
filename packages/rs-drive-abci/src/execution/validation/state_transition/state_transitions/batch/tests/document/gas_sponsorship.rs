@@ -24,13 +24,13 @@ mod gas_sponsorship_tests {
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Setters;
     use dpp::data_contract::document_type::accessors::{
-        DocumentTypeV0MutGetters, DocumentTypeV1Setters,
+        DocumentTypeV0MutGetters, DocumentTypeV1Getters, DocumentTypeV1Setters,
     };
     use dpp::data_contract::DataContract;
     use dpp::identity::accessors::IdentitySettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
-    use dpp::prelude::Identifier;
+    use dpp::prelude::{Identifier, Revision};
     use dpp::state_transition::StateTransition;
     use dpp::tokens::calculate_token_id;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -46,6 +46,7 @@ mod gas_sponsorship_tests {
     const GAS_SPONSOR_INSUFFICIENT_BALANCE: u32 = 40222;
     const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
     const IDENTITY_DOES_NOT_HAVE_ENOUGH_TOKEN_BALANCE: u32 = 40700;
+    const INVALID_DOCUMENT_REVISION: u32 = 40106;
 
     /// Creating a card costs 10 gold, transferred to the contract owner.
     const CARD_COST: TokenAmount = 10;
@@ -64,7 +65,7 @@ mod gas_sponsorship_tests {
     }
 
     impl Sponsorship {
-        /// A card game whose `card` creation offers `offered` for the gas, a contract owner
+        /// A card game whose `card` creation and replacement offer `offered` for the gas, a contract owner
         /// with `owner_credits`, and a user with `user_credits` and `user_gold` gold.
         fn new(
             offered: GasFeesPaidBy,
@@ -140,6 +141,15 @@ mod gas_sponsorship_tests {
                         effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                         gas_fees_paid_by: offered,
                     }));
+                    let replacement_token_cost = document_type
+                        .document_replacement_token_cost()
+                        .expect("expected the card game to charge for a replacement");
+                    document_type.set_document_replacement_token_cost(Some(
+                        DocumentActionTokenCost {
+                            gas_fees_paid_by: offered,
+                            ..replacement_token_cost
+                        },
+                    ));
                     let offered_int: u8 = offered.into();
                     let schema = document_type.schema_mut();
                     let token_cost = schema
@@ -153,6 +163,12 @@ mod gas_sponsorship_tests {
                     creation_token_cost
                         .set_value("gasFeesPaidBy", offered_int.into())
                         .expect("expected to set who pays the gas");
+                    token_cost
+                        .get_mut("replace")
+                        .expect("expected to get the replacement token cost")
+                        .expect("expected the replacement token cost to be set")
+                        .set_value("gasFeesPaidBy", offered_int.into())
+                        .expect("expected to set who pays the gas of a replacement");
                 }),
                 None,
                 Some(platform_version),
@@ -195,6 +211,50 @@ mod gas_sponsorship_tests {
                 requested,
             )
             .await
+        }
+
+        /// The user's replacement of the card they created, at `revision`, preferring that the
+        /// contract owner pays the gas
+        async fn card_replacement(&self, revision: Revision) -> StateTransition {
+            let mut rng = StdRng::seed_from_u64(433);
+            let card_document_type = self
+                .contract
+                .document_type_for_name("card")
+                .expect("expected the card document type");
+            let entropy = Bytes32::random_with_rng(&mut rng);
+            let mut document = card_document_type
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    self.user.id(),
+                    entropy,
+                    DocumentFieldFillType::DoNotFillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    self.platform_version,
+                )
+                .expect("expected a random document");
+            document.set("attack", 5.into());
+            document.set("defense", 7.into());
+            document.set_revision(Some(revision));
+
+            BatchTransition::new_document_replacement_transition_from_document(
+                document,
+                card_document_type,
+                &self.user_key,
+                3,
+                0,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 1,
+                    minimum_token_cost: None,
+                    maximum_token_cost: Some(2),
+                    gas_fees_paid_by: GasFeesPaidBy::PreferContractOwner,
+                })),
+                &self.user_signer,
+                self.platform_version,
+                None,
+            )
+            .await
+            .expect("expected a batch transition")
         }
 
         async fn card_creation_by(
@@ -582,6 +642,39 @@ mod gas_sponsorship_tests {
         );
         let transition = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
         assert_eq!(setup.check_tx_at(&transition, Recheck), Vec::<u32>::new());
+    }
+
+    #[tokio::test]
+    async fn should_keep_an_unfunded_users_replacement_with_a_wrong_revision_out_of_the_mempool() {
+        // The revision of a replacement is judged by the transformer, which check tx leaves to
+        // the block. A signer who relies on a gas sponsor could not pay for that failure, so
+        // check tx asks the transformer to validate against the state too, on the first check
+        // and on a recheck, while its validation mode stays what it is.
+        let setup = Sponsorship::new(GasFeesPaidBy::ContractOwner, dash_to_credits!(0.1), 0, 15);
+        // Replacing a card costs 2 of the game's second token
+        let gas_token_id: Identifier = calculate_token_id(setup.contract.id().as_bytes(), 1).into();
+        add_tokens_to_identity(&setup.platform, gas_token_id, setup.user.id(), 5);
+
+        let creation = setup.card_creation(GasFeesPaidBy::ContractOwner).await;
+        let tx = setup.platform.drive.grove.start_transaction();
+        assert_matches!(setup.process(&creation, &tx), SuccessfulExecution { .. });
+        setup
+            .platform
+            .drive
+            .grove
+            .commit_transaction(tx)
+            .unwrap()
+            .expect("expected to commit the creation");
+
+        for (revision, expected) in [(2, Vec::<u32>::new()), (3, vec![INVALID_DOCUMENT_REVISION])] {
+            let replacement = setup.card_replacement(revision).await;
+            assert_eq!(setup.check_tx(&replacement), expected, "first check");
+            assert_eq!(
+                setup.check_tx_at(&replacement, Recheck),
+                expected,
+                "recheck"
+            );
+        }
     }
 
     #[tokio::test]
