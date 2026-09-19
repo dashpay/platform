@@ -56,11 +56,15 @@ rather than assume there is exactly one.
 ### `appManifest`
 
 Published once by the owner of an app's data contract and updated when the app's requirements
-change. A wallet only trusts a manifest whose `$ownerId` is the owner of the contract it names.
+change. Consensus refuses a manifest from anyone but the contract's owner: `appContractId`
+carries the owner gate, `refersTo: { type: contract, propertyAgreement: { "$ownerId":
+"$ownerId" } }`, so a create or replace whose writer is not the referenced contract's owner is
+rejected (`ReferencedDocumentPropertyMismatchError`). A wallet therefore fetches the manifest by
+`appContractId` and needs no owner check of its own.
 
 | Property | Type | Meaning |
 |---|---|---|
-| `appContractId` | identifier, `refersTo: contract` | The app's data contract. |
+| `appContractId` | identifier, `refersTo: contract` with the owner gate | The app's data contract. Only its owner can write this document. |
 | `name` | string, at most 64 characters | Display name, shown on the wallet's approval sheet. |
 | `url` | string, at most 256 characters | The app's URL, shown on the approval sheet. |
 | `authBoundsKind` | integer 0 to 3 | The contract bounds the login key must carry: `0` none, `1` the contract in `authBoundsId`, `2` the document type `authBoundsDocType` of that contract, `3` the contract group in `authBoundsId`. |
@@ -68,39 +72,53 @@ change. A wallet only trusts a manifest whose `$ownerId` is the owner of the con
 | `authBoundsDocType` | string, at most 64 characters, optional | The document type name, present only when `authBoundsKind` is `2`. |
 | `sessionSeconds` | integer | The login key lifetime the app asks for, in seconds. |
 | `sessionBudget` | integer | The login key budget the app asks for, in credits. |
-| `encBindings` | 0 to 768 bytes, optional | The encryption key bindings the app needs, packed as fixed 96-byte records (below). |
+| `requestedEncryptionKeys` | 0 to 768 bytes, optional | The encryption keys the wallet should register on the identity at login, packed as fixed 96-byte records (below). |
 
 `appContractId`, `name`, `url`, `authBoundsKind`, `sessionSeconds` and `sessionBudget` are
-required. The single index, `byOwnerAndApp` on `($ownerId, appContractId)`, is unique. Wallets
-query by both values, so an identity can publish at most one manifest per app contract and cannot
-publish one that a wallet would accept for a contract it does not own.
+required. The single index, `byApp` on `(appContractId)`, is unique: one manifest per app
+contract, and with the owner gate, one that only the contract's owner could have written.
+
+A contract's owner never changes, so the gate is fixed for the contract's lifetime and an
+existing manifest always belongs to the current owner. Wallets should still treat a manifest
+whose `$ownerId` differs from the contract's owner as absent: that cannot happen through
+consensus today, but it is the invariant the wallet relies on, and checking it costs nothing
+once both documents are in hand.
 
 The bounds are a requirement: the wallet registers the login key with exactly those
 `contractBounds` (see [contract-bound authentication keys](contract-bound-authentication-keys.md)),
-or refuses. The lifetime and budget are requests: they cap what the wallet grants, and the wallet
-may grant less (see [authentication keys with a budget or an expiry](authentication-key-limits.md)).
+or refuses. The lifetime and budget are the app's request; the wallet treats them as a default
+and may grant less or more (see
+[authentication keys with a budget or an expiry](authentication-key-limits.md)).
 `authBoundsKind = 0` is legal; the expiry and budget still apply, only the scope does not.
 
-#### The `encBindings` record
+#### `requestedEncryptionKeys`
 
-Document schemas admit byte arrays but not arrays of objects, so the bindings are packed. Each
-record is 96 bytes:
+The app cannot register keys on the user's identity; the wallet does that at login. Encryption
+keys are per data contract (a Yappr user holds one pair for its DM contract, one for its social
+contract, and so on), so the app lists the contracts and document types it will encrypt under
+and which purposes it needs on each. At login the wallet walks this list, checks which of those
+keys the identity already holds, and adds the missing ones in the same identity update as the
+login key.
+
+Document schemas admit byte arrays but not arrays of objects, so the list is packed. Each record
+is 96 bytes:
 
 | Offset | Size | Content |
 |---|---|---|
 | 0 | 32 | The id of the data contract the keys serve. |
 | 32 | 1 | Purpose mask: bit 0 asks for an ENCRYPTION key, bit 1 for a DECRYPTION key. |
-| 33 | 63 | The document type name, zero-padded; all zero for a contract-level binding. |
+| 33 | 63 | The document type name, zero-padded; all zero for a contract-level key. |
 
 The array holds zero to eight records, so its length is a multiple of 96 up to 768. For each
 record and each purpose bit, the wallet makes sure the identity holds an enabled key with that
 purpose, bound to that contract (or that document type of it), and registers one if it does not.
 The bound contract or document type has to opt in with `requiresIdentityEncryptionBoundedKey` or
-`requiresIdentityDecryptionBoundedKey` for the binding to be registrable.
+`requiresIdentityDecryptionBoundedKey` for the key to be registrable.
 
-Platform does not parse `encBindings`; it is a byte array to consensus, and the layout above is
-a convention between apps and wallets. The Rust crate exposes the offsets and the purpose bits as
-constants under `app_connect_contract::v1::document_types::app_manifest::enc_bindings`.
+Platform does not parse `requestedEncryptionKeys`; it is a byte array to consensus, and the
+layout above is a convention between apps and wallets. The Rust crate exposes the offsets and the
+purpose bits as constants under
+`app_connect_contract::v1::document_types::app_manifest::requested_encryption_keys`.
 
 ## The login flow
 
@@ -117,14 +135,15 @@ The app keeps the matching private key in memory until the answer arrives.
 
 ### The wallet
 
-1. Fetches the app contract, then the manifest owned by the contract's owner whose
-   `appContractId` matches. Either missing, the request is refused.
+1. Fetches the app contract, then the manifest whose `appContractId` matches. Either missing,
+   the request is refused. Consensus guarantees the manifest was written by the contract's
+   owner.
 2. Lets the user choose an identity if the wallet holds more than one usable one.
 3. Derives the session key for this request (its derivation leaf is the request id, so a
    different `e` yields a different key). If that key is already on the identity and not
    expired, the same request was already served: skip to step 6 with it.
-4. For every `encBindings` record, checks the identity for the bound keys it asks for and plans
-   to add the missing ones.
+4. For every `requestedEncryptionKeys` record, checks the identity for the bound keys it asks
+   for and plans to add the missing ones.
 5. Shows the approval sheet: the app's name and URL, the key's lifetime and budget (the wallet's
    grant, which the user can shorten), the bounds, and any encryption keys that will be added.
    On approval, broadcasts one identity update that adds the login key with the manifest's
@@ -142,14 +161,11 @@ that document, verifies that each granted key's public half is a live key on tha
 treats that identity as the logged-in user. It is logged in until the key expires or its budget
 runs out, at which point it starts a new `connect`.
 
-**Residual risk.** ECDH to a public ephemeral key does not authenticate the sender: an observer
-of the QR code can compute the shared secret and answer the request with keys of their own
-identity. The identity check bounds what that achieves. The observer's keys are live only on the
-observer's identity, so the app is logged into the observer's account, never the user's; the
-observer gains nothing about the user and has spent a document fee. That is the standard
-exposure of any unauthenticated pairing. The wallet's approval sheet is the pairing step, and
-the identity the app shows after login is the user's confirmation that it paired with the right
-wallet.
+**Who logs in.** Whoever scans the request logs in, as with any QR or passkey login: if a
+second party scans the same code first, the app is logged into that party's identity. The app
+shows the identity it is logged in as; users verify it the same way they verify any account they
+sign into. Platform gives no stronger binding because the request carries no user secret by
+design (it is shown in the open).
 
 ### Signing outside the login key's scope
 
@@ -161,18 +177,17 @@ does not touch this contract.
 ## What Platform enforces
 
 Platform validates both document types against their schema, keeps the manifest index unique,
-checks that `contractId` and `appContractId` name existing contracts, and bills the writer. The
-login key's scope, lifetime and budget are enforced by the identity key itself once registered.
+checks that `contractId` and `appContractId` name existing contracts, refuses a manifest whose
+writer is not the owner of the contract `appContractId` names, and bills the writer. The login
+key's scope, lifetime and budget are enforced by the identity key itself once registered.
 
 What Platform does not check:
 
-- that a manifest's owner owns the app contract (wallets check `$ownerId` against the
-  contract's owner);
 - the dependency between `authBoundsKind` and `authBoundsId` / `authBoundsDocType`: the schema
   admits a kind of `1`, `2` or `3` without an id, a kind of `2` without a document type, and an
   id or document type beside a kind of `0`. Wallets must refuse a manifest whose bounds fields
   do not match its kind;
-- the layout of `encBindings`;
+- the layout of `requestedEncryptionKeys`;
 - whether a response belongs to a real request, or was written by the wallet the request was
   made to. The app authenticates every response by decrypting it.
 

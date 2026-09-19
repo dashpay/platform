@@ -51,7 +51,7 @@
         "byteArray": true,
         "minItems": 60,
         "maxItems": 572,
-        "description": "The session key material encrypted to the app: a 28-byte envelope followed by 32 bytes per key, one to seventeen keys (the session key plus up to eight encBindings records with both purposes)",
+        "description": "The session key material encrypted to the app: a 28-byte envelope followed by 32 bytes per key, one to seventeen keys (the session key plus up to eight requestedEncryptionKeys records with both purposes)",
         "position": 3
       }
     },
@@ -71,11 +71,8 @@
     "creationRestrictionMode": 0,
     "indices": [
       {
-        "name": "byOwnerAndApp",
+        "name": "byApp",
         "properties": [
-          {
-            "$ownerId": "asc"
-          },
           {
             "appContractId": "asc"
           }
@@ -91,9 +88,12 @@
         "maxItems": 32,
         "contentMediaType": "application/x.dash.dpp.identifier",
         "refersTo": {
-          "type": "contract"
+          "type": "contract",
+          "propertyAgreement": {
+            "$ownerId": "$ownerId"
+          }
         },
-        "description": "The app's data contract; wallets only trust a manifest whose owner is this contract's owner",
+        "description": "The app's data contract; the owner gate means only that contract's owner can create or replace this manifest",
         "position": 0
       },
       "name": {
@@ -132,21 +132,21 @@
       "sessionSeconds": {
         "type": "integer",
         "minimum": 0,
-        "description": "The login key lifetime the app asks for, in seconds; the wallet may grant less",
+        "description": "The login key lifetime the app asks for, in seconds; the wallet treats it as a default and may grant less or more",
         "position": 6
       },
       "sessionBudget": {
         "type": "integer",
         "minimum": 0,
-        "description": "The login key budget the app asks for, in credits; the wallet may grant less",
+        "description": "The login key budget the app asks for, in credits; the wallet treats it as a default and may grant less or more",
         "position": 7
       },
-      "encBindings": {
+      "requestedEncryptionKeys": {
         "type": "array",
         "byteArray": true,
         "minItems": 0,
         "maxItems": 768,
-        "description": "Zero to eight fixed 96-byte records, each a contract id (32 bytes), a purpose mask (1 byte: bit 0 ENCRYPTION, bit 1 DECRYPTION) and a zero-padded document type name (63 bytes, all zero for a contract-level binding), naming where the app needs encryption keys bound",
+        "description": "The encryption keys the app needs the wallet to register on the identity at login, zero to eight fixed 96-byte records: a contract id (32 bytes), a purpose mask (1 byte: bit 0 ENCRYPTION, bit 1 DECRYPTION) and a zero-padded document type name (63 bytes, all zero for a contract-level key)",
         "position": 8
       }
     },
@@ -158,7 +158,7 @@
       "sessionSeconds",
       "sessionBudget"
     ],
-    "description": "An app's published identity and requirements for the connect handshake, created by the owner of the app's data contract. The bounds are requirements; the session lifetime and budget are requests that cap what the wallet grants.",
+    "description": "An app's published identity and requirements for the connect handshake; consensus lets only the owner of the app's data contract create or replace it. The bounds are requirements; the session lifetime and budget are the app's request, which the wallet treats as a default and may grant less or more.",
     "additionalProperties": false
   }
 }

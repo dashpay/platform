@@ -197,7 +197,7 @@ describe('App Connect Contract', () => {
         });
 
         it('should accept the maximum grant of seventeen keys', async () => {
-          // Session key plus eight encBindings records asking for both
+          // Session key plus eight requestedEncryptionKeys records asking for both
           // purposes: 28-byte envelope + 17 * 32 = 572 bytes.
           rawLoginKeyResponseDocument.encryptedPayload = crypto.randomBytes(28 + (17 * 32));
 
@@ -239,7 +239,7 @@ describe('App Connect Contract', () => {
           authBoundsId: crypto.randomBytes(32),
           sessionSeconds: 604800,
           sessionBudget: 10000000000,
-          encBindings: crypto.randomBytes(96 * 4),
+          requestedEncryptionKeys: crypto.randomBytes(96 * 4),
         };
       });
 
@@ -449,9 +449,9 @@ describe('App Connect Contract', () => {
         });
       });
 
-      describe('encBindings', () => {
+      describe('requestedEncryptionKeys', () => {
         it('should be optional', async () => {
-          delete rawAppManifestDocument.encBindings;
+          delete rawAppManifestDocument.requestedEncryptionKeys;
 
           const document = dpp.document.create(dataContract, identityId, 'appManifest', rawAppManifestDocument);
           const validationResult = document.validate(dpp.protocolVersion);
@@ -460,7 +460,7 @@ describe('App Connect Contract', () => {
         });
 
         it('should accept an empty array', async () => {
-          rawAppManifestDocument.encBindings = Buffer.alloc(0);
+          rawAppManifestDocument.requestedEncryptionKeys = Buffer.alloc(0);
 
           const document = dpp.document.create(dataContract, identityId, 'appManifest', rawAppManifestDocument);
           const validationResult = document.validate(dpp.protocolVersion);
@@ -469,7 +469,7 @@ describe('App Connect Contract', () => {
         });
 
         it('should accept eight records', async () => {
-          rawAppManifestDocument.encBindings = crypto.randomBytes(96 * 8);
+          rawAppManifestDocument.requestedEncryptionKeys = crypto.randomBytes(96 * 8);
 
           const document = dpp.document.create(dataContract, identityId, 'appManifest', rawAppManifestDocument);
           const validationResult = document.validate(dpp.protocolVersion);
@@ -478,7 +478,7 @@ describe('App Connect Contract', () => {
         });
 
         it('should be not longer than 768 bytes', async () => {
-          rawAppManifestDocument.encBindings = crypto.randomBytes(769);
+          rawAppManifestDocument.requestedEncryptionKeys = crypto.randomBytes(769);
 
           const document = dpp.document.create(dataContract, identityId, 'appManifest', rawAppManifestDocument);
           const validationResult = document.validate(dpp.protocolVersion);

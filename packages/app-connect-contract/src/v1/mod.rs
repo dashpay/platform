@@ -29,11 +29,11 @@ pub mod document_types {
             pub const AUTH_BOUNDS_DOC_TYPE: &str = "authBoundsDocType";
             pub const SESSION_SECONDS: &str = "sessionSeconds";
             pub const SESSION_BUDGET: &str = "sessionBudget";
-            pub const ENC_BINDINGS: &str = "encBindings";
+            pub const REQUESTED_ENCRYPTION_KEYS: &str = "requestedEncryptionKeys";
         }
 
         pub mod indexes {
-            pub const BY_OWNER_AND_APP: &str = "byOwnerAndApp";
+            pub const BY_APP: &str = "byApp";
         }
 
         /// Values of the `authBoundsKind` property: the contract bounds the app asks the
@@ -50,11 +50,12 @@ pub mod document_types {
             pub const CONTRACT_GROUP: u8 = 3;
         }
 
-        /// Layout of the packed `encBindings` byte array: zero to
-        /// [`MAX_RECORDS`](enc_bindings::MAX_RECORDS) fixed-size records, each naming a
-        /// contract (or one of its document types) and which encryption key purposes the
-        /// app wants bound there.
-        pub mod enc_bindings {
+        /// Layout of the packed `requestedEncryptionKeys` byte array: zero to
+        /// [`MAX_RECORDS`](requested_encryption_keys::MAX_RECORDS) fixed-size records,
+        /// each naming a contract (or one of its document types) and which encryption
+        /// key purposes the app needs registered there. The app cannot register keys
+        /// on the user's identity; the wallet does that at login from this list.
+        pub mod requested_encryption_keys {
             /// Size of one record: contract id, purpose mask, document type name.
             pub const RECORD_SIZE: usize = 96;
             /// Maximum number of records, so the array is at most 768 bytes.
@@ -69,7 +70,7 @@ pub mod document_types {
             /// Purpose mask bit asking for a DECRYPTION key bound there.
             pub const PURPOSE_DECRYPTION: u8 = 0b10;
             /// Byte offset and length of the zero-padded document type name within a
-            /// record; all zero for a contract-level binding.
+            /// record; all zero for a contract-level key.
             pub const DOCUMENT_TYPE_NAME_OFFSET: usize = 33;
             pub const DOCUMENT_TYPE_NAME_SIZE: usize = 63;
         }
