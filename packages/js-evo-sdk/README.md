@@ -198,7 +198,10 @@ for (const ref of contract.documentTypeReferences('note')) {
   // or `$creatorId`, e.g. `propertyAgreement: { authorId: '$ownerId' }`, and
   // the referring side may be the writer's own `$ownerId`: a write gate such
   // as `{ '$ownerId': '$ownerId' }` lets only the referenced document's
-  // current owner create or replace the referring document.
+  // current owner create or replace the referring document. A `contract`
+  // reference admits that one gate too:
+  // { path: 'appContractId', type: 'contract', propertyAgreement: { '$ownerId': '$ownerId' } }
+  // means only the referenced contract's owner may write the document.
   console.log(ref.path, ref.type);
 }
 

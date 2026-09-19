@@ -340,6 +340,58 @@ mod tests {
     }
 
     #[test]
+    fn should_accept_the_owner_gate_on_a_contract_refers_to() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "contract",
+            "propertyAgreement": { "$ownerId": "$ownerId" }
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "expected the owner gate on a contract refersTo to be valid"
+        );
+    }
+
+    #[test]
+    fn should_reject_any_other_agreement_on_a_contract_refers_to() {
+        for agreement in [
+            json!({ "$ownerId": "$creatorId" }),
+            json!({ "authorId": "$ownerId" }),
+            json!({ "$ownerId": "$ownerId", "name": "name" }),
+            json!({}),
+        ] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": "contract",
+                "propertyAgreement": agreement
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected {agreement} on a contract refersTo to be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_property_agreement_on_identity_token_and_key_refers_to() {
+        for target in ["identity", "token", "identityPublicKey"] {
+            let mut refers_to = json!({
+                "type": target,
+                "propertyAgreement": { "$ownerId": "$ownerId" }
+            });
+            if target == "identityPublicKey" {
+                refers_to["keyIdProperty"] = json!("toKeyIndex");
+            }
+            let schema = document_schema_with_refers_to(refers_to);
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected propertyAgreement on a {target} refersTo to be invalid"
+            );
+        }
+    }
+
+    #[test]
     fn should_accept_permanent_document_refers_to_in_v3_document_schema() {
         let schema = document_schema_with_refers_to(json!({
             "type": "permanentDocument",

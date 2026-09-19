@@ -2413,6 +2413,7 @@ pub(super) fn apply_index_only(
                         DocumentPropertyType::IdentifierWithReference(
                             DocumentPropertyReferenceTarget::Identity
                                 | DocumentPropertyReferenceTarget::Contract
+                                | DocumentPropertyReferenceTarget::ContractOwnerGated
                                 | DocumentPropertyReferenceTarget::Token
                                 | DocumentPropertyReferenceTarget::PermanentDocument { .. }
                         )

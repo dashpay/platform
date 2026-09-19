@@ -164,6 +164,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   `refersTo` reference keyword and the `timeRange` index transform. v13
 ///   keeps validating against meta-schema v2, where those keys are rejected
 ///   as unknown properties, so a pre-v14 contract cannot smuggle them in.
+///   A `contract` reference may carry the owner gate
+///   (`propertyAgreement: { "$ownerId": "$ownerId" }`): `apply_property_reference`
+///   generation 1 parses it (as its own appended `ContractOwnerGated`
+///   target), contract reference validation 1 admits it (registration has
+///   nothing to resolve), and document reference validation 1 refuses a
+///   create or replace by anyone but the referenced contract's owner
+///   (`ReferencedDocumentPropertyMismatchError`, 40127). The
+///   app-connect `appManifest` is the first user: only an app contract's
+///   owner can publish its manifest.
 ///   It also bumps `validate_schema_compatibility` to 1, which strips the
 ///   top-level `indices` key before diffing the old and new document type
 ///   schemas: index immutability is enforced by `validate_update` v1's

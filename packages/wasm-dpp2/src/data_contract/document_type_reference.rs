@@ -32,7 +32,17 @@ const DOCUMENT_PROPERTY_REFERENCE_TS: &'static str = r#"
  */
 export type DocumentPropertyReferenceTarget =
   | { type: 'identity' }
-  | { type: 'contract' }
+  | {
+      type: 'contract';
+      /**
+       * Present as `{ '$ownerId': '$ownerId' }` when the reference carries
+       * the owner gate: only the referenced contract's owner may create or
+       * replace the referring document (consensus refuses anyone else with
+       * code 40127). The only agreement a contract reference admits. Absent
+       * when the declaration carries none.
+       */
+      propertyAgreement?: { '$ownerId': '$ownerId' };
+    }
   | { type: 'token' }
   | {
       type: 'permanentDocument';
@@ -131,7 +141,8 @@ fn reference_to_js(
 
     let kind = match target {
         DocumentPropertyReferenceTarget::Identity => "identity",
-        DocumentPropertyReferenceTarget::Contract => "contract",
+        DocumentPropertyReferenceTarget::Contract
+        | DocumentPropertyReferenceTarget::ContractOwnerGated => "contract",
         DocumentPropertyReferenceTarget::Token => "token",
         DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
@@ -142,6 +153,13 @@ fn reference_to_js(
         DocumentPropertyReferenceTarget::Identity
         | DocumentPropertyReferenceTarget::Contract
         | DocumentPropertyReferenceTarget::Token => {}
+        DocumentPropertyReferenceTarget::ContractOwnerGated => {
+            // The owner gate is reported in the schema keyword's own shape;
+            // a plain contract reference carries no `propertyAgreement` key.
+            let agreement = Object::new();
+            set_field(&agreement, "$ownerId", &JsValue::from_str("$ownerId"), path)?;
+            set_field(&object, "propertyAgreement", &agreement, path)?;
+        }
         DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id,
             document_type_name,

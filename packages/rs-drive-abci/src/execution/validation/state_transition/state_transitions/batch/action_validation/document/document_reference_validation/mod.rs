@@ -1,4 +1,5 @@
 pub mod v0;
+pub mod v1;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,6 +15,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::DocumentReferenceValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v1::DocumentReferenceValidationV1;
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(crate) trait DocumentReferenceValidation {
@@ -27,7 +29,9 @@ pub(crate) trait DocumentReferenceValidation {
     ///
     /// `owner_id` is the writer, the transition's owner: a `propertyAgreement`
     /// whose referring side is `$ownerId` compares it, since it lives on the
-    /// transition rather than in `document_data`.
+    /// transition rather than in `document_data`. Version 1 also compares it
+    /// against the referenced contract's owner on a `contract` reference that
+    /// carries the owner gate.
     #[allow(clippy::too_many_arguments)]
     fn validate_document_references(
         &self,
@@ -71,9 +75,19 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
                 execution_context,
                 platform_version,
             ),
+            1 => self.validate_document_references_v1(
+                document_data,
+                owner_id,
+                changed_fields,
+                platform,
+                block_info,
+                transaction,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentBaseTransitionAction::validate_document_references".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

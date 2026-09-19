@@ -78,6 +78,13 @@ const schemas = {
         },
         additionalProperties: false,
       },
+      // A `contract` reference may carry the owner gate: only the referenced
+      // contract's owner may write the document. The only agreement a
+      // contract reference admits.
+      ownedContract: identifierProperty(8, {
+        type: 'contract',
+        propertyAgreement: { $ownerId: '$ownerId' },
+      }),
     },
     additionalProperties: false,
   },
@@ -124,6 +131,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
         'otherDoc',
         'signerKey',
         'meta.ownerRef',
+        'ownedContract',
       ]);
     });
 
@@ -139,6 +147,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(byPath.get('otherDoc')!.type).to.equal('permanentDocument');
       expect(byPath.get('signerKey')!.type).to.equal('identityPublicKey');
       expect(byPath.get('meta.ownerRef')!.type).to.equal('identity');
+      expect(byPath.get('ownedContract')!.type).to.equal('contract');
     });
 
     it('should carry no target fields for the bare kinds', () => {
@@ -192,6 +201,20 @@ describe('DataContract — refersTo declarations (v14)', () => {
       const other = references.find((reference) => reference.path === 'otherDoc')!;
 
       expect(other).to.not.have.property('propertyAgreement');
+    });
+
+    it("should report the owner gate on a contract reference in the schema keyword's shape", () => {
+      const contract = buildContract(14);
+      const references = contract.documentTypeReferences('note') as Reference[];
+      const owned = references.find((reference) => reference.path === 'ownedContract')!;
+      const plain = references.find((reference) => reference.path === 'sourceContract')!;
+
+      expect(owned).to.deep.equal({
+        path: 'ownedContract',
+        type: 'contract',
+        propertyAgreement: { $ownerId: '$ownerId' },
+      });
+      expect(plain).to.deep.equal({ path: 'sourceContract', type: 'contract' });
     });
 
     it('should carry keyIdProperty for an identityPublicKey reference', () => {

@@ -17,6 +17,13 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // the `document_reference_validation` feature version. Also bump
 // `delete_withdrawal_data_trigger` to 2 so owners can delete withdrawals in the
 // terminal FAILED status the withdrawals contract v2 admits.
+// `document_reference_validation` and `data_contract_reference_validation`
+// move to 1 in place (protocol version 14 introduced both slots): a `contract`
+// reference may carry the owner gate `propertyAgreement: { "$ownerId":
+// "$ownerId" }`, so only the referenced contract's owner may write the
+// referring document. Registration has nothing to resolve for the gate (the
+// parser admits exactly that one pair); its generation 1 marks the grammar
+// and delegates to 0.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -123,7 +130,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 state: 1, // changed: runs data_contract_reference_validation on the updated contract's refersTo declarations
                 transform_into_action: 0,
             },
-            data_contract_reference_validation: 0,
+            data_contract_reference_validation: 1, // changed: admits the owner gate on contract references (nothing to resolve at registration; delegates to 0)
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 basic_structure: 0,
                 advanced_structure: 1,
@@ -217,7 +224,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,
                 document_update_price_transition_state_validation: 0,
-                document_reference_validation: 0,
+                document_reference_validation: 1, // changed: the owner gate on contract references
                 token_mint_transition_structure_validation: 0,
                 token_burn_transition_structure_validation: 0,
                 token_transfer_transition_structure_validation: 0,

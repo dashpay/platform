@@ -46,15 +46,17 @@ use crate::execution::types::state_transition_execution_context::{
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_document_with_id;
 use crate::platform_types::platform::PlatformStateRef;
 
-/// Versioned, stateful validation of document references using the v0 rules.
+/// Versioned, stateful validation of document references using the v1 rules.
 ///
-/// This performs existence checks for the supported reference targets (identity,
-/// contract and token) and can be limited to changed fields for replace
-/// transitions. It is intended to be called via the higher-level
-/// `DocumentReferenceValidation` dispatcher that selects the version.
-pub(crate) trait DocumentReferenceValidationV0 {
+/// v1 is v0 plus the owner gate on `contract` references: a reference declared
+/// with `propertyAgreement: { "$ownerId": "$ownerId" }` requires the writer to
+/// be the referenced contract's owner, which is compared against the contract
+/// already fetched for the existence check, so the gate adds no reads. Like
+/// the permanent-document writer gate it is re-checked on every replace. The
+/// v0 generation stays byte-identical for protocol version 13 replay.
+pub(crate) trait DocumentReferenceValidationV1 {
     #[allow(clippy::too_many_arguments)]
-    fn validate_document_references_v0(
+    fn validate_document_references_v1(
         &self,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
@@ -67,8 +69,8 @@ pub(crate) trait DocumentReferenceValidationV0 {
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
-    fn validate_document_references_v0(
+impl DocumentReferenceValidationV1 for DocumentBaseTransitionAction {
+    fn validate_document_references_v1(
         &self,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
@@ -90,7 +92,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
             ));
         };
 
-        validate_document_type_references_v0(
+        validate_document_type_references_v1(
             contract,
             document_type,
             document_data,
@@ -106,7 +108,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn validate_document_type_references_v0(
+fn validate_document_type_references_v1(
     contract: &DataContract,
     document_type: DocumentTypeRef<'_>,
     document_data: &BTreeMap<String, Value>,
@@ -133,11 +135,14 @@ fn validate_document_type_references_v0(
             // - an identityPublicKey reference binds the key id property,
             //   since the referenced key is the (identity id, key id) pair
             //   and a freshly written key id must exist and not be disabled.
-            // A writer gate (an agreement keyed by `$ownerId`) is re-checked
-            // on EVERY replace: the writer is transition metadata that never
-            // appears among the changed fields, and either document may have
-            // been transferred since the last write, so a replace of an
-            // unrelated field by a now-unauthorized owner must still fail.
+            // A writer gate (an agreement keyed by `$ownerId`, on a permanent
+            // document or on a contract) is re-checked on EVERY replace: the
+            // writer is transition metadata that never appears among the
+            // changed fields, and a referenced document may have been
+            // transferred since the last write, so a replace of an unrelated
+            // field by a now-unauthorized owner must still fail. A contract's
+            // owner never changes, but the referring document may have been
+            // transferred away from that owner, so the same rule applies.
             let bound_property_changed = match reference_target {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     property_agreement, ..
@@ -148,12 +153,9 @@ fn validate_document_type_references_v0(
                 DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
                     is_changed_field(changed, key_id_property)
                 }
-                // `ContractOwnerGated` is protocol-14 grammar that generation-0
-                // parsing never produces, so this generation never sees it;
-                // the arm only keeps the match exhaustive.
+                DocumentPropertyReferenceTarget::ContractOwnerGated => true,
                 DocumentPropertyReferenceTarget::Identity
                 | DocumentPropertyReferenceTarget::Contract
-                | DocumentPropertyReferenceTarget::ContractOwnerGated
                 | DocumentPropertyReferenceTarget::Token => false,
             };
             if !is_changed_field(changed, path) && !bound_property_changed {
@@ -186,6 +188,10 @@ fn validate_document_type_references_v0(
             }
             DocumentPropertyReferenceTarget::Contract
             | DocumentPropertyReferenceTarget::ContractOwnerGated => {
+                let owner_gate = matches!(
+                    reference_target,
+                    DocumentPropertyReferenceTarget::ContractOwnerGated
+                );
                 let (fee, referenced_contract) =
                     platform.drive.get_contract_with_fetch_info_and_fee(
                         referenced_id,
@@ -201,6 +207,28 @@ fn validate_document_type_references_v0(
 
                 // The cost is added even if the referenced contract does not exist or was cached
                 execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+
+                // The owner gate: the writer must be the referenced contract's
+                // owner. The contract is already in hand for the existence
+                // check, so the comparison adds no reads. A missing contract
+                // falls through to the not-found error below instead. On a
+                // replace the gate is re-checked whether or not the reference
+                // changed: a contract's owner never changes, but a gated
+                // document on a transferable type may have moved to an
+                // identity that is not the owner, which then may not replace
+                // it (the permanent-document writer gate behaves the same).
+                if let Some(referenced_contract) = &referenced_contract {
+                    if owner_gate && referenced_contract.contract.owner_id() != owner_id {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ReferencedDocumentPropertyMismatchError::new(
+                                path.to_string(),
+                                OWNER_ID.to_string(),
+                                OWNER_ID.to_string(),
+                            )
+                            .into(),
+                        ));
+                    }
+                }
 
                 referenced_contract.is_some()
             }

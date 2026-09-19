@@ -139,7 +139,7 @@
               "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
             },
             "propertyAgreement": {
-              "description": "permanentDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId and $creatorId system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId never changes; either is checked when the referring document is written, not when the referenced document later moves",
+              "description": "On permanentDocument references: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId and $creatorId system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId never changes; either is checked when the referring document is written, not when the referenced document later moves. On contract references the only admitted pair is { \"$ownerId\": \"$ownerId\" }: the writer's $ownerId must equal the referenced contract's owner id, so only the contract's owner may create or replace the referring document; contract ownership never changes, so the gate is fixed for the contract's lifetime",
               "type": "object",
               "minProperties": 1,
               "maxProperties": 10,
@@ -202,6 +202,39 @@
               "else": {
                 "properties": {
                   "keyIdProperty": false
+                }
+              }
+            },
+            {
+              "$comment": "propertyAgreement is admitted on permanentDocument references (any pairs) and on contract references (only the owner gate); identity, token and identityPublicKey references have nothing to agree with",
+              "if": {
+                "properties": { "type": { "const": "contract" } },
+                "required": ["type"]
+              },
+              "then": {
+                "properties": {
+                  "propertyAgreement": {
+                    "type": "object",
+                    "properties": {
+                      "$ownerId": {
+                        "const": "$ownerId"
+                      }
+                    },
+                    "required": ["$ownerId"],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "else": {
+                "if": {
+                  "properties": { "type": { "const": "permanentDocument" } },
+                  "required": ["type"]
+                },
+                "then": true,
+                "else": {
+                  "properties": {
+                    "propertyAgreement": false
+                  }
                 }
               }
             }
