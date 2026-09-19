@@ -1,0 +1,56 @@
+name: PR Hygiene policy
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed, edited]
+  issue_comment:
+    # CodeRabbit publishes its completion by editing the comment it posted when
+    # the review began: on Platform every observed receipt arrived that way and
+    # none was accompanied by a review. Edits therefore have to be heard, but
+    # only from the accounts whose comments this controller reads.
+    types: [created, edited]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'all reconciles every governed pull request now; batch is the sweep'
+        type: choice
+        options: [batch, all]
+        default: batch
+  schedule:
+    - cron: '17 * * * *'
+    # A build turning green raises no event this controller hears. This one
+    # reconciles only the pull requests already recorded as waiting on one, so
+    # it costs a listing and a single batched read when none are — which is
+    # almost always. Offset from the hourly sweep so the two never collide.
+    - cron: '2,32,47 * * * *'
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+jobs:
+  policy:
+    # Only comments this controller actually reads can change an outcome, and a
+    # comment it reads only matters for what it carries. CodeRabbit never
+    # approves — measured over 75 recent pull requests, every one of its
+    # receipts arrived as a comment and none as a review — so its completion
+    # marker and its rate-limit notice have to be heard. It keeps one comment
+    # per pull request and edits it in place, so once it has reviewed once that
+    # body carries the marker for ever and its later edits still wake the
+    # controller: the saving is on pull requests it has not reviewed yet or
+    # skips entirely. thepastaclaw is the mirror image: its receipt is always a
+    # review, which arrives on its own event, and nothing reads its comments.
+    #
+    # Narrowing this costs latency and never correctness: comments are read from
+    # the pull request when a run happens, not from the event that started it,
+    # so a comment that starts no run is still seen by the next one.
+    if: >-
+      github.event_name != 'issue_comment' ||
+      contains(github.event.comment.body, '/self-reviewed') ||
+      (contains(fromJSON('["coderabbitai", "coderabbitai[bot]"]'), github.event.comment.user.login) &&
+      (contains(github.event.comment.body, 'final_review_risk_coverage') ||
+      contains(github.event.comment.body, 'rate limited by coderabbit.ai')))
+    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@2a9705fbefd4294f490baa36f46f2b880a592502
+    with:
+      scope: ${{ inputs.scope || 'batch' }}
