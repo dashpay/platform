@@ -130,7 +130,7 @@ jobs:
 
       - name: Find unused dependencies
         run: |
-          cargo install cargo-machete 2>/dev/null || true
+          cargo machete --version | grep -qx 'cargo-machete 0.9.2'
           cargo machete
 
       - name: Detect immutable structure changes

@@ -118,12 +118,28 @@ runs:
           ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
           ${{ runner.os }}/cargo/registry/
 
-    - name: Install clang
+    # Linux self-hosted runners provide the compiler and native libraries in
+    # the pinned image. Do not install packages or mutate system alternatives
+    # from a job: the runner is intentionally non-root.
+    - name: Verify clang and native dependencies
       id: deps-clang
       shell: bash
       if: runner.os == 'Linux'
       run: |
-        sudo apt update
-        # snappy is required by rust rocksdb
-        sudo apt install -qq --yes clang llvm libsnappy-dev
-        sudo update-alternatives --set cc /usr/bin/clang
+        set -euo pipefail
+        missing=()
+        for tool in clang llvm-config; do
+          command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+        done
+        for pkg in clang llvm libsnappy-dev; do
+          dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+        done
+        if [ ${#missing[@]} -gt 0 ]; then
+          echo "::error::Self-hosted runner image is missing: ${missing[*]}"
+          echo "::error::Provision these dependencies in the pinned image; Rust CI must not use sudo or apt."
+          exit 1
+        fi
+        # Use clang for native C/C++ build scripts without changing the
+        # system-wide cc alternative.
+        echo "CC=/usr/bin/clang" >> "$GITHUB_ENV"
+        echo "CXX=/usr/bin/clang++" >> "$GITHUB_ENV"
