@@ -11,5 +11,8 @@ end_of_line = lf
 [*.rs]
 indent_size = 4
 
+[packages/swift-sdk/scripts/*.py]
+indent_size = 4
+
 [*.{md,markdown}]
 trim_trailing_whitespace = false

@@ -38,14 +38,26 @@ SHA = re.compile(r"[0-9a-f]{40}")
 DIGEST = re.compile(r"[0-9a-f]{64}")
 COMPONENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,254}")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+SOURCE_TAG_PREFIX = "refs/tags/swift-schema-source/"
 
 
 class ReleaseError(RuntimeError):
     pass
 
 
+def process_environment():
+    """Branch files are data, never a source of credentials or Git/Python setup."""
+    return {
+        "PATH": os.defpath, "HOME": os.devnull, "LC_ALL": "C",
+        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": os.devnull,
+    }
+
+
 def run(directory, *args, env=None):
-    result = subprocess.run(args, cwd=directory, env=env, capture_output=True)
+    result = subprocess.run(args, cwd=directory,
+                            env=process_environment() if env is None else env, capture_output=True)
     if result.returncode:
         # Never echo commands or credentials from subprocess diagnostics.
         raise ReleaseError(f"{args[0]} {args[1] if len(args) > 1 else ''} failed: "
@@ -63,9 +75,10 @@ def require_string(value, pattern, label):
     return value
 
 
-def read_blob(directory, commit, path):
+def read_blob(directory, commit, path, *, allow_executable=False):
     entry = git(directory, "ls-tree", commit, "--", path)
-    if not entry.startswith("100644 blob "):
+    modes = ("100644 blob ", "100755 blob ") if allow_executable else ("100644 blob ",)
+    if not entry.startswith(modes):
         raise ReleaseError(f"Missing regular data file: {path}")
     return run(directory, "git", "show", f"{commit}:{path}")
 
@@ -217,12 +230,53 @@ class GitHub:
 
 
 def git_environment(token):
-    env = os.environ.copy()
+    env = process_environment()
     # This is process-local and never written to git config or command output.
     credential = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-    env.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="http.https://github.com/.extraheader",
-               GIT_CONFIG_VALUE_0=f"AUTHORIZATION: basic {credential}", GIT_TERMINAL_PROMPT="0")
+    env.update(GIT_CONFIG_COUNT="2", GIT_CONFIG_KEY_1="http.https://github.com/.extraheader",
+               GIT_CONFIG_VALUE_1=f"AUTHORIZATION: basic {credential}")
     return env
+
+
+def source_commits(registry):
+    return {
+        require_string(entry.get("platform_sha"), SHA, "registered Platform commit")
+        for group in ("schemas", "releases") for entry in registry.get(group, {}).values()
+    }
+
+
+def fetch_sources(clone, commits, env):
+    """Fetch all recorded sources, including objects outside development history."""
+    git(clone, "fetch", "origin", f"{SOURCE_TAG_PREFIX}*:{SOURCE_TAG_PREFIX}*", env=env)
+    for commit in sorted(commits):
+        require_string(commit, SHA, "source commit")
+        git(clone, "fetch", "origin", commit, env=env)
+        if git(clone, "cat-file", "-t", commit) != "commit":
+            raise ReleaseError("A registered source SHA does not identify a commit")
+
+
+def retain_source(clone, commit, env):
+    """Publish a lightweight immutable source tag, reconciling concurrent retries."""
+    require_string(commit, SHA, "source commit")
+    ref = SOURCE_TAG_PREFIX + commit
+
+    def existing():
+        row = git(clone, "ls-remote", "--refs", "origin", ref, env=env)
+        if not row:
+            return False
+        if row != f"{commit}\t{ref}":
+            raise ReleaseError(f"Source retention tag points to a different object: {ref}")
+        return True
+
+    if existing():
+        return
+    try:
+        git(clone, "push", "origin", f"{commit}:{ref}", env=env)
+    except ReleaseError:
+        # A concurrent upload may have created the exact same immutable tag,
+        # or the server accepted the push before the connection was lost.
+        if not existing():
+            raise
 
 
 def pr_body(proof, manifest, data_commit):
@@ -263,10 +317,26 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
         git(clone, "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
         git(clone, "config", "commit.gpgsign", "false")
         git(clone, "fetch", "origin", f"{BASE_BRANCH}:refs/remotes/origin/{BASE_BRANCH}", env=env)
+        # Read executable code only from the reviewed base. A contributor may
+        # edit code on the draft branch; it must never become this worker's
+        # generator, even when running a dry-run with no remote writes.
+        trusted_generator = Path(temporary) / "trusted-freeze-schema-models.py"
+        trusted_generator.write_bytes(read_blob(clone, f"origin/{BASE_BRANCH}", GENERATOR,
+                                                allow_executable=True))
+
+        def generate(*args):
+            run(temporary, sys.executable, "-I", str(trusted_generator), "--repo", str(clone), *args)
+
         git(clone, "checkout", "--detach", f"origin/{BASE_BRANCH}")
         merged_registry = json_object((clone / REGISTRY).read_bytes(), "merged snapshot registry")
         if release_id in merged_registry.get("releases", {}):
             associate_release(merged_registry, release_id, release_entry(proof, manifest, data_commit))
+            commits = source_commits(merged_registry) | {manifest["platform_sha"]}
+            fetch_sources(clone, commits, env)
+            generate("--check")
+            if not dry_run:
+                for commit in sorted(commits):
+                    retain_source(clone, commit, env)
             print("This release is already present in the merged registry.")
             return
         remote_branch = git(clone, "ls-remote", "--heads", "origin", branch, env=env)
@@ -278,11 +348,9 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
             git(clone, "merge", "--no-commit", "--no-ff", f"origin/{BASE_BRANCH}")
         else:
             git(clone, "checkout", "-b", branch, f"origin/{BASE_BRANCH}")
-        # A released SHA can be absent from current branch history after a
-        # force-updated development branch. Fetch exactly the proven SHA.
-        git(clone, "fetch", "origin", manifest["platform_sha"], env=env)
-        run(clone, sys.executable, GENERATOR, "--check")
         before_registry = json_object((clone / REGISTRY).read_bytes(), "snapshot registry")
+        fetch_sources(clone, source_commits(before_registry) | {manifest["platform_sha"]}, env)
+        generate("--check")
         immutable_files = {path: (clone / path).read_bytes()
                            for path in git(clone, "ls-files").splitlines()
                            if permitted_change(path) and path not in (REGISTRY, GENERATED_TEST)}
@@ -293,7 +361,7 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
         with contextlib.closing(sqlite3.connect(f"file:{fixture_file}?immutable=1", uri=True)) as database:
             if database.execute("PRAGMA quick_check").fetchone() != ("ok",):
                 raise ReleaseError("The release fixture is corrupt or needs a WAL file")
-        run(clone, sys.executable, GENERATOR, "--release-manifest", str(manifest_file), "--fixture", str(fixture_file))
+        generate("--release-manifest", str(manifest_file), "--fixture", str(fixture_file))
         if any(not (clone / path).is_file() or (clone / path).read_bytes() != content
                for path, content in immutable_files.items()):
             raise ReleaseError("Attempted to replace an existing snapshot or fixture")
@@ -305,7 +373,7 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
                     raise ReleaseError(f"Attempted to rewrite existing {key} entry: {identifier}")
         associate_release(registry, release_id, release_entry(proof, manifest, data_commit))
         (clone / REGISTRY).write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
-        run(clone, sys.executable, GENERATOR, "--check")
+        generate("--check")
         # Inspect only unstaged changes: a non-conflicting base merge may have
         # staged unrelated source updates, which are preserved in the merge.
         changed = set(git(clone, "diff", "--name-only").splitlines())
@@ -316,6 +384,10 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
                           "files": sorted(changed), "dry_run": dry_run}, indent=2))
         if dry_run:
             return
+        # The source objects must remain reachable in a fresh checkout before
+        # the PR references them. Neither tags nor source history are rewritten.
+        for commit in sorted(source_commits(registry) | {manifest["platform_sha"]}):
+            retain_source(clone, commit, env)
         if changed:
             git(clone, "add", "--", *sorted(changed))
         staged = git(clone, "diff", "--cached", "--name-only")

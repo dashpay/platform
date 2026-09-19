@@ -35,6 +35,7 @@ jobs:
         with:
           ref: v4.2-dev
           path: platform
+          # Include immutable swift-schema-source/* tags and their history.
           fetch-depth: 0
           persist-credentials: false
       - name: Checkout publication records from the fixed iOS repository
@@ -58,4 +59,4 @@ jobs:
           set -euo pipefail
           args=(--release-id "$RELEASE_ID" --data-commit "$DATA_COMMIT" --data-repo ../release-data)
           if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
-          python3 packages/swift-sdk/scripts/freeze_appstore_release.py "${args[@]}"
+          python3 -I packages/swift-sdk/scripts/freeze_appstore_release.py "${args[@]}"

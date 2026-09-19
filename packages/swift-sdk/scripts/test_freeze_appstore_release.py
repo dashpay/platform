@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -206,8 +207,17 @@ class WorkerIntegrationTests(unittest.TestCase):
         write_json(self.platform / worker.REGISTRY, {"format_version": 1, "schemas": {}, "releases": {}})
         generator = self.platform / worker.GENERATOR
         generator.parent.mkdir(parents=True)
-        generator.write_text('''import json, pathlib, sys
+        generator.write_text('''import json, os, pathlib, subprocess, sys
+assert sys.flags.isolated
+assert "SCHEMA_RELEASE_TOKEN" not in os.environ
+assert "GITHUB_TOKEN" not in os.environ
+assert "GIT_CONFIG_VALUE_1" not in os.environ
+os.chdir(sys.argv[sys.argv.index("--repo") + 1])
 if "--check" in sys.argv:
+    registry = json.loads(pathlib.Path("packages/swift-sdk/schema-releases.json").read_text())
+    for group in ("schemas", "releases"):
+        for entry in registry[group].values():
+            subprocess.run(["git", "cat-file", "-e", entry["platform_sha"] + "^{commit}"], check=True)
     sys.exit(0)
 m = json.loads(pathlib.Path(sys.argv[sys.argv.index("--release-manifest") + 1]).read_text())
 p = pathlib.Path("packages/swift-sdk/schema-releases.json")
@@ -218,6 +228,7 @@ if v in r["schemas"] and r["schemas"][v]["schema"] != m["schema"]:
 r["schemas"].setdefault(v, {"schema": m["schema"], "platform_sha": m["platform_sha"]})
 p.write_text(json.dumps(r))
 ''')
+        generator.chmod(0o755)
         git(self.platform, "add", ".")
         git(self.platform, "commit", "-m", "base")
         self.manifest["platform_sha"] = git(self.platform, "rev-parse", "HEAD")
@@ -252,7 +263,9 @@ p.write_text(json.dumps(r))
             database = sqlite3.connect(self.store)
             checked_database = mock.Mock(wraps=database)
             if corrupt:
-                checked_database.execute.return_value.fetchone.return_value = ("corrupt",)
+                cursor = mock.Mock()
+                cursor.fetchone.return_value = ("corrupt",)
+                checked_database.execute.return_value = cursor
             with mock.patch.object(worker.sqlite3, "connect", return_value=checked_database):
                 if corrupt:
                     with self.assertRaisesRegex(worker.ReleaseError, "corrupt or needs a WAL"):
@@ -294,6 +307,116 @@ p.write_text(json.dumps(r))
         self.api.pull_requests.return_value = [{"state": "open", "html_url": "https://example.invalid/pr"}]
         self.prepare()
         self.assertEqual(git(self.remote, "show", f"{branch}:human-review.txt"), "Keep this review change")
+
+    def test_draft_generator_and_imports_never_run_with_ambient_credentials(self):
+        self.prepare()
+        branch = "codex/freeze-swift-schema-v2.0.0"
+        git(self.platform, "fetch", str(self.remote), branch)
+        git(self.platform, "checkout", "-b", "untrusted-draft", "FETCH_HEAD")
+        marker = self.root / "untrusted-code-executed"
+        attack = f"import pathlib\npathlib.Path({str(marker)!r}).write_text('executed')\nraise RuntimeError('draft code ran')\n"
+        (self.platform / worker.GENERATOR).write_text(attack)
+        (self.platform / "json.py").write_text(attack)
+        (self.platform / "sitecustomize.py").write_text(attack)
+        git(self.platform, "add", ".")
+        git(self.platform, "commit", "-m", "unreviewed executable changes")
+        git(self.platform, "push", str(self.remote), f"HEAD:refs/heads/{branch}")
+        self.api.pull_requests.return_value = [{"state": "open", "html_url": "https://example.invalid/pr"}]
+        with mock.patch.dict(os.environ, {"SCHEMA_RELEASE_TOKEN": "synthetic-secret",
+                                         "GITHUB_TOKEN": "synthetic-other-secret",
+                                         "PYTHONPATH": str(self.platform)}):
+            self.prepare(dry_run=True)
+            self.prepare()
+        self.assertFalse(marker.exists())
+        self.assertEqual(git(self.remote, "show", f"{branch}:{worker.GENERATOR}"), attack.strip())
+
+    def test_ambient_git_hooks_never_receive_worker_credentials(self):
+        hooks = self.root / "hooks"
+        hooks.mkdir()
+        marker = self.root / "hook-ran"
+        for name in ("post-checkout", "pre-commit", "pre-push"):
+            hook = hooks / name
+            hook.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n")
+            hook.chmod(0o755)
+        config = self.root / "global.gitconfig"
+        config.write_text(f"[core]\n  hooksPath = {hooks}\n")
+        git(self.root, "config", "--file", str(config), "filter.capture.smudge", f"touch '{marker}'; cat")
+        git(self.root, "config", "--file", str(config), "filter.capture.clean", f"touch '{marker}'; cat")
+        (self.platform / ".gitattributes").write_text("* filter=capture\n")
+        git(self.platform, "add", ".gitattributes")
+        git(self.platform, "commit", "-m", "draft-controlled filter selection")
+        git(self.platform, "push", str(self.remote), worker.BASE_BRANCH)
+        with mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(config),
+                                         "SCHEMA_RELEASE_TOKEN": "synthetic-secret"}):
+            self.prepare()
+        self.assertFalse(marker.exists())
+
+    def unreachable_source(self, name):
+        """Publish a source commit, then remove its only advertised branch."""
+        git(self.platform, "checkout", "-b", name)
+        (self.platform / f"{name}.txt").write_text(name)
+        git(self.platform, "add", ".")
+        git(self.platform, "commit", "-m", name)
+        commit = git(self.platform, "rev-parse", "HEAD")
+        git(self.platform, "push", str(self.remote), f"HEAD:refs/heads/{name}")
+        git(self.platform, "checkout", worker.BASE_BRANCH)
+        git(self.platform, "branch", "-D", name)
+        git(self.remote, "update-ref", "-d", f"refs/heads/{name}")
+        return commit
+
+    def test_source_tag_retains_rewritten_history_for_fresh_clones_and_later_freezes(self):
+        source = self.unreachable_source("released-before-force-push")
+        self.manifest["platform_sha"] = source
+        self.commit = self.save()
+        self.prepare()
+        self.assertEqual(git(self.remote, "rev-parse", worker.SOURCE_TAG_PREFIX + source), source)
+        branch = "codex/freeze-swift-schema-v2.0.0"
+        git(self.remote, "update-ref", f"refs/heads/{worker.BASE_BRANCH}", git(self.remote, "rev-parse", branch))
+        git(self.remote, "reflog", "expire", "--expire=now", "--all")
+        git(self.remote, "gc", "--prune=now")
+        fresh = self.root / "fresh"
+        git(self.root, "clone", "--no-local", str(self.remote), str(fresh))
+        self.assertEqual(git(fresh, "cat-file", "-t", source), "commit")
+        git(fresh, "config", "user.name", "Test")
+        git(fresh, "config", "user.email", "test@example.invalid")
+        git(fresh, "config", "commit.gpgsign", "false")
+        self.platform = fresh
+        second_source = self.unreachable_source("second-released-before-force-push")
+        self.manifest.update(platform_sha=second_source, app_version="3.0", build_number="31")
+        self.manifest["schema"].update(schema_version="3.0.0", model_checksum="new-checksum")
+        self.proof.update(release_id="release-31", app_version="3.0", build_number="31",
+                          build_id="build-31", manifest_path="builds/org.dash.wallet/3.0/31/manifest.json")
+        self.commit = self.save()
+        without_tags = self.root / "checkout-without-source-tags"
+        git(self.root, "clone", "--no-local", "--no-tags", "--single-branch", "--branch",
+            worker.BASE_BRANCH, str(self.remote), str(without_tags))
+        with self.assertRaisesRegex(RuntimeError, "Test git cat-file failed"):
+            git(without_tags, "cat-file", "-t", source)
+        self.platform = without_tags
+        self.api.pull_requests.return_value = []
+        self.prepare()
+        self.assertEqual(git(self.remote, "rev-parse", worker.SOURCE_TAG_PREFIX + second_source), second_source)
+        newest = self.root / "newest"
+        git(self.root, "clone", "--no-local", str(self.remote), str(newest))
+        self.assertEqual(git(newest, "cat-file", "-t", source), "commit")
+        self.assertEqual(git(newest, "cat-file", "-t", second_source), "commit")
+
+    def test_conflicting_source_tag_is_never_rewritten(self):
+        source = self.unreachable_source("released-source")
+        self.manifest["platform_sha"] = source
+        self.commit = self.save()
+        wrong = git(self.remote, "rev-parse", worker.BASE_BRANCH)
+        git(self.remote, "update-ref", worker.SOURCE_TAG_PREFIX + source, wrong)
+        with self.assertRaisesRegex(worker.ReleaseError, "different object"):
+            self.prepare()
+        self.assertEqual(git(self.remote, "rev-parse", worker.SOURCE_TAG_PREFIX + source), wrong)
+        self.api.request.assert_not_called()
+
+    def test_source_tag_retry_reconciles_a_concurrent_matching_creation(self):
+        commit = self.manifest["platform_sha"]
+        ref = worker.SOURCE_TAG_PREFIX + commit
+        with mock.patch.object(worker, "git", side_effect=["", worker.ReleaseError("race"), f"{commit}\t{ref}"]):
+            worker.retain_source(self.platform, commit, worker.git_environment("synthetic"))
 
     def test_closed_unmerged_pr_requires_intervention(self):
         self.api.pull_requests.return_value = [{"state": "closed", "merged_at": None}]

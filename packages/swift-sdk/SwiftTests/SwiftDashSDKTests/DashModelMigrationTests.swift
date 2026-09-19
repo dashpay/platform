@@ -33,7 +33,7 @@ final class DashModelMigrationTests: XCTestCase {
             hasTrackedMasternode: false, assetLockRecipientIsExternal: nil),
     ]
 
-    private static let acceptedBaselineVersions = [Schema.Version(1, 0, 0)]
+    private static var acceptedBaselineVersions: [Schema.Version] { [Schema.Version(1, 0, 0)] }
 
     private static let fixtureWalletId = Data(repeating: 0x31, count: 32)
     private static let fixtureSpendTxid = Data(repeating: 0x32, count: 32)

@@ -23,9 +23,11 @@ Usage:
     python3 packages/swift-sdk/scripts/freeze_schema_models.py \
         --release-manifest build.json --fixture fixture.store
 
-A full-history checkout is required. New manifests must refer to a commit that
-already contains schema-models.json. Historical fixture files are never rebuilt
-from today's sources.
+A full-history checkout including swift-schema-source/* tags is required. New
+manifests must refer to a commit that already contains schema-models.json.
+Historical fixture files are never rebuilt from today's sources. --repo selects
+the data repository explicitly when a trusted copy of this generator runs from
+outside the checkout.
 """
 
 import argparse
@@ -136,8 +138,8 @@ def git(root, *args):
         )
 
 
-def repo_root():
-    return git(os.getcwd(), "rev-parse", "--show-toplevel").strip()
+def repo_root(directory=None):
+    return git(directory or os.getcwd(), "rev-parse", "--show-toplevel").strip()
 
 
 def strip_comments(lines):
@@ -539,6 +541,7 @@ def check_problems(root, files):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("--repo", help="repository containing the schema data; defaults to the current directory")
     parser.add_argument(
         "--check",
         action="store_true",
@@ -549,7 +552,7 @@ def main():
     args = parser.parse_args()
     if bool(args.release_manifest) != bool(args.fixture) or (args.check and args.release_manifest):
         parser.error("--release-manifest and --fixture are required together and cannot use --check")
-    root = repo_root()
+    root = repo_root(args.repo)
     if args.release_manifest:
         with open(args.release_manifest, encoding="utf-8") as source:
             add_release(root, json.load(source), args.fixture)
