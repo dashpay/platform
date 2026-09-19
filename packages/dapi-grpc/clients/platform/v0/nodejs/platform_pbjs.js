@@ -747,6 +747,72 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getContractModerationStatus}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getContractModerationStatusCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse} [response] GetContractModerationStatusResponse
+                         */
+
+                        /**
+                         * Calls getContractModerationStatus.
+                         * @function getContractModerationStatus
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationStatusRequest} request GetContractModerationStatusRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getContractModerationStatusCallback} callback Node-style callback called with the error, if any, and GetContractModerationStatusResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getContractModerationStatus = function getContractModerationStatus(request, callback) {
+                            return this.rpcCall(getContractModerationStatus, $root.org.dash.platform.dapi.v0.GetContractModerationStatusRequest, $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse, request, callback);
+                        }, "name", { value: "getContractModerationStatus" });
+
+                        /**
+                         * Calls getContractModerationStatus.
+                         * @function getContractModerationStatus
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationStatusRequest} request GetContractModerationStatusRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetContractModerationStatusResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getContractModerationEntries}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getContractModerationEntriesCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse} [response] GetContractModerationEntriesResponse
+                         */
+
+                        /**
+                         * Calls getContractModerationEntries.
+                         * @function getContractModerationEntries
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationEntriesRequest} request GetContractModerationEntriesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getContractModerationEntriesCallback} callback Node-style callback called with the error, if any, and GetContractModerationEntriesResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getContractModerationEntries = function getContractModerationEntries(request, callback) {
+                            return this.rpcCall(getContractModerationEntries, $root.org.dash.platform.dapi.v0.GetContractModerationEntriesRequest, $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse, request, callback);
+                        }, "name", { value: "getContractModerationEntries" });
+
+                        /**
+                         * Calls getContractModerationEntries.
+                         * @function getContractModerationEntries
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationEntriesRequest} request GetContractModerationEntriesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetContractModerationEntriesResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getDocumentHistory}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getDocumentHistoryCallback
@@ -23423,6 +23489,2694 @@ $root.org = (function() {
                         })();
 
                         return GetContractGroupMembersResponse;
+                    })();
+
+                    /**
+                     * ContractModerationList enum.
+                     * @name org.dash.platform.dapi.v0.ContractModerationList
+                     * @enum {number}
+                     * @property {number} CONTRACT_MODERATION_LIST_BANLIST=0 CONTRACT_MODERATION_LIST_BANLIST value
+                     * @property {number} CONTRACT_MODERATION_LIST_SUSPENSIONS=1 CONTRACT_MODERATION_LIST_SUSPENSIONS value
+                     */
+                    v0.ContractModerationList = (function() {
+                        var valuesById = {}, values = Object.create(valuesById);
+                        values[valuesById[0] = "CONTRACT_MODERATION_LIST_BANLIST"] = 0;
+                        values[valuesById[1] = "CONTRACT_MODERATION_LIST_SUSPENSIONS"] = 1;
+                        return values;
+                    })();
+
+                    v0.GetContractModerationStatusRequest = (function() {
+
+                        /**
+                         * Properties of a GetContractModerationStatusRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContractModerationStatusRequest
+                         * @property {org.dash.platform.dapi.v0.GetContractModerationStatusRequest.IGetContractModerationStatusRequestV0|null} [v0] GetContractModerationStatusRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetContractModerationStatusRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContractModerationStatusRequest.
+                         * @implements IGetContractModerationStatusRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationStatusRequest=} [properties] Properties to set
+                         */
+                        function GetContractModerationStatusRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContractModerationStatusRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetContractModerationStatusRequest.IGetContractModerationStatusRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                         * @instance
+                         */
+                        GetContractModerationStatusRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContractModerationStatusRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetContractModerationStatusRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContractModerationStatusRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationStatusRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusRequest} GetContractModerationStatusRequest instance
+                         */
+                        GetContractModerationStatusRequest.create = function create(properties) {
+                            return new GetContractModerationStatusRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContractModerationStatusRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationStatusRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationStatusRequest} message GetContractModerationStatusRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractModerationStatusRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContractModerationStatusRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationStatusRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationStatusRequest} message GetContractModerationStatusRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractModerationStatusRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContractModerationStatusRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusRequest} GetContractModerationStatusRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractModerationStatusRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractModerationStatusRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContractModerationStatusRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusRequest} GetContractModerationStatusRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractModerationStatusRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContractModerationStatusRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContractModerationStatusRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContractModerationStatusRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusRequest} GetContractModerationStatusRequest
+                         */
+                        GetContractModerationStatusRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContractModerationStatusRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContractModerationStatusRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationStatusRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContractModerationStatusRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContractModerationStatusRequest} message GetContractModerationStatusRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContractModerationStatusRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContractModerationStatusRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContractModerationStatusRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContractModerationStatusRequest.GetContractModerationStatusRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetContractModerationStatusRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                             * @interface IGetContractModerationStatusRequestV0
+                             * @property {Uint8Array|null} [contractId] GetContractModerationStatusRequestV0 contractId
+                             * @property {Uint8Array|null} [identityId] GetContractModerationStatusRequestV0 identityId
+                             * @property {Array.<org.dash.platform.dapi.v0.ContractModerationList>|null} [lists] GetContractModerationStatusRequestV0 lists
+                             * @property {boolean|null} [prove] GetContractModerationStatusRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetContractModerationStatusRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest
+                             * @classdesc Represents a GetContractModerationStatusRequestV0.
+                             * @implements IGetContractModerationStatusRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusRequest.IGetContractModerationStatusRequestV0=} [properties] Properties to set
+                             */
+                            function GetContractModerationStatusRequestV0(properties) {
+                                this.lists = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContractModerationStatusRequestV0 contractId.
+                             * @member {Uint8Array} contractId
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @instance
+                             */
+                            GetContractModerationStatusRequestV0.prototype.contractId = $util.newBuffer([]);
+
+                            /**
+                             * GetContractModerationStatusRequestV0 identityId.
+                             * @member {Uint8Array} identityId
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @instance
+                             */
+                            GetContractModerationStatusRequestV0.prototype.identityId = $util.newBuffer([]);
+
+                            /**
+                             * GetContractModerationStatusRequestV0 lists.
+                             * @member {Array.<org.dash.platform.dapi.v0.ContractModerationList>} lists
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @instance
+                             */
+                            GetContractModerationStatusRequestV0.prototype.lists = $util.emptyArray;
+
+                            /**
+                             * GetContractModerationStatusRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @instance
+                             */
+                            GetContractModerationStatusRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetContractModerationStatusRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusRequest.IGetContractModerationStatusRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0} GetContractModerationStatusRequestV0 instance
+                             */
+                            GetContractModerationStatusRequestV0.create = function create(properties) {
+                                return new GetContractModerationStatusRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContractModerationStatusRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusRequest.IGetContractModerationStatusRequestV0} message GetContractModerationStatusRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractModerationStatusRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.contractId != null && Object.hasOwnProperty.call(message, "contractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.contractId);
+                                if (message.identityId != null && Object.hasOwnProperty.call(message, "identityId"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.identityId);
+                                if (message.lists != null && message.lists.length) {
+                                    writer.uint32(/* id 3, wireType 2 =*/26).fork();
+                                    for (var i = 0; i < message.lists.length; ++i)
+                                        writer.int32(message.lists[i]);
+                                    writer.ldelim();
+                                }
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 4, wireType 0 =*/32).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContractModerationStatusRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusRequest.IGetContractModerationStatusRequestV0} message GetContractModerationStatusRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractModerationStatusRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContractModerationStatusRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0} GetContractModerationStatusRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractModerationStatusRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.contractId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.identityId = reader.bytes();
+                                        break;
+                                    case 3:
+                                        if (!(message.lists && message.lists.length))
+                                            message.lists = [];
+                                        if ((tag & 7) === 2) {
+                                            var end2 = reader.uint32() + reader.pos;
+                                            while (reader.pos < end2)
+                                                message.lists.push(reader.int32());
+                                        } else
+                                            message.lists.push(reader.int32());
+                                        break;
+                                    case 4:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContractModerationStatusRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0} GetContractModerationStatusRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractModerationStatusRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContractModerationStatusRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContractModerationStatusRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    if (!(message.contractId && typeof message.contractId.length === "number" || $util.isString(message.contractId)))
+                                        return "contractId: buffer expected";
+                                if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                    if (!(message.identityId && typeof message.identityId.length === "number" || $util.isString(message.identityId)))
+                                        return "identityId: buffer expected";
+                                if (message.lists != null && message.hasOwnProperty("lists")) {
+                                    if (!Array.isArray(message.lists))
+                                        return "lists: array expected";
+                                    for (var i = 0; i < message.lists.length; ++i)
+                                        switch (message.lists[i]) {
+                                        default:
+                                            return "lists: enum value[] expected";
+                                        case 0:
+                                        case 1:
+                                            break;
+                                        }
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContractModerationStatusRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0} GetContractModerationStatusRequestV0
+                             */
+                            GetContractModerationStatusRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0();
+                                if (object.contractId != null)
+                                    if (typeof object.contractId === "string")
+                                        $util.base64.decode(object.contractId, message.contractId = $util.newBuffer($util.base64.length(object.contractId)), 0);
+                                    else if (object.contractId.length >= 0)
+                                        message.contractId = object.contractId;
+                                if (object.identityId != null)
+                                    if (typeof object.identityId === "string")
+                                        $util.base64.decode(object.identityId, message.identityId = $util.newBuffer($util.base64.length(object.identityId)), 0);
+                                    else if (object.identityId.length >= 0)
+                                        message.identityId = object.identityId;
+                                if (object.lists) {
+                                    if (!Array.isArray(object.lists))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0.lists: array expected");
+                                    message.lists = [];
+                                    for (var i = 0; i < object.lists.length; ++i)
+                                        switch (object.lists[i]) {
+                                        default:
+                                        case "CONTRACT_MODERATION_LIST_BANLIST":
+                                        case 0:
+                                            message.lists[i] = 0;
+                                            break;
+                                        case "CONTRACT_MODERATION_LIST_SUSPENSIONS":
+                                        case 1:
+                                            message.lists[i] = 1;
+                                            break;
+                                        }
+                                }
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContractModerationStatusRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0} message GetContractModerationStatusRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContractModerationStatusRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.lists = [];
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.contractId = "";
+                                    else {
+                                        object.contractId = [];
+                                        if (options.bytes !== Array)
+                                            object.contractId = $util.newBuffer(object.contractId);
+                                    }
+                                    if (options.bytes === String)
+                                        object.identityId = "";
+                                    else {
+                                        object.identityId = [];
+                                        if (options.bytes !== Array)
+                                            object.identityId = $util.newBuffer(object.identityId);
+                                    }
+                                    object.prove = false;
+                                }
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    object.contractId = options.bytes === String ? $util.base64.encode(message.contractId, 0, message.contractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.contractId) : message.contractId;
+                                if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                    object.identityId = options.bytes === String ? $util.base64.encode(message.identityId, 0, message.identityId.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityId) : message.identityId;
+                                if (message.lists && message.lists.length) {
+                                    object.lists = [];
+                                    for (var j = 0; j < message.lists.length; ++j)
+                                        object.lists[j] = options.enums === String ? $root.org.dash.platform.dapi.v0.ContractModerationList[message.lists[j]] : message.lists[j];
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContractModerationStatusRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusRequest.GetContractModerationStatusRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContractModerationStatusRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetContractModerationStatusRequestV0;
+                        })();
+
+                        return GetContractModerationStatusRequest;
+                    })();
+
+                    v0.GetContractModerationStatusResponse = (function() {
+
+                        /**
+                         * Properties of a GetContractModerationStatusResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContractModerationStatusResponse
+                         * @property {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IGetContractModerationStatusResponseV0|null} [v0] GetContractModerationStatusResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetContractModerationStatusResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContractModerationStatusResponse.
+                         * @implements IGetContractModerationStatusResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationStatusResponse=} [properties] Properties to set
+                         */
+                        function GetContractModerationStatusResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContractModerationStatusResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IGetContractModerationStatusResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                         * @instance
+                         */
+                        GetContractModerationStatusResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContractModerationStatusResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetContractModerationStatusResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContractModerationStatusResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationStatusResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusResponse} GetContractModerationStatusResponse instance
+                         */
+                        GetContractModerationStatusResponse.create = function create(properties) {
+                            return new GetContractModerationStatusResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContractModerationStatusResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationStatusResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationStatusResponse} message GetContractModerationStatusResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractModerationStatusResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContractModerationStatusResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationStatusResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationStatusResponse} message GetContractModerationStatusResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractModerationStatusResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContractModerationStatusResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusResponse} GetContractModerationStatusResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractModerationStatusResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContractModerationStatusResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusResponse} GetContractModerationStatusResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractModerationStatusResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContractModerationStatusResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContractModerationStatusResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContractModerationStatusResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusResponse} GetContractModerationStatusResponse
+                         */
+                        GetContractModerationStatusResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationStatusResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContractModerationStatusResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse} message GetContractModerationStatusResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContractModerationStatusResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContractModerationStatusResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContractModerationStatusResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContractModerationStatusResponse.ContractModerationStatus = (function() {
+
+                            /**
+                             * Properties of a ContractModerationStatus.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                             * @interface IContractModerationStatus
+                             * @property {boolean|null} [banned] ContractModerationStatus banned
+                             * @property {number|Long|null} [suspendedUntil] ContractModerationStatus suspendedUntil
+                             */
+
+                            /**
+                             * Constructs a new ContractModerationStatus.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                             * @classdesc Represents a ContractModerationStatus.
+                             * @implements IContractModerationStatus
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IContractModerationStatus=} [properties] Properties to set
+                             */
+                            function ContractModerationStatus(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * ContractModerationStatus banned.
+                             * @member {boolean} banned
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @instance
+                             */
+                            ContractModerationStatus.prototype.banned = false;
+
+                            /**
+                             * ContractModerationStatus suspendedUntil.
+                             * @member {number|Long} suspendedUntil
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @instance
+                             */
+                            ContractModerationStatus.prototype.suspendedUntil = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * Creates a new ContractModerationStatus instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IContractModerationStatus=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus} ContractModerationStatus instance
+                             */
+                            ContractModerationStatus.create = function create(properties) {
+                                return new ContractModerationStatus(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ContractModerationStatus message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IContractModerationStatus} message ContractModerationStatus message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractModerationStatus.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.banned != null && Object.hasOwnProperty.call(message, "banned"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.banned);
+                                if (message.suspendedUntil != null && Object.hasOwnProperty.call(message, "suspendedUntil"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.suspendedUntil);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ContractModerationStatus message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IContractModerationStatus} message ContractModerationStatus message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractModerationStatus.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ContractModerationStatus message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus} ContractModerationStatus
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractModerationStatus.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.banned = reader.bool();
+                                        break;
+                                    case 2:
+                                        message.suspendedUntil = reader.uint64();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ContractModerationStatus message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus} ContractModerationStatus
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractModerationStatus.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ContractModerationStatus message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ContractModerationStatus.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.banned != null && message.hasOwnProperty("banned"))
+                                    if (typeof message.banned !== "boolean")
+                                        return "banned: boolean expected";
+                                if (message.suspendedUntil != null && message.hasOwnProperty("suspendedUntil"))
+                                    if (!$util.isInteger(message.suspendedUntil) && !(message.suspendedUntil && $util.isInteger(message.suspendedUntil.low) && $util.isInteger(message.suspendedUntil.high)))
+                                        return "suspendedUntil: integer|Long expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ContractModerationStatus message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus} ContractModerationStatus
+                             */
+                            ContractModerationStatus.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus();
+                                if (object.banned != null)
+                                    message.banned = Boolean(object.banned);
+                                if (object.suspendedUntil != null)
+                                    if ($util.Long)
+                                        (message.suspendedUntil = $util.Long.fromValue(object.suspendedUntil)).unsigned = true;
+                                    else if (typeof object.suspendedUntil === "string")
+                                        message.suspendedUntil = parseInt(object.suspendedUntil, 10);
+                                    else if (typeof object.suspendedUntil === "number")
+                                        message.suspendedUntil = object.suspendedUntil;
+                                    else if (typeof object.suspendedUntil === "object")
+                                        message.suspendedUntil = new $util.LongBits(object.suspendedUntil.low >>> 0, object.suspendedUntil.high >>> 0).toNumber(true);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ContractModerationStatus message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus} message ContractModerationStatus
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ContractModerationStatus.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.banned = false;
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.suspendedUntil = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.suspendedUntil = options.longs === String ? "0" : 0;
+                                }
+                                if (message.banned != null && message.hasOwnProperty("banned"))
+                                    object.banned = message.banned;
+                                if (message.suspendedUntil != null && message.hasOwnProperty("suspendedUntil"))
+                                    if (typeof message.suspendedUntil === "number")
+                                        object.suspendedUntil = options.longs === String ? String(message.suspendedUntil) : message.suspendedUntil;
+                                    else
+                                        object.suspendedUntil = options.longs === String ? $util.Long.prototype.toString.call(message.suspendedUntil) : options.longs === Number ? new $util.LongBits(message.suspendedUntil.low >>> 0, message.suspendedUntil.high >>> 0).toNumber(true) : message.suspendedUntil;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ContractModerationStatus to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ContractModerationStatus.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ContractModerationStatus;
+                        })();
+
+                        GetContractModerationStatusResponse.GetContractModerationStatusResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetContractModerationStatusResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                             * @interface IGetContractModerationStatusResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IContractModerationStatus|null} [status] GetContractModerationStatusResponseV0 status
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetContractModerationStatusResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetContractModerationStatusResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetContractModerationStatusResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse
+                             * @classdesc Represents a GetContractModerationStatusResponseV0.
+                             * @implements IGetContractModerationStatusResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IGetContractModerationStatusResponseV0=} [properties] Properties to set
+                             */
+                            function GetContractModerationStatusResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContractModerationStatusResponseV0 status.
+                             * @member {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IContractModerationStatus|null|undefined} status
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @instance
+                             */
+                            GetContractModerationStatusResponseV0.prototype.status = null;
+
+                            /**
+                             * GetContractModerationStatusResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @instance
+                             */
+                            GetContractModerationStatusResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetContractModerationStatusResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @instance
+                             */
+                            GetContractModerationStatusResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetContractModerationStatusResponseV0 result.
+                             * @member {"status"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetContractModerationStatusResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["status", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetContractModerationStatusResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IGetContractModerationStatusResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0} GetContractModerationStatusResponseV0 instance
+                             */
+                            GetContractModerationStatusResponseV0.create = function create(properties) {
+                                return new GetContractModerationStatusResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContractModerationStatusResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IGetContractModerationStatusResponseV0} message GetContractModerationStatusResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractModerationStatusResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.status != null && Object.hasOwnProperty.call(message, "status"))
+                                    $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.encode(message.status, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContractModerationStatusResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IGetContractModerationStatusResponseV0} message GetContractModerationStatusResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractModerationStatusResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContractModerationStatusResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0} GetContractModerationStatusResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractModerationStatusResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.status = $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContractModerationStatusResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0} GetContractModerationStatusResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractModerationStatusResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContractModerationStatusResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContractModerationStatusResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.status != null && message.hasOwnProperty("status")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.verify(message.status);
+                                        if (error)
+                                            return "status." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContractModerationStatusResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0} GetContractModerationStatusResponseV0
+                             */
+                            GetContractModerationStatusResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0();
+                                if (object.status != null) {
+                                    if (typeof object.status !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0.status: object expected");
+                                    message.status = $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.fromObject(object.status);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContractModerationStatusResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0} message GetContractModerationStatusResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContractModerationStatusResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.status != null && message.hasOwnProperty("status")) {
+                                    object.status = $root.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.toObject(message.status, options);
+                                    if (options.oneofs)
+                                        object.result = "status";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContractModerationStatusResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.GetContractModerationStatusResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContractModerationStatusResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetContractModerationStatusResponseV0;
+                        })();
+
+                        return GetContractModerationStatusResponse;
+                    })();
+
+                    v0.GetContractModerationEntriesRequest = (function() {
+
+                        /**
+                         * Properties of a GetContractModerationEntriesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContractModerationEntriesRequest
+                         * @property {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.IGetContractModerationEntriesRequestV0|null} [v0] GetContractModerationEntriesRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetContractModerationEntriesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContractModerationEntriesRequest.
+                         * @implements IGetContractModerationEntriesRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationEntriesRequest=} [properties] Properties to set
+                         */
+                        function GetContractModerationEntriesRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContractModerationEntriesRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.IGetContractModerationEntriesRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                         * @instance
+                         */
+                        GetContractModerationEntriesRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContractModerationEntriesRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetContractModerationEntriesRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContractModerationEntriesRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationEntriesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest} GetContractModerationEntriesRequest instance
+                         */
+                        GetContractModerationEntriesRequest.create = function create(properties) {
+                            return new GetContractModerationEntriesRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContractModerationEntriesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationEntriesRequest} message GetContractModerationEntriesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractModerationEntriesRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContractModerationEntriesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationEntriesRequest} message GetContractModerationEntriesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractModerationEntriesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContractModerationEntriesRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest} GetContractModerationEntriesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractModerationEntriesRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractModerationEntriesRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContractModerationEntriesRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest} GetContractModerationEntriesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractModerationEntriesRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContractModerationEntriesRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContractModerationEntriesRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContractModerationEntriesRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest} GetContractModerationEntriesRequest
+                         */
+                        GetContractModerationEntriesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContractModerationEntriesRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContractModerationEntriesRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContractModerationEntriesRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest} message GetContractModerationEntriesRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContractModerationEntriesRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContractModerationEntriesRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContractModerationEntriesRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetContractModerationEntriesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                             * @interface IGetContractModerationEntriesRequestV0
+                             * @property {Uint8Array|null} [contractId] GetContractModerationEntriesRequestV0 contractId
+                             * @property {org.dash.platform.dapi.v0.ContractModerationList|null} [list] GetContractModerationEntriesRequestV0 list
+                             * @property {Uint8Array|null} [startAfter] GetContractModerationEntriesRequestV0 startAfter
+                             * @property {number|null} [limit] GetContractModerationEntriesRequestV0 limit
+                             * @property {boolean|null} [prove] GetContractModerationEntriesRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetContractModerationEntriesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest
+                             * @classdesc Represents a GetContractModerationEntriesRequestV0.
+                             * @implements IGetContractModerationEntriesRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.IGetContractModerationEntriesRequestV0=} [properties] Properties to set
+                             */
+                            function GetContractModerationEntriesRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContractModerationEntriesRequestV0 contractId.
+                             * @member {Uint8Array} contractId
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @instance
+                             */
+                            GetContractModerationEntriesRequestV0.prototype.contractId = $util.newBuffer([]);
+
+                            /**
+                             * GetContractModerationEntriesRequestV0 list.
+                             * @member {org.dash.platform.dapi.v0.ContractModerationList} list
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @instance
+                             */
+                            GetContractModerationEntriesRequestV0.prototype.list = 0;
+
+                            /**
+                             * GetContractModerationEntriesRequestV0 startAfter.
+                             * @member {Uint8Array} startAfter
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @instance
+                             */
+                            GetContractModerationEntriesRequestV0.prototype.startAfter = $util.newBuffer([]);
+
+                            /**
+                             * GetContractModerationEntriesRequestV0 limit.
+                             * @member {number} limit
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @instance
+                             */
+                            GetContractModerationEntriesRequestV0.prototype.limit = 0;
+
+                            /**
+                             * GetContractModerationEntriesRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @instance
+                             */
+                            GetContractModerationEntriesRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetContractModerationEntriesRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.IGetContractModerationEntriesRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0} GetContractModerationEntriesRequestV0 instance
+                             */
+                            GetContractModerationEntriesRequestV0.create = function create(properties) {
+                                return new GetContractModerationEntriesRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContractModerationEntriesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.IGetContractModerationEntriesRequestV0} message GetContractModerationEntriesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractModerationEntriesRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.contractId != null && Object.hasOwnProperty.call(message, "contractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.contractId);
+                                if (message.list != null && Object.hasOwnProperty.call(message, "list"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).int32(message.list);
+                                if (message.startAfter != null && Object.hasOwnProperty.call(message, "startAfter"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.startAfter);
+                                if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
+                                    writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.limit);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContractModerationEntriesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.IGetContractModerationEntriesRequestV0} message GetContractModerationEntriesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractModerationEntriesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContractModerationEntriesRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0} GetContractModerationEntriesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractModerationEntriesRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.contractId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.list = reader.int32();
+                                        break;
+                                    case 3:
+                                        message.startAfter = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.limit = reader.uint32();
+                                        break;
+                                    case 5:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContractModerationEntriesRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0} GetContractModerationEntriesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractModerationEntriesRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContractModerationEntriesRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContractModerationEntriesRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    if (!(message.contractId && typeof message.contractId.length === "number" || $util.isString(message.contractId)))
+                                        return "contractId: buffer expected";
+                                if (message.list != null && message.hasOwnProperty("list"))
+                                    switch (message.list) {
+                                    default:
+                                        return "list: enum value expected";
+                                    case 0:
+                                    case 1:
+                                        break;
+                                    }
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter"))
+                                    if (!(message.startAfter && typeof message.startAfter.length === "number" || $util.isString(message.startAfter)))
+                                        return "startAfter: buffer expected";
+                                if (message.limit != null && message.hasOwnProperty("limit"))
+                                    if (!$util.isInteger(message.limit))
+                                        return "limit: integer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContractModerationEntriesRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0} GetContractModerationEntriesRequestV0
+                             */
+                            GetContractModerationEntriesRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0();
+                                if (object.contractId != null)
+                                    if (typeof object.contractId === "string")
+                                        $util.base64.decode(object.contractId, message.contractId = $util.newBuffer($util.base64.length(object.contractId)), 0);
+                                    else if (object.contractId.length >= 0)
+                                        message.contractId = object.contractId;
+                                switch (object.list) {
+                                case "CONTRACT_MODERATION_LIST_BANLIST":
+                                case 0:
+                                    message.list = 0;
+                                    break;
+                                case "CONTRACT_MODERATION_LIST_SUSPENSIONS":
+                                case 1:
+                                    message.list = 1;
+                                    break;
+                                }
+                                if (object.startAfter != null)
+                                    if (typeof object.startAfter === "string")
+                                        $util.base64.decode(object.startAfter, message.startAfter = $util.newBuffer($util.base64.length(object.startAfter)), 0);
+                                    else if (object.startAfter.length >= 0)
+                                        message.startAfter = object.startAfter;
+                                if (object.limit != null)
+                                    message.limit = object.limit >>> 0;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContractModerationEntriesRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0} message GetContractModerationEntriesRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContractModerationEntriesRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.contractId = "";
+                                    else {
+                                        object.contractId = [];
+                                        if (options.bytes !== Array)
+                                            object.contractId = $util.newBuffer(object.contractId);
+                                    }
+                                    object.list = options.enums === String ? "CONTRACT_MODERATION_LIST_BANLIST" : 0;
+                                    if (options.bytes === String)
+                                        object.startAfter = "";
+                                    else {
+                                        object.startAfter = [];
+                                        if (options.bytes !== Array)
+                                            object.startAfter = $util.newBuffer(object.startAfter);
+                                    }
+                                    object.limit = 0;
+                                    object.prove = false;
+                                }
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    object.contractId = options.bytes === String ? $util.base64.encode(message.contractId, 0, message.contractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.contractId) : message.contractId;
+                                if (message.list != null && message.hasOwnProperty("list"))
+                                    object.list = options.enums === String ? $root.org.dash.platform.dapi.v0.ContractModerationList[message.list] : message.list;
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter"))
+                                    object.startAfter = options.bytes === String ? $util.base64.encode(message.startAfter, 0, message.startAfter.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAfter) : message.startAfter;
+                                if (message.limit != null && message.hasOwnProperty("limit"))
+                                    object.limit = message.limit;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContractModerationEntriesRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesRequest.GetContractModerationEntriesRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContractModerationEntriesRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetContractModerationEntriesRequestV0;
+                        })();
+
+                        return GetContractModerationEntriesRequest;
+                    })();
+
+                    v0.GetContractModerationEntriesResponse = (function() {
+
+                        /**
+                         * Properties of a GetContractModerationEntriesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContractModerationEntriesResponse
+                         * @property {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IGetContractModerationEntriesResponseV0|null} [v0] GetContractModerationEntriesResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetContractModerationEntriesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContractModerationEntriesResponse.
+                         * @implements IGetContractModerationEntriesResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationEntriesResponse=} [properties] Properties to set
+                         */
+                        function GetContractModerationEntriesResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContractModerationEntriesResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IGetContractModerationEntriesResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                         * @instance
+                         */
+                        GetContractModerationEntriesResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContractModerationEntriesResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetContractModerationEntriesResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContractModerationEntriesResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationEntriesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse} GetContractModerationEntriesResponse instance
+                         */
+                        GetContractModerationEntriesResponse.create = function create(properties) {
+                            return new GetContractModerationEntriesResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContractModerationEntriesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationEntriesResponse} message GetContractModerationEntriesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractModerationEntriesResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContractModerationEntriesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContractModerationEntriesResponse} message GetContractModerationEntriesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContractModerationEntriesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContractModerationEntriesResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse} GetContractModerationEntriesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractModerationEntriesResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContractModerationEntriesResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse} GetContractModerationEntriesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContractModerationEntriesResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContractModerationEntriesResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContractModerationEntriesResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContractModerationEntriesResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse} GetContractModerationEntriesResponse
+                         */
+                        GetContractModerationEntriesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContractModerationEntriesResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse} message GetContractModerationEntriesResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContractModerationEntriesResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContractModerationEntriesResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContractModerationEntriesResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContractModerationEntriesResponse.ContractModerationEntry = (function() {
+
+                            /**
+                             * Properties of a ContractModerationEntry.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                             * @interface IContractModerationEntry
+                             * @property {Uint8Array|null} [identityId] ContractModerationEntry identityId
+                             * @property {number|Long|null} [until] ContractModerationEntry until
+                             */
+
+                            /**
+                             * Constructs a new ContractModerationEntry.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                             * @classdesc Represents a ContractModerationEntry.
+                             * @implements IContractModerationEntry
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntry=} [properties] Properties to set
+                             */
+                            function ContractModerationEntry(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * ContractModerationEntry identityId.
+                             * @member {Uint8Array} identityId
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @instance
+                             */
+                            ContractModerationEntry.prototype.identityId = $util.newBuffer([]);
+
+                            /**
+                             * ContractModerationEntry until.
+                             * @member {number|Long} until
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @instance
+                             */
+                            ContractModerationEntry.prototype.until = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * Creates a new ContractModerationEntry instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntry=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry} ContractModerationEntry instance
+                             */
+                            ContractModerationEntry.create = function create(properties) {
+                                return new ContractModerationEntry(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ContractModerationEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntry} message ContractModerationEntry message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractModerationEntry.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identityId != null && Object.hasOwnProperty.call(message, "identityId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identityId);
+                                if (message.until != null && Object.hasOwnProperty.call(message, "until"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.until);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ContractModerationEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntry} message ContractModerationEntry message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractModerationEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ContractModerationEntry message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry} ContractModerationEntry
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractModerationEntry.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.identityId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.until = reader.uint64();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ContractModerationEntry message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry} ContractModerationEntry
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractModerationEntry.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ContractModerationEntry message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ContractModerationEntry.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                    if (!(message.identityId && typeof message.identityId.length === "number" || $util.isString(message.identityId)))
+                                        return "identityId: buffer expected";
+                                if (message.until != null && message.hasOwnProperty("until"))
+                                    if (!$util.isInteger(message.until) && !(message.until && $util.isInteger(message.until.low) && $util.isInteger(message.until.high)))
+                                        return "until: integer|Long expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ContractModerationEntry message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry} ContractModerationEntry
+                             */
+                            ContractModerationEntry.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry();
+                                if (object.identityId != null)
+                                    if (typeof object.identityId === "string")
+                                        $util.base64.decode(object.identityId, message.identityId = $util.newBuffer($util.base64.length(object.identityId)), 0);
+                                    else if (object.identityId.length >= 0)
+                                        message.identityId = object.identityId;
+                                if (object.until != null)
+                                    if ($util.Long)
+                                        (message.until = $util.Long.fromValue(object.until)).unsigned = true;
+                                    else if (typeof object.until === "string")
+                                        message.until = parseInt(object.until, 10);
+                                    else if (typeof object.until === "number")
+                                        message.until = object.until;
+                                    else if (typeof object.until === "object")
+                                        message.until = new $util.LongBits(object.until.low >>> 0, object.until.high >>> 0).toNumber(true);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ContractModerationEntry message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry} message ContractModerationEntry
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ContractModerationEntry.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.identityId = "";
+                                    else {
+                                        object.identityId = [];
+                                        if (options.bytes !== Array)
+                                            object.identityId = $util.newBuffer(object.identityId);
+                                    }
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.until = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.until = options.longs === String ? "0" : 0;
+                                }
+                                if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                    object.identityId = options.bytes === String ? $util.base64.encode(message.identityId, 0, message.identityId.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityId) : message.identityId;
+                                if (message.until != null && message.hasOwnProperty("until"))
+                                    if (typeof message.until === "number")
+                                        object.until = options.longs === String ? String(message.until) : message.until;
+                                    else
+                                        object.until = options.longs === String ? $util.Long.prototype.toString.call(message.until) : options.longs === Number ? new $util.LongBits(message.until.low >>> 0, message.until.high >>> 0).toNumber(true) : message.until;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ContractModerationEntry to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ContractModerationEntry.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ContractModerationEntry;
+                        })();
+
+                        GetContractModerationEntriesResponse.ContractModerationEntries = (function() {
+
+                            /**
+                             * Properties of a ContractModerationEntries.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                             * @interface IContractModerationEntries
+                             * @property {Array.<org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntry>|null} [entries] ContractModerationEntries entries
+                             */
+
+                            /**
+                             * Constructs a new ContractModerationEntries.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                             * @classdesc Represents a ContractModerationEntries.
+                             * @implements IContractModerationEntries
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntries=} [properties] Properties to set
+                             */
+                            function ContractModerationEntries(properties) {
+                                this.entries = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * ContractModerationEntries entries.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntry>} entries
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries
+                             * @instance
+                             */
+                            ContractModerationEntries.prototype.entries = $util.emptyArray;
+
+                            /**
+                             * Creates a new ContractModerationEntries instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntries=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries} ContractModerationEntries instance
+                             */
+                            ContractModerationEntries.create = function create(properties) {
+                                return new ContractModerationEntries(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ContractModerationEntries message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntries} message ContractModerationEntries message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractModerationEntries.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.entries != null && message.entries.length)
+                                    for (var i = 0; i < message.entries.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ContractModerationEntries message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntries} message ContractModerationEntries message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractModerationEntries.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ContractModerationEntries message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries} ContractModerationEntries
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractModerationEntries.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.entries && message.entries.length))
+                                            message.entries = [];
+                                        message.entries.push($root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry.decode(reader, reader.uint32()));
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ContractModerationEntries message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries} ContractModerationEntries
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractModerationEntries.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ContractModerationEntries message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ContractModerationEntries.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.entries != null && message.hasOwnProperty("entries")) {
+                                    if (!Array.isArray(message.entries))
+                                        return "entries: array expected";
+                                    for (var i = 0; i < message.entries.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry.verify(message.entries[i]);
+                                        if (error)
+                                            return "entries." + error;
+                                    }
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ContractModerationEntries message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries} ContractModerationEntries
+                             */
+                            ContractModerationEntries.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries();
+                                if (object.entries) {
+                                    if (!Array.isArray(object.entries))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries.entries: array expected");
+                                    message.entries = [];
+                                    for (var i = 0; i < object.entries.length; ++i) {
+                                        if (typeof object.entries[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries.entries: object expected");
+                                        message.entries[i] = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry.fromObject(object.entries[i]);
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ContractModerationEntries message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries} message ContractModerationEntries
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ContractModerationEntries.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.entries = [];
+                                if (message.entries && message.entries.length) {
+                                    object.entries = [];
+                                    for (var j = 0; j < message.entries.length; ++j)
+                                        object.entries[j] = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry.toObject(message.entries[j], options);
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ContractModerationEntries to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ContractModerationEntries.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ContractModerationEntries;
+                        })();
+
+                        GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetContractModerationEntriesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                             * @interface IGetContractModerationEntriesResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntries|null} [entries] GetContractModerationEntriesResponseV0 entries
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetContractModerationEntriesResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetContractModerationEntriesResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetContractModerationEntriesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse
+                             * @classdesc Represents a GetContractModerationEntriesResponseV0.
+                             * @implements IGetContractModerationEntriesResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IGetContractModerationEntriesResponseV0=} [properties] Properties to set
+                             */
+                            function GetContractModerationEntriesResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContractModerationEntriesResponseV0 entries.
+                             * @member {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IContractModerationEntries|null|undefined} entries
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @instance
+                             */
+                            GetContractModerationEntriesResponseV0.prototype.entries = null;
+
+                            /**
+                             * GetContractModerationEntriesResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @instance
+                             */
+                            GetContractModerationEntriesResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetContractModerationEntriesResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @instance
+                             */
+                            GetContractModerationEntriesResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetContractModerationEntriesResponseV0 result.
+                             * @member {"entries"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetContractModerationEntriesResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["entries", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetContractModerationEntriesResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IGetContractModerationEntriesResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0} GetContractModerationEntriesResponseV0 instance
+                             */
+                            GetContractModerationEntriesResponseV0.create = function create(properties) {
+                                return new GetContractModerationEntriesResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContractModerationEntriesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IGetContractModerationEntriesResponseV0} message GetContractModerationEntriesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractModerationEntriesResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.entries != null && Object.hasOwnProperty.call(message, "entries"))
+                                    $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries.encode(message.entries, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContractModerationEntriesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.IGetContractModerationEntriesResponseV0} message GetContractModerationEntriesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContractModerationEntriesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContractModerationEntriesResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0} GetContractModerationEntriesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractModerationEntriesResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.entries = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContractModerationEntriesResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0} GetContractModerationEntriesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContractModerationEntriesResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContractModerationEntriesResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContractModerationEntriesResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.entries != null && message.hasOwnProperty("entries")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries.verify(message.entries);
+                                        if (error)
+                                            return "entries." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContractModerationEntriesResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0} GetContractModerationEntriesResponseV0
+                             */
+                            GetContractModerationEntriesResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0();
+                                if (object.entries != null) {
+                                    if (typeof object.entries !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0.entries: object expected");
+                                    message.entries = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries.fromObject(object.entries);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContractModerationEntriesResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0} message GetContractModerationEntriesResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContractModerationEntriesResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.entries != null && message.hasOwnProperty("entries")) {
+                                    object.entries = $root.org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntries.toObject(message.entries, options);
+                                    if (options.oneofs)
+                                        object.result = "entries";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContractModerationEntriesResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.GetContractModerationEntriesResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContractModerationEntriesResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetContractModerationEntriesResponseV0;
+                        })();
+
+                        return GetContractModerationEntriesResponse;
                     })();
 
                     v0.GetContractGroupsForContractRequest = (function() {

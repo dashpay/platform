@@ -483,6 +483,46 @@
              responseClass:[GetContractGroupsForContractResponse class]];
 }
 
+#pragma mark getContractModerationStatus(GetContractModerationStatusRequest) returns (GetContractModerationStatusResponse)
+
+- (void)getContractModerationStatusWithRequest:(GetContractModerationStatusRequest *)request handler:(void(^)(GetContractModerationStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractModerationStatusWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractModerationStatusWithRequest:(GetContractModerationStatusRequest *)request handler:(void(^)(GetContractModerationStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractModerationStatus"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractModerationStatusResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractModerationStatusWithMessage:(GetContractModerationStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractModerationStatus"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractModerationStatusResponse class]];
+}
+
+#pragma mark getContractModerationEntries(GetContractModerationEntriesRequest) returns (GetContractModerationEntriesResponse)
+
+- (void)getContractModerationEntriesWithRequest:(GetContractModerationEntriesRequest *)request handler:(void(^)(GetContractModerationEntriesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractModerationEntriesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractModerationEntriesWithRequest:(GetContractModerationEntriesRequest *)request handler:(void(^)(GetContractModerationEntriesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractModerationEntries"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractModerationEntriesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractModerationEntriesWithMessage:(GetContractModerationEntriesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractModerationEntries"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractModerationEntriesResponse class]];
+}
+
 #pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)
 
 - (void)getDocumentHistoryWithRequest:(GetDocumentHistoryRequest *)request handler:(void(^)(GetDocumentHistoryResponse *_Nullable response, NSError *_Nullable error))handler{

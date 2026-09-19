@@ -114,6 +114,16 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetContractGroupsForContractRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetContractGroupsForContractResponse.FromString,
                 )
+        self.getContractModerationStatus = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractModerationStatus',
+                request_serializer=platform__pb2.GetContractModerationStatusRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractModerationStatusResponse.FromString,
+                )
+        self.getContractModerationEntries = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractModerationEntries',
+                request_serializer=platform__pb2.GetContractModerationEntriesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractModerationEntriesResponse.FromString,
+                )
         self.getDocumentHistory = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDocumentHistory',
                 request_serializer=platform__pb2.GetDocumentHistoryRequest.SerializeToString,
@@ -465,6 +475,18 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getContractGroupsForContract(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractModerationStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractModerationEntries(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -854,6 +876,16 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getContractGroupsForContract,
                     request_deserializer=platform__pb2.GetContractGroupsForContractRequest.FromString,
                     response_serializer=platform__pb2.GetContractGroupsForContractResponse.SerializeToString,
+            ),
+            'getContractModerationStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractModerationStatus,
+                    request_deserializer=platform__pb2.GetContractModerationStatusRequest.FromString,
+                    response_serializer=platform__pb2.GetContractModerationStatusResponse.SerializeToString,
+            ),
+            'getContractModerationEntries': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractModerationEntries,
+                    request_deserializer=platform__pb2.GetContractModerationEntriesRequest.FromString,
+                    response_serializer=platform__pb2.GetContractModerationEntriesResponse.SerializeToString,
             ),
             'getDocumentHistory': grpc.unary_unary_rpc_method_handler(
                     servicer.getDocumentHistory,
@@ -1432,6 +1464,40 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractGroupsForContract',
             platform__pb2.GetContractGroupsForContractRequest.SerializeToString,
             platform__pb2.GetContractGroupsForContractResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractModerationStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractModerationStatus',
+            platform__pb2.GetContractModerationStatusRequest.SerializeToString,
+            platform__pb2.GetContractModerationStatusResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractModerationEntries(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractModerationEntries',
+            platform__pb2.GetContractModerationEntriesRequest.SerializeToString,
+            platform__pb2.GetContractModerationEntriesResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

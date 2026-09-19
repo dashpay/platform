@@ -184,6 +184,24 @@ type PlatformgetContractGroupsForContract = {
   readonly responseType: typeof platform_pb.GetContractGroupsForContractResponse;
 };
 
+type PlatformgetContractModerationStatus = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractModerationStatusRequest;
+  readonly responseType: typeof platform_pb.GetContractModerationStatusResponse;
+};
+
+type PlatformgetContractModerationEntries = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractModerationEntriesRequest;
+  readonly responseType: typeof platform_pb.GetContractModerationEntriesResponse;
+};
+
 type PlatformgetDocumentHistory = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -620,6 +638,8 @@ export class Platform {
   static readonly getContractGroupInfo: PlatformgetContractGroupInfo;
   static readonly getContractGroupMembers: PlatformgetContractGroupMembers;
   static readonly getContractGroupsForContract: PlatformgetContractGroupsForContract;
+  static readonly getContractModerationStatus: PlatformgetContractModerationStatus;
+  static readonly getContractModerationEntries: PlatformgetContractModerationEntries;
   static readonly getDocumentHistory: PlatformgetDocumentHistory;
   static readonly getDocuments: PlatformgetDocuments;
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
@@ -879,6 +899,24 @@ export class PlatformClient {
   getContractGroupsForContract(
     requestMessage: platform_pb.GetContractGroupsForContractRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupsForContractResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationStatus(
+    requestMessage: platform_pb.GetContractModerationStatusRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationStatusResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationStatus(
+    requestMessage: platform_pb.GetContractModerationStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationStatusResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationEntries(
+    requestMessage: platform_pb.GetContractModerationEntriesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationEntriesResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationEntries(
+    requestMessage: platform_pb.GetContractModerationEntriesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationEntriesResponse|null) => void
   ): UnaryResponse;
   getDocumentHistory(
     requestMessage: platform_pb.GetDocumentHistoryRequest,
