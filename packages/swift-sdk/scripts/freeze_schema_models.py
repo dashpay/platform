@@ -29,6 +29,7 @@ from today's sources.
 """
 
 import argparse
+import contextlib
 import dataclasses
 import hashlib
 import json
@@ -447,7 +448,7 @@ def validate_fixture_description(path, schema):
     """Check captured metadata without opening or migrating the store in SwiftData."""
     uri = pathlib.Path(path).resolve().as_uri() + "?mode=ro&immutable=1"
     try:
-        with sqlite3.connect(uri, uri=True) as database:
+        with contextlib.closing(sqlite3.connect(uri, uri=True)) as database:
             row = database.execute("SELECT Z_PLIST FROM Z_METADATA").fetchone()
             metadata = plistlib.loads(row[0])
             if metadata.get("NSStoreModelVersionIdentifiers") != [schema["schema_version"]]:

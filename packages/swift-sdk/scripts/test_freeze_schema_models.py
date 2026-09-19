@@ -13,6 +13,7 @@ question this script can answer; see `DashModelMigrationTests`.
 """
 
 import os
+import contextlib
 import hashlib
 import json
 import plistlib
@@ -103,7 +104,7 @@ class ReleaseTests(unittest.TestCase):
         self.schema = {
             "schema_version": "2.0.0", "model_checksum": "checksum",
             "entity_hashes": {"PersistentThing": "abcd"}, "indexes": []}
-        with sqlite3.connect(self.fixture) as database:
+        with contextlib.closing(sqlite3.connect(self.fixture)) as database, database:
             database.execute("CREATE TABLE Z_METADATA (Z_PLIST BLOB)")
             metadata = {"NSStoreModelVersionIdentifiers": ["2.0.0"], "NSStoreModelVersionChecksumKey": "checksum", "NSStoreModelVersionHashes": {"PersistentThing": bytes.fromhex("abcd")}}
             database.execute("INSERT INTO Z_METADATA VALUES (?)", (plistlib.dumps(metadata, fmt=plistlib.FMT_BINARY),))
@@ -138,9 +139,22 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("enum DashSchemaSnapshotV2", rendered[f"{gen.OUT_DIR}/DashSchemaSnapshotV2+Schema.swift"])
         self.assertTrue(all("a" * 40 + ":" in args[-1] for args in self.git_calls))
 
+    def test_should_close_fixture_connection_after_success_or_validation_failure(self):
+        for version in ("2.0.0", "3.0.0"):
+            database = sqlite3.connect(self.fixture)
+            schema = dict(self.schema, schema_version=version)
+            with mock.patch.object(gen.sqlite3, "connect", return_value=database):
+                if version == "2.0.0":
+                    gen.validate_fixture_description(self.fixture, schema)
+                else:
+                    with self.assertRaisesRegex(SystemExit, "schema version does not match"):
+                        gen.validate_fixture_description(self.fixture, schema)
+            with self.assertRaises(sqlite3.ProgrammingError):
+                database.execute("SELECT 1")
+
     def test_should_reuse_same_shape_even_when_a_later_build_has_different_bytes_and_sha(self):
         first = gen.add_release(self.root, self.manifest, self.fixture)
-        with sqlite3.connect(self.fixture) as database:
+        with contextlib.closing(sqlite3.connect(self.fixture)) as database, database:
             database.execute("CREATE TABLE unimportant (value INTEGER)")
         digest = hashlib.sha256(self.fixture.read_bytes()).hexdigest()
         next_manifest = {**self.manifest, "platform_sha": "b" * 40,
@@ -153,7 +167,7 @@ class ReleaseTests(unittest.TestCase):
         for field in ["model_checksum", "indexes"]:
             self.fixture.write_bytes(original)
             schema = dict(self.schema)
-            with sqlite3.connect(self.fixture) as database:
+            with contextlib.closing(sqlite3.connect(self.fixture)) as database, database:
                 if field == "model_checksum":
                     metadata = plistlib.loads(database.execute("SELECT Z_PLIST FROM Z_METADATA").fetchone()[0])
                     metadata["NSStoreModelVersionChecksumKey"] = "changed"
@@ -170,7 +184,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_should_reject_duplicate_checksum_under_another_version(self):
         gen.add_release(self.root, self.manifest, self.fixture)
-        with sqlite3.connect(self.fixture) as database:
+        with contextlib.closing(sqlite3.connect(self.fixture)) as database, database:
             metadata = plistlib.loads(database.execute("SELECT Z_PLIST FROM Z_METADATA").fetchone()[0])
             metadata["NSStoreModelVersionIdentifiers"] = ["3.0.0"]
             database.execute("UPDATE Z_METADATA SET Z_PLIST = ?", (plistlib.dumps(metadata),))

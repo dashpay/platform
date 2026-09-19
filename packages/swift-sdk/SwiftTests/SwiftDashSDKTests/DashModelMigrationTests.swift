@@ -33,7 +33,7 @@ final class DashModelMigrationTests: XCTestCase {
             hasTrackedMasternode: false, assetLockRecipientIsExternal: nil),
     ]
 
-    private static let shippedVersions = ["1.0.0"]
+    private static let acceptedBaselineVersions = [Schema.Version(1, 0, 0)]
 
     private static let fixtureWalletId = Data(repeating: 0x31, count: 32)
     private static let fixtureSpendTxid = Data(repeating: 0x32, count: 32)
@@ -169,8 +169,8 @@ final class DashModelMigrationTests: XCTestCase {
     /// Captured App Store versions are covered by DashReleasedSchemaTests.
     func testFrozenVersionsBuiltAfterTheLiveSchemaHashLikeTheStoresTheyShipped() throws {
         XCTAssertEqual(
-            Self.fixtures.map { Self.describe($0.version.versionIdentifier) },
-            Self.shippedVersions,
+            Self.fixtures.map { $0.version.versionIdentifier },
+            Self.acceptedBaselineVersions,
             "the accepted baseline must retain its existing fixture")
 
         for fixture in Self.fixtures {
@@ -202,13 +202,31 @@ final class DashModelMigrationTests: XCTestCase {
         "\(version.major).\(version.minor).\(version.patch)"
     }
 
-    func testAcceptedBaselineRemainsInTheMigrationPlan() {
+    func testMigrationPlanContainsBaselinePublishedAndLiveVersionsInOrder() {
+        let publishedVersions = DashReleasedSchemaRegistry.fixtures.map {
+            $0.version.versionIdentifier
+        }
+        let expected = Set(
+            Self.acceptedBaselineVersions + publishedVersions + [DashModelContainer.schema.version]
+        ).sorted()
         XCTAssertEqual(
-            DashMigrationPlan.schemas.prefix(Self.shippedVersions.count).map {
-                Self.describe($0.versionIdentifier)
-            }, Self.shippedVersions)
-        let versions = DashMigrationPlan.schemas.map { Self.describe($0.versionIdentifier) }
-        XCTAssertEqual(Set(versions).count, versions.count)
+            DashMigrationPlan.schemas.map { $0.versionIdentifier }, expected,
+            "The plan must retain the accepted baseline and every published version, followed by the live version")
+    }
+
+    func testMigrationStagesConnectAdjacentRegisteredSchemas() {
+        let schemas = DashMigrationPlan.schemas
+        let stages = DashMigrationPlan.stages
+        XCTAssertEqual(stages.count, schemas.count - 1)
+        for (stage, adjacent) in zip(stages, zip(schemas, schemas.dropFirst())) {
+            switch stage {
+            case .lightweight(let from, let to), .custom(let from, let to, _, _):
+                XCTAssertEqual(ObjectIdentifier(from), ObjectIdentifier(adjacent.0))
+                XCTAssertEqual(ObjectIdentifier(to), ObjectIdentifier(adjacent.1))
+            @unknown default:
+                XCTFail("Unsupported migration stage")
+            }
+        }
     }
 
     /// The schema the app opens stores with must be the last version of
@@ -223,6 +241,13 @@ final class DashModelMigrationTests: XCTestCase {
             Self.describe(DashModelContainer.schema.version),
             Self.describe(last.versionIdentifier),
             "DashModelContainer.schema must be built from the migration plan's last version")
+        let registeredModels = last.models.map { ObjectIdentifier($0) }
+        let liveModels = DashModelContainer.modelTypes.map { ObjectIdentifier($0) }
+        XCTAssertEqual(Set(registeredModels).count, registeredModels.count)
+        XCTAssertEqual(registeredModels.count, liveModels.count)
+        XCTAssertEqual(
+            Set(registeredModels), Set(liveModels),
+            "The last version must register the live model types used by SDK callers")
     }
 
     /// The SQLite indexes of a store, one line per index: table, name and

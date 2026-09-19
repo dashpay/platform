@@ -40,7 +40,7 @@ class PublicationTests(unittest.TestCase):
         git(self.data, "config", "commit.gpgsign", "false")
         git(self.data, "remote", "add", "origin", f"https://github.com/{worker.IOS_REPO}.git")
         self.store = self.root / "synthetic.store"
-        with sqlite3.connect(self.store) as database:
+        with contextlib.closing(sqlite3.connect(self.store)) as database, database:
             database.execute("CREATE TABLE synthetic(value TEXT)")
             database.execute("INSERT INTO synthetic VALUES ('test')")
         self.fixture = self.store.read_bytes()
@@ -246,6 +246,21 @@ p.write_text(json.dumps(r))
         self.assertEqual(git(self.remote, "show-ref"), before)
         self.api.request.assert_not_called()
         self.assertEqual(git(self.platform, "status", "--porcelain"), "")
+
+    def test_fixture_check_closes_connection_on_success_or_failure(self):
+        for corrupt in (False, True):
+            database = sqlite3.connect(self.store)
+            checked_database = mock.Mock(wraps=database)
+            if corrupt:
+                checked_database.execute.return_value.fetchone.return_value = ("corrupt",)
+            with mock.patch.object(worker.sqlite3, "connect", return_value=checked_database):
+                if corrupt:
+                    with self.assertRaisesRegex(worker.ReleaseError, "corrupt or needs a WAL"):
+                        self.prepare(dry_run=True)
+                else:
+                    self.prepare(dry_run=True)
+            with self.assertRaises(sqlite3.ProgrammingError):
+                database.execute("SELECT 1")
 
     def test_push_then_retry_reuses_draft_pr_and_commit(self):
         self.prepare()

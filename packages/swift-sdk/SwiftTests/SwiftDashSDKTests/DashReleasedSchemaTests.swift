@@ -26,6 +26,9 @@ final class DashReleasedSchemaTests: XCTestCase {
 
     @MainActor
     func testPublishedSnapshotsAndRuntimeVersionsMatchCapturedStores() throws {
+        try XCTSkipIf(
+            DashReleasedSchemaRegistry.fixtures.isEmpty,
+            "No App Store schema snapshots have been registered yet")
         for fixture in DashReleasedSchemaRegistry.fixtures {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -52,6 +55,9 @@ final class DashReleasedSchemaTests: XCTestCase {
 
     @MainActor
     func testPublishedStoresMigrateAndRemainWritableThroughLiveTypes() throws {
+        try XCTSkipIf(
+            DashReleasedSchemaRegistry.fixtures.isEmpty,
+            "No App Store schema snapshots have been registered yet")
         for fixture in DashReleasedSchemaRegistry.fixtures {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

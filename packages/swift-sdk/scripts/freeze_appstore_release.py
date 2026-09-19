@@ -10,6 +10,7 @@ does not commit, push, or write to the GitHub API.
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -289,7 +290,7 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
         fixture_file = Path(temporary) / "fixture.store"
         manifest_file.write_text(json.dumps(manifest))
         fixture_file.write_bytes(fixture)
-        with sqlite3.connect(f"file:{fixture_file}?immutable=1", uri=True) as database:
+        with contextlib.closing(sqlite3.connect(f"file:{fixture_file}?immutable=1", uri=True)) as database:
             if database.execute("PRAGMA quick_check").fetchone() != ("ok",):
                 raise ReleaseError("The release fixture is corrupt or needs a WAL file")
         run(clone, sys.executable, GENERATOR, "--release-manifest", str(manifest_file), "--fixture", str(fixture_file))
