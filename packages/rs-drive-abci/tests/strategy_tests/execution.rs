@@ -978,6 +978,8 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
 
     let mut state_transitions_per_block = BTreeMap::new();
     let mut state_transition_results_per_block = BTreeMap::new();
+    let mut app_hashes_per_block = BTreeMap::new();
+    let mut protocol_versions_per_block = BTreeMap::new();
     let mut shielded_state: Option<crate::strategy::ShieldedState> = None;
 
     for block_height in block_start..(block_start + block_count) {
@@ -1162,6 +1164,8 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
         }
 
         state_transition_results_per_block.insert(block_height, state_transaction_results);
+        app_hashes_per_block.insert(block_height, root_app_hash);
+        protocol_versions_per_block.insert(block_height, app_version);
 
         if let Some(query_strategy) = &strategy.query_testing {
             query_strategy.query_chain_for_strategy(
@@ -1245,6 +1249,8 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
         withdrawals: total_withdrawals,
         validator_set_updates,
         state_transition_results_per_block,
+        app_hashes_per_block,
+        protocol_versions_per_block,
         instant_lock_quorums,
         signer,
     }

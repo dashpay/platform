@@ -75,6 +75,7 @@
 - [Unit Tests](testing/unit-tests.md)
 - [Strategy Tests](testing/strategy-tests.md)
 - [Test Configuration](testing/test-configuration.md)
+- [Determinism and Fuzzing](testing/determinism-and-fuzzing.md)
 
 # Evo SDK (JavaScript/TypeScript)
 
