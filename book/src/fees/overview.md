@@ -285,12 +285,66 @@ pub struct FeeVersion {
     pub data_contract_registration: FeeDataContractRegistrationVersion,
     pub state_transition_min_fees: StateTransitionMinFees,
     pub vote_resolution_fund_fees: VoteResolutionFundFees,
+    pub dashvm: Option<FeeDashVmVersion>,
 }
 ```
 
 Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The
 `uses_version_fee_multiplier_permille` field allows a global scaling factor
 (permille = divide by 1000; a value of 1000 means no change).
+
+`fee_version_number` keys the persisted fee history and the storage refund
+rates, so it only changes when a storage rate changes. A schedule that changes
+only a group the history never serves keeps the number of the generation it
+agrees with and is not appended to `FEE_VERSIONS`: `FEE_VERSION2` (protocol
+version 9) and `FEE_VERSION3` (protocol version 17) both carry number 1.
+
+The epoch fee history (`previous_fee_versions` in platform state) records a
+schedule only when its number changes, is saved as numbers and restored through
+`FeeVersion::get(number)`, and serves exactly the groups `KnownCostItem` reads:
+storage, processing, hashing and signature. Every other group
+(`data_contract_registration`, `state_transition_min_fees`,
+`vote_resolution_fund_fees`, `dashvm`) is read from the active protocol
+version's schedule, `platform_version.fee_version`, and never from the history.
+Upgrading from protocol version 16 to 17 therefore records nothing new in the
+history and a restart resolves the existing entry to `FEE_VERSION1`; contract
+pricing is unaffected because nothing reads it from there.
+
+### Smart-contract computation (protocol version 17, 5.0)
+
+Smart-contract work is metered by the runtime in *computation units*
+(`ComputationUnits` in `rs-platform-version`): a deterministic count of the
+admitted guest operations and host work an invocation performs, weighted by the
+active metering generation. A unit is never wall-clock time, so every node
+counts the same number of units for the same invocation, whatever its hardware
+or cache state.
+
+Two consensus limits bound the units, both in
+`SystemLimits::smart_contract_computation` and both counted by one
+contract-only counter that is separate from every native budget (the proposer
+timer, the withdrawal and shielded per-block caps, the Tenderdash block gas
+limit):
+
+| Limit | Scope |
+|---|---|
+| `max_computation_units_per_invocation` | One outer invocation: a direct call, a predicate, or one scheduled attempt, including every nested call, predicate, module initialisation and host entry it causes. The runtime receives it as the budget of the invocation. |
+| `max_computation_units_per_block` | All invocations in one block, ordinary and scheduled. The block loop reserves an invocation's admitted bound before it runs and settles the actual consumption afterwards (`BlockComputationBudget` in `rs-drive-abci`), so an invocation that would not fit is delayed or rejected, never failed part-way through. |
+
+Units become credits at the active protocol version's price,
+`platform_version.fee_version.dashvm.credits_per_computation_unit`, through
+`dpp::fee::smart_contract_computation::computation_units_to_credits` (checked
+multiplication; the function takes `&PlatformVersion`, so a schedule taken from
+the epoch fee history cannot be passed to it). The charge enters the processing fee of the invocation's
+`FeeResult`, which is what Tenderdash's `gas_used` and `gas_wanted` already
+report, so gas stays denominated in credits and no unit equivalence between
+computation units and Tenderdash gas exists. A failed invocation still consumed
+its units and is charged for them.
+
+Protocol versions before 17 carry `None` for both the limits and the price:
+nothing meters, prices or budgets contract computation there. The numbers on
+protocol version 17 (25 million units per invocation, 250 million per block,
+1 credit per unit) are the provisional starting values of the DashVM allocation
+register and are measured and revised before any network runs that version.
 
 ## Key Source Files
 
