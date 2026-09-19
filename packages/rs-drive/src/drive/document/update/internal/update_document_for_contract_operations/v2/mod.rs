@@ -1,6 +1,7 @@
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::index_level_tree_types::{
-    index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
+    index_level_tree_types_with_continuation_demotion, terminal_member_tree_type_for_aggregates,
+    IndexLevelTreeTypes,
 };
 use crate::drive::document::time_range_ttl::{entry_key_bucket_start, live_time_range_entry_keys};
 use crate::drive::document::{
@@ -35,9 +36,7 @@ use crate::drive::document::paths::{
     contract_document_type_path, contract_documents_primary_key_path,
 };
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::{
-    DocumentTypeRef, Index, IndexCountability, IndexLevel, TimeRangeTransform,
-};
+use dpp::data_contract::document_type::{DocumentTypeRef, Index, IndexLevel, TimeRangeTransform};
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
@@ -58,40 +57,6 @@ fn drive_key_info_is_empty(key_info: &DriveKeyInfo) -> bool {
         Key(key) => key.is_empty(),
         KeyRef(key_ref) => key_ref.is_empty(),
         KeySize(_) => false,
-    }
-}
-
-/// `[0]`-key reference-bucket `TreeType` dispatch for the
-/// terminator level. Mirrors the dispatch in
-/// `add_reference_for_index_level_for_contract_operations_v0` —
-/// this table distinguishes `Countable` (→ `CountTree`) from
-/// `CountableAllowingOffset` (→ `ProvableCountTree`), where the
-/// value-tree dispatch above collapses them via `is_countable()`.
-///
-/// The `[0]` bucket is the leaf tree under a non-unique terminator
-/// value, holding the per-doc references; it must carry the index's
-/// count and sum aggregates so `count_value_or_default()` /
-/// `sum_value_or_default()` walks at the value tree's parent
-/// resolve to the right per-value totals.
-fn reference_tree_type_for_index(
-    countable: IndexCountability,
-    summable: &Option<String>,
-    range_summable: bool,
-) -> TreeType {
-    let count_provable = matches!(countable, IndexCountability::CountableAllowingOffset);
-    let count_root_only = matches!(countable, IndexCountability::Countable) && !count_provable;
-    let sum_provable = range_summable;
-    let sum_root_only = summable.is_some() && !sum_provable;
-    match (count_provable, count_root_only, sum_provable, sum_root_only) {
-        (false, false, false, false) => TreeType::NormalTree,
-        (false, true, false, false) => TreeType::CountTree,
-        (true, _, false, false) => TreeType::ProvableCountTree,
-        (false, false, false, true) => TreeType::SumTree,
-        (false, false, true, _) => TreeType::ProvableSumTree,
-        (false, true, false, true) => TreeType::CountSumTree,
-        (true, _, false, true) => TreeType::ProvableCountSumTree,
-        (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
-        (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
     }
 }
 
@@ -805,13 +770,14 @@ impl Drive {
                     // value tree resolve to the right totals.
                     //
                     // Unlike the value/property-name dispatches
-                    // above, this table distinguishes `Countable`
-                    // (→ `CountTree`) from `CountableAllowingOffset`
-                    // (→ `ProvableCountTree`), matching the insert
-                    // path's terminator bucket exactly.
-                    let reference_tree_type = reference_tree_type_for_index(
+                    // above, this shared dispatch distinguishes
+                    // `Countable` (→ `CountTree`) from
+                    // `CountableAllowingOffset` (→ `ProvableCountTree`),
+                    // matching the insert path's terminator bucket
+                    // exactly.
+                    let reference_tree_type = terminal_member_tree_type_for_aggregates(
                         index.countable,
-                        &index.summable,
+                        index.summable.is_some(),
                         index.range_summable,
                     );
                     self.batch_insert_empty_tree_if_not_exists(
@@ -1073,8 +1039,11 @@ impl Drive {
         let old_terminator_is_unique = index.unique && !old_any_fields_null;
 
         let suffix_changed = new_suffix != old_suffix;
-        let reference_tree_type =
-            reference_tree_type_for_index(index.countable, &index.summable, index.range_summable);
+        let reference_tree_type = terminal_member_tree_type_for_aggregates(
+            index.countable,
+            index.summable.is_some(),
+            index.range_summable,
+        );
         let top_level_tree_types =
             index_level_tree_types_with_continuation_demotion(top_index_level)?;
         let top_value_tree_type = top_level_tree_types.value_tree_type;
