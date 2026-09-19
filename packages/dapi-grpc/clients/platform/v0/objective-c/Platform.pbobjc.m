@@ -549,9 +549,11 @@ GPBEnumDescriptor *ContractModerationList_EnumDescriptor(void) {
   static _Atomic(GPBEnumDescriptor*) descriptor = nil;
   if (!descriptor) {
     static const char *valueNames =
-        "ContractModerationListBanlist\000ContractMo"
-        "derationListSuspensions\000";
+        "ContractModerationListUnspecified\000Contra"
+        "ctModerationListBanlist\000ContractModerati"
+        "onListSuspensions\000";
     static const int32_t values[] = {
+        ContractModerationList_ContractModerationListUnspecified,
         ContractModerationList_ContractModerationListBanlist,
         ContractModerationList_ContractModerationListSuspensions,
     };
@@ -571,6 +573,7 @@ GPBEnumDescriptor *ContractModerationList_EnumDescriptor(void) {
 
 BOOL ContractModerationList_IsValidValue(int32_t value__) {
   switch (value__) {
+    case ContractModerationList_ContractModerationListUnspecified:
     case ContractModerationList_ContractModerationListBanlist:
     case ContractModerationList_ContractModerationListSuspensions:
       return YES;

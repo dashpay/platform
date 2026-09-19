@@ -23495,13 +23495,15 @@ $root.org = (function() {
                      * ContractModerationList enum.
                      * @name org.dash.platform.dapi.v0.ContractModerationList
                      * @enum {number}
-                     * @property {number} CONTRACT_MODERATION_LIST_BANLIST=0 CONTRACT_MODERATION_LIST_BANLIST value
-                     * @property {number} CONTRACT_MODERATION_LIST_SUSPENSIONS=1 CONTRACT_MODERATION_LIST_SUSPENSIONS value
+                     * @property {number} CONTRACT_MODERATION_LIST_UNSPECIFIED=0 CONTRACT_MODERATION_LIST_UNSPECIFIED value
+                     * @property {number} CONTRACT_MODERATION_LIST_BANLIST=1 CONTRACT_MODERATION_LIST_BANLIST value
+                     * @property {number} CONTRACT_MODERATION_LIST_SUSPENSIONS=2 CONTRACT_MODERATION_LIST_SUSPENSIONS value
                      */
                     v0.ContractModerationList = (function() {
                         var valuesById = {}, values = Object.create(valuesById);
-                        values[valuesById[0] = "CONTRACT_MODERATION_LIST_BANLIST"] = 0;
-                        values[valuesById[1] = "CONTRACT_MODERATION_LIST_SUSPENSIONS"] = 1;
+                        values[valuesById[0] = "CONTRACT_MODERATION_LIST_UNSPECIFIED"] = 0;
+                        values[valuesById[1] = "CONTRACT_MODERATION_LIST_BANLIST"] = 1;
+                        values[valuesById[2] = "CONTRACT_MODERATION_LIST_SUSPENSIONS"] = 2;
                         return values;
                     })();
 
@@ -23912,6 +23914,7 @@ $root.org = (function() {
                                             return "lists: enum value[] expected";
                                         case 0:
                                         case 1:
+                                        case 2:
                                             break;
                                         }
                                 }
@@ -23950,13 +23953,17 @@ $root.org = (function() {
                                     for (var i = 0; i < object.lists.length; ++i)
                                         switch (object.lists[i]) {
                                         default:
-                                        case "CONTRACT_MODERATION_LIST_BANLIST":
+                                        case "CONTRACT_MODERATION_LIST_UNSPECIFIED":
                                         case 0:
                                             message.lists[i] = 0;
                                             break;
-                                        case "CONTRACT_MODERATION_LIST_SUSPENSIONS":
+                                        case "CONTRACT_MODERATION_LIST_BANLIST":
                                         case 1:
                                             message.lists[i] = 1;
+                                            break;
+                                        case "CONTRACT_MODERATION_LIST_SUSPENSIONS":
+                                        case 2:
+                                            message.lists[i] = 2;
                                             break;
                                         }
                                 }
@@ -25139,6 +25146,7 @@ $root.org = (function() {
                                         return "list: enum value expected";
                                     case 0:
                                     case 1:
+                                    case 2:
                                         break;
                                     }
                                 if (message.startAfter != null && message.hasOwnProperty("startAfter"))
@@ -25171,13 +25179,17 @@ $root.org = (function() {
                                     else if (object.contractId.length >= 0)
                                         message.contractId = object.contractId;
                                 switch (object.list) {
-                                case "CONTRACT_MODERATION_LIST_BANLIST":
+                                case "CONTRACT_MODERATION_LIST_UNSPECIFIED":
                                 case 0:
                                     message.list = 0;
                                     break;
-                                case "CONTRACT_MODERATION_LIST_SUSPENSIONS":
+                                case "CONTRACT_MODERATION_LIST_BANLIST":
                                 case 1:
                                     message.list = 1;
+                                    break;
+                                case "CONTRACT_MODERATION_LIST_SUSPENSIONS":
+                                case 2:
+                                    message.list = 2;
                                     break;
                                 }
                                 if (object.startAfter != null)
@@ -25213,7 +25225,7 @@ $root.org = (function() {
                                         if (options.bytes !== Array)
                                             object.contractId = $util.newBuffer(object.contractId);
                                     }
-                                    object.list = options.enums === String ? "CONTRACT_MODERATION_LIST_BANLIST" : 0;
+                                    object.list = options.enums === String ? "CONTRACT_MODERATION_LIST_UNSPECIFIED" : 0;
                                     if (options.bytes === String)
                                         object.startAfter = "";
                                     else {

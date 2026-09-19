@@ -71,35 +71,43 @@ impl VerifiedDataContractWasm {
 
 impl_wasm_type_info!(VerifiedDataContractWasm, VerifiedDataContract);
 
-/// `VerifiedContractModerationListStatus` proof-result wrapper: the target identity's entry on
-/// the list a moderation transition edited. The proof holds that one entry, so the other list
-/// is unknown: `banned` is undefined unless `list` is `banlist`.
-#[wasm_bindgen(js_name = "VerifiedContractModerationListStatus")]
+/// `VerifiedContractModerationListStatuses` proof-result wrapper: the target identity's status
+/// on the lists a moderation transition touched (both for a ban, the edited one otherwise).
+/// A list the proof does not cover is unknown: `banned` is undefined unless `lists` includes
+/// `banlist`.
+#[wasm_bindgen(js_name = "VerifiedContractModerationListStatuses")]
 #[derive(Clone)]
-pub struct VerifiedContractModerationListStatusWasm {
+pub struct VerifiedContractModerationListStatusesWasm {
     #[wasm_bindgen(getter_with_clone, js_name = "contractId")]
     pub contract_id: IdentifierWasm,
     #[wasm_bindgen(getter_with_clone, js_name = "identityId")]
     pub identity_id: IdentifierWasm,
-    /// The list the moderation edited: `banlist` or `suspensions`
+    /// The lists the proof covers: `banlist`, `suspensions`, or both
     #[wasm_bindgen(getter_with_clone)]
-    pub list: String,
-    /// When `list` is `banlist`: the identity is on the banlist
+    pub lists: Vec<String>,
+    /// When `lists` includes `banlist`: the identity is on the banlist
     pub banned: Option<bool>,
-    /// When `list` is `suspensions`: the block time, in milliseconds, until which the identity
-    /// is suspended
+    /// When `lists` includes `suspensions`: the block time, in milliseconds, until which the
+    /// identity is suspended
     #[wasm_bindgen(js_name = "suspendedUntil")]
     pub suspended_until: Option<u64>,
 }
 
-#[wasm_bindgen(js_class = VerifiedContractModerationListStatus)]
-impl VerifiedContractModerationListStatusWasm {
+#[wasm_bindgen(js_class = VerifiedContractModerationListStatuses)]
+impl VerifiedContractModerationListStatusesWasm {
     #[wasm_bindgen(js_name = toObject)]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
         Ok(js_obj(&[
             ("contractId", self.contract_id.into()),
             ("identityId", self.identity_id.into()),
-            ("list", JsValue::from_str(&self.list)),
+            (
+                "lists",
+                self.lists
+                    .iter()
+                    .map(|list| JsValue::from_str(list))
+                    .collect::<js_sys::Array>()
+                    .into(),
+            ),
             (
                 "banned",
                 self.banned
@@ -126,7 +134,14 @@ impl VerifiedContractModerationListStatusWasm {
                 "identityId",
                 JsValue::from_str(&self.identity_id.to_base58()),
             ),
-            ("list", JsValue::from_str(&self.list)),
+            (
+                "lists",
+                self.lists
+                    .iter()
+                    .map(|list| JsValue::from_str(list))
+                    .collect::<js_sys::Array>()
+                    .into(),
+            ),
             (
                 "banned",
                 self.banned
@@ -144,6 +159,6 @@ impl VerifiedContractModerationListStatusWasm {
 }
 
 impl_wasm_type_info!(
-    VerifiedContractModerationListStatusWasm,
-    VerifiedContractModerationListStatus
+    VerifiedContractModerationListStatusesWasm,
+    VerifiedContractModerationListStatuses
 );

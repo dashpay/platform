@@ -34,9 +34,10 @@ pub(super) fn list_from_request(
     match ContractModerationListProto::try_from(list) {
         Ok(ContractModerationListProto::Banlist) => Ok(ContractModerationList::Banlist),
         Ok(ContractModerationListProto::Suspensions) => Ok(ContractModerationList::Suspensions),
-        Err(_) => Err(QueryError::InvalidArgument(format!(
-            "{field} {list} is not a moderation list"
-        ))),
+        // Zero is what a proto3 client sends when it leaves the field out: not a list.
+        Ok(ContractModerationListProto::Unspecified) | Err(_) => Err(QueryError::InvalidArgument(
+            format!("{field} {list} is not a moderation list"),
+        )),
     }
 }
 
@@ -84,8 +85,8 @@ pub(super) mod tests {
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::PlatformVersion;
 
-    pub const BANLIST: i32 = 0;
-    pub const SUSPENSIONS: i32 = 1;
+    pub const BANLIST: i32 = 1;
+    pub const SUSPENSIONS: i32 = 2;
 
     /// Stores a contract that keeps the lists asked for (none: an unmoderated contract).
     pub fn store_contract(
@@ -161,5 +162,7 @@ pub(super) mod tests {
             ContractModerationList::Suspensions
         );
         assert!(list_from_request(7, "list").is_err());
+        // The proto3 default, an omitted field, is refused rather than read as the banlist.
+        assert!(list_from_request(0, "list").is_err());
     }
 }

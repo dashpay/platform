@@ -36,6 +36,7 @@ use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocume
 use dpp::consensus::basic::value_error::ValueError;
 use dpp::consensus::basic::BasicError;
 
+use dpp::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
 
@@ -955,6 +956,25 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     }
                 }
 
+                // Contract moderation (protocol version 14): a barred identity receives nothing.
+                if let Some(error) = Self::contract_moderation_counterparty_gate(
+                    drive,
+                    block_info,
+                    &data_contract_fetch_info.contract,
+                    document_transfer_transition.recipient_owner_id(),
+                    ContractModerationCounterpartyRole::Recipient,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )? {
+                    return Self::failed_per_transition_action(
+                        document_transfer_transition.base(),
+                        owner_id,
+                        vec![error],
+                        platform_version,
+                    );
+                }
+
                 let (document_transfer_action, fee_result) =
                     DocumentTransferTransitionAction::try_from_borrowed_document_transfer_transition(
                         document_transfer_transition,
@@ -1101,6 +1121,25 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                             platform_version,
                         );
                     }
+                }
+
+                // Contract moderation (protocol version 14): a barred identity sells nothing.
+                if let Some(error) = Self::contract_moderation_counterparty_gate(
+                    drive,
+                    block_info,
+                    &data_contract_fetch_info.contract,
+                    original_document.owner_id(),
+                    ContractModerationCounterpartyRole::Seller,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )? {
+                    return Self::failed_per_transition_action(
+                        document_purchase_transition.base(),
+                        owner_id,
+                        vec![error],
+                        platform_version,
+                    );
                 }
 
                 let (document_purchase_action, fee_result) =

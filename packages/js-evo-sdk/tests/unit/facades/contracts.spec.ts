@@ -215,17 +215,21 @@ describe('ContractsFacade', () => {
     const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
     const identityId = 'H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1';
 
-    // Every moderation transition resolves to the entry on the list it edited, and nothing
-    // about the other list: `banned` is only set when `list` is `banlist`.
+    // Every moderation transition resolves to the status on the lists its proof covers: both
+    // for a ban, the edited one otherwise. `banned` is only set when `lists` includes `banlist`.
     const transitions = [
-      { facade: 'banUser', wasm: 'contractBanUser', result: { list: 'banlist', banned: true } },
-      { facade: 'unbanUser', wasm: 'contractUnbanUser', result: { list: 'banlist', banned: false } },
+      {
+        facade: 'banUser',
+        wasm: 'contractBanUser',
+        result: { lists: ['banlist', 'suspensions'], banned: true },
+      },
+      { facade: 'unbanUser', wasm: 'contractUnbanUser', result: { lists: ['banlist'], banned: false } },
       {
         facade: 'suspendUser',
         wasm: 'contractSuspendUser',
-        result: { list: 'suspensions', suspendedUntil: BigInt(1800000000000) },
+        result: { lists: ['suspensions'], suspendedUntil: BigInt(1800000000000) },
       },
-      { facade: 'unsuspendUser', wasm: 'contractUnsuspendUser', result: { list: 'suspensions' } },
+      { facade: 'unsuspendUser', wasm: 'contractUnsuspendUser', result: { lists: ['suspensions'] } },
     ] as const;
 
     transitions.forEach(({ facade, wasm, result }) => {
@@ -242,8 +246,8 @@ describe('ContractsFacade', () => {
         const moderated = await client.contracts[facade](options);
 
         expect(stub).to.be.calledOnceWithExactly(options);
-        expect(moderated.list).to.equal(result.list);
-        if (result.list === 'suspensions') {
+        expect(moderated.lists).to.deep.equal(result.lists);
+        if (!result.lists.includes('banlist')) {
           expect(moderated.banned).to.equal(undefined);
         }
       });

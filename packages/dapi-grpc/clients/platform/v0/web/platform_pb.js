@@ -108467,8 +108467,9 @@ proto.org.dash.platform.dapi.v0.KeyPurpose = {
  * @enum {number}
  */
 proto.org.dash.platform.dapi.v0.ContractModerationList = {
-  CONTRACT_MODERATION_LIST_BANLIST: 0,
-  CONTRACT_MODERATION_LIST_SUSPENSIONS: 1
+  CONTRACT_MODERATION_LIST_UNSPECIFIED: 0,
+  CONTRACT_MODERATION_LIST_BANLIST: 1,
+  CONTRACT_MODERATION_LIST_SUSPENSIONS: 2
 };
 
 goog.object.extend(exports, proto.org.dash.platform.dapi.v0);

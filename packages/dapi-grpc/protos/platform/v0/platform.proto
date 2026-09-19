@@ -704,8 +704,9 @@ message GetContractGroupMembersResponse {
 
 // One of the two moderation lists a moderated data contract may keep (protocol version 14).
 enum ContractModerationList {
-  CONTRACT_MODERATION_LIST_BANLIST = 0;     // Identities barred until an unban
-  CONTRACT_MODERATION_LIST_SUSPENSIONS = 1; // Identities barred until a block time
+  CONTRACT_MODERATION_LIST_UNSPECIFIED = 0; // Not a list: a request that leaves the field out is refused
+  CONTRACT_MODERATION_LIST_BANLIST = 1;     // Identities barred until an unban
+  CONTRACT_MODERATION_LIST_SUSPENSIONS = 2; // Identities barred until a block time
 }
 
 message GetContractModerationStatusRequest {

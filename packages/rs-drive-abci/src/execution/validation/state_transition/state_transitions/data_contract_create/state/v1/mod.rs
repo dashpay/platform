@@ -143,9 +143,9 @@ impl DataContractCreateStateTransitionStateValidationV1 for DataContractCreateTr
             ));
         }
 
-        // Contract moderation: every identity named as a moderator must exist. What the
-        // moderation team earns is credited to each of its members, and crediting an identity
-        // that was never created is an internal error inside a block. At most
+        // Contract moderation: every identity named as a moderator must exist. One that does
+        // not can never sign a moderation, so naming it is a mistake, and the cheapest place to
+        // catch it is here, once, rather than in every feature that will read the set. At most
         // `max_contract_moderators` lookups, each billed; a miss is paid like the ones above.
         for moderator_id in &moderators {
             if !validate_identity_exists(

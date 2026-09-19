@@ -13,7 +13,8 @@ use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShie
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
-    ContractModerationTargetNotFoundError, ContractModeratorIdentityNotFoundError,
+    ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
+    ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
     ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
     IdentityNotContractModeratorError,
@@ -506,6 +507,9 @@ pub enum StateError {
 
     #[error(transparent)]
     ContractModeratorIdentityNotFoundError(ContractModeratorIdentityNotFoundError),
+
+    #[error(transparent)]
+    ContractModerationCounterpartyBarredError(ContractModerationCounterpartyBarredError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -517,6 +521,7 @@ impl From<StateError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
     use crate::data_contract::config::moderation::ContractModerationList;
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -757,8 +762,8 @@ mod tests {
             )),
             113
         );
-        // Contract moderation (protocol version 14): its first variant and the last two, the
-        // tail of the enum.
+        // Contract moderation (protocol version 14): its first variant and the last three,
+        // the tail of the enum.
         assert_eq!(
             discriminant_of(StateError::ContractModerationNotEnabledError(
                 ContractModerationNotEnabledError::new(group_id, ContractModerationList::Banlist,)
@@ -776,6 +781,16 @@ mod tests {
                 ContractModeratorIdentityNotFoundError::new(group_id, identity_id)
             )),
             124
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationCounterpartyBarredError(
+                ContractModerationCounterpartyBarredError::new(
+                    group_id,
+                    identity_id,
+                    ContractModerationCounterpartyRole::Recipient,
+                )
+            )),
+            125
         );
     }
 }

@@ -7,6 +7,7 @@ use crate::execution::validation::state_transition::state_transitions::batch::tr
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionInternalTransformerV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::contract_moderation::{
+    ContractModerationCounterpartyBarredError, ContractModerationCounterpartyRole,
     ContractUserBannedError, ContractUserSuspendedError,
 };
 use dpp::consensus::ConsensusError;
@@ -38,6 +39,18 @@ pub(super) trait BatchTransitionContractModerationGateV0 {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<ContractModerationRefusal<'a>>, Error>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn contract_moderation_counterparty_gate_v0(
+        drive: &Drive,
+        block_info: &BlockInfo,
+        contract: &DataContract,
+        counterparty_id: Identifier,
+        role: ContractModerationCounterpartyRole,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<ConsensusError>, Error>;
 }
 
 impl BatchTransitionContractModerationGateV0 for BatchTransition {
@@ -132,5 +145,42 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
             ConsensusValidationResult::new_with_data_and_errors(actions, errors)
         };
         Ok(Some(ContractModerationRefusal { refused, deletions }))
+    }
+
+    /// A barred identity is kept out of the contract's documents as a counterparty too: it can
+    /// be given nothing by transfer and sell nothing, or a ban would still let it collect
+    /// assets and proceeds on the contract. The read is billed to the batch. A lapsed
+    /// suspension of a counterparty is not swept here; the identity's own next transition
+    /// does that.
+    fn contract_moderation_counterparty_gate_v0(
+        drive: &Drive,
+        block_info: &BlockInfo,
+        contract: &DataContract,
+        counterparty_id: Identifier,
+        role: ContractModerationCounterpartyRole,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<ConsensusError>, Error> {
+        let Some(moderation) = contract.config().moderation() else {
+            return Ok(None);
+        };
+        let data_contract_id = contract.id();
+
+        let lists: Vec<ContractModerationList> = moderation.lists().collect();
+        let (fee, status) = drive.fetch_contract_moderation_status_with_fee(
+            data_contract_id,
+            counterparty_id,
+            &lists,
+            &block_info.epoch,
+            transaction,
+            platform_version,
+        )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+
+        Ok(status.is_barred_at(block_info.time_ms).then(|| {
+            ContractModerationCounterpartyBarredError::new(data_contract_id, counterparty_id, role)
+                .into()
+        }))
     }
 }

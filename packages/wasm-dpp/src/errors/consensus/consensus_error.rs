@@ -95,7 +95,8 @@ use dpp::consensus::basic::contract_moderation::{
 };
 use dpp::consensus::state::contract_moderation::{
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
-    ContractModerationTargetNotFoundError, ContractModeratorIdentityNotFoundError,
+    ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
+    ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError,
     ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
     ContractUserNotSuspendedError, ContractUserSuspendedError, IdentityNotContractModeratorError,
@@ -614,6 +615,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ContractModeratorIdentityNotFoundError(e) => {
             generic_consensus_error!(ContractModeratorIdentityNotFoundError, e).into()
+        }
+        StateError::ContractModerationCounterpartyBarredError(e) => {
+            generic_consensus_error!(ContractModerationCounterpartyBarredError, e).into()
         }
     }
 }

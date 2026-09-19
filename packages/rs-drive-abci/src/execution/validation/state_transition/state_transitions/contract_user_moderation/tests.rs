@@ -16,7 +16,7 @@ use dpp::dash_to_credits;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
     ContractModerationConfig, ContractModerationList, ContractModerationListStatus,
-    ContractModerationStatus, ContractModerators,
+    ContractModerationListStatuses, ContractModerationStatus, ContractModerators,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::random_document::{
@@ -24,6 +24,7 @@ use dpp::data_contract::document_type::random_document::{
 };
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
+use dpp::document::DocumentV0Setters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::{Bytes32, Identifier};
@@ -44,9 +45,11 @@ use dpp::state_transition::proof_result::{
 };
 use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
+use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::Transaction;
+use drive::util::storage_flags::StorageFlags;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use simple_signer::signer::SimpleSigner;
@@ -67,6 +70,7 @@ const CONTRACT_USER_BANNED: u32 = 41107;
 const CONTRACT_USER_SUSPENDED: u32 = 41108;
 const CONTRACT_MODERATION_TARGET_NOT_FOUND: u32 = 41109;
 const CONTRACT_MODERATOR_IDENTITY_NOT_FOUND: u32 = 41110;
+const CONTRACT_MODERATION_COUNTERPARTY_BARRED: u32 = 41114;
 
 const CRITICAL_KEY_ID: KeyID = 1;
 const DOCUMENT_TYPE: &str = "niceDocument";
@@ -407,7 +411,7 @@ impl Setup {
     fn assert_execution_proved(
         &self,
         transition: &StateTransition,
-    ) -> ContractModerationListStatus {
+    ) -> ContractModerationListStatuses {
         let platform_version = PlatformVersion::latest();
         let proof = self
             .platform
@@ -416,7 +420,10 @@ impl Setup {
             .expect("expected to prove the state transition")
             .into_data()
             .expect("expected proof bytes");
-        let known_contracts: BTreeMap<Identifier, DataContract> = BTreeMap::new();
+        // A ban's proof covers every list the contract keeps, which the verifier reads from
+        // the contract, as a client holding the contract does.
+        let known_contracts: BTreeMap<Identifier, DataContract> =
+            BTreeMap::from([(self.contract.id(), self.contract.clone())]);
         let (_, outcome) = Drive::verify_state_transition_was_executed_with_proof(
             transition,
             &BlockInfo::default(),
@@ -427,7 +434,7 @@ impl Setup {
         .expect("expected the proof to verify");
         match outcome {
             StateTransitionProofOutcome::AffectedState(
-                StateTransitionProofResult::VerifiedContractModerationListStatus(_, _, status),
+                StateTransitionProofResult::VerifiedContractModerationListStatuses(_, _, status),
             ) => status,
             other => panic!("expected a moderation status, got {other:?}"),
         }
@@ -458,6 +465,27 @@ fn assert_unpaid_with_code(execution: &StateTransitionExecutionResult, code: u32
     );
 }
 
+/// A moderation transition by `actor` on `contract_id`, signed with its CRITICAL key
+async fn moderation_by(
+    actor: &Actor,
+    contract_id: Identifier,
+    action: ContractUserModerationAction,
+) -> StateTransition {
+    ContractUserModerationTransition::try_from_identity_with_signer(
+        &actor.identity,
+        &CRITICAL_KEY_ID,
+        contract_id,
+        action,
+        actor.contract_nonce(),
+        0,
+        &actor.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the moderation transition")
+}
+
 fn ban_action(identity_id: Identifier) -> ContractUserModerationAction {
     ContractUserModerationAction::Ban { identity_id }
 }
@@ -486,9 +514,15 @@ async fn should_ban_a_user_refuse_its_documents_and_let_them_through_again_after
     let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
     assert_success(&setup.process(&ban, &transaction));
     setup.commit(transaction);
+    // A ban proves every list the contract keeps: banned, and no suspension left behind.
     assert_eq!(
         setup.assert_execution_proved(&ban),
-        ContractModerationListStatus::Banlist { banned: true }
+        ContractModerationListStatuses(vec![
+            ContractModerationListStatus::Banlist { banned: true },
+            ContractModerationListStatus::Suspensions {
+                suspended_until: None
+            },
+        ])
     );
 
     // The mempool refuses the banned user's documents, paid, before a block does.
@@ -511,7 +545,9 @@ async fn should_ban_a_user_refuse_its_documents_and_let_them_through_again_after
     setup.commit(transaction);
     assert_eq!(
         setup.assert_execution_proved(&unban),
-        ContractModerationListStatus::Banlist { banned: false }
+        ContractModerationListStatuses(vec![ContractModerationListStatus::Banlist {
+            banned: false
+        }])
     );
 }
 
@@ -529,9 +565,9 @@ async fn should_suspend_until_a_block_time_and_sweep_the_suspension_once_it_laps
     setup.commit(transaction);
     assert_eq!(
         setup.assert_execution_proved(&suspend),
-        ContractModerationListStatus::Suspensions {
+        ContractModerationListStatuses(vec![ContractModerationListStatus::Suspensions {
             suspended_until: Some(until)
-        }
+        }])
     );
 
     let refused = setup.create_document(&setup.user).await;
@@ -856,9 +892,9 @@ async fn should_prove_only_the_edited_list_and_leave_the_other_unknown() {
     // banned": the identity is banned in the very state the proof was made from.
     assert_eq!(
         setup.assert_execution_proved(&unsuspend),
-        ContractModerationListStatus::Suspensions {
+        ContractModerationListStatuses(vec![ContractModerationListStatus::Suspensions {
             suspended_until: None
-        }
+        }])
     );
     assert!(setup.status(user_id, None).banned);
 }
@@ -1132,4 +1168,208 @@ async fn should_let_a_barred_identity_delete_its_own_documents() {
     setup.commit(transaction);
     let delete = setup.delete_document(&setup.user, document).await;
     assert!(setup.check_tx(&delete).is_empty());
+}
+
+#[tokio::test]
+async fn should_prove_that_a_ban_removed_the_suspension() {
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let user_id = setup.user.id();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let suspend = setup
+        .moderate(
+            &setup.owner,
+            suspend_action(user_id, BLOCK_TIME_MS + 10_000),
+        )
+        .await;
+    assert_success(&setup.process(&suspend, &transaction));
+    let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
+    assert_success(&setup.process(&ban, &transaction));
+    setup.commit(transaction);
+
+    // The ban's proof covers both lists: it shows the ban and that the suspension is gone,
+    // the two things a ban does.
+    assert_eq!(
+        setup.assert_execution_proved(&ban),
+        ContractModerationListStatuses(vec![
+            ContractModerationListStatus::Banlist { banned: true },
+            ContractModerationListStatus::Suspensions {
+                suspended_until: None
+            },
+        ])
+    );
+}
+
+/// A moderated copy of the crypto card game, whose cards can be transferred and sold: the
+/// counterparty gate needs documents that move between identities.
+#[tokio::test]
+async fn should_keep_a_barred_identity_from_receiving_or_selling_documents() {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = TestPlatformBuilder::new()
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let owner = Actor::new(&mut platform, 21);
+    let seller = Actor::new(&mut platform, 22);
+    let buyer = Actor::new(&mut platform, 23);
+
+    let mut contract = json_document_to_contract(
+        "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase.json",
+        true,
+        platform_version,
+    )
+    .expect("expected the card game contract");
+    contract.set_owner_id(owner.id());
+    contract.set_config(contract.config().clone().with_moderation(Some(moderation(
+        true,
+        true,
+        owner.id(),
+    ))));
+    platform
+        .drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to apply the contract");
+    let card_type = contract
+        .document_type_for_name("card")
+        .expect("expected the card document type");
+    let mut rng = StdRng::seed_from_u64(7);
+    let process = |transition: &StateTransition, transaction: &Transaction| {
+        let state = platform.state.load();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![transition.serialize_to_bytes().expect("serialize")],
+                &state,
+                &BlockInfo {
+                    time_ms: BLOCK_TIME_MS,
+                    ..Default::default()
+                },
+                transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process the state transition");
+        result.execution_results()[0].clone()
+    };
+    // The seller mints a card.
+    let entropy = Bytes32::random_with_rng(&mut rng);
+    let mut card = card_type
+        .random_document_with_identifier_and_entropy(
+            &mut rng,
+            seller.id(),
+            entropy,
+            DocumentFieldFillType::DoNotFillIfNotRequired,
+            DocumentFieldFillSize::AnyDocumentFillSize,
+            platform_version,
+        )
+        .expect("expected a random card");
+    card.set("attack", 4.into());
+    card.set("defense", 7.into());
+    let create = BatchTransition::new_document_creation_transition_from_document(
+        card.clone(),
+        card_type,
+        entropy.0,
+        &seller.key,
+        seller.contract_nonce(),
+        0,
+        None,
+        &seller.signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected the card creation");
+    let transaction = platform.drive.grove.start_transaction();
+    assert_success(&process(&create, &transaction));
+
+    // A banned buyer receives nothing: the seller's transfer to it is refused, paid.
+    let ban_buyer = moderation_by(&owner, contract.id(), ban_action(buyer.id())).await;
+    assert_success(&process(&ban_buyer, &transaction));
+    card.set_revision(Some(2));
+    let transfer = BatchTransition::new_document_transfer_transition_from_document(
+        card.clone(),
+        card_type,
+        buyer.id(),
+        &seller.key,
+        seller.contract_nonce(),
+        0,
+        None,
+        &seller.signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected the transfer");
+    assert_paid_with_code(
+        &process(&transfer, &transaction),
+        CONTRACT_MODERATION_COUNTERPARTY_BARRED,
+    );
+
+    // Unbanned, the buyer may be sold to; but a banned seller sells nothing.
+    let unban_buyer = moderation_by(&owner, contract.id(), unban_action(buyer.id())).await;
+    assert_success(&process(&unban_buyer, &transaction));
+    let set_price = BatchTransition::new_document_update_price_transition_from_document(
+        card.clone(),
+        card_type,
+        dash_to_credits!(0.1),
+        &seller.key,
+        seller.contract_nonce(),
+        0,
+        None,
+        &seller.signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected the price update");
+    assert_success(&process(&set_price, &transaction));
+    let ban_seller = moderation_by(&owner, contract.id(), ban_action(seller.id())).await;
+    assert_success(&process(&ban_seller, &transaction));
+    card.set_revision(Some(3));
+    let purchase = BatchTransition::new_document_purchase_transition_from_document(
+        card.clone(),
+        card_type,
+        buyer.id(),
+        dash_to_credits!(0.1),
+        &buyer.key,
+        buyer.contract_nonce(),
+        0,
+        None,
+        &buyer.signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected the purchase");
+    assert_paid_with_code(
+        &process(&purchase, &transaction),
+        CONTRACT_MODERATION_COUNTERPARTY_BARRED,
+    );
+
+    // With nobody barred the same purchase goes through.
+    let unban_seller = moderation_by(&owner, contract.id(), unban_action(seller.id())).await;
+    assert_success(&process(&unban_seller, &transaction));
+    let purchase = BatchTransition::new_document_purchase_transition_from_document(
+        card,
+        card_type,
+        buyer.id(),
+        dash_to_credits!(0.1),
+        &buyer.key,
+        buyer.contract_nonce(),
+        0,
+        None,
+        &buyer.signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected the purchase");
+    assert_success(&process(&purchase, &transaction));
 }

@@ -95,10 +95,10 @@ impl DataContractUpdateStateTransitionStateValidationV1 for DataContractUpdateTr
             ));
         }
 
-        // Contract moderation: an identity the update names as a moderator must exist. What
-        // the moderation team earns is credited to each of its members, and crediting an
-        // identity that was never created is an internal error inside a block. Each lookup is
-        // billed; a miss is paid like the one above.
+        // Contract moderation: an identity the update names as a moderator must exist. One
+        // that does not can never sign a moderation, so naming it is a mistake, caught here
+        // once rather than in every feature that will read the set. Each lookup is billed; a
+        // miss is paid like the one above.
         for moderator_id in &added_moderators {
             if !validate_identity_exists(
                 platform.drive,

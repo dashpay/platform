@@ -278,20 +278,24 @@ mod tests {
         let id = vec![1; 32];
         for (request, needle) in [
             (
-                status_request(vec![1; 5], id.clone(), vec![0]),
+                status_request(vec![1; 5], id.clone(), vec![1]),
                 "contract_id",
             ),
             (
-                status_request(id.clone(), vec![1; 5], vec![0]),
+                status_request(id.clone(), vec![1; 5], vec![1]),
                 "identity_id",
             ),
             (
                 status_request(id.clone(), id.clone(), vec![]),
                 "at least one",
             ),
-            (status_request(id.clone(), id.clone(), vec![0, 0]), "twice"),
+            (status_request(id.clone(), id.clone(), vec![1, 1]), "twice"),
             (
                 status_request(id.clone(), id.clone(), vec![9]),
+                "not a moderation list",
+            ),
+            (
+                status_request(id.clone(), id.clone(), vec![0]),
                 "not a moderation list",
             ),
         ] {
@@ -309,7 +313,7 @@ mod tests {
     #[test]
     fn status_should_fail_without_proof_when_response_carries_none() {
         let err = status_error(
-            status_request(vec![1; 32], vec![2; 32], vec![0]),
+            status_request(vec![1; 32], vec![2; 32], vec![1]),
             status_response(None),
         );
         assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
@@ -318,7 +322,7 @@ mod tests {
     #[test]
     fn status_should_fail_on_a_proof_that_does_not_verify() {
         let err = status_error(
-            status_request(vec![1; 32], vec![2; 32], vec![0, 1]),
+            status_request(vec![1; 32], vec![2; 32], vec![1, 2]),
             status_response(Some(StatusResult::Proof(Proof::default()))),
         );
         assert!(
@@ -340,17 +344,21 @@ mod tests {
     fn entries_should_reject_malformed_requests() {
         let id = vec![1; 32];
         for (request, needle) in [
-            (entries_request(vec![1; 5], 0, None, None), "contract_id"),
+            (entries_request(vec![1; 5], 1, None, None), "contract_id"),
             (
                 entries_request(id.clone(), 9, None, None),
                 "not a moderation list",
             ),
             (
-                entries_request(id.clone(), 0, Some(vec![1; 5]), None),
+                entries_request(id.clone(), 0, None, None),
+                "not a moderation list",
+            ),
+            (
+                entries_request(id.clone(), 1, Some(vec![1; 5]), None),
                 "start_after",
             ),
             (
-                entries_request(id.clone(), 0, None, Some(70_000)),
+                entries_request(id.clone(), 1, None, Some(70_000)),
                 "out of bounds",
             ),
         ] {
@@ -368,7 +376,7 @@ mod tests {
     #[test]
     fn entries_should_fail_without_proof_when_response_carries_none() {
         let err = entries_error(
-            entries_request(vec![1; 32], 0, None, None),
+            entries_request(vec![1; 32], 1, None, None),
             entries_response(None),
         );
         assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
@@ -377,7 +385,7 @@ mod tests {
     #[test]
     fn entries_should_fail_on_a_proof_that_does_not_verify() {
         let err = entries_error(
-            entries_request(vec![1; 32], 1, Some(vec![2; 32]), Some(10)),
+            entries_request(vec![1; 32], 2, Some(vec![2; 32]), Some(10)),
             entries_response(Some(EntriesResult::Proof(Proof::default()))),
         );
         assert!(

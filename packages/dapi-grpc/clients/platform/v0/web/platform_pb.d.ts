@@ -14335,8 +14335,9 @@ export interface KeyPurposeMap {
 export const KeyPurpose: KeyPurposeMap;
 
 export interface ContractModerationListMap {
-  CONTRACT_MODERATION_LIST_BANLIST: 0;
-  CONTRACT_MODERATION_LIST_SUSPENSIONS: 1;
+  CONTRACT_MODERATION_LIST_UNSPECIFIED: 0;
+  CONTRACT_MODERATION_LIST_BANLIST: 1;
+  CONTRACT_MODERATION_LIST_SUSPENSIONS: 2;
 }
 
 export const ContractModerationList: ContractModerationListMap;

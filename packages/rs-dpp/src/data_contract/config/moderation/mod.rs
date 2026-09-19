@@ -31,8 +31,7 @@ pub enum ContractModerators {
     ContractOwner,
     /// The contract owner and a fixed set of identities moderate. Non-empty, at most
     /// `SystemLimits::max_contract_moderators`. The owner may be named in the set, and then
-    /// counts toward that limit; naming it changes nothing about who may moderate, only who
-    /// is on the team (see `ContractModerationConfig::team`).
+    /// counts toward that limit; naming it changes nothing about who may moderate.
     OwnerAndIdentities(BTreeSet<Identifier>),
 }
 
@@ -229,21 +228,11 @@ impl ContractModerationConfig {
         self.may_moderate(owner_id, identity_id)
     }
 
-    /// The moderation team: the identities the contract names, as written. The owner is on it
-    /// only when the set names it; a contract that names nobody (`ContractOwner`) has the owner
-    /// alone. This is who shares what the team earns, not who may moderate (`may_moderate`,
-    /// which the owner always passes).
-    pub fn team(&self, owner_id: &Identifier) -> BTreeSet<Identifier> {
-        match self.moderators.identity_ids() {
-            Some(ids) => ids.clone(),
-            None => BTreeSet::from([*owner_id]),
-        }
-    }
-
     /// The pure-data rules of the declaration: at least one list is kept, and a moderator set
     /// is non-empty and within `SystemLimits::max_contract_moderators` (a named owner counts).
     /// Whether the named identities exist is state validation, done by the contract create
-    /// and update transitions.
+    /// and update transitions: a moderator that does not exist can never sign, so naming one
+    /// is a mistake, caught where it is cheapest.
     pub fn validate(
         &self,
         platform_version: &PlatformVersion,
@@ -388,6 +377,56 @@ impl ContractModerationListStatus {
     }
 }
 
+/// One identity's status on the lists that were read, one entry per list, in the order read:
+/// what a status query answers for the lists it names, and what the proof of a moderation
+/// transition's execution shows. A list the query did not name is absent, not empty: an identity that is not
+/// suspended may still be banned when the banlist was not read. Query every list the contract
+/// keeps for the whole picture.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Encode, Decode, Serialize, Deserialize)]
+pub struct ContractModerationListStatuses(pub Vec<ContractModerationListStatus>);
+
+impl ContractModerationListStatuses {
+    /// The part of `status` that `lists` cover.
+    pub fn from_status(
+        lists: &[ContractModerationList],
+        status: &ContractModerationStatus,
+    ) -> Self {
+        Self(
+            lists
+                .iter()
+                .map(|list| ContractModerationListStatus::from_status(*list, status))
+                .collect(),
+        )
+    }
+
+    /// Whether the identity is banned, `None` when the banlist was not queried.
+    pub fn banned(&self) -> Option<bool> {
+        self.0.iter().find_map(|status| match status {
+            ContractModerationListStatus::Banlist { banned } => Some(*banned),
+            ContractModerationListStatus::Suspensions { .. } => None,
+        })
+    }
+
+    /// Until when the identity is suspended (`Some(None)`: not suspended), `None` when the
+    /// suspension list was not queried.
+    pub fn suspended_until(&self) -> Option<Option<TimestampMillis>> {
+        self.0.iter().find_map(|status| match status {
+            ContractModerationListStatus::Banlist { .. } => None,
+            ContractModerationListStatus::Suspensions { suspended_until } => Some(*suspended_until),
+        })
+    }
+
+    /// Whether one of the lists queried bars the identity at `block_time_ms`. `false` says
+    /// nothing about a list that was not queried.
+    pub fn is_barred_on_queried_lists_at(&self, block_time_ms: TimestampMillis) -> bool {
+        self.banned() == Some(true)
+            || self
+                .suspended_until()
+                .flatten()
+                .is_some_and(|until| until > block_time_ms)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -462,30 +501,6 @@ mod tests {
             .validate(platform_version)
             .expect("validate")
             .is_valid());
-    }
-
-    #[test]
-    fn should_name_the_team_as_the_set_is_written() {
-        let owner = Identifier::from([9; 32]);
-        let config = |moderators| ContractModerationConfig {
-            banlist: true,
-            suspensions: false,
-            moderators,
-        };
-        // The owner is named: it is on the team with the others.
-        assert_eq!(
-            config(ContractModerators::OwnerAndIdentities(set(&[9, 1]))).team(&owner),
-            set(&[1, 9])
-        );
-        // The owner is not named: it moderates, but is not on the team.
-        let unnamed = config(ContractModerators::OwnerAndIdentities(set(&[1, 2])));
-        assert_eq!(unnamed.team(&owner), set(&[1, 2]));
-        assert!(unnamed.may_moderate(&owner, &owner));
-        // Nobody is named: the owner alone.
-        assert_eq!(
-            config(ContractModerators::ContractOwner).team(&owner),
-            set(&[9])
-        );
     }
 
     #[test]

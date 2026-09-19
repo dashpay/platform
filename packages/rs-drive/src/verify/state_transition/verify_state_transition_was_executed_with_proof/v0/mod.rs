@@ -29,8 +29,9 @@ use dpp::state_transition::identity_create_from_addresses_transition::accessors:
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::config::moderation::{
-    ContractModerationList, ContractModerationListStatus,
+    ContractModerationList, ContractModerationListStatuses,
 };
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
@@ -55,7 +56,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractModerationListStatus, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1150,44 +1151,55 @@ impl Drive {
                 Ok((root_hash, VerifiedPartialIdentity(identity)))
             }
             StateTransition::ContractUserModeration(transition) => {
-                // The proof holds the edited list entry, present or absent, nothing more.
+                // The proof holds the entries of the lists the moderation touched, present or
+                // absent, and nothing more. A ban touched both lists the contract keeps (it
+                // removes a suspension too), so the contract's config says which to expect.
                 let contract_id = transition.data_contract_id();
                 let identity_id = transition.target_identity_id();
-                let list = match transition.action() {
-                    ContractUserModerationAction::Ban { .. }
-                    | ContractUserModerationAction::Unban { .. } => ContractModerationList::Banlist,
+                let lists = match transition.action() {
+                    ContractUserModerationAction::Ban { .. } => {
+                        let contract = known_contracts_provider_fn(&contract_id)?.ok_or(
+                            Error::Proof(ProofError::UnknownContract(format!(
+                                "unknown contract with id {} in contract moderation verification",
+                                contract_id
+                            ))),
+                        )?;
+                        contract
+                            .config()
+                            .moderation()
+                            .map(|moderation| moderation.lists().collect::<Vec<_>>())
+                            .unwrap_or_else(|| vec![ContractModerationList::Banlist])
+                    }
+                    ContractUserModerationAction::Unban { .. } => {
+                        vec![ContractModerationList::Banlist]
+                    }
                     ContractUserModerationAction::Suspend { .. }
                     | ContractUserModerationAction::Unsuspend { .. } => {
-                        ContractModerationList::Suspensions
+                        vec![ContractModerationList::Suspensions]
                     }
                 };
                 let (root_hash, status) = Drive::verify_contract_moderation_status(
                     proof,
                     contract_id,
                     identity_id,
-                    &[list],
+                    &lists,
                     platform_version,
                 )?;
-                // Only `list` was proved: the rest of `status` is unknown, not empty.
-                let list_status = ContractModerationListStatus::from_status(list, &status);
-                let as_expected = match (transition.action(), list_status) {
-                    (
-                        ContractUserModerationAction::Ban { .. },
-                        ContractModerationListStatus::Banlist { banned },
-                    ) => banned,
-                    (
-                        ContractUserModerationAction::Unban { .. },
-                        ContractModerationListStatus::Banlist { banned },
-                    ) => !banned,
-                    (
-                        ContractUserModerationAction::Suspend { until, .. },
-                        ContractModerationListStatus::Suspensions { suspended_until },
-                    ) => suspended_until == Some(until),
-                    (
-                        ContractUserModerationAction::Unsuspend { .. },
-                        ContractModerationListStatus::Suspensions { suspended_until },
-                    ) => suspended_until.is_none(),
-                    _ => false,
+                // Only `lists` were proved: the rest of `status` is unknown, not empty.
+                let statuses = ContractModerationListStatuses::from_status(&lists, &status);
+                let as_expected = match transition.action() {
+                    // Banned, and no suspension left behind on a contract that keeps them.
+                    ContractUserModerationAction::Ban { .. } => {
+                        statuses.banned() == Some(true)
+                            && statuses.suspended_until().flatten().is_none()
+                    }
+                    ContractUserModerationAction::Unban { .. } => statuses.banned() == Some(false),
+                    ContractUserModerationAction::Suspend { until, .. } => {
+                        statuses.suspended_until() == Some(Some(until))
+                    }
+                    ContractUserModerationAction::Unsuspend { .. } => {
+                        statuses.suspended_until() == Some(None)
+                    }
                 };
                 if !as_expected {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!(
@@ -1199,7 +1211,7 @@ impl Drive {
                 }
                 Ok((
                     root_hash,
-                    VerifiedContractModerationListStatus(contract_id, identity_id, list_status),
+                    VerifiedContractModerationListStatuses(contract_id, identity_id, statuses),
                 ))
             }
             StateTransition::IdentityKeyLimitsUpdate(transition) => {

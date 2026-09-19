@@ -7,10 +7,10 @@ use crate::Error;
 use dapi_grpc::platform::v0::get_contract_moderation_entries_response::ContractModerationEntry as ContractModerationEntryProto;
 use dapi_grpc::platform::v0::ContractModerationList as ContractModerationListProto;
 pub use dpp::data_contract::config::moderation::{
-    ContractModerationList, ContractModerationListStatus, ContractModerationStatus,
+    ContractModerationList, ContractModerationListStatus, ContractModerationListStatuses,
+    ContractModerationStatus,
 };
 use dpp::identifier::Identifier;
-use dpp::identity::TimestampMillis;
 use dpp::version::PlatformVersion;
 pub use drive::drive::contract::moderation::types::{
     ContractModerationEntriesQuery, ContractModerationEntry,
@@ -20,55 +20,6 @@ pub use drive::drive::contract::moderation::types::{
 /// returns: the platform version's `max_returned_elements`, the number the node reads too.
 pub fn default_contract_moderation_entries_limit(platform_version: &PlatformVersion) -> u16 {
     platform_version.drive_abci.query.max_returned_elements
-}
-
-/// One identity's status on the lists a status query named, one entry per list, in the order
-/// queried. A list the query did not name is absent, not empty: an identity that is not
-/// suspended may still be banned when the banlist was not read. Query every list the contract
-/// keeps for the whole picture.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ContractModerationListStatuses(pub Vec<ContractModerationListStatus>);
-
-impl ContractModerationListStatuses {
-    /// The part of `status` that `lists` cover.
-    pub fn from_status(
-        lists: &[ContractModerationList],
-        status: &ContractModerationStatus,
-    ) -> Self {
-        Self(
-            lists
-                .iter()
-                .map(|list| ContractModerationListStatus::from_status(*list, status))
-                .collect(),
-        )
-    }
-
-    /// Whether the identity is banned, `None` when the banlist was not queried.
-    pub fn banned(&self) -> Option<bool> {
-        self.0.iter().find_map(|status| match status {
-            ContractModerationListStatus::Banlist { banned } => Some(*banned),
-            ContractModerationListStatus::Suspensions { .. } => None,
-        })
-    }
-
-    /// Until when the identity is suspended (`Some(None)`: not suspended), `None` when the
-    /// suspension list was not queried.
-    pub fn suspended_until(&self) -> Option<Option<TimestampMillis>> {
-        self.0.iter().find_map(|status| match status {
-            ContractModerationListStatus::Banlist { .. } => None,
-            ContractModerationListStatus::Suspensions { suspended_until } => Some(*suspended_until),
-        })
-    }
-
-    /// Whether one of the lists queried bars the identity at `block_time_ms`. `false` says
-    /// nothing about a list that was not queried.
-    pub fn is_barred_on_queried_lists_at(&self, block_time_ms: TimestampMillis) -> bool {
-        self.banned() == Some(true)
-            || self
-                .suspended_until()
-                .flatten()
-                .is_some_and(|until| until > block_time_ms)
-    }
 }
 
 /// One page of a moderated contract's banlist or suspension list, in identity id order. A page
@@ -113,7 +64,8 @@ pub fn list_from_request(list: i32, what: &str) -> Result<ContractModerationList
     match ContractModerationListProto::try_from(list) {
         Ok(ContractModerationListProto::Banlist) => Ok(ContractModerationList::Banlist),
         Ok(ContractModerationListProto::Suspensions) => Ok(ContractModerationList::Suspensions),
-        Err(_) => Err(Error::RequestError {
+        // Zero is what a proto3 client sends when it leaves the field out: not a list.
+        Ok(ContractModerationListProto::Unspecified) | Err(_) => Err(Error::RequestError {
             error: format!("{what} {list} is not a moderation list"),
         }),
     }
@@ -258,7 +210,7 @@ mod tests {
     #[test]
     fn should_parse_the_lists_of_a_status_request() {
         assert_eq!(
-            lists_from_request(&[1, 0]).expect("expected lists"),
+            lists_from_request(&[2, 1]).expect("expected lists"),
             vec![
                 ContractModerationList::Suspensions,
                 ContractModerationList::Banlist
@@ -266,8 +218,9 @@ mod tests {
         );
         for (lists, needle) in [
             (&[][..], "at least one"),
-            (&[0, 0][..], "twice"),
-            (&[0, 9][..], "not a moderation list"),
+            (&[1, 1][..], "twice"),
+            (&[1, 9][..], "not a moderation list"),
+            (&[0][..], "not a moderation list"),
         ] {
             let err = lists_from_request(lists).unwrap_err();
             assert!(
@@ -281,7 +234,7 @@ mod tests {
     fn should_build_the_entries_query_of_a_request() {
         let platform_version = PlatformVersion::latest();
         assert_eq!(
-            entries_query_from_request(0, None, None, platform_version).expect("expected a query"),
+            entries_query_from_request(1, None, None, platform_version).expect("expected a query"),
             ContractModerationEntriesQuery {
                 list: ContractModerationList::Banlist,
                 start_after: None,
@@ -289,7 +242,7 @@ mod tests {
             }
         );
         assert_eq!(
-            entries_query_from_request(1, Some(id(3).as_slice()), Some(5), platform_version)
+            entries_query_from_request(2, Some(id(3).as_slice()), Some(5), platform_version)
                 .expect("expected a query"),
             ContractModerationEntriesQuery {
                 list: ContractModerationList::Suspensions,
@@ -299,8 +252,9 @@ mod tests {
         );
         for (list, start_after, limit, needle) in [
             (9, None, None, "not a moderation list"),
-            (0, Some(&[1u8; 5][..]), None, "start_after"),
-            (0, None, Some(u16::MAX as u32 + 1), "out of bounds"),
+            (0, None, None, "not a moderation list"),
+            (1, Some(&[1u8; 5][..]), None, "start_after"),
+            (1, None, Some(u16::MAX as u32 + 1), "out of bounds"),
         ] {
             let err =
                 entries_query_from_request(list, start_after, limit, platform_version).unwrap_err();

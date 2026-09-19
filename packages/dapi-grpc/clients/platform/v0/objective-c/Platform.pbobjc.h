@@ -382,11 +382,14 @@ typedef GPB_ENUM(ContractModerationList) {
    * of the field.
    **/
   ContractModerationList_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  /** Not a list: a request that leaves the field out is refused */
+  ContractModerationList_ContractModerationListUnspecified = 0,
+
   /** Identities barred until an unban */
-  ContractModerationList_ContractModerationListBanlist = 0,
+  ContractModerationList_ContractModerationListBanlist = 1,
 
   /** Identities barred until a block time */
-  ContractModerationList_ContractModerationListSuspensions = 1,
+  ContractModerationList_ContractModerationListSuspensions = 2,
 };
 
 GPBEnumDescriptor *ContractModerationList_EnumDescriptor(void);

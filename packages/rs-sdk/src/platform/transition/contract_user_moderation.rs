@@ -12,7 +12,7 @@
 //!     .await?;
 //! ```
 
-use dpp::data_contract::config::moderation::ContractModerationListStatus;
+use dpp::data_contract::config::moderation::ContractModerationListStatuses;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -31,18 +31,19 @@ use crate::{Error, Sdk};
 
 use super::waitable::Waitable;
 
-/// The target identity's entry on the list a moderation edited, as the proof of the moderation
-/// shows it. The proof holds that one entry: it says nothing about the contract's other list,
-/// so an identity shown as no longer suspended may still be banned. Fetch
+/// The target identity's status on the lists a moderation touched, as the proof of the
+/// moderation shows it. A ban proves every list the contract keeps (it removes a suspension
+/// too); an unban, a suspend and an unsuspend prove the one list they edit and say nothing
+/// about the other, so an identity shown as no longer suspended may still be banned. Fetch
 /// `ContractModerationListStatuses` over every list the contract keeps for the whole picture.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModeratedUserStatus {
     /// The moderated contract
     pub contract_id: Identifier,
     /// The moderated identity
     pub identity_id: Identifier,
-    /// Its status on the edited list after the moderation
-    pub status: ContractModerationListStatus,
+    /// Its status on the lists proved, after the moderation
+    pub status: ContractModerationListStatuses,
 }
 
 impl TryFrom<StateTransitionProofResult> for ModeratedUserStatus {
@@ -50,7 +51,7 @@ impl TryFrom<StateTransitionProofResult> for ModeratedUserStatus {
 
     fn try_from(value: StateTransitionProofResult) -> Result<Self, Self::Error> {
         match value {
-            StateTransitionProofResult::VerifiedContractModerationListStatus(
+            StateTransitionProofResult::VerifiedContractModerationListStatuses(
                 contract_id,
                 identity_id,
                 status,

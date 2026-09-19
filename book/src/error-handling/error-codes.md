@@ -117,7 +117,7 @@ The fee category currently has a single code. The 30000 range is reserved for fu
 | 40800-40804 | Groups | `IdentityNotMemberOfGroupError` (40800), `GroupActionAlreadyCompletedError` (40802) |
 | 40900-40904 | Shielded | `InvalidAnchorError` (40900), `NullifierAlreadySpentError` (40901), `InsufficientShieldedFeeError` (40904) |
 | 41000-41003 | Contract Groups | `ContractGroupAlreadyExistsError` (41000), `ContractGroupNotFoundError` (41001), `IdentityNotContractGroupOwnerOrAdminError` (41002), `ContractGroupAdminNotFoundError` (41003) |
-| 41100-41110 | Contract Moderation | `ContractModerationNotEnabledError` (41100), `IdentityNotContractModeratorError` (41101), `ContractUserBannedError` (41107), `ContractUserSuspendedError` (41108), `ContractModerationTargetNotFoundError` (41109), `ContractModeratorIdentityNotFoundError` (41110) |
+| 41100-41114 | Contract Moderation | `ContractModerationNotEnabledError` (41100), `IdentityNotContractModeratorError` (41101), `ContractUserBannedError` (41107), `ContractUserSuspendedError` (41108), `ContractModerationTargetNotFoundError` (41109), `ContractModeratorIdentityNotFoundError` (41110), `ContractModerationCounterpartyBarredError` (41114; 41111-41113 reserved) |
 
 Notice how the `DataTriggerError` sub-enum has its own `ErrorWithCode` implementation that the `StateError` delegates to:
 

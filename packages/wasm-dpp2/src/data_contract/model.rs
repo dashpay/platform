@@ -122,8 +122,8 @@ export interface DataContractConfig {
 
 /**
  * Who may ban and suspend identities on a moderated contract: the owner alone, or the owner
- * and a fixed set of identities (at most 16). The owner always may and need not be named;
- * naming it puts it on the moderation team and counts toward the 16.
+ * and a fixed set of identities (at most 16, each of which must exist). The owner always may
+ * and need not be named; naming it counts toward the 16.
  */
 export type ContractModerators =
   | { $type: "contractOwner" }

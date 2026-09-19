@@ -339,7 +339,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     suspended signer, its deletions excepted, and collect a lapsed
 ///     suspension, which
 ///     `documents_batch_transition` 1 (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4`)
-///     deletes when the batch executes. Token transitions are not gated.
+///     deletes when the batch executes; the same field gates the other
+///     party of a transfer or a purchase, so a barred identity neither
+///     receives nor sells a document. Token transitions are not gated.
 ///     `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2,
 ///     which creates the list trees (`[64, contract] / 3` and `/ 4`), and
 ///     adds the `moderation` method table; the verify and

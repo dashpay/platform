@@ -10,6 +10,7 @@ use crate::verify::state_transition::state_transition_execution_path_queries::Tr
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
@@ -247,22 +248,46 @@ impl Drive {
                 &st.identity_id().to_buffer(),
                 &platform_version.drive.grove_version,
             )?,
-            // Only the edited list entry: present after a ban or a suspend, absent after an
-            // unban or an unsuspend.
+            // The lists the moderation touched: a ban also removes a suspension, so it proves
+            // every list the contract keeps (the banlist entry present, the suspension absent);
+            // an unban, a suspend and an unsuspend prove the one entry they edit.
             StateTransition::ContractUserModeration(st) => {
-                let list = match st.action() {
-                    ContractUserModerationAction::Ban { .. }
-                    | ContractUserModerationAction::Unban { .. } => ContractModerationList::Banlist,
+                let contract_id = st.data_contract_id();
+                let lists = match st.action() {
+                    ContractUserModerationAction::Ban { .. } => {
+                        let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
+                            contract_id.to_buffer(),
+                            false,
+                            None,
+                            platform_version,
+                        )?
+                        else {
+                            return Err(Error::Proof(ProofError::UnknownContract(format!(
+                                "unknown contract with id {} in contract moderation proving",
+                                contract_id
+                            ))));
+                        };
+                        contract_fetch_info
+                            .contract
+                            .config()
+                            .moderation()
+                            .map(|moderation| moderation.lists().collect::<Vec<_>>())
+                            .unwrap_or_else(|| vec![ContractModerationList::Banlist])
+                    }
+                    ContractUserModerationAction::Unban { .. } => {
+                        vec![ContractModerationList::Banlist]
+                    }
                     ContractUserModerationAction::Suspend { .. }
                     | ContractUserModerationAction::Unsuspend { .. } => {
-                        ContractModerationList::Suspensions
+                        vec![ContractModerationList::Suspensions]
                     }
                 };
-                Drive::contract_moderation_entry_query(
-                    st.data_contract_id().to_buffer(),
-                    list,
+                Drive::contract_moderation_status_query(
+                    contract_id.to_buffer(),
                     st.target_identity_id().to_buffer(),
-                )
+                    &lists,
+                    &platform_version.drive.grove_version,
+                )?
             }
             // Only the rewritten key: the verifier compares that one key.
             StateTransition::IdentityKeyLimitsUpdate(st) => {

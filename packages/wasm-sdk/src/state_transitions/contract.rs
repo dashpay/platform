@@ -268,21 +268,22 @@ export interface ContractModerationOptions {
 }
 
 /**
- * The moderated identity's entry on the list the moderation edited, as its proof shows it.
- * The proof holds that one entry and says nothing about the contract's other list: after an
- * unsuspend `banned` is undefined (unknown), not false. Use `getContractModerationStatus` for
- * the identity's whole status.
+ * The moderated identity's status on the lists the moderation touched, as its proof shows it.
+ * A ban proves every list the contract keeps (it removes a suspension too); an unban, a
+ * suspend and an unsuspend prove the one list they edit and say nothing about the other, so
+ * after an unsuspend `banned` is undefined (unknown), not false. Use
+ * `getContractModerationStatus` for the identity's whole status.
  */
 export interface ContractModerationResult {
   contractId: Identifier;
   identityId: Identifier;
-  /** The list the moderation edited, the only one this result describes */
-  list: 'banlist' | 'suspensions';
-  /** Set when `list` is `banlist`: the identity is on the banlist */
+  /** The lists the proof covers, the only ones this result describes */
+  lists: ContractModerationListKind[];
+  /** Set when `lists` includes `banlist`: the identity is on the banlist */
   banned?: boolean;
   /**
-   * When `list` is `suspensions`: the block time, in milliseconds, until which the identity
-   * is suspended; undefined when it is not suspended
+   * When `lists` includes `suspensions`: the block time, in milliseconds, until which the
+   * identity is suspended; undefined when it is not suspended
    */
   suspendedUntil?: bigint;
 }
@@ -362,20 +363,24 @@ impl WasmSdk {
             "identityId",
             IdentifierWasm::from(status.identity_id).into(),
         )?;
-        // Only the edited list is proved, so only its field is set: the other one stays
+        // Only the lists proved are reported: a field for a list that was not proved stays
         // undefined (unknown) rather than reading as "not banned" or "not suspended".
-        match status.status {
-            ContractModerationListStatus::Banlist { banned } => {
-                set("list", "banlist".into())?;
-                set("banned", banned.into())?;
-            }
-            ContractModerationListStatus::Suspensions { suspended_until } => {
-                set("list", "suspensions".into())?;
-                if let Some(until) = suspended_until {
-                    set("suspendedUntil", js_sys::BigInt::from(until).into())?;
+        let lists = js_sys::Array::new();
+        for list_status in &status.status.0 {
+            match list_status {
+                ContractModerationListStatus::Banlist { banned } => {
+                    lists.push(&"banlist".into());
+                    set("banned", (*banned).into())?;
+                }
+                ContractModerationListStatus::Suspensions { suspended_until } => {
+                    lists.push(&"suspensions".into());
+                    if let Some(until) = suspended_until {
+                        set("suspendedUntil", js_sys::BigInt::from(*until).into())?;
+                    }
                 }
             }
         }
+        set("lists", lists.into())?;
         Ok(JsValue::from(result).into())
     }
 }

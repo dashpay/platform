@@ -4,6 +4,8 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
+use dpp::consensus::ConsensusError;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::prelude::ConsensusValidationResult;
@@ -47,6 +49,22 @@ pub(super) trait BatchTransitionContractModerationGate {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<ContractModerationRefusal<'a>>, Error>;
+
+    /// Gates the other party of a document transition: the recipient of a transfer or the
+    /// seller of a purchase. Returns the error to refuse the transition with when that identity
+    /// is banned or under a live suspension on the contract, `None` to carry on. Before
+    /// protocol version 14 nothing is read.
+    #[allow(clippy::too_many_arguments)]
+    fn contract_moderation_counterparty_gate(
+        drive: &Drive,
+        block_info: &BlockInfo,
+        contract: &DataContract,
+        counterparty_id: Identifier,
+        role: ContractModerationCounterpartyRole,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<ConsensusError>, Error>;
 }
 
 impl BatchTransitionContractModerationGate for BatchTransition {
@@ -82,6 +100,43 @@ impl BatchTransitionContractModerationGate for BatchTransition {
             ),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: contract_moderation_gate".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    fn contract_moderation_counterparty_gate(
+        drive: &Drive,
+        block_info: &BlockInfo,
+        contract: &DataContract,
+        counterparty_id: Identifier,
+        role: ContractModerationCounterpartyRole,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<ConsensusError>, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition
+            .contract_moderation_gate
+        {
+            None => Ok(None),
+            Some(0) => Self::contract_moderation_counterparty_gate_v0(
+                drive,
+                block_info,
+                contract,
+                counterparty_id,
+                role,
+                execution_context,
+                transaction,
+                platform_version,
+            ),
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "documents batch transition: contract_moderation_counterparty_gate"
+                    .to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

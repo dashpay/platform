@@ -455,6 +455,8 @@ impl ErrorWithCode for StateError {
             Self::ContractUserSuspendedError(_) => 41108,
             Self::ContractModerationTargetNotFoundError(_) => 41109,
             Self::ContractModeratorIdentityNotFoundError(_) => 41110,
+            // 41111 to 41113 are reserved for the moderation earnings follow-up.
+            Self::ContractModerationCounterpartyBarredError(_) => 41114,
         }
     }
 }
