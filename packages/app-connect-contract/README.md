@@ -13,12 +13,15 @@ It gives the two halves of a login one well-known contract id on every network:
   unique (the request id is public, so uniqueness would let anyone block the
   wallet's write); the app authenticates each candidate by decrypting it. The
   wallet keeps its response's document id locally and replaces it on re-login.
-- `appManifest`: published once by the owner of an app's data contract. Names
+- `appManifest`: published once by the owner of an app's data contract.
+  Consensus refuses it from anyone else (`appContractId` carries the owner
+  gate `propertyAgreement: { "$ownerId": "$ownerId" }`), and it is unique
+  per app contract, so a wallet fetches it by `appContractId` alone. Names
   the app, states the contract bounds its login key must carry, the session
-  lifetime and budget it asks for, and the encryption key bindings it needs,
-  packed as fixed 96-byte records in `encBindings`. Wallets look it up by
-  `($ownerId, appContractId)`, so only the contract's owner can publish the
-  manifest for it.
+  lifetime and budget it asks for (a default the wallet may raise or
+  lower), and the encryption keys the wallet should register on the
+  identity at login, packed as fixed 96-byte records in
+  `requestedEncryptionKeys`.
 
 Both document types are created by ordinary identities
 (`creationRestrictionMode: 0`), mutable and deletable. The contract activates
