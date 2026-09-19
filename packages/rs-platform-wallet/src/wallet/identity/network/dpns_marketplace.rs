@@ -26,6 +26,7 @@
 //! purchase/transfer; a name inside an active contested-name vote is not
 //! in the documents tree at all.
 
+use super::signing_key::available_signing_key;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
@@ -903,6 +904,7 @@ impl IdentityWallet {
     async fn select_dpns_signing_key(
         &self,
         identity_id: &Identifier,
+        signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
         let contract = self.dpns_contract().await?;
         let required_level = contract
@@ -925,21 +927,24 @@ impl IdentityWallet {
             .wallet_identity(&self.wallet_id, identity_id)
             .map(|m| m.identity.clone())
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        identity
-            .get_first_public_key_matching(
-                Purpose::AUTHENTICATION,
-                allowed_levels.iter().copied().collect(),
-                [KeyType::ECDSA_SECP256K1].into(),
-                false,
-            )
-            .cloned()
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "No ECDSA authentication key at a security level satisfying \
-                     {required_level} found on identity {identity_id} \
+        drop(wm);
+        available_signing_key(
+            &identity,
+            signer,
+            Purpose::AUTHENTICATION,
+            &allowed_levels,
+            &[KeyType::ECDSA_SECP256K1],
+            false,
+        )
+        .map_err(dash_sdk::Error::from)?
+        .cloned()
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "No ECDSA authentication key at a security level satisfying \
+                     {required_level} available to signer on identity {identity_id} \
                      (required to sign a DPNS domain state transition)"
-                ))
-            })
+            ))
+        })
     }
 
     // -----------------------------------------------------------------
@@ -1099,7 +1104,9 @@ impl IdentityWallet {
                 state.owner_id
             )));
         }
-        let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
+        let signing_key = self
+            .select_dpns_signing_key(owner_identity_id, signer)
+            .await?;
         let contract_id = dpns_contract_id();
         let confirmed = self
             .set_document_price_with_signer(
@@ -1151,7 +1158,9 @@ impl IdentityWallet {
                 document_id: state.document_id,
             });
         }
-        let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
+        let signing_key = self
+            .select_dpns_signing_key(owner_identity_id, signer)
+            .await?;
         let contract_id = dpns_contract_id();
         let confirmed = self
             .transfer_document_with_signer(
@@ -1212,7 +1221,9 @@ impl IdentityWallet {
                 state.owner_id
             )));
         }
-        let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
+        let signing_key = self
+            .select_dpns_signing_key(owner_identity_id, signer)
+            .await?;
         let contract_id = dpns_contract_id();
         let confirmed = self
             .transfer_document_with_signer(
@@ -1332,7 +1343,9 @@ impl IdentityWallet {
                 available,
             });
         }
-        let signing_key = self.select_dpns_signing_key(purchaser_identity_id).await?;
+        let signing_key = self
+            .select_dpns_signing_key(purchaser_identity_id, signer)
+            .await?;
         let contract_id = dpns_contract_id();
         let confirmed = self
             .purchase_document_with_signer(
@@ -2216,7 +2229,12 @@ fn required_purchase_credits(expected_price: Credits) -> Result<Credits, Platfor
 
 #[cfg(test)]
 mod tests {
+    use super::super::signing_key::tests::LockCheckingSigner;
     use super::*;
+    use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
+    use dpp::identity::accessors::IdentitySettersV0;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{Identity, SecurityLevel};
 
     fn name_state_entry(
         document_id: Identifier,
@@ -3833,6 +3851,47 @@ mod tests {
             Arc::new(MirrorPersister::hydrated(Vec::new())),
             sdk_answering_dpns_domain_query(DEPARTED_LABEL, documents).await,
         )
+    }
+
+    #[tokio::test]
+    async fn should_preserve_unavailable_signer_when_setting_dpns_price() {
+        let owner = Identifier::from([0xB2; 32]);
+        let wallet = wallet_seeing_listing(Identifier::from([0xB1; 32]), owner, None).await;
+        let mut identity =
+            Identity::default_versioned(dpp::version::PlatformVersion::latest()).unwrap();
+        identity.set_id(owner);
+        identity.add_public_key(
+            IdentityPublicKeyV0 {
+                id: 1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::CRITICAL,
+                key_type: KeyType::ECDSA_SECP256K1,
+                data: vec![1; 33].into(),
+                ..Default::default()
+            }
+            .into(),
+        );
+        wallet
+            .wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet.wallet_id)
+            .unwrap()
+            .identity_manager
+            .add_identity(identity, 0, wallet.wallet_id, &wallet.persister)
+            .unwrap();
+
+        let error = wallet
+            .set_dpns_name_price(&owner, DEPARTED_LABEL, 1000, &LockCheckingSigner(&wallet))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error,
+                PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(ref message)))
+                    if message.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+            ),
+            "expected signer-unavailable error, got {error:?}"
+        );
     }
 
     /// The purchase pre-flight's rejection ORDER, as a pure decision.

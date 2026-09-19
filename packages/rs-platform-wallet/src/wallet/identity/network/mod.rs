@@ -60,6 +60,7 @@ pub(crate) use payments::{
 mod profile;
 pub(crate) mod sdk_writer;
 mod seed_binding;
+mod signing_key;
 pub use seed_binding::SeedBindingVerification;
 
 // Token state-transition operations (same `IdentityWallet` impl blocks).

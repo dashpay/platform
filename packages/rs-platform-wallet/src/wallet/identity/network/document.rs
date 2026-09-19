@@ -26,6 +26,7 @@
 //!     stack-overflow avoidance `contract.rs` documents for the
 //!     post-broadcast GroveDB proof-verification recursion.
 
+use super::signing_key::{available_signing_key, signing_key_unavailable};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -275,17 +276,12 @@ impl IdentityWallet {
                 .identity(owner_identity_id)
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
-            identity
-                .get_first_public_key_matching(
-                    Purpose::AUTHENTICATION,
-                    allowed_levels.iter().copied().collect(),
-                    [KeyType::ECDSA_SECP256K1].into(),
-                    false,
-                )
+            drop(wm);
+            available_signing_key(&identity, signer, Purpose::AUTHENTICATION, &allowed_levels, &[KeyType::ECDSA_SECP256K1], false).map_err(dash_sdk::Error::from)?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "No ECDSA authentication key at a security level satisfying \
-                         {required_level} found on owner identity {owner_identity_id} \
+                         {required_level} available to signer on owner identity {owner_identity_id} \
                          (required to sign a {document_type_name} document state transition)"
                     ))
                 })?
@@ -415,6 +411,7 @@ impl IdentityWallet {
         &self,
         owner_identity_id: &Identifier,
         signing_key_id: u32,
+        signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -427,6 +424,7 @@ impl IdentityWallet {
             .identity(owner_identity_id)
             .map(|m| m.identity.clone())
             .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
+        drop(wm);
         let key = identity
             .get_public_key_by_id(signing_key_id)
             .ok_or_else(|| {
@@ -448,6 +446,9 @@ impl IdentityWallet {
                  but a document state transition must be signed with an ECDSA_SECP256K1 key",
                 key.key_type()
             )));
+        }
+        if !signer.can_sign_with(&key) {
+            return Err(dash_sdk::Error::from(signing_key_unavailable(&key)).into());
         }
         Ok(key)
     }
@@ -522,7 +523,7 @@ impl IdentityWallet {
         })?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(owner_identity_id, signing_key_id)
+            .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
             .await?;
 
         let builder = DocumentReplaceTransitionBuilder::new(
@@ -571,7 +572,7 @@ impl IdentityWallet {
             .await?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(owner_identity_id, signing_key_id)
+            .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
             .await?;
 
         // Delete is keyed by (document_id, owner_id); no current-document
@@ -635,7 +636,7 @@ impl IdentityWallet {
         })?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(owner_identity_id, signing_key_id)
+            .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
             .await?;
 
         let builder = DocumentTransferTransitionBuilder::new(
@@ -698,7 +699,7 @@ impl IdentityWallet {
         })?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(owner_identity_id, signing_key_id)
+            .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
             .await?;
 
         let builder = DocumentSetPriceTransitionBuilder::new(
@@ -764,7 +765,7 @@ impl IdentityWallet {
         })?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(purchaser_identity_id, signing_key_id)
+            .resolve_authentication_signing_key(purchaser_identity_id, signing_key_id, signer)
             .await?;
 
         let builder = DocumentPurchaseTransitionBuilder::new(
@@ -833,5 +834,36 @@ mod tests {
         // than the CRITICAL..=MASTER range (which would be empty).
         let levels = allowed_signing_security_levels(SecurityLevel::MASTER);
         assert_eq!(levels, vec![SecurityLevel::MASTER]);
+    }
+}
+
+#[cfg(test)]
+mod signing_tests {
+    use super::super::signing_key::tests::{wallet_with_signing_keys, LockCheckingSigner};
+    use super::*;
+
+    #[tokio::test]
+    async fn should_reject_unavailable_explicit_document_key_outside_wallet_lock() {
+        let wallet = wallet_with_signing_keys().await;
+        let signer = LockCheckingSigner(wallet.identity());
+        let error = wallet
+            .identity()
+            .resolve_authentication_signing_key(&Identifier::default(), 1, &signer)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(ref message)))
+                if message.starts_with(crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX)),
+            "{error:?}"
+        );
+        let missing = wallet
+            .identity()
+            .resolve_authentication_signing_key(&Identifier::default(), 99, &signer)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            missing,
+            PlatformWalletError::InvalidIdentityData(_)
+        ));
     }
 }
