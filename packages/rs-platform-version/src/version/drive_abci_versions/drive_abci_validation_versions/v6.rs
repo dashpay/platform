@@ -141,6 +141,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V6: DriveAbciValidationVersions =
                     },
                 },
                 is_allowed: 0,
+                identity_minimum_balance_pre_check: 0,
                 document_create_transition_structure_validation: 0,
                 document_delete_transition_structure_validation: 0,
                 document_index_only_delete_transition_structure_validation: 0,

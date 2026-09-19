@@ -255,6 +255,26 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     internal error, since no cycle can be computed from a zero step. Block
 ///     and time minimums are unchanged.
 ///
+/// 11. **Gas paid by the contract owner**: a token-paid document action's
+///     `gasFeesPaidBy` (offered by the document type's token cost, asked for by
+///     the transition's `$tokenPaymentInfo`) is acted on. Both values were
+///     carried but ignored up to v13, where the signer always paid. Batch
+///     transform v2 resolves one payer for the batch (`GasFeesPaidBy::resolve`)
+///     and reads the contract owner's balance into the action; batch advanced
+///     structure v1 refuses a request the document type does not offer
+///     (`GasFeesPaidByNotAllowedError`, 40129) or a batch naming two payers
+///     (`InconsistentGasFeesPaidByInBatchError`, 40130); `validate_fees_of_event`
+///     v1 judges the fee against the sponsor's balance, refusing an insisting
+///     batch unpaid when it falls short (`GasSponsorInsufficientBalanceError`,
+///     40222) and handing a preferring one back to the signer; `execute_event`
+///     v1 charges whoever was admitted. The batch's signer only funds the
+///     principal, and its minimum balance pre-check v1
+///     (`identity_minimum_balance_pre_check`) asks no more of a batch that
+///     requests sponsorship. A failed batch is never sponsored, so check tx
+///     validates the state of a sponsored batch whose signer is under the fee
+///     minimum in full, on the first check and on every recheck (mempool
+///     policy, not consensus).
+///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
 ///   `is_allowed`, and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` is the first

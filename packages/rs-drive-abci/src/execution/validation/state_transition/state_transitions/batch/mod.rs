@@ -129,7 +129,7 @@ impl StateTransitionSignerAwareActionTransformer for BatchTransition {
                 &platform.into(),
                 block_info,
                 signer_identity,
-                validation_mode,
+                validation_mode.should_validate_batch_valid_against_state(),
                 execution_context,
                 tx,
             ),
@@ -138,6 +138,66 @@ impl StateTransitionSignerAwareActionTransformer for BatchTransition {
                 known_versions: vec![0, 1, 2],
                 received: version,
             })),
+        }
+    }
+}
+
+/// Check tx only: transforms the batch validating it against the state, as a block would,
+/// whatever the validation mode says. The mode names where validation runs, and check tx leaves
+/// the state checks of the transformer to the block; check tx asks for them here for a batch
+/// whose signer relies on a gas sponsor (`relies_on_gas_sponsor_to_pay`), because nobody could
+/// be charged for its failure in a block.
+pub(in crate::execution::validation::state_transition) trait BatchTransitionCheckTxStateValidatingTransformer
+{
+    /// Gas sponsorship starts with transformer v2, so earlier versions have no such batch and
+    /// transform as the mode says.
+    fn transform_into_action_validating_against_state_for_check_tx<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        signer_identity: Option<&PartialIdentity>,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+}
+
+impl BatchTransitionCheckTxStateValidatingTransformer for BatchTransition {
+    fn transform_into_action_validating_against_state_for_check_tx<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        signer_identity: Option<&PartialIdentity>,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let platform_version = platform.state.current_platform_version()?;
+
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition
+            .transform_into_action
+        {
+            2 => self.transform_into_action_v2(
+                &platform.into(),
+                block_info,
+                signer_identity,
+                true,
+                execution_context,
+                tx,
+            ),
+            _ => self.transform_into_action_for_signer(
+                platform,
+                block_info,
+                &None,
+                signer_identity,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
         }
     }
 }

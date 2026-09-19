@@ -344,6 +344,8 @@ impl ErrorWithCode for StateError {
             Self::ReferencedDocumentPropertyAgreementInvalidError(_) => 40126,
             Self::ReferencedDocumentPropertyMismatchError(_) => 40127,
             Self::DocumentImmutablePropertyChangedError(_) => 40128,
+            Self::GasFeesPaidByNotAllowedError(_) => 40129,
+            Self::InconsistentGasFeesPaidByInBatchError(_) => 40130,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -367,6 +369,7 @@ impl ErrorWithCode for StateError {
             Self::IdentityPublicKeyAlreadyExpiredError(_) => 40219,
             Self::IdentityPublicKeyLimitNotSetError(_) => 40220,
             Self::IdentityPublicKeyLimitNotRaisedError(_) => 40221,
+            Self::GasSponsorInsufficientBalanceError(_) => 40222,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,

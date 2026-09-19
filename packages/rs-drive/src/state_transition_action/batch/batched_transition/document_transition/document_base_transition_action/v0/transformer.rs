@@ -105,6 +105,12 @@ impl DocumentBaseTransitionActionV0 {
             .as_ref()
             .map(|token_payment_info| token_payment_info.gas_fees_paid_by())
             .unwrap_or(GasFeesPaidBy::DocumentOwner);
+        // Both sides of the gas question travel on the action; from protocol version 14 the
+        // batch's advanced structure validation refuses a request the offer does not cover and
+        // the execution event charges whoever `GasFeesPaidBy::resolve` names.
+        let contract_gas_fees_paid_by = document_action_token_cost
+            .map(|cost| cost.gas_fees_paid_by)
+            .unwrap_or(GasFeesPaidBy::DocumentOwner);
         Ok(DocumentBaseTransitionActionV0 {
             id: value.id(),
             identity_contract_nonce: value.identity_contract_nonce(),
@@ -112,6 +118,7 @@ impl DocumentBaseTransitionActionV0 {
             data_contract,
             token_cost,
             gas_fees_paid_by,
+            contract_gas_fees_paid_by,
         }
         .into())
     }
