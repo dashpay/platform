@@ -323,8 +323,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     admits config V2 (`max_version: 2`, the default stays 1), which carries
 ///     the declaration; a contract create or update carrying a V2 config is
 ///     inactive before this version (`StateTransition::active_version_range`).
-///     `DPP_VALIDATION_VERSIONS_V5.validate_config_update = 2` lets an update
-///     turn a list on and change the moderators, never turn a list off.
+///     `DPP_VALIDATION_VERSIONS_V5.validate_config_update = 2` fixes the lists
+///     a contract keeps at its creation: an update turns none on and none off,
+///     and may only change the moderators.
 ///     `ContractUserModeration` (state transition type 24, gated by
 ///     `CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION`) bans, unbans,
 ///     suspends until a block time (at most
@@ -335,12 +336,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     update state validation (already 1 here) checks the named moderators.
 ///     `batch_state_transition.contract_moderation_gate = Some(0)` makes the
 ///     batch transformer refuse, paid, the document transitions of a banned or
-///     suspended signer and collect a lapsed suspension, which
+///     suspended signer, its deletions excepted, and collect a lapsed
+///     suspension, which
 ///     `documents_batch_transition` 1 (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4`)
 ///     deletes when the batch executes. Token transitions are not gated.
-///     `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2 and
-///     has `update_contract` 2 create the list trees (`[64, contract] / 3`
-///     and `/ 4`) and adds the `moderation` method table; the verify and
+///     `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2,
+///     which creates the list trees (`[64, contract] / 3` and `/ 4`), and
+///     adds the `moderation` method table; the verify and
 ///     query tables gain the status and entries methods.
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:

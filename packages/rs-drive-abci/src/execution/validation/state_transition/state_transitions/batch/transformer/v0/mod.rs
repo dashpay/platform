@@ -24,7 +24,8 @@
 
 mod contract_moderation_gate;
 
-use contract_moderation_gate::BatchTransitionContractModerationGate;
+use contract_moderation_gate::{BatchTransitionContractModerationGate, ContractModerationRefusal};
+use std::borrow::Cow;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -446,10 +447,10 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         };
 
         // Contract moderation (protocol version 14): a moderated contract refuses the document
-        // transitions of a banned or suspended signer. The gate is its own versioned helper,
+        // transitions of a banned or suspended signer, its deletions excepted. The gate is its own versioned helper,
         // selected by `batch_state_transition.contract_moderation_gate`, so that this shared
         // transformer does for earlier protocol versions exactly what it did before.
-        if let Some(refusal) = Self::contract_moderation_gate(
+        let refusal = Self::contract_moderation_gate(
             drive,
             block_info,
             &data_contract_fetch_info.contract,
@@ -459,11 +460,19 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             execution_context,
             transaction,
             platform_version,
-        )? {
-            return Ok(refusal);
-        }
+        )?;
+        // A barred signer keeps its deletions: only they carry on, next to the refusal.
+        let (refused, document_transitions) = match refusal {
+            Some(ContractModerationRefusal { refused, deletions }) => {
+                if deletions.is_empty() {
+                    return Ok(refused);
+                }
+                (Some(refused), Cow::Owned(deletions))
+            }
+            None => (None, Cow::Borrowed(document_transitions)),
+        };
 
-        let validation_result = document_transitions
+        let mut validation_result = document_transitions
             .iter()
             .map(|(document_type_name, document_transitions)| {
                 Self::transform_document_transitions_within_document_type_v0(
@@ -482,6 +491,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             })
             .collect::<Result<Vec<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error>>(
             )?;
+        validation_result.extend(refused);
         Ok(ConsensusValidationResult::flatten(
             validation_result,
             platform_version,

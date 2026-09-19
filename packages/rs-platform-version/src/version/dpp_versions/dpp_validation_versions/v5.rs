@@ -14,9 +14,9 @@ use super::v4::DPP_VALIDATION_VERSIONS_V4;
 /// depended on where the changed index's name sorted relative to the
 /// document type's other indexes.
 ///
-/// `validate_config_update` 2 admits the contract moderation declaration of config V2: a
-/// moderation list may be turned on by an update and its moderators changed, but a list
-/// that is on can never be turned off.
+/// `validate_config_update` 2 admits the contract moderation declaration of config V2: the
+/// lists a contract keeps are fixed when it is created (an update turns none on and none
+/// off); only its moderators may change.
 pub const DPP_VALIDATION_VERSIONS_V5: DPPValidationVersions = DPPValidationVersions {
     // Once-per-identity token distributions: version 1 distribution rules and claims of
     // distribution type 2 exist from this protocol version on.

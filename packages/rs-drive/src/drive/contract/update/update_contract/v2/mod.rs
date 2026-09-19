@@ -6,7 +6,6 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
@@ -218,8 +217,9 @@ impl Drive {
     /// identity `insert_contract` credits at registration. v1 left such a
     /// token at a total supply of zero with nobody holding any of it.
     ///
-    /// An update whose config declares a moderation list the stored contract does not keep yet
-    /// also creates that list's tree.
+    /// The moderation list trees need nothing here: which lists a contract keeps is fixed when
+    /// it is created (`DataContractConfig::validate_update` v2), so `insert_contract` made
+    /// them and an update leaves them, and their entries, alone.
     #[allow(clippy::too_many_arguments)]
     fn update_contract_operations_v2(
         &self,
@@ -233,8 +233,6 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let storage_flags = StorageFlags::map_some_element_flags_ref(contract_element.get_flags())?;
-
         let mut batch_operations: Vec<LowLevelDriveOperation> = self
             .update_contract_operations_v1(
                 contract_element,
@@ -326,20 +324,6 @@ impl Drive {
                     platform_version,
                 )?;
             }
-        }
-
-        if let Some(moderation) = contract.config().moderation() {
-            // The list trees already on disk are kept (the insert is `if not exists`); only a
-            // list the update turns on gets a new tree.
-            self.insert_contract_moderation_trees_operations(
-                contract.id().to_buffer(),
-                moderation,
-                storage_flags.as_ref(),
-                estimated_costs_only_with_layer_info,
-                transaction,
-                &mut batch_operations,
-                platform_version,
-            )?;
         }
 
         Ok(batch_operations)

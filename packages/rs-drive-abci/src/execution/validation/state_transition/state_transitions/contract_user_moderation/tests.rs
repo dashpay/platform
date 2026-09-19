@@ -23,6 +23,7 @@ use dpp::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
 };
 use dpp::data_contract::DataContract;
+use dpp::document::Document;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::{Bytes32, Identifier};
@@ -130,6 +131,8 @@ struct Setup {
 /// Stands for `Setup::moderator` in a config handed to `Setup::new`, which is built before the
 /// actors exist. `Setup` swaps it for the real identity: a named moderator must exist.
 const THE_MODERATOR: Identifier = Identifier::new([7; 32]);
+/// Stands for `Setup::owner` in the same way.
+const THE_OWNER: Identifier = Identifier::new([8; 32]);
 
 fn moderation(banlist: bool, suspensions: bool, moderator: Identifier) -> ContractModerationConfig {
     ContractModerationConfig {
@@ -168,6 +171,9 @@ impl Setup {
             if let ContractModerators::OwnerAndIdentities(ids) = &mut moderation.moderators {
                 if ids.remove(&THE_MODERATOR) {
                     ids.insert(moderator.id());
+                }
+                if ids.remove(&THE_OWNER) {
+                    ids.insert(owner.id());
                 }
             }
             moderation
@@ -252,6 +258,11 @@ impl Setup {
 
     /// A document creation by `actor` on the contract
     async fn create_document(&self, actor: &Actor) -> StateTransition {
+        self.create_document_keeping_it(actor).await.1
+    }
+
+    /// A document creation by `actor` on the contract, and the document it creates
+    async fn create_document_keeping_it(&self, actor: &Actor) -> (Document, StateTransition) {
         let platform_version = PlatformVersion::latest();
         let document_type = self
             .contract
@@ -273,8 +284,8 @@ impl Setup {
                 .expect("expected a random document");
             (entropy, document)
         };
-        BatchTransition::new_document_creation_transition_from_document(
-            document,
+        let transition = BatchTransition::new_document_creation_transition_from_document(
+            document.clone(),
             document_type,
             entropy.0,
             &actor.key,
@@ -286,7 +297,29 @@ impl Setup {
             None,
         )
         .await
-        .expect("expected to build the document creation")
+        .expect("expected to build the document creation");
+        (document, transition)
+    }
+
+    /// The deletion of `document` by `actor`, its owner
+    async fn delete_document(&self, actor: &Actor, document: Document) -> StateTransition {
+        let document_type = self
+            .contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("expected the document type");
+        BatchTransition::new_document_deletion_transition_from_document(
+            document,
+            document_type,
+            &actor.key,
+            actor.contract_nonce(),
+            0,
+            None,
+            &actor.signer,
+            PlatformVersion::latest(),
+            None,
+        )
+        .await
+        .expect("expected to build the document deletion")
     }
 
     fn process_at(
@@ -669,10 +702,24 @@ async fn should_refuse_actions_that_do_not_fit_the_targets_status() {
 }
 
 #[tokio::test]
-async fn should_enable_moderation_by_a_contract_update_and_never_turn_a_list_off() {
-    let mut setup = Setup::new(None).await;
-    let user_id = setup.user.id();
+async fn should_fix_the_lists_a_contract_keeps_when_it_is_created() {
+    let config_update_refused = |execution: StateTransitionExecutionResult, what: &str| {
+        assert!(
+            matches!(
+                &execution,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::DataContractConfigUpdateError(_)),
+                    ..
+                }
+            ),
+            "expected {what} to be refused, got {execution:?}"
+        );
+    };
 
+    // An unmoderated contract stays unmoderated: whoever wrote documents under it was never
+    // told they could be barred from it.
+    let setup = Setup::new(None).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
     let mut moderated = setup.contract.clone();
     moderated.set_version(2);
     moderated.set_config(moderated.config().clone().with_moderation(Some(moderation(
@@ -680,35 +727,33 @@ async fn should_enable_moderation_by_a_contract_update_and_never_turn_a_list_off
         true,
         setup.moderator.id(),
     ))));
-    let transaction = setup.platform.drive.grove.start_transaction();
-    let update = setup.contract_update(moderated.clone()).await;
-    assert_success(&setup.process(&update, &transaction));
-    setup.contract = moderated;
-
-    let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
-    assert_success(&setup.process(&ban, &transaction));
-    let refused = setup.create_document(&setup.user).await;
-    assert_paid_with_code(&setup.process(&refused, &transaction), CONTRACT_USER_BANNED);
-
-    let mut narrowed = setup.contract.clone();
-    narrowed.set_version(3);
-    narrowed.set_config(narrowed.config().clone().with_moderation(Some(moderation(
-        true,
-        false,
-        setup.moderator.id(),
-    ))));
-    let update = setup.contract_update(narrowed).await;
-    let execution = setup.process(&update, &transaction);
-    assert!(
-        matches!(
-            &execution,
-            StateTransitionExecutionResult::PaidConsensusError {
-                error: ConsensusError::StateError(StateError::DataContractConfigUpdateError(_)),
-                ..
-            }
-        ),
-        "expected the list to stay on, got {execution:?}"
+    let update = setup.contract_update(moderated).await;
+    config_update_refused(
+        setup.process(&update, &transaction),
+        "moderation enabled by an update",
     );
+    // Nothing was switched on: the user's documents still go through.
+    let allowed = setup.create_document(&setup.user).await;
+    assert_success(&setup.process(&allowed, &transaction));
+    drop(transaction);
+
+    // A contract that keeps one list can neither add the other nor drop the one it has.
+    let setup = Setup::new(Some(moderation(true, false, THE_MODERATOR))).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    for (banlist, suspensions, what) in [
+        (true, true, "a second list turned on"),
+        (false, true, "the banlist swapped for a suspension list"),
+    ] {
+        let mut changed = setup.contract.clone();
+        changed.set_version(2);
+        changed.set_config(changed.config().clone().with_moderation(Some(moderation(
+            banlist,
+            suspensions,
+            setup.moderator.id(),
+        ))));
+        let update = setup.contract_update(changed).await;
+        config_update_refused(setup.process(&update, &transaction), what);
+    }
 }
 
 #[tokio::test]
@@ -958,27 +1003,21 @@ async fn should_accept_an_update_that_keeps_the_existing_moderators() {
 
 #[tokio::test]
 async fn should_accept_the_owner_named_among_the_moderators() {
-    let mut setup = Setup::new(None).await;
-    let transaction = setup.platform.drive.grove.start_transaction();
-    let owner_id = setup.owner.id();
-    let user_id = setup.user.id();
-    let named = ContractModerationConfig {
+    let setup = Setup::new(Some(ContractModerationConfig {
         banlist: true,
         suspensions: true,
         moderators: ContractModerators::OwnerAndIdentities(
-            [owner_id, setup.moderator.id()].into_iter().collect(),
+            [THE_OWNER, THE_MODERATOR].into_iter().collect(),
         ),
-    };
-
-    let mut moderated = setup.contract.clone();
-    moderated.set_version(2);
-    moderated.set_config(moderated.config().clone().with_moderation(Some(named)));
-    let update = setup.contract_update(moderated.clone()).await;
-    assert_success(&setup.process(&update, &transaction));
-    setup.contract = moderated;
+    }))
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let owner_id = setup.owner.id();
 
     // Naming the owner changes nothing about its authority or its protection.
-    let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
+    let ban = setup
+        .moderate(&setup.owner, ban_action(setup.user.id()))
+        .await;
     assert_success(&setup.process(&ban, &transaction));
     let ban_owner = setup.moderate(&setup.moderator, ban_action(owner_id)).await;
     assert_paid_with_code(
@@ -1044,4 +1083,53 @@ async fn should_refuse_a_contract_that_does_not_exist_and_charge_for_it() {
         &setup.process(&ban, &transaction),
         DATA_CONTRACT_NOT_PRESENT,
     );
+}
+
+#[tokio::test]
+async fn should_let_a_barred_identity_delete_its_own_documents() {
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let user_id = setup.user.id();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (banned_with, create) = setup.create_document_keeping_it(&setup.user).await;
+    assert_success(&setup.process(&create, &transaction));
+    let (suspended_with, create) = setup.create_document_keeping_it(&setup.user).await;
+    assert_success(&setup.process(&create, &transaction));
+
+    // Suspended: nothing new, but what it wrote can come down.
+    let suspend = setup
+        .moderate(
+            &setup.owner,
+            suspend_action(user_id, BLOCK_TIME_MS + 10_000),
+        )
+        .await;
+    assert_success(&setup.process(&suspend, &transaction));
+    let refused = setup.create_document(&setup.user).await;
+    assert_paid_with_code(
+        &setup.process(&refused, &transaction),
+        CONTRACT_USER_SUSPENDED,
+    );
+    let delete = setup.delete_document(&setup.user, suspended_with).await;
+    assert_success(&setup.process(&delete, &transaction));
+
+    // Banned: the same.
+    let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
+    assert_success(&setup.process(&ban, &transaction));
+    let refused = setup.create_document(&setup.user).await;
+    assert_paid_with_code(&setup.process(&refused, &transaction), CONTRACT_USER_BANNED);
+    let delete = setup.delete_document(&setup.user, banned_with).await;
+    assert_success(&setup.process(&delete, &transaction));
+    setup.commit(transaction);
+
+    // And the mempool lets the deletion of a banned identity through as a block does.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let unban = setup.moderate(&setup.owner, unban_action(user_id)).await;
+    assert_success(&setup.process(&unban, &transaction));
+    let (document, create) = setup.create_document_keeping_it(&setup.user).await;
+    assert_success(&setup.process(&create, &transaction));
+    let ban = setup.moderate(&setup.owner, ban_action(user_id)).await;
+    assert_success(&setup.process(&ban, &transaction));
+    setup.commit(transaction);
+    let delete = setup.delete_document(&setup.user, document).await;
+    assert!(setup.check_tx(&delete).is_empty());
 }

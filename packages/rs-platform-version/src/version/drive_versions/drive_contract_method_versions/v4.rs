@@ -26,10 +26,10 @@ use crate::version::drive_versions::drive_contract_method_versions::{
 ///   supply at that amount. v1 left such a token at a total supply of zero with nobody
 ///   holding any of it. Nothing is minted retroactively for a token added by an update
 ///   before this version.
-/// * `insert.insert_contract` is bumped to `2`, and the v2 contract update does the same for
-///   an update: a contract whose config declares moderation gets its banlist (`[64, id] / 3`)
-///   and suspension list (`[64, id] / 4`) trees created at insertion, or by the update that
-///   turns a list on.
+/// * `insert.insert_contract` is bumped to `2`: a contract whose config declares moderation
+///   gets its banlist (`[64, id] / 3`) and suspension list (`[64, id] / 4`) trees created at
+///   insertion. Which lists a contract keeps never changes afterwards, so a contract update
+///   creates none.
 /// * The `moderation` table is new: the ban and suspension entry writers, readers and provers.
 pub const DRIVE_CONTRACT_METHOD_VERSIONS_V4: DriveContractMethodVersions =
     DriveContractMethodVersions {

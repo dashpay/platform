@@ -159,18 +159,27 @@ fn should_create_the_list_trees_only_when_the_config_declares_them() {
 }
 
 #[test]
-fn should_add_a_list_tree_when_a_contract_update_turns_the_list_on() {
+fn should_keep_the_list_trees_and_their_entries_across_a_contract_update() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
     let contract = moderated_contract(true, false);
     insert(&drive, &contract, platform_version);
-    assert!(!has_list_tree(
-        &drive,
-        contract.id(),
-        CONTRACT_SUSPENSIONS_KEY
-    ));
+    let target = identity(0x41);
+    drive
+        .add_contract_ban(
+            contract.id(),
+            target,
+            contract.owner_id(),
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to ban");
 
+    // Which lists a contract keeps is fixed at creation, so an update only ever changes the
+    // moderators. It leaves the trees and what they hold alone, and creates none.
     let mut updated = contract.clone();
     updated.set_version(contract.version() + 1);
     updated.set_config(
@@ -179,8 +188,10 @@ fn should_add_a_list_tree_when_a_contract_update_turns_the_list_on() {
             .clone()
             .with_moderation(Some(ContractModerationConfig {
                 banlist: true,
-                suspensions: true,
-                moderators: ContractModerators::ContractOwner,
+                suspensions: false,
+                moderators: ContractModerators::OwnerAndIdentities(
+                    [identity(0x42)].into_iter().collect(),
+                ),
             })),
     );
     drive
@@ -193,12 +204,23 @@ fn should_add_a_list_tree_when_a_contract_update_turns_the_list_on() {
             None,
         )
         .expect("expected to update the contract");
+
     assert!(has_list_tree(&drive, contract.id(), CONTRACT_BANLIST_KEY));
-    assert!(has_list_tree(
+    assert!(!has_list_tree(
         &drive,
         contract.id(),
         CONTRACT_SUSPENSIONS_KEY
     ));
+    assert_status(
+        &drive,
+        contract.id(),
+        target,
+        &[ContractModerationList::Banlist],
+        ContractModerationStatus {
+            banned: true,
+            suspended_until: None,
+        },
+    );
 }
 
 #[test]

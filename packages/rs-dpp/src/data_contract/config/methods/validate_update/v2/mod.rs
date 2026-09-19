@@ -6,9 +6,12 @@ use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
 impl DataContractConfig {
-    /// Generation 2 (protocol version 14): generation 1 plus the contract moderation rules. A
-    /// moderation list may be turned on by an update, and the moderators may change, but a
-    /// list that is on can never be turned off: its tree may hold entries.
+    /// Generation 2 (protocol version 14): generation 1 plus the contract moderation rules.
+    /// Which lists a contract keeps is decided when it is created and never changes: an update
+    /// can not make an unmoderated contract moderated, turn a second list on, or turn a list
+    /// off. Whoever writes documents under a contract knows, from its first version, whether
+    /// and how they can be barred from it, and a list that is on may hold entries. Only the
+    /// moderators may change.
     #[inline(always)]
     pub(super) fn validate_update_v2(
         &self,
@@ -21,36 +24,33 @@ impl DataContractConfig {
             return v1_result;
         }
 
-        let Some(old_moderation) = self.moderation() else {
-            return SimpleConsensusValidationResult::new();
+        let lists = |config: &DataContractConfig| {
+            config
+                .moderation()
+                .map(|moderation| (moderation.banlist, moderation.suspensions))
+                .unwrap_or((false, false))
+        };
+        let (old_banlist, old_suspensions) = lists(self);
+        let (new_banlist, new_suspensions) = lists(new_config);
+
+        let refusal = if old_banlist && !new_banlist {
+            Some("contract can not turn off its banlist once it keeps one")
+        } else if old_suspensions && !new_suspensions {
+            Some("contract can not turn off its suspension list once it keeps one")
+        } else if !old_banlist && new_banlist {
+            Some("contract can not start keeping a banlist after it is created")
+        } else if !old_suspensions && new_suspensions {
+            Some("contract can not start keeping a suspension list after it is created")
+        } else {
+            None
         };
 
-        let (new_banlist, new_suspensions) = new_config
-            .moderation()
-            .map(|moderation| (moderation.banlist, moderation.suspensions))
-            .unwrap_or((false, false));
-
-        if old_moderation.banlist && !new_banlist {
-            return SimpleConsensusValidationResult::new_with_error(
-                DataContractConfigUpdateError::new(
-                    contract_id,
-                    "contract can not turn off its banlist once it keeps one",
-                )
-                .into(),
-            );
+        match refusal {
+            Some(reason) => SimpleConsensusValidationResult::new_with_error(
+                DataContractConfigUpdateError::new(contract_id, reason).into(),
+            ),
+            None => SimpleConsensusValidationResult::new(),
         }
-
-        if old_moderation.suspensions && !new_suspensions {
-            return SimpleConsensusValidationResult::new_with_error(
-                DataContractConfigUpdateError::new(
-                    contract_id,
-                    "contract can not turn off its suspension list once it keeps one",
-                )
-                .into(),
-            );
-        }
-
-        SimpleConsensusValidationResult::new()
     }
 }
 
@@ -73,18 +73,45 @@ mod tests {
     }
 
     #[test]
-    fn should_allow_enabling_moderation_on_update() {
+    fn should_reject_enabling_moderation_on_update() {
         let platform_version = PlatformVersion::latest();
         let contract_id = Identifier::new([1u8; 32]);
         let old = DataContractConfig::V1(DataContractConfigV1::default());
-        let result = old.validate_update_v2(&moderated(true, false), contract_id, platform_version);
-        assert!(result.is_valid(), "{:?}", result.errors);
-        let result = moderated(true, false).validate_update_v2(
-            &moderated(true, true),
-            contract_id,
-            platform_version,
-        );
-        assert!(result.is_valid(), "{:?}", result.errors);
+        for new in [
+            moderated(true, false),
+            moderated(false, true),
+            moderated(true, true),
+        ] {
+            let result = old.validate_update_v2(&new, contract_id, platform_version);
+            assert!(!result.is_valid(), "{new:?}");
+        }
+    }
+
+    #[test]
+    fn should_reject_turning_a_second_list_on() {
+        let platform_version = PlatformVersion::latest();
+        let contract_id = Identifier::new([1u8; 32]);
+        for (old, new) in [
+            (moderated(true, false), moderated(true, true)),
+            (moderated(false, true), moderated(true, true)),
+        ] {
+            let result = old.validate_update_v2(&new, contract_id, platform_version);
+            assert!(!result.is_valid(), "{old:?} -> {new:?}");
+        }
+    }
+
+    #[test]
+    fn should_allow_an_update_that_keeps_the_lists() {
+        let platform_version = PlatformVersion::latest();
+        let contract_id = Identifier::new([1u8; 32]);
+        let unmoderated = DataContractConfig::V1(DataContractConfigV1::default());
+        assert!(unmoderated
+            .validate_update_v2(&unmoderated, contract_id, platform_version)
+            .is_valid());
+        for config in [moderated(true, false), moderated(true, true)] {
+            let result = config.validate_update_v2(&config, contract_id, platform_version);
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
     }
 
     #[test]

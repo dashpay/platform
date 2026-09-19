@@ -49,9 +49,8 @@ impl Drive {
         let contract_root_path = contract_root_path(&contract_id);
 
         for list in moderation.lists() {
-            // A contract update that turns a list on adds the tree; a list that is already on
-            // has one. Both go through the same `if not exists` insert, and the check is
-            // what makes the update path safe to call on an insert path's fresh contract too.
+            // `if not exists` costs one check on a fresh contract and keeps the insert from
+            // ever replacing a list tree that holds entries.
             self.batch_insert_empty_tree_if_not_exists(
                 PathFixedSizeKeyRef((contract_root_path, contract_moderation_list_key(list))),
                 TreeType::NormalTree,

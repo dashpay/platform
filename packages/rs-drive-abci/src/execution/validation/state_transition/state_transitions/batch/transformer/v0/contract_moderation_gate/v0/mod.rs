@@ -3,6 +3,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::contract_moderation_gate::ContractModerationRefusal;
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionInternalTransformerV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::contract_moderation::{
@@ -22,41 +23,41 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) trait BatchTransitionContractModerationGateV0 {
     #[allow(clippy::too_many_arguments)]
-    fn contract_moderation_gate_v0(
+    fn contract_moderation_gate_v0<'a>(
         drive: &Drive,
         block_info: &BlockInfo,
         contract: &DataContract,
         owner_id: Identifier,
-        document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
+        document_transitions: &BTreeMap<&'a String, Vec<&'a DocumentTransition>>,
         lapsed_suspensions: &mut BTreeSet<(Identifier, Identifier)>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error>;
+    ) -> Result<Option<ContractModerationRefusal<'a>>, Error>;
 }
 
 impl BatchTransitionContractModerationGateV0 for BatchTransition {
-    /// A moderated contract refuses every document transition of an identity on its banlist
-    /// or under a live suspension, and the first document transition after a suspension lapsed
-    /// sweeps the stale entry. The gate runs in the transformer, so the mempool refuses a
+    /// A moderated contract refuses the document transitions of an identity on its banlist or
+    /// under a live suspension, except its deletions (`Delete` and `IndexOnlyDelete`): a barred
+    /// identity can write nothing new, but may still take down what it wrote. The first
+    /// document transition after a suspension lapsed sweeps the stale entry. The gate runs in the transformer, so the mempool refuses a
     /// barred identity as a block does. A contract that declares no moderation costs nothing:
     /// no read is made for it.
-    fn contract_moderation_gate_v0(
+    fn contract_moderation_gate_v0<'a>(
         drive: &Drive,
         block_info: &BlockInfo,
         contract: &DataContract,
         owner_id: Identifier,
-        document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
+        document_transitions: &BTreeMap<&'a String, Vec<&'a DocumentTransition>>,
         lapsed_suspensions: &mut BTreeSet<(Identifier, Identifier)>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error> {
+    ) -> Result<Option<ContractModerationRefusal<'a>>, Error> {
         let Some(moderation) = contract.config().moderation() else {
             return Ok(None);
         };
@@ -91,30 +92,45 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
             return Ok(None);
         };
 
-        // Paid: the signer is authenticated and the read happened. Every transition against
-        // the contract is refused on its own, as a per-transition failure is anywhere else in
-        // the transformer, so each one's contract nonce is bumped and none stays replayable.
+        // Paid: the signer is authenticated and the read happened. Every transition the bar
+        // covers is refused on its own, as a per-transition failure is anywhere else in the
+        // transformer, so each one's contract nonce is bumped and none stays replayable.
         let mut actions = vec![];
         let mut errors = vec![];
-        for transition in document_transitions.values().flatten() {
-            let failed = Self::failed_per_transition_action(
-                transition.base(),
-                owner_id,
-                vec![error.clone()],
-                platform_version,
-            )?;
-            actions.extend(failed.data);
-            errors.extend(failed.errors);
+        let mut deletions: BTreeMap<&'a String, Vec<&'a DocumentTransition>> = BTreeMap::new();
+        for (document_type_name, transitions) in document_transitions {
+            for transition in transitions {
+                if matches!(
+                    transition,
+                    DocumentTransition::Delete(_) | DocumentTransition::IndexOnlyDelete(_)
+                ) {
+                    deletions
+                        .entry(*document_type_name)
+                        .or_default()
+                        .push(*transition);
+                    continue;
+                }
+                let failed = Self::failed_per_transition_action(
+                    transition.base(),
+                    owner_id,
+                    vec![error.clone()],
+                    platform_version,
+                )?;
+                actions.extend(failed.data);
+                errors.extend(failed.errors);
+            }
         }
 
-        Ok(Some(if actions.is_empty() {
-            ConsensusValidationResult::new_with_errors(if errors.is_empty() {
-                vec![error]
-            } else {
-                errors
-            })
+        // Nothing but deletions: the bar does not apply, the batch carries on whole.
+        if actions.is_empty() && errors.is_empty() {
+            return Ok(None);
+        }
+
+        let refused = if actions.is_empty() {
+            ConsensusValidationResult::new_with_errors(errors)
         } else {
             ConsensusValidationResult::new_with_data_and_errors(actions, errors)
-        }))
+        };
+        Ok(Some(ContractModerationRefusal { refused, deletions }))
     }
 }

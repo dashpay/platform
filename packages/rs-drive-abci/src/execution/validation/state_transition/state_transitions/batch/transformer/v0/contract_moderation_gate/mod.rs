@@ -16,41 +16,51 @@ use drive::state_transition_action::batch::batched_transition::BatchedTransition
 use std::collections::{BTreeMap, BTreeSet};
 use v0::BatchTransitionContractModerationGateV0;
 
+/// What the gate hands back for a signer the contract bars.
+pub(super) struct ContractModerationRefusal<'a> {
+    /// The refusal of every transition the bar covers, each with its nonce bump.
+    pub refused: ConsensusValidationResult<Vec<BatchedTransitionAction>>,
+    /// The signer's deletions, by document type, which the bar does not cover: a barred
+    /// identity may still take its own documents down. They carry on through the transformer.
+    pub deletions: BTreeMap<&'a String, Vec<&'a DocumentTransition>>,
+}
+
 /// The contract moderation gate of the batch transformer (protocol version 14).
 pub(super) trait BatchTransitionContractModerationGate {
     /// Gates the document transitions of `owner_id` against one contract on the contract's
-    /// moderation lists. Returns the refusal to hand back when the signer is banned or under a
-    /// live suspension, `None` to carry on. A suspension found lapsed is recorded in
-    /// `lapsed_suspensions` for the batch to sweep.
+    /// moderation lists. Returns the refusal when the signer is banned or under a live
+    /// suspension and asks for anything but deletions, `None` to carry on with every
+    /// transition. A suspension found lapsed is recorded in `lapsed_suspensions` for the batch
+    /// to sweep.
     ///
     /// Before protocol version 14 the gate does not exist (`None` in the version table) and
     /// nothing is read.
     #[allow(clippy::too_many_arguments)]
-    fn contract_moderation_gate(
+    fn contract_moderation_gate<'a>(
         drive: &Drive,
         block_info: &BlockInfo,
         contract: &DataContract,
         owner_id: Identifier,
-        document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
+        document_transitions: &BTreeMap<&'a String, Vec<&'a DocumentTransition>>,
         lapsed_suspensions: &mut BTreeSet<(Identifier, Identifier)>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error>;
+    ) -> Result<Option<ContractModerationRefusal<'a>>, Error>;
 }
 
 impl BatchTransitionContractModerationGate for BatchTransition {
-    fn contract_moderation_gate(
+    fn contract_moderation_gate<'a>(
         drive: &Drive,
         block_info: &BlockInfo,
         contract: &DataContract,
         owner_id: Identifier,
-        document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
+        document_transitions: &BTreeMap<&'a String, Vec<&'a DocumentTransition>>,
         lapsed_suspensions: &mut BTreeSet<(Identifier, Identifier)>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error> {
+    ) -> Result<Option<ContractModerationRefusal<'a>>, Error> {
         match platform_version
             .drive_abci
             .validation_and_processing
