@@ -203,24 +203,26 @@ extension PersistentToken {
     /// nothing to derive from.
     ///
     /// Parsing lives in `DataContractParser.parseOncePerIdentityDistribution`
-    /// so the derived read and the contract parser agree on the wire shape.
+    /// so the derived read and the contract parser agree on the wire shape,
+    /// and the decode is memoised per contract payload by
+    /// `TokenOncePerIdentityDistributionCache` so reading this per token row
+    /// per paint does not re-parse the whole contract every time.
     public var oncePerIdentityDistribution: TokenOncePerIdentityDistribution? {
-        guard let contract = dataContract,
-              let tokens = contract.parsedContract?["tokens"] as? [String: Any],
-              let tokenDict = tokens[String(position)] as? [String: Any],
-              let distributionRules = tokenDict["distributionRules"] as? [String: Any] else {
-            return nil
-        }
-        return DataContractParser.parseOncePerIdentityDistribution(
-            distributionRules["oncePerIdentityDistribution"]
+        guard let contract = dataContract else { return nil }
+        return TokenOncePerIdentityDistributionCache.shared.distribution(
+            for: contract,
+            position: position
         )
     }
 
     /// True when the token carries any distribution kind.
     ///
-    /// The two column-backed kinds are checked first on purpose: `||` short
-    /// circuits, so a token that already has one never pays for the contract
-    /// JSON decode behind `oncePerIdentityDistribution`.
+    /// The two column-backed kinds are checked first, so a token that
+    /// already has one answers without touching the contract JSON at all.
+    /// The fall-through is not free even so: the first read of a given
+    /// contract payload decodes it. That decode is paid once per payload
+    /// (see `TokenOncePerIdentityDistributionCache`), not once per call, so
+    /// calling this per row in a list is safe.
     public var hasDistribution: Bool {
         perpetualDistribution != nil
             || preProgrammedDistribution != nil
@@ -379,10 +381,30 @@ extension PersistentToken {
     /// see `oncePerIdentityDistribution`, which is derived from the owning
     /// contract's JSON. Filter in memory on `hasDistribution` when that kind
     /// has to count.
-    public static func distributionTokensPredicate() -> Predicate<PersistentToken> {
+    ///
+    /// The name says "column-backed" because the old one read as "every
+    /// token with a distribution" and no longer is: it disagrees with
+    /// `hasDistribution` on a token whose only distribution is
+    /// once-per-identity.
+    public static func columnBackedDistributionTokensPredicate() -> Predicate<PersistentToken> {
         #Predicate<PersistentToken> { token in
             token.perpetualDistribution != nil || token.preProgrammedDistribution != nil
         }
+    }
+
+    @available(
+        *,
+        deprecated,
+        renamed: "columnBackedDistributionTokensPredicate()",
+        message: """
+            This predicate never matched the once-per-identity kind, which is derived from the \
+            contract JSON rather than stored on the token row. Fetch without it and filter on \
+            `hasDistribution`, or call `columnBackedDistributionTokensPredicate()` when the two \
+            column-backed kinds really are all you want.
+            """
+    )
+    public static func distributionTokensPredicate() -> Predicate<PersistentToken> {
+        columnBackedDistributionTokensPredicate()
     }
 
     public static func pausedTokensPredicate() -> Predicate<PersistentToken> {

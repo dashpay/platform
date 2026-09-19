@@ -497,20 +497,66 @@ public struct DataContractParser {
         return nil
     }
 
+    /// Render a once-per-identity `amount` to a canonical decimal string,
+    /// accepting only what the protocol admits: an integer in
+    /// `1 ... Int64.max`.
+    ///
+    /// rs-dpp's `validate_once_per_identity_distribution` rejects `0` (every
+    /// claim would be a paid no-op) and anything above `i64::MAX` (a claim
+    /// mints into a signed balance), so no contract the chain accepted can
+    /// carry a value outside that range, and anything outside it in a
+    /// persisted payload is garbage rather than a distribution.
+    ///
+    /// Deliberately stricter than `stringifyDistributionAmount`, which hands
+    /// any string back verbatim and stringifies negative or fractional
+    /// numbers. That leniency is fine for the pre-programmed schedule, whose
+    /// malformed entries are skipped one by one, but here it would make
+    /// `"abc"`, `-5` or `1.5` read as a distribution the token does not
+    /// have. Android's `TokenAmounts.parseRaw` applies the same range, so
+    /// iOS has to as well or the two apps disagree about which tokens are
+    /// claimable.
+    ///
+    /// JSON booleans bridge to `NSNumber` and would otherwise pass as 1, so
+    /// they are rejected by identity against `CFBoolean` before the numeric
+    /// read.
+    private static func oncePerIdentityAmount(_ value: Any) -> String? {
+        if CFGetTypeID(value as CFTypeRef) == CFBooleanGetTypeID() {
+            return nil
+        }
+        if let string = value as? String {
+            // `Int64(_:)` rejects a fractional, negative or non-numeric
+            // string and anything above `Int64.max`; re-rendering the parsed
+            // value drops leading zeros and a leading `+`, the same
+            // canonical form Android's `BigInteger.toString()` produces.
+            guard let parsed = Int64(string.trimmingCharacters(in: .whitespaces)),
+                  parsed > 0 else {
+                return nil
+            }
+            return String(parsed)
+        }
+        // `NSNumber` covers every numeric JSON value. `Int64(exactly:)`
+        // fails on a fractional number and on one outside `Int64`, which
+        // with the positivity check is exactly the set to reject.
+        if let number = value as? NSNumber, let exact = Int64(exactly: number), exact > 0 {
+            return String(exact)
+        }
+        return nil
+    }
+
     /// Read a token's once-per-identity distribution out of its
     /// `distributionRules` block (protocol version 14).
     ///
     /// rs-dpp emits the block as
     /// `"oncePerIdentityDistribution": {"$formatVersion": "0", "amount": 5000}`.
-    /// `amount` is a protocol `u64`, so it arrives as a JSON number up to
-    /// 2^53 - 1 and as a decimal string above that;
-    /// `stringifyDistributionAmount` normalises both to an exact decimal
-    /// string, which is what the value type carries.
+    /// `amount` is a protocol `u64` capped at `i64::MAX` by validation, so it
+    /// arrives as a JSON number up to 2^53 - 1 and as a decimal string above
+    /// that; both normalise to an exact decimal string, which is what the
+    /// value type carries.
     ///
     /// Returns nil when the block is absent, is not a dictionary, or carries
-    /// no readable `amount`. A malformed block therefore reads the same as
-    /// "this token has no once-per-identity distribution" rather than
-    /// claiming an amount that was never authored.
+    /// an `amount` outside `1 ... Int64.max`. A malformed block therefore
+    /// reads the same as "this token has no once-per-identity distribution"
+    /// rather than claiming an amount that was never authored.
     ///
     /// This is the single place that shape is parsed:
     /// `PersistentToken.oncePerIdentityDistribution` derives its value by
@@ -520,7 +566,7 @@ public struct DataContractParser {
     ) -> TokenOncePerIdentityDistribution? {
         guard let dict = value as? [String: Any],
               let amountValue = dict["amount"],
-              let amount = stringifyDistributionAmount(amountValue) else {
+              let amount = oncePerIdentityAmount(amountValue) else {
             return nil
         }
         return TokenOncePerIdentityDistribution(amount: amount)

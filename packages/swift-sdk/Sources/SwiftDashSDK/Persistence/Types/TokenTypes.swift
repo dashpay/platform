@@ -125,10 +125,11 @@ public struct DistributionEvent: Codable, Equatable, Sendable {
 /// rs-dpp serialises it inside a token's `distributionRules` as
 /// `"oncePerIdentityDistribution": {"$formatVersion": "0", "amount": 5000}`.
 ///
-/// `amount` is a protocol `u64`, so it is carried as an exact decimal string
-/// here, the same convention the other token amounts use. Values above
-/// `Int64.max` arrive as JSON strings and must survive verbatim, which a
-/// fixed-width or floating-point carrier could not guarantee.
+/// `amount` is a protocol `u64` that validation caps at `i64::MAX`, so it is
+/// carried as an exact decimal string here, the same convention the other
+/// token amounts use. Values above 2^53 - 1 arrive as JSON strings because a
+/// JSON number that large is not exactly representable, and a floating-point
+/// carrier could not hand them back digit for digit.
 ///
 /// Unlike `TokenPerpetualDistribution` and `TokenPreProgrammedDistribution`
 /// this value has no column on `PersistentToken`: it is derived from the

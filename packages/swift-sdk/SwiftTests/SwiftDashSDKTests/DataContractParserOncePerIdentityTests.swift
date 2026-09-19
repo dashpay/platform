@@ -14,9 +14,11 @@ import SwiftData
 /// }
 /// ```
 ///
-/// `amount` is a protocol `u64`, so it arrives as a JSON number up to
-/// 2^53 - 1 and as a decimal string above that. Both must land on the model
-/// as the same exact decimal string.
+/// `amount` is a protocol `u64` that rs-dpp's
+/// `validate_once_per_identity_distribution` narrows to `1 ... i64::MAX`, so
+/// it arrives as a JSON number up to 2^53 - 1 and as a decimal string above
+/// that. Both must land on the model as the same exact decimal string, and
+/// anything outside the range must read as "no distribution".
 ///
 /// Unlike the perpetual and pre-programmed kinds this one has no column on
 /// `PersistentToken`: `DashSchemaV5` is frozen, and a new stored property
@@ -31,9 +33,17 @@ final class DataContractParserOncePerIdentityTests: XCTestCase {
 
     private let contractId = Data(repeating: 0xEF, count: 32)
 
-    /// 18446744073709551615 == `UInt64.max`, well above `Int64.max`. A value
-    /// this large only ever arrives as a JSON string.
-    private let hugeAmount = "18446744073709551615"
+    /// 9223372036854775807 == `Int64.max`, the largest amount rs-dpp's
+    /// `validate_once_per_identity_distribution` admits. Above 2^53 - 1, so
+    /// it also exercises the decimal-string encoding.
+    private let maxAmount = "9223372036854775807"
+
+    /// One past the protocol's ceiling.
+    private let aboveMaxAmount = "9223372036854775808"
+
+    /// `UInt64.max`: fits the wire type, but no contract on chain can carry
+    /// it.
+    private let uInt64MaxAmount = "18446744073709551615"
 
     private func makeContext() throws -> ModelContext {
         let container = try DashModelContainer.createInMemory()
@@ -47,7 +57,7 @@ final class DataContractParserOncePerIdentityTests: XCTestCase {
     /// The contract row carries the JSON-serialised `contractData` on
     /// `serializedContract`, which is what both of `ContractDownloader`'s
     /// persist paths do before calling the parser. The derived property reads
-    /// it back through `PersistentDataContract.parsedContract`.
+    /// it back through `TokenOncePerIdentityDistributionCache`.
     @discardableResult
     private func parseTokens(
         _ tokens: [String: Any],
@@ -139,25 +149,60 @@ final class DataContractParserOncePerIdentityTests: XCTestCase {
         XCTAssertEqual(distribution.amount, "12345")
     }
 
-    /// An amount above `Int64.max` survives with every digit intact: no
-    /// truncation, no overflow, no round trip through a floating-point type.
-    func testAmountAboveInt64MaxPreservedVerbatim() throws {
+    /// The largest amount the protocol admits survives with every digit
+    /// intact, as a JSON string and as a JSON number: no truncation, no
+    /// overflow, no round trip through a floating-point type.
+    func testLargestProtocolAmountPreservedVerbatim() throws {
+        let context = try makeContext()
+
+        let asString = try parseSingleToken(
+            tokenDict: tokenDict(oncePerIdentity: [
+                "$formatVersion": "0",
+                "amount": maxAmount
+            ]),
+            in: context
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(asString.oncePerIdentityDistribution).amount,
+            maxAmount
+        )
+        XCTAssertGreaterThan(
+            try XCTUnwrap(Int64(maxAmount)),
+            1 << 53,
+            "fixture must exceed the exactly-representable JSON number range"
+        )
+
+        let numericContext = try makeContext()
+        let asNumber = try parseSingleToken(
+            tokenDict: tokenDict(oncePerIdentity: [
+                "$formatVersion": "0",
+                "amount": Int64.max
+            ]),
+            in: numericContext
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(asNumber.oncePerIdentityDistribution).amount,
+            maxAmount
+        )
+    }
+
+    /// An amount the protocol cannot carry reads as "no once-per-identity
+    /// distribution" rather than as a claimable one. rs-dpp admits
+    /// `1 ... i64::MAX`, so a bigger value never came from a contract the
+    /// chain accepted.
+    func testAmountAboveProtocolMaximumIsRejected() throws {
         let context = try makeContext()
 
         let token = try parseSingleToken(
             tokenDict: tokenDict(oncePerIdentity: [
                 "$formatVersion": "0",
-                "amount": hugeAmount
+                "amount": aboveMaxAmount
             ]),
             in: context
         )
 
-        let distribution = try XCTUnwrap(token.oncePerIdentityDistribution)
-        XCTAssertEqual(distribution.amount, hugeAmount)
-        XCTAssertNil(
-            Int64(distribution.amount),
-            "fixture must exceed Int64.max for this test to mean anything"
-        )
+        XCTAssertNil(token.oncePerIdentityDistribution)
+        XCTAssertFalse(token.hasDistribution)
     }
 
     // MARK: - 2. Presence drives `hasDistribution`
@@ -266,9 +311,137 @@ final class DataContractParserOncePerIdentityTests: XCTestCase {
         XCTAssertEqual(
             DataContractParser.parseOncePerIdentityDistribution([
                 "$formatVersion": "0",
-                "amount": hugeAmount
+                "amount": maxAmount
             ])?.amount,
-            hugeAmount
+            maxAmount
         )
+    }
+
+    /// Everything outside the protocol's `1 ... i64::MAX` range is refused,
+    /// so iOS never reports a distribution Android's `TokenAmounts.parseRaw`
+    /// would reject. The lenient `stringifyDistributionAmount` used by the
+    /// pre-programmed schedule would have accepted most of these.
+    func testParseOncePerIdentityDistributionRejectsOutOfRangeAmounts() throws {
+        let rejected: [(String, Any)] = [
+            ("zero, which rs-dpp refuses because every claim would be a no-op", 0),
+            ("zero as a string", "0"),
+            ("negative number", -1),
+            ("negative string", "-1"),
+            ("fractional number", 1.5),
+            ("fractional string", "1.5"),
+            ("non-numeric string", "abc"),
+            ("empty string", ""),
+            ("one past Int64.max", aboveMaxAmount),
+            ("UInt64.max, which fits the wire type but not the rules", uInt64MaxAmount),
+            ("boolean, which bridges to NSNumber and would read as 1", true)
+        ]
+        for (description, amount) in rejected {
+            XCTAssertNil(
+                DataContractParser.parseOncePerIdentityDistribution(["amount": amount]),
+                "should reject \(description)"
+            )
+        }
+
+        // The edges of the accepted range still pass, and a non-canonical
+        // spelling of one normalises rather than being handed back verbatim.
+        XCTAssertEqual(
+            DataContractParser.parseOncePerIdentityDistribution(["amount": 1])?.amount,
+            "1"
+        )
+        XCTAssertEqual(
+            DataContractParser.parseOncePerIdentityDistribution(["amount": "0005"])?.amount,
+            "5"
+        )
+    }
+
+    // MARK: - 4. The decode is paid once per contract payload
+
+    /// Reading the derived property decodes the contract JSON on the first
+    /// read and answers from the memo afterwards. Without this the common
+    /// token, which declares no distribution at all, would re-decode a whole
+    /// contract per row per paint: `hasDistribution` falls through to this
+    /// property for the badge in `TokenSearchView` and again in its filter,
+    /// and the claim form and permission resolver read it too.
+    func testRepeatedReadsDecodeTheContractOnce() throws {
+        let cache = TokenOncePerIdentityDistributionCache.shared
+        cache.removeAll()
+
+        let context = try makeContext()
+        let tokens = try parseTokens(
+            [
+                "0": tokenDict(oncePerIdentity: ["amount": 100]),
+                "1": tokenDict(oncePerIdentity: nil)
+            ],
+            in: context
+        )
+        XCTAssertEqual(
+            cache.decodeCount,
+            0,
+            "the contract parser writes the rows without deriving anything"
+        )
+
+        let withDistribution = try XCTUnwrap(tokens.first { $0.position == 0 })
+        let withoutDistribution = try XCTUnwrap(tokens.first { $0.position == 1 })
+
+        XCTAssertEqual(withDistribution.oncePerIdentityDistribution?.amount, "100")
+        XCTAssertEqual(cache.decodeCount, 1, "first read decodes the payload")
+
+        for _ in 0..<5 {
+            XCTAssertEqual(withDistribution.oncePerIdentityDistribution?.amount, "100")
+            XCTAssertNil(withoutDistribution.oncePerIdentityDistribution)
+            XCTAssertTrue(withDistribution.hasDistribution)
+            XCTAssertFalse(withoutDistribution.hasDistribution)
+        }
+        XCTAssertEqual(
+            cache.decodeCount,
+            1,
+            "later reads, including the sibling position that has none, come from the memo"
+        )
+    }
+
+    /// Two contracts are two payloads: the memo is keyed per contract, not
+    /// shared across them.
+    func testSeparateContractsDecodeSeparately() throws {
+        let cache = TokenOncePerIdentityDistributionCache.shared
+        cache.removeAll()
+
+        let context = try makeContext()
+        let first = try parseSingleToken(
+            tokenDict: tokenDict(oncePerIdentity: ["amount": 11]),
+            in: context
+        )
+
+        let otherId = Data(repeating: 0xAB, count: 32)
+        let otherContractData: [String: Any] = [
+            "tokens": ["0": tokenDict(oncePerIdentity: ["amount": 22])]
+        ]
+        let otherContract = PersistentDataContract(
+            id: otherId,
+            name: "Other",
+            serializedContract: try JSONSerialization.data(
+                withJSONObject: otherContractData,
+                options: []
+            ),
+            network: .testnet
+        )
+        context.insert(otherContract)
+        try context.save()
+        try DataContractParser.parseDataContract(
+            contractData: otherContractData,
+            contractId: otherId,
+            modelContext: context
+        )
+        let otherDescriptor = FetchDescriptor<PersistentToken>(
+            predicate: #Predicate { $0.contractId == otherId }
+        )
+        let second = try XCTUnwrap(try context.fetch(otherDescriptor).first)
+
+        XCTAssertEqual(first.oncePerIdentityDistribution?.amount, "11")
+        XCTAssertEqual(second.oncePerIdentityDistribution?.amount, "22")
+        XCTAssertEqual(cache.decodeCount, 2)
+
+        XCTAssertEqual(first.oncePerIdentityDistribution?.amount, "11")
+        XCTAssertEqual(second.oncePerIdentityDistribution?.amount, "22")
+        XCTAssertEqual(cache.decodeCount, 2, "both payloads stay memoised")
     }
 }
