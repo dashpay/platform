@@ -13,9 +13,8 @@ import org.junit.Test
  * [TokenMaterializer] coverage for the `oncePerIdentityDistribution` block
  * (protocol version 14): the raw block lands in
  * [TokenEntity.oncePerIdentityDistribution], flips `hasDistribution`, and
- * [TokenOncePerIdentityDistribution.parse] reads the amount back as a
- * decimal string whether the contract encoded it as a number or a string,
- * and only inside the protocol's 1 to i64::MAX range.
+ * [TokenOncePerIdentityDistribution.parse] reads the u64 amount back as a
+ * decimal string whether the contract encoded it as a number or a string.
  */
 class TokenMaterializerOncePerIdentityTest {
 
@@ -60,30 +59,32 @@ class TokenMaterializerOncePerIdentityTest {
     }
 
     @Test
-    fun `the largest protocol amount survives verbatim as number and as string`() {
-        val max = Long.MAX_VALUE.toString() // i64::MAX, the most rs-dpp admits
+    fun `amounts above Long MAX_VALUE survive verbatim as number and as string`() {
+        val huge = "18446744073709551615" // UInt64.max
 
-        val asNumber = parseSingleToken(block(max))
+        val asNumber = parseSingleToken(block(huge))
         assertEquals(
-            max,
+            huge,
             TokenOncePerIdentityDistribution.parse(asNumber.oncePerIdentityDistribution)?.amount,
         )
 
-        val asString = parseSingleToken(block("\"$max\""))
+        val asString = parseSingleToken(block("\"$huge\""))
         assertEquals(
-            max,
+            huge,
             TokenOncePerIdentityDistribution.parse(asString.oncePerIdentityDistribution)?.amount,
         )
     }
 
     @Test
-    fun `parse rejects amounts outside the protocol range`() {
-        // rs-dpp admits 1..=i64::MAX, so nothing else can come from a contract on chain.
-        assertNull(TokenOncePerIdentityDistribution.parse("""{"amount":0}"""))
-        assertNull(TokenOncePerIdentityDistribution.parse("""{"amount":"9223372036854775808"}"""))
-        assertNull(TokenOncePerIdentityDistribution.parse("""{"amount":"18446744073709551615"}"""))
+    fun `parse checks the u64 carrier and leaves the protocol range to Rust`() {
+        // rs-dpp validates 1..=i64::MAX at registration; the app does not mirror that
+        // rule, it only refuses what is not a raw u64 at all.
+        assertEquals("0", TokenOncePerIdentityDistribution.parse("""{"amount":0}""")?.amount)
+        assertEquals(
+            "9223372036854775808",
+            TokenOncePerIdentityDistribution.parse("""{"amount":"9223372036854775808"}""")?.amount,
+        )
         assertNull(TokenOncePerIdentityDistribution.parse("""{"amount":"18446744073709551616"}"""))
-        assertEquals("1", TokenOncePerIdentityDistribution.parse("""{"amount":1}""")?.amount)
     }
 
     @Test

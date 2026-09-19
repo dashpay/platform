@@ -213,18 +213,17 @@ data class TokenOncePerIdentityDistribution(val amount: String) {
         }
 
         /**
-         * Null when the block carries no `amount` the protocol admits: an
-         * integer from 1 to `i64::MAX`, the range rs-dpp validates at
-         * registration, so nothing else can come from a contract on chain.
+         * Null when the block carries no `amount` that is a raw u64, the
+         * type the protocol gives token amounts. The range rs-dpp admits for
+         * this field (1 to `i64::MAX`) is validated in Rust at registration
+         * and is deliberately not mirrored here.
          */
         fun parse(obj: JsonObject): TokenOncePerIdentityDistribution? {
             // Tolerate the enum-wrapped rendering the pre-programmed
             // resolver also accepts; rs-dpp itself emits the flat shape.
             val body = (obj["V0"] as? JsonObject) ?: obj
             val content = (body["amount"] as? JsonPrimitive)?.content ?: return null
-            val amount = TokenAmounts.parseRaw(content)?.toULong() ?: return null
-            if (amount == 0UL || amount > Long.MAX_VALUE.toULong()) return null
-            return TokenOncePerIdentityDistribution(amount.toString())
+            return TokenAmounts.parseRaw(content)?.let(::TokenOncePerIdentityDistribution)
         }
     }
 }

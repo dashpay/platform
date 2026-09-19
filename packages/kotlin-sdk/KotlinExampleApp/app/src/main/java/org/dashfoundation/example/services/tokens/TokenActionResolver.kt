@@ -474,46 +474,42 @@ object TokenActionResolver {
     }
 
     /**
-     * The distribution kinds the claim form offers [identity], in display
-     * order. A once-per-identity distribution the identity already claimed
-     * is left out: claiming it again is a paid rejection.
+     * The distribution kinds [identity] can claim under [resolveClaim]'s
+     * rules, in the order the claim form shows them. A kind the token merely
+     * declares is not enough: perpetual is listed only for the identity it
+     * pays, pre-programmed only for a listed recipient, and once-per-identity
+     * only while the identity's single claim is not known to be spent.
+     * Offering anything else enables a claim Drive rejects for a fee.
      */
     fun claimableDistributions(
         token: TokenEntity,
+        identity: IdentityEntity,
         oncePerIdentityClaimed: Boolean,
     ): List<TokenDistributionType> = buildList {
-        if (token.perpetualDistribution != null) add(TokenDistributionType.PERPETUAL)
-        if (token.preProgrammedDistribution != null) add(TokenDistributionType.PRE_PROGRAMMED)
+        if (token.perpetualDistribution != null && isDesignatedRecipient(token, identity)) {
+            add(TokenDistributionType.PERPETUAL)
+        }
+        if (token.preProgrammedDistribution != null && isPreProgrammedRecipient(token, identity)) {
+            add(TokenDistributionType.PRE_PROGRAMMED)
+        }
         if (token.oncePerIdentityDistribution != null && !oncePerIdentityClaimed) {
             add(TokenDistributionType.ONCE_PER_IDENTITY)
         }
     }
 
     /**
-     * The kind the claim form preselects: the one that makes [identity]
-     * eligible under [resolveClaim]'s rules. The Claim row opens for every
-     * identity once a token has a once-per-identity distribution, so
-     * defaulting to perpetual there would steer an identity that is not the
-     * perpetual recipient into a paid wrong-claimant rejection. Perpetual
-     * still wins for the identity it pays, then pre-programmed for a listed
-     * recipient.
+     * The kind the claim form preselects: the first the identity is eligible
+     * for, or null when there is none. The Claim row opens for every identity
+     * once a token has a once-per-identity distribution, so defaulting to a
+     * kind the token only declares would steer an identity that is not its
+     * recipient into a paid wrong-claimant rejection.
      */
     fun preferredClaimDistribution(
         token: TokenEntity,
         identity: IdentityEntity,
         oncePerIdentityClaimed: Boolean,
-    ): TokenDistributionType? {
-        val available = claimableDistributions(token, oncePerIdentityClaimed)
-        return when {
-            TokenDistributionType.PERPETUAL in available &&
-                isDesignatedRecipient(token, identity) -> TokenDistributionType.PERPETUAL
-            TokenDistributionType.PRE_PROGRAMMED in available &&
-                isPreProgrammedRecipient(token, identity) -> TokenDistributionType.PRE_PROGRAMMED
-            TokenDistributionType.ONCE_PER_IDENTITY in available ->
-                TokenDistributionType.ONCE_PER_IDENTITY
-            else -> available.firstOrNull()
-        }
-    }
+    ): TokenDistributionType? =
+        claimableDistributions(token, identity, oncePerIdentityClaimed).firstOrNull()
 
     private fun isDesignatedRecipient(token: TokenEntity, identity: IdentityEntity): Boolean =
         token.newTokensDestinationIdentity?.contentEquals(identity.identityId) == true

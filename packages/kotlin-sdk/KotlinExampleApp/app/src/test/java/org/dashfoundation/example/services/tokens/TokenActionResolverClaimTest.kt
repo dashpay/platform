@@ -210,31 +210,46 @@ class TokenActionResolverClaimTest {
         )
     }
 
+    private fun claimable(
+        token: TokenEntity,
+        identity: IdentityEntity,
+        oncePerIdentityClaimed: Boolean = false,
+    ): List<TokenDistributionType> =
+        TokenActionResolver.claimableDistributions(token, identity, oncePerIdentityClaimed)
+
     @Test
-    fun `preferred kind is the one that makes the identity eligible`() {
+    fun `only the kinds the identity is eligible for are offered`() {
         val perpetualAndOnce = token(
             perpetual = "{}",
             destination = recipientId,
             oncePerIdentity = oncePerIdentityJson(),
         )
         // A stranger is only eligible through the once-per-identity kind:
-        // defaulting to perpetual would be a paid wrong-claimant rejection.
+        // offering perpetual would enable a paid wrong-claimant rejection.
+        assertEquals(
+            listOf(TokenDistributionType.ONCE_PER_IDENTITY),
+            claimable(perpetualAndOnce, identity(strangerId)),
+        )
         assertEquals(
             TokenDistributionType.ONCE_PER_IDENTITY,
             preferred(perpetualAndOnce, identity(strangerId)),
         )
         // The identity the perpetual distribution pays keeps perpetual first.
+        assertEquals(
+            listOf(TokenDistributionType.PERPETUAL, TokenDistributionType.ONCE_PER_IDENTITY),
+            claimable(perpetualAndOnce, identity()),
+        )
         assertEquals(TokenDistributionType.PERPETUAL, preferred(perpetualAndOnce, identity()))
 
         val preProgrammedAndOnce =
             token(preProgrammed = preProgrammedJson(), oncePerIdentity = oncePerIdentityJson())
         assertEquals(
-            TokenDistributionType.PRE_PROGRAMMED,
-            preferred(preProgrammedAndOnce, identity()),
+            listOf(TokenDistributionType.PRE_PROGRAMMED, TokenDistributionType.ONCE_PER_IDENTITY),
+            claimable(preProgrammedAndOnce, identity()),
         )
         assertEquals(
-            TokenDistributionType.ONCE_PER_IDENTITY,
-            preferred(preProgrammedAndOnce, identity(strangerId)),
+            listOf(TokenDistributionType.ONCE_PER_IDENTITY),
+            claimable(preProgrammedAndOnce, identity(strangerId)),
         )
         assertEquals(
             TokenDistributionType.ONCE_PER_IDENTITY,
@@ -243,29 +258,29 @@ class TokenActionResolverClaimTest {
     }
 
     @Test
-    fun `claimed once-per-identity distribution is no longer offered`() {
+    fun `a spent once-per-identity claim leaves a stranger nothing to claim`() {
         val perpetualAndOnce = token(
             perpetual = "{}",
             destination = recipientId,
             oncePerIdentity = oncePerIdentityJson(),
         )
+        // The perpetual distribution pays someone else, so it is not a fallback.
         assertEquals(
-            listOf(TokenDistributionType.PERPETUAL),
-            TokenActionResolver.claimableDistributions(
-                perpetualAndOnce, oncePerIdentityClaimed = true,
-            ),
+            emptyList<TokenDistributionType>(),
+            claimable(perpetualAndOnce, identity(strangerId), oncePerIdentityClaimed = true),
         )
-        // Nothing left that makes the stranger eligible: fall back to what exists.
-        assertEquals(
-            TokenDistributionType.PERPETUAL,
-            preferred(perpetualAndOnce, identity(strangerId), oncePerIdentityClaimed = true),
-        )
+        assertNull(preferred(perpetualAndOnce, identity(strangerId), oncePerIdentityClaimed = true))
         assertNull(
             preferred(
                 token(oncePerIdentity = oncePerIdentityJson()),
                 identity(strangerId),
                 oncePerIdentityClaimed = true,
             ),
+        )
+        // The identity it pays keeps the perpetual kind after spending the claim.
+        assertEquals(
+            listOf(TokenDistributionType.PERPETUAL),
+            claimable(perpetualAndOnce, identity(), oncePerIdentityClaimed = true),
         )
     }
 
