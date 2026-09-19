@@ -1,4 +1,5 @@
 mod action_fees;
+mod contract_owner_gate;
 mod creation;
 mod deletion;
 mod dpns;

@@ -9,6 +9,7 @@ use crate::data_contract::document_type::{
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
+use crate::document::property_names::OWNER_ID;
 use crate::util::json_schema::resolve_uri;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
@@ -342,9 +343,69 @@ fn apply_property_reference(
     {
         None => Ok(property_type),
         Some(0) => apply_property_reference_v0(inner_properties, property_type),
+        Some(1) => apply_property_reference_v1(inner_properties, property_type),
         Some(version) => Err(DataContractError::Unsupported(format!(
             "apply_property_reference version {version} is not supported"
         ))),
+    }
+}
+
+/// Generation 1 is generation 0 plus the owner gate on `contract` references:
+/// `refersTo: { type: "contract", propertyAgreement: { "$ownerId": "$ownerId" } }`
+/// parses to [`DocumentPropertyReferenceTarget::ContractOwnerGated`], and any
+/// other agreement pair on a contract reference is refused. A `refersTo`
+/// without an agreement, or on any other target, is delegated to generation 0
+/// unchanged; the identifier check runs first, as it does there.
+fn apply_property_reference_v1(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: DocumentPropertyType,
+) -> Result<DocumentPropertyType, DataContractError> {
+    let Some(refers_to_value) = inner_properties.get(property_names::REFERS_TO) else {
+        return Ok(property_type);
+    };
+
+    if !matches!(
+        property_type,
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+    ) {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo is only allowed on identifier properties".to_string(),
+        ));
+    }
+
+    let refers_to_map = refers_to_value.to_btree_ref_string_map()?;
+
+    let Some(agreement_value) = refers_to_map.get(property_names::PROPERTY_AGREEMENT) else {
+        return apply_property_reference_v0(inner_properties, property_type);
+    };
+
+    let is_contract_reference = refers_to_map
+        .get_str(property_names::TYPE)
+        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?
+        == "contract";
+
+    if !is_contract_reference {
+        return apply_property_reference_v0(inner_properties, property_type);
+    }
+
+    // A contract has no document body to agree with: the one pair a contract
+    // reference admits binds the writer to the contract's owner.
+    let agreement_map = agreement_value.to_btree_ref_string_map()?;
+    match agreement_map.iter().collect::<Vec<_>>().as_slice() {
+        [(referring_property, referenced_value)]
+            if referring_property.as_str() == OWNER_ID
+                && referenced_value.as_text() == Some(OWNER_ID) =>
+        {
+            Ok(DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::ContractOwnerGated,
+            ))
+        }
+        _ => Err(DataContractError::InvalidContractStructure(
+            "propertyAgreement on a contract reference admits exactly one pair, \
+             { \"$ownerId\": \"$ownerId\" }: the writer must be the referenced \
+             contract's owner"
+                .to_string(),
+        )),
     }
 }
 
@@ -673,6 +734,133 @@ mod tests {
             property_agreement,
             BTreeMap::from([("hashtag".to_string(), "hashtag".to_string())])
         );
+    }
+
+    #[test]
+    fn should_parse_owner_gate_on_contract_refers_to() {
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "appContractId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "contract",
+                        "propertyAgreement": { "$ownerId": "$ownerId" }
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("appContractId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert_eq!(
+            property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::ContractOwnerGated
+            )
+        );
+    }
+
+    #[test]
+    fn should_reject_any_other_agreement_pair_on_a_contract_reference() {
+        for agreement in [
+            json!({ "$ownerId": "$creatorId" }),
+            json!({ "authorId": "$ownerId" }),
+            json!({ "$ownerId": "$ownerId", "name": "name" }),
+            json!({}),
+        ] {
+            let err = try_document_type_from_schema(json!({
+                "type": "object",
+                "properties": {
+                    "authorId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0
+                    },
+                    "name": { "type": "string", "position": 1, "maxLength": 63 },
+                    "appContractId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 2,
+                        "refersTo": {
+                            "type": "contract",
+                            "propertyAgreement": agreement
+                        }
+                    }
+                },
+                "required": [],
+                "additionalProperties": false
+            }))
+            .expect_err("should fail");
+
+            let message = err.to_string();
+            assert!(
+                message
+                    .contains("propertyAgreement on a contract reference admits exactly one pair"),
+                "unexpected error for {agreement}: {message}"
+            );
+        }
+    }
+
+    /// Protocol version 13 predates the `refersTo` keyword (`apply_property_reference`
+    /// is `None` there), so a contract carrying the owner gate parses under it
+    /// exactly as it always did: the keyword is ignored and the property is a
+    /// plain identifier. The gate is protocol-14 grammar; pre-14 nodes never see
+    /// it in the parsed type and consensus never evaluates it there.
+    #[test]
+    fn should_ignore_owner_gate_on_contract_reference_before_protocol_14() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+        let document_type = try_document_type_from_schema_on_version(
+            json!({
+                "type": "object",
+                "properties": {
+                    "appContractId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                        "refersTo": {
+                            "type": "contract",
+                            "propertyAgreement": { "$ownerId": "$ownerId" }
+                        }
+                    }
+                },
+                "required": [],
+                "additionalProperties": false
+            }),
+            platform_version,
+        )
+        .expect("should parse under protocol version 13");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("appContractId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert_eq!(property_type, DocumentPropertyType::Identifier);
     }
 
     #[test]

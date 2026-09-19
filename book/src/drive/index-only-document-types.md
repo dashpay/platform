@@ -194,7 +194,13 @@ sentinel disappears (see the absence-aware `propertyAgreement` below).
   may have been transferred in between; a transfer itself is not
   re-checked, so on a transferable referring type it governs writing, not
   holding. A writer gate does not make an owner-prefixed index
-  preallocatable.
+  preallocatable. A `contract` reference admits the same writer gate and
+  nothing else: `refersTo: { "type": "contract", "propertyAgreement":
+  { "$ownerId": "$ownerId" } }` lets only the referenced contract's owner
+  create or replace the referring document (the app-connect `appManifest`
+  uses it so only an app's owner can publish the app's manifest). A
+  contract's owner never changes, so that gate is fixed for the
+  contract's lifetime.
 - **Delete** is its own transition kind,
   `DocumentIndexOnlyDeleteTransition { base, data }` (`$action:
   "indexOnlyDelete"`), carrying the full value tuple (`$createdAt` under

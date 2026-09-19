@@ -5812,6 +5812,22 @@ mod tests {
             );
         }
 
+        /// A `contract` reference may carry the owner gate; registration has
+        /// nothing to resolve for it (the parser admits exactly that one pair),
+        /// so the contract is accepted and the gate is enforced at write time.
+        #[tokio::test]
+        async fn should_register_contract_with_owner_gate_on_a_contract_reference() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-gate-valid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
         /// The writer is an identifier, so the referenced side must be one too.
         #[tokio::test]
         async fn should_reject_writer_owner_agreement_against_a_non_identifier_property() {

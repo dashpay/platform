@@ -148,6 +148,21 @@ pub enum DocumentPropertyReferenceTarget {
         /// referenced key id
         key_id_property: String,
     },
+    /// A data contract whose owner must be the writer: the schema's
+    /// `refersTo: { type: "contract", propertyAgreement: { "$ownerId": "$ownerId" } }`.
+    /// The only property agreement a contract reference admits (a contract has
+    /// no document body to agree with): the writer's id must equal the
+    /// referenced contract's owner id, so only the contract's owner may create
+    /// or replace the referring document. A contract's owner never changes,
+    /// so unlike the permanent-document writer gate this one is fixed for the
+    /// contract's lifetime. Checked on every create and every replace, since
+    /// the writer is transition metadata that never appears among the changed
+    /// fields. Its own variant, appended, so that the plain `Contract`
+    /// encoding every earlier protocol-14 contract carries is untouched; the
+    /// JSON tag keeps the schema keyword's `type` ("contract") out of the
+    /// picture, the wasm surface adds the agreement back.
+    #[serde(rename = "contractOwnerGated")]
+    ContractOwnerGated,
 }
 
 /// The system properties of a referenced document that the referenced side
@@ -209,6 +224,9 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             ),
             DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
                 write!(f, "identity public key (key id property {key_id_property})")
+            }
+            DocumentPropertyReferenceTarget::ContractOwnerGated => {
+                write!(f, "contract (owner gate)")
             }
         }
     }
@@ -7383,6 +7401,23 @@ mod tests {
         );
     }
 
+    /// The plain contract reference keeps its unit-variant shape (the bytes
+    /// and JSON every protocol-14 contract already carries), and the gated
+    /// one is its own appended variant rather than a field on it.
+    #[test]
+    fn should_serialize_both_contract_reference_targets_as_unit_variants() {
+        assert_eq!(
+            serde_json::to_value(DocumentPropertyReferenceTarget::Contract)
+                .expect("expected to serialize"),
+            serde_json::json!("contract")
+        );
+        assert_eq!(
+            serde_json::to_value(DocumentPropertyReferenceTarget::ContractOwnerGated)
+                .expect("expected to serialize"),
+            serde_json::json!("contractOwnerGated")
+        );
+    }
+
     #[test]
     fn should_display_reference_targets() {
         let contract_id = Identifier::from([7u8; 32]);
@@ -7394,6 +7429,10 @@ mod tests {
         assert_eq!(
             DocumentPropertyReferenceTarget::Contract.to_string(),
             "contract"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::ContractOwnerGated.to_string(),
+            "contract (owner gate)"
         );
         assert_eq!(DocumentPropertyReferenceTarget::Token.to_string(), "token");
         assert_eq!(
@@ -7439,6 +7478,7 @@ mod tests {
             DocumentPropertyReferenceTarget::IdentityPublicKey {
                 key_id_property: "signerKeyId".to_string(),
             },
+            DocumentPropertyReferenceTarget::ContractOwnerGated,
         ];
 
         for target in &targets {
@@ -7449,6 +7489,9 @@ mod tests {
                 DocumentPropertyReferenceTarget::Token => "token",
                 DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
                 DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
+                // The schema keyword is still `contract`; the gate is the
+                // `propertyAgreement` beside it, which the JS surface reports.
+                DocumentPropertyReferenceTarget::ContractOwnerGated => "contract",
             };
 
             // The tag is the `refersTo` schema keyword's own `type` value,
