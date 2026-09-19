@@ -26,6 +26,7 @@ use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use tenderdash_abci::proto::abci::response_process_proposal::ProposalStatus;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{
@@ -35,8 +36,8 @@ use tenderdash_abci::proto::abci::{
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
-    Block, BlockId, CanonicalVote, Data, EvidenceList, Header, PartSetHeader, SignedMsgType,
-    StateId, VoteExtension, VoteExtensionType,
+    Block, BlockId, CanonicalVote, ConsensusParams, Data, EvidenceList, Header, PartSetHeader,
+    SignedMsgType, StateId, VoteExtension, VoteExtensionType,
 };
 use tenderdash_abci::proto::ToMillis;
 use tenderdash_abci::signatures::Hashable;
@@ -68,6 +69,11 @@ pub struct MimicExecuteBlockOutcome {
     pub signature: [u8; 96],
     /// Version of Drive app used to generate this block
     pub app_version: u64,
+    /// The consensus parameter update the proposer path (`prepare_proposal`) returned
+    pub consensus_param_updates: Option<ConsensusParams>,
+    /// The consensus parameter update the validator path (`process_proposal`) returned when it
+    /// ran independently (`independent_process_proposal_verification`); `None` otherwise
+    pub process_proposal_consensus_param_updates: Option<ConsensusParams>,
 }
 
 /// Options for execution
@@ -108,19 +114,27 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             .as_ref()
             .cloned();
 
-        let init_chain_root_hash = self
-            .transaction
-            .read()
-            .unwrap()
-            .as_ref()
-            .map(|transaction| {
-                self.platform
-                    .drive
-                    .grove
-                    .root_hash(Some(transaction), &platform_version.drive.grove_version)
-                    .unwrap()
-                    .unwrap()
-            });
+        // The genesis block runs inside the transaction init chain opened and rewinds it to
+        // the savepoint init chain set; every other height starts a transaction of its own.
+        // A retried round of a later block also finds a transaction open (the previous round
+        // was not finalized), so the height decides, not the transaction.
+        let init_chain_root_hash = if block_info.height == self.platform.config.abci.genesis_height
+        {
+            self.transaction
+                .read()
+                .unwrap()
+                .as_ref()
+                .map(|transaction| {
+                    self.platform
+                        .drive
+                        .grove
+                        .root_hash(Some(transaction), &platform_version.drive.grove_version)
+                        .unwrap()
+                        .unwrap()
+                })
+        } else {
+            None
+        };
 
         const DEFAULT_APP_VERSION: u64 = 0;
 
@@ -175,7 +189,7 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             tx_records,
             app_hash,
             tx_results,
-            consensus_param_updates: _,
+            consensus_param_updates,
             core_chain_lock_update,
             validator_set_update,
             app_version,
@@ -302,6 +316,8 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
 
+        let mut process_proposal_consensus_param_updates = None;
+
         if !options.independent_process_proposal_verification {
             //we just check as if we were the proposer
             //we must call process proposal so the app hash is set
@@ -365,13 +381,24 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             };
 
             //we call process proposal as if we are a processor
-            self.process_proposal(request_process_proposal)
+            let response_process_proposal = self
+                .process_proposal(request_process_proposal)
                 .unwrap_or_else(|e| {
                     panic!(
                         "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
                         block_info.height, block_info.time_ms, e
                     )
                 });
+            assert_eq!(
+                response_process_proposal.status,
+                ProposalStatus::Accept as i32,
+                "the validator path rejected block #{} at time #{}: {:?}",
+                block_info.height,
+                block_info.time_ms,
+                response_process_proposal
+            );
+            process_proposal_consensus_param_updates =
+                response_process_proposal.consensus_param_updates;
 
             let process_proposal_application_hash = self
                 .block_execution_context
@@ -644,6 +671,8 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
                 .block_signature
                 .try_into()
                 .expect("signature mut be 96 bytes long"),
+            consensus_param_updates,
+            process_proposal_consensus_param_updates,
         })
     }
 }

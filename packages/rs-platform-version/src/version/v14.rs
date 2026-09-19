@@ -226,6 +226,8 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
+        block_max_bytes: None,
+        block_max_gas: None,
     },
 };
 

@@ -188,6 +188,54 @@ pub fn deserialize_from_bytes_in_version(
 This ensures that a transition type introduced in protocol version 9 cannot be
 submitted to a node running protocol version 8.
 
+### Size caps and decode budgets per family
+
+Two different numbers bound a serialized state transition, and they are
+enforced at different points:
+
+- **The wire cap** is a plain comparison on the raw byte length, made before
+  any decoding. Every ordinary family shares
+  `SystemLimits::max_state_transition_size` (20 KiB). From protocol version 17
+  the contract create and update transitions, in the generation that can carry
+  a code bundle, get their own cap,
+  `SystemLimits::max_contract_code_state_transition_size` (32 MiB,
+  provisional).
+- **The decode budget** is bincode's `with_limit`. It counts the bytes read
+  *and* the allocation claims the `Value` decoder makes for every map and
+  array while decoding a contract schema, so it has to sit well above the wire
+  cap. The contract-code envelopes decode under
+  `SystemLimits::max_contract_code_state_transition_decode_budget` (64 MiB,
+  provisional). The ordinary families keep the decode they shipped with: the
+  `limit = 100000` on the enum sits in a second `platform_serialize` attribute
+  the derive never reads, so `deserialize_from_bytes` applies no bincode
+  budget and the wire cap is the only bound on them. That decode is not
+  changed retroactively; the contract-code envelopes are the first family
+  decoded under an explicit budget.
+
+The family is read from the wire prefix before anything is decoded.
+`StateTransition::peek_envelope_kind` looks at the first ten bytes at most
+(the outer variant index of `StateTransition`, then the inner variant index
+of the contract transition enum) and returns `Ordinary` or
+`ContractCodeCapable { family }`; an unknown or truncated prefix is
+`Ordinary`, so it is bounded by the small cap and fails decode as it always
+did. `family_max_size` and `family_decode_budget` map the kind onto the
+tables of the active version, and
+`deserialize_from_bytes_in_version_bounded` decodes under that budget and
+reports a not-yet-active variant as `StateTransitionNotActiveError` (an
+unpaid consensus rejection) rather than as a protocol error. The block
+decoder (`decode_raw_state_transitions` v1), the `getProofs` query (v1) and
+the DAPI broadcast pre-filter all go through these helpers so every ingress
+path applies the same cap; the frozen v0 decoder keeps calling
+`deserialize_from_bytes_in_version` unchanged.
+
+Because the block byte limit is a Tenderdash consensus parameter, raising it
+for the large envelopes is protocol state as well:
+`ConsensusVersions::block_max_bytes` and `block_max_gas` are pushed by
+`consensus_params_update` v2 from both proposal paths at the activation
+boundary, so every validator adopts them at the same height. The node-local
+Tenderdash mempool (`max-tx-bytes`) and RPC (`max-body-bytes`) limits are
+dashmate options sized to match.
+
 ## The Full Journey
 
 Here is the end-to-end lifecycle of a state transition, from a client's perspective

@@ -31,7 +31,7 @@ const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
 
 const MAX_PATH_COMPONENTS: usize = 256;
 const MAX_GROVEDB_KEY_BYTES: usize = 255;
-const MAX_PATH_QUERY_BYTES: usize = 64 * 1024;
+pub(crate) const MAX_PATH_QUERY_BYTES: usize = 64 * 1024;
 
 fn validate_path_elements_request(request: &GetPathElementsRequest) -> Result<(), Status> {
     let v0 = match request.version.as_ref() {
