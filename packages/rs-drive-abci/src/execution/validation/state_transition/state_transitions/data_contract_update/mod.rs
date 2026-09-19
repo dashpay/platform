@@ -2749,6 +2749,10 @@ mod tests {
 
             let mut token_configuration =
                 TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            // No base supply, so the owner's balance is what the claim paid on
+            // every protocol version: from version 14 the update mints the base
+            // supply of a token it adds, to the owner here.
+            token_configuration.set_base_supply(0);
             token_configuration.set_conventions(TokenConfigurationConvention::V0(
                 TokenConfigurationConventionV0 {
                     localizations: BTreeMap::from([(
@@ -3157,6 +3161,148 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::InternalError(_)]
+            );
+        }
+
+        /// Registers a contract without tokens and adds a token with a base
+        /// supply of 1 000 000 at position 0 through a data contract update,
+        /// both under `protocol_version`. Returns the contract owner's resulting
+        /// balance of the token and the token's total supply.
+        async fn add_token_with_base_supply_by_update(
+            protocol_version: ProtocolVersion,
+        ) -> (Option<TokenAmount>, Option<TokenAmount>) {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a known protocol version");
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(protocol_version)
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            let platform_state = platform.state.load();
+
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity.id());
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            let mut token_configuration =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            token_configuration.set_base_supply(1_000_000);
+            token_configuration.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "credit".to_string(),
+                            plural_form: "credits".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+            updated_data_contract.add_token(0, token_configuration);
+
+            let token_id = updated_data_contract
+                .token_id(0)
+                .expect("expected the token added at position 0");
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.clone().into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract update transition");
+
+            let update_bytes = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[update_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "the update adding the token must succeed on every protocol version"
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let token_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id.to_buffer(),
+                    identity.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the token balance");
+            let total_supply = platform
+                .drive
+                .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+                .expect("expected to fetch the token total supply");
+
+            (token_balance, total_supply)
+        }
+
+        #[tokio::test]
+        async fn should_mint_base_supply_of_token_added_by_update() {
+            let latest = PlatformVersion::latest().protocol_version;
+
+            assert_eq!(
+                add_token_with_base_supply_by_update(latest).await,
+                (Some(1_000_000), Some(1_000_000))
+            );
+        }
+
+        /// The frozen side of the gate: on protocol version 13 the update
+        /// creates the token with a total supply of zero and credits nobody.
+        #[tokio::test]
+        async fn should_not_mint_base_supply_of_token_added_by_update_on_protocol_version_13() {
+            assert_eq!(
+                add_token_with_base_supply_by_update(13).await,
+                (None, Some(0))
             );
         }
     }

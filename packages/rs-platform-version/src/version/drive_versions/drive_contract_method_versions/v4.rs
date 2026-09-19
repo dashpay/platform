@@ -20,7 +20,12 @@ use crate::version::drive_versions::drive_contract_method_versions::{
 ///   on such a token failed as an internal error and the distribution was unclaimable. There
 ///   is no backfill for tokens added by an update before this version: mainnet has none
 ///   (checked at block 436796, where no contract update ever carried a token and every
-///   token's contract is still at version 1).
+///   token's contract is still at version 1). It also mints the base supply of a token the
+///   update adds, to the identity the contract insert credits at registration (the token's
+///   new tokens destination identity, else the contract owner), and starts the token's total
+///   supply at that amount. v1 left such a token at a total supply of zero with nobody
+///   holding any of it. Nothing is minted retroactively for a token added by an update
+///   before this version.
 /// * `insert.insert_contract` is bumped to `2`, and the v2 contract update does the same for
 ///   an update: a contract whose config declares moderation gets its banlist (`[64, id] / 3`)
 ///   and suspension list (`[64, id] / 4`) trees created at insertion, or by the update that

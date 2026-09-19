@@ -12,13 +12,17 @@ use dpp::fee::fee_result::FeeResult;
 
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
+use crate::drive::balances::total_tokens_root_supply_path_vec;
+use crate::drive::tokens::paths::token_balances_path_vec;
 use crate::error::contract::DataContractError;
+use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -210,6 +214,10 @@ impl Drive {
     /// record under a tree that did not exist and failed as an internal error,
     /// leaving the distribution unclaimable.
     ///
+    /// It also mints the base supply of a token the update adds, to the same
+    /// identity `insert_contract` credits at registration. v1 left such a
+    /// token at a total supply of zero with nobody holding any of it.
+    ///
     /// An update whose config declares a moderation list the stored contract does not keep yet
     /// also creates that list's tree.
     #[allow(clippy::too_many_arguments)]
@@ -240,10 +248,13 @@ impl Drive {
 
         for (token_pos, configuration) in contract.tokens() {
             // Only a token absent from the original contract is new to state.
-            // A token the contract already had keeps the distribution storage
-            // it has, and both helpers error when the token's tree already
-            // exists. That covers a token config update too, which reaches
-            // this method with its token present in the original contract.
+            // A token the contract already had keeps the supply and the
+            // distribution storage it has: its base supply was minted when it
+            // was added, and both distribution helpers error when the token's
+            // tree already exists. That covers a token config update too,
+            // which reaches this method with its token present in the original
+            // contract. An update can not remove a token, so a token is new
+            // exactly once.
             if original_contract.tokens().contains_key(token_pos) {
                 continue;
             }
@@ -254,6 +265,21 @@ impl Drive {
                     token_pos
                 )),
             ))?;
+
+            if configuration.base_supply() > 0 {
+                let destination_identity_id = configuration
+                    .distribution_rules()
+                    .new_tokens_destination_identity()
+                    .copied()
+                    .unwrap_or(contract.owner_id());
+
+                Self::mint_base_supply_of_added_token(
+                    token_id.to_buffer(),
+                    configuration.base_supply(),
+                    destination_identity_id.to_buffer(),
+                    &mut batch_operations,
+                )?;
+            }
 
             if let Some(perpetual_distribution) =
                 configuration.distribution_rules().perpetual_distribution()
@@ -318,12 +344,77 @@ impl Drive {
 
         Ok(batch_operations)
     }
+
+    /// Turns the operations creating the trees of a token the update adds into
+    /// ones that also mint its base supply, the way `insert_contract` v1 does
+    /// at registration: `destination_identity_id` is credited `base_supply`
+    /// and the token's total supply starts at `base_supply`.
+    ///
+    /// The v1 operations already hold the insert of a zero
+    /// total supply, and a batch may hold only one operation per path and
+    /// key, so that insert is replaced rather than followed by a second one.
+    /// The supply helpers used by a mint transition do not fit here: they
+    /// read the current supply and balance from state, where this token's
+    /// trees do not exist until the batch is applied.
+    fn mint_base_supply_of_added_token(
+        token_id: [u8; 32],
+        base_supply: TokenAmount,
+        destination_identity_id: [u8; 32],
+        token_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<(), Error> {
+        // The update transition's basic structure validation rejects such a
+        // base supply as a consensus error, so this is not reachable from a
+        // state transition.
+        if base_supply > i64::MAX as u64 {
+            return Err(
+                ProtocolError::CriticalCorruptedCreditsCodeExecution(format!(
+                    "Token base supply over i64 max, is {}",
+                    base_supply
+                ))
+                .into(),
+            );
+        }
+
+        let zero_total_supply_insert = LowLevelDriveOperation::insert_for_known_path_key_element(
+            total_tokens_root_supply_path_vec(),
+            token_id.to_vec(),
+            Element::new_sum_item(0),
+        );
+
+        // The token is new to the contract and a token id is unique to its
+        // contract and position, so no supply entry can exist yet and the
+        // insert has to be there. Minting on top of an existing entry would
+        // overwrite a live supply.
+        let total_supply_insert = token_operations
+            .iter_mut()
+            .find(|operation| **operation == zero_total_supply_insert)
+            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                "a token new to the contract already has a total supply".to_string(),
+            )))?;
+
+        *total_supply_insert = LowLevelDriveOperation::insert_for_known_path_key_element(
+            total_tokens_root_supply_path_vec(),
+            token_id.to_vec(),
+            Element::new_sum_item(base_supply as i64),
+        );
+
+        token_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
+            token_balances_path_vec(token_id),
+            destination_identity_id.to_vec(),
+            Element::new_sum_item(base_supply as i64),
+        ));
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::balances::total_tokens_root_supply_path_vec;
     use crate::drive::Drive;
+    use crate::error::drive::DriveError;
     use crate::error::Error;
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
@@ -348,6 +439,8 @@ mod tests {
     use dpp::prelude::{DataContract, Identifier};
     use dpp::tests::fixtures::get_dashpay_contract_fixture;
     use dpp::version::PlatformVersion;
+    use dpp::ProtocolError;
+    use grovedb::Element;
     use std::collections::BTreeMap;
 
     const DISTRIBUTION_RECIPIENT: [u8; 32] = [7; 32];
@@ -694,6 +787,366 @@ mod tests {
                 .expect("a perpetual claim should be recordable on both tokens");
             record_pre_programmed_claim(&drive, token_id, platform_version)
                 .expect("a pre-programmed claim should be recordable on both tokens");
+        }
+    }
+
+    const BASE_SUPPLY: u64 = 1_000_000;
+    const BASE_SUPPLY_DESTINATION: [u8; 32] = [9; 32];
+
+    /// A token with a base supply of `BASE_SUPPLY`, credited to `destination`
+    /// when there is one and to the contract owner otherwise.
+    fn token_with_base_supply(destination: Option<Identifier>) -> TokenConfiguration {
+        let mut configuration = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(BASE_SUPPLY),
+        );
+        configuration
+            .distribution_rules_mut()
+            .set_new_tokens_destination_identity(destination);
+        configuration
+    }
+
+    /// Registers a contract without tokens, then adds `configuration` at
+    /// position 0 through `update_contract`. Returns the updated contract and
+    /// the id of the added token.
+    fn add_token_by_update(
+        drive: &Drive,
+        configuration: TokenConfiguration,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, [u8; 32]) {
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract without tokens");
+
+        contract.set_tokens(BTreeMap::from([(0, configuration)]));
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update adding the token should succeed");
+
+        let token_id = contract
+            .token_id(0)
+            .expect("expected the token added at position 0")
+            .to_buffer();
+
+        (contract, token_id)
+    }
+
+    fn balance_and_total_supply(
+        drive: &Drive,
+        token_id: [u8; 32],
+        identity_id: [u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> (Option<u64>, Option<u64>) {
+        let balance = drive
+            .fetch_identity_token_balance(token_id, identity_id, None, platform_version)
+            .expect("expected to fetch the token balance");
+        let total_supply = drive
+            .fetch_token_total_supply(token_id, None, platform_version)
+            .expect("expected to fetch the token total supply");
+        (balance, total_supply)
+    }
+
+    #[test]
+    fn should_mint_base_supply_to_contract_owner_for_token_added_by_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let (contract, token_id) =
+            add_token_by_update(&drive, token_with_base_supply(None), platform_version);
+
+        assert_eq!(
+            balance_and_total_supply(
+                &drive,
+                token_id,
+                contract.owner_id().to_buffer(),
+                platform_version
+            ),
+            (Some(BASE_SUPPLY), Some(BASE_SUPPLY))
+        );
+        assert_eq!(
+            drive
+                .fetch_token_total_aggregated_identity_balances(token_id, None, platform_version)
+                .expect("expected to fetch the aggregated balances"),
+            Some(BASE_SUPPLY),
+            "the balances of the token must sum to its total supply"
+        );
+    }
+
+    #[test]
+    fn should_mint_base_supply_to_new_tokens_destination_identity_for_token_added_by_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let (contract, token_id) = add_token_by_update(
+            &drive,
+            token_with_base_supply(Some(Identifier::from(BASE_SUPPLY_DESTINATION))),
+            platform_version,
+        );
+
+        assert_eq!(
+            balance_and_total_supply(&drive, token_id, BASE_SUPPLY_DESTINATION, platform_version),
+            (Some(BASE_SUPPLY), Some(BASE_SUPPLY))
+        );
+        assert_eq!(
+            drive
+                .fetch_identity_token_balance(
+                    token_id,
+                    contract.owner_id().to_buffer(),
+                    None,
+                    platform_version
+                )
+                .expect("expected to fetch the owner's token balance"),
+            None,
+            "the owner gets nothing when the token names another destination"
+        );
+    }
+
+    /// The frozen side of the gate, through the same dispatcher: protocol
+    /// version 13 selects v1, which creates the token's trees with a total
+    /// supply of zero and credits nobody.
+    #[test]
+    fn should_not_mint_base_supply_of_token_added_by_update_on_protocol_version_13() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+
+        let (contract, token_id) =
+            add_token_by_update(&drive, token_with_base_supply(None), platform_version);
+
+        assert_eq!(
+            balance_and_total_supply(
+                &drive,
+                token_id,
+                contract.owner_id().to_buffer(),
+                platform_version
+            ),
+            (None, Some(0))
+        );
+    }
+
+    #[test]
+    fn should_leave_token_without_base_supply_added_by_update_at_zero_supply() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let configuration = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+        );
+        let (contract, token_id) = add_token_by_update(&drive, configuration, platform_version);
+
+        assert_eq!(
+            balance_and_total_supply(
+                &drive,
+                token_id,
+                contract.owner_id().to_buffer(),
+                platform_version
+            ),
+            (None, Some(0))
+        );
+    }
+
+    #[test]
+    fn should_mint_base_supply_of_every_token_added_by_one_update() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract without tokens");
+
+        let destination = Identifier::from(BASE_SUPPLY_DESTINATION);
+        contract.set_tokens(BTreeMap::from([
+            (0, token_with_base_supply(None)),
+            (1, token_with_base_supply(Some(destination))),
+        ]));
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update adding two tokens should succeed");
+
+        for (position, holder) in [(0, contract.owner_id()), (1, destination)] {
+            let token_id = contract
+                .token_id(position)
+                .expect("expected both tokens")
+                .to_buffer();
+            assert_eq!(
+                balance_and_total_supply(&drive, token_id, holder.to_buffer(), platform_version),
+                (Some(BASE_SUPPLY), Some(BASE_SUPPLY)),
+                "token at position {position}"
+            );
+        }
+    }
+
+    /// Nothing is minted retroactively. A token added by update before
+    /// protocol version 14 got no base supply, and every later update finds it
+    /// in the original contract, so it stays that way after the upgrade.
+    #[test]
+    fn should_not_mint_base_supply_of_token_added_by_update_before_protocol_version_14() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        let platform_version = PlatformVersion::latest();
+
+        let (mut contract, token_id) =
+            add_token_by_update(&drive, token_with_base_supply(None), platform_version_13);
+
+        contract.increment_version();
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update after the upgrade should succeed");
+
+        assert_eq!(
+            balance_and_total_supply(
+                &drive,
+                token_id,
+                contract.owner_id().to_buffer(),
+                platform_version
+            ),
+            (None, Some(0))
+        );
+    }
+
+    /// Neither refusal is reachable through a state transition: the update's
+    /// basic structure validation rejects a base supply over `i64::MAX`, and a
+    /// token new to a contract has no supply entry in state.
+    #[test]
+    fn should_refuse_to_mint_an_unstorable_base_supply_or_over_an_existing_total_supply() {
+        let token_id = [3; 32];
+
+        let mut operations = vec![LowLevelDriveOperation::insert_for_known_path_key_element(
+            total_tokens_root_supply_path_vec(),
+            token_id.to_vec(),
+            Element::new_sum_item(0),
+        )];
+        let result = Drive::mint_base_supply_of_added_token(
+            token_id,
+            i64::MAX as u64 + 1,
+            BASE_SUPPLY_DESTINATION,
+            &mut operations,
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Protocol(error))
+                if matches!(*error, ProtocolError::CriticalCorruptedCreditsCodeExecution(_))
+        ));
+
+        // `create_token_trees_operations` queues no total supply insert when
+        // state already holds one.
+        let result = Drive::mint_base_supply_of_added_token(
+            token_id,
+            BASE_SUPPLY,
+            BASE_SUPPLY_DESTINATION,
+            &mut vec![],
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+        ));
+    }
+
+    /// The base supply is minted once, by the update that adds the token. A
+    /// later update sees the token in the original contract and must not mint
+    /// again, and neither may it touch a token that got its base supply at
+    /// registration.
+    #[test]
+    fn should_mint_base_supply_only_in_the_update_that_adds_the_token() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+        contract.set_tokens(BTreeMap::from([(0, token_with_base_supply(None))]));
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract with a token");
+
+        // The first update adds a second token next to the registered one, the
+        // second update changes nothing about either of them.
+        let mut tokens = contract.tokens().clone();
+        tokens.insert(1, token_with_base_supply(None));
+        contract.set_tokens(tokens);
+
+        for _ in 0..2 {
+            contract.increment_version();
+            drive
+                .update_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("update keeping existing tokens should succeed");
+        }
+
+        for position in [0, 1] {
+            let token_id = contract
+                .token_id(position)
+                .expect("expected both tokens")
+                .to_buffer();
+            assert_eq!(
+                balance_and_total_supply(
+                    &drive,
+                    token_id,
+                    contract.owner_id().to_buffer(),
+                    platform_version
+                ),
+                (Some(BASE_SUPPLY), Some(BASE_SUPPLY)),
+                "token at position {position}"
+            );
         }
     }
 }
