@@ -82,13 +82,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             None,
         )
         .await
-        .map_err(|e| {
-            // Preserve a structured key-unavailable signer failure so the FFI
-            // boundary can still restore code 31; only genuine operation
-            // failures get stringified into `TokenError`.
-            crate::error::preserve_signer_key_unavailable_or(e, |e| {
-                PlatformWalletError::TokenError(format!("Token transfer failed: {}", e))
-            })
-        })
+        // Keeps the SDK error, so a consensus rejection reaches the FFI
+        // boundary with its code instead of as rendered text.
+        .map_err(|e| PlatformWalletError::token_operation_failed("transfer", e))
     }
 }
