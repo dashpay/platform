@@ -27,8 +27,10 @@ mod dpns_tests {
             // reading the old value, billing one fewer seek than the V3 path.
             // +740 per document write: the contract's version item is one more
             // node to rehash. +4_300 per domain create: the v2 state validation
-            // probes contested storage for the id.
-            6_021_500,
+            // probes contested storage for the id. The app-connect system
+            // contract registered at a v14 genesis is one more sibling under the
+            // contracts subtree, so every contract-tree read bills more bytes.
+            6_175_580,
         )
         .await;
     }
