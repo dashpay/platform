@@ -30,7 +30,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
     },
     initialization: DriveAbciInitializationMethodVersions {
         initial_core_height_and_time: 0,
-        create_genesis_state: 1,
+        create_genesis_state: 2, // registers the app-connect contract at genesis
     },
     core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions {
         update_core_info: 0,

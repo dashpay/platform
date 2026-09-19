@@ -186,8 +186,8 @@ describe('App Connect Contract', () => {
           expect(error.keyword).to.equal('minItems');
         });
 
-        it('should be not longer than 284 bytes', async () => {
-          rawLoginKeyResponseDocument.encryptedPayload = crypto.randomBytes(285);
+        it('should be not longer than 572 bytes', async () => {
+          rawLoginKeyResponseDocument.encryptedPayload = crypto.randomBytes(573);
 
           const document = dpp.document.create(dataContract, identityId, 'loginKeyResponse', rawLoginKeyResponseDocument);
           const validationResult = document.validate(dpp.protocolVersion);
@@ -196,8 +196,10 @@ describe('App Connect Contract', () => {
           expect(error.keyword).to.equal('maxItems');
         });
 
-        it('should accept eight keys', async () => {
-          rawLoginKeyResponseDocument.encryptedPayload = crypto.randomBytes(284);
+        it('should accept the maximum grant of seventeen keys', async () => {
+          // Session key plus eight encBindings records asking for both
+          // purposes: 28-byte envelope + 17 * 32 = 572 bytes.
+          rawLoginKeyResponseDocument.encryptedPayload = crypto.randomBytes(28 + (17 * 32));
 
           const document = dpp.document.create(dataContract, identityId, 'loginKeyResponse', rawLoginKeyResponseDocument);
           const validationResult = document.validate(dpp.protocolVersion);

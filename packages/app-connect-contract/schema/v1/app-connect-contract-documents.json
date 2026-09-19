@@ -50,8 +50,8 @@
         "type": "array",
         "byteArray": true,
         "minItems": 60,
-        "maxItems": 284,
-        "description": "The session key material encrypted to the app: a 28-byte envelope followed by 32 bytes per key, one to eight keys",
+        "maxItems": 572,
+        "description": "The session key material encrypted to the app: a 28-byte envelope followed by 32 bytes per key, one to seventeen keys (the session key plus up to eight encBindings records with both purposes)",
         "position": 3
       }
     },
