@@ -316,6 +316,33 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     a total supply of zero with nobody holding any of it. Nothing is minted
 ///     retroactively for a token an update added under an earlier version.
 ///
+/// 16. **Contract moderation**: a data contract may declare, in its config,
+///     a banlist and/or a suspension list of identities and who edits them
+///     (the owner, or the owner and up to `SystemLimits::max_contract_moderators`
+///     named identities, each of which must exist). `CONTRACT_VERSIONS_V6`
+///     admits config V2 (`max_version: 2`, the default stays 1), which carries
+///     the declaration; a contract create or update carrying a V2 config is
+///     inactive before this version (`StateTransition::active_version_range`).
+///     `DPP_VALIDATION_VERSIONS_V5.validate_config_update = 2` lets an update
+///     turn a list on and change the moderators, never turn a list off.
+///     `ContractUserModeration` (state transition type 24, gated by
+///     `CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION`) bans, unbans,
+///     suspends until a block time (at most
+///     `SystemLimits::max_contract_suspension_until`) and unsuspends one
+///     identity, signed by the owner or a moderator with a CRITICAL key;
+///     `DRIVE_ABCI_VALIDATION_VERSIONS_V10` turns its gates on, moves the
+///     contract update's basic structure to 2 and the contract create and
+///     update state validation (already 1 here) checks the named moderators.
+///     `batch_state_transition.contract_moderation_gate = Some(0)` makes the
+///     batch transformer refuse, paid, the document transitions of a banned or
+///     suspended signer and collect a lapsed suspension, which
+///     `documents_batch_transition` 1 (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4`)
+///     deletes when the batch executes. Token transitions are not gated.
+///     `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2 and
+///     has `update_contract` 2 create the list trees (`[64, contract] / 3`
+///     and `/ 4`) and adds the `moderation` method table; the verify and
+///     query tables gain the status and entries methods.
+///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
 ///   `is_allowed`, and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` is the first
@@ -368,23 +395,23 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees and the moderation method table
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
-        validation: DPP_VALIDATION_VERSIONS_V5,
-        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire
+        validation: DPP_VALIDATION_VERSIONS_V5, // changed: validate_config_update 2 admits the contract moderation declaration of config V2
+        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; the ContractUserModeration transition
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
@@ -398,7 +425,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1)
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators and max_contract_suspension_until
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

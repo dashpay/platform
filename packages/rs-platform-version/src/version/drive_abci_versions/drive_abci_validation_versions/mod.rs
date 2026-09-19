@@ -214,6 +214,16 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     ///
     /// [`transform_document_transition`]: crate
     pub failed_per_transition_action: FeatureVersion,
+    /// Versions the contract moderation gate the batch transformer runs for the document
+    /// transitions of one contract: the signer's status read, the refusal of a banned or
+    /// suspended signer, and the collection of a lapsed suspension for the batch to sweep
+    /// (`contract_moderation_gate`).
+    ///
+    /// - `None` (protocol version 13 and below): no gate. Contract moderation does not exist,
+    ///   and the shared transformer does exactly what it did before it.
+    /// - `Some(0)` (protocol version 14+): the gate runs for a contract whose config declares
+    ///   moderation.
+    pub contract_moderation_gate: OptionalFeatureVersion,
     /// Versions the
     /// `fetch_documents_for_transitions_knowing_contract_and_document_type`
     /// helper. v0 (PROTOCOL_VERSION_11 and below) passes `epoch=None`

@@ -17,10 +17,14 @@
 //   * `dpp.validation.validation_result.flatten`
 //   * `dpp.validation.validation_result.merge_many`
 //   * `drive_abci...batch_state_transition.failed_per_transition_action`
+//   * `drive_abci...batch_state_transition.contract_moderation_gate`
 // A future protocol bump that needs different aggregator or
 // failure-action semantics should add another value to one of those
 // fields rather than rename this file.
 
+mod contract_moderation_gate;
+
+use contract_moderation_gate::BatchTransitionContractModerationGate;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -34,14 +38,9 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
 
-use dpp::consensus::state::contract_moderation::{
-    ContractUserBannedError, ContractUserSuspendedError,
-};
 use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::config::moderation::ContractModerationList;
-use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
@@ -446,65 +445,22 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             ));
         };
 
-        // Contract moderation (protocol version 14). A moderated contract refuses every
-        // document transition of an identity on its banlist or under a live suspension, and
-        // the first document transition after a suspension lapsed sweeps the stale entry.
-        // The gate runs here, in the transformer, so the mempool refuses a barred identity
-        // as a block does. Only a config that declares moderation triggers the read, and no
-        // contract could declare it before protocol version 14 (config V2 does not decode
-        // there), so older blocks replay unchanged.
-        if let Some(moderation) = data_contract_fetch_info.contract.config().moderation() {
-            let lists: Vec<ContractModerationList> = moderation.lists().collect();
-            let (fee, status) = drive.fetch_contract_moderation_status_with_fee(
-                *data_contract_id,
-                owner_id,
-                &lists,
-                &block_info.epoch,
-                transaction,
-                platform_version,
-            )?;
-            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-
-            let barred: Option<ConsensusError> = if status.banned {
-                Some(ContractUserBannedError::new(*data_contract_id, owner_id).into())
-            } else {
-                status
-                    .suspended_until
-                    .filter(|until| *until > block_info.time_ms)
-                    .map(|until| {
-                        ContractUserSuspendedError::new(*data_contract_id, owner_id, until).into()
-                    })
-            };
-            if let Some(error) = barred {
-                // Paid: the signer is authenticated and the read happened. Every transition
-                // against the contract is refused on its own, as a per-transition failure is
-                // anywhere else in this transformer, so each one's contract nonce is bumped
-                // and none stays replayable.
-                let mut actions = vec![];
-                let mut errors = vec![];
-                for transition in document_transitions.values().flatten() {
-                    let failed = Self::failed_per_transition_action(
-                        transition.base(),
-                        owner_id,
-                        vec![error.clone()],
-                        platform_version,
-                    )?;
-                    actions.extend(failed.data);
-                    errors.extend(failed.errors);
-                }
-                return Ok(if actions.is_empty() {
-                    ConsensusValidationResult::new_with_errors(if errors.is_empty() {
-                        vec![error]
-                    } else {
-                        errors
-                    })
-                } else {
-                    ConsensusValidationResult::new_with_data_and_errors(actions, errors)
-                });
-            }
-            if status.has_lapsed_suspension_at(block_info.time_ms) {
-                lapsed_suspensions.insert((*data_contract_id, owner_id));
-            }
+        // Contract moderation (protocol version 14): a moderated contract refuses the document
+        // transitions of a banned or suspended signer. The gate is its own versioned helper,
+        // selected by `batch_state_transition.contract_moderation_gate`, so that this shared
+        // transformer does for earlier protocol versions exactly what it did before.
+        if let Some(refusal) = Self::contract_moderation_gate(
+            drive,
+            block_info,
+            &data_contract_fetch_info.contract,
+            owner_id,
+            document_transitions,
+            lapsed_suspensions,
+            execution_context,
+            transaction,
+            platform_version,
+        )? {
+            return Ok(refusal);
         }
 
         let validation_result = document_transitions

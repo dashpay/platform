@@ -172,6 +172,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 // ownership/revision check). v0 stays for chain
                 // reproducibility on PROTOCOL_VERSION_11 and below.
                 failed_per_transition_action: 1,
+                // Contract moderation (protocol version 14): the batch transformer gates the
+                // document transitions of a moderated contract on the signer's status.
+                contract_moderation_gate: Some(0),
                 // PROTOCOL_VERSION_12 (v3.1 hard fork): fetch_documents
                 // helpers bumped to v1 which bill the grovedb cost of
                 // their query_documents calls. v0 stays for PV11 chain

@@ -75,7 +75,7 @@ The transform reads the contract and the target's status and refuses, paid, by b
 
 ### The Document Gate
 
-The gate sits in the batch transformer (a barred signer has every one of its transitions against the contract refused on its own, each with its nonce bump), `transform_document_transitions_within_contract_v0`, right after the contract is fetched. A config that declares no moderation costs nothing: no read, no branch. Otherwise the transformer reads the owner's status on the lists the contract keeps, bills the read, and:
+The gate sits in the batch transformer (a barred signer has every one of its transitions against the contract refused on its own, each with its nonce bump), `transform_document_transitions_within_contract_v0`, right after the contract is fetched, as its own versioned helper: `contract_moderation_gate`, selected by `batch_state_transition.contract_moderation_gate` (`None` up to protocol version 13, `Some(0)` from 14). That transformer is shared with every earlier protocol version, so the gate is a version-table fact there, not something inferred from contract data. A config that declares no moderation costs nothing: no read, no branch. Otherwise the transformer reads the owner's status on the lists the contract keeps, bills the read, and:
 
 - banned: every document transition of the batch on that contract fails with `ContractUserBannedError` (41107), paid, one contract nonce bump per contract;
 - suspended and not lapsed: the same with `ContractUserSuspendedError` (41108);
@@ -116,7 +116,7 @@ A status query answers for the lists it names and no others: the SDK result, `Co
 
 ## Versioning Touchpoints
 
-All in place for protocol version 14: `CONTRACT_VERSIONS_V6` admits config V2 (`max_version: 2`, default stays 1) and `validate_config_update` 2; `STATE_TRANSITION_SERIALIZATION_VERSIONS_V3` and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` carry the transition's slots, and the contract update's basic structure moves to 2 to validate the declaration; `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` and `update_contract` to 2 and adds the `moderation` table; `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds the converter slot and bumps `documents_batch_transition` to 1 for the sweep; `DRIVE_VERIFY_METHOD_VERSIONS` and `DRIVE_ABCI_QUERY_VERSIONS` gain their moderation tables; `SYSTEM_LIMITS_V4` gains `max_contract_moderators`.
+All in place for protocol version 14: `CONTRACT_VERSIONS_V6` admits config V2 (`max_version: 2`, default stays 1) and `validate_config_update` 2; `STATE_TRANSITION_SERIALIZATION_VERSIONS_V3` and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` carry the transition's slots and `batch_state_transition.contract_moderation_gate`, and the contract update's basic structure moves to 2 to validate the declaration; `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` and `update_contract` to 2 and adds the `moderation` table; `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds the converter slot and bumps `documents_batch_transition` to 1 for the sweep; `DRIVE_VERIFY_METHOD_VERSIONS` and `DRIVE_ABCI_QUERY_VERSIONS` gain their moderation tables; `SYSTEM_LIMITS_V4` gains `max_contract_moderators`.
 
 ## What Is Not There Yet
 
