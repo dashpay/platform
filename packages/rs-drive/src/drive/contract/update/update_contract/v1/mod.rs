@@ -14,6 +14,7 @@ use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use crate::error::contract::DataContractError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -199,7 +200,7 @@ impl Drive {
 
     /// operations for updating a contract.
     #[allow(clippy::too_many_arguments)]
-    fn update_contract_operations_v1(
+    pub(in crate::drive::contract::update::update_contract) fn update_contract_operations_v1(
         &self,
         contract_element: Element,
         contract: &DataContract,
@@ -241,6 +242,25 @@ impl Drive {
                 transaction,
                 platform_version,
             )?);
+
+            // A token added by this update gets its once-per-identity claims subtree here, as
+            // `insert_contract` does for the tokens of a new contract; without it every claim
+            // would insert under a path that does not exist. Tokens of the original contract
+            // can not be reconfigured, so theirs already exists.
+            if !original_contract.tokens().contains_key(token_pos)
+                && configuration
+                    .distribution_rules()
+                    .once_per_identity_distribution()
+                    .is_some()
+            {
+                self.add_once_per_identity_distribution(
+                    token_id.to_buffer(),
+                    estimated_costs_only_with_layer_info,
+                    &mut batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
         }
 
         if !contract.groups().is_empty() {
@@ -303,9 +323,13 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-    use dpp::data_contract::accessors::v1::DataContractV1Setters;
+    use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Setters;
+    use dpp::data_contract::associated_token::token_once_per_identity_distribution::v0::TokenOncePerIdentityDistributionV0;
+    use dpp::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
     use dpp::data_contract::config::v0::DataContractConfigSettersV0;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;
@@ -315,11 +339,6 @@ mod tests {
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
-    /// v1 is frozen: protocol version 13 is the last one that selects it.
-    fn frozen_platform_version() -> &'static PlatformVersion {
-        PlatformVersion::get(13).expect("expected protocol version 13")
-    }
-
     /// Exercises `update_contract_operations_v1` when the updated contract
     /// gains tokens that weren't in the original. This covers the loop that
     /// calls `create_token_trees_operations` for each token.
@@ -328,7 +347,7 @@ mod tests {
     #[test]
     fn test_update_contract_v1_adds_tokens_creates_token_trees() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = frozen_platform_version();
+        let platform_version = PlatformVersion::latest();
 
         // Original: no tokens.
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
@@ -366,6 +385,100 @@ mod tests {
             .expect("update adding tokens should succeed");
     }
 
+    /// A token added by an update whose rules carry a once-per-identity distribution gets its
+    /// claims subtree, so a claim can be recorded under it; a later update that adds nothing
+    /// leaves the existing subtree alone.
+    #[test]
+    fn test_update_contract_v1_adds_token_with_once_per_identity_distribution() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert initial contract without tokens");
+
+        let mut token_config = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+        );
+        token_config
+            .distribution_rules_mut()
+            .set_once_per_identity_distribution(Some(TokenOncePerIdentityDistribution::V0(
+                TokenOncePerIdentityDistributionV0 { amount: 100 },
+            )));
+        contract.set_tokens(BTreeMap::from([(0, token_config)]));
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update adding the token should succeed");
+
+        let token_id = contract.token_id(0).expect("expected the token id");
+        let claimant = Identifier::random();
+
+        let operations = drive
+            .mark_once_per_identity_release_as_distributed_operations(
+                token_id.to_buffer(),
+                claimant.to_buffer(),
+                1_000,
+                &BlockInfo::default(),
+                &mut None,
+                platform_version,
+            )
+            .expect("expected the claim operations");
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("the claim must insert under the token's claims subtree");
+
+        assert_eq!(
+            drive
+                .fetch_once_per_identity_distribution_claim(
+                    token_id.to_buffer(),
+                    claimant,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the claim"),
+            Some(1_000)
+        );
+
+        // The token now belongs to the original contract, so its subtree is not added again.
+        contract.increment_version();
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("a later update should leave the claims subtree alone");
+    }
+
     /// Exercises `update_contract_operations_v1` where the updated contract
     /// gains groups that weren't in the original. This covers the
     /// `if !contract.groups().is_empty()` true branch inside
@@ -373,7 +486,7 @@ mod tests {
     #[test]
     fn test_update_contract_v1_adds_groups() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = frozen_platform_version();
+        let platform_version = PlatformVersion::latest();
 
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
@@ -419,7 +532,7 @@ mod tests {
     #[test]
     fn test_update_contract_v1_keyword_delta_via_update_contract() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = frozen_platform_version();
+        let platform_version = PlatformVersion::latest();
 
         // Insert the keyword_search system contract first (required because
         // update_contract_v1 calls update_contract_keywords_operations).
@@ -536,7 +649,7 @@ mod tests {
     #[test]
     fn clearing_a_contracts_keywords_leaves_the_old_ones_indexed() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = frozen_platform_version();
+        let platform_version = PlatformVersion::latest();
 
         let keyword_search =
             load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
@@ -601,7 +714,7 @@ mod tests {
     #[test]
     fn test_update_contract_v1_description_via_update_contract() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = frozen_platform_version();
+        let platform_version = PlatformVersion::latest();
 
         let keyword_search =
             load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)

@@ -15,7 +15,6 @@ use crate::error::contract::DataContractError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
-use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -201,13 +200,12 @@ impl Drive {
 
     /// operations for updating a contract.
     ///
-    /// Differs from v1 in one way: a token the update adds also gets its
-    /// perpetual, pre-programmed and once-per-identity distribution storage,
-    /// the same storage `insert_contract` creates for a token present at
-    /// registration. v1 created only the token's balance, identity info,
-    /// status, contract info and supply entries, so the first claim on such a
-    /// token wrote its claim record under a tree that did not exist and failed
-    /// as an internal error, leaving the distribution unclaimable.
+    /// The v1 operations, plus the perpetual and pre-programmed distribution
+    /// storage of every token the update adds: the same storage
+    /// `insert_contract` creates for a token present at registration. v1
+    /// created none of it, so the first claim on such a token wrote its claim
+    /// record under a tree that did not exist and failed as an internal error,
+    /// leaving the distribution unclaimable.
     #[allow(clippy::too_many_arguments)]
     fn update_contract_operations_v2(
         &self,
@@ -222,7 +220,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = self
-            .update_contract_operations_v0(
+            .update_contract_operations_v1(
                 contract_element,
                 contract,
                 original_contract,
@@ -233,25 +231,6 @@ impl Drive {
             )?;
 
         for (token_pos, configuration) in contract.tokens() {
-            let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
-                DataContractError::CorruptedDataContract(format!(
-                    "data contract has a token at position {}, but it can not be found",
-                    token_pos
-                )),
-            ))?;
-
-            batch_operations.extend(self.create_token_trees_operations(
-                contract.id(),
-                *token_pos,
-                token_id.to_buffer(),
-                configuration.start_as_paused(),
-                true,
-                &mut None,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                platform_version,
-            )?);
-
             // Only a token absent from the original contract is new to state.
             // A token the contract already had keeps the distribution storage
             // it has, and both helpers error when the token's tree already
@@ -260,6 +239,13 @@ impl Drive {
             if original_contract.tokens().contains_key(token_pos) {
                 continue;
             }
+
+            let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
+                DataContractError::CorruptedDataContract(format!(
+                    "data contract has a token at position {}, but it can not be found",
+                    token_pos
+                )),
+            ))?;
 
             if let Some(perpetual_distribution) =
                 configuration.distribution_rules().perpetual_distribution()
@@ -289,73 +275,6 @@ impl Drive {
                     platform_version,
                 )?;
             }
-
-            // The once-per-identity claims subtree, as `insert_contract` creates it for the
-            // tokens of a new contract; without it every claim would insert under a path
-            // that does not exist.
-            if configuration
-                .distribution_rules()
-                .once_per_identity_distribution()
-                .is_some()
-            {
-                self.add_once_per_identity_distribution(
-                    token_id.to_buffer(),
-                    estimated_costs_only_with_layer_info,
-                    &mut batch_operations,
-                    transaction,
-                    platform_version,
-                )?;
-            }
-        }
-
-        if !contract.groups().is_empty() {
-            batch_operations.extend(self.add_new_groups_operations(
-                contract.id(),
-                contract.groups(),
-                estimated_costs_only_with_layer_info,
-                transaction,
-                platform_version,
-            )?);
-        }
-
-        // Skipping an empty keyword set is load-bearing, but it is a shield
-        // rather than a fix, and both halves matter to anyone changing it.
-        //
-        // What it prevents: the keyword update emits its deletes blind to each
-        // other in one batch, so several of them jointly emptying the shared
-        // `byContractId/<contractId>` group would leave that group tree behind
-        // with nothing in it — and emptying the group without refilling it
-        // requires exactly this empty-set case.
-        //
-        // What it costs: the previous keyword documents are not deleted either,
-        // so a contract that clears its keywords advertises none while keyword
-        // search still returns it under the old ones. Removing this guard to fix
-        // that trades a stale index for a stranded group tree; the deletes have
-        // to become sibling-aware first. Both halves are pinned —
-        // `clearing_a_contracts_keywords_leaves_the_old_ones_indexed` and
-        // `clearing_every_keyword_leaves_an_empty_by_contract_id_group_behind`.
-        if !contract.keywords().is_empty() {
-            batch_operations.extend(self.update_contract_keywords_operations(
-                contract.id(),
-                contract.owner_id(),
-                contract.keywords(),
-                block_info,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                platform_version,
-            )?);
-        }
-
-        if let Some(description) = contract.description() {
-            batch_operations.extend(self.update_contract_description_operations(
-                contract.id(),
-                contract.owner_id(),
-                description,
-                block_info,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                platform_version,
-            )?);
         }
 
         Ok(batch_operations)
@@ -375,9 +294,6 @@ mod tests {
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
-    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Setters;
-    use dpp::data_contract::associated_token::token_once_per_identity_distribution::v0::TokenOncePerIdentityDistributionV0;
-    use dpp::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
     use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
@@ -387,439 +303,10 @@ mod tests {
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::data_contract::config::v0::DataContractConfigSettersV0;
-    use dpp::data_contract::group::v0::GroupV0;
-    use dpp::data_contract::group::Group;
     use dpp::prelude::{DataContract, Identifier};
-    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::get_dashpay_contract_fixture;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
-
-    /// Exercises `update_contract_operations_v2` when the updated contract
-    /// gains tokens that weren't in the original. This covers the loop that
-    /// calls `create_token_trees_operations` for each token.
-    /// PR #3516 inserts contracts with tokens but does not exercise an
-    /// UPDATE that adds tokens.
-    #[test]
-    fn test_update_contract_v2_adds_tokens_creates_token_trees() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-
-        // Original: no tokens.
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-        contract.config_mut().set_readonly(false);
-
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("insert initial contract without tokens");
-
-        // Updated: add a token configuration. The update path exercises the
-        // `create_token_trees_operations` call in update_contract_operations_v2.
-        let token_config = TokenConfiguration::V0(
-            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
-        );
-        contract.set_tokens(BTreeMap::from([(0, token_config)]));
-        contract.increment_version();
-
-        drive
-            .update_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("update adding tokens should succeed");
-    }
-
-    /// A token added by an update whose rules carry a once-per-identity distribution gets its
-    /// claims subtree, so a claim can be recorded under it; a later update that adds nothing
-    /// leaves the existing subtree alone.
-    #[test]
-    fn test_update_contract_v2_adds_token_with_once_per_identity_distribution() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-        contract.config_mut().set_readonly(false);
-
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("insert initial contract without tokens");
-
-        let mut token_config = TokenConfiguration::V0(
-            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
-        );
-        token_config
-            .distribution_rules_mut()
-            .set_once_per_identity_distribution(Some(TokenOncePerIdentityDistribution::V0(
-                TokenOncePerIdentityDistributionV0 { amount: 100 },
-            )));
-        contract.set_tokens(BTreeMap::from([(0, token_config)]));
-        contract.increment_version();
-
-        drive
-            .update_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("update adding the token should succeed");
-
-        let token_id = contract.token_id(0).expect("expected the token id");
-        let claimant = Identifier::random();
-
-        let operations = drive
-            .mark_once_per_identity_release_as_distributed_operations(
-                token_id.to_buffer(),
-                claimant.to_buffer(),
-                1_000,
-                &BlockInfo::default(),
-                &mut None,
-                platform_version,
-            )
-            .expect("expected the claim operations");
-        drive
-            .apply_batch_low_level_drive_operations(
-                None,
-                None,
-                operations,
-                &mut vec![],
-                &platform_version.drive,
-            )
-            .expect("the claim must insert under the token's claims subtree");
-
-        assert_eq!(
-            drive
-                .fetch_once_per_identity_distribution_claim(
-                    token_id.to_buffer(),
-                    claimant,
-                    None,
-                    platform_version,
-                )
-                .expect("expected to fetch the claim"),
-            Some(1_000)
-        );
-
-        // The token now belongs to the original contract, so its subtree is not added again.
-        contract.increment_version();
-        drive
-            .update_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("a later update should leave the claims subtree alone");
-    }
-
-    /// Exercises `update_contract_operations_v2` where the updated contract
-    /// gains groups that weren't in the original. This covers the
-    /// `if !contract.groups().is_empty()` true branch inside
-    /// `update_contract_operations_v2`, invoking `add_new_groups_operations`.
-    #[test]
-    fn test_update_contract_v2_adds_groups() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("insert");
-
-        // Add a group.
-        let member = Identifier::random();
-        let group = Group::V0(GroupV0 {
-            members: BTreeMap::from([(member, 1)]),
-            required_power: 1,
-        });
-        contract.set_groups(BTreeMap::from([(0, group)]));
-        contract.increment_version();
-
-        drive
-            .update_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("update adding groups should succeed");
-    }
-
-    /// Exercises `update_contract_operations_v2`'s keyword-update branch:
-    /// update a contract that starts with some keywords to a new set of
-    /// keywords (different set), routed through the full `update_contract_v2`
-    /// path rather than the dedicated `update_contract_keywords` API.
-    /// PR #3516 covers the dedicated API but not the embedded path invoked
-    /// via `update_contract`.
-    #[test]
-    fn test_update_contract_v2_keyword_delta_via_update_contract() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-
-        // Insert the keyword_search system contract first (required because
-        // update_contract_v2 calls update_contract_keywords_operations).
-        let keyword_search =
-            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
-                .expect("load keyword_search");
-        drive
-            .apply_contract(
-                &keyword_search,
-                BlockInfo::default(),
-                true,
-                None,
-                None,
-                platform_version,
-            )
-            .expect("apply keyword_search");
-
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-        contract.set_keywords(vec!["initial_a".to_string(), "initial_b".to_string()]);
-
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("initial insert with keywords");
-
-        // Now change keywords entirely.
-        contract.set_keywords(vec!["new_x".to_string(), "new_y".to_string()]);
-        contract.increment_version();
-
-        drive
-            .update_contract(
-                &contract,
-                BlockInfo {
-                    time_ms: 2000,
-                    height: 10,
-                    core_height: 5,
-                    epoch: Default::default(),
-                },
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("update keyword delta via update_contract should succeed");
-    }
-
-    /// The keywords the keyword search index currently returns for `contract_id`.
-    fn indexed_keywords(
-        drive: &crate::drive::Drive,
-        keyword_search: &dpp::prelude::DataContract,
-        contract_id: Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Vec<String> {
-        use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
-        use crate::query::{DriveDocumentQuery, WhereClause, WhereOperator};
-        use dpp::document::DocumentV0Getters;
-        use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-        use dpp::platform_value::Value;
-
-        let document_type = keyword_search
-            .document_type_for_name("contractKeywords")
-            .expect("contractKeywords doctype");
-        let mut query = DriveDocumentQuery::all_items_query(keyword_search, document_type, None);
-        query.internal_clauses.equal_clauses.insert(
-            "contractId".to_string(),
-            WhereClause {
-                field: "contractId".to_string(),
-                operator: WhereOperator::Equal,
-                value: Value::Identifier(contract_id.to_buffer()),
-            },
-        );
-        let mut keywords: Vec<String> = drive
-            .query_documents(
-                query,
-                None,
-                false,
-                None,
-                Some(platform_version.protocol_version),
-            )
-            .expect("the byContractId query must succeed")
-            .documents_owned()
-            .into_iter()
-            .map(|document| {
-                document
-                    .properties()
-                    .get_string("keyword")
-                    .expect("every keyword document carries a keyword")
-            })
-            .collect();
-        keywords.sort();
-        keywords
-    }
-
-    /// **This test asserts a defect, not the desired behaviour**, and it is the
-    /// other half of the empty-keyword-set skip above.
-    ///
-    /// Clearing a contract's keywords does not delete its keyword documents: an
-    /// empty set skips the keyword update entirely, so the previous documents
-    /// survive and stay indexed. The contract then advertises no keywords while
-    /// keyword search still returns it under the old ones, permanently.
-    ///
-    /// The skip is a shield, not a fix. It is what keeps the deletes from
-    /// jointly emptying the shared `byContractId` group and stranding it — see
-    /// `clearing_every_keyword_leaves_an_empty_by_contract_id_group_behind` —
-    /// so removing it to make this test go green trades a stale index for an
-    /// empty group tree. Making the deletes sibling-aware has to come first.
-    #[test]
-    fn clearing_a_contracts_keywords_leaves_the_old_ones_indexed() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-
-        let keyword_search =
-            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
-                .expect("load keyword_search");
-        drive
-            .apply_contract(
-                &keyword_search,
-                BlockInfo::default(),
-                true,
-                None,
-                None,
-                platform_version,
-            )
-            .expect("apply keyword_search");
-
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-        contract.set_keywords(vec!["alpha".to_string(), "bravo".to_string()]);
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("initial insert with keywords");
-
-        assert_eq!(
-            indexed_keywords(&drive, &keyword_search, contract.id(), platform_version),
-            vec!["alpha".to_string(), "bravo".to_string()],
-            "baseline: both keywords are indexed"
-        );
-
-        contract.set_keywords(vec![]);
-        contract.increment_version();
-        drive
-            .update_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("clearing keywords via update_contract should succeed");
-
-        assert_eq!(
-            indexed_keywords(&drive, &keyword_search, contract.id(), platform_version),
-            vec!["alpha".to_string(), "bravo".to_string()],
-            "the old keyword documents are expected to survive: an empty keyword set skips \
-             the keyword update rather than performing it"
-        );
-    }
-
-    /// Exercises `update_contract_operations_v2`'s description-update branch:
-    /// changing contract description routes through
-    /// `update_contract_description_operations`. Covers the `if let Some(description)`
-    /// true branch specifically from the v2 update path (not the dedicated update
-    /// description API).
-    #[test]
-    fn test_update_contract_v2_description_via_update_contract() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-
-        let keyword_search =
-            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
-                .expect("load keyword_search");
-        drive
-            .apply_contract(
-                &keyword_search,
-                BlockInfo::default(),
-                true,
-                None,
-                None,
-                platform_version,
-            )
-            .expect("apply keyword_search");
-
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-        contract.set_description(Some("initial description".to_string()));
-
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("initial insert with description");
-
-        contract.set_description(Some("updated description text".to_string()));
-        contract.increment_version();
-
-        drive
-            .update_contract(
-                &contract,
-                BlockInfo {
-                    time_ms: 3000,
-                    height: 20,
-                    core_height: 7,
-                    epoch: Default::default(),
-                },
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("update description via update_contract should succeed");
-    }
 
     const DISTRIBUTION_RECIPIENT: [u8; 32] = [7; 32];
 
