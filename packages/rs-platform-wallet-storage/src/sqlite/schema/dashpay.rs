@@ -30,6 +30,13 @@ use crate::sqlite::schema::blob::impl_persistable_blob;
 // PUBLIC material only: DashPay overlay types reaching `_blob` columns.
 impl_persistable_blob!(DashPayProfile, PaymentEntry);
 
+// `profile_blob` carries an encoding stamp (`profile_format`, V019): 0 is the
+// pre-payment-address `DashPayProfile` shape, 1 the current one. Every write
+// stamps 1; nothing in the crate reads the column back yet (see the module
+// doc), so the stamped decoder is exported for hosts and for the day `load()`
+// grows a reader.
+pub use super::identity_profile_encoding::decode_profile;
+
 /// Both tables are keyed by identity only; their FK to
 /// `identities(identity_id)` cascades via the `wallets → identities` chain.
 /// `wallet_id` feeds the precondition check only — no column.
@@ -50,9 +57,10 @@ pub fn apply(
             let mut delete_stmt =
                 tx.prepare_cached("DELETE FROM dashpay_profiles WHERE identity_id = ?1")?;
             let mut insert_stmt = tx.prepare_cached(
-                "INSERT INTO dashpay_profiles (identity_id, profile_blob) \
-                 VALUES (?1, ?2) \
-                 ON CONFLICT(identity_id) DO UPDATE SET profile_blob = excluded.profile_blob",
+                "INSERT INTO dashpay_profiles (identity_id, profile_blob, profile_format) \
+                 VALUES (?1, ?2, 1) \
+                 ON CONFLICT(identity_id) DO UPDATE SET \
+                    profile_blob = excluded.profile_blob, profile_format = 1",
             )?;
             for (identity_id, profile) in profiles {
                 match profile {

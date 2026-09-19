@@ -176,6 +176,17 @@ FREEZES = [
     Freeze("DashSchemaV2", "5f58417079", ("PersistentTrackedMasternode",)),
     # V3 replaces the asset lock with the shape that has `recipientIsExternal`.
     Freeze("DashSchemaV3", "5f58417079", ("PersistentAssetLock",)),
+    # V4 registered the whole graph live (V3's models plus the sweep columns
+    # on the wallet transaction models). V5 added `PersistentDashpayPaymentAddresses`,
+    # so every model V4 registers is frozen at the last commit that touched
+    # the live models before that.
+    Freeze(
+        "DashSchemaV4",
+        "787cac09e7",
+        tuple(V1_GRAPH_MODELS) + ("PersistentAssetLock", "PersistentTrackedMasternode"),
+        TOKEN_TYPES_FILE,
+        tuple(TOKEN_VALUE_TYPES),
+    ),
 ]
 
 HEADER = "import Foundation\nimport SwiftData\n\n"

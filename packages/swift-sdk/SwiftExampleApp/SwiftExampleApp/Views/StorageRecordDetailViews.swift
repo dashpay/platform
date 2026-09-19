@@ -337,6 +337,29 @@ struct DashpayContactProfileStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentDashpayPaymentAddresses
+
+struct DashpayPaymentAddressesStorageDetailView: View {
+    let record: PersistentDashpayPaymentAddresses
+
+    var body: some View {
+        Form {
+            Section("Profile") {
+                FieldRow(label: "Network", value: Network(rawValue: record.networkRaw)?.displayName ?? String(record.networkRaw))
+                FieldRow(label: "Owner ID (Hex)", value: hexString(record.ownerIdentityId))
+                FieldRow(label: "Profile ID (Hex)", value: hexString(record.profileIdentityId))
+            }
+            Section("Payment Addresses (Hex)") {
+                FieldRow(label: "Core (21 B)", value: record.corePaymentAddress.map(hexString) ?? "—")
+                FieldRow(label: "Platform (21 B)", value: record.platformPaymentAddress.map(hexString) ?? "—")
+                FieldRow(label: "Shielded (43 B)", value: record.shieldedAddress.map(hexString) ?? "—")
+            }
+        }
+        .navigationTitle("Payment Addresses")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentDashpayPayment
 
 /// Detail view for one DashPay payment-history row. Read-only dump
