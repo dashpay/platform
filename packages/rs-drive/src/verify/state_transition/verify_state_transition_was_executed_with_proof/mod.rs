@@ -11,6 +11,7 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 
 mod v0;
+mod v1;
 
 impl Drive {
     /// Verifies a state transition against a provided proof, returning the
@@ -70,9 +71,16 @@ impl Drive {
                 known_contracts_provider_fn,
                 platform_version,
             ),
+            1 => Drive::verify_state_transition_was_executed_with_proof_v1(
+                state_transition,
+                block_info,
+                proof,
+                known_contracts_provider_fn,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_state_transition_was_executed_with_proof".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

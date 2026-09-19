@@ -3,7 +3,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::state::identity::IdentityInsufficientBalanceError;
 use crate::consensus::ConsensusError;
 use crate::fee::Credits;
-use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV1;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::batch_transition::BatchTransition;
 use crate::state_transition::{
@@ -23,7 +23,7 @@ impl StateTransitionEstimatedFeeValidation for BatchTransition {
             .fee_version
             .state_transition_min_fees
             .document_batch_sub_transition
-            .saturating_mul(self.transitions_len() as u64))
+            .saturating_mul(self.transitions_len_v1() as u64))
     }
 }
 

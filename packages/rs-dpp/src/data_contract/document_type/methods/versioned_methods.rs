@@ -3,6 +3,7 @@ use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
+use crate::data_contract::document_type::v3::DocumentTypeV3;
 use crate::data_contract::document_type::{
     DocumentPropertyType, DocumentType, DocumentTypeRef, Index, CONTRACT_VERSION_STAMP_MAX_SIZE,
     DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
@@ -780,6 +781,7 @@ impl DocumentTypeV0MethodsVersioned for DocumentTypeV0 {}
 
 impl DocumentTypeV0MethodsVersioned for DocumentTypeV1 {}
 impl DocumentTypeV0MethodsVersioned for DocumentTypeV2 {}
+impl DocumentTypeV0MethodsVersioned for DocumentTypeV3 {}
 impl DocumentTypeV0MethodsVersioned for DocumentType {}
 
 impl DocumentTypeV0MethodsVersioned for DocumentTypeRef<'_> {}

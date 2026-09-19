@@ -7,7 +7,7 @@ use crate::state_transitions::batch::generators::generate_delete_transition;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
 use crate::utils::{try_from_options, try_from_options_optional, try_from_options_with, try_to_u64};
 use dpp::prelude::IdentityNonce;
-use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+use dpp::state_transition::batch_transition::batched_transition::DocumentTransitionV1;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::DocumentDeleteTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -74,7 +74,7 @@ impl DocumentDeleteTransitionWasm {
 
     #[wasm_bindgen(js_name = "toDocumentTransition")]
     pub fn to_document_transition(&self) -> DocumentTransitionWasm {
-        let rs_transition = DocumentTransition::from(self.0.clone());
+        let rs_transition = DocumentTransitionV1::from(self.0.clone());
 
         DocumentTransitionWasm::from(rs_transition)
     }

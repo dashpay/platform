@@ -109,6 +109,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
                 transform_into_action: 0,
                 failed_per_transition_action: 0,
                 fetch_documents_for_transitions_knowing_contract_and_document_type: 0,
+                fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type:
+                    None,
                 fetch_document_with_id: 0,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 0,
@@ -127,6 +129,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
                 document_create_transition_structure_validation: 0,
                 document_delete_transition_structure_validation: 0,
                 document_index_only_delete_transition_structure_validation: 0,
+                document_erase_transition_structure_validation: None,
                 document_replace_transition_structure_validation: 0,
                 document_transfer_transition_structure_validation: 0,
                 document_purchase_transition_structure_validation: 0,
@@ -135,6 +138,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
                 document_create_transition_state_validation: 1,
                 document_delete_transition_state_validation: 0,
                 document_index_only_delete_transition_state_validation: 0,
+                document_erase_transition_state_validation: None,
+                fetch_keep_history_document_lifecycle: None,
                 document_replace_transition_state_validation: 0,
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,

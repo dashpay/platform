@@ -127,12 +127,30 @@ Platform.getDataContractHistory = {
   responseType: platform_pb.GetDataContractHistoryResponse
 };
 
+Platform.getDataContractsLatestVersions = {
+  methodName: "getDataContractsLatestVersions",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetDataContractsLatestVersionsRequest,
+  responseType: platform_pb.GetDataContractsLatestVersionsResponse
+};
+
 Platform.getDataContracts = {
   methodName: "getDataContracts",
   service: Platform,
   requestStream: false,
   responseStream: false,
   requestType: platform_pb.GetDataContractsRequest,
+  responseType: platform_pb.GetDataContractsResponse
+};
+
+Platform.getDataContractsByRange = {
+  methodName: "getDataContractsByRange",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetDataContractsByRangeRequest,
   responseType: platform_pb.GetDataContractsResponse
 };
 
@@ -960,11 +978,73 @@ PlatformClient.prototype.getDataContractHistory = function getDataContractHistor
   };
 };
 
+PlatformClient.prototype.getDataContractsLatestVersions = function getDataContractsLatestVersions(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getDataContractsLatestVersions, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
 PlatformClient.prototype.getDataContracts = function getDataContracts(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getDataContracts, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getDataContractsByRange = function getDataContractsByRange(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getDataContractsByRange, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

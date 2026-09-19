@@ -4,6 +4,8 @@ pub mod document_base_transition_action;
 pub mod document_create_transition_action;
 /// document_delete_transition_action
 pub mod document_delete_transition_action;
+/// document_erase_transition_action
+pub mod document_erase_transition_action;
 /// document_index_only_delete_transition_action
 pub mod document_index_only_delete_transition_action;
 /// document_purchase_transition_action

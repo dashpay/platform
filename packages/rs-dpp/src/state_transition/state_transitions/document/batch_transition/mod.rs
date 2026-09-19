@@ -14,7 +14,8 @@ use crate::{identity::SecurityLevel, state_transition::StateTransitionFieldTypes
 pub use self::batched_transition::{
     document_base_transition, document_create_transition,
     document_create_transition::DocumentCreateTransition, document_delete_transition,
-    document_delete_transition::DocumentDeleteTransition, document_index_only_delete_transition,
+    document_delete_transition::DocumentDeleteTransition, document_erase_transition,
+    document_erase_transition::DocumentEraseTransition, document_index_only_delete_transition,
     document_index_only_delete_transition::DocumentIndexOnlyDeleteTransition,
     document_replace_transition, document_replace_transition::DocumentReplaceTransition,
     token_base_transition, token_burn_transition, token_burn_transition::TokenBurnTransition,
@@ -48,6 +49,7 @@ mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
 mod v1;
+mod v2;
 #[cfg(feature = "validation")]
 mod validation;
 mod version;
@@ -61,6 +63,7 @@ use crate::state_transition::batch_transition::fields::property_names;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 pub use v0::*;
 pub use v1::*;
+pub use v2::*;
 
 #[derive(
     Debug,
@@ -90,6 +93,8 @@ pub enum BatchTransition {
     V0(BatchTransitionV0),
     #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
     V1(BatchTransitionV1),
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "2"))]
+    V2(BatchTransitionV2),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]

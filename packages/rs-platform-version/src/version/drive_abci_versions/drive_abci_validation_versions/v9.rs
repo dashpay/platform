@@ -151,6 +151,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V9: DriveAbciValidationVersions =
                 // replay (the v0 helpers pass epoch=None and never call
                 // add_operation — byte-identical to pre-PR behavior).
                 fetch_documents_for_transitions_knowing_contract_and_document_type: 1,
+                fetch_documents_for_transitions_of_any_format_knowing_contract_and_document_type:
+                    None,
                 fetch_document_with_id: 1,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     // PROTOCOL_VERSION_13: v1 drops the reject bindings for
@@ -178,6 +180,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V9: DriveAbciValidationVersions =
                 document_create_transition_structure_validation: 0,
                 document_delete_transition_structure_validation: 0,
                 document_index_only_delete_transition_structure_validation: 0,
+                document_erase_transition_structure_validation: None,
                 document_replace_transition_structure_validation: 0,
                 document_transfer_transition_structure_validation: 0,
                 document_purchase_transition_structure_validation: 0,
@@ -186,6 +189,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V9: DriveAbciValidationVersions =
                 document_create_transition_state_validation: 1,
                 document_delete_transition_state_validation: 0,
                 document_index_only_delete_transition_state_validation: 0,
+                document_erase_transition_state_validation: None,
+                fetch_keep_history_document_lifecycle: None,
                 document_replace_transition_state_validation: 0,
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,

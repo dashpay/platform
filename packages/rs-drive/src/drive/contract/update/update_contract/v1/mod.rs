@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn test_update_contract_v1_adds_tokens_creates_token_trees() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
 
         // Original: no tokens.
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn test_update_contract_v1_adds_groups() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
 
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
@@ -414,7 +414,7 @@ mod tests {
     #[test]
     fn test_update_contract_v1_keyword_delta_via_update_contract() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
 
         // Insert the keyword_search system contract first (required because
         // update_contract_v1 calls update_contract_keywords_operations).
@@ -531,7 +531,7 @@ mod tests {
     #[test]
     fn clearing_a_contracts_keywords_leaves_the_old_ones_indexed() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
 
         let keyword_search =
             load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
@@ -596,7 +596,7 @@ mod tests {
     #[test]
     fn test_update_contract_v1_description_via_update_contract() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
 
         let keyword_search =
             load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)

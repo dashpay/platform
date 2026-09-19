@@ -7,6 +7,7 @@ impl FeatureVersioned for BatchTransition {
         match self {
             BatchTransition::V0(v0) => v0.feature_version(),
             BatchTransition::V1(v1) => v1.feature_version(),
+            BatchTransition::V2(v2) => v2.feature_version(),
         }
     }
 }

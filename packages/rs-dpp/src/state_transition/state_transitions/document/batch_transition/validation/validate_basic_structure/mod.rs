@@ -4,6 +4,7 @@ use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 mod v0;
+mod v1;
 
 impl BatchTransition {
     pub fn validate_base_structure(
@@ -19,9 +20,10 @@ impl BatchTransition {
             .validate_base_structure
         {
             0 => self.validate_base_structure_v0(platform_version),
+            1 => self.validate_base_structure_v1(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::validate_base_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

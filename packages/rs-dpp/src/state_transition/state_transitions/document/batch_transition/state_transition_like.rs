@@ -13,6 +13,7 @@ impl StateTransitionLike for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.modified_data_ids(),
             BatchTransition::V1(transition) => transition.modified_data_ids(),
+            BatchTransition::V2(transition) => transition.modified_data_ids(),
         }
     }
 
@@ -20,6 +21,7 @@ impl StateTransitionLike for BatchTransition {
         match self {
             BatchTransition::V0(_) => 0,
             BatchTransition::V1(_) => 1,
+            BatchTransition::V2(_) => 2,
         }
     }
     /// returns the type of State Transition
@@ -27,6 +29,7 @@ impl StateTransitionLike for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.state_transition_type(),
             BatchTransition::V1(transition) => transition.state_transition_type(),
+            BatchTransition::V2(transition) => transition.state_transition_type(),
         }
     }
 
@@ -34,6 +37,7 @@ impl StateTransitionLike for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.unique_identifiers(),
             BatchTransition::V1(transition) => transition.unique_identifiers(),
+            BatchTransition::V2(transition) => transition.unique_identifiers(),
         }
     }
 }
@@ -43,6 +47,7 @@ impl StateTransitionHasUserFeeIncrease for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.user_fee_increase(),
             BatchTransition::V1(transition) => transition.user_fee_increase(),
+            BatchTransition::V2(transition) => transition.user_fee_increase(),
         }
     }
 
@@ -50,6 +55,7 @@ impl StateTransitionHasUserFeeIncrease for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.set_user_fee_increase(user_fee_increase),
             BatchTransition::V1(transition) => transition.set_user_fee_increase(user_fee_increase),
+            BatchTransition::V2(transition) => transition.set_user_fee_increase(user_fee_increase),
         }
     }
 }
@@ -60,6 +66,7 @@ impl StateTransitionSingleSigned for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.signature(),
             BatchTransition::V1(transition) => transition.signature(),
+            BatchTransition::V2(transition) => transition.signature(),
         }
     }
     /// set a new signature
@@ -67,6 +74,7 @@ impl StateTransitionSingleSigned for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.set_signature(signature),
             BatchTransition::V1(transition) => transition.set_signature(signature),
+            BatchTransition::V2(transition) => transition.set_signature(signature),
         }
     }
 
@@ -74,6 +82,7 @@ impl StateTransitionSingleSigned for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.set_signature_bytes(signature),
             BatchTransition::V1(transition) => transition.set_signature_bytes(signature),
+            BatchTransition::V2(transition) => transition.set_signature_bytes(signature),
         }
     }
 }
@@ -83,6 +92,7 @@ impl StateTransitionOwned for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.owner_id(),
             BatchTransition::V1(transition) => transition.owner_id(),
+            BatchTransition::V2(transition) => transition.owner_id(),
         }
     }
 }

@@ -83,23 +83,34 @@ CF_EXTERN_C_BEGIN
 @class GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistoryEntry;
 @class GetDataContractRequest_GetDataContractRequestV0;
 @class GetDataContractResponse_GetDataContractResponseV0;
+@class GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0;
+@class GetDataContractsLatestVersionsRequest_GetDataContractsLatestVersionsRequestV0;
+@class GetDataContractsLatestVersionsResponse_DataContractLatestVersionEntry;
+@class GetDataContractsLatestVersionsResponse_DataContractsLatestVersions;
+@class GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0;
 @class GetDataContractsRequest_GetDataContractsRequestV0;
 @class GetDataContractsResponse_DataContractEntry;
 @class GetDataContractsResponse_DataContracts;
 @class GetDataContractsResponse_GetDataContractsResponseV0;
 @class GetDocumentHistoryRequest_GetDocumentHistoryRequestV0;
+@class GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Cursor;
 @class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0;
-@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory;
-@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Entry;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_History;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle;
 @class GetDocumentsRequest_DocumentFieldValue;
 @class GetDocumentsRequest_DocumentFieldValue_ValueList;
 @class GetDocumentsRequest_GetDocumentsRequestV0;
 @class GetDocumentsRequest_GetDocumentsRequestV1;
 @class GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin;
 @class GetDocumentsRequest_GetDocumentsRequestV1_Select;
+@class GetDocumentsRequest_GetDocumentsRequestV1_SubQuery;
+@class GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Binding;
 @class GetDocumentsRequest_HavingAggregate;
 @class GetDocumentsRequest_HavingClause;
 @class GetDocumentsRequest_OrderClause;
+@class GetDocumentsRequest_TimeRangeSelection;
+@class GetDocumentsRequest_TimeRangeSelection_Grid;
 @class GetDocumentsRequest_WhereClause;
 @class GetDocumentsResponse_GetDocumentsResponseV0;
 @class GetDocumentsResponse_GetDocumentsResponseV0_Documents;
@@ -109,6 +120,8 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry;
 @class GetDocumentsResponse_GetDocumentsResponseV1_AverageResults;
 @class GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments;
+@class GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments;
+@class GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountEntries;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountEntry;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountResults;
@@ -391,15 +404,15 @@ typedef GPB_ENUM(GetDocumentsRequest_WhereOperator) {
   /**
    * Time-range bucket selection (v1 only; the v0 CBOR surface is
    * unaffected). `field` names a timestamp covered by a `timeRange`
-   * index. Operand: `text` selector `"newest"`/`"oldest"` when one grid
-   * buckets the field, or `list` `[selector, range, step(, phase)]` in
-   * the contract's declared seconds to name one of several grids (zero
-   * phase is spelled by omission — one wire spelling per grid). The
-   * server resolves it to a bucket-start equality from current block
-   * time; the verifier re-derives the same bucket from the quorum-signed
-   * metadata time — an ordinary index/count proof. See `timeRange` in
-   * the document meta-schema and
-   * `drive::query::resolve_time_range_bucket_clause`.
+   * index. The operand is `WhereClause.time_range` (a
+   * `TimeRangeSelection`); `WhereClause.value` must be unset. For the
+   * relative selectors (`NEWEST` / `OLDEST`) the server resolves the
+   * selection to a bucket-start equality from current block time and
+   * the verifier re-derives the same bucket from the quorum-signed
+   * metadata time; `BY_START` names the window absolutely, so both
+   * sides read the start straight from the query — an ordinary
+   * index/count proof either way. See `timeRange` in the document
+   * meta-schema and `drive::query::resolve_time_range_bucket_clause`.
    **/
   GetDocumentsRequest_WhereOperator_InTimeRange = 11,
 };
@@ -411,6 +424,28 @@ GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void);
  * the time this source was generated.
  **/
 BOOL GetDocumentsRequest_WhereOperator_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentsRequest_TimeRangeSelection_Selector
+
+typedef GPB_ENUM(GetDocumentsRequest_TimeRangeSelection_Selector) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentsRequest_TimeRangeSelection_Selector_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentsRequest_TimeRangeSelection_Selector_Newest = 0,
+  GetDocumentsRequest_TimeRangeSelection_Selector_Oldest = 1,
+  GetDocumentsRequest_TimeRangeSelection_Selector_ByStart = 2,
+};
+
+GPBEnumDescriptor *GetDocumentsRequest_TimeRangeSelection_Selector_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentsRequest_TimeRangeSelection_Selector_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetDocumentsRequest_HavingAggregate_Function
 
@@ -498,6 +533,57 @@ GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Enu
  * the time this source was generated.
  **/
 BOOL GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind
+
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  /** The matching documents. */
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_Documents = 0,
+
+  /**
+   * One count per derived value from the `countable` index
+   * covering the fixed clauses plus the bound field. Must be
+   * bound, and must not share its index path with a documents
+   * component (the count reads the value trees the documents
+   * query descends past).
+   **/
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_Count = 1,
+};
+
+GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_State
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_State) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_State_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_State_Active = 0,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_State_Absent = 1,
+};
+
+GPBEnumDescriptor *GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_State_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_State_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType
 
@@ -2115,6 +2201,168 @@ GPB_FINAL @interface GetDataContractResponse_GetDataContractResponseV0 : GPBMess
  **/
 void GetDataContractResponse_GetDataContractResponseV0_ClearResultOneOfCase(GetDataContractResponse_GetDataContractResponseV0 *message);
 
+#pragma mark - GetDataContractsLatestVersionsRequest
+
+typedef GPB_ENUM(GetDataContractsLatestVersionsRequest_FieldNumber) {
+  GetDataContractsLatestVersionsRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetDataContractsLatestVersionsRequest_Version_OneOfCase) {
+  GetDataContractsLatestVersionsRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDataContractsLatestVersionsRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * Returns the current version number of each requested data contract: the
+ * cheap way for a client to check that the contracts it already holds are
+ * still current. Every distinct requested id gets an entry; an id no contract has gets
+ * an entry without `version`. Serialized contracts are added only when
+ * `include_contracts` is set.
+ *
+ * From protocol version 14 every contract carries a four-byte version item
+ * beside it in state. Without `include_contracts`, the unproved form answers
+ * from Drive's contract cache or that item without loading a contract, and
+ * the proof covers the items, a few hundred bytes of hash path per contract.
+ * With `include_contracts`, and on earlier protocol versions, the unproved
+ * form reads the contracts through the cache and the proof is the
+ * multi-contract proof `getDataContracts` returns, which carries the
+ * contracts.
+ **/
+GPB_FINAL @interface GetDataContractsLatestVersionsRequest : GPBMessage
+
+@property(nonatomic, readonly) GetDataContractsLatestVersionsRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDataContractsLatestVersionsRequest_GetDataContractsLatestVersionsRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetDataContractsLatestVersionsRequest_ClearVersionOneOfCase(GetDataContractsLatestVersionsRequest *message);
+
+#pragma mark - GetDataContractsLatestVersionsRequest_GetDataContractsLatestVersionsRequestV0
+
+typedef GPB_ENUM(GetDataContractsLatestVersionsRequest_GetDataContractsLatestVersionsRequestV0_FieldNumber) {
+  GetDataContractsLatestVersionsRequest_GetDataContractsLatestVersionsRequestV0_FieldNumber_IdsArray = 1,
+  GetDataContractsLatestVersionsRequest_GetDataContractsLatestVersionsRequestV0_FieldNumber_IncludeContracts = 2,
+  GetDataContractsLatestVersionsRequest_GetDataContractsLatestVersionsRequestV0_FieldNumber_Prove = 3,
+};
+
+GPB_FINAL @interface GetDataContractsLatestVersionsRequest_GetDataContractsLatestVersionsRequestV0 : GPBMessage
+
+/** The IDs of the data contracts, at least one and at most 100 */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *idsArray;
+/** The number of items in @c idsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger idsArray_Count;
+
+/** When set, found entries also carry the serialized contract */
+@property(nonatomic, readwrite) BOOL includeContracts;
+
+/** Flag to request a proof as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetDataContractsLatestVersionsResponse
+
+typedef GPB_ENUM(GetDataContractsLatestVersionsResponse_FieldNumber) {
+  GetDataContractsLatestVersionsResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetDataContractsLatestVersionsResponse_Version_OneOfCase) {
+  GetDataContractsLatestVersionsResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDataContractsLatestVersionsResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetDataContractsLatestVersionsResponse : GPBMessage
+
+@property(nonatomic, readonly) GetDataContractsLatestVersionsResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetDataContractsLatestVersionsResponse_ClearVersionOneOfCase(GetDataContractsLatestVersionsResponse *message);
+
+#pragma mark - GetDataContractsLatestVersionsResponse_DataContractLatestVersionEntry
+
+typedef GPB_ENUM(GetDataContractsLatestVersionsResponse_DataContractLatestVersionEntry_FieldNumber) {
+  GetDataContractsLatestVersionsResponse_DataContractLatestVersionEntry_FieldNumber_Identifier = 1,
+  GetDataContractsLatestVersionsResponse_DataContractLatestVersionEntry_FieldNumber_Version = 2,
+  GetDataContractsLatestVersionsResponse_DataContractLatestVersionEntry_FieldNumber_DataContract = 3,
+};
+
+GPB_FINAL @interface GetDataContractsLatestVersionsResponse_DataContractLatestVersionEntry : GPBMessage
+
+/** The requested contract id */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identifier;
+
+/** The contract's current version number; absent when no contract has this id */
+@property(nonatomic, readwrite) uint32_t version;
+
+@property(nonatomic, readwrite) BOOL hasVersion;
+/** The serialized contract, only when `include_contracts` was set and the contract exists */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContract;
+/** Test to see if @c dataContract has been set. */
+@property(nonatomic, readwrite) BOOL hasDataContract;
+
+@end
+
+#pragma mark - GetDataContractsLatestVersionsResponse_DataContractsLatestVersions
+
+typedef GPB_ENUM(GetDataContractsLatestVersionsResponse_DataContractsLatestVersions_FieldNumber) {
+  GetDataContractsLatestVersionsResponse_DataContractsLatestVersions_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetDataContractsLatestVersionsResponse_DataContractsLatestVersions : GPBMessage
+
+/** One entry per requested contract id */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDataContractsLatestVersionsResponse_DataContractLatestVersionEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0
+
+typedef GPB_ENUM(GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0_FieldNumber) {
+  GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0_FieldNumber_DataContractsLatestVersions = 1,
+  GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0_FieldNumber_Proof = 2,
+  GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0_Result_OneOfCase) {
+  GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0_Result_OneOfCase_DataContractsLatestVersions = 1,
+  GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** The current versions, and the contracts if requested */
+@property(nonatomic, readwrite, strong, null_resettable) GetDataContractsLatestVersionsResponse_DataContractsLatestVersions *dataContractsLatestVersions;
+
+/** Cryptographic proof of the data contracts, if requested */
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0_ClearResultOneOfCase(GetDataContractsLatestVersionsResponse_GetDataContractsLatestVersionsResponseV0 *message);
+
 #pragma mark - GetDataContractsRequest
 
 typedef GPB_ENUM(GetDataContractsRequest_FieldNumber) {
@@ -2157,6 +2405,82 @@ GPB_FINAL @interface GetDataContractsRequest_GetDataContractsRequestV0 : GPBMess
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
+
+#pragma mark - GetDataContractsByRangeRequest
+
+typedef GPB_ENUM(GetDataContractsByRangeRequest_FieldNumber) {
+  GetDataContractsByRangeRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetDataContractsByRangeRequest_Version_OneOfCase) {
+  GetDataContractsByRangeRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDataContractsByRangeRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * Enumerates every data contract on Platform, one page at a time, in
+ * ascending contract id order. Answered with `GetDataContractsResponse`:
+ * each `DataContractEntry` carries the contract id and, unless `ids_only`
+ * is set, the serialized contract. An empty page (no more contracts) is an
+ * empty `data_contract_entries` list, never NotFound. A page shorter than
+ * `limit` is the last page; otherwise pass the last entry's identifier as
+ * `start_after` to fetch the next one.
+ **/
+GPB_FINAL @interface GetDataContractsByRangeRequest : GPBMessage
+
+@property(nonatomic, readonly) GetDataContractsByRangeRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetDataContractsByRangeRequest_ClearVersionOneOfCase(GetDataContractsByRangeRequest *message);
+
+#pragma mark - GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0
+
+typedef GPB_ENUM(GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0_FieldNumber) {
+  GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0_FieldNumber_Limit = 1,
+  GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0_FieldNumber_StartAfter = 2,
+  GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0_FieldNumber_StartAt = 3,
+  GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0_FieldNumber_IdsOnly = 4,
+  GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0_FieldNumber_Prove = 5,
+};
+
+typedef GPB_ENUM(GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0_Start_OneOfCase) {
+  GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0_Start_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0_Start_OneOfCase_StartAfter = 2,
+  GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0_Start_OneOfCase_StartAt = 3,
+};
+
+GPB_FINAL @interface GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0 : GPBMessage
+
+/** Maximum number of contracts to return, 1..=100; absent means 100 */
+@property(nonatomic, readwrite) uint32_t limit;
+
+@property(nonatomic, readwrite) BOOL hasLimit;
+@property(nonatomic, readonly) GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0_Start_OneOfCase startOneOfCase;
+
+/** 32-byte contract id; the page starts after it */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAfter;
+
+/** 32-byte contract id; the page starts at it */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAt;
+
+/** When set, entries carry only `identifier`; `data_contract` is unset */
+@property(nonatomic, readwrite) BOOL idsOnly;
+
+/** Flag to request a proof as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'start'.
+ **/
+void GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0_ClearStartOneOfCase(GetDataContractsByRangeRequest_GetDataContractsByRangeRequestV0 *message);
 
 #pragma mark - GetDataContractsResponse
 
@@ -2545,12 +2869,102 @@ GPB_FINAL @interface GetDocumentsRequest_DocumentFieldValue_ValueList : GPBMessa
 
 @end
 
+#pragma mark - GetDocumentsRequest_TimeRangeSelection
+
+typedef GPB_ENUM(GetDocumentsRequest_TimeRangeSelection_FieldNumber) {
+  GetDocumentsRequest_TimeRangeSelection_FieldNumber_Selector = 1,
+  GetDocumentsRequest_TimeRangeSelection_FieldNumber_StartMs = 2,
+  GetDocumentsRequest_TimeRangeSelection_FieldNumber_Grid = 3,
+};
+
+/**
+ * Operand of an `IN_TIME_RANGE` where clause: which window of a
+ * `timeRange` grid the query selects. Typed rather than riding
+ * `DocumentFieldValue` — the selection is not a field value, and a
+ * structured message keeps the selector an enum instead of a
+ * magic string.
+ *
+ * The relative selectors are resolved server-side: `NEWEST` is the
+ * freshest started window (largest grid start <= block time; the
+ * latest partial slice of history), `OLDEST` the oldest window still
+ * active at block time (a near-full trailing window of ~`range` —
+ * best for "trending over the last window"). The proof verifier
+ * re-derives the same window from the quorum-signed response
+ * metadata time, so neither side trusts the other's clock.
+ *
+ * `BY_START` names a window absolutely — any window, current or
+ * historic — by its start. `start_ms` is then required and must lie
+ * on the grid (`start_ms == phase + k * step`, in milliseconds);
+ * an unaligned start is rejected rather than snapped. A window with
+ * no documents (including one that has not started yet) is a
+ * provable empty answer, not an error. The relative selectors must
+ * NOT carry `start_ms` — one wire spelling per meaning.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_TimeRangeSelection : GPBMessage
+
+@property(nonatomic, readwrite) GetDocumentsRequest_TimeRangeSelection_Selector selector;
+
+/**
+ * `BY_START` only: the selected window's start, as a millisecond
+ * timestamp on the grid (see the message docstring). Rejected on
+ * the relative selectors.
+ **/
+@property(nonatomic, readwrite) uint64_t startMs;
+
+@property(nonatomic, readwrite) BOOL hasStartMs;
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_TimeRangeSelection_Grid *grid;
+/** Test to see if @c grid has been set. */
+@property(nonatomic, readwrite) BOOL hasGrid;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_TimeRangeSelection's @c selector property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_TimeRangeSelection_Selector_RawValue(GetDocumentsRequest_TimeRangeSelection *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_TimeRangeSelection's @c selector property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_TimeRangeSelection_Selector_RawValue(GetDocumentsRequest_TimeRangeSelection *message, int32_t value);
+
+#pragma mark - GetDocumentsRequest_TimeRangeSelection_Grid
+
+typedef GPB_ENUM(GetDocumentsRequest_TimeRangeSelection_Grid_FieldNumber) {
+  GetDocumentsRequest_TimeRangeSelection_Grid_FieldNumber_Range = 1,
+  GetDocumentsRequest_TimeRangeSelection_Grid_FieldNumber_Step = 2,
+  GetDocumentsRequest_TimeRangeSelection_Grid_FieldNumber_Phase = 3,
+};
+
+/**
+ * Names one of the field's declared grids, in the contract's own
+ * seconds — verbatim from the contract's `timeRange` declaration.
+ * Required when more than one `timeRange` grid buckets the field
+ * (the bare selector is ambiguous there and rejected); optional
+ * while exactly one grid does. A zero `phase` is the proto3
+ * default, matching the contract grammar where `phase` is an
+ * omittable key — every grid has exactly one wire spelling by
+ * construction.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_TimeRangeSelection_Grid : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t range;
+
+@property(nonatomic, readwrite) uint64_t step;
+
+@property(nonatomic, readwrite) uint64_t phase;
+
+@end
+
 #pragma mark - GetDocumentsRequest_WhereClause
 
 typedef GPB_ENUM(GetDocumentsRequest_WhereClause_FieldNumber) {
   GetDocumentsRequest_WhereClause_FieldNumber_Field = 1,
   GetDocumentsRequest_WhereClause_FieldNumber_Operator_p = 2,
   GetDocumentsRequest_WhereClause_FieldNumber_Value = 3,
+  GetDocumentsRequest_WhereClause_FieldNumber_TimeRange = 4,
 };
 
 /**
@@ -2562,6 +2976,11 @@ typedef GPB_ENUM(GetDocumentsRequest_WhereClause_FieldNumber) {
  * then hands the structured clauses to the executor. Wire
  * semantics are identical to v0's CBOR `[field, op, value]`
  * triples — only the envelope differs.
+ *
+ * Exactly one operand field is set, keyed by the operator:
+ * `operator = IN_TIME_RANGE` carries its operand in `time_range`
+ * (`value` must be unset); every other operator carries `value`
+ * (`time_range` must be unset). Either mismatch is rejected.
  **/
 GPB_FINAL @interface GetDocumentsRequest_WhereClause : GPBMessage
 
@@ -2572,6 +2991,10 @@ GPB_FINAL @interface GetDocumentsRequest_WhereClause : GPBMessage
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_DocumentFieldValue *value;
 /** Test to see if @c value has been set. */
 @property(nonatomic, readwrite) BOOL hasValue;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_TimeRangeSelection *timeRange;
+/** Test to see if @c timeRange has been set. */
+@property(nonatomic, readwrite) BOOL hasTimeRange;
 
 @end
 
@@ -2890,6 +3313,7 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber) {
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_HavingArray = 11,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Offset = 12,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Chained = 13,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_SubQueriesArray = 14,
 };
 
 typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
@@ -3201,6 +3625,10 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
 /** Test to see if @c chained has been set. */
 @property(nonatomic, readwrite) BOOL hasChained;
 
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_GetDocumentsRequestV1_SubQuery*> *subQueriesArray;
+/** The number of items in @c subQueriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger subQueriesArray_Count;
+
 @end
 
 /**
@@ -3324,6 +3752,145 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin : GPB
 
 /** The joined document type — the `refersTo` target. */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *outerDocumentType;
+
+@end
+
+#pragma mark - GetDocumentsRequest_GetDocumentsRequestV1_SubQuery
+
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_FieldNumber) {
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_FieldNumber_DataContractId = 1,
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_FieldNumber_DocumentType = 2,
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_FieldNumber_WhereClausesArray = 3,
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_FieldNumber_OrderByArray = 4,
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_FieldNumber_Limit = 5,
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_FieldNumber_Kind = 6,
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_FieldNumber_Bind = 7,
+};
+
+/**
+ * Composite mode — a page plus sub-queries DERIVED from its
+ * results, answered as ONE merged proof over one state root.
+ *
+ * Presence of any `sub_queries` selects composite mode: this
+ * request's own `data_contract_id` / `document_type` /
+ * `where_clauses` / `order_by` / `limit` describe the PAGE, and
+ * every sub-query's `IN` clause is derived by the node from the
+ * page's (or an earlier sub-query's) proven documents. The
+ * verifier re-derives every sub-query from the proven page with
+ * the same builders, re-merges, and verifies the whole
+ * composition — so the composition cannot be steered by the
+ * responding node, and a node that predates this field (proto3
+ * unknown field) serves a page-only proof that FAILS CLOSED
+ * client-side.
+ *
+ * Mode gates (rejected otherwise): `limit` is REQUIRED on the
+ * page (at most 100 — it bounds every derived clause); `selects`
+ * must be empty or a single DOCUMENTS projection; `group_by`,
+ * `having`, time-range clauses, cursors and `offset` are
+ * rejected (paginate with a range clause on the page's ordering
+ * property); `chained` and `sub_queries` are mutually exclusive.
+ * See `SubQuery` for the per-sub-query rules.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1_SubQuery : GPBMessage
+
+/**
+ * The contract this sub-query targets. Empty = the page's own
+ * contract; otherwise any contract (profiles keyed by owner,
+ * names keyed by identity).
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
+
+/**
+ * The FIXED clauses — everything but the derived `IN`, which
+ * must not be named here.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_WhereClause*> *whereClausesArray;
+/** The number of items in @c whereClausesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger whereClausesArray_Count;
+
+/**
+ * Ordering (documents only). Every component of the merged proof
+ * walks in the page's direction: a bound field missing from here
+ * is appended in that direction by the node and the verifier
+ * alike, and an ordering that disagrees with the page's direction
+ * is refused (turning a limited lookup around would change the
+ * rows it returns).
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_OrderClause*> *orderByArray;
+/** The number of items in @c orderByArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger orderByArray_Count;
+
+/**
+ * Documents lookups on a non-unique index REQUIRE a limit: it
+ * caps the rows the lookup returns in total, in walk order, like
+ * an ordinary IN query's limit (at most 100). Lookups already
+ * bounded by their values (a unique index, or an indexOnly
+ * terminal with every prefix fixed), by-id joins (completeness is
+ * set equality) and counts take none.
+ **/
+@property(nonatomic, readwrite) uint32_t limit;
+
+@property(nonatomic, readwrite) BOOL hasLimit;
+@property(nonatomic, readwrite) GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind kind;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Binding *bind;
+/** Test to see if @c bind has been set. */
+@property(nonatomic, readwrite) BOOL hasBind;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_GetDocumentsRequestV1_SubQuery's @c kind property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_RawValue(GetDocumentsRequest_GetDocumentsRequestV1_SubQuery *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_GetDocumentsRequestV1_SubQuery's @c kind property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_RawValue(GetDocumentsRequest_GetDocumentsRequestV1_SubQuery *message, int32_t value);
+
+#pragma mark - GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Binding
+
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Binding_FieldNumber) {
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Binding_FieldNumber_Source = 1,
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Binding_FieldNumber_SourceProperty = 2,
+  GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Binding_FieldNumber_Field = 3,
+};
+
+/**
+ * The derived clause `<field> IN <values>`. Absent = a SIBLING:
+ * an independent documents query proven under the same root.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Binding : GPBMessage
+
+/**
+ * Whose proven documents supply the values: `0` = the page,
+ * `n` = `sub_queries[n - 1]` (which must precede this one and
+ * be a DOCUMENTS sub-query).
+ **/
+@property(nonatomic, readwrite) uint32_t source;
+
+/**
+ * The source property read off each document: `$id`,
+ * `$ownerId`, or an identifier-typed property (dotted paths
+ * reach nested properties). Documents without it contribute
+ * nothing.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSString *sourceProperty;
+
+/**
+ * The sub-query field receiving the `IN` clause. `$id` makes
+ * this a by-id JOIN: the source property must then declare
+ * `refersTo: permanentDocument` targeting this document type,
+ * so every derived id resolves and a missing document is an
+ * invalid proof. Otherwise `$ownerId` or an indexed property
+ * (a LOOKUP, where absence is a proven fact).
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSString *field;
 
 @end
 
@@ -3976,6 +4543,7 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNum
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Averages = 4,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Ranked = 5,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Chained = 6,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Composite = 7,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase) {
@@ -3986,6 +4554,7 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Averages = 4,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Ranked = 5,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Chained = 6,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Composite = 7,
 };
 
 /**
@@ -4047,6 +4616,13 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GP
  **/
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments *chained;
 
+/**
+ * Composite-mode result: the page plus one result per
+ * sub-query, in request order. Routed when the request
+ * carries `sub_queries`.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments *composite;
+
 @end
 
 /**
@@ -4077,6 +4653,67 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocument
 
 @end
 
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_FieldNumber_PageDocumentsArray = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_FieldNumber_SubResultsArray = 2,
+};
+
+/**
+ * A composite query's page and per-sub-query results, documents
+ * serialized with their own document type.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments : GPBMessage
+
+/** The page, exactly as the page query alone would return it. */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *pageDocumentsArray;
+/** The number of items in @c pageDocumentsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger pageDocumentsArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult*> *subResultsArray;
+/** The number of items in @c subResultsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger subResultsArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber_Documents = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber_Counts = 2,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_Result_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_Result_OneOfCase_Documents = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_Result_OneOfCase_Counts = 2,
+};
+
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_Result_OneOfCase resultOneOfCase;
+
+/**
+ * DOCUMENTS: a by-id join in first-appearance order of the
+ * derived ids; a lookup or sibling in query order.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_Documents *documents;
+
+/**
+ * COUNT: one entry per derived value that has a count tree
+ * (a value with no entry counts zero), keyed by the
+ * value's index-key bytes.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_CountEntries *counts;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_ClearResultOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult *message);
+
 #pragma mark - GetDocumentHistoryRequest
 
 typedef GPB_ENUM(GetDocumentHistoryRequest_FieldNumber) {
@@ -4090,6 +4727,11 @@ typedef GPB_ENUM(GetDocumentHistoryRequest_Version_OneOfCase) {
 
 GPB_FINAL @interface GetDocumentHistoryRequest : GPBMessage
 
+/**
+ * This shape replaces the timestamp-keyed request that earlier releases
+ * served under the same version. Compatibility with those SDKs is not
+ * retained by the 4.3 API.
+ **/
 @property(nonatomic, readonly) GetDocumentHistoryRequest_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 *v0;
@@ -4108,37 +4750,73 @@ typedef GPB_ENUM(GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumb
   GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_DocumentTypeName = 2,
   GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_DocumentId = 3,
   GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_Limit = 4,
-  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_Offset = 5,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_Prove = 5,
   GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_StartAtMs = 6,
-  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_Prove = 7,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_StartAfter = 7,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_StartAtRevision = 8,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_Revision = 9,
 };
 
+typedef GPB_ENUM(GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Filter_OneOfCase) {
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Filter_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Filter_OneOfCase_StartAtMs = 6,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Filter_OneOfCase_StartAfter = 7,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Filter_OneOfCase_StartAtRevision = 8,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Filter_OneOfCase_Revision = 9,
+};
+
+/**
+ * Reads the retained revisions of a historical document (a type with
+ * documentsKeepHistory). This 4.3 V0 shape intentionally replaces the
+ * earlier SDK surface.
+ **/
 GPB_FINAL @interface GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 : GPBMessage
 
-/** The ID of the data contract */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
 
-/** The document type name */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
 
-/** The document ID */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
 
-/** The maximum number of history entries to return */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *limit;
 /** Test to see if @c limit has been set. */
 @property(nonatomic, readwrite) BOOL hasLimit;
 
-/** The offset for pagination through the document history */
-@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *offset;
-/** Test to see if @c offset has been set. */
-@property(nonatomic, readwrite) BOOL hasOffset;
+@property(nonatomic, readwrite) BOOL prove;
 
-/** Only return results after this time in milliseconds */
+@property(nonatomic, readonly) GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Filter_OneOfCase filterOneOfCase;
+
 @property(nonatomic, readwrite) uint64_t startAtMs;
 
-/** Flag to request a proof as the response */
-@property(nonatomic, readwrite) BOOL prove;
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Cursor *startAfter;
+
+@property(nonatomic, readwrite) uint64_t startAtRevision;
+
+@property(nonatomic, readwrite) uint64_t revision;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'filter'.
+ **/
+void GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_ClearFilterOneOfCase(GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 *message);
+
+#pragma mark - GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Cursor
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Cursor_FieldNumber) {
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Cursor_FieldNumber_TimeMs = 1,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Cursor_FieldNumber_Revision = 2,
+};
+
+/**
+ * Exclusive cursor returned with a page. Several revisions can share a
+ * block time, so resuming needs the revision as well as the time.
+ **/
+GPB_FINAL @interface GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_Cursor : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t timeMs;
+
+@property(nonatomic, readwrite) uint64_t revision;
 
 @end
 
@@ -4169,28 +4847,39 @@ void GetDocumentHistoryResponse_ClearVersionOneOfCase(GetDocumentHistoryResponse
 #pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV0
 
 typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber) {
-  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber_DocumentHistory = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber_History = 1,
   GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber_Proof = 2,
   GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber_Metadata = 3,
 };
 
 typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase) {
   GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase_DocumentHistory = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase_History = 1,
   GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase_Proof = 2,
 };
 
+/**
+ * A page of a historical document's retained revisions, with the
+ * document's lifecycle as of the same block. Only document types with
+ * documentsKeepHistory retain history; every field here describes such a
+ * historical document.
+ **/
 GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0 : GPBMessage
 
 @property(nonatomic, readonly) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase resultOneOfCase;
 
-/** The actual history of the document */
-@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory *documentHistory;
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_History *history;
 
-/** Cryptographic proof of the document history, if requested */
+/**
+ * One proof object. Its grovedb_proof carries two GroveDB proofs in a
+ * small versioned envelope, because they answer two queries GroveDB
+ * cannot merge: the offset-paginated proof over the document's history
+ * tree and the exact-key absence proof over the current pointer, the
+ * lifecycle record and the history tree's count. Both commit to the
+ * same root hash, signed once.
+ **/
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
-/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -4202,41 +4891,79 @@ GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0 : G
  **/
 void GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_ClearResultOneOfCase(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0 *message);
 
-#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Entry
 
-typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry_FieldNumber) {
-  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry_FieldNumber_Date = 1,
-  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry_FieldNumber_Value = 2,
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Entry_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Entry_FieldNumber_TimeMs = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Entry_FieldNumber_Revision = 2,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Entry_FieldNumber_Document = 3,
 };
 
 /**
- * Represents a single entry in a document's history
+ * One retained revision of the historical document.
  **/
-GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry : GPBMessage
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Entry : GPBMessage
 
-/** The date of the history entry */
-@property(nonatomic, readwrite) uint64_t date;
+@property(nonatomic, readwrite) uint64_t timeMs;
 
-/** The value of the document at this point in history */
-@property(nonatomic, readwrite, copy, null_resettable) NSData *value;
+@property(nonatomic, readwrite) uint64_t revision;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *document;
 
 @end
 
-#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle
 
-typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory_FieldNumber) {
-  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory_FieldNumber_DocumentEntriesArray = 1,
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_FieldNumber_State = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_FieldNumber_RemainingRevisions = 2,
 };
 
 /**
- * Collection of document history entries
+ * Where the historical document stands: still current, or gone with
+ * nothing retained. Later protocol versions add the states between.
  **/
-GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory : GPBMessage
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle : GPBMessage
 
-/** List of history entries */
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry*> *documentEntriesArray;
-/** The number of items in @c documentEntriesArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger documentEntriesArray_Count;
+@property(nonatomic, readwrite) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_State state;
+
+/** Revisions the history still retains for the document. */
+@property(nonatomic, readwrite) uint64_t remainingRevisions;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle's @c state property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_State_RawValue(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle *message);
+/**
+ * Sets the raw value of an @c GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle's @c state property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle_State_RawValue(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle *message, int32_t value);
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_History
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_History_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_History_FieldNumber_EntriesArray = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_History_FieldNumber_Lifecycle = 2,
+};
+
+/**
+ * A page of retained revisions and the document's lifecycle as of the
+ * same block.
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_History : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Entry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Lifecycle *lifecycle;
+/** Test to see if @c lifecycle has been set. */
+@property(nonatomic, readwrite) BOOL hasLifecycle;
 
 @end
 

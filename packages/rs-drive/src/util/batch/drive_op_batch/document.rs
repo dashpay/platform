@@ -103,6 +103,31 @@ pub enum DocumentOperationType<'a> {
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
     },
+    /// Deletes a document while retaining the lifecycle metadata needed by a
+    /// keep-history document.
+    DeleteDocumentWithLifecycle {
+        /// The document id
+        document_id: Identifier,
+        /// The identity credited with the lifecycle record's bytes.
+        deleter_id: Option<Identifier>,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+    },
+    /// Removes a bounded chunk of the retained revisions of an already deleted
+    /// keep-history document, dropping the history subtree and the lifecycle
+    /// record with the terminal chunk. Whether the type allows erasure and who
+    /// may start one are decided in transition validation, like a delete's
+    /// ownership; this operation assumes both.
+    EraseDocument {
+        /// The document id
+        document_id: Identifier,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+    },
     /// Deletes an indexOnly document from its property values — there is
     /// no primary-storage row to fetch, so the values (plus the owner)
     /// are what every index entry is recomputed from. `$createdAt` may
@@ -209,6 +234,11 @@ impl DocumentOperationType<'_> {
                 document_type_info,
                 ..
             }
+            | Self::DeleteDocumentWithLifecycle {
+                contract_info,
+                document_type_info,
+                ..
+            }
             | Self::DeleteIndexOnlyDocument {
                 contract_info,
                 document_type_info,
@@ -251,6 +281,9 @@ impl DocumentOperationType<'_> {
             }
             // These write to system contracts, which have no TTL indexes.
             Self::AddWithdrawalDocument { .. } | Self::DocumentHistory { .. } => Ok(()),
+            // An erase acts on a document whose delete already removed every
+            // index reference, so there is nothing left to drain.
+            Self::EraseDocument { .. } => Ok(()),
         }
     }
 
@@ -445,6 +478,64 @@ impl DocumentOperationType<'_> {
                     transaction,
                     platform_version,
                 )
+            }
+            DocumentOperationType::DeleteDocumentWithLifecycle {
+                document_id,
+                deleter_id,
+                contract_info,
+                document_type_info,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+
+                drive.delete_document_for_contract_operations_with_lifecycle_without_ttl_drain(
+                    document_id,
+                    contract,
+                    document_type,
+                    block_info,
+                    deleter_id,
+                    None,
+                    estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
+                    transaction,
+                    platform_version,
+                )
+            }
+            DocumentOperationType::EraseDocument {
+                document_id,
+                contract_info,
+                document_type_info,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+
+                let mut operations = drive.erase_document_for_contract_operations(
+                    document_id,
+                    contract,
+                    document_type,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                drive_operations.append(&mut operations);
+                Ok(drive_operations)
             }
             DocumentOperationType::DeleteIndexOnlyDocument {
                 document_id,

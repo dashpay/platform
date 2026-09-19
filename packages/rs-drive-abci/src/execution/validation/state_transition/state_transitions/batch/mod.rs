@@ -31,9 +31,13 @@ use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::batch::advanced_structure::v0::DocumentsBatchStateTransitionStructureValidationV0;
+use crate::execution::validation::state_transition::batch::advanced_structure::v1::DocumentsBatchStateTransitionStructureValidationV1;
 use crate::execution::validation::state_transition::batch::identity_contract_nonce::v0::DocumentsBatchStateTransitionIdentityContractNonceV0;
+use crate::execution::validation::state_transition::batch::identity_contract_nonce::v1::DocumentsBatchStateTransitionIdentityContractNonceV1;
 use crate::execution::validation::state_transition::batch::state::v0::DocumentsBatchStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::batch::state::v1::DocumentsBatchStateTransitionStateValidationV1;
+use crate::execution::validation::state_transition::batch::state::v2::DocumentsBatchStateTransitionActionTransformV2;
+use crate::execution::validation::state_transition::batch::state::validation_v1::DocumentsBatchStateTransitionValidationV1;
 use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::identity_nonces::StateTransitionIdentityNonceValidationV0;
@@ -90,9 +94,16 @@ impl StateTransitionActionTransformer for BatchTransition {
                 execution_context,
                 tx,
             ),
+            2 => self.transform_into_action_v2(
+                &platform.into(),
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: transform_into_action".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -149,9 +160,16 @@ impl StateTransitionIdentityNonceValidationV0 for BatchTransition {
                 execution_context,
                 platform_version,
             ),
+            1 => self.validate_identity_contract_nonces_v1(
+                platform,
+                block_info,
+                tx,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: revision".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -195,9 +213,30 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
                     platform_version,
                 )
             }
+            1 => {
+                let identity =
+                    identity.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "The identity must be known on advanced structure validation",
+                    )))?;
+                let StateTransitionAction::BatchActionV1(documents_batch_transition_action) =
+                    action
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "action must be a documents batch transition action in format 1",
+                    )));
+                };
+                self.validate_advanced_structure_from_state_v1(
+                    block_info,
+                    network,
+                    documents_batch_transition_action,
+                    identity,
+                    execution_context,
+                    platform_version,
+                )
+            }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: advanced structure from state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -251,9 +290,30 @@ impl StateTransitionStateValidation for BatchTransition {
                     platform_version,
                 )
             }
+            1 => {
+                let action =
+                    action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "documents batch structure validation should have an action",
+                    )))?;
+                let StateTransitionAction::BatchActionV1(documents_batch_transition_action) =
+                    action
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "action must be a documents batch transition action in format 1",
+                    )));
+                };
+                self.validate_state_v1(
+                    documents_batch_transition_action,
+                    &platform.into(),
+                    block_info,
+                    execution_context,
+                    tx,
+                    platform_version,
+                )
+            }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

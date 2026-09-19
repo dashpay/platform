@@ -1,3 +1,6 @@
+use crate::state_transition::batch_transition::batched_transition::{
+    DocumentTransitionRefV1, DocumentTransitionV1,
+};
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
 use crate::ProtocolError;
 
@@ -12,6 +15,7 @@ pub enum DocumentTransitionActionType {
     UpdatePrice,
     IgnoreWhileBumpingRevision,
     IndexOnlyDelete,
+    Erase,
 }
 
 pub trait DocumentTransitionActionTypeGetter {
@@ -32,6 +36,29 @@ impl DocumentTransitionActionTypeGetter for DocumentTransition {
     }
 }
 
+impl DocumentTransitionActionTypeGetter for DocumentTransitionV1 {
+    fn action_type(&self) -> DocumentTransitionActionType {
+        self.borrow_as_ref().action_type()
+    }
+}
+
+impl DocumentTransitionActionTypeGetter for DocumentTransitionRefV1<'_> {
+    fn action_type(&self) -> DocumentTransitionActionType {
+        match self {
+            DocumentTransitionRefV1::Create(_) => DocumentTransitionActionType::Create,
+            DocumentTransitionRefV1::Delete(_) => DocumentTransitionActionType::Delete,
+            DocumentTransitionRefV1::Replace(_) => DocumentTransitionActionType::Replace,
+            DocumentTransitionRefV1::Transfer(_) => DocumentTransitionActionType::Transfer,
+            DocumentTransitionRefV1::UpdatePrice(_) => DocumentTransitionActionType::UpdatePrice,
+            DocumentTransitionRefV1::Purchase(_) => DocumentTransitionActionType::Purchase,
+            DocumentTransitionRefV1::IndexOnlyDelete(_) => {
+                DocumentTransitionActionType::IndexOnlyDelete
+            }
+            DocumentTransitionRefV1::Erase(_) => DocumentTransitionActionType::Erase,
+        }
+    }
+}
+
 impl TryFrom<&str> for DocumentTransitionActionType {
     type Error = ProtocolError;
 
@@ -46,6 +73,7 @@ impl TryFrom<&str> for DocumentTransitionActionType {
             "indexOnlyDelete" | "index_only_delete" => {
                 Ok(DocumentTransitionActionType::IndexOnlyDelete)
             }
+            "erase" => Ok(DocumentTransitionActionType::Erase),
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown action type {action_type}"
             ))),

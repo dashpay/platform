@@ -6,12 +6,12 @@ use crate::state_transitions::batch::document_transition::DocumentTransitionWasm
 use crate::state_transitions::batch::token_transition::TokenTransitionWasm;
 use crate::utils::get_class_type;
 use dpp::prelude::Identifier;
-use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
-use dpp::state_transition::batch_transition::batched_transition::document_transition::{
-    DocumentTransition, DocumentTransitionV0Methods,
-};
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
     TokenTransition, TokenTransitionV0Methods,
+};
+use dpp::state_transition::batch_transition::batched_transition::{
+    BatchedTransition, BatchedTransitionV1, DocumentTransitionV1,
 };
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -34,17 +34,26 @@ impl_from_for_extern_type!(
     TokenTransitionWasm
 );
 
+/// Wraps the batched transition shell of batch format 2, which knows every
+/// kind the older batch formats carry plus the erase kind, so one class
+/// mirrors a batched transition of any batch format.
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "BatchedTransition")]
-pub struct BatchedTransitionWasm(BatchedTransition);
+pub struct BatchedTransitionWasm(BatchedTransitionV1);
 
-impl From<BatchedTransition> for BatchedTransitionWasm {
-    fn from(v: BatchedTransition) -> Self {
+impl From<BatchedTransitionV1> for BatchedTransitionWasm {
+    fn from(v: BatchedTransitionV1) -> Self {
         BatchedTransitionWasm(v)
     }
 }
 
-impl From<BatchedTransitionWasm> for BatchedTransition {
+impl From<BatchedTransition> for BatchedTransitionWasm {
+    fn from(v: BatchedTransition) -> Self {
+        BatchedTransitionWasm(v.into())
+    }
+}
+
+impl From<BatchedTransitionWasm> for BatchedTransitionV1 {
     fn from(v: BatchedTransitionWasm) -> Self {
         v.0
     }
@@ -62,11 +71,11 @@ impl BatchedTransitionWasm {
         }
 
         match get_class_type(&js_transition)?.as_str() {
-            "TokenTransition" => Ok(BatchedTransitionWasm::from(BatchedTransition::from(
+            "TokenTransition" => Ok(BatchedTransitionWasm(BatchedTransitionV1::Token(
                 TokenTransition::from(TokenTransitionWasm::try_from(&js_transition)?),
             ))),
-            "DocumentTransition" => Ok(BatchedTransitionWasm(BatchedTransition::Document(
-                DocumentTransition::from(DocumentTransitionWasm::try_from(&js_transition)?),
+            "DocumentTransition" => Ok(BatchedTransitionWasm(BatchedTransitionV1::Document(
+                DocumentTransitionV1::from(DocumentTransitionWasm::try_from(&js_transition)?),
             ))),
             _ => Err(WasmDppError::invalid_argument("Invalid transition type")),
         }
@@ -75,10 +84,10 @@ impl BatchedTransitionWasm {
     #[wasm_bindgen(js_name = "toTransition")]
     pub fn to_transition(&self) -> BatchedTransitionLikeJs {
         match &self.0 {
-            BatchedTransition::Document(document_transition) => {
+            BatchedTransitionV1::Document(document_transition) => {
                 DocumentTransitionWasm::from(document_transition.clone()).into()
             }
-            BatchedTransition::Token(token_transition) => {
+            BatchedTransitionV1::Token(token_transition) => {
                 TokenTransitionWasm::from(token_transition.clone()).into()
             }
         }
@@ -87,10 +96,10 @@ impl BatchedTransitionWasm {
     #[wasm_bindgen(getter = "dataContractId")]
     pub fn data_contract_id(&self) -> IdentifierWasm {
         match self.0.clone() {
-            BatchedTransition::Document(document_transition) => {
+            BatchedTransitionV1::Document(document_transition) => {
                 document_transition.data_contract_id().into()
             }
-            BatchedTransition::Token(token_transition) => {
+            BatchedTransitionV1::Token(token_transition) => {
                 token_transition.data_contract_id().into()
             }
         }
@@ -104,15 +113,15 @@ impl BatchedTransitionWasm {
         let contract_id: Identifier = contract_id.try_into()?;
 
         self.0 = match self.0.clone() {
-            BatchedTransition::Document(mut document_transition) => {
+            BatchedTransitionV1::Document(mut document_transition) => {
                 document_transition.set_data_contract_id(contract_id);
 
-                BatchedTransition::Document(document_transition)
+                BatchedTransitionV1::Document(document_transition)
             }
-            BatchedTransition::Token(mut token_transition) => {
+            BatchedTransitionV1::Token(mut token_transition) => {
                 token_transition.set_data_contract_id(contract_id);
 
-                BatchedTransition::Token(token_transition)
+                BatchedTransitionV1::Token(token_transition)
             }
         };
 
