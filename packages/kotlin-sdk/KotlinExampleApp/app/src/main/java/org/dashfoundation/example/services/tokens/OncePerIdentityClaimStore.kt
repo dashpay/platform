@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.example.util.toHex
 
 /**
@@ -40,26 +41,17 @@ class OncePerIdentityClaimStore(
         const val ALREADY_CLAIMED_ERROR_CODE = 40722
 
         /**
-         * The code as a number of its own. Error texts carry amounts and
-         * millisecond timestamps, and a claim time such as 1758140722000
-         * contains the digits, so a plain substring match would take an
-         * unrelated failure for a spent claim and hide the kind for good.
+         * True when [error] is the already-claimed rejection: the SDK error,
+         * or one in its cause chain, carries the consensus code the native
+         * layer read off Platform's verdict. The message is never consulted.
+         * Claim errors quote amounts and millisecond timestamps, so text that
+         * happens to contain the digits says nothing, and a false positive is
+         * permanent because the record is never cleared.
          */
-        private val ALREADY_CLAIMED_CODE_PATTERN =
-            Regex("(?<![0-9])$ALREADY_CLAIMED_ERROR_CODE(?![0-9])")
-
-        /**
-         * True when [error] is the already-claimed rejection. The native
-         * layer surfaces consensus errors as text, so match the code and the
-         * message rs-dpp renders for it.
-         */
-        fun isAlreadyClaimed(error: Throwable): Boolean {
-            val message = generateSequence(error) { it.cause }
-                .mapNotNull { it.message }
-                .joinToString(" ")
-            return ALREADY_CLAIMED_CODE_PATTERN.containsMatchIn(message) ||
-                message.contains("already claimed the once-per-identity distribution")
-        }
+        fun isAlreadyClaimed(error: Throwable): Boolean =
+            generateSequence(error) { it.cause }
+                .filterIsInstance<DashSdkError>()
+                .any { it.consensusError?.code == ALREADY_CLAIMED_ERROR_CODE }
 
         private fun preferenceKey(networkRaw: Int, tokenId: ByteArray, identityId: ByteArray) =
             booleanPreferencesKey(

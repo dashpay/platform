@@ -1,5 +1,7 @@
 package org.dashfoundation.example.services.tokens
 
+import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.junit.Assert.assertEquals
@@ -124,45 +126,70 @@ class TokenMaterializerOncePerIdentityTest {
     }
 
     @Test
-    fun `already-claimed rejection is recognised by code and by message`() {
+    fun `already-claimed rejection is recognised by its consensus code`() {
+        val rejection = claimFailure(consensusCode = 40722, consensusKind = STATE_KIND)
+        assertTrue(OncePerIdentityClaimStore.isAlreadyClaimed(rejection))
+        // Wrapped by a caller on the way up, the SDK error is still found.
         assertTrue(
+            OncePerIdentityClaimStore.isAlreadyClaimed(RuntimeException("claim failed", rejection)),
+        )
+    }
+
+    @Test
+    fun `another consensus rejection is not the already-claimed one`() {
+        // `TokenNotForDirectSale`, the state error one code below.
+        assertFalse(
             OncePerIdentityClaimStore.isAlreadyClaimed(
-                IllegalStateException("consensus error 40722: claim rejected"),
+                claimFailure(consensusCode = 40721, consensusKind = STATE_KIND),
             ),
         )
-        assertTrue(
-            OncePerIdentityClaimStore.isAlreadyClaimed(
-                RuntimeException(
-                    "claim failed",
-                    IllegalStateException(
-                        "Token claim error: identity 'a' already claimed the " +
-                            "once-per-identity distribution of token 'b' at 100",
-                    ),
+    }
+
+    @Test
+    fun `error text is never read as the already-claimed rejection`() {
+        // A failure that was not a consensus rejection, whatever its message
+        // says: the code as a number of its own, the sentence rs-dpp renders,
+        // and the digits inside a timestamp.
+        listOf(
+            "consensus error 40722: claim rejected",
+            "Token claim error: identity 'a' already claimed the " +
+                "once-per-identity distribution of token 'b' at 100",
+            "Token mint past max supply: 1758140722000",
+        ).forEach { message ->
+            assertFalse(
+                message,
+                OncePerIdentityClaimStore.isAlreadyClaimed(
+                    DashSdkError.fromNative(DashSDKException(UNKNOWN_WALLET_ERROR, message)),
                 ),
-            ),
-        )
-        assertTrue(
-            OncePerIdentityClaimStore.isAlreadyClaimed(IllegalStateException("code=40722")),
-        )
-        assertFalse(
-            OncePerIdentityClaimStore.isAlreadyClaimed(
-                IllegalStateException("Token mint past max supply"),
-            ),
-        )
-        // The digits inside a longer number are not the code: a timestamp or an
-        // amount in an unrelated failure must not read as a spent claim.
-        assertFalse(
-            OncePerIdentityClaimStore.isAlreadyClaimed(
-                IllegalStateException("Token mint past max supply: 1758140722000"),
-            ),
-        )
-        assertFalse(
-            OncePerIdentityClaimStore.isAlreadyClaimed(IllegalStateException("amount 4072299")),
-        )
+            )
+            assertFalse(
+                message,
+                OncePerIdentityClaimStore.isAlreadyClaimed(IllegalStateException(message)),
+            )
+        }
     }
 
     @Test
     fun `V0-wrapped block is unwrapped`() {
         assertEquals("7", TokenOncePerIdentityDistribution.parse("""{"V0":{"amount":7}}""")?.amount)
+    }
+
+    /** What `wallet.tokens.claim` throws for a claim Platform rejected. */
+    private fun claimFailure(consensusCode: Int, consensusKind: Int): DashSdkError =
+        DashSdkError.fromNative(
+            DashSDKException(
+                UNKNOWN_WALLET_ERROR,
+                "Token operation failed: Token claim failed: state transition broadcast error",
+                consensusCode,
+                consensusKind,
+            ),
+        )
+
+    private companion object {
+        /** `PlatformWalletFFIResultCode::ErrorUnknown`, as the JNI bridge throws it. */
+        const val UNKNOWN_WALLET_ERROR = DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 99
+
+        /** `PlatformWalletFFIConsensusErrorKind::State`. */
+        const val STATE_KIND = 4
     }
 }

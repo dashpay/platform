@@ -485,82 +485,73 @@ final class TokenClaimResolverTests: XCTestCase {
         XCTAssertTrue(reopened.hasClaimed(token: token, identity: identity))
     }
 
-    /// Drive's rejection is recognised from the message, which is all the
-    /// FFI hands back for a consensus error today.
-    func testAlreadyClaimedRejectionIsRecognisedFromTheMessage() {
-        let rejection = PlatformWalletError.unknown(
+    /// Drive's rejection is recognised from the consensus code the FFI hands
+    /// over beside the message.
+    func testAlreadyClaimedRejectionIsRecognisedFromTheConsensusCode() {
+        let rejection = PlatformWalletError.consensusRejection(
+            PlatformConsensusError(code: 40722, kind: .state),
             """
-            Token claim failed: state transition broadcast error: Token claim error: identity \
-            '5r5MYEznyc9UtKQZpmM1DUisVDwtPhUpaBxNpeTBQEHi' already claimed the once-per-identity \
-            distribution of token '6vk7Xk3dLFdBfNkAvj6vSpk6NNAoBEMRkGbdBHSqzmPu' at 1750000000000
+            Token operation failed: Token claim failed: state transition broadcast error: \
+            identity '5r5MYEznyc9UtKQZpmM1DUisVDwtPhUpaBxNpeTBQEHi' already claimed the \
+            once-per-identity distribution of token \
+            '6vk7Xk3dLFdBfNkAvj6vSpk6NNAoBEMRkGbdBHSqzmPu' at 1750000000000
             """
         )
         XCTAssertTrue(OncePerIdentityClaimRejection.isAlreadyClaimed(rejection))
-
-        XCTAssertTrue(
-            OncePerIdentityClaimRejection.isAlreadyClaimed(
-                PlatformWalletError.unknown(
-                    "TokenOncePerIdentityDistributionAlreadyClaimedError { token_id: .. }"
-                )
-            )
-        )
-        XCTAssertFalse(
-            OncePerIdentityClaimRejection.isAlreadyClaimed(
-                PlatformWalletError.unknown(
-                    "Token claim failed: Token claim error: no current rewards"
-                )
-            )
-        )
+        XCTAssertEqual(OncePerIdentityClaimRejection.alreadyClaimedConsensusCode, 40722)
     }
 
-    /// The consensus code counts as a signal too, for parity with Android,
-    /// but only where it stands as a number of its own.
-    func testAlreadyClaimedRejectionIsRecognisedFromTheConsensusCode() {
-        let recognised = [
-            "Token claim failed: consensus error 40722: claim rejected",
-            "Token claim failed: code=40722",
-            "Token claim failed: broadcast rejected (code 40722)"
-        ]
-        for message in recognised {
-            XCTAssertTrue(
+    /// Any other rejection is a different code, including the neighbours in
+    /// the token block: recording a claim that never happened would hide the
+    /// kind from that identity for good, since the record is never cleared.
+    func testOtherConsensusCodesAreNotTheAlreadyClaimedRejection() {
+        let others: [UInt32] = [40721, 40723, 40108, 10000]
+        for code in others {
+            XCTAssertFalse(
                 OncePerIdentityClaimRejection.isAlreadyClaimed(
-                    PlatformWalletError.unknown(message)
+                    PlatformWalletError.consensusRejection(
+                        PlatformConsensusError(code: code, kind: .state),
+                        "Token operation failed: Token claim failed"
+                    )
                 ),
-                "should recognise the standalone code in: \(message)"
+                "consensus code \(code) is not the already-claimed rejection"
             )
         }
+
+        // A failure that never reached Platform carries no verdict at all.
+        XCTAssertFalse(
+            OncePerIdentityClaimRejection.isAlreadyClaimed(
+                PlatformWalletError.unknown("Token operation failed: Token claim failed: timeout")
+            )
+        )
+        struct SomeOtherError: Error {}
+        XCTAssertFalse(OncePerIdentityClaimRejection.isAlreadyClaimed(SomeOtherError()))
     }
 
-    /// The digits of the code inside a longer number are not the code. Claim
-    /// errors quote millisecond timestamps and token amounts, and reading one
-    /// of those as the rejection would record a claim that never happened and
-    /// hide the kind from that identity permanently.
-    func testDigitsOfTheConsensusCodeInsideALongerNumberAreNotTheCode() {
-        let notRecognised = [
-            "Token mint past max supply: 1758140722000",
-            "Token claim failed: amount 4072299",
-            "Token claim failed: identity balance 407220 is too low",
-            "Token claim failed: at 40722000"
+    /// Text is not a signal. rs-dpp owns the wording, claim errors quote
+    /// millisecond timestamps whose digits contain the code, and an error
+    /// that only describes the rejection did not come from Platform refusing
+    /// this claim.
+    func testRenderedTextAloneIsNotTheAlreadyClaimedRejection() {
+        let messagesThatOnlyDescribeIt = [
+            """
+            Token operation failed: Token claim failed: identity \
+            '5r5MYEznyc9UtKQZpmM1DUisVDwtPhUpaBxNpeTBQEHi' already claimed the once-per-identity \
+            distribution of token '6vk7Xk3dLFdBfNkAvj6vSpk6NNAoBEMRkGbdBHSqzmPu' at 1750000000000
+            """,
+            "TokenOncePerIdentityDistributionAlreadyClaimedError { token_id: .. }",
+            "Token claim failed: consensus error 40722: claim rejected",
+            "Token claim failed: 40722 at 1758140722000",
+            "Token mint past max supply: 1758140722000"
         ]
-        for message in notRecognised {
+        for message in messagesThatOnlyDescribeIt {
             XCTAssertFalse(
                 OncePerIdentityClaimRejection.isAlreadyClaimed(
                     PlatformWalletError.unknown(message)
                 ),
-                "should not read a longer number as the code in: \(message)"
+                "text must not stand in for the consensus code: \(message)"
             )
         }
-
-        // The same message with the code standing on its own still counts,
-        // so the guard above is about digit boundaries and not about the
-        // words around them.
-        XCTAssertTrue(
-            OncePerIdentityClaimRejection.isAlreadyClaimed(
-                PlatformWalletError.unknown(
-                    "Token claim failed: 40722 at 1758140722000"
-                )
-            )
-        )
     }
 }
 
