@@ -766,6 +766,29 @@ impl<C> Platform<C> {
         self.drive
             .insert_contract_groups_structure(Some(transaction), platform_version)?;
 
+        // Token history contract v2: the claim document's `distributionType` admits the value 2
+        // (OncePerIdentity) written for once-per-identity distribution claims.
+        let token_history_contract =
+            load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
+
+        self.drive.apply_contract(
+            &token_history_contract,
+            *block_info,
+            true,
+            None,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        // Once-per-identity distributions root tree: one claims subtree per token that lets
+        // every identity claim a fixed amount once. Fresh chains call the same helper from
+        // `create_initial_state_structure` v4.
+        self.drive
+            .insert_once_per_identity_distributions_root_tree(
+                Some(transaction),
+                platform_version,
+            )?;
+
         // Token distribution storage: before this version a contract update created none of
         // the perpetual or pre-programmed distribution storage of a token it added, so every
         // claim on such a token failed as an internal error. `update_contract` v2 creates it
@@ -785,6 +808,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
@@ -1274,6 +1298,142 @@ mod tests {
             stored_withdrawal_status_enum(&platform, &transaction, platform_version),
             vec![0, 1, 2, 3, 4, 5],
             "the withdrawals contract must admit FAILED after transition_to_version_14"
+        );
+    }
+
+    fn stored_token_history_claim_distribution_type_enum(
+        platform: &Platform<MockCoreRPCLike>,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Vec<u64> {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
+        let (_fee_result, fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *SystemDataContract::TokenHistory.id().as_bytes(),
+                None,
+                false,
+                Some(transaction),
+                platform_version,
+            )
+            .expect("expected to fetch the token history contract");
+
+        let schema = fetch_info
+            .expect("expected the token history contract to exist")
+            .contract
+            .document_type_for_name("claim")
+            .expect("expected the claim document type")
+            .schema()
+            .clone()
+            .try_into_validating_json()
+            .expect("expected the document type schema to convert to JSON");
+
+        schema["properties"]["distributionType"]["enum"]
+            .as_array()
+            .expect("expected the distributionType enum")
+            .iter()
+            .map(|value| {
+                value
+                    .as_u64()
+                    .expect("expected an integer distribution type")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_transition_to_version_14_adds_once_per_identity_distributions() {
+        use drive::drive::tokens::paths::{
+            token_distributions_root_path, TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY,
+        };
+        use drive::util::grove_operations::DirectQueryType;
+
+        // A chain born at protocol version 13 stores the token history contract v1, whose claim
+        // `distributionType` enum stops at Perpetual (1), and has no once-per-identity
+        // distributions tree.
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version = PlatformVersion::get(14).expect("expected platform version 14");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let tree_exists = |transaction: &Transaction| {
+            platform
+                .drive
+                .grove_has_raw(
+                    (&token_distributions_root_path()).into(),
+                    &[TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY],
+                    DirectQueryType::StatefulDirectQuery,
+                    Some(transaction),
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to query the once-per-identity distributions tree")
+        };
+        assert!(
+            !tree_exists(&transaction),
+            "protocol version 13 has no once-per-identity distributions tree"
+        );
+        assert_eq!(
+            stored_token_history_claim_distribution_type_enum(
+                &platform,
+                &transaction,
+                platform_version
+            ),
+            vec![0, 1],
+            "the token history contract must be v1 before transition_to_version_14"
+        );
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected version 14 transition to succeed");
+
+        assert!(tree_exists(&transaction));
+        assert_eq!(
+            stored_token_history_claim_distribution_type_enum(
+                &platform,
+                &transaction,
+                platform_version
+            ),
+            vec![0, 1, 2],
+            "the token history contract must admit OncePerIdentity after transition_to_version_14"
+        );
+
+        // A chain born at version 14 has the tree from genesis.
+        let genesis_platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let genesis_transaction = genesis_platform.drive.grove.start_transaction();
+        assert!(genesis_platform
+            .drive
+            .grove_has_raw(
+                (&token_distributions_root_path()).into(),
+                &[TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY],
+                DirectQueryType::StatefulDirectQuery,
+                Some(&genesis_transaction),
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to query the once-per-identity distributions tree"));
+        assert_eq!(
+            stored_token_history_claim_distribution_type_enum(
+                &genesis_platform,
+                &genesis_transaction,
+                platform_version
+            ),
+            vec![0, 1, 2],
         );
     }
 
