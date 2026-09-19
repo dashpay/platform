@@ -67,7 +67,7 @@ It is signed like a contract update: a CRITICAL authentication key without contr
 
 | Tier | What | Codes |
 |---|---|---|
-| Basic structure (unpaid) | the target is not the signer | 10463 |
+| Basic structure (unpaid) | the target is not the signer; a suspension ends at or before `SystemLimits::max_contract_suspension_until` (2^53 - 1 ms, the largest value JSON clients read exactly) | 10463, 10700 |
 | Signature and nonce | CRITICAL key, contract nonce | existing |
 | Transform (state, paid) | the contract exists; it keeps the list the action edits; the signer is the owner or a moderator; the target of a ban or a suspend is neither; the target exists; the action fits the target's status | 41100-41106, 41109 |
 
@@ -75,7 +75,7 @@ The transform reads the contract and the target's status and refuses, paid, by b
 
 ### The Document Gate
 
-The gate sits in the batch transformer, `transform_document_transitions_within_contract_v0`, right after the contract is fetched. A config that declares no moderation costs nothing: no read, no branch. Otherwise the transformer reads the owner's status on the lists the contract keeps, bills the read, and:
+The gate sits in the batch transformer (a barred signer has every one of its transitions against the contract refused on its own, each with its nonce bump), `transform_document_transitions_within_contract_v0`, right after the contract is fetched. A config that declares no moderation costs nothing: no read, no branch. Otherwise the transformer reads the owner's status on the lists the contract keeps, bills the read, and:
 
 - banned: every document transition of the batch on that contract fails with `ContractUserBannedError` (41107), paid, one contract nonce bump per contract;
 - suspended and not lapsed: the same with `ContractUserSuspendedError` (41108);
@@ -105,14 +105,14 @@ The writers, readers and provers live in `packages/rs-drive/src/drive/contract/m
 
 ## Reading and Proving
 
-`fetch_contract_moderation_status(contract, identity, lists)` reads the identity's entry on each list named, and the verifier of its proof rebuilds the same merged path query from the same lists. The lists are the ones the contract's config declares; an undeclared list has no tree and cannot be queried, so a status query names the lists it wants and the node refuses one the contract does not keep. `fetch_contract_moderation_entries` pages one list in identity id order, bounded by the query limit, with the last identity as the cursor.
+`fetch_contract_moderation_status(contract, identity, lists)` reads the identity's entry on each list named, and the verifier of its proof rebuilds the same merged path query from the same lists. The lists are the ones the contract's config declares; an undeclared list has no tree and cannot be queried, so a status query names the lists it wants and the node refuses one the contract does not keep. `fetch_contract_moderation_entries` pages one list in identity id order, bounded by the platform version's `max_returned_elements` (the default page size too, and the number the proof verifier assumes when a request names no limit), with the last identity as the cursor. A page shorter than its limit is the last one and carries no cursor.
 
 ### The DAPI Queries
 
 - `getContractModerationStatus(contract_id, identity_id, lists, prove)`: the identity's status on the lists named.
 - `getContractModerationEntries(contract_id, list, start_after, limit, prove)`: one page of a list.
 
-Both have `Fetch` and `FetchUnproved` impls in the Rust SDK (`platform::contract_moderation`), wasm-sdk functions and `contracts.moderationStatus` / `contracts.moderationEntries` on the JavaScript SDK. The proof of a moderation transition's execution is the edited entry, present or absent, and is classified as affected state: an earlier or later moderation leaving the same entry verifies just the same. Its result, `VerifiedContractModerationListStatus`, is a `ContractModerationListStatus` of that one list (`Banlist { banned }` or `Suspensions { suspended_until }`), not a full status: the other list was not proved, so it is left unknown rather than reported as empty. An identity whose unsuspend was just proved may be banned; the status query answers that.
+A status query answers for the lists it names and no others: the SDK result, `ContractModerationListStatuses`, holds one `ContractModerationListStatus` per list queried, so a list that was not read is absent rather than reported as empty (`banned()` is `None` unless the banlist was queried). `ContractModerationStatusQuery::for_contract` names every list the contract keeps; the wasm-sdk does the same, fetching the contract, when the query names no list. Both have `Fetch` and `FetchUnproved` impls in the Rust SDK (`platform::contract_moderation`), wasm-sdk functions and `contracts.moderationStatus` / `contracts.moderationEntries` on the JavaScript SDK. The proof of a moderation transition's execution is the edited entry, present or absent, and is classified as affected state: an earlier or later moderation leaving the same entry verifies just the same. Its result, `VerifiedContractModerationListStatus`, is a `ContractModerationListStatus` of that one list (`Banlist { banned }` or `Suspensions { suspended_until }`), not a full status: the other list was not proved, so it is left unknown rather than reported as empty. An identity whose unsuspend was just proved may be banned; the status query answers that.
 
 ## Versioning Touchpoints
 

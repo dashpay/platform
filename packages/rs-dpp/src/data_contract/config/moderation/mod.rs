@@ -246,7 +246,6 @@ impl ContractModerationConfig {
     /// and update transitions.
     pub fn validate(
         &self,
-        owner_id: &Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
@@ -255,7 +254,7 @@ impl ContractModerationConfig {
             .methods
             .validate_moderation_config
         {
-            0 => Ok(self.validate_v0(owner_id, platform_version)),
+            0 => Ok(self.validate_v0(platform_version)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ContractModerationConfig::validate".to_string(),
                 known_versions: vec![0],
@@ -265,12 +264,7 @@ impl ContractModerationConfig {
     }
 
     #[inline(always)]
-    fn validate_v0(
-        &self,
-        // The owner may be named like anybody else, so no rule reads it any more.
-        _owner_id: &Identifier,
-        platform_version: &PlatformVersion,
-    ) -> SimpleConsensusValidationResult {
+    fn validate_v0(&self, platform_version: &PlatformVersion) -> SimpleConsensusValidationResult {
         if !self.banlist && !self.suspensions {
             return SimpleConsensusValidationResult::new_with_error(
                 InvalidContractModerationConfigError::new(
@@ -354,7 +348,7 @@ impl ContractModerationStatus {
 /// other list. It is what the proof of a moderation transition's execution shows: that proof
 /// holds the edited entry only, so the other list stays unknown rather than being reported as
 /// empty (an identity unsuspended a moment ago may well be banned).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 #[serde(tag = "list", rename_all = "camelCase")]
 pub enum ContractModerationListStatus {
     /// The banlist entry
@@ -420,14 +414,13 @@ mod tests {
 
     #[test]
     fn should_reject_a_config_with_no_list() {
-        let owner = Identifier::from([9; 32]);
         let config = ContractModerationConfig {
             banlist: false,
             suspensions: false,
             moderators: ContractModerators::ContractOwner,
         };
         let result = config
-            .validate(&owner, PlatformVersion::latest())
+            .validate(PlatformVersion::latest())
             .expect("validate");
         assert!(!result.is_valid());
     }
@@ -441,7 +434,7 @@ mod tests {
             moderators: ContractModerators::OwnerAndIdentities(set(&[9, 1])),
         };
         let result = config
-            .validate(&owner, PlatformVersion::latest())
+            .validate(PlatformVersion::latest())
             .expect("validate");
         assert!(result.is_valid(), "{:?}", result.errors);
         // Naming the owner changes nothing about who may moderate or who is protected.
@@ -453,7 +446,7 @@ mod tests {
     fn should_count_a_named_owner_toward_the_moderator_limit() {
         let platform_version = PlatformVersion::latest();
         let max = platform_version.system_limits.max_contract_moderators as u8;
-        let owner = Identifier::from([1; 32]);
+        // Identity `[1; 32]`, the first of every set below, stands for the owner: it counts.
         let config = |count: u8| ContractModerationConfig {
             banlist: true,
             suspensions: false,
@@ -462,11 +455,11 @@ mod tests {
             )),
         };
         assert!(config(max)
-            .validate(&owner, platform_version)
+            .validate(platform_version)
             .expect("validate")
             .is_valid());
         assert!(!config(max + 1)
-            .validate(&owner, platform_version)
+            .validate(platform_version)
             .expect("validate")
             .is_valid());
     }
@@ -497,7 +490,6 @@ mod tests {
 
     #[test]
     fn should_reject_an_empty_or_oversized_moderator_set() {
-        let owner = Identifier::from([9; 32]);
         let platform_version = PlatformVersion::latest();
         let empty = ContractModerationConfig {
             banlist: true,
@@ -505,7 +497,7 @@ mod tests {
             moderators: ContractModerators::OwnerAndIdentities(BTreeSet::new()),
         };
         assert!(!empty
-            .validate(&owner, platform_version)
+            .validate(platform_version)
             .expect("validate")
             .is_valid());
         let too_many: Vec<u8> =
@@ -516,7 +508,7 @@ mod tests {
             moderators: ContractModerators::OwnerAndIdentities(set(&too_many)),
         };
         assert!(!oversized
-            .validate(&owner, platform_version)
+            .validate(platform_version)
             .expect("validate")
             .is_valid());
     }
@@ -530,7 +522,7 @@ mod tests {
             moderators: ContractModerators::OwnerAndIdentities(set(&[1, 2, 3])),
         };
         assert!(config
-            .validate(&owner, PlatformVersion::latest())
+            .validate(PlatformVersion::latest())
             .expect("validate")
             .is_valid());
         assert!(config.may_moderate(&owner, &owner));

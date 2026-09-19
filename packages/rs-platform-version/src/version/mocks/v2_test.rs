@@ -576,6 +576,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contract_group_name_length: 64,
         max_contract_group_description_length: 256,
         max_contract_moderators: 16,
+        max_contract_suspension_until: 9_007_199_254_740_991,
         max_token_redemption_cycles: 128,
         max_shielded_transition_actions: 16,
         max_time_range_overlap_factor: None,

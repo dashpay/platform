@@ -14,7 +14,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        self.check_contract_moderation_entries_limit(query.limit)?;
+        Self::check_contract_moderation_entries_limit(query.limit, platform_version)?;
         let path_query = Self::contract_moderation_entries_query(contract_id.to_buffer(), query);
         self.grove_get_proved_path_query(
             &path_query,

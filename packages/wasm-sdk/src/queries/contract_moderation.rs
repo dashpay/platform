@@ -8,9 +8,9 @@ use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::platform::contract_moderation::{
     ContractModerationEntries, ContractModerationEntriesPageQuery, ContractModerationList,
-    ContractModerationStatus, ContractModerationStatusQuery,
+    ContractModerationListStatus, ContractModerationListStatuses, ContractModerationStatusQuery,
 };
-use dash_sdk::platform::{Fetch, Identifier};
+use dash_sdk::platform::{DataContract, Fetch, Identifier};
 use js_sys::Array;
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -33,18 +33,25 @@ export interface ContractModerationStatusQuery {
   identityId: IdentifierLike;
   /**
    * The lists to read; each must be one the contract keeps (see the contract's
-   * `config.moderation`). Omit to read both, which a contract keeping only one refuses.
+   * `config.moderation`). Omit to read every list the contract keeps, which costs one
+   * extra request for the contract.
    */
   lists?: ContractModerationListKind[];
 }
 
-/** One identity's status on a moderated contract. */
+/**
+ * One identity's status on the lists of a moderated contract that were read. A list that was
+ * not read says nothing: `banned` is undefined, not false, unless `lists` includes `banlist`.
+ */
 export interface ContractModerationStatus {
-  /** The identity is on the banlist. */
-  banned: boolean;
+  /** The lists this status covers: the ones the query named, or every list the contract keeps. */
+  lists: ContractModerationListKind[];
+  /** Set when `lists` includes `banlist`: the identity is on the banlist. */
+  banned?: boolean;
   /**
-   * The block time, in milliseconds, until which the identity is suspended. A lapsed
-   * suspension stays until the identity's next document transition sweeps it.
+   * When `lists` includes `suspensions`: the block time, in milliseconds, until which the
+   * identity is suspended; undefined when it is not. A lapsed suspension stays until the
+   * identity's next document transition sweeps it.
    */
   suspendedUntil?: bigint;
 }
@@ -76,7 +83,8 @@ export interface ContractModerationEntry {
 
 /**
  * One page of a moderation list, in identity id order. `nextStartAfter` is the cursor of the
- * next page and is absent when this page is empty, which makes it the last one.
+ * next page and is absent when this page holds fewer entries than the limit, which makes it
+ * the last one.
  */
 export interface ContractModerationEntriesPage {
   entries: ContractModerationEntry[];
@@ -129,28 +137,36 @@ struct ContractModerationEntriesQueryInput {
     limit: Option<u32>,
 }
 
-fn parse_status_query(
-    query: ContractModerationStatusQueryJs,
-) -> Result<ContractModerationStatusQuery, WasmSdkError> {
-    let input: ContractModerationStatusQueryInput = deserialize_required_query(
-        query,
-        "Query object is required",
-        "contract moderation status query",
-    )?;
-    let lists = input
-        .lists
-        .map(|lists| lists.into_iter().map(Into::into).collect())
-        .unwrap_or_else(|| {
-            vec![
-                ContractModerationList::Banlist,
-                ContractModerationList::Suspensions,
-            ]
-        });
-    Ok(ContractModerationStatusQuery {
-        contract_id: Identifier::from(input.contract_id),
-        identity_id: Identifier::from(input.identity_id),
-        lists,
-    })
+impl WasmSdk {
+    /// The status query for `query`. Without `lists`, the contract is fetched and every list
+    /// it keeps is read, because the node refuses a list the contract does not keep.
+    async fn contract_moderation_status_query(
+        &self,
+        query: ContractModerationStatusQueryJs,
+    ) -> Result<ContractModerationStatusQuery, WasmSdkError> {
+        let input: ContractModerationStatusQueryInput = deserialize_required_query(
+            query,
+            "Query object is required",
+            "contract moderation status query",
+        )?;
+        let contract_id = Identifier::from(input.contract_id);
+        let identity_id = Identifier::from(input.identity_id);
+
+        if let Some(lists) = input.lists {
+            return Ok(ContractModerationStatusQuery {
+                contract_id,
+                identity_id,
+                lists: lists.into_iter().map(Into::into).collect(),
+            });
+        }
+
+        let contract = DataContract::fetch(self.as_ref(), contract_id)
+            .await?
+            .ok_or_else(|| WasmSdkError::not_found(format!("contract {contract_id} not found")))?;
+        ContractModerationStatusQuery::for_contract(&contract, identity_id).ok_or_else(|| {
+            WasmSdkError::invalid_argument(format!("contract {contract_id} is not moderated"))
+        })
+    }
 }
 
 fn parse_entries_query(
@@ -175,20 +191,36 @@ fn parse_entries_query(
     Ok(page_query)
 }
 
-fn status_to_js(status: ContractModerationStatus) -> Result<JsValue, WasmSdkError> {
+fn status_to_js(statuses: ContractModerationListStatuses) -> Result<JsValue, WasmSdkError> {
     let result = js_sys::Object::new();
     let set = |key: &str, value: JsValue| {
         js_sys::Reflect::set(&result, &key.into(), &value)
             .map_err(|_| WasmSdkError::generic(format!("failed to set `{key}` on the status")))
     };
-    set("banned", status.banned.into())?;
-    if let Some(until) = status.suspended_until {
-        set("suspendedUntil", js_sys::BigInt::from(until).into())?;
+    // Only the lists read are reported: the other field stays undefined (unknown).
+    let lists = Array::new();
+    for status in &statuses.0 {
+        match status {
+            ContractModerationListStatus::Banlist { banned } => {
+                lists.push(&"banlist".into());
+                set("banned", (*banned).into())?;
+            }
+            ContractModerationListStatus::Suspensions { suspended_until } => {
+                lists.push(&"suspensions".into());
+                if let Some(until) = suspended_until {
+                    set("suspendedUntil", js_sys::BigInt::from(*until).into())?;
+                }
+            }
+        }
     }
+    set("lists", lists.into())?;
     Ok(result.into())
 }
 
-fn entries_to_js(page: ContractModerationEntries) -> Result<JsValue, WasmSdkError> {
+fn entries_to_js(
+    page: ContractModerationEntries,
+    query: &ContractModerationEntriesPageQuery,
+) -> Result<JsValue, WasmSdkError> {
     let result = js_sys::Object::new();
     let set = |target: &js_sys::Object, key: &str, value: JsValue| {
         js_sys::Reflect::set(target, &key.into(), &value)
@@ -208,11 +240,12 @@ fn entries_to_js(page: ContractModerationEntries) -> Result<JsValue, WasmSdkErro
         entries.push(&js_entry);
     }
     set(&result, "entries", entries.into())?;
-    if let Some(last) = page.entries().last() {
+    // A page shorter than the limit is the last one, so it carries no cursor.
+    if let Some(start_after) = query.after(&page).and_then(|next| next.query.start_after) {
         set(
             &result,
             "nextStartAfter",
-            JsValue::from_str(&IdentifierWasm::from(last.identity_id).to_base58()),
+            JsValue::from_str(&IdentifierWasm::from(start_after).to_base58()),
         )?;
     }
     Ok(result.into())
@@ -221,11 +254,12 @@ fn entries_to_js(page: ContractModerationEntries) -> Result<JsValue, WasmSdkErro
 #[wasm_bindgen]
 impl WasmSdk {
     /// One identity's status on a moderated contract: whether it is banned, and until when it
-    /// is suspended. Every list the query names must be one the contract keeps.
+    /// is suspended, on the lists read. Every list the query names must be one the contract
+    /// keeps; without `lists`, every list the contract keeps is read.
     ///
     /// # Example
     /// ```javascript
-    /// const status = await sdk.getContractModerationStatus({ contractId, identityId, lists: ['banlist'] });
+    /// const status = await sdk.getContractModerationStatus({ contractId, identityId });
     /// if (status.banned) console.log('banned');
     /// ```
     #[wasm_bindgen(
@@ -236,8 +270,8 @@ impl WasmSdk {
         &self,
         query: ContractModerationStatusQueryJs,
     ) -> Result<JsValue, WasmSdkError> {
-        let query = parse_status_query(query)?;
-        let status = ContractModerationStatus::fetch(self.as_ref(), query)
+        let query = self.contract_moderation_status_query(query).await?;
+        let status = ContractModerationListStatuses::fetch(self.as_ref(), query)
             .await?
             .unwrap_or_default();
         status_to_js(status)
@@ -252,10 +286,14 @@ impl WasmSdk {
         &self,
         query: ContractModerationStatusQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let query = parse_status_query(query)?;
+        let query = self.contract_moderation_status_query(query).await?;
         let (status, metadata, proof) =
-            ContractModerationStatus::fetch_with_metadata_and_proof(self.as_ref(), query, None)
-                .await?;
+            ContractModerationListStatuses::fetch_with_metadata_and_proof(
+                self.as_ref(),
+                query,
+                None,
+            )
+            .await?;
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             status_to_js(status.unwrap_or_default())?,
             metadata,
@@ -283,10 +321,10 @@ impl WasmSdk {
         query: ContractModerationEntriesQueryJs,
     ) -> Result<JsValue, WasmSdkError> {
         let query = parse_entries_query(query)?;
-        let page = ContractModerationEntries::fetch(self.as_ref(), query)
+        let page = ContractModerationEntries::fetch(self.as_ref(), query.clone())
             .await?
             .unwrap_or_default();
-        entries_to_js(page)
+        entries_to_js(page, &query)
     }
 
     /// One page of a moderation list together with its proof and metadata.
@@ -299,11 +337,14 @@ impl WasmSdk {
         query: ContractModerationEntriesQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let query = parse_entries_query(query)?;
-        let (page, metadata, proof) =
-            ContractModerationEntries::fetch_with_metadata_and_proof(self.as_ref(), query, None)
-                .await?;
+        let (page, metadata, proof) = ContractModerationEntries::fetch_with_metadata_and_proof(
+            self.as_ref(),
+            query.clone(),
+            None,
+        )
+        .await?;
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            entries_to_js(page.unwrap_or_default())?,
+            entries_to_js(page.unwrap_or_default(), &query)?,
             metadata,
             proof,
         ))

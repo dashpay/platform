@@ -235,6 +235,42 @@ describe('DataContract', () => {
     });
   });
 
+  describe('config.moderation', () => {
+    it('should keep a moderation declaration from protocol version 14', () => {
+      const dataContract = wasm.DataContract.fromJSON(json, true);
+      const moderation = {
+        banlist: true,
+        suspensions: false,
+        moderators: { $type: 'contractOwner' },
+      };
+
+      dataContract.setConfig({ ...dataContract.config, moderation }, new PlatformVersion(14));
+
+      expect(dataContract.config.moderation).to.deep.equal(moderation);
+    });
+
+    it('should leave an unmoderated config without the key', () => {
+      const dataContract = wasm.DataContract.fromJSON(json, true);
+
+      dataContract.setConfig({ ...dataContract.config }, new PlatformVersion(14));
+
+      expect(dataContract.config).to.not.have.property('moderation');
+    });
+
+    it('should drop the declaration before protocol version 14', () => {
+      const dataContract = wasm.DataContract.fromJSON(json, true);
+      const moderation = {
+        banlist: true,
+        suspensions: true,
+        moderators: { $type: 'contractOwner' },
+      };
+
+      dataContract.setConfig({ ...dataContract.config, moderation }, new PlatformVersion(13));
+
+      expect(dataContract.config).to.not.have.property('moderation');
+    });
+  });
+
   describe('setSchemas()', () => {
     it('should allow to set schema', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);

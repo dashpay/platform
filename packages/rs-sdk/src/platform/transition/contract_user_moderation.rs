@@ -34,7 +34,7 @@ use super::waitable::Waitable;
 /// The target identity's entry on the list a moderation edited, as the proof of the moderation
 /// shows it. The proof holds that one entry: it says nothing about the contract's other list,
 /// so an identity shown as no longer suspended may still be banned. Fetch
-/// `ContractModerationStatus` for the whole picture.
+/// `ContractModerationListStatuses` over every list the contract keeps for the whole picture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModeratedUserStatus {
     /// The moderated contract

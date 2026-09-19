@@ -20,7 +20,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<ContractModerationEntry>, Error> {
-        self.check_contract_moderation_entries_limit(query.limit)?;
+        Self::check_contract_moderation_entries_limit(query.limit, platform_version)?;
 
         // A path query over a missing list tree is an error in GroveDB, so check first.
         let exists = self.grove_has_raw(

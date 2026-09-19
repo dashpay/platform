@@ -476,23 +476,30 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     })
             };
             if let Some(error) = barred {
-                // Paid: the signer is authenticated and the read happened. One nonce bump per
-                // contract, on the first of its transitions.
-                let Some(first_transition) = document_transitions.values().flatten().next() else {
-                    return Ok(ConsensusValidationResult::new_with_error(error));
-                };
-                let failed = Self::failed_per_transition_action(
-                    first_transition.base(),
-                    owner_id,
-                    vec![error],
-                    platform_version,
-                )?;
-                let ConsensusValidationResult { data, errors } = failed;
-                return Ok(match data {
-                    Some(action) => {
-                        ConsensusValidationResult::new_with_data_and_errors(vec![action], errors)
-                    }
-                    None => ConsensusValidationResult::new_with_errors(errors),
+                // Paid: the signer is authenticated and the read happened. Every transition
+                // against the contract is refused on its own, as a per-transition failure is
+                // anywhere else in this transformer, so each one's contract nonce is bumped
+                // and none stays replayable.
+                let mut actions = vec![];
+                let mut errors = vec![];
+                for transition in document_transitions.values().flatten() {
+                    let failed = Self::failed_per_transition_action(
+                        transition.base(),
+                        owner_id,
+                        vec![error.clone()],
+                        platform_version,
+                    )?;
+                    actions.extend(failed.data);
+                    errors.extend(failed.errors);
+                }
+                return Ok(if actions.is_empty() {
+                    ConsensusValidationResult::new_with_errors(if errors.is_empty() {
+                        vec![error]
+                    } else {
+                        errors
+                    })
+                } else {
+                    ConsensusValidationResult::new_with_data_and_errors(actions, errors)
                 });
             }
             if status.has_lapsed_suspension_at(block_info.time_ms) {

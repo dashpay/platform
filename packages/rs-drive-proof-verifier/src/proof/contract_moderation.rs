@@ -3,7 +3,7 @@
 use crate::error::MapGroveDbError;
 use crate::types::contract_moderation::{
     entries_query_from_request, lists_from_request, ContractModerationEntries,
-    ContractModerationStatus,
+    ContractModerationListStatuses,
 };
 use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
@@ -28,7 +28,7 @@ fn identifier_from_request(bytes: Vec<u8>, what: &str) -> Result<Identifier, Err
     })
 }
 
-impl FromProof<GetContractModerationStatusRequest> for ContractModerationStatus {
+impl FromProof<GetContractModerationStatusRequest> for ContractModerationListStatuses {
     type Request = GetContractModerationStatusRequest;
     type Response = GetContractModerationStatusResponse;
 
@@ -68,8 +68,13 @@ impl FromProof<GetContractModerationStatusRequest> for ContractModerationStatus 
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
 
-        // An absent entry is a status too: the identity is neither banned nor suspended.
-        Ok((Some(status), metadata, proof))
+        // An absent entry is a status too: the identity is not on that list. Only the lists
+        // queried were proved, so only they are reported.
+        Ok((
+            Some(ContractModerationListStatuses::from_status(&lists, &status)),
+            metadata,
+            proof,
+        ))
     }
 }
 
@@ -93,7 +98,12 @@ impl FromProof<GetContractModerationEntriesRequest> for ContractModerationEntrie
         let get_contract_moderation_entries_request::Version::V0(v0) =
             request.version.ok_or(Error::EmptyVersion)?;
         let contract_id = identifier_from_request(v0.contract_id, "contract_id")?;
-        let query = entries_query_from_request(v0.list, v0.start_after.as_deref(), v0.limit)?;
+        let query = entries_query_from_request(
+            v0.list,
+            v0.start_after.as_deref(),
+            v0.limit,
+            platform_version,
+        )?;
 
         let metadata = response
             .metadata()
@@ -230,7 +240,7 @@ mod tests {
         request: GetContractModerationStatusRequest,
         response: GetContractModerationStatusResponse,
     ) -> Error {
-        <ContractModerationStatus as FromProof<_>>::maybe_from_proof(
+        <ContractModerationListStatuses as FromProof<_>>::maybe_from_proof(
             request,
             response,
             Network::Testnet,

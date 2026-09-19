@@ -9,9 +9,7 @@ use crate::data_contract::config::moderation::ContractModerationConfig;
 use crate::data_contract::config::v1::{
     DataContractConfigGettersV1, DataContractConfigSettersV1, DataContractConfigV1,
 };
-use crate::data_contract::config::v2::{
-    DataContractConfigGettersV2, DataContractConfigSettersV2, DataContractConfigV2,
-};
+use crate::data_contract::config::v2::{DataContractConfigGettersV2, DataContractConfigV2};
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
@@ -387,15 +385,6 @@ impl DataContractConfigGettersV2 for DataContractConfig {
         match self {
             DataContractConfig::V0(_) | DataContractConfig::V1(_) => None,
             DataContractConfig::V2(v2) => v2.moderation.as_ref(),
-        }
-    }
-}
-
-impl DataContractConfigSettersV2 for DataContractConfig {
-    fn set_moderation(&mut self, moderation: Option<ContractModerationConfig>) {
-        match self {
-            DataContractConfig::V0(_) | DataContractConfig::V1(_) => {}
-            DataContractConfig::V2(v2) => v2.moderation = moderation,
         }
     }
 }

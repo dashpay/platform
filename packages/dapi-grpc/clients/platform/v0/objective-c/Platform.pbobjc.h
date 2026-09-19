@@ -3135,11 +3135,11 @@ GPB_FINAL @interface GetContractModerationEntriesRequest_GetContractModerationEn
 /** Test to see if @c startAfter has been set. */
 @property(nonatomic, readwrite) BOOL hasStartAfter;
 
-/** Maximum number of entries to return, 1..=100; absent means 100 */
+/** Maximum number of entries to return, from 1 to the protocol's */
 @property(nonatomic, readwrite) uint32_t limit;
 
 @property(nonatomic, readwrite) BOOL hasLimit;
-/** Flag to request a proof as the response */
+/** max_returned_elements (100); absent means that maximum */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end

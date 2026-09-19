@@ -54,16 +54,19 @@ impl Drive {
         }
     }
 
-    /// Checks a moderation entries page limit: at least one entry, at most the configured
-    /// maximum query limit, so that no page and no proof grows with the size of the list.
+    /// Checks a moderation entries page limit: at least one entry, at most the platform
+    /// version's `max_returned_elements` (the number the proof verifier reads too, so that a
+    /// node setting cannot make a default request unanswerable), so that no page and no proof
+    /// grows with the size of the list.
     pub(in crate::drive::contract::moderation) fn check_contract_moderation_entries_limit(
-        &self,
         limit: u16,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if limit == 0 || limit > self.config.max_query_limit {
+        let max_limit = platform_version.drive_abci.query.max_returned_elements;
+        if limit == 0 || limit > max_limit {
             return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
                 "contract moderation entries limit must be between 1 and {}, got {}",
-                self.config.max_query_limit, limit
+                max_limit, limit
             ))));
         }
         Ok(())

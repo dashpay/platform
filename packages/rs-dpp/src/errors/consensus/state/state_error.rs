@@ -518,6 +518,7 @@ impl From<StateError> for ConsensusError {
 mod tests {
     use super::*;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
+    use crate::data_contract::config::moderation::ContractModerationList;
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use platform_value::Identifier;
 
@@ -760,10 +761,7 @@ mod tests {
         // tail of the enum.
         assert_eq!(
             discriminant_of(StateError::ContractModerationNotEnabledError(
-                ContractModerationNotEnabledError::new(
-                    group_id,
-                    crate::data_contract::config::moderation::ContractModerationList::Banlist,
-                )
+                ContractModerationNotEnabledError::new(group_id, ContractModerationList::Banlist,)
             )),
             114
         );

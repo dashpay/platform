@@ -53,6 +53,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10463;
+const OVERFLOW: u32 = 10700;
 const CONTRACT_MODERATION_NOT_ENABLED: u32 = 41100;
 const IDENTITY_NOT_CONTRACT_MODERATOR: u32 = 41101;
 const CONTRACT_MODERATION_TARGET_NOT_ALLOWED: u32 = 41102;
@@ -983,4 +984,24 @@ async fn should_accept_the_owner_named_among_the_moderators() {
         &setup.process(&ban_owner, &transaction),
         CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
     );
+}
+
+#[tokio::test]
+async fn should_refuse_a_suspension_ending_past_the_json_safe_range() {
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let user_id = setup.user.id();
+    let max_until = PlatformVersion::latest()
+        .system_limits
+        .max_contract_suspension_until;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let too_late = setup
+        .moderate(&setup.owner, suspend_action(user_id, max_until + 1))
+        .await;
+    assert_unpaid_with_code(&setup.process(&too_late, &transaction), OVERFLOW);
+
+    let latest = setup
+        .moderate(&setup.owner, suspend_action(user_id, max_until))
+        .await;
+    assert_success(&setup.process(&latest, &transaction));
 }

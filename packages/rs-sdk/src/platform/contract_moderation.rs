@@ -8,8 +8,8 @@
 //! the query. [`ContractModerationStatusQuery::for_contract`] derives the lists from a contract
 //! the caller holds.
 //!
-//! * [`ContractModerationStatus::fetch`] with a [`ContractModerationStatusQuery`] returns
-//!   whether the identity is banned and until when it is suspended.
+//! * [`ContractModerationListStatuses::fetch`] with a [`ContractModerationStatusQuery`] returns
+//!   the identity's status on each list queried; a list not queried is absent, not empty.
 //! * [`ContractModerationEntries::fetch`] with a [`ContractModerationEntriesPageQuery`] returns
 //!   one page of a list in identity id order; the page's
 //!   [`next_query`](ContractModerationEntries::next_query) is the cursor of the next page.
@@ -27,9 +27,11 @@ use dapi_grpc::platform::v0::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::DataContract;
+use dpp::version::PlatformVersion;
 pub use drive_proof_verifier::types::contract_moderation::{
-    list_to_request, ContractModerationEntries, ContractModerationEntriesQuery,
-    ContractModerationEntry, ContractModerationList, ContractModerationStatus,
+    default_contract_moderation_entries_limit, list_to_request, ContractModerationEntries,
+    ContractModerationEntriesQuery, ContractModerationEntry, ContractModerationList,
+    ContractModerationListStatus, ContractModerationListStatuses,
 };
 
 /// Query for one identity's status on a moderated contract.
@@ -95,7 +97,7 @@ impl ContractModerationEntriesPageQuery {
             query: ContractModerationEntriesQuery {
                 list,
                 start_after: None,
-                limit: drive_proof_verifier::types::contract_moderation::DEFAULT_CONTRACT_MODERATION_ENTRIES_LIMIT,
+                limit: default_contract_moderation_entries_limit(PlatformVersion::latest()),
             },
         }
     }
@@ -134,12 +136,12 @@ impl Query<GetContractModerationEntriesRequest> for ContractModerationEntriesPag
     }
 }
 
-impl Fetch for ContractModerationStatus {
+impl Fetch for ContractModerationListStatuses {
     type Query = GetContractModerationStatusRequest;
     type Request = GetContractModerationStatusRequest;
 }
 
-impl FetchUnproved for ContractModerationStatus {
+impl FetchUnproved for ContractModerationListStatuses {
     type Request = GetContractModerationStatusRequest;
 }
 

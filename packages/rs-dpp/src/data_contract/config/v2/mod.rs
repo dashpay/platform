@@ -1,8 +1,6 @@
 use crate::data_contract::config;
 use crate::data_contract::config::moderation::ContractModerationConfig;
-use crate::data_contract::config::v1::{
-    DataContractConfigGettersV1, DataContractConfigSettersV1, DataContractConfigV1,
-};
+use crate::data_contract::config::v1::{DataContractConfigGettersV1, DataContractConfigV1};
 use crate::data_contract::config::{
     DataContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED,
     DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY, DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
@@ -61,12 +59,6 @@ pub trait DataContractConfigGettersV2: DataContractConfigGettersV1 {
     /// The moderation declaration, `None` for an unmoderated contract (and for every config
     /// below V2).
     fn moderation(&self) -> Option<&ContractModerationConfig>;
-}
-
-/// Trait representing setters for `DataContractConfigV2`
-pub trait DataContractConfigSettersV2: DataContractConfigSettersV1 {
-    /// Sets the moderation declaration. Has no effect on a config below V2.
-    fn set_moderation(&mut self, moderation: Option<ContractModerationConfig>);
 }
 
 impl Default for DataContractConfigV2 {

@@ -210,4 +210,87 @@ describe('ContractsFacade', () => {
       expect(contractUpdateStub).to.be.calledOnceWithExactly(options);
     });
   });
+
+  describe('contract moderation', () => {
+    const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
+    const identityId = 'H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1';
+
+    // Every moderation transition resolves to the entry on the list it edited, and nothing
+    // about the other list: `banned` is only set when `list` is `banlist`.
+    const transitions = [
+      { facade: 'banUser', wasm: 'contractBanUser', result: { list: 'banlist', banned: true } },
+      { facade: 'unbanUser', wasm: 'contractUnbanUser', result: { list: 'banlist', banned: false } },
+      {
+        facade: 'suspendUser',
+        wasm: 'contractSuspendUser',
+        result: { list: 'suspensions', suspendedUntil: BigInt(1800000000000) },
+      },
+      { facade: 'unsuspendUser', wasm: 'contractUnsuspendUser', result: { list: 'suspensions' } },
+    ] as const;
+
+    transitions.forEach(({ facade, wasm, result }) => {
+      it(`should forward ${facade}() to ${wasm}() and return its per-list result`, async function run() {
+        const stub = this.sinon.stub(wasmSdk, wasm).resolves({ contractId, identityId, ...result });
+        const options = {
+          identity: Object.create(wasmSDKPackage.Identity.prototype),
+          contractId,
+          identityId,
+          until: BigInt(1800000000000),
+          signer,
+        };
+
+        const moderated = await client.contracts[facade](options);
+
+        expect(stub).to.be.calledOnceWithExactly(options);
+        expect(moderated.list).to.equal(result.list);
+        if (result.list === 'suspensions') {
+          expect(moderated.banned).to.equal(undefined);
+        }
+      });
+    });
+
+    it('should fetch a status without naming lists', async function run() {
+      const status = { lists: ['banlist'], banned: true };
+      const stub = this.sinon.stub(wasmSdk, 'getContractModerationStatus').resolves(status);
+      const query = { contractId, identityId };
+
+      const result = await client.contracts.moderationStatus(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result).to.equal(status);
+    });
+
+    it('should fetch a status with proof', async function run() {
+      const response = { data: { lists: ['suspensions'] }, proof: {}, metadata: {} };
+      const stub = this.sinon.stub(wasmSdk, 'getContractModerationStatusWithProofInfo').resolves(response);
+      const query = { contractId, identityId, lists: ['suspensions' as const] };
+
+      const result = await client.contracts.moderationStatusWithProof(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result.data.banned).to.equal(undefined);
+    });
+
+    it('should fetch a page of entries, and the last page carries no cursor', async function run() {
+      const page = { entries: [{ identityId }] };
+      const stub = this.sinon.stub(wasmSdk, 'getContractModerationEntries').resolves(page);
+      const query = { contractId, list: 'banlist' as const, limit: 10 };
+
+      const result = await client.contracts.moderationEntries(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result.nextStartAfter).to.equal(undefined);
+    });
+
+    it('should fetch a page of entries with proof', async function run() {
+      const response = { data: { entries: [] }, proof: {}, metadata: {} };
+      const stub = this.sinon.stub(wasmSdk, 'getContractModerationEntriesWithProofInfo').resolves(response);
+      const query = { contractId, list: 'suspensions' as const };
+
+      const result = await client.contracts.moderationEntriesWithProof(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result).to.equal(response);
+    });
+  });
 });

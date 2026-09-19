@@ -745,7 +745,8 @@ message GetContractModerationEntriesRequest {
     optional bytes start_after =
         3; // 32-byte identity id; the page starts after it
     optional uint32 limit =
-        4; // Maximum number of entries to return, 1..=100; absent means 100
+        4; // Maximum number of entries to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
     bool prove = 5; // Flag to request a proof as the response
   }
   oneof version { GetContractModerationEntriesRequestV0 v0 = 1; }

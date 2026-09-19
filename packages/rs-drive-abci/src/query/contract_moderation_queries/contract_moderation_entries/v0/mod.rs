@@ -17,9 +17,6 @@ use dpp::version::PlatformVersion;
 use drive::drive::contract::moderation::types::ContractModerationEntriesQuery;
 use drive::util::grove_operations::GroveDBToUse;
 
-/// The page size when the request names none.
-const DEFAULT_LIMIT: u16 = 100;
-
 impl<C> Platform<C> {
     /// Returns one page of a moderated contract's banlist or suspension list, in identity id
     /// order. The list must be one the contract keeps.
@@ -42,7 +39,9 @@ impl<C> Platform<C> {
             .map(|bytes| identifier_from_request(bytes, "start_after"))
             .transpose());
         let limit = match limit {
-            None => DEFAULT_LIMIT,
+            // The page size when the request names none: the largest page, the number the
+            // proof verifier assumes as well.
+            None => platform_version.drive_abci.query.max_returned_elements,
             Some(limit) => check_validation_result_with_data!(u16::try_from(limit).map_err(|_| {
                 QueryError::InvalidArgument(format!("limit {limit} is out of bounds"))
             })),

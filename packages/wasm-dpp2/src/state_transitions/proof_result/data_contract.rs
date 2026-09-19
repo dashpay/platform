@@ -2,6 +2,7 @@
 
 use super::helpers::js_obj;
 use crate::DataContractWasm;
+use crate::IdentifierWasm;
 use crate::PlatformVersionLikeJs;
 use crate::data_contract::{DataContractJSONJs, DataContractObjectJs};
 use crate::error::{WasmDppError, WasmDppResult};
@@ -77,9 +78,9 @@ impl_wasm_type_info!(VerifiedDataContractWasm, VerifiedDataContract);
 #[derive(Clone)]
 pub struct VerifiedContractModerationListStatusWasm {
     #[wasm_bindgen(getter_with_clone, js_name = "contractId")]
-    pub contract_id: crate::IdentifierWasm,
+    pub contract_id: IdentifierWasm,
     #[wasm_bindgen(getter_with_clone, js_name = "identityId")]
-    pub identity_id: crate::IdentifierWasm,
+    pub identity_id: IdentifierWasm,
     /// The list the moderation edited: `banlist` or `suspensions`
     #[wasm_bindgen(getter_with_clone)]
     pub list: String,

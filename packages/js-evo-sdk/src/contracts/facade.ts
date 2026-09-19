@@ -158,7 +158,7 @@ export class ContractsFacade {
 
   /**
    * One page of a moderated contract's banlist or suspension list, in identity id order. Pass
-   * the page's `nextStartAfter` as the next query's `startAfter`; a page without one is the last.
+   * the page's `nextStartAfter` as the next query's `startAfter`; a page without one (it holds fewer entries than the limit) is the last.
    */
   async moderationEntries(query: wasm.ContractModerationEntriesQuery): Promise<wasm.ContractModerationEntriesPage> {
     const w = await this.sdk.getWasmSdkConnected();

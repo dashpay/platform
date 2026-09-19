@@ -100,8 +100,8 @@ impl fmt::Display for ContractUserModerationAction {
     }
 }
 
-// `until` is a u64, but a millisecond block time stays far below 2^53, as every other
-// `TimestampMillis` on the wire (`expiresAt`, `$createdAt`) does.
+// `until` is a u64, but basic structure validation refuses one past
+// `SystemLimits::max_contract_suspension_until` (2^53 - 1), so it is exact in JSON.
 #[cfg(feature = "json-conversion")]
 impl JsonSafeFields for ContractUserModerationAction {}
 
