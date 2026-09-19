@@ -7,6 +7,7 @@
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
@@ -221,6 +222,12 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   restore, so instant-locked funds come back instant-locked instead of
 ///   waiting for the next sync to re-learn them.
 /// - **Sync watermarks**: `synced_height` / `last_processed_height`.
+/// - **Observed on-chain spends**: every input of a block-confirmed record
+///   in `core.records` is merged into `observed_spent_outpoints` at its
+///   block height, so a funding transaction redelivered after the restore
+///   cannot re-credit a coin already spent. Stamped sweep holds (spends by
+///   a foreign winner, which leave no record) are merged by the SQLite
+///   persister from [`load_observed_spend_holds`](crate::sqlite::schema::core_state::load_observed_spend_holds).
 ///
 /// # Reconstructed when the persister supplies it
 ///
@@ -259,7 +266,9 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   among them: it is rebuilt from `core_instant_locks` above, for every
 ///   UTXO a replayed lock covers.
 /// - **Transaction-record history**: rebuilt by the next scan; not a
-///   balance input.
+///   balance input. Only the records' block-confirmed spends are replayed
+///   (see above); mempool and InstantSend spends carry no height for
+///   `observed_spent_outpoints` and wait for that scan.
 ///
 /// # Errors
 ///
@@ -300,11 +309,20 @@ pub fn apply_persisted_core_state(
         wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
     }
 
-    // INTENTIONAL(tx-record-rehydration-gap): `core` also carries transaction
-    // records, but they cannot be replayed here — injecting one needs the raw
-    // `dashcore::Transaction`, and this crate persists only the abstracted
-    // `TransactionRecord` blob. History re-warms on the next scan and is not a
-    // balance input.
+    // Replay every block-confirmed spend into `observed_spent_outpoints`
+    // BEFORE anything can redeliver a funding transaction: that map is what
+    // `update_utxos` consults to refuse re-crediting a coin already spent
+    // on-chain, and it starts empty on a freshly minted skeleton. Without it
+    // a redelivered funding transaction resurrects a spent output. The merge
+    // is additive and subject to the engine's own finality pruning, so it
+    // must run on every restore.
+    //
+    // INTENTIONAL(tx-record-rehydration-gap): the records themselves are not
+    // injected into the accounts — history re-warms on the next scan and is
+    // not a balance input. Only their spends are replayed here, so the
+    // account-level `spent_outpoints` (which also holds mempool/IS spends)
+    // stays empty until then.
+    wallet_info.merge_observed_spent_outpoints(block_confirmed_spends(&core.records));
 
     // Restore the UTXO set, routing each unspent outpoint to its true owning
     // funds account via `utxo_accounts` (matched on the same account identity
@@ -418,6 +436,33 @@ pub fn apply_persisted_core_state(
     // silent zero would be a hard FAIL of the rehydration contract.
     wallet_info.update_balance();
     Ok(())
+}
+
+/// Every outpoint spent by a block-confirmed record in `records`, paired with
+/// the height of the block that spent it — the projection key-wallet's own
+/// `record_observed_spends` builds while scanning. Mempool and InstantSend
+/// records carry no spend height and are skipped (the engine never records
+/// an unconfirmed spend there: it may never be mined), and so is a coinbase,
+/// whose only input is the null prevout.
+fn block_confirmed_spends(
+    records: &[TransactionRecord],
+) -> impl Iterator<Item = (dashcore::OutPoint, u32)> + '_ {
+    records
+        .iter()
+        .filter(|record| !record.transaction.is_coin_base())
+        .filter_map(|record| {
+            record
+                .context
+                .block_info()
+                .map(|block| (record, block.height()))
+        })
+        .flat_map(|(record, height)| {
+            record
+                .transaction
+                .input
+                .iter()
+                .map(move |input| (input.previous_output, height))
+        })
 }
 
 /// Resolve an owning account to its position among `account_keys`, or fall
@@ -2633,6 +2678,91 @@ mod tests {
             Some(&cl),
             "persisted last_applied_chain_lock must be restored onto wallet metadata"
         );
+    }
+
+    /// Only block-confirmed, non-coinbase records replay their spends, each
+    /// at the height of the block that spent it; a height already observed
+    /// is never overwritten by the replay.
+    #[test]
+    fn rehydration_replays_block_confirmed_spends_only() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, OutPoint, Transaction, TxIn, TxOut, Txid};
+        use key_wallet::account::StandardAccountType;
+        use key_wallet::managed_account::transaction_record::TransactionDirection;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+
+        fn record(inputs: &[OutPoint], context: TransactionContext) -> TransactionRecord {
+            let tx = Transaction {
+                version: 2,
+                lock_time: 0,
+                input: inputs
+                    .iter()
+                    .map(|op| TxIn {
+                        previous_output: *op,
+                        ..Default::default()
+                    })
+                    .collect(),
+                output: vec![TxOut::default()],
+                special_transaction_payload: None,
+            };
+            TransactionRecord::new(
+                tx,
+                AccountType::Standard {
+                    index: 0,
+                    standard_account_type: StandardAccountType::BIP44Account,
+                },
+                context,
+                TransactionType::Standard,
+                TransactionDirection::Outgoing,
+                Vec::new(),
+                Vec::new(),
+                0,
+            )
+        }
+        let block = |h: u32| BlockInfo::new(h, BlockHash::from_byte_array([h as u8; 32]), h);
+        let op = |b: u8| OutPoint::new(Txid::from_byte_array([b; 32]), 0);
+
+        let wallet = Wallet::from_seed_bytes(
+            [6u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        // Already observed at a real block height: the replay must keep it.
+        wallet_info.merge_observed_spent_outpoints([(op(5), 77)]);
+
+        let core = CoreChangeSet {
+            records: vec![
+                record(&[op(1), op(2)], TransactionContext::InBlock(block(10))),
+                record(&[op(3)], TransactionContext::InChainLockedBlock(block(20))),
+                record(&[op(4)], TransactionContext::Mempool),
+                record(
+                    &[op(6)],
+                    TransactionContext::InstantSend(InstantLock::default()),
+                ),
+                record(&[op(5)], TransactionContext::InBlock(block(30))),
+                // Coinbase: its null prevout is not a spend.
+                record(&[OutPoint::null()], TransactionContext::InBlock(block(40))),
+            ],
+            ..Default::default()
+        };
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest_for(&wallet),
+            &core,
+            &Default::default(),
+            &Default::default(),
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+
+        let expected: std::collections::BTreeMap<OutPoint, u32> =
+            [(op(1), 10), (op(2), 10), (op(3), 20), (op(5), 77)]
+                .into_iter()
+                .collect();
+        assert_eq!(wallet_info.observed_spent_outpoints(), &expected);
     }
 
     /// A `Default` watch-only wallet with its first funds account's external

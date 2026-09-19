@@ -1836,6 +1836,13 @@ fn load_one_wallet(
             hex::encode(wallet_id)
         ))
     })?;
+    // Spends by a foreign winner leave no record for the rehydration above
+    // to replay; their stamped sweep holds are the only durable trace. Merge
+    // them before the wallet is handed to the manager, i.e. before any
+    // block or mempool event can redeliver the funding transaction.
+    let spend_holds = schema::core_state::load_observed_spend_holds(conn, &wallet_id)
+        .map_err(PersistenceError::from)?;
+    wallet_info.merge_observed_spent_outpoints(spend_holds);
     if account_manifest
         .provider
         .iter()
