@@ -1,4 +1,5 @@
 import lodash from 'lodash';
+import tenderdashSeeds from './tenderdashSeeds.js';
 
 import {
   NETWORK_MAINNET,
@@ -32,33 +33,7 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
         drive: {
           tenderdash: {
             p2p: {
-              seeds: [
-                {
-                  id: '069639dfceec5f7c86257e6e9c46407c16ad1eab',
-                  host: '34.211.174.194',
-                  port: 26656,
-                },
-                {
-                  id: 'd46e2445642b2f94158ac3c2a6d90b88b83705b8',
-                  host: '3.76.148.150',
-                  port: 26656,
-                },
-                {
-                  id: 'b08a650ecfac178939f21c0c12801eccaf18a5ea',
-                  host: '3.0.60.103',
-                  port: 26656,
-                },
-                {
-                  id: '4cb4a8488eb1dbabda7fb79e47ac3c14eec73c4f',
-                  host: '152.42.151.147',
-                  port: 26656,
-                },
-                {
-                  id: 'fdc2239c1e0e62f3a192823d6e068d012620a2d1',
-                  host: 'seed-1.pshenmic.dev',
-                  port: 26656,
-                },
-              ],
+              seeds: tenderdashSeeds.mainnet.seeds,
             },
             mempool: {
               timeoutCheckTx: '3s',
