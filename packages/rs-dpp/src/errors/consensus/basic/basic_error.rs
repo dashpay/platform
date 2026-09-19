@@ -622,11 +622,6 @@ pub enum BasicError {
     InvalidTokenDistributionEpochIntervalTooShortError(
         InvalidTokenDistributionEpochIntervalTooShortError,
     ),
-
-    #[error(transparent)]
-    InvalidTokenOncePerIdentityDistributionAmountError(
-        InvalidTokenOncePerIdentityDistributionAmountError,
-    ),
     #[error(transparent)]
     RedundantDocumentPaidForByTokenWithContractId(RedundantDocumentPaidForByTokenWithContractId),
 
@@ -776,6 +771,12 @@ pub enum BasicError {
     // Identity key limits update (protocol version 14).
     #[error(transparent)]
     IdentityKeyLimitsUpdateEmptyError(IdentityKeyLimitsUpdateEmptyError),
+
+    // Once-per-identity token distribution (protocol version 14).
+    #[error(transparent)]
+    InvalidTokenOncePerIdentityDistributionAmountError(
+        InvalidTokenOncePerIdentityDistributionAmountError,
+    ),
 }
 
 impl From<BasicError> for ConsensusError {

@@ -379,4 +379,56 @@ describe('TokenDistributionRules', () => {
       expect(distributionRules.preProgrammedDistribution.distributions).to.not.equal(undefined);
     });
   });
+
+  describe('oncePerIdentityDistribution', () => {
+    function createRulesWithoutOncePerIdentityDistribution() {
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
+      const changeRules = createChangeControlRules(noOne, noOne);
+
+      return new wasm.TokenDistributionRules({
+        perpetualDistribution: undefined,
+        perpetualDistributionRules: changeRules,
+        preProgrammedDistribution: undefined,
+        newTokensDestinationIdentity: undefined,
+        newTokensDestinationIdentityRules: changeRules,
+        mintingAllowChoosingDestination: true,
+        mintingAllowChoosingDestinationRules: changeRules,
+        changeDirectPurchasePricingRules: changeRules,
+      });
+    }
+
+    it('should set oncePerIdentityDistribution on rules created without it', () => {
+      const distributionRules = createRulesWithoutOncePerIdentityDistribution();
+
+      distributionRules.oncePerIdentityDistribution = new wasm.TokenOncePerIdentityDistribution(
+        BigInt(1000),
+      );
+
+      expect(distributionRules.oncePerIdentityDistribution).to.be.an.instanceof(
+        wasm.TokenOncePerIdentityDistribution,
+      );
+      expect(distributionRules.oncePerIdentityDistribution?.amount).to.equal(BigInt(1000));
+      // The other rules survive the upgrade to format version 1.
+      expect(distributionRules.mintingAllowChoosingDestination).to.equal(true);
+    });
+
+    it('should clear oncePerIdentityDistribution when set to undefined', () => {
+      const distributionRules = createRulesWithoutOncePerIdentityDistribution();
+
+      distributionRules.oncePerIdentityDistribution = new wasm.TokenOncePerIdentityDistribution(
+        BigInt(1000),
+      );
+      distributionRules.oncePerIdentityDistribution = undefined;
+
+      expect(distributionRules.oncePerIdentityDistribution).to.be.undefined;
+      // The other rules survive the downgrade back to format version 0.
+      expect(distributionRules.mintingAllowChoosingDestination).to.equal(true);
+
+      distributionRules.oncePerIdentityDistribution = new wasm.TokenOncePerIdentityDistribution(
+        BigInt(2500),
+      );
+
+      expect(distributionRules.oncePerIdentityDistribution?.amount).to.equal(BigInt(2500));
+    });
+  });
 });
