@@ -101,27 +101,30 @@ impl Drive {
                 Ok((root_hash, VerifiedDataContract(contract)))
             }
             StateTransition::DataContractUpdate(data_contract_update) => {
+                // generation 0 verifies full-contract updates only; a delta-based
+                // update is verified by generation 1
+                let Some(data_contract) = data_contract_update.data_contract() else {
+                    return Err(Error::Proof(ProofError::InvalidTransition(
+                        "a delta-based data contract update needs verifier generation 1"
+                            .to_string(),
+                    )));
+                };
                 // we expect to get a contract that matches the state transition
-                let keeps_history = data_contract_update
-                    .data_contract()
-                    .config()
-                    .keeps_history();
+                let keeps_history = data_contract.config().keeps_history();
                 let (root_hash, contract) = Drive::verify_contract(
                     proof,
                     Some(keeps_history),
                     false,
                     true,
-                    data_contract_update.data_contract().id().into_buffer(),
+                    data_contract.id().into_buffer(),
                     platform_version,
                 )?;
-                let contract = contract.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain contract with id {} expected to exist because of state transition (update", data_contract_update.data_contract().id()))))?;
+                let contract = contract.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain contract with id {} expected to exist because of state transition (update", data_contract.id()))))?;
                 let contract_for_serialization: DataContractInSerializationFormat = contract
                     .clone()
                     .try_into_platform_versioned(platform_version)?;
-                if let Some(mismatch) =
-                    contract_for_serialization.first_mismatch(data_contract_update.data_contract())
-                {
-                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after update with id {}: {}", data_contract_update.data_contract().id(), mismatch))));
+                if let Some(mismatch) = contract_for_serialization.first_mismatch(data_contract) {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after update with id {}: {}", data_contract.id(), mismatch))));
                 }
                 Ok((root_hash, VerifiedDataContract(contract)))
             }
@@ -2307,7 +2310,7 @@ impl Drive {
     /// configuration and group usage — so adding a new variant fails to
     /// compile until it is classified here: no transition can silently
     /// inherit the stronger `ExecutionProved` guarantee.
-    fn state_transition_proof_binds_execution(
+    pub(super) fn state_transition_proof_binds_execution(
         state_transition: &StateTransition,
         known_contracts_provider_fn: &ContractLookupFn,
     ) -> Result<bool, Error> {
@@ -2450,7 +2453,7 @@ impl Drive {
     /// Returns the proof root hash and every proved `(path, key, element)` trio, left
     /// for the caller to partition against the sub-query paths.
     #[allow(clippy::type_complexity)]
-    fn verify_merged_query_strict(
+    pub(super) fn verify_merged_query_strict(
         proof: &[u8],
         mut sub_queries: Vec<grovedb::PathQuery>,
         platform_version: &PlatformVersion,

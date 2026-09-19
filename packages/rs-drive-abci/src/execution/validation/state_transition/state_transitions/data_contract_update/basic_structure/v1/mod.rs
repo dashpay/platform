@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use dpp::dashcore::Network;
@@ -23,6 +24,11 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV1 for DataContrac
         network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        let Some(data_contract) = self.data_contract() else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "this generation validates full-contract updates only; the dispatcher rejects a delta-based update before it",
+            )));
+        };
         // First run all v0 validations
         let v0_result = self.validate_basic_structure_v0(network_type, platform_version)?;
         if !v0_result.is_valid() {
@@ -33,13 +39,13 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV1 for DataContrac
         // Since protocol version 12, V0 config is no longer accepted because it lacks
         // sized_integer_types support.
         let config_min_version = platform_version.dpp.contract_versions.config.min_version;
-        if (self.data_contract().config().version() as FeatureVersion) < config_min_version {
+        if (data_contract.config().version() as FeatureVersion) < config_min_version {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 DataContractConfigUpdateError::new(
-                    self.data_contract().id(),
+                    data_contract.id(),
                     format!(
                         "config version {} is not supported, minimum version is {}",
-                        self.data_contract().config().version(),
+                        data_contract.config().version(),
                         config_min_version
                     ),
                 )

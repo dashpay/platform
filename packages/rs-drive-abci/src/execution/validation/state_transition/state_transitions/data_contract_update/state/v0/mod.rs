@@ -74,6 +74,11 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let Some(data_contract) = self.data_contract() else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "this generation validates full-contract updates only; the dispatcher rejects a delta-based update before it",
+            )));
+        };
         let mut action = self.transform_into_action_v0(
             block_info,
             validation_mode,
@@ -172,7 +177,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let mut validated_identities = BTreeSet::new();
 
-        for (position, group) in self.data_contract().groups() {
+        for (position, group) in data_contract.groups() {
             for member_identity_id in group.members().keys() {
                 if !validated_identities.contains(member_identity_id) {
                     let identity_exists = validate_non_masternode_identity_exists(
@@ -193,7 +198,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                             bump_action,
                             vec![StateError::IdentityMemberOfGroupNotFoundError(
                                 IdentityMemberOfGroupNotFoundError::new(
-                                    self.data_contract().id(),
+                                    data_contract.id(),
                                     *position,
                                     *member_identity_id,
                                 ),

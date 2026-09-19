@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::consensus::basic::data_contract::{
     InvalidTokenBaseSupplyError, NewTokensDestinationIdentityOptionRequiredError,
@@ -30,7 +31,12 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
         network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let groups = self.data_contract().groups();
+        let Some(data_contract) = self.data_contract() else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "this generation validates full-contract updates only; the dispatcher rejects a delta-based update before it",
+            )));
+        };
+        let groups = data_contract.groups();
         if !groups.is_empty() {
             let validation_result = DataContract::validate_groups(groups, platform_version)?;
 
@@ -40,7 +46,7 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
         }
 
         for (expected_position, (token_contract_position, token_configuration)) in
-            self.data_contract().tokens().iter().enumerate()
+            data_contract.tokens().iter().enumerate()
         {
             if expected_position as TokenContractPosition != *token_contract_position {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -65,10 +71,8 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
                 return Ok(validation_result);
             }
 
-            let validation_result = token_configuration.validate_token_config_groups_exist(
-                self.data_contract().groups(),
-                platform_version,
-            )?;
+            let validation_result = token_configuration
+                .validate_token_config_groups_exist(data_contract.groups(), platform_version)?;
             if !validation_result.is_valid() {
                 return Ok(validation_result);
             }
@@ -118,7 +122,7 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
             {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     NewTokensDestinationIdentityOptionRequiredError::new(
-                        self.data_contract().id(),
+                        data_contract.id(),
                         *token_contract_position,
                     )
                     .into(),
