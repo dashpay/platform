@@ -28,6 +28,8 @@ pub(crate) mod prove;
 pub(crate) mod queries;
 #[cfg(feature = "server")]
 mod refresh_cache;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 #[cfg(feature = "fixtures-and-mocks")]
 /// Test helpers and utility methods
 pub mod test_helpers;

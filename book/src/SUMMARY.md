@@ -62,6 +62,7 @@
 
 # Drive
 
+- [The GroveDB Structure](drive/grovedb-structure.md)
 - [Grove Operations](drive/grove-operations.md)
 - [Batch Operations](drive/batch-operations.md)
 - [Cost Tracking](drive/cost-tracking.md)

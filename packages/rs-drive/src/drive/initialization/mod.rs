@@ -1,6 +1,6 @@
 //! Drive Initialization
 
-mod genesis_core_height;
+pub(crate) mod genesis_core_height;
 mod v0;
 mod v1;
 mod v2;
