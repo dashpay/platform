@@ -213,6 +213,7 @@ mod fixtures {
     use crate::util::object_size_info::{
         DataContractOwnedResolvedInfo, DocumentAndContractInfo, OwnedDocumentInfo,
     };
+    use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_document;
     use crate::util::test_helpers::setup_contract;
     use dpp::address_funds::PlatformAddress;
@@ -227,6 +228,7 @@ mod fixtures {
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;
+    use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
     use dpp::data_contract::v1::DataContractV1;
     use dpp::data_contract::DataContract;
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
@@ -235,12 +237,17 @@ mod fixtures {
     use dpp::group::group_action::GroupAction;
     use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::Identity;
-    use dpp::platform_value::Value;
+    use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::{BinaryData, Value};
+    use dpp::tests::fixtures::get_dashpay_contract_fixture;
     use dpp::tokens::status::TokenStatus;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use std::collections::{BTreeMap, BTreeSet};
 
     /// Nodes no fixture below reaches yet. The coverage test fails when a
@@ -260,12 +267,7 @@ mod fixtures {
         "tokens.distributions.pre_programmed.token.last_claim.identity",
         "tokens.distributions.pre_programmed.token.time",
         "tokens.distributions.pre_programmed.token.time.recipient",
-        // Identity keys bound to a contract, masternode keys, key budgets
-        "identities.identity.contract_info.bound.keys",
-        "identities.identity.contract_info.bound.keys.latest",
-        "identities.identity.contract_info.bound.keys.purpose",
-        "identities.identity.contract_info.bound.keys.purpose.unique",
-        "identities.identity.contract_info.bound.keys.purpose.key",
+        // Masternode keys, key budgets
         "identities.identity.key_references.transfer.key",
         "identities.identity.key_references.voting.key",
         "identities.identity.key_budgets",
@@ -693,6 +695,70 @@ mod fixtures {
         conformance_of(&drive, "contested_documents")
     }
 
+    /// An identity with an encryption and a decryption key bound to a whole
+    /// contract that keeps a reference to the latest key of each purpose.
+    fn whole_contract_bound_keys() -> ConformanceReport {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+
+        let mut contract = get_dashpay_contract_fixture(None, 1, platform_version.protocol_version)
+            .data_contract_owned();
+        contract
+            .config_mut()
+            .set_requires_identity_encryption_bounded_key(Some(
+                StorageKeyRequirements::MultipleReferenceToLatest,
+            ));
+        contract
+            .config_mut()
+            .set_requires_identity_decryption_bounded_key(Some(
+                StorageKeyRequirements::MultipleReferenceToLatest,
+            ));
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to insert the contract");
+
+        let mut rng = StdRng::seed_from_u64(78);
+        let mut identity = Identity::random_identity(3, Some(78), platform_version)
+            .expect("expected a random identity");
+        for (id, purpose) in [(10, Purpose::ENCRYPTION), (11, Purpose::DECRYPTION)] {
+            identity.add_public_key(
+                IdentityPublicKeyV0 {
+                    id,
+                    purpose,
+                    security_level: SecurityLevel::MEDIUM,
+                    contract_bounds: Some(ContractBounds::SingleContract { id: contract.id() }),
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(
+                        KeyType::ECDSA_SECP256K1
+                            .random_public_key_data(&mut rng, platform_version)
+                            .expect("expected a random key"),
+                    ),
+                    disabled_at: None,
+                }
+                .into(),
+            );
+        }
+        drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the identity");
+        conformance_of(&drive, "whole_contract_bound_keys")
+    }
+
     #[test]
     fn should_match_populated_state_and_reach_every_described_node() {
         let mut visited = BTreeSet::new();
@@ -703,6 +769,7 @@ mod fixtures {
             address_balances(),
             current_then_paid_epoch(),
             contested_documents(),
+            whole_contract_bound_keys(),
         ] {
             visited.extend(report.visited);
         }

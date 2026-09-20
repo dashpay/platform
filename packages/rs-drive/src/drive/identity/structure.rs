@@ -111,36 +111,28 @@ pub(crate) fn structure() -> StructureNode {
                             "The identity's keys bound to this contract, by \
                              purpose.",
                         )
+                        .children(vec![StructureNode::dynamic(
+                            "purpose",
+                            "purpose",
+                            KeyMatcher::Len(1),
+                            KeyEncoding::U8,
+                            "The key purpose: encryption or decryption",
+                        )
+                        .kind(ElementKind::Tree)
+                        .describe("Bound keys of one purpose.")
                         .children(vec![
-                            StructureNode::fixed("latest", &[], "LatestKey", "")
+                            StructureNode::fixed("current", &[], "CurrentKey", "")
                                 .kind(ElementKind::Reference)
                                 .lazy()
                                 .reference(KEYS)
                                 .describe(
-                                    "The most recently added bound key, stored at the \
-                                     empty key.",
+                                    "The current key of the purpose, stored at the \
+                                     empty key: the single key when the contract asks \
+                                     for a unique bound key, otherwise a sibling \
+                                     reference to the latest key.",
                                 ),
-                            StructureNode::dynamic(
-                                "purpose",
-                                "purpose",
-                                KeyMatcher::Len(1),
-                                KeyEncoding::U8,
-                                "The key purpose: encryption or decryption",
-                            )
-                            .kind(ElementKind::Tree)
-                            .describe("Bound keys of one purpose.")
-                            .children(vec![
-                                StructureNode::fixed("unique", &[], "UniqueKey", "")
-                                    .kind(ElementKind::Reference)
-                                    .lazy()
-                                    .reference(KEYS)
-                                    .describe(
-                                        "The single key, stored at the empty key, when \
-                                         the contract asks for a unique bound key.",
-                                    ),
-                                key_reference("One bound key, when the contract allows several."),
-                            ]),
-                        ]),
+                            key_reference("One bound key, when the contract allows several."),
+                        ])]),
                     ]),
                 ),
                 StructureNode::fixed(
