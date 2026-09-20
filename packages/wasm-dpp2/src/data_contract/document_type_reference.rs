@@ -76,6 +76,31 @@ export type DocumentPropertyReferenceTarget =
        * identity id. A dotted path when the property is nested.
        */
       keyIdProperty: string;
+    }
+  | {
+      /**
+       * A document of a type whose documents CAN be deleted (the
+       * counterpart of `permanentDocument`, disjoint from it). The
+       * referenced document must exist, and every `propertyAgreement`
+       * pair must hold, when the referring document is written; it may be
+       * deleted afterwards, so a reader must expect the reference to
+       * resolve to nothing. Every replace of the referring document
+       * re-validates it: a dead reference has to be repointed at an
+       * existing document or cleared.
+       */
+      type: 'deletableDocument';
+      /**
+       * The contract the referenced document type lives in. Always
+       * present, resolved exactly as for `permanentDocument`.
+       */
+      contractId: Identifier;
+      /** Name of the referenced document type; it must allow deletion. */
+      documentType: string;
+      /**
+       * Write-time equality bindings, exactly as for `permanentDocument`.
+       * Absent — not `{}`-valued — when the declaration carries none.
+       */
+      propertyAgreement?: Record<string, string>;
     };
 
 /**
@@ -117,7 +142,7 @@ fn set_field(target: &Object, key: &str, value: &JsValue, path: &str) -> WasmDpp
 
 /// Build the flat, internally-tagged JS object for one declaration.
 ///
-/// `declaring_contract_id` resolves the `PermanentDocument` variant's
+/// `declaring_contract_id` resolves the document variants'
 /// absent `contract_id`, which consensus reads as "the declaring contract"
 /// — it computes `contract_id.unwrap_or(contract.id())` and treats an
 /// explicit self-id identically, so collapsing the two here loses nothing.
@@ -135,6 +160,7 @@ fn reference_to_js(
         DocumentPropertyReferenceTarget::Token => "token",
         DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
+        DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
     };
     set_field(&object, "type", &JsValue::from_str(kind), path)?;
 
@@ -143,6 +169,11 @@ fn reference_to_js(
         | DocumentPropertyReferenceTarget::Contract
         | DocumentPropertyReferenceTarget::Token => {}
         DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id,
+            document_type_name,
+            property_agreement,
+        }
+        | DocumentPropertyReferenceTarget::DeletableDocument {
             contract_id,
             document_type_name,
             property_agreement,

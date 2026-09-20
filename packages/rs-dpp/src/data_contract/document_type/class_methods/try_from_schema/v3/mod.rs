@@ -233,6 +233,40 @@ const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
 /// Full validation rejects keep-history document types that allow deletion.
 /// Stored contracts bypass this check so legacy contradictory schemas remain
 /// readable and can be repaired by setting `canBeDeleted: false` on update.
+///
+/// # Doctype-level keywords on contracts that predate them
+///
+/// Not every stored contract was validated against the keywords read here.
+/// The document meta-schema v0 admitted every contract created at protocol
+/// versions 1 to 11 and leaves unknown doctype-level keys open, so such a
+/// contract may carry a key named like one of these keywords, of any shape.
+/// Meta-schemas v1 and later refuse unknown doctype-level keys, and the
+/// property and index levels were closed from v0 on.
+///
+/// One rule covers every doctype-level keyword of this generation: it is read
+/// wherever it appears, and its shape is enforced on both the validating and
+/// the stored path. No keyword gets stored-path leniency.
+///
+/// * Nothing this parser receives records which meta-schema admitted the
+///   contract, so a well-formed stray cannot be told apart from a validated
+///   declaration. Leniency could therefore only ever cover the malformed
+///   case, which fails loudly, and never the well-formed one, which would
+///   silently change the meaning of a contract (for `indexOnly`, the storage
+///   layout of documents already written).
+/// * `full_validation: false` is not only the stored path. `check_tx` and
+///   client-side parsing take it too, so leniency there widens what an
+///   unvalidated schema may contain.
+/// * Refusing is the safe failure. It is deterministic across nodes, confined
+///   to the one contract (its transitions end as an internal error, which the
+///   proposer leaves out of the block, so the chain does not halt), and
+///   repairable in a later protocol version.
+///
+/// What makes the rule safe is evidence rather than code: a census of every
+/// contract admitted under meta-schema v0 on mainnet and testnet (2026-09-20)
+/// found none carrying any of these keywords, and that set closed for good
+/// when protocol version 12 activated. `meta_schema_v0_stray_keyword_tests`
+/// records the stray keys those contracts do carry, and fails if a document
+/// meta-schema ever declares one of them as a keyword.
 #[allow(clippy::too_many_arguments)]
 fn try_from_schema_generation_3(
     data_contract_id: Identifier,
@@ -247,17 +281,12 @@ fn try_from_schema_generation_3(
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
-    // Read the aggregate and indexOnly keywords before the core parser
-    // consumes `schema`.
+    // Read the doctype-level keywords before the core parser consumes
+    // `schema`. Each is read wherever it appears, and its shape is enforced on
+    // both paths: see "Doctype-level keywords on contracts that predate them"
+    // above.
     let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
     let index_only = common::parse_index_only_keyword(&schema)?;
-    // Like every doctype-level keyword of this generation, `actionFees` is read wherever it
-    // appears and its shape is enforced on the validating and the stored path alike: no keyword
-    // is softened for a stored contract. The frozen v0 meta-schema (protocol versions 1 to 11)
-    // did not refuse unknown top-level keys, but a census of every contract create and update
-    // on mainnet and testnet (2026-09-20) found no contract it admitted carrying this key, and
-    // every create and update since is validated by a meta-schema that refuses it. So every
-    // declaration a node reads from state was validated.
     let action_fees = DocumentActionFees::try_from_document_schema(&schema, name)?;
     let immutable_fields =
         common::parse_property_name_list_keyword(&schema, name, property_names::IMMUTABLE)?;
@@ -403,6 +432,8 @@ mod index_only_tests;
 
 #[cfg(test)]
 mod keep_history_tests;
+#[cfg(test)]
+mod meta_schema_v0_stray_keyword_tests;
 
 #[cfg(test)]
 mod tests {

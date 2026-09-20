@@ -292,7 +292,7 @@ mod tests {
         let mut batches = vec![];
         for nonce in 1..=3u64 {
             let entropy = Bytes32::random_with_rng(&mut rng);
-            let document = document_type
+            let mut document = document_type
                 .random_document_with_identifier_and_entropy(
                     &mut rng,
                     identity.id(),
@@ -302,6 +302,9 @@ mod tests {
                     platform_version,
                 )
                 .expect("expected a random document");
+            document
+                .set_id_for_creation(document_type, &entropy.0, nonce, platform_version)
+                .expect("expected to set the document id");
             let batch = if nonce == 2 {
                 BatchTransition::new_document_deletion_transition_from_document(
                     document,

@@ -484,9 +484,9 @@ mod action_fee_tests {
         );
     }
 
-    const DOCUMENT_ACTION_FEE_AGREEMENT_NOT_SET: u32 = 40131;
-    const DOCUMENT_ACTION_FEE_AGREEMENT_MISMATCH: u32 = 40132;
-    const DOCUMENT_ACTION_FEE_MULTIPLIER_NOT_TOLERATED: u32 = 40133;
+    const DOCUMENT_ACTION_FEE_AGREEMENT_NOT_SET: u32 = 40132;
+    const DOCUMENT_ACTION_FEE_AGREEMENT_MISMATCH: u32 = 40133;
+    const DOCUMENT_ACTION_FEE_MULTIPLIER_NOT_TOLERATED: u32 = 40134;
 
     fn paid_codes(result: &StateTransitionExecutionResult) -> Vec<u32> {
         match result {
@@ -901,6 +901,9 @@ mod action_fee_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card, &entropy.0, 1, platform_version)
+            .expect("expected to set the document id");
         document.set("attack", 4.into());
         document.set("defense", 7.into());
 

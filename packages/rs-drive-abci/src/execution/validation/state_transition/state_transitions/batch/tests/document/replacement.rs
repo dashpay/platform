@@ -103,6 +103,8 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random note");
+        note.set_id_for_creation(note_type, &note_entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
         note.set("topic", "alpha".into());
         let note_create = BatchTransition::new_document_creation_transition_from_document(
             note.clone(),
@@ -138,6 +140,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random message");
+        message
+            .set_id_for_creation(message_type, &message_entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         message.set(
             "noteId",
             dpp::platform_value::Value::Identifier(note.id().to_buffer()),
@@ -238,6 +243,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(message, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         create_setup(&mut document, identity.id(), other_identity.id());
 
@@ -386,6 +394,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(message, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("toUserId", identity.id().into());
         document.set("note", "before".into());
@@ -581,6 +592,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
 
@@ -750,6 +764,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
 
@@ -1106,6 +1123,14 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(
+                contact_request_document_type,
+                &entropy.0,
+                2,
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         document.set(
             "toUserId",
@@ -1307,6 +1332,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
         // Random fillers can produce a non-URI avatarUrl that fails JSON-schema
@@ -1559,6 +1587,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -1912,6 +1943,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
 
@@ -1993,7 +2027,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
+        assert_eq!(document.to_string(), "v0 : id:Hek9BmBiymTrsxccySNNsQCyhgX1J7fUAafSMeDb1Pd6 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         let documents_batch_update_transition_1 =
             BatchTransition::new_document_replacement_transition_from_document(
@@ -2074,7 +2108,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
+        assert_eq!(document.to_string(), "v0 : id:Hek9BmBiymTrsxccySNNsQCyhgX1J7fUAafSMeDb1Pd6 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         let issues = platform
             .drive
@@ -2136,6 +2170,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
 
@@ -2217,7 +2254,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
+        assert_eq!(document.to_string(), "v0 : id:Hek9BmBiymTrsxccySNNsQCyhgX1J7fUAafSMeDb1Pd6 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
 
@@ -2299,7 +2336,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Samuel platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
+        assert_eq!(document.to_string(), "v0 : id:Hek9BmBiymTrsxccySNNsQCyhgX1J7fUAafSMeDb1Pd6 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Samuel platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         fast_forward_to_block(&platform, 1_600_000_000, 902, 44, 1, false); //next epoch
 
@@ -2343,7 +2380,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
+        assert_eq!(document.to_string(), "v0 : id:Hek9BmBiymTrsxccySNNsQCyhgX1J7fUAafSMeDb1Pd6 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         let issues = platform
             .drive
@@ -2405,6 +2442,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
 
@@ -2482,7 +2522,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
+        assert_eq!(document.to_string(), "v0 : id:Hek9BmBiymTrsxccySNNsQCyhgX1J7fUAafSMeDb1Pd6 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
 
@@ -2564,7 +2604,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
+        assert_eq!(document.to_string(), "v0 : id:Hek9BmBiymTrsxccySNNsQCyhgX1J7fUAafSMeDb1Pd6 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         fast_forward_to_block(&platform, 1_600_000_000, 902, 44, 1, false); //next epoch
 
@@ -2608,7 +2648,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
+        assert_eq!(document.to_string(), "v0 : id:Hek9BmBiymTrsxccySNNsQCyhgX1J7fUAafSMeDb1Pd6 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         let issues = platform
             .drive
@@ -2670,6 +2710,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
 
@@ -2751,7 +2794,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
+        assert_eq!(document.to_string(), "v0 : id:Hek9BmBiymTrsxccySNNsQCyhgX1J7fUAafSMeDb1Pd6 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
 
@@ -2833,7 +2876,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Samuel platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
+        assert_eq!(document.to_string(), "v0 : id:Hek9BmBiymTrsxccySNNsQCyhgX1J7fUAafSMeDb1Pd6 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Samuel platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         fast_forward_to_block(&platform, 1_600_000_000, 905, 44, 2, true); //next epoch
 
@@ -2877,7 +2920,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
+        assert_eq!(document.to_string(), "v0 : id:Hek9BmBiymTrsxccySNNsQCyhgX1J7fUAafSMeDb1Pd6 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2 shieldedAddress:bytes b3bb8852a93313580b0f9cef98328f2fa69b49e87f74043b160f4edb43e8cbe62c4985b6ec6094dd7554da  ");
 
         let issues = platform
             .drive
@@ -2948,6 +2991,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -3265,6 +3311,9 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random message document");
+        document
+            .set_id_for_creation(message, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         create_mutator(&mut document, &targets);
 

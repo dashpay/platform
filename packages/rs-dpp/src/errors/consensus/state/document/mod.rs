@@ -22,6 +22,7 @@ pub mod invalid_document_revision_error;
 pub mod referenced_document_property_agreement_invalid_error;
 pub mod referenced_document_property_mismatch_error;
 pub mod referenced_document_type_deletable_error;
+pub mod referenced_document_type_not_deletable_error;
 pub mod referenced_document_type_not_found_error;
 pub mod referenced_entity_not_found_error;
 pub mod referenced_identity_key_disabled_error;

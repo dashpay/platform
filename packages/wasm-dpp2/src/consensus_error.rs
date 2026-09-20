@@ -27,15 +27,17 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(js_name = "DocumentReferenceErrorCode")]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DocumentReferenceErrorCodeWasm {
-    /// The referenced identity, contract, token or permanent document does
-    /// not exist.
+    /// The referenced identity, contract, token or document (permanent or
+    /// deletable) does not exist.
     ReferencedEntityNotFound = 40120,
-    /// A `permanentDocument` reference names a document type the referenced
-    /// contract does not define, or the contract itself is missing.
+    /// A `permanentDocument` or `deletableDocument` reference names a
+    /// document type the referenced contract does not define, or the
+    /// contract itself is missing.
     ReferencedDocumentTypeNotFound = 40121,
     /// The referenced document type allows deletion. Only types declaring
     /// `canBeDeleted: false` may be the target of a `permanentDocument`
-    /// reference — otherwise the reference could be left dangling.
+    /// reference — otherwise the reference could be left dangling. A
+    /// `deletableDocument` reference is the one for such a type.
     ReferencedDocumentTypeDeletable = 40122,
     /// The referenced identity public key does not exist.
     ReferencedIdentityKeyNotFound = 40123,
@@ -44,11 +46,16 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// The declaration's `keyIdProperty` is missing from the document type,
     /// or names a property that is not an integer.
     ReferencedKeyIdPropertyInvalid = 40125,
+    /// The referenced document type forbids deletion. Only types whose
+    /// documents can be deleted may be the target of a `deletableDocument`
+    /// reference; a `permanentDocument` reference is the one for a type
+    /// declaring `canBeDeleted: false`.
+    ReferencedDocumentTypeNotDeletable = 40131,
 }
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is outside the 40120-40125 range.
+    /// is neither in the 40120-40125 range nor 40131.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -57,6 +64,7 @@ impl DocumentReferenceErrorCodeWasm {
             40123 => Some(Self::ReferencedIdentityKeyNotFound),
             40124 => Some(Self::ReferencedIdentityKeyDisabled),
             40125 => Some(Self::ReferencedKeyIdPropertyInvalid),
+            40131 => Some(Self::ReferencedDocumentTypeNotDeletable),
             _ => None,
         }
     }

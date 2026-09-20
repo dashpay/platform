@@ -135,6 +135,7 @@ use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized
 use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, TokenTransferRecipientIdentityNotExistError, PreProgrammedDistributionTimestampInPastError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError};
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
 use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+use dpp::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use dpp::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use dpp::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
 use dpp::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
@@ -643,6 +644,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ContractFeeClaimNotAllowedError(e) => {
             generic_consensus_error!(ContractFeeClaimNotAllowedError, e).into()
+        }
+        StateError::ReferencedDocumentTypeNotDeletableError(e) => {
+            generic_consensus_error!(ReferencedDocumentTypeNotDeletableError, e).into()
         }
     }
 }

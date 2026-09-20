@@ -148,6 +148,84 @@ pub enum DocumentPropertyReferenceTarget {
         /// referenced key id
         key_id_property: String,
     },
+    /// A document of a document type whose documents CAN be deleted: the
+    /// counterpart of [`Self::PermanentDocument`], disjoint from it, so a
+    /// declaration always states which guarantee the reference carries.
+    /// The declaration shape and the write-time validation are the same:
+    /// the referenced document must exist, and every `property_agreement`
+    /// pair must hold, when the referring document is written. Nothing is
+    /// promised afterwards: the referenced document may be deleted, the
+    /// deletion is not blocked by referring documents, and a reader must
+    /// expect the reference to resolve to nothing. It can not come back
+    /// pointing at something else: a document id commits to the nonce of
+    /// its create transition, so an id is produced at most once and a
+    /// reference means that one document or nothing. A WRITER may not leave
+    /// it that way: every replace of the referring document re-validates
+    /// the reference, so a dead one has to be repointed at a document that
+    /// exists or cleared (on an `immutable` property, clearing is the only
+    /// move, and the immutable check lets it through). Features that lean
+    /// on the target staying in state (`preallocated` index trees) are not
+    /// available through it.
+    #[serde(rename = "deletableDocument")]
+    DeletableDocument {
+        /// The contract the referenced document type lives in; `None` means
+        /// the declaring contract itself
+        contract_id: Option<Identifier>,
+        document_type_name: String,
+        /// See [`Self::PermanentDocument`]'s `property_agreement`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        property_agreement: BTreeMap<String, String>,
+    },
+}
+
+/// The declaration content the two document reference targets,
+/// [`DocumentPropertyReferenceTarget::PermanentDocument`] and
+/// [`DocumentPropertyReferenceTarget::DeletableDocument`], share.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct DocumentReferenceDeclaration<'a> {
+    /// The contract the referenced document type lives in; `None` means
+    /// the declaring contract itself
+    pub contract_id: Option<Identifier>,
+    /// The referenced document type
+    pub document_type_name: &'a str,
+    /// The `{referring property: referenced property}` equalities
+    pub property_agreement: &'a BTreeMap<String, String>,
+    /// Whether the referenced document type must forbid deletion
+    /// (`permanentDocument`) or must allow it (`deletableDocument`)
+    pub permanent: bool,
+}
+
+impl DocumentPropertyReferenceTarget {
+    /// The declaration of a reference to a DOCUMENT, of either kind;
+    /// `None` for every other target.
+    pub fn as_document_reference(&self) -> Option<DocumentReferenceDeclaration<'_>> {
+        match self {
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id,
+                document_type_name,
+                property_agreement,
+            } => Some(DocumentReferenceDeclaration {
+                contract_id: *contract_id,
+                document_type_name,
+                property_agreement,
+                permanent: true,
+            }),
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id,
+                document_type_name,
+                property_agreement,
+            } => Some(DocumentReferenceDeclaration {
+                contract_id: *contract_id,
+                document_type_name,
+                property_agreement,
+                permanent: false,
+            }),
+            DocumentPropertyReferenceTarget::Identity
+            | DocumentPropertyReferenceTarget::Contract
+            | DocumentPropertyReferenceTarget::Token
+            | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => None,
+        }
+    }
 }
 
 /// The system properties of a referenced document that the referenced side
@@ -210,6 +288,22 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
                 write!(f, "identity public key (key id property {key_id_property})")
             }
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: Some(contract_id),
+                document_type_name,
+                ..
+            } => write!(
+                f,
+                "deletable document (contract {contract_id}, document type {document_type_name})"
+            ),
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: None,
+                document_type_name,
+                ..
+            } => write!(
+                f,
+                "deletable document (own contract, document type {document_type_name})"
+            ),
         }
     }
 }
@@ -7414,6 +7508,53 @@ mod tests {
             .to_string(),
             "permanent document (own contract, document type note)"
         );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: Some(contract_id),
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+            }
+            .to_string(),
+            format!("deletable document (contract {contract_id}, document type note)")
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+            }
+            .to_string(),
+            "deletable document (own contract, document type note)"
+        );
+    }
+
+    #[test]
+    fn should_expose_the_shared_declaration_of_both_document_references() {
+        let agreement: BTreeMap<String, String> =
+            [("hashtag".to_string(), "hashtag".to_string())].into();
+        let permanent = DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: None,
+            document_type_name: "note".to_string(),
+            property_agreement: agreement.clone(),
+        };
+        let deletable = DocumentPropertyReferenceTarget::DeletableDocument {
+            contract_id: None,
+            document_type_name: "note".to_string(),
+            property_agreement: agreement.clone(),
+        };
+
+        let permanent = permanent.as_document_reference().expect("a document");
+        let deletable = deletable.as_document_reference().expect("a document");
+        assert!(permanent.permanent);
+        assert!(!deletable.permanent);
+        for declaration in [permanent, deletable] {
+            assert_eq!(declaration.contract_id, None);
+            assert_eq!(declaration.document_type_name, "note");
+            assert_eq!(declaration.property_agreement, &agreement);
+        }
+        assert!(DocumentPropertyReferenceTarget::Identity
+            .as_document_reference()
+            .is_none());
     }
 
     /// A compile-time guard, not a behavioural test.
@@ -7423,7 +7564,7 @@ mod tests {
     /// and the conversion that builds it. Those live behind a `match` that
     /// a new variant would not break, because they can fall back to a
     /// catch-all. This exhaustive `match` has no catch-all, so adding a
-    /// sixth variant fails to compile *here*, in the crate that owns the
+    /// seventh variant fails to compile *here*, in the crate that owns the
     /// enum, where whoever adds it will see it.
     #[test]
     fn reference_targets_are_exhaustively_mirrored() {
@@ -7439,6 +7580,11 @@ mod tests {
             DocumentPropertyReferenceTarget::IdentityPublicKey {
                 key_id_property: "signerKeyId".to_string(),
             },
+            DocumentPropertyReferenceTarget::DeletableDocument {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
+            },
         ];
 
         for target in &targets {
@@ -7449,6 +7595,7 @@ mod tests {
                 DocumentPropertyReferenceTarget::Token => "token",
                 DocumentPropertyReferenceTarget::PermanentDocument { .. } => "permanentDocument",
                 DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
+                DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
             };
 
             // The tag is the `refersTo` schema keyword's own `type` value,

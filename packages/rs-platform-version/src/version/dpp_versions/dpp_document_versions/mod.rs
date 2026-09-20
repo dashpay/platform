@@ -23,4 +23,8 @@ pub struct DocumentMethodVersions {
     pub get_raw_for_contract: FeatureVersion,
     pub get_raw_for_document_type: FeatureVersion,
     pub try_into_asset_unlock_base_transaction_info: FeatureVersion,
+    /// How a new document's id is derived. 0 hashes the contract, owner,
+    /// document type and entropy; 1 also hashes the identity contract nonce
+    /// of the create transition, so an id can be produced at most once.
+    pub generate_document_id: FeatureVersion,
 }

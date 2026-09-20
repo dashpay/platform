@@ -5693,6 +5693,61 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_register_contract_with_deletable_document_references() {
+            // A deletableDocument reference targets a document type that
+            // allows deletion (`draft`), which a permanentDocument one
+            // refuses; its propertyAgreement and writer gate declarations
+            // are validated like a permanentDocument reference's
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-deletable-doc.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_with_deletable_document_reference_to_a_permanent_type() {
+            // The two document references are disjoint: `note` forbids
+            // deletion, so it is a permanentDocument target and nothing else
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-deletable-doc-registration-not-deletable.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotDeletableError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_with_deletable_document_reference_to_unknown_type() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-deletable-doc-registration-unknown-type.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
         async fn should_register_contract_with_valid_property_agreement() {
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-valid.json",

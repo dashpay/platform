@@ -98,7 +98,7 @@ Formats 0–2 have no stamp; documents read from them deserialize with `contract
 
 ### `$id` (32 bytes)
 
-The document's unique identifier, written as raw bytes. This is a 256-bit value derived from the contract ID, owner ID, document type name, and entropy via double SHA-256.
+The document's unique identifier, written as raw bytes. This is a 256-bit value derived from the contract ID, owner ID, document type name, entropy and (protocol v14+) the identity contract nonce of the create transition via double SHA-256.
 
 ### `$ownerId` (32 bytes)
 

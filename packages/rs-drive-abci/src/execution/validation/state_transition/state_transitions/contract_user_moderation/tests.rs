@@ -274,11 +274,12 @@ impl Setup {
             .contract
             .document_type_for_name(DOCUMENT_TYPE)
             .expect("expected the document type");
+        let creation_nonce = actor.contract_nonce();
         // The borrow ends before the await below (clippy::await_holding_refcell_ref).
         let (entropy, document) = {
             let mut rng = self.rng.borrow_mut();
             let entropy = Bytes32::random_with_rng(&mut rng);
-            let document = document_type
+            let mut document = document_type
                 .random_document_with_identifier_and_entropy(
                     &mut rng,
                     actor.id(),
@@ -288,6 +289,9 @@ impl Setup {
                     platform_version,
                 )
                 .expect("expected a random document");
+            document
+                .set_id_for_creation(document_type, &entropy.0, creation_nonce, platform_version)
+                .expect("expected to set the document id");
             (entropy, document)
         };
         let transition = BatchTransition::new_document_creation_transition_from_document(
@@ -295,7 +299,7 @@ impl Setup {
             document_type,
             entropy.0,
             &actor.key,
-            actor.contract_nonce(),
+            creation_nonce,
             0,
             None,
             &actor.signer,
@@ -1418,6 +1422,9 @@ async fn should_keep_a_barred_identity_from_receiving_or_selling_documents() {
             platform_version,
         )
         .expect("expected a random card");
+    let creation_nonce = seller.contract_nonce();
+    card.set_id_for_creation(card_type, &entropy.0, creation_nonce, platform_version)
+        .expect("expected to set the document id");
     card.set("attack", 4.into());
     card.set("defense", 7.into());
     let create = BatchTransition::new_document_creation_transition_from_document(
@@ -1425,7 +1432,7 @@ async fn should_keep_a_barred_identity_from_receiving_or_selling_documents() {
         card_type,
         entropy.0,
         &seller.key,
-        seller.contract_nonce(),
+        creation_nonce,
         0,
         None,
         &seller.signer,

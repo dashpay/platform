@@ -294,7 +294,7 @@ default from protocol version 14):
   action, before any multiplier. They must **match exactly**, each pot on its
   own: a fee that was raised, lowered, or moved between the pots since the
   signer read the contract refuses the action
-  (`DocumentActionFeeAgreementMismatchError`, 40132), and the signer reads the
+  (`DocumentActionFeeAgreementMismatchError`, 40133), and the signer reads the
   contract again.
 - `feeMultiplier` says how the fee is priced. It is named for a
   `feeMultiplier` fee and left out for a `fixed` one, and an agreement to the
@@ -303,11 +303,11 @@ default from protocol version 14):
   the multiplier of the executing epoch may be, in percent of the known one:
   20 accepts up to 1.2 times. A transition signed just before an epoch
   boundary is then not refused for a small move; one the multiplier outran is
-  (`DocumentActionFeeMultiplierNotToleratedError`, 40133). A multiplier that
+  (`DocumentActionFeeMultiplierNotToleratedError`, 40134). A multiplier that
   fell is always accepted. What is charged follows the epoch's multiplier,
   never the known one.
 - A transition without an agreement on an action that charges a fee is
-  refused (`DocumentActionFeeAgreementNotSetError`, 40131), whoever pays: a
+  refused (`DocumentActionFeeAgreementNotSetError`, 40132), whoever pays: a
   sponsored action says what it agrees to as well, since a preferred sponsor
   can hand the fee back to the signer. An agreement on an action that charges
   nothing is ignored.

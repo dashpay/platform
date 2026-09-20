@@ -83,6 +83,9 @@ async fn should_enforce_contract_bounds_in_execution_and_preserve_paid_failure_n
                 version,
             )
             .unwrap();
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, version)
+            .expect("expected to set the document id");
         set_valid_profile_payment_addresses(&mut document, profile);
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
         let mut batch = BatchTransition::new_document_creation_transition_from_document(

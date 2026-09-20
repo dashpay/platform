@@ -177,6 +177,8 @@ pub(super) mod index_only_tests {
                 platform_version,
             )
             .expect("expected a random post");
+        post.set_id_for_creation(post_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
         match hashtag {
             Some(hashtag) => {
                 post.set("hashtag", hashtag.into());
@@ -293,7 +295,7 @@ pub(super) mod index_only_tests {
 
         // ── Alice likes the post ───────────────────────────────────────
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let alice_like = build_like(
+        let mut alice_like = build_like(
             &contract,
             alice.id(),
             post.id(),
@@ -301,6 +303,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        alice_like
+            .set_id_for_creation(like_type, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let create = BatchTransition::new_document_creation_transition_from_document(
             alice_like.clone(),
@@ -327,7 +332,7 @@ pub(super) mod index_only_tests {
 
         // ── the same like again (fresh entropy, same values) collides ──
         let entropy_2 = Bytes32::random_with_rng(&mut rng);
-        let alice_like_again = build_like(
+        let mut alice_like_again = build_like(
             &contract,
             alice.id(),
             post.id(),
@@ -335,6 +340,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        alice_like_again
+            .set_id_for_creation(like_type, &entropy_2.0, 4, platform_version)
+            .expect("expected to set the document id");
         let create_again = BatchTransition::new_document_creation_transition_from_document(
             alice_like_again,
             like_type,
@@ -364,7 +372,7 @@ pub(super) mod index_only_tests {
 
         // ── Bob may like the same post ─────────────────────────────────
         let bob_entropy = Bytes32::random_with_rng(&mut rng);
-        let bob_like = build_like(
+        let mut bob_like = build_like(
             &contract,
             bob.id(),
             post.id(),
@@ -372,6 +380,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        bob_like
+            .set_id_for_creation(like_type, &bob_entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
         let bob_create = BatchTransition::new_document_creation_transition_from_document(
             bob_like.clone(),
             like_type,
@@ -483,7 +494,7 @@ pub(super) mod index_only_tests {
 
         // And re-liking after the unlike works again.
         let entropy_3 = Bytes32::random_with_rng(&mut rng);
-        let alice_relike = build_like(
+        let mut alice_relike = build_like(
             &contract,
             alice.id(),
             post.id(),
@@ -491,6 +502,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        alice_relike
+            .set_id_for_creation(like_type, &entropy_3.0, 6, platform_version)
+            .expect("expected to set the document id");
         let re_create = BatchTransition::new_document_creation_transition_from_document(
             alice_relike,
             like_type,
@@ -564,6 +578,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        disagreeing_like
+            .set_id_for_creation(like_type, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         disagreeing_like.set("hashtag", "btc".into());
 
         let create = BatchTransition::new_document_creation_transition_from_document(
@@ -643,7 +660,7 @@ pub(super) mod index_only_tests {
 
         // Referring absent, referenced present: refused.
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let hashtag_less_on_tagged = build_untagged_like(
+        let mut hashtag_less_on_tagged = build_untagged_like(
             &contract,
             alice.id(),
             tagged_post.id(),
@@ -651,6 +668,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        hashtag_less_on_tagged
+            .set_id_for_creation(like_type, &entropy.0, 4, platform_version)
+            .expect("expected to set the document id");
         let create = BatchTransition::new_document_creation_transition_from_document(
             hashtag_less_on_tagged,
             like_type,
@@ -679,7 +699,7 @@ pub(super) mod index_only_tests {
 
         // Referring present, referenced absent: refused.
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let tagged_on_untagged = build_like(
+        let mut tagged_on_untagged = build_like(
             &contract,
             alice.id(),
             untagged_post.id(),
@@ -687,6 +707,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        tagged_on_untagged
+            .set_id_for_creation(like_type, &entropy.0, 5, platform_version)
+            .expect("expected to set the document id");
         let create = BatchTransition::new_document_creation_transition_from_document(
             tagged_on_untagged,
             like_type,
@@ -749,7 +772,7 @@ pub(super) mod index_only_tests {
 
         // ── the untagged like goes through ─────────────────────────────
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let untagged_like = build_untagged_like(
+        let mut untagged_like = build_untagged_like(
             &contract,
             alice.id(),
             untagged_post.id(),
@@ -757,6 +780,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        untagged_like
+            .set_id_for_creation(like_type, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         let create = BatchTransition::new_document_creation_transition_from_document(
             untagged_like.clone(),
             like_type,
@@ -807,7 +833,7 @@ pub(super) mod index_only_tests {
 
         // ── a second untagged like collides on byPost ──────────────────
         let entropy_2 = Bytes32::random_with_rng(&mut rng);
-        let again = build_untagged_like(
+        let mut again = build_untagged_like(
             &contract,
             alice.id(),
             untagged_post.id(),
@@ -815,6 +841,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        again
+            .set_id_for_creation(like_type, &entropy_2.0, 4, platform_version)
+            .expect("expected to set the document id");
         let create_again = BatchTransition::new_document_creation_transition_from_document(
             again,
             like_type,
@@ -931,7 +960,7 @@ pub(super) mod index_only_tests {
         .await;
 
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let alice_like = build_like(
+        let mut alice_like = build_like(
             &contract,
             alice.id(),
             post.id(),
@@ -939,6 +968,9 @@ pub(super) mod index_only_tests {
             &mut rng,
             platform_version,
         );
+        alice_like
+            .set_id_for_creation(like_type, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         let create = BatchTransition::new_document_creation_transition_from_document(
             alice_like.clone(),
             like_type,
@@ -1224,6 +1256,8 @@ pub(super) mod index_only_tests {
             .expect("expected a random mark");
         mark.set("a", a.into());
         mark.set("b", b.into());
+        mark.set_id_for_creation(mark_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
         let create = DocumentCreateTransition::from_document(
             mark.clone(),
             mark_type,
@@ -1442,7 +1476,7 @@ mod index_only_executed_proof_tests {
         .await;
 
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let alice_like = build_like(
+        let mut alice_like = build_like(
             &contract,
             alice.id(),
             post.id(),
@@ -1450,6 +1484,9 @@ mod index_only_executed_proof_tests {
             &mut rng,
             platform_version,
         );
+        alice_like
+            .set_id_for_creation(like_type, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         let create = BatchTransition::new_document_creation_transition_from_document(
             alice_like.clone(),
             like_type,
@@ -1586,7 +1623,7 @@ mod index_only_executed_proof_tests {
         .await;
 
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let untagged_like = build_untagged_like(
+        let mut untagged_like = build_untagged_like(
             &contract,
             alice.id(),
             untagged_post.id(),
@@ -1594,6 +1631,9 @@ mod index_only_executed_proof_tests {
             &mut rng,
             platform_version,
         );
+        untagged_like
+            .set_id_for_creation(like_type, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         let create = BatchTransition::new_document_creation_transition_from_document(
             untagged_like.clone(),
             like_type,
@@ -1720,6 +1760,8 @@ mod index_only_executed_proof_tests {
                 platform_version,
             )
             .expect("expected a random mark");
+        mark.set_id_for_creation(mark_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
         mark.set("a", a.into());
         mark.set("b", b.into());
         let create = BatchTransition::new_document_creation_transition_from_document(
@@ -1909,6 +1951,8 @@ mod index_only_executed_proof_tests {
                 platform_version,
             )
             .expect("expected a random beat");
+        beat.set_id_for_creation(beat_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
         beat.set("hashtag", hashtag.into());
         // Consensus assigns `$createdAt` from the block time at create
         // (BlockInfo::default() in this suite), and the delete-by-values
@@ -2231,6 +2275,8 @@ mod index_only_executed_proof_tests {
                 platform_version,
             )
             .expect("expected a random tip");
+        tip.set_id_for_creation(tip_type, &entropy.0, nonce, platform_version)
+            .expect("expected to set the document id");
         tip.set(
             "postId",
             dpp::platform_value::Value::Identifier(post_id.to_buffer()),
