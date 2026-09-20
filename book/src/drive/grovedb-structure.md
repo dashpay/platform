@@ -54,6 +54,14 @@ A node says:
   such as "identity id, 32 bytes" standing for many keys;
 - **the element kinds** that can sit there. Several when the code chooses, as
   the primary key tree of a document type does between eight tree kinds;
+- **the element flags** on it. GroveDB stores a byte string of flags with
+  every element and never reads it; Drive keeps its storage flags there: the
+  epoch the element's bytes were paid for in, the bytes added in later epochs
+  if it grew, and for owned flags the identity that paid, which is who a
+  refund goes to when the element is deleted or shrinks. A node says whether
+  its element carries none, storage flags, or storage flags with an owner, and
+  who that owner is. The exported file explains each kind and its byte layout
+  once, under `flag_kinds`;
 - **`since`**, the first protocol version it exists in, which children inherit;
 - whether it is created with its parent, **lazily** on first use, or with its
   parent and **deleted later** while the parent stays, as an epoch's storage
@@ -80,7 +88,7 @@ templates of a layer could claim the same element.
 
 **Conformance.** `check_conformance` walks a real GroveDB layer by layer and
 reports every element no node describes, every element of a kind its node
-does not list, every element outside its node's protocol versions, and every
+does not list, every element whose flags are of a kind its node does not list, every element outside its node's protocol versions, and every
 node that should have been created with its parent but is missing. Where
 several templates of a layer accept a key, the one whose description fits what
 is below the element wins: below a contested index a 32 byte key is a

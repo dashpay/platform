@@ -3,9 +3,15 @@ use crate::drive::contract::paths::{
 };
 use crate::drive::document::structure::document_type;
 use crate::drive::RootTree;
-use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
+use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/contract/paths.rs";
+const CONTRACT_FLAGS: &str =
+    "The owner is the contract owner, and the epoch the one the contract was \
+     created in. System contracts created at genesis carry no flags.";
+const MODERATOR_FLAGS: &str =
+    "The owner is the moderator who added the entry. They pay for it, and are \
+     refunded when it is removed.";
 
 /// Data contracts and their documents
 pub(crate) fn structure() -> StructureNode {
@@ -26,6 +32,7 @@ pub(crate) fn structure() -> StructureNode {
     .child(
         StructureNode::identifier("contract", "contract_id", "The data contract id")
             .kind(ElementKind::Tree)
+            .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
             .source(SOURCE)
             .describe("One data contract.")
             .children(vec![
@@ -35,6 +42,7 @@ pub(crate) fn structure() -> StructureNode {
                         "An item holding the contract; a tree of \
                          revisions when the contract keeps history.",
                     )
+                    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                     .value("serialized DataContract")
                     .describe("The contract itself.")
                     .children(vec![
@@ -56,6 +64,7 @@ pub(crate) fn structure() -> StructureNode {
                     ]),
                 StructureNode::fixed("documents", &[1], "Documents", "")
                     .kind(ElementKind::Tree)
+                    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                     .book("drive/indexes.md")
                     .describe("The documents of the contract, by document type.")
                     .child(document_type()),
@@ -66,6 +75,7 @@ pub(crate) fn structure() -> StructureNode {
                     "CONTRACT_OTHER_KEY",
                 )
                 .kind(ElementKind::Tree)
+                .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                 .since(14)
                 .book("data-model/contract-moderation.md")
                 .describe(
@@ -83,6 +93,7 @@ pub(crate) fn structure() -> StructureNode {
                         "CONTRACT_VERSION_KEY",
                     )
                     .kind(ElementKind::Item)
+                    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                     .value("u32 big endian")
                     .describe(
                         "The contract's version, readable without \
@@ -109,7 +120,8 @@ pub(crate) fn structure() -> StructureNode {
                             "The banned identity's id",
                         )
                         .kind(ElementKind::Item)
-                        .value("empty; the flags name the moderator that pays for the entry")
+                        .flags(&[FlagsKind::EpochOwned], MODERATOR_FLAGS)
+                        .value("empty; the key carries the information")
                         .describe("One ban, until an unban."),
                     ),
                     StructureNode::fixed(
@@ -132,6 +144,7 @@ pub(crate) fn structure() -> StructureNode {
                             "The suspended identity's id",
                         )
                         .kind(ElementKind::Item)
+                        .flags(&[FlagsKind::EpochOwned], MODERATOR_FLAGS)
                         .value(
                             "the block time in milliseconds the suspension \
                                  runs until, u64 big endian",

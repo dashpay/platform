@@ -37,6 +37,15 @@ pub fn lint(root: &StructureNode, repository_root: Option<&Path>) -> Vec<String>
                 node.id
             ));
         }
+        if node.flags.is_empty() {
+            problems.push(format!("{}: no element flags kind", node.id));
+        }
+        if node.flags.len() > 1 && node.flags_note.is_none() {
+            problems.push(format!(
+                "{}: several kinds of element flags but nothing says what decides",
+                node.id
+            ));
+        }
         if node.description.is_empty() && !matches!(node.key, KeySpec::Root) {
             problems.push(format!("{}: no description", node.id));
         }
