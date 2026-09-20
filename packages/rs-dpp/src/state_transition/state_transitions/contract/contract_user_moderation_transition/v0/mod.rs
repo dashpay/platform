@@ -14,13 +14,14 @@ use platform_value::BinaryData;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+use crate::data_contract::config::moderation::ContractModerationReason;
 use crate::identity::{KeyID, TimestampMillis};
 use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
 use crate::ProtocolError;
 use std::fmt;
 
 /// What the moderator does to one identity on the contract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -31,6 +32,8 @@ pub enum ContractUserModerationAction {
     Ban {
         #[cfg_attr(feature = "serde-conversion", serde(rename = "identityId"))]
         identity_id: Identifier,
+        /// Why, stored with the banlist entry.
+        reason: ContractModerationReason,
     },
     /// Takes the identity off the banlist.
     Unban {
@@ -43,6 +46,8 @@ pub enum ContractUserModerationAction {
         #[cfg_attr(feature = "serde-conversion", serde(rename = "identityId"))]
         identity_id: Identifier,
         until: TimestampMillis,
+        /// Why, stored with the suspension list entry.
+        reason: ContractModerationReason,
     },
     /// Takes the identity off the suspension list, lapsed or not.
     Unsuspend {
@@ -55,6 +60,7 @@ impl Default for ContractUserModerationAction {
     fn default() -> Self {
         ContractUserModerationAction::Ban {
             identity_id: Identifier::default(),
+            reason: ContractModerationReason::default(),
         }
     }
 }
@@ -63,7 +69,7 @@ impl ContractUserModerationAction {
     /// The identity the action targets.
     pub fn identity_id(&self) -> Identifier {
         match self {
-            ContractUserModerationAction::Ban { identity_id }
+            ContractUserModerationAction::Ban { identity_id, .. }
             | ContractUserModerationAction::Unban { identity_id }
             | ContractUserModerationAction::Suspend { identity_id, .. }
             | ContractUserModerationAction::Unsuspend { identity_id } => *identity_id,
@@ -75,6 +81,17 @@ impl ContractUserModerationAction {
         match self {
             ContractUserModerationAction::Suspend { until, .. } => Some(*until),
             _ => None,
+        }
+    }
+
+    /// The reason a ban or a suspend carries, `None` for an action that takes an identity off
+    /// a list.
+    pub fn reason(&self) -> Option<&ContractModerationReason> {
+        match self {
+            ContractUserModerationAction::Ban { reason, .. }
+            | ContractUserModerationAction::Suspend { reason, .. } => Some(reason),
+            ContractUserModerationAction::Unban { .. }
+            | ContractUserModerationAction::Unsuspend { .. } => None,
         }
     }
 
@@ -92,7 +109,9 @@ impl ContractUserModerationAction {
 impl fmt::Display for ContractUserModerationAction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ContractUserModerationAction::Suspend { identity_id, until } => {
+            ContractUserModerationAction::Suspend {
+                identity_id, until, ..
+            } => {
                 write!(f, "suspend {} until {}", identity_id, until)
             }
             other => write!(f, "{} {}", other.name(), other.identity_id()),
@@ -101,7 +120,8 @@ impl fmt::Display for ContractUserModerationAction {
 }
 
 // `until` is a u64, but basic structure validation refuses one past
-// `SystemLimits::max_contract_suspension_until` (2^53 - 1), so it is exact in JSON.
+// `SystemLimits::max_contract_suspension_until` (2^53 - 1), so it is exact in JSON. The
+// reason holds a u16 and a string.
 #[cfg(feature = "json-conversion")]
 impl JsonSafeFields for ContractUserModerationAction {}
 
@@ -157,6 +177,7 @@ mod test {
             identity_contract_nonce: 3,
             action: ContractUserModerationAction::Ban {
                 identity_id: Identifier::random(),
+                reason: ContractModerationReason::from_text("spam"),
             },
             user_fee_increase: 1,
             signature_public_key_id: 2,
@@ -203,19 +224,37 @@ mod test {
     #[test]
     fn should_name_the_action_target() {
         let target = Identifier::random();
+        let reason = ContractModerationReason {
+            code: Some(4),
+            text: "flooding".to_string(),
+        };
         let action = ContractUserModerationAction::Suspend {
             identity_id: target,
             until: 12,
+            reason: reason.clone(),
         };
         assert_eq!(action.identity_id(), target);
         assert_eq!(action.until(), Some(12));
+        assert_eq!(action.reason(), Some(&reason));
         assert_eq!(action.name(), "suspend");
-        assert_eq!(
-            ContractUserModerationAction::Unban {
-                identity_id: target
-            }
-            .until(),
-            None
+        let unban = ContractUserModerationAction::Unban {
+            identity_id: target,
+        };
+        assert_eq!(unban.until(), None);
+        assert_eq!(unban.reason(), None);
+    }
+
+    #[test]
+    fn should_sign_the_reason() {
+        let a = make_v0();
+        let mut b = a.clone();
+        b.action = ContractUserModerationAction::Ban {
+            identity_id: a.action.identity_id(),
+            reason: ContractModerationReason::from_text("something else"),
+        };
+        assert_ne!(
+            a.signable_bytes().expect("signable"),
+            b.signable_bytes().expect("signable")
         );
     }
 }

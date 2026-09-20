@@ -52,8 +52,8 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
     /// a contract that does not exist included, is paid for by bumping the signer's contract
     /// nonce.
     ///
-    /// The action carries the target's status as read here, so Drive edits the lists without
-    /// reading them again, and the mempool, which transforms without a state validation stage,
+    /// The action carries what Drive needs of the target's status as read here, so Drive edits
+    /// the lists without reading them again, and the mempool, which transforms without a state validation stage,
     /// refuses with the same consensus codes as a block.
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
@@ -109,7 +109,7 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
         };
 
         let contract = &contract_fetch_info.contract;
-        let list = list_of(&action);
+        let list = list_of(action);
 
         let Some(moderation) = contract.config().moderation() else {
             return refuse(ContractModerationNotEnabledError::new(contract_id, list).into());
@@ -150,7 +150,7 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
             );
         }
 
-        let lists = lists_to_read(moderation, &action);
+        let lists = lists_to_read(moderation, action);
         let (fee, status) = platform.drive.fetch_contract_moderation_status_with_fee(
             contract_id,
             target_id,
@@ -161,13 +161,13 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
         )?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
-        if let Some(error) = refusal_for_status(&action, &status, contract_id, block_info) {
+        if let Some(error) = refusal_for_status(action, &status, contract_id, block_info) {
             return refuse(error);
         }
 
         Ok(ConsensusValidationResult::new_with_data(
             ContractUserModerationTransitionAction::from_borrowed_transition_with_status(
-                self, status,
+                self, &status,
             )
             .into(),
         ))
@@ -211,14 +211,13 @@ fn refusal_for_status(
     let target_id = action.identity_id();
     match action {
         ContractUserModerationAction::Ban { .. } => status
-            .banned
+            .banned()
             .then(|| ContractUserAlreadyBannedError::new(contract_id, target_id).into()),
-        ContractUserModerationAction::Unban { .. } => {
-            (!status.banned).then(|| ContractUserNotBannedError::new(contract_id, target_id).into())
-        }
+        ContractUserModerationAction::Unban { .. } => (!status.banned())
+            .then(|| ContractUserNotBannedError::new(contract_id, target_id).into()),
         ContractUserModerationAction::Suspend { until, .. } => {
             // A suspend blocked by a ban is not a duplicate ban: it gets the "is banned" code.
-            if status.banned {
+            if status.banned() {
                 return Some(ContractUserBannedError::new(contract_id, target_id).into());
             }
             (*until <= block_info.time_ms).then(|| {
@@ -232,7 +231,7 @@ fn refusal_for_status(
             })
         }
         ContractUserModerationAction::Unsuspend { .. } => status
-            .suspended_until
+            .suspension
             .is_none()
             .then(|| ContractUserNotSuspendedError::new(contract_id, target_id).into()),
     }

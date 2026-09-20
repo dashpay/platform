@@ -7,14 +7,17 @@
 //! suspended identity cannot act on the contract at the document level.
 //!
 //! ```ignore
+//! let reason = ContractModerationReason::from_text("spam");
 //! let status = moderator_identity
-//!     .ban_contract_user(&sdk, contract_id, user_id, None, signer, None)
+//!     .ban_contract_user(&sdk, contract_id, user_id, reason, None, signer, None)
 //!     .await?;
 //! ```
 
 use crate::platform::Fetch;
 use dash_context_provider::ContextProvider;
-use dpp::data_contract::config::moderation::ContractModerationListStatuses;
+use dpp::data_contract::config::moderation::{
+    ContractModerationListStatuses, ContractModerationReason,
+};
 use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -90,12 +93,16 @@ pub trait ModerateContractUser: Waitable {
         settings: Option<PutSettings>,
     ) -> Result<ModeratedUserStatus, Error>;
 
-    /// Puts `identity_id` on the banlist of `contract_id`.
+    /// Puts `identity_id` on the banlist of `contract_id` for `reason`, which is stored with
+    /// the entry: a text of at most `SystemLimits::max_contract_moderation_reason_length`
+    /// bytes, and a code nothing checks, reserved for ban codes contracts may declare later.
+    #[allow(clippy::too_many_arguments)]
     async fn ban_contract_user<S: Signer<IdentityPublicKey> + Send>(
         &self,
         sdk: &Sdk,
         contract_id: Identifier,
         identity_id: Identifier,
+        reason: ContractModerationReason,
         signing_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
         settings: Option<PutSettings>,
@@ -103,7 +110,10 @@ pub trait ModerateContractUser: Waitable {
         self.moderate_contract_user(
             sdk,
             contract_id,
-            ContractUserModerationAction::Ban { identity_id },
+            ContractUserModerationAction::Ban {
+                identity_id,
+                reason,
+            },
             signing_key_to_use,
             signer,
             settings,
@@ -133,7 +143,7 @@ pub trait ModerateContractUser: Waitable {
     }
 
     /// Suspends `identity_id` on `contract_id` until the block time `until`, in milliseconds,
-    /// replacing a suspension it already carries.
+    /// for `reason` (as for a ban), replacing a suspension it already carries.
     #[allow(clippy::too_many_arguments)]
     async fn suspend_contract_user<S: Signer<IdentityPublicKey> + Send>(
         &self,
@@ -141,6 +151,7 @@ pub trait ModerateContractUser: Waitable {
         contract_id: Identifier,
         identity_id: Identifier,
         until: TimestampMillis,
+        reason: ContractModerationReason,
         signing_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
         settings: Option<PutSettings>,
@@ -148,7 +159,11 @@ pub trait ModerateContractUser: Waitable {
         self.moderate_contract_user(
             sdk,
             contract_id,
-            ContractUserModerationAction::Suspend { identity_id, until },
+            ContractUserModerationAction::Suspend {
+                identity_id,
+                until,
+                reason,
+            },
             signing_key_to_use,
             signer,
             settings,

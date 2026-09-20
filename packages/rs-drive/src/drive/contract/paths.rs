@@ -186,14 +186,15 @@ pub const CONTRACT_OTHER_KEY: u8 = 2;
 pub const CONTRACT_VERSION_KEY: u8 = 64;
 
 /// The key under a contract's other tree (`[64, id, 2]`) of the banlist a moderated contract
-/// keeps (protocol version 14): `identity id -> Item([])`. Present only when the contract's
+/// keeps (protocol version 14): `identity id -> Item(reason)`. Present only when the contract's
 /// config declares a banlist. Read by every document transition on the contract, hence on
 /// top.
 pub const CONTRACT_BANLIST_KEY: u8 = 128;
 
 /// The key under a contract's other tree (`[64, id, 2]`) of the suspension list a moderated
 /// contract keeps (protocol version 14): `identity id -> Item(until, u64 big-endian
-/// milliseconds)`. Present only when the contract's config declares a suspension list.
+/// milliseconds, then the reason)`. Present only when the contract's config declares a
+/// suspension list.
 pub const CONTRACT_SUSPENSIONS_KEY: u8 = 192;
 
 /// `[64, contract id, 2]`: the contract's other tree.

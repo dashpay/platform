@@ -1,4 +1,4 @@
-use crate::structure::{ElementKind, NodeId, StructureNode};
+use crate::structure::{ElementKind, FlagsKind, NodeId, StructureNode};
 use dpp::util::deserializer::ProtocolVersion;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
@@ -19,10 +19,13 @@ pub struct StructureDocument {
     pub latest_protocol_version: ProtocolVersion,
     /// Every element kind, with what a reader needs to draw it
     pub element_kinds: Vec<ElementKindInfo>,
+    /// Every kind of element flags, with what it means
+    pub flag_kinds: Vec<FlagsKindInfo>,
     /// The structure
     pub root: StructureNode,
     /// The exact Merk binary tree of layers whose keys are all fixed, by the
-    /// identifier of the node holding the layer
+    /// identifier of the node holding the layer. A layer below a template,
+    /// such as an identity's, is recorded from one instance.
     pub layer_shapes: BTreeMap<NodeId, LayerShape>,
 }
 
@@ -39,11 +42,41 @@ pub struct ElementKindInfo {
     pub is_reference: bool,
 }
 
+/// What a reader needs to know about a kind of element flags
+#[derive(Clone, Debug, Serialize)]
+pub struct FlagsKindInfo {
+    /// The name of the kind
+    pub name: FlagsKind,
+    /// What the flags mean
+    pub meaning: String,
+    /// How the flags are laid out in bytes
+    pub layout: String,
+}
+
 /// The exact Merk binary tree of one layer.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LayerShape {
-    /// How the layer was built, since the shape depends on the order of
-    /// insertion: `genesis@<protocol version>` for a fresh chain.
+    /// How the layer was built, since the shape depends on the keys that
+    /// exist and the order they were inserted in: `genesis@<protocol version>`
+    /// for a layer of a fresh chain, `fixture <name>@<protocol version>` for
+    /// one instance of a layer below a template, the fullest a test fixture
+    /// builds.
+    pub origin: String,
+    /// The root of the binary tree
+    pub tree: ShapeNode,
+    /// For a layer that goes through states: its shape in each of them, in
+    /// the order of the node's `states`. `origin` and `tree` above are those
+    /// of the state holding the most keys.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub states: Vec<StateShape>,
+}
+
+/// The exact Merk binary tree of one layer in one of its states.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct StateShape {
+    /// The name of the state, as the node lists it
+    pub state: String,
+    /// How the layer was brought into this state
     pub origin: String,
     /// The root of the binary tree
     pub tree: ShapeNode,
@@ -80,6 +113,14 @@ impl StructureDocument {
                     is_tree: kind.is_tree(),
                     is_opaque: kind.is_opaque(),
                     is_reference: kind.is_reference(),
+                })
+                .collect(),
+            flag_kinds: FlagsKind::ALL
+                .iter()
+                .map(|kind| FlagsKindInfo {
+                    name: *kind,
+                    meaning: kind.meaning().to_string(),
+                    layout: kind.layout().to_string(),
                 })
                 .collect(),
             root,

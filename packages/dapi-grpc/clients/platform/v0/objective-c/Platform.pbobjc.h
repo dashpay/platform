@@ -41,6 +41,7 @@ CF_EXTERN_C_BEGIN
 @class CompactedBlockAddressBalanceChanges;
 @class ContractGroupDocumentTypeMember;
 @class ContractGroupTokenMember;
+@class ContractModerationReason;
 @class GPBBytesValue;
 @class GPBUInt32Value;
 @class GetAddressInfoRequest_GetAddressInfoRequestV0;
@@ -2961,6 +2962,28 @@ GPB_FINAL @interface GetContractGroupMembersResponse_GetContractGroupMembersResp
  **/
 void GetContractGroupMembersResponse_GetContractGroupMembersResponseV0_ClearResultOneOfCase(GetContractGroupMembersResponse_GetContractGroupMembersResponseV0 *message);
 
+#pragma mark - ContractModerationReason
+
+typedef GPB_ENUM(ContractModerationReason_FieldNumber) {
+  ContractModerationReason_FieldNumber_Code = 1,
+  ContractModerationReason_FieldNumber_Text = 2,
+};
+
+/**
+ * Why a moderator banned or suspended an identity. Nothing checks what a
+ * moderator writes.
+ **/
+GPB_FINAL @interface ContractModerationReason : GPBMessage
+
+/** Reserved for the ban codes a contract may declare in a later */
+@property(nonatomic, readwrite) uint32_t code;
+
+@property(nonatomic, readwrite) BOOL hasCode;
+/** protocol version; a u16, expected unset today, never checked */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *text;
+
+@end
+
 #pragma mark - GetContractModerationStatusRequest
 
 typedef GPB_ENUM(GetContractModerationStatusRequest_FieldNumber) {
@@ -3043,6 +3066,8 @@ typedef GPB_ENUM(GetContractModerationStatusResponse_ContractModerationStatus_Fi
   GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_Banned = 1,
   GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_SuspendedUntil = 2,
   GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_ListsArray = 3,
+  GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_BanReason = 4,
+  GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_SuspensionReason = 5,
 };
 
 /**
@@ -3067,6 +3092,16 @@ GPB_FINAL @interface GetContractModerationStatusResponse_ContractModerationStatu
 @property(nonatomic, readwrite, strong, null_resettable) GPBEnumArray *listsArray;
 /** The number of items in @c listsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger listsArray_Count;
+
+/** Set when the identity is banned: why */
+@property(nonatomic, readwrite, strong, null_resettable) ContractModerationReason *banReason;
+/** Test to see if @c banReason has been set. */
+@property(nonatomic, readwrite) BOOL hasBanReason;
+
+/** Set when the identity is suspended: why */
+@property(nonatomic, readwrite, strong, null_resettable) ContractModerationReason *suspensionReason;
+/** Test to see if @c suspensionReason has been set. */
+@property(nonatomic, readwrite) BOOL hasSuspensionReason;
 
 @end
 
@@ -3203,6 +3238,7 @@ void GetContractModerationEntriesResponse_ClearVersionOneOfCase(GetContractModer
 typedef GPB_ENUM(GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber) {
   GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber_IdentityId = 1,
   GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber_Until = 2,
+  GetContractModerationEntriesResponse_ContractModerationEntry_FieldNumber_Reason = 3,
 };
 
 GPB_FINAL @interface GetContractModerationEntriesResponse_ContractModerationEntry : GPBMessage
@@ -3214,6 +3250,11 @@ GPB_FINAL @interface GetContractModerationEntriesResponse_ContractModerationEntr
 @property(nonatomic, readwrite) uint64_t until;
 
 @property(nonatomic, readwrite) BOOL hasUntil;
+/** which it lapses */
+@property(nonatomic, readwrite, strong, null_resettable) ContractModerationReason *reason;
+/** Test to see if @c reason has been set. */
+@property(nonatomic, readwrite) BOOL hasReason;
+
 @end
 
 #pragma mark - GetContractModerationEntriesResponse_ContractModerationEntries

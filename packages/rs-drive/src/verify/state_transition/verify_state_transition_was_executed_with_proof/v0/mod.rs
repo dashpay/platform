@@ -1186,14 +1186,21 @@ impl Drive {
                     platform_version,
                 )?;
                 let as_expected = match transition.action() {
-                    // Banned, and no suspension left behind on a contract that keeps them.
-                    ContractUserModerationAction::Ban { .. } => {
-                        statuses.banned() == Some(true)
-                            && statuses.suspended_until().flatten().is_none()
+                    // Banned for the reason the transition gives, and no suspension left behind
+                    // on a contract that keeps them.
+                    ContractUserModerationAction::Ban { reason, .. } => {
+                        statuses
+                            .ban()
+                            .flatten()
+                            .is_some_and(|ban| ban.reason == *reason)
+                            && statuses.suspension().flatten().is_none()
                     }
                     ContractUserModerationAction::Unban { .. } => statuses.banned() == Some(false),
-                    ContractUserModerationAction::Suspend { until, .. } => {
-                        statuses.suspended_until() == Some(Some(until))
+                    // Suspended until the time and for the reason the transition gives.
+                    ContractUserModerationAction::Suspend { until, reason, .. } => {
+                        statuses.suspension().flatten().is_some_and(|suspension| {
+                            suspension.until == *until && suspension.reason == *reason
+                        })
                     }
                     ContractUserModerationAction::Unsuspend { .. } => {
                         statuses.suspended_until() == Some(None)

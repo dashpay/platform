@@ -16,6 +16,7 @@ use js_sys::Array;
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_dpp2::data_contract::moderation_reason_to_js;
 use wasm_dpp2::identifier::IdentifierWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -49,12 +50,16 @@ export interface ContractModerationStatus {
   lists: ContractModerationListKind[];
   /** Set when `lists` includes `banlist`: the identity is on the banlist. */
   banned?: boolean;
+  /** When the identity is banned: why, as the moderator wrote it. */
+  banReason?: ContractModerationReason;
   /**
    * When `lists` includes `suspensions`: the block time, in milliseconds, until which the
    * identity is suspended; undefined when it is not. A lapsed suspension stays until the
    * identity's next document transition sweeps it.
    */
   suspendedUntil?: bigint;
+  /** When the identity is suspended: why, as the moderator wrote it. */
+  suspensionReason?: ContractModerationReason;
 }
 
 /**
@@ -80,6 +85,8 @@ export interface ContractModerationEntry {
   identityId: string;
   /** For a suspension list entry: the block time, in milliseconds, at which it lapses. */
   until?: bigint;
+  /** Why the identity is on the list, as the moderator wrote it. */
+  reason: ContractModerationReason;
 }
 
 /**
@@ -194,7 +201,8 @@ fn parse_entries_query(
     Ok(page_query)
 }
 
-/// Sets `lists`, and `banned` and `suspendedUntil` for the lists read, on `target`. Only the
+/// Sets `lists`, and `banned` and `suspendedUntil` for the lists read, each with the reason of
+/// the entry found, on `target`. Only the
 /// lists read are reported: the field of a list that was not read stays undefined (unknown)
 /// rather than reading as "not banned" or "not suspended". The status query and the moderation
 /// result share the shape, so they share this.
@@ -210,14 +218,24 @@ pub(crate) fn set_status_fields(
     let lists = Array::new();
     for status in &statuses.0 {
         match status {
-            ContractModerationListStatus::Banlist { banned } => {
+            ContractModerationListStatus::Banlist { ban } => {
                 lists.push(&"banlist".into());
-                set("banned", (*banned).into())?;
+                set("banned", ban.is_some().into())?;
+                if let Some(ban) = ban {
+                    set("banReason", moderation_reason_to_js(&ban.reason))?;
+                }
             }
-            ContractModerationListStatus::Suspensions { suspended_until } => {
+            ContractModerationListStatus::Suspensions { suspension } => {
                 lists.push(&"suspensions".into());
-                if let Some(until) = suspended_until {
-                    set("suspendedUntil", js_sys::BigInt::from(*until).into())?;
+                if let Some(suspension) = suspension {
+                    set(
+                        "suspendedUntil",
+                        js_sys::BigInt::from(suspension.until).into(),
+                    )?;
+                    set(
+                        "suspensionReason",
+                        moderation_reason_to_js(&suspension.reason),
+                    )?;
                 }
             }
         }
@@ -251,6 +269,7 @@ fn entries_to_js(
         if let Some(until) = entry.until {
             set(&js_entry, "until", js_sys::BigInt::from(until).into())?;
         }
+        set(&js_entry, "reason", moderation_reason_to_js(&entry.reason))?;
         entries.push(&js_entry);
     }
     set(&result, "entries", entries.into())?;

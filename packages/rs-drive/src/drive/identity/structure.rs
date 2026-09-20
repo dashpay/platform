@@ -1,7 +1,7 @@
 use crate::drive::identity::contract_info::ContractInfoStructure;
 use crate::drive::identity::IdentityRootStructure;
 use crate::drive::RootTree;
-use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
+use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, StructureNode};
 use dpp::identity::{Purpose, SecurityLevel};
 
 const SOURCE: &str = "packages/rs-drive/src/drive/identity/mod.rs";
@@ -51,8 +51,46 @@ pub(crate) fn structure() -> StructureNode {
     .child(
         StructureNode::identifier("identity", "identity_id", "The identity id")
             .kind(ElementKind::Tree)
+.flags(&[FlagsKind::Epoch], "The epoch the identity was created in. No owner: nothing under an identity is refunded.")
             .source(SOURCE)
             .describe("One identity.")
+            .state(
+                "created",
+                "As created",
+                "One batch creates the identity with its nonce, its negative credit, its \
+                 revision, its keys and the key reference trees.",
+                &["nonce", "negative_credit", "keys", "key_references", "revision"],
+            )
+            .state(
+                "used_with_a_contract",
+                "Used with a contract",
+                "The identity's first state transition on a data contract adds the \
+                 contract info tree, which holds its nonce for that contract.",
+                &[
+                    "contract_info",
+                    "nonce",
+                    "negative_credit",
+                    "keys",
+                    "key_references",
+                    "revision",
+                ],
+            )
+            .state(
+                "budgeted_key_and_contract",
+                "Created with a budgeted key, then used with a contract",
+                "An identity created with a budgeted key gets the key budgets tree in its \
+                 creation batch (protocol version 14). Its first use with a contract then \
+                 adds the contract info tree.",
+                &[
+                    "contract_info",
+                    "nonce",
+                    "negative_credit",
+                    "keys",
+                    "key_references",
+                    "revision",
+                    "key_budgets",
+                ],
+            )
             .children(vec![
                 StructureNode::fixed(
                     "contract_info",

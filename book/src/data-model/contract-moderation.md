@@ -30,11 +30,21 @@ pub enum ContractModerators {
 
 pub enum ContractModerationList { Banlist, Suspensions }
 
+pub struct ContractModerationReason {
+    pub code: Option<u16>,
+    pub text: String,
+}
+
+pub struct ContractBan { pub reason: ContractModerationReason }
+pub struct ContractSuspension { pub until: TimestampMillis, pub reason: ContractModerationReason }
+
 pub struct ContractModerationStatus {
-    pub banned: bool,
-    pub suspended_until: Option<TimestampMillis>,
+    pub ban: Option<ContractBan>,
+    pub suspension: Option<ContractSuspension>,
 }
 ```
+
+Every ban and every suspension carries a **reason**, stored with the entry so that whoever reads the list reads why. The `text` is free: at most `SystemLimits::max_contract_moderation_reason_length` (1024) bytes of UTF-8, possibly empty. The `code` is reserved for the ban codes a contract may declare in a later protocol version. No contract declares any today, so it is expected to be `None`; a moderator may still write any `u16` there, and nothing checks it against anything. The moderator pays the storage of the reason, byte for byte, and gets it back when the entry is removed.
 
 The config is `DataContractConfig::V2`, a new variant of the config's own bincode enum inside the contract. The config version follows the platform version, as V1 did from protocol version 9: from protocol version 14 every new contract carries a V2 config, moderated or not (`CONTRACT_VERSIONS_V6` sets both `max_version` and `default_current_version` to 2), and an existing V1 contract moves to V2 with its next update. `config_valid_for_platform_version` lowers a V2 only where the platform version does not admit it, never because of what it declares. Lowering would drop a moderation declaration, and moderation can never be turned on later, so that case is refused rather than dropped: serializing a contract whose config declares moderation at a platform version below 14 (`ensure_admitted_by_platform_version`), and parsing a config value with a `moderation` key at such a version, both fail with `ProtocolError::NotSupported`. For the same reason the declaration refuses an unknown key instead of skipping it (`deny_unknown_fields`, and the moderators' `$type` map likewise): a misspelled `suspensions` would otherwise leave the contract without the list for good. A contract create or update carrying a V2 config is active from protocol version 14 only (`StateTransition::active_version_range`): before that a node rejects it at decoding, unpaid, exactly as a binary that cannot decode the V2 discriminant does, so upgraded and older nodes agree on every block before activation. The JSON shape of the moderators is a flat `{"$type": "contractOwner"}` or `{"$type": "appointedModerators", "identities": [...]}`, the style of `AuthorizedActionTakers`.
 
@@ -54,9 +64,9 @@ pub struct ContractUserModerationTransitionV0 {
 }
 
 pub enum ContractUserModerationAction {
-    Ban { identity_id },
+    Ban { identity_id, reason: ContractModerationReason },
     Unban { identity_id },
-    Suspend { identity_id, until: TimestampMillis },
+    Suspend { identity_id, until: TimestampMillis, reason: ContractModerationReason },
     Unsuspend { identity_id },
 }
 ```
@@ -67,7 +77,7 @@ It is signed like a contract update: a CRITICAL authentication key without contr
 
 | Tier | What | Codes |
 |---|---|---|
-| Basic structure (unpaid) | the target is not the signer; a suspension ends at or before `SystemLimits::max_contract_suspension_until` (2^53 - 1 ms, the largest value JSON clients read exactly) | 10901, 10700 |
+| Basic structure (unpaid) | the target is not the signer; a suspension ends at or before `SystemLimits::max_contract_suspension_until` (2^53 - 1 ms, the largest value JSON clients read exactly); the text of a ban's or a suspension's reason is at most `SystemLimits::max_contract_moderation_reason_length` bytes (its code is not checked) | 10901, 10700, 10903 |
 | Signature and nonce | CRITICAL key, contract nonce | existing |
 | Transform (state, paid) | the contract exists; it keeps the list the action edits; the signer is the owner or a moderator; the target of a ban or a suspend is neither; the target exists; the action fits the target's status | 41100-41106, 41109 |
 
@@ -85,7 +95,7 @@ Deletions (`Delete` and `IndexOnlyDelete`) are never refused: a barred identity 
 
 ### The Errors
 
-Basic, in their own band (10900-10949): `InvalidContractModerationConfigError` (10900), `ContractModerationSelfTargetError` (10901). State, in their own sub-band: `ContractModerationNotEnabledError` (41100), `IdentityNotContractModeratorError` (41101), `ContractModerationTargetNotAllowedError` (41102), `ContractUserAlreadyBannedError` (41103), `ContractUserNotBannedError` (41104), `ContractUserNotSuspendedError` (41105), `ContractSuspensionNotInFutureError` (41106), `ContractUserBannedError` (41107), `ContractUserSuspendedError` (41108), `ContractModerationTargetNotFoundError` (41109), `ContractModeratorIdentityNotFoundError` (41110, from the contract create and update, not from the moderation transition), `ContractModerationCounterpartyBarredError` (41114, from the document gate; 41111 to 41113 are reserved). A contract update that turns a list on or off is refused with the existing `DataContractConfigUpdateError` (40002).
+Basic, in their own band (10900-10949): `InvalidContractModerationConfigError` (10900), `ContractModerationSelfTargetError` (10901), `ContractModerationReasonTooLongError` (10903; 10902 is reserved). State, in their own sub-band: `ContractModerationNotEnabledError` (41100), `IdentityNotContractModeratorError` (41101), `ContractModerationTargetNotAllowedError` (41102), `ContractUserAlreadyBannedError` (41103), `ContractUserNotBannedError` (41104), `ContractUserNotSuspendedError` (41105), `ContractSuspensionNotInFutureError` (41106), `ContractUserBannedError` (41107), `ContractUserSuspendedError` (41108), `ContractModerationTargetNotFoundError` (41109), `ContractModeratorIdentityNotFoundError` (41110, from the contract create and update, not from the moderation transition), `ContractModerationCounterpartyBarredError` (41114, from the document gate; 41111 to 41113 are reserved). A contract update that turns a list on or off is refused with the existing `DataContractConfigUpdateError` (40002).
 
 ## Storage
 
@@ -96,9 +106,11 @@ Basic, in their own band (10900-10949): `InvalidContractModerationConfigError` (
     ├── [1] documents
     └── [2] other
         ├── [64]  contract version item (every contract)
-        ├── [128] banlist       -> <identity id> -> Item([])                    (when declared)
-        └── [192] suspensions   -> <identity id> -> Item(until, u64 BE millis)   (when declared)
+        ├── [128] banlist       -> <identity id> -> Item(reason)                 (when declared)
+        └── [192] suspensions   -> <identity id> -> Item(until ‖ reason)         (when declared)
 ```
+
+`until` is a u64 of block time in milliseconds, big-endian. A reason is a tag byte (`0`: no code, `1`: a code), the code as a big-endian u16 when tagged, then the text as UTF-8 up to the end of the value, so an entry with an empty reason and no code costs one byte more than the bare entry would. A value without the tag byte is an entry written before entries carried a reason and reads as the empty reason.
 
 The contract's own subtree holds three keys whatever the contract keeps, so its Merk keeps `1`, the documents, on top: every document proof and write goes through that key, and a fourth key beside it would have pushed it one level down (a Merk built from one sorted batch roots at the middle key). Everything else a contract keeps goes into `2`, its **other tree**, which protocol version 14 introduces together with the version item. Inside, the keys are spread like the root tree's, so the tree stays balanced as it fills and the most read entry sits on top: the banlist at `128`, read by every document transition on a moderated contract, the version item at `64`, the suspension list at `192`. A key added later should sort below `128` to keep the banlist on top when four keys are created at once.
 
@@ -106,7 +118,7 @@ The other tree is written by every contract insertion, and by the migration on t
 
 The list trees are created by `insert_contract` generation 2 for a contract that declares them, and by nothing else: the lists are fixed at creation, so a contract update creates none and leaves the existing ones and their entries alone, and no tree is made lazily by the first ban. An entry's storage flags name the moderator that wrote it, so the storage refund of its deletion goes to that moderator whichever transition deletes it: the explicit unban or unsuspend, the ban over a suspension, or the document transition that sweeps a lapsed suspension. The sweep's processing fee is charged to the batch signer.
 
-The writers, readers and provers live in `packages/rs-drive/src/drive/contract/moderation/`, versioned by `DriveContractModerationMethodVersions`. A suspend that replaces an entry is a `batch_replace`, because two operations on one key would fail the batch.
+The writers, readers and provers live in `packages/rs-drive/src/drive/contract/moderation/`, versioned by `DriveContractModerationMethodVersions`. A suspend that replaces an entry is a `batch_replace`, because two operations on one key would fail the batch. The replacement brings its own reason, so the entry may change size: a longer replacement merges the flags as a document that changes hands does, the moderator that replaced it paying for the bytes it added and becoming the entry's owner, refunded when it is removed; a shorter or an equally long one stays the first moderator's, who is refunded the removed bytes at once and the rest on removal. A fee estimate prices a replacement as a fresh insert of the whole entry, because GroveDB's average-case replace assumes an item keeps its size and would price no storage for a longer reason; the entries a write walks past, and the one a delete removes, are estimated at a typical reason (128 bytes of text), not at the longest.
 
 ## Reading and Proving
 
@@ -155,11 +167,11 @@ The proof of a claim's execution shows the pot with its last claim epoch and the
 
 ## Versioning Touchpoints
 
-All in place for protocol version 14: `CONTRACT_VERSIONS_V6` makes config V2 the config of every new contract (`max_version` and `default_current_version` 2) and `validate_config_update` 2; `STATE_TRANSITION_SERIALIZATION_VERSIONS_V3` and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` carry the transition's slots and `batch_state_transition.contract_moderation_gate`, and the contract update's basic structure moves to 2 to validate the declaration; `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2 and adds the `moderation` table (its `update_contract` 2 belongs to token distribution and does nothing for moderation); `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds the converter slot and bumps `documents_batch_transition` to 1 for the sweep; `DRIVE_VERIFY_METHOD_VERSIONS` and `DRIVE_ABCI_QUERY_VERSIONS` gain their moderation tables; `SYSTEM_LIMITS_V4` gains `max_contract_moderators` and `max_contract_suspension_until`.
+All in place for protocol version 14: `CONTRACT_VERSIONS_V6` makes config V2 the config of every new contract (`max_version` and `default_current_version` 2) and `validate_config_update` 2; `STATE_TRANSITION_SERIALIZATION_VERSIONS_V3` and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` carry the transition's slots and `batch_state_transition.contract_moderation_gate`, and the contract update's basic structure moves to 2 to validate the declaration; `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2 and adds the `moderation` table (its `update_contract` 2 belongs to token distribution and does nothing for moderation); `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds the converter slot and bumps `documents_batch_transition` to 1 for the sweep; `DRIVE_VERIFY_METHOD_VERSIONS` and `DRIVE_ABCI_QUERY_VERSIONS` gain their moderation tables; `SYSTEM_LIMITS_V4` gains `max_contract_moderators`, `max_contract_suspension_until` and `max_contract_moderation_reason_length`.
 
 ## What Is Not There Yet
 
-Action fees on token transitions, a DAPI query and SDK methods for the fee pots and the claim, group-based moderators (`AuthorizedActionTakers::Group` through group actions), keys bound to the contract allowed to sign its moderation, entry metadata such as a reason or a timestamp, and the Swift and Kotlin SDKs.
+Action fees on token transitions, a DAPI query and SDK methods for the fee pots and the claim, group-based moderators (`AuthorizedActionTakers::Group` through group actions), keys bound to the contract allowed to sign its moderation, ban codes declared by the contract (the reason's `code` is where they will go), further entry metadata such as a timestamp or the moderator's id, and the Swift and Kotlin SDKs. The refusal a barred identity receives (41107, 41108, 41114) does not repeat the reason: the status query does.
 
 ## Tests
 

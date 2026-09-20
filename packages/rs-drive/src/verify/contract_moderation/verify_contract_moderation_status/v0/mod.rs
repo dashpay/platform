@@ -1,4 +1,4 @@
-use crate::drive::contract::moderation::types::decode_until;
+use crate::drive::contract::moderation::types::{decode_ban, decode_suspension};
 use crate::drive::contract::paths::{CONTRACT_BANLIST_KEY, CONTRACT_SUSPENSIONS_KEY};
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
@@ -48,15 +48,18 @@ impl Drive {
                     "contract moderation entry is not an item".to_string(),
                 )));
             };
+            let malformed = |description: String| {
+                Error::Proof(ProofError::CorruptedProof(format!(
+                    "contract moderation entry is malformed: {}",
+                    description
+                )))
+            };
             match path.last().map(Vec::as_slice) {
-                Some([CONTRACT_BANLIST_KEY]) => status.banned = true,
+                Some([CONTRACT_BANLIST_KEY]) => {
+                    status.ban = Some(decode_ban(&value).map_err(malformed)?);
+                }
                 Some([CONTRACT_SUSPENSIONS_KEY]) => {
-                    status.suspended_until = Some(decode_until(&value).map_err(|description| {
-                        Error::Proof(ProofError::CorruptedProof(format!(
-                            "contract suspension entry is malformed: {}",
-                            description
-                        )))
-                    })?);
+                    status.suspension = Some(decode_suspension(&value).map_err(malformed)?);
                 }
                 _ => {
                     return Err(Error::Proof(ProofError::CorruptedProof(

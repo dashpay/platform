@@ -115,6 +115,10 @@ pub struct SystemLimits {
     /// to clients. Read by the `ContractUserModeration` basic structure validation v0
     /// (protocol version 14) and never reached before.
     pub max_contract_suspension_until: u64,
+    /// Maximum length, in bytes of UTF-8, of the text of the reason a ban or a suspension
+    /// carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
+    /// structure validation v0 (protocol version 14) and never reached before.
+    pub max_contract_moderation_reason_length: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to

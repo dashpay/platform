@@ -12,8 +12,8 @@ use crate::consensus::basic::contract_group::{
     RedundantContractGroupMembershipError,
 };
 use crate::consensus::basic::contract_moderation::{
-    ContractModerationSelfTargetError, DocumentActionFeesWithoutModerationError,
-    InvalidContractModerationConfigError,
+    ContractModerationReasonTooLongError, ContractModerationSelfTargetError,
+    DocumentActionFeesWithoutModerationError, InvalidContractModerationConfigError,
 };
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
@@ -794,6 +794,9 @@ pub enum BasicError {
     #[error(transparent)]
     ContractModerationSelfTargetError(ContractModerationSelfTargetError),
 
+    #[error(transparent)]
+    ContractModerationReasonTooLongError(ContractModerationReasonTooLongError),
+
     // Document action fees (protocol version 14).
     #[error(transparent)]
     DocumentActionFeesWithoutModerationError(DocumentActionFeesWithoutModerationError),
@@ -861,12 +864,18 @@ mod tests {
             )),
             190
         );
+        assert_eq!(
+            discriminant_of(BasicError::ContractModerationReasonTooLongError(
+                ContractModerationReasonTooLongError::new(1025, 1024)
+            )),
+            191
+        );
         // Document action fees (protocol version 14): the tail of the enum.
         assert_eq!(
             discriminant_of(BasicError::DocumentActionFeesWithoutModerationError(
                 DocumentActionFeesWithoutModerationError::new("post".to_string())
             )),
-            191
+            192
         );
     }
 }

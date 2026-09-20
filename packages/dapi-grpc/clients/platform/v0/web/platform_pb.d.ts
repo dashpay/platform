@@ -2768,6 +2768,32 @@ export namespace GetContractGroupMembersResponse {
   }
 }
 
+export class ContractModerationReason extends jspb.Message {
+  hasCode(): boolean;
+  clearCode(): void;
+  getCode(): number;
+  setCode(value: number): void;
+
+  getText(): string;
+  setText(value: string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): ContractModerationReason.AsObject;
+  static toObject(includeInstance: boolean, msg: ContractModerationReason): ContractModerationReason.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: ContractModerationReason, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ContractModerationReason;
+  static deserializeBinaryFromReader(message: ContractModerationReason, reader: jspb.BinaryReader): ContractModerationReason;
+}
+
+export namespace ContractModerationReason {
+  export type AsObject = {
+    code: number,
+    text: string,
+  }
+}
+
 export class GetContractModerationStatusRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
@@ -2872,6 +2898,16 @@ export namespace GetContractModerationStatusResponse {
     setListsList(value: Array<ContractModerationListMap[keyof ContractModerationListMap]>): void;
     addLists(value: ContractModerationListMap[keyof ContractModerationListMap], index?: number): ContractModerationListMap[keyof ContractModerationListMap];
 
+    hasBanReason(): boolean;
+    clearBanReason(): void;
+    getBanReason(): ContractModerationReason | undefined;
+    setBanReason(value?: ContractModerationReason): void;
+
+    hasSuspensionReason(): boolean;
+    clearSuspensionReason(): void;
+    getSuspensionReason(): ContractModerationReason | undefined;
+    setSuspensionReason(value?: ContractModerationReason): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): ContractModerationStatus.AsObject;
     static toObject(includeInstance: boolean, msg: ContractModerationStatus): ContractModerationStatus.AsObject;
@@ -2887,6 +2923,8 @@ export namespace GetContractModerationStatusResponse {
       banned: boolean,
       suspendedUntil: number,
       listsList: Array<ContractModerationListMap[keyof ContractModerationListMap]>,
+      banReason?: ContractModerationReason.AsObject,
+      suspensionReason?: ContractModerationReason.AsObject,
     }
   }
 
@@ -3042,6 +3080,11 @@ export namespace GetContractModerationEntriesResponse {
     getUntil(): number;
     setUntil(value: number): void;
 
+    hasReason(): boolean;
+    clearReason(): void;
+    getReason(): ContractModerationReason | undefined;
+    setReason(value?: ContractModerationReason): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): ContractModerationEntry.AsObject;
     static toObject(includeInstance: boolean, msg: ContractModerationEntry): ContractModerationEntry.AsObject;
@@ -3056,6 +3099,7 @@ export namespace GetContractModerationEntriesResponse {
     export type AsObject = {
       identityId: Uint8Array | string,
       until: number,
+      reason?: ContractModerationReason.AsObject,
     }
   }
 

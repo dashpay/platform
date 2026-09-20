@@ -268,6 +268,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidContractModerationConfigError(_) => 10900,
             Self::ContractModerationSelfTargetError(_) => 10901,
             Self::DocumentActionFeesWithoutModerationError(_) => 10902,
+            Self::ContractModerationReasonTooLongError(_) => 10903,
         }
     }
 }

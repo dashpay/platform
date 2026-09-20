@@ -1,3 +1,4 @@
+use crate::drive::contract::moderation::types::estimated_entry_value_size;
 use crate::drive::contract::paths::contract_moderation_list_path;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -90,7 +91,8 @@ impl Drive {
             BatchDeleteApplyType::StatelessBatchDelete {
                 in_tree_type: TreeType::NormalTree,
                 estimated_key_size: DEFAULT_HASH_SIZE_U32,
-                estimated_value_size: StorageFlags::approximate_size(true, None),
+                estimated_value_size: estimated_entry_value_size(list)
+                    + StorageFlags::approximate_size(true, None),
             }
         } else {
             BatchDeleteApplyType::StatefulBatchDelete {

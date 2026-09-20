@@ -1,4 +1,4 @@
-use crate::drive::contract::moderation::CONTRACT_SUSPENSION_VALUE_SIZE;
+use crate::drive::contract::moderation::types::estimated_entry_value_size;
 use crate::drive::contract::paths::contract_moderation_list_path;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -44,12 +44,10 @@ impl Drive {
             drive_version,
         )?;
 
-        let value_size = match list {
-            ContractModerationList::Banlist => 0,
-            ContractModerationList::Suspensions => CONTRACT_SUSPENSION_VALUE_SIZE,
-        };
+        // The list itself: one item per barred identity, keyed by identity id. An entry holds a
+        // reason of any length up to the limit, estimated at a typical one.
+        let value_size = estimated_entry_value_size(list);
 
-        // The list itself: one small item per barred identity, keyed by identity id.
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(contract_moderation_list_path(&contract_id, list)),
             EstimatedLayerInformation {

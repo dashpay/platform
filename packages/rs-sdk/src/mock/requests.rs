@@ -28,7 +28,7 @@ use drive::grovedb::Element;
 use drive_proof_verifier::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use drive_proof_verifier::types::contract_moderation::{
     ContractModerationEntries, ContractModerationEntry, ContractModerationListStatus,
-    ContractModerationListStatuses,
+    ContractModerationListStatuses, ContractModerationReason,
 };
 use drive_proof_verifier::types::contract_groups::{
     ContractGroupInfo, ContractGroupMembersPage, ContractGroupMembershipsForContract,
@@ -411,10 +411,10 @@ impl MockResponse for ContractModerationListStatuses {
 
 impl MockResponse for ContractModerationEntries {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        let entries: Vec<(Identifier, Option<u64>)> = self
+        let entries: Vec<(Identifier, Option<u64>, ContractModerationReason)> = self
             .entries()
             .iter()
-            .map(|entry| (entry.identity_id, entry.until))
+            .map(|entry| (entry.identity_id, entry.until, entry.reason.clone()))
             .collect();
         bincode::encode_to_vec(entries, BINCODE_CONFIG).expect("encode ContractModerationEntries")
     }
@@ -423,13 +423,17 @@ impl MockResponse for ContractModerationEntries {
     where
         Self: Sized,
     {
-        let (entries, _): (Vec<(Identifier, Option<u64>)>, _) =
+        let (entries, _): (Vec<(Identifier, Option<u64>, ContractModerationReason)>, _) =
             bincode::decode_from_slice(buf, BINCODE_CONFIG)
                 .expect("decode ContractModerationEntries");
         ContractModerationEntries(
             entries
                 .into_iter()
-                .map(|(identity_id, until)| ContractModerationEntry { identity_id, until })
+                .map(|(identity_id, until, reason)| ContractModerationEntry {
+                    identity_id,
+                    until,
+                    reason,
+                })
                 .collect(),
         )
     }

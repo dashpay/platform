@@ -4,9 +4,12 @@ use crate::structure::conformance::{check_conformance, Violation};
 use crate::structure::export::{StructureDocument, STRUCTURE_JSON_PATH};
 use crate::structure::lint::lint;
 use crate::structure::shape::layer_shapes;
-use crate::structure::{drive_structure, ElementKind, StructureNode};
+use crate::structure::{drive_structure, ElementKind, FlagsKind, StructureNode};
 use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+use dpp::block::block_info::BlockInfo;
+use dpp::identity::Identity;
 use dpp::version::PlatformVersion;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -59,13 +62,16 @@ fn should_match_initial_structure_for_every_protocol_version() {
     }
 }
 
-/// The description as the viewer reads it, with the shapes of a fresh chain
+/// The description as the viewer reads it. Layers reached through fixed keys
+/// only get the shape of a fresh chain; layers below a template, such as an
+/// identity's, get the shape of the fullest instance the fixtures build.
 fn structure_json() -> String {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
     let structure = drive_structure();
     let origin = format!("genesis@{}", platform_version.protocol_version);
-    let shapes = layer_shapes(&drive, &structure, &origin, platform_version);
+    let mut shapes = layer_shapes(&drive, &structure, &origin, platform_version);
+    shapes.extend(fixtures::run_all().shapes());
     let document = StructureDocument::new(structure, platform_version.protocol_version, shapes);
 
     let mut json =
@@ -102,6 +108,26 @@ fn should_record_the_root_layer_as_the_root_tree_diagram_draws_it() {
     assert_eq!(root["hex"], "40");
     assert_eq!(root["left"]["hex"], "20");
     assert_eq!(root["right"]["hex"], "60");
+}
+
+#[test]
+fn should_record_a_contract_layer_with_its_documents_on_top() {
+    let json: serde_json::Value =
+        serde_json::from_str(&structure_json()).expect("expected valid json");
+
+    // A contract's layer is one layer per contract, so its shape comes from a
+    // fixture. Documents are read most and sit at the root of the layer; the
+    // contract itself and everything else hang below.
+    let contract = &json["layer_shapes"]["contracts.contract"];
+    assert_eq!(contract["origin"], "fixture contracts_with_documents@14");
+    assert_eq!(contract["tree"]["hex"], "01");
+    assert_eq!(contract["tree"]["left"]["hex"], "00");
+    assert_eq!(contract["tree"]["right"]["hex"], "02");
+
+    // Inside `other` the banlist, read on every document transition of a
+    // moderated contract, is in the middle
+    let other = &json["layer_shapes"]["contracts.contract.other"]["tree"];
+    assert_eq!(other["hex"], "80");
 }
 
 mod walker {
@@ -181,6 +207,50 @@ mod walker {
     }
 
     #[test]
+    fn should_report_element_flags_of_another_kind() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let identity = Identity::random_identity(2, Some(5), platform_version)
+            .expect("expected a random identity");
+        drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the identity");
+
+        // An identity's tree carries the epoch it was created in
+        let mut structure = drive_structure();
+        let identities = structure
+            .children
+            .iter_mut()
+            .find(|child| child.id == "identities")
+            .expect("expected the identities node");
+        identities.children[0].flags = vec![FlagsKind::None];
+
+        let report = check_conformance(&drive, &structure, None, platform_version)
+            .expect("expected to walk the state");
+
+        assert_eq!(
+            report.violations,
+            vec![Violation::FlagsMismatch {
+                node: "identities.identity".to_string(),
+                path: vec![vec![RootTree::Identities as u8]],
+                expected: vec![FlagsKind::None],
+                actual: FlagsKind::Epoch,
+            }]
+        );
+        assert_eq!(
+            report.flags.get("identities.identity.keys"),
+            Some(&BTreeSet::from([FlagsKind::None]))
+        );
+    }
+
+    #[test]
     fn should_report_an_element_from_a_later_protocol_version() {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
@@ -205,7 +275,9 @@ mod fixtures {
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
-    use crate::structure::conformance::ConformanceReport;
+    use crate::structure::export::{LayerShape, ShapeNode, StateShape};
+    use crate::structure::shape::shape_at;
+    use crate::structure::{KeySpec, NodeId};
     use crate::util::batch::drive_op_batch::{
         AddressFundsOperationType, ContractFeePotOperationType,
     };
@@ -221,7 +293,9 @@ mod fixtures {
     use crate::util::test_helpers::setup_contract;
     use dpp::address_funds::PlatformAddress;
     use dpp::block::block_info::BlockInfo;
+    use crate::drive::credit_pools::epochs::paths::EpochProposers;
     use dpp::block::epoch::Epoch;
+    use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
     use dpp::contract_group::{
         generate_contract_group_id, ContractGroupMember, ContractGroupMembership,
         ContractGroupRegistration,
@@ -237,9 +311,17 @@ mod fixtures {
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Setters;
     use dpp::data_contract::associated_token::token_once_per_identity_distribution::v0::TokenOncePerIdentityDistributionV0;
     use dpp::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
-    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::config::moderation::{
+        ContractModerationConfig, ContractModerationReason, ContractModerators,
+    };
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::document_type::action_fees::ContractFeePot;
@@ -276,18 +358,12 @@ mod fixtures {
     /// (`assert_state_conforms_to_structure` in their `execution.rs`), and
     /// between them they write these.
     const REACHED_BY_STRATEGY_TESTS: &[&str] = &[
-        "tokens.distributions.perpetual.token",
-        "tokens.distributions.perpetual.token.info",
-        "tokens.distributions.perpetual.token.last_claim",
-        "tokens.distributions.perpetual.token.last_claim.identity",
         "identities.identity.key_references.transfer.key",
         "identities.identity.key_references.voting.key",
         "saved_block_transactions.compacted.range",
         "saved_block_transactions.compacted_expiration.expiration",
         "saved_block_transactions.address_balances.block",
         "pools.pending_epoch_refunds.epoch",
-        "pools.epoch.finished_epoch_info",
-        "pools.epoch.processing_fees",
         "misc.genesis_core_height",
         "spent_asset_locks.outpoint",
         "withdrawals.queue.transaction",
@@ -310,9 +386,137 @@ mod fixtures {
     /// fails when a listed node does get reached.
     const UNVERIFIED: &[&str] = &[];
 
-    fn conformance_of(drive: &Drive, fixture: &str) -> ConformanceReport {
+    /// What the fixtures found: every node they reached, and for each layer
+    /// below a template the shape of its fullest instance.
+    #[derive(Default)]
+    pub(super) struct FixtureRun {
+        visited: BTreeSet<NodeId>,
+        fullest: BTreeMap<NodeId, (usize, LayerShape)>,
+        states: BTreeMap<NodeId, BTreeMap<String, StateShape>>,
+    }
+
+    fn keys_of(tree: &ShapeNode, keys: &mut BTreeSet<Vec<u8>>) {
+        keys.insert(tree.key.clone());
+        for child in [&tree.left, &tree.right].into_iter().flatten() {
+            keys_of(child, keys);
+        }
+    }
+
+    impl FixtureRun {
+        /// The shapes of the layers below a template. A layer that goes
+        /// through states gets one shape per state, which must have been
+        /// recorded from an instance holding exactly the keys the state
+        /// declares; the state with the most keys is the layer's main shape.
+        pub(super) fn shapes(mut self) -> BTreeMap<NodeId, LayerShape> {
+            let structure = drive_structure();
+            let mut shapes: BTreeMap<NodeId, LayerShape> = self
+                .fullest
+                .into_iter()
+                .map(|(id, (_, shape))| (id, shape))
+                .collect();
+
+            structure.walk(&mut |node| {
+                if node.states.is_empty() {
+                    return;
+                }
+                let mut recorded = self.states.remove(&node.id).unwrap_or_default();
+                let states: Vec<StateShape> = node
+                    .states
+                    .iter()
+                    .map(|state| {
+                        let shape = recorded.remove(&state.name).unwrap_or_else(|| {
+                            panic!(
+                                "no fixture records `{}` in its `{}` state",
+                                node.id, state.name
+                            )
+                        });
+                        let declared: BTreeSet<Vec<u8>> = state
+                            .keys
+                            .iter()
+                            .map(|segment| {
+                                node.children
+                                    .iter()
+                                    .find(|child| child.segment == *segment)
+                                    .and_then(|child| child.fixed_key_bytes())
+                                    .expect("the lint checks that state keys are fixed children")
+                                    .to_vec()
+                            })
+                            .collect();
+                        let mut found = BTreeSet::new();
+                        keys_of(&shape.tree, &mut found);
+                        assert_eq!(
+                            found, declared,
+                            "`{}` in its `{}` state holds other keys than the state declares",
+                            node.id, state.name
+                        );
+                        shape
+                    })
+                    .collect();
+                let main = states
+                    .iter()
+                    .zip(&node.states)
+                    .max_by_key(|(_, state)| state.keys.len())
+                    .map(|(shape, _)| shape.clone())
+                    .expect("a node with states has at least two");
+                shapes.insert(
+                    node.id.clone(),
+                    LayerShape {
+                        origin: main.origin,
+                        tree: main.tree,
+                        states,
+                    },
+                );
+            });
+            shapes
+        }
+
+        /// Records the shape of one instance of a node's layer as the shape
+        /// of one of the states the node declares
+        fn record_state(
+            &mut self,
+            drive: &Drive,
+            node: &str,
+            state: &str,
+            path: Vec<Vec<u8>>,
+            fixture: &str,
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let tree =
+                shape_at(drive, &path, platform_version).expect("expected the shape of the layer");
+            self.states.entry(node.to_string()).or_default().insert(
+                state.to_string(),
+                StateShape {
+                    state: state.to_string(),
+                    origin: format!("fixture {fixture}@{}", platform_version.protocol_version),
+                    tree,
+                },
+            );
+        }
+    }
+
+    /// The nodes whose layer sits below a template, so that there is one
+    /// instance of it per identity, contract, epoch and so on
+    fn layers_below_a_template(structure: &StructureNode) -> BTreeSet<NodeId> {
+        fn visit(node: &StructureNode, below_template: bool, found: &mut BTreeSet<NodeId>) {
+            let below_template = below_template || matches!(node.key, KeySpec::Dynamic { .. });
+            if below_template {
+                found.insert(node.id.clone());
+            }
+            for child in &node.children {
+                visit(child, below_template, found);
+            }
+        }
+        let mut found = BTreeSet::new();
+        visit(structure, false, &mut found);
+        found
+    }
+
+    /// Checks the state against the description, and records the shape of
+    /// every layer below a template that is fuller here than seen so far
+    fn conformance_of(drive: &Drive, fixture: &str, run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
-        let report = check_conformance(drive, &drive_structure(), None, platform_version)
+        let structure = drive_structure();
+        let report = check_conformance(drive, &structure, None, platform_version)
             .expect("expected to walk the state");
         assert!(
             report.violations.is_empty(),
@@ -324,10 +528,32 @@ mod fixtures {
                 .collect::<Vec<_>>()
                 .join("\n"),
         );
-        report
+
+        let templated = layers_below_a_template(&structure);
+        for (id, (count, path)) in &report.fullest_layers {
+            let fuller = run.fullest.get(id).is_none_or(|(best, _)| count > best);
+            if !templated.contains(id) || *count < 2 || !fuller {
+                continue;
+            }
+            let tree = shape_at(drive, path, platform_version)
+                .expect("expected the shape of a layer the walker just read");
+            let origin = format!("fixture {fixture}@{}", platform_version.protocol_version);
+            run.fullest.insert(
+                id.clone(),
+                (
+                    *count,
+                    LayerShape {
+                        origin,
+                        tree,
+                        states: vec![],
+                    },
+                ),
+            );
+        }
+        run.visited.extend(report.visited);
     }
 
-    fn identities() -> ConformanceReport {
+    fn identities(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         for seed in 1..4 {
@@ -344,6 +570,16 @@ mod fixtures {
                     platform_version,
                 )
                 .expect("expected to add the identity");
+            let layer = vec![vec![RootTree::Identities as u8], identity_id.to_vec()];
+            if seed == 1 {
+                run.record_state(
+                    &drive,
+                    "identities.identity",
+                    "created",
+                    layer.clone(),
+                    "identities",
+                );
+            }
             drive
                 .merge_identity_contract_nonce(
                     identity_id,
@@ -356,6 +592,15 @@ mod fixtures {
                     platform_version,
                 )
                 .expect("expected to set a contract nonce");
+            if seed == 1 {
+                run.record_state(
+                    &drive,
+                    "identities.identity",
+                    "used_with_a_contract",
+                    layer,
+                    "identities",
+                );
+            }
         }
         drive
             .add_prefunded_specialized_balance(
@@ -373,10 +618,10 @@ mod fixtures {
                 &platform_version.drive,
             )
             .expect("expected to record a proposed version");
-        conformance_of(&drive, "identities")
+        conformance_of(&drive, "identities", run);
     }
 
-    fn contracts_with_documents() -> ConformanceReport {
+    fn contracts_with_documents(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         for (index, path) in [
@@ -410,11 +655,11 @@ mod fixtures {
                 }
             }
         }
-        conformance_of(&drive, "contracts_with_documents")
+        conformance_of(&drive, "contracts_with_documents", run);
     }
 
     /// A contract that keeps both moderation lists, with one ban and one suspension
-    fn moderated_contract() -> ConformanceReport {
+    fn moderated_contract(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = setup_contract(
@@ -438,6 +683,7 @@ mod fixtures {
             .add_contract_ban(
                 contract.id(),
                 Identifier::from([0x21; 32]),
+                &ContractModerationReason::from_text("spam"),
                 contract.owner_id(),
                 &BlockInfo::default(),
                 true,
@@ -450,6 +696,7 @@ mod fixtures {
                 contract.id(),
                 Identifier::from([0x22; 32]),
                 1_000,
+                &ContractModerationReason::from_text("flooding"),
                 false,
                 contract.owner_id(),
                 &BlockInfo::default(),
@@ -488,10 +735,10 @@ mod fixtures {
                 None,
             )
             .expect("expected to fill and claim the fee pots");
-        conformance_of(&drive, "moderated_contract")
+        conformance_of(&drive, "moderated_contract", run);
     }
 
-    fn tokens_and_group_actions() -> ConformanceReport {
+    fn tokens_and_group_actions(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let member_1 = Identifier::from([1; 32]);
@@ -629,10 +876,10 @@ mod fixtures {
                     .expect("expected to close the action");
             }
         }
-        conformance_of(&drive, "tokens_and_group_actions")
+        conformance_of(&drive, "tokens_and_group_actions", run);
     }
 
-    fn address_balances() -> ConformanceReport {
+    fn address_balances(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let operations = vec![
@@ -657,12 +904,13 @@ mod fixtures {
                 None,
             )
             .expect("expected to set address balances");
-        conformance_of(&drive, "address_balances")
+        conformance_of(&drive, "address_balances", run);
     }
 
     /// An epoch while it runs, then after it was paid out: payout deletes the
-    /// proposers and both fee items and keeps the epoch tree.
-    fn current_then_paid_epoch() -> ConformanceReport {
+    /// proposers and both fee items and keeps the epoch tree. The finished
+    /// epoch info is written at payout, so no epoch ever holds all nine keys.
+    fn current_then_paid_epoch(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let epoch = Epoch::new(0).expect("expected the genesis epoch");
@@ -677,20 +925,72 @@ mod fixtures {
             &mut batch,
         );
         batch.push(epoch.update_proposer_block_count_operation(&[7; 32], 3));
+        // The first block of an epoch starts it and pays its fees into the
+        // pools in one batch, so a running epoch holds its processing fees
+        // from the start. The shape of the layer depends on that.
+        batch.push(
+            epoch
+                .update_processing_fee_pool_operation(1000)
+                .expect("expected the processing fee operation"),
+        );
         drive
             .grove_apply_batch(batch, false, None, &platform_version.drive)
             .expect("expected to start the epoch");
-        let mut report = conformance_of(&drive, "current_epoch");
+        conformance_of(&drive, "current_epoch", run);
+        run.record_state(
+            &drive,
+            "pools.epoch",
+            "future",
+            Epoch::new(1)
+                .expect("expected the next epoch")
+                .get_path_vec(),
+            "current_epoch",
+        );
+        run.record_state(
+            &drive,
+            "pools.epoch",
+            "running",
+            epoch.get_path_vec(),
+            "current_epoch",
+        );
 
+        // Payout deletes and writes in one batch
         let mut batch = GroveDbOpBatch::new();
         epoch.add_mark_as_paid_operations(&mut batch);
+        batch.push(
+            drive
+                .add_epoch_final_info_operation(
+                    &epoch,
+                    FinalizedEpochInfoV0 {
+                        first_block_time: 3,
+                        first_block_height: 2,
+                        total_blocks_in_epoch: 3,
+                        first_core_block_height: 5,
+                        next_epoch_start_core_block_height: 6,
+                        total_processing_fees: 1000,
+                        total_distributed_storage_fees: 0,
+                        total_created_storage_fees: 0,
+                        core_block_rewards: 0,
+                        block_proposers: BTreeMap::from([(Identifier::from([7; 32]), 3)]),
+                        fee_multiplier_permille: 1000,
+                        protocol_version: platform_version.protocol_version,
+                    }
+                    .into(),
+                    platform_version,
+                )
+                .expect("expected the finished epoch info operation"),
+        );
         drive
             .grove_apply_batch(batch, false, None, &platform_version.drive)
             .expect("expected to mark the epoch as paid");
-        report
-            .visited
-            .extend(conformance_of(&drive, "paid_epoch").visited);
-        report
+        conformance_of(&drive, "paid_epoch", run);
+        run.record_state(
+            &drive,
+            "pools.epoch",
+            "paid",
+            epoch.get_path_vec(),
+            "paid_epoch",
+        );
     }
 
     /// Two contests on the DPNS index of parent domain name and label. In the
@@ -699,7 +999,7 @@ mod fixtures {
     /// the key tells the two apart. (DPNS only contests shorter labels, but
     /// that rule lives in dpp, and any contested index over identifiers has
     /// 32 byte values.)
-    fn contested_documents() -> ConformanceReport {
+    fn contested_documents(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = setup_contract(
@@ -764,7 +1064,7 @@ mod fixtures {
                 )
                 .expect("expected to add the contested document");
         }
-        conformance_of(&drive, "contested_documents")
+        conformance_of(&drive, "contested_documents", run);
     }
 
     fn apply_operations(drive: &Drive, operations: Vec<LowLevelDriveOperation>) {
@@ -779,9 +1079,9 @@ mod fixtures {
             .expect("expected to apply the operations");
     }
 
-    /// A token with a pre-programmed release and a once per identity rule,
-    /// before and after each is claimed. The second release stays queued.
-    fn token_distributions() -> ConformanceReport {
+    /// A token with a perpetual distribution, a pre-programmed release and a
+    /// once per identity rule, before and after each is claimed. The second release stays queued.
+    fn token_distributions(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let recipient = [7; 32];
@@ -797,6 +1097,17 @@ mod fixtures {
                         (100, BTreeMap::from([(Identifier::from(recipient), 445)])),
                         (200, BTreeMap::from([(Identifier::from(recipient), 5)])),
                     ]),
+                },
+            )));
+        configuration
+            .distribution_rules_mut()
+            .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                TokenPerpetualDistributionV0 {
+                    distribution_type: RewardDistributionType::BlockBasedDistribution {
+                        interval: 10,
+                        function: DistributionFunction::FixedAmount { amount: 50 },
+                    },
+                    distribution_recipient: TokenDistributionRecipient::ContractOwner,
                 },
             )));
         configuration
@@ -817,7 +1128,7 @@ mod fixtures {
                 platform_version,
             )
             .expect("expected to insert the token contract");
-        let mut report = conformance_of(&drive, "token_distributions_unclaimed");
+        conformance_of(&drive, "token_distributions_unclaimed", run);
 
         let token_id = contract.token_id(0).expect("expected a token").to_buffer();
         apply_operations(
@@ -837,6 +1148,18 @@ mod fixtures {
         apply_operations(
             &drive,
             drive
+                .mark_perpetual_release_as_distributed_operations(
+                    token_id,
+                    recipient,
+                    RewardDistributionMoment::BlockBasedMoment(20),
+                    &mut None,
+                    platform_version,
+                )
+                .expect("expected the perpetual claim operations"),
+        );
+        apply_operations(
+            &drive,
+            drive
                 .mark_once_per_identity_release_as_distributed_operations(
                     token_id,
                     recipient,
@@ -847,10 +1170,7 @@ mod fixtures {
                 )
                 .expect("expected the once per identity claim operations"),
         );
-        report
-            .visited
-            .extend(conformance_of(&drive, "token_distributions_claimed").visited);
-        report
+        conformance_of(&drive, "token_distributions_claimed", run);
     }
 
     /// A key bound to a contract, a document type or a contract group. A key
@@ -890,7 +1210,7 @@ mod fixtures {
     /// that keeps a reference to the latest key of each purpose, to a document
     /// type of that contract, and to a contract group; one of its keys has a
     /// budget.
-    fn contract_groups_and_bound_keys() -> ConformanceReport {
+    fn contract_groups_and_bound_keys(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let owner = Identifier::from([1; 32]);
@@ -1005,6 +1325,7 @@ mod fixtures {
         ] {
             identity.add_public_key(key);
         }
+        let identity_id = identity.id().to_buffer();
         drive
             .add_new_identity(
                 identity,
@@ -1015,10 +1336,30 @@ mod fixtures {
                 platform_version,
             )
             .expect("expected to add the identity");
-        conformance_of(&drive, "contract_groups_and_bound_keys")
+        // A nonce beside the bound keys, so one entry holds both
+        drive
+            .merge_identity_contract_nonce(
+                identity_id,
+                contracts[0].id().to_buffer(),
+                1,
+                &BlockInfo::default(),
+                true,
+                None,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected to set a contract nonce");
+        run.record_state(
+            &drive,
+            "identities.identity",
+            "budgeted_key_and_contract",
+            vec![vec![RootTree::Identities as u8], identity_id.to_vec()],
+            "contract_groups_and_bound_keys",
+        );
+        conformance_of(&drive, "contract_groups_and_bound_keys", run);
     }
 
-    fn spent_nullifiers() -> ConformanceReport {
+    fn spent_nullifiers(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         apply_operations(
@@ -1027,26 +1368,28 @@ mod fixtures {
                 .insert_nullifiers(&[[3; 32], [4; 32]], platform_version)
                 .expect("expected the nullifier operations"),
         );
-        conformance_of(&drive, "spent_nullifiers")
+        conformance_of(&drive, "spent_nullifiers", run);
+    }
+
+    /// Runs every fixture
+    pub(super) fn run_all() -> FixtureRun {
+        let mut run = FixtureRun::default();
+        identities(&mut run);
+        contracts_with_documents(&mut run);
+        moderated_contract(&mut run);
+        tokens_and_group_actions(&mut run);
+        address_balances(&mut run);
+        current_then_paid_epoch(&mut run);
+        contested_documents(&mut run);
+        token_distributions(&mut run);
+        contract_groups_and_bound_keys(&mut run);
+        spent_nullifiers(&mut run);
+        run
     }
 
     #[test]
     fn should_match_populated_state_and_reach_every_described_node() {
-        let mut visited = BTreeSet::new();
-        for report in [
-            identities(),
-            contracts_with_documents(),
-            moderated_contract(),
-            tokens_and_group_actions(),
-            address_balances(),
-            current_then_paid_epoch(),
-            contested_documents(),
-            token_distributions(),
-            contract_groups_and_bound_keys(),
-            spent_nullifiers(),
-        ] {
-            visited.extend(report.visited);
-        }
+        let visited = run_all().visited;
 
         let mut unreached = vec![];
         let mut wrongly_listed = vec![];

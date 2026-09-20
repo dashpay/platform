@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::config::moderation::ContractModerationReason;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use grovedb::batch::KeyInfoPath;
@@ -19,6 +20,8 @@ pub enum ContractModerationOperationType {
         contract_id: Identifier,
         /// The identity to ban.
         identity_id: Identifier,
+        /// Why, stored with the entry.
+        reason: ContractModerationReason,
         /// The identity that pays for the entry and receives its refund.
         moderator_id: Identifier,
     },
@@ -38,6 +41,8 @@ pub enum ContractModerationOperationType {
         identity_id: Identifier,
         /// The block time, in milliseconds, at which the suspension lapses.
         until: TimestampMillis,
+        /// Why, stored with the entry.
+        reason: ContractModerationReason,
         /// Whether the identity already has an entry, which is then replaced.
         replaces_existing: bool,
         /// The identity that pays for the entry and receives its refund.
@@ -67,10 +72,12 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
             ContractModerationOperationType::AddBan {
                 contract_id,
                 identity_id,
+                reason,
                 moderator_id,
             } => drive.add_contract_ban_operations(
                 contract_id,
                 identity_id,
+                &reason,
                 moderator_id,
                 block_info,
                 estimated_costs_only_with_layer_info,
@@ -92,12 +99,14 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
                 contract_id,
                 identity_id,
                 until,
+                reason,
                 replaces_existing,
                 moderator_id,
             } => drive.add_contract_suspension_operations(
                 contract_id,
                 identity_id,
                 until,
+                &reason,
                 replaces_existing,
                 moderator_id,
                 block_info,

@@ -217,39 +217,68 @@ describe('ContractsFacade', () => {
 
     // Every moderation transition resolves to the status on the lists its proof covers: both
     // for a ban, the edited one otherwise. `banned` is only set when `lists` includes `banlist`.
+    // Each action gets the options the WASM entrypoint accepts for it: a reason for a ban and a
+    // suspend, `until` for a suspend alone, neither for an unban or an unsuspend.
     const transitions = [
       {
         facade: 'banUser',
         wasm: 'contractBanUser',
-        result: { lists: ['banlist', 'suspensions'], banned: true },
+        extraOptions: { reason: { text: 'spam' } },
+        result: { lists: ['banlist', 'suspensions'], banned: true, banReason: { text: 'spam' } },
       },
-      { facade: 'unbanUser', wasm: 'contractUnbanUser', result: { lists: ['banlist'], banned: false } },
+      {
+        facade: 'unbanUser',
+        wasm: 'contractUnbanUser',
+        extraOptions: {},
+        result: { lists: ['banlist'], banned: false },
+      },
       {
         facade: 'suspendUser',
         wasm: 'contractSuspendUser',
-        result: { lists: ['suspensions'], suspendedUntil: BigInt(1800000000000) },
+        extraOptions: { until: BigInt(1800000000000), reason: { code: 7, text: 'flooding' } },
+        result: {
+          lists: ['suspensions'],
+          suspendedUntil: BigInt(1800000000000),
+          suspensionReason: { code: 7, text: 'flooding' },
+        },
       },
-      { facade: 'unsuspendUser', wasm: 'contractUnsuspendUser', result: { lists: ['suspensions'] } },
+      {
+        facade: 'unsuspendUser',
+        wasm: 'contractUnsuspendUser',
+        extraOptions: {},
+        result: { lists: ['suspensions'] },
+      },
     ] as const;
 
-    transitions.forEach(({ facade, wasm, result }) => {
+    transitions.forEach(({
+      facade, wasm, extraOptions, result,
+    }) => {
       it(`should forward ${facade}() to ${wasm}() and return its per-list result`, async function run() {
         const stub = this.sinon.stub(wasmSdk, wasm).resolves({ contractId, identityId, ...result });
         const options = {
           identity: Object.create(wasmSDKPackage.Identity.prototype),
           contractId,
           identityId,
-          until: BigInt(1800000000000),
           signer,
+          ...extraOptions,
         };
 
-        const moderated = await client.contracts[facade](options);
+        // The per-action option types differ, so the facade method is called through one
+        // signature wide enough for all four.
+        const method = client.contracts[facade].bind(client.contracts) as (
+          moderationOptions: typeof options,
+        ) => Promise<wasmSDKPackage.ContractModerationResult>;
+        const moderated = await method(options);
 
         expect(stub).to.be.calledOnceWithExactly(options);
         expect(moderated.lists).to.deep.equal(result.lists);
         if (!result.lists.includes('banlist')) {
           expect(moderated.banned).to.equal(undefined);
         }
+        expect(moderated.banReason).to.deep.equal('banReason' in result ? result.banReason : undefined);
+        expect(moderated.suspensionReason).to.deep.equal(
+          'suspensionReason' in result ? result.suspensionReason : undefined,
+        );
       });
     });
 

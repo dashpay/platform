@@ -24,6 +24,7 @@ mod builder;
 pub mod conformance;
 /// Serialization of the description to the committed JSON file
 pub mod export;
+mod flags;
 mod kinds;
 /// Static checks of the description
 pub mod lint;
@@ -34,6 +35,7 @@ mod tests;
 
 use crate::drive::structure::root_structure;
 use dpp::util::deserializer::ProtocolVersion;
+pub use flags::FlagsKind;
 pub use kinds::ElementKind;
 use serde::Serialize;
 
@@ -159,6 +161,22 @@ pub enum Presence {
     UntilDeleted,
 }
 
+/// One of the states the layer below a node goes through. A layer that gains
+/// and loses keys over its life, as an epoch's does when it starts and when it
+/// is paid out, holds a different set of keys in each state, and so its Merk
+/// has a different shape in each.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct LayerState {
+    /// The identifier of the state within the node, for example `running`
+    pub name: String,
+    /// A short human readable name
+    pub title: String,
+    /// What the state means, and what moves the layer into it
+    pub description: String,
+    /// The segments of the children the layer holds in this state
+    pub keys: Vec<String>,
+}
+
 /// One level of the GroveDB structure.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct StructureNode {
@@ -175,6 +193,14 @@ pub struct StructureNode {
     /// When there are several kinds, what decides between them
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kinds_note: Option<String>,
+    /// The element flags that can sit on the element. More than one when the
+    /// code chooses between them. Left out of the exported file when the
+    /// element carries none, which is the common case.
+    #[serde(skip_serializing_if = "FlagsKind::is_none_only")]
+    pub flags: Vec<FlagsKind>,
+    /// Who the owner in the flags is, or what decides between several kinds
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flags_note: Option<String>,
     /// What an item holds
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
@@ -203,6 +229,10 @@ pub struct StructureNode {
     /// trees, MMR trees, bulk append trees); says what they hold instead.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub opaque: Option<String>,
+    /// The states the layer below goes through, in the order it goes through
+    /// them. Empty when the layer holds the same keys all its life.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub states: Vec<LayerState>,
     /// The levels below
     pub children: Vec<StructureNode>,
 }

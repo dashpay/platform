@@ -709,6 +709,15 @@ enum ContractModerationList {
   CONTRACT_MODERATION_LIST_SUSPENSIONS = 2; // Identities barred until a block time
 }
 
+// Why a moderator banned or suspended an identity. Nothing checks what a
+// moderator writes.
+message ContractModerationReason {
+  optional uint32 code =
+      1; // Reserved for the ban codes a contract may declare in a later
+         // protocol version; a u16, expected unset today, never checked
+  string text = 2; // Free text, at most 1024 bytes of UTF-8, may be empty
+}
+
 message GetContractModerationStatusRequest {
   message GetContractModerationStatusRequestV0 {
     bytes contract_id = 1; // The 32-byte id of the moderated contract
@@ -733,6 +742,10 @@ message GetContractModerationStatusResponse {
            // when the identity is not suspended or the list was not read
     repeated ContractModerationList lists =
         3; // The lists this status covers, as the request named them
+    optional ContractModerationReason ban_reason =
+        4; // Set when the identity is banned: why
+    optional ContractModerationReason suspension_reason =
+        5; // Set when the identity is suspended: why
   }
 
   message GetContractModerationStatusResponseV0 {
@@ -765,6 +778,7 @@ message GetContractModerationEntriesResponse {
     optional uint64 until =
         2; // For a suspension list entry: the block time, in milliseconds, at
            // which it lapses
+    ContractModerationReason reason = 3; // Why the identity is on the list
   }
 
   message ContractModerationEntries {

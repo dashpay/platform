@@ -37,6 +37,15 @@ pub fn lint(root: &StructureNode, repository_root: Option<&Path>) -> Vec<String>
                 node.id
             ));
         }
+        if node.flags.is_empty() {
+            problems.push(format!("{}: no element flags kind", node.id));
+        }
+        if node.flags.len() > 1 && node.flags_note.is_none() {
+            problems.push(format!(
+                "{}: several kinds of element flags but nothing says what decides",
+                node.id
+            ));
+        }
         if node.description.is_empty() && !matches!(node.key, KeySpec::Root) {
             problems.push(format!("{}: no description", node.id));
         }
@@ -68,6 +77,33 @@ pub fn lint(root: &StructureNode, repository_root: Option<&Path>) -> Vec<String>
                 "{}: `reference` must be set exactly when a kind is a reference",
                 node.id
             ));
+        }
+
+        if node.states.len() == 1 {
+            problems.push(format!("{}: a single state says nothing", node.id));
+        }
+        let mut state_names = BTreeSet::new();
+        for state in &node.states {
+            if !state_names.insert(state.name.as_str()) {
+                problems.push(format!("{}: state `{}` listed twice", node.id, state.name));
+            }
+            if state.description.is_empty() || state.title.is_empty() {
+                problems.push(format!(
+                    "{}: state `{}` needs a title and a description",
+                    node.id, state.name
+                ));
+            }
+            for key in &state.keys {
+                let fixed_child = node.children.iter().any(|child| {
+                    child.segment == *key && matches!(child.key, KeySpec::Fixed { .. })
+                });
+                if !fixed_child {
+                    problems.push(format!(
+                        "{}: state `{}` names `{key}`, which is not a fixed key of the layer",
+                        node.id, state.name
+                    ));
+                }
+            }
         }
 
         lint_layer(node, &mut problems);

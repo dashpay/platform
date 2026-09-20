@@ -159,6 +159,28 @@
       "is_reference": false
     }
   ],
+  "flag_kinds": [
+    {
+      "name": "None",
+      "meaning": "No flags. Nobody is recorded as having paid for the element, so removing it refunds nothing.",
+      "layout": "absent"
+    },
+    {
+      "name": "Epoch",
+      "meaning": "Storage flags without an owner. They record the epoch in which the element's bytes were paid for. If the element grew later, they also record how many bytes were added in each later epoch.",
+      "layout": "type byte 0, base epoch u16 BE; or type byte 1, base epoch u16 BE, then for each later epoch: epoch u16 BE and bytes added as a varint"
+    },
+    {
+      "name": "EpochOwned",
+      "meaning": "Storage flags with an owner. They record the epoch in which the element's bytes were paid for, the bytes added in each later epoch if it grew, and the identity that paid. When the element is deleted or shrinks, the unused part of the storage fee is refunded to that identity, epoch by epoch.",
+      "layout": "type byte 2, owner id 32 bytes, base epoch u16 BE; or type byte 3, owner id 32 bytes, base epoch u16 BE, then for each later epoch: epoch u16 BE and bytes added as a varint"
+    },
+    {
+      "name": "Other",
+      "meaning": "Flags that are not Drive's storage flags.",
+      "layout": "unknown"
+    }
+  ],
   "root": {
     "id": "root",
     "key": {
@@ -319,6 +341,10 @@
                         "kinds": [
                           "Item"
                         ],
+                        "flags": [
+                          "EpochOwned"
+                        ],
+                        "flags_note": "The owner is the identity that claimed, in the epoch of the claim.",
                         "value": "the claim's block time in milliseconds, u64 big endian",
                         "since": 14,
                         "presence": "always",
@@ -492,6 +518,10 @@
                         "kinds": [
                           "Tree"
                         ],
+                        "flags": [
+                          "EpochOwned"
+                        ],
+                        "flags_note": "The owner is the contract owner: releases are queued when the token is created.",
                         "since": 9,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/tokens/paths.rs",
@@ -511,6 +541,10 @@
                             "kinds": [
                               "Reference"
                             ],
+                            "flags": [
+                              "EpochOwned"
+                            ],
+                            "flags_note": "The owner is the contract owner: releases are queued when the token is created.",
                             "reference": "tokens.distributions.pre_programmed.token.time.recipient",
                             "since": 9,
                             "presence": "always",
@@ -986,10 +1020,55 @@
             "kinds": [
               "Tree"
             ],
+            "flags": [
+              "Epoch"
+            ],
+            "flags_note": "The epoch the identity was created in. No owner: nothing under an identity is refunded.",
             "since": 1,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/identity/mod.rs",
             "description": "One identity.",
+            "states": [
+              {
+                "name": "created",
+                "title": "As created",
+                "description": "One batch creates the identity with its nonce, its negative credit, its revision, its keys and the key reference trees.",
+                "keys": [
+                  "nonce",
+                  "negative_credit",
+                  "keys",
+                  "key_references",
+                  "revision"
+                ]
+              },
+              {
+                "name": "used_with_a_contract",
+                "title": "Used with a contract",
+                "description": "The identity's first state transition on a data contract adds the contract info tree, which holds its nonce for that contract.",
+                "keys": [
+                  "contract_info",
+                  "nonce",
+                  "negative_credit",
+                  "keys",
+                  "key_references",
+                  "revision"
+                ]
+              },
+              {
+                "name": "budgeted_key_and_contract",
+                "title": "Created with a budgeted key, then used with a contract",
+                "description": "An identity created with a budgeted key gets the key budgets tree in its creation batch (protocol version 14). Its first use with a contract then adds the contract info tree.",
+                "keys": [
+                  "contract_info",
+                  "nonce",
+                  "negative_credit",
+                  "keys",
+                  "key_references",
+                  "revision",
+                  "key_budgets"
+                ]
+              }
+            ],
             "children": [
               {
                 "id": "identities.identity.contract_info",
@@ -1933,6 +2012,44 @@
             "presence": "always",
             "source": "packages/rs-drive/src/drive/credit_pools/epochs/epoch_key_constants.rs",
             "description": "One epoch. Trees for 50 eras of epochs are created at genesis so storage fees can be spread forward.",
+            "states": [
+              {
+                "name": "future",
+                "title": "Future",
+                "description": "Created at genesis with every epoch of the next 50 eras, so that storage fees can be spread forward to it. It holds only its share of those fees.",
+                "keys": [
+                  "storage_fees"
+                ]
+              },
+              {
+                "name": "running",
+                "title": "Running, or ended and not paid yet",
+                "description": "Started by its first block, which in one batch writes the start fields, the protocol version, the fee multiplier and the proposers tree, and pays the block's processing fees in. The epoch stays like this after it ends, until its proposers are paid.",
+                "keys": [
+                  "start_block_core_height",
+                  "start_block_height",
+                  "proposers",
+                  "processing_fees",
+                  "storage_fees",
+                  "start_time",
+                  "protocol_version",
+                  "fee_multiplier"
+                ]
+              },
+              {
+                "name": "paid",
+                "title": "Paid out",
+                "description": "One batch pays the proposers, deletes the proposers tree and both fee items, and writes the finished epoch info. The summary exists since protocol version 9; before that a paid epoch kept its start fields only.",
+                "keys": [
+                  "start_block_core_height",
+                  "finished_epoch_info",
+                  "start_block_height",
+                  "start_time",
+                  "protocol_version",
+                  "fee_multiplier"
+                ]
+              }
+            ],
             "children": [
               {
                 "id": "pools.epoch.start_block_core_height",
@@ -1966,10 +2083,10 @@
                   "Item"
                 ],
                 "value": "serialized FinalizedEpochInfo",
-                "since": 1,
+                "since": 9,
                 "presence": "lazy",
                 "source": "packages/rs-drive/src/drive/credit_pools/epochs/epoch_key_constants.rs",
-                "description": "A summary written when the epoch is paid out.",
+                "description": "A summary of the epoch, written by the batch that pays it out and deletes its proposers and fee items.",
                 "children": []
               },
               {
@@ -2416,6 +2533,11 @@
             "kinds": [
               "Tree"
             ],
+            "flags": [
+              "EpochOwned",
+              "None"
+            ],
+            "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
             "since": 1,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -2434,6 +2556,11 @@
                   "Tree"
                 ],
                 "kinds_note": "An item holding the contract; a tree of revisions when the contract keeps history.",
+                "flags": [
+                  "EpochOwned",
+                  "None"
+                ],
+                "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
                 "value": "serialized DataContract",
                 "since": 1,
                 "presence": "always",
@@ -2493,6 +2620,11 @@
                 "kinds": [
                   "Tree"
                 ],
+                "flags": [
+                  "EpochOwned",
+                  "None"
+                ],
+                "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
                 "since": 1,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -2513,6 +2645,11 @@
                     "kinds": [
                       "Tree"
                     ],
+                    "flags": [
+                      "EpochOwned",
+                      "None"
+                    ],
+                    "flags_note": "The owner is the contract owner. System contracts created at genesis carry no flags.",
                     "since": 1,
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/document/paths.rs",
@@ -2537,6 +2674,11 @@
                           "ProvableCountProvableSumTree"
                         ],
                         "kinds_note": "Chosen by the document type's documentsCountable and documentsSummable settings; see primary_key_tree_type.rs.",
+                        "flags": [
+                          "EpochOwned",
+                          "None"
+                        ],
+                        "flags_note": "The owner is the contract owner. System contracts created at genesis carry no flags.",
                         "since": 1,
                         "presence": "lazy",
                         "source": "packages/rs-drive/src/drive/document/primary_key_tree_type.rs",
@@ -2562,6 +2704,11 @@
                               "SumTree"
                             ],
                             "kinds_note": "An item; with a sum when the document type is summable; a tree of revisions when it keeps history.",
+                            "flags": [
+                              "EpochOwned",
+                              "None"
+                            ],
+                            "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes carry no flags.",
                             "value": "serialized document",
                             "since": 1,
                             "presence": "always",
@@ -2636,6 +2783,11 @@
                           "ProvableCountProvableSumIndexedTree"
                         ],
                         "kinds_note": "A plain tree unless the index is range countable, range summable or ranked; see ranked_index_tree_type.rs.",
+                        "flags": [
+                          "EpochOwned",
+                          "None"
+                        ],
+                        "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data carry no flags.",
                         "since": 1,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/document/index_level_tree_types.rs",
@@ -2662,6 +2814,11 @@
                               "ProvableCountProvableSumTree"
                             ],
                             "kinds_note": "A plain tree unless the index is countable or summable, so each value carries its count or sum.",
+                            "flags": [
+                              "EpochOwned",
+                              "None"
+                            ],
+                            "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data carry no flags.",
                             "since": 1,
                             "presence": "always",
                             "source": "packages/rs-drive/src/drive/document/index_level_tree_types.rs",
@@ -2688,6 +2845,11 @@
                                   "ReferenceWithSumItem"
                                 ],
                                 "kinds_note": "The end of an index: a tree of members, or for a unique index the one reference itself.",
+                                "flags": [
+                                  "EpochOwned",
+                                  "None"
+                                ],
+                                "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data carry no flags.",
                                 "reference": "contracts.contract.documents.document_type.primary_key.document",
                                 "since": 1,
                                 "presence": "lazy",
@@ -2713,6 +2875,11 @@
                                       "ItemWithSumItem"
                                     ],
                                     "kinds_note": "A reference to the document; for index only document types an item holding the row's commitment. With a sum under a summable index.",
+                                    "flags": [
+                                      "EpochOwned",
+                                      "None"
+                                    ],
+                                    "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes carry no flags.",
                                     "value": "for index only document types, a 32 byte row commitment",
                                     "reference": "contracts.contract.documents.document_type.primary_key.document",
                                     "since": 1,
@@ -2745,6 +2912,11 @@
                                   "ProvableCountProvableSumIndexedTree"
                                 ],
                                 "kinds_note": "A plain tree unless the index is range countable, range summable or ranked; see ranked_index_tree_type.rs.",
+                                "flags": [
+                                  "EpochOwned",
+                                  "None"
+                                ],
+                                "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data carry no flags.",
                                 "since": 1,
                                 "presence": "always",
                                 "source": "packages/rs-drive/src/drive/document/index_level_tree_types.rs",
@@ -2771,6 +2943,11 @@
                 "kinds": [
                   "Tree"
                 ],
+                "flags": [
+                  "EpochOwned",
+                  "None"
+                ],
+                "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
                 "since": 14,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/contract/paths.rs",
@@ -2806,6 +2983,11 @@
                     "kinds": [
                       "Item"
                     ],
+                    "flags": [
+                      "EpochOwned",
+                      "None"
+                    ],
+                    "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
                     "value": "u32 big endian",
                     "since": 14,
                     "presence": "always",
@@ -2862,11 +3044,15 @@
                         "kinds": [
                           "Item"
                         ],
-                        "value": "empty; the flags name the moderator that pays for the entry",
+                        "flags": [
+                          "EpochOwned"
+                        ],
+                        "flags_note": "The owner is the moderator who added the entry. They pay for it, and are refunded when it is removed. A suspension replaced with a longer reason passes to the moderator who replaced it, who pays for the added bytes; replaced with a shorter or an equally long one it stays the first moderator's, who is refunded the removed bytes.",
+                        "value": "the moderator's reason: a tag byte (0 no code, 1 a code), the code as a u16 big endian when tagged, then the text as UTF-8 to the end of the value",
                         "since": 14,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/contract/paths.rs",
-                        "description": "One ban, until an unban.",
+                        "description": "One ban and why, until an unban.",
                         "children": []
                       }
                     ]
@@ -2902,11 +3088,15 @@
                         "kinds": [
                           "Item"
                         ],
-                        "value": "the block time in milliseconds the suspension runs until, u64 big endian",
+                        "flags": [
+                          "EpochOwned"
+                        ],
+                        "flags_note": "The owner is the moderator who added the entry. They pay for it, and are refunded when it is removed. A suspension replaced with a longer reason passes to the moderator who replaced it, who pays for the added bytes; replaced with a shorter or an equally long one it stays the first moderator's, who is refunded the removed bytes.",
+                        "value": "the block time in milliseconds the suspension runs until, u64 big endian, then the moderator's reason as in a banlist entry",
                         "since": 14,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/contract/paths.rs",
-                        "description": "One suspension. A lapsed one stays until the identity's next document transition sweeps it.",
+                        "description": "One suspension and why. A lapsed one stays until the identity's next document transition sweeps it.",
                         "children": []
                       }
                     ]
@@ -3317,6 +3507,10 @@
                             "kinds": [
                               "Item"
                             ],
+                            "flags": [
+                              "EpochOwned"
+                            ],
+                            "flags_note": "The owner is the member who signed, in the epoch they signed.",
                             "value": "serialized GroupAction",
                             "since": 9,
                             "presence": "always",
@@ -3356,6 +3550,10 @@
                                 "kinds": [
                                   "SumItem"
                                 ],
+                                "flags": [
+                                  "EpochOwned"
+                                ],
+                                "flags_note": "The owner is the member who signed, in the epoch they signed.",
                                 "value": "the signer's power in the group",
                                 "since": 9,
                                 "presence": "always",
@@ -3418,6 +3616,7 @@
                             "kinds": [
                               "Item"
                             ],
+                            "flags_note": "Entries moved or written when an action closes carry no flags.",
                             "value": "serialized GroupAction",
                             "since": 9,
                             "presence": "always",
@@ -3457,6 +3656,7 @@
                                 "kinds": [
                                   "SumItem"
                                 ],
+                                "flags_note": "Entries moved or written when an action closes carry no flags.",
                                 "value": "the signer's power in the group",
                                 "since": 9,
                                 "presence": "always",
@@ -3798,6 +3998,11 @@
                                 "kinds": [
                                   "Item"
                                 ],
+                                "flags": [
+                                  "EpochOwned",
+                                  "None"
+                                ],
+                                "flags_note": "The owner is the contender whose document created the level, who is refunded when the poll is cleaned up. Written without storage flags, it carries none.",
                                 "value": "serialized document",
                                 "since": 1,
                                 "presence": "always",
@@ -3837,6 +4042,11 @@
                                 "kinds": [
                                   "Tree"
                                 ],
+                                "flags": [
+                                  "EpochOwned",
+                                  "None"
+                                ],
+                                "flags_note": "The owner is the contender whose document created the level, who is refunded when the poll is cleaned up. Written without storage flags, it carries none.",
                                 "since": 1,
                                 "presence": "always",
                                 "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -3871,6 +4081,11 @@
                                     "kinds": [
                                       "Tree"
                                     ],
+                                    "flags": [
+                                      "EpochOwned",
+                                      "None"
+                                    ],
+                                    "flags_note": "The owner is the contender whose document created the level, who is refunded when the poll is cleaned up. Written without storage flags, it carries none.",
                                     "since": 1,
                                     "presence": "lazy",
                                     "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -3887,6 +4102,11 @@
                                         "kinds": [
                                           "SumTree"
                                         ],
+                                        "flags": [
+                                          "EpochOwned",
+                                          "None"
+                                        ],
+                                        "flags_note": "The owner is the contender whose document created the level, who is refunded when the poll is cleaned up. Written without storage flags, it carries none.",
                                         "since": 1,
                                         "presence": "always",
                                         "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -3929,6 +4149,11 @@
                                     "kinds": [
                                       "Tree"
                                     ],
+                                    "flags": [
+                                      "EpochOwned",
+                                      "None"
+                                    ],
+                                    "flags_note": "The owner is the contender whose document created the level, who is refunded when the poll is cleaned up. Written without storage flags, it carries none.",
                                     "since": 1,
                                     "presence": "lazy",
                                     "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -3945,6 +4170,11 @@
                                         "kinds": [
                                           "SumTree"
                                         ],
+                                        "flags": [
+                                          "EpochOwned",
+                                          "None"
+                                        ],
+                                        "flags_note": "The owner is the contender whose document created the level, who is refunded when the poll is cleaned up. Written without storage flags, it carries none.",
                                         "since": 1,
                                         "presence": "always",
                                         "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -3991,6 +4221,11 @@
                                     "kinds": [
                                       "Tree"
                                     ],
+                                    "flags": [
+                                      "EpochOwned",
+                                      "None"
+                                    ],
+                                    "flags_note": "The owner is the contender whose document created the level, who is refunded when the poll is cleaned up. Written without storage flags, it carries none.",
                                     "since": 1,
                                     "presence": "always",
                                     "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -4007,6 +4242,11 @@
                                         "kinds": [
                                           "Reference"
                                         ],
+                                        "flags": [
+                                          "EpochOwned",
+                                          "None"
+                                        ],
+                                        "flags_note": "The owner is the contender whose document created the level, who is refunded when the poll is cleaned up. Written without storage flags, it carries none.",
                                         "reference": "votes.contested_resource.active_polls.contract.document_type.storage.document",
                                         "since": 1,
                                         "presence": "always",
@@ -4025,6 +4265,11 @@
                                         "kinds": [
                                           "SumTree"
                                         ],
+                                        "flags": [
+                                          "EpochOwned",
+                                          "None"
+                                        ],
+                                        "flags_note": "The owner is the contender whose document created the level, who is refunded when the poll is cleaned up. Written without storage flags, it carries none.",
                                         "since": 1,
                                         "presence": "always",
                                         "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -4070,6 +4315,11 @@
                                     "kinds": [
                                       "Tree"
                                     ],
+                                    "flags": [
+                                      "EpochOwned",
+                                      "None"
+                                    ],
+                                    "flags_note": "The owner is the contender whose document created the level, who is refunded when the poll is cleaned up. Written without storage flags, it carries none.",
                                     "since": 1,
                                     "presence": "always",
                                     "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -4139,6 +4389,10 @@
                 "kinds": [
                   "Tree"
                 ],
+                "flags": [
+                  "EpochOwned"
+                ],
+                "flags_note": "The owner is the identity whose contested document started the poll.",
                 "since": 1,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/votes/paths.rs",
@@ -4159,6 +4413,10 @@
                     "kinds": [
                       "Item"
                     ],
+                    "flags": [
+                      "EpochOwned"
+                    ],
+                    "flags_note": "The owner is the identity whose contested document started the poll.",
                     "value": "serialized VotePoll",
                     "since": 1,
                     "presence": "always",
@@ -4681,6 +4939,221 @@
         }
       }
     },
+    "contract_groups.groups.group": {
+      "origin": "fixture contract_groups_and_bound_keys@14",
+      "tree": {
+        "hex": "02",
+        "left": {
+          "hex": "01",
+          "left": {
+            "hex": "00"
+          }
+        },
+        "right": {
+          "hex": "03"
+        }
+      }
+    },
+    "contract_groups.members.contract": {
+      "origin": "fixture contract_groups_and_bound_keys@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        },
+        "right": {
+          "hex": "02"
+        }
+      }
+    },
+    "contracts.contract": {
+      "origin": "fixture contracts_with_documents@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        },
+        "right": {
+          "hex": "02"
+        }
+      }
+    },
+    "contracts.contract.other": {
+      "origin": "fixture moderated_contract@14",
+      "tree": {
+        "hex": "80",
+        "left": {
+          "hex": "40",
+          "left": {
+            "hex": "20"
+          },
+          "right": {
+            "hex": "60"
+          }
+        },
+        "right": {
+          "hex": "c0"
+        }
+      }
+    },
+    "group_actions.contract.group": {
+      "origin": "fixture tokens_and_group_actions@14",
+      "tree": {
+        "hex": "4d",
+        "left": {
+          "hex": "49"
+        },
+        "right": {
+          "hex": "58"
+        }
+      }
+    },
+    "group_actions.contract.group.active.action": {
+      "origin": "fixture tokens_and_group_actions@14",
+      "tree": {
+        "hex": "53",
+        "left": {
+          "hex": "49"
+        }
+      }
+    },
+    "group_actions.contract.group.closed.action": {
+      "origin": "fixture tokens_and_group_actions@14",
+      "tree": {
+        "hex": "53",
+        "left": {
+          "hex": "49"
+        }
+      }
+    },
+    "identities.identity": {
+      "origin": "fixture contract_groups_and_bound_keys@14",
+      "tree": {
+        "hex": "80",
+        "left": {
+          "hex": "40",
+          "left": {
+            "hex": "20"
+          },
+          "right": {
+            "hex": "60"
+          }
+        },
+        "right": {
+          "hex": "c0",
+          "left": {
+            "hex": "a0"
+          },
+          "right": {
+            "hex": "e0"
+          }
+        }
+      },
+      "states": [
+        {
+          "state": "created",
+          "origin": "fixture identities@14",
+          "tree": {
+            "hex": "80",
+            "left": {
+              "hex": "60",
+              "left": {
+                "hex": "40"
+              }
+            },
+            "right": {
+              "hex": "c0",
+              "left": {
+                "hex": "a0"
+              }
+            }
+          }
+        },
+        {
+          "state": "used_with_a_contract",
+          "origin": "fixture identities@14",
+          "tree": {
+            "hex": "80",
+            "left": {
+              "hex": "40",
+              "left": {
+                "hex": "20"
+              },
+              "right": {
+                "hex": "60"
+              }
+            },
+            "right": {
+              "hex": "c0",
+              "left": {
+                "hex": "a0"
+              }
+            }
+          }
+        },
+        {
+          "state": "budgeted_key_and_contract",
+          "origin": "fixture contract_groups_and_bound_keys@14",
+          "tree": {
+            "hex": "80",
+            "left": {
+              "hex": "40",
+              "left": {
+                "hex": "20"
+              },
+              "right": {
+                "hex": "60"
+              }
+            },
+            "right": {
+              "hex": "c0",
+              "left": {
+                "hex": "a0"
+              },
+              "right": {
+                "hex": "e0"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "identities.identity.contract_info.bound": {
+      "origin": "fixture contract_groups_and_bound_keys@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        }
+      }
+    },
+    "identities.identity.key_references": {
+      "origin": "fixture identities@14",
+      "tree": {
+        "hex": "03",
+        "left": {
+          "hex": "00"
+        },
+        "right": {
+          "hex": "05"
+        }
+      }
+    },
+    "identities.identity.key_references.authentication": {
+      "origin": "fixture identities@14",
+      "tree": {
+        "hex": "02",
+        "left": {
+          "hex": "01",
+          "left": {
+            "hex": "00"
+          }
+        },
+        "right": {
+          "hex": "03"
+        }
+      }
+    },
     "misc": {
       "origin": "genesis@14",
       "tree": {
@@ -4689,6 +5162,92 @@
           "hex": "44"
         }
       }
+    },
+    "pools.epoch": {
+      "origin": "fixture current_epoch@14",
+      "tree": {
+        "hex": "6d",
+        "left": {
+          "hex": "68",
+          "left": {
+            "hex": "63"
+          }
+        },
+        "right": {
+          "hex": "76",
+          "left": {
+            "hex": "73",
+            "left": {
+              "hex": "70"
+            },
+            "right": {
+              "hex": "74"
+            }
+          },
+          "right": {
+            "hex": "78"
+          }
+        }
+      },
+      "states": [
+        {
+          "state": "future",
+          "origin": "fixture current_epoch@14",
+          "tree": {
+            "hex": "73"
+          }
+        },
+        {
+          "state": "running",
+          "origin": "fixture current_epoch@14",
+          "tree": {
+            "hex": "6d",
+            "left": {
+              "hex": "68",
+              "left": {
+                "hex": "63"
+              }
+            },
+            "right": {
+              "hex": "76",
+              "left": {
+                "hex": "73",
+                "left": {
+                  "hex": "70"
+                },
+                "right": {
+                  "hex": "74"
+                }
+              },
+              "right": {
+                "hex": "78"
+              }
+            }
+          }
+        },
+        {
+          "state": "paid",
+          "origin": "fixture paid_epoch@14",
+          "tree": {
+            "hex": "74",
+            "left": {
+              "hex": "66",
+              "left": {
+                "hex": "63"
+              },
+              "right": {
+                "hex": "68"
+              }
+            },
+            "right": {
+              "hex": "76",
+              "right": {
+                "hex": "78"
+              }
+            }
+          }
+        }
+      ]
     },
     "prefunded_balances": {
       "origin": "genesis@14",
@@ -4825,6 +5384,15 @@
         }
       }
     },
+    "tokens.distributions.perpetual.token": {
+      "origin": "fixture token_distributions_unclaimed@14",
+      "tree": {
+        "hex": "c0",
+        "left": {
+          "hex": "80"
+        }
+      }
+    },
     "tokens.distributions.timed": {
       "origin": "genesis@14",
       "tree": {
@@ -4864,6 +5432,24 @@
         "hex": "70",
         "left": {
           "hex": "69"
+        }
+      }
+    },
+    "votes.contested_resource.active_polls.contract.document_type": {
+      "origin": "fixture contested_documents@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        }
+      }
+    },
+    "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender": {
+      "origin": "fixture contested_documents@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
         }
       }
     },
