@@ -212,17 +212,29 @@ impl ModerateContractUser for Identity {
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
         // The proof of a ban covers every list the contract keeps, which the verifier reads
-        // from the contract through the context provider. A provider that does not fetch on
-        // demand would refuse a result the network already accepted, so the contract is
-        // fetched and registered with it before anything is paid for.
+        // from the contract through the context provider. A provider that can not resolve the
+        // contract would refuse a result the network already accepted, so before anything is
+        // paid for the provider is asked, and only when it does not have the contract (the
+        // lists never change, so whatever copy it holds will do) is the contract fetched and
+        // registered with it.
         if matches!(action, ContractUserModerationAction::Ban { .. }) {
-            let contract = DataContract::fetch(sdk, contract_id)
-                .await?
-                .ok_or_else(|| {
-                    Error::Generic(format!("data contract {contract_id} does not exist"))
-                })?;
             if let Some(provider) = sdk.context_provider() {
-                provider.register_data_contract(Arc::new(contract));
+                let resolved = provider
+                    .get_data_contract(&contract_id, sdk.version())
+                    .ok()
+                    .flatten()
+                    .is_some();
+                if !resolved {
+                    let contract =
+                        DataContract::fetch(sdk, contract_id)
+                            .await?
+                            .ok_or_else(|| {
+                                Error::Generic(format!(
+                                    "data contract {contract_id} does not exist"
+                                ))
+                            })?;
+                    provider.register_data_contract(Arc::new(contract));
+                }
             }
         }
 
