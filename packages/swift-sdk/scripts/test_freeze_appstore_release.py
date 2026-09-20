@@ -222,6 +222,8 @@ class GitHubTests(unittest.TestCase):
         api.request = mock.Mock(side_effect=[[{}] * 100, [{"number": 101}]])
         self.assertEqual(len(api.pull_requests("codex/freeze-swift-schema-v2.0.0")), 101)
         self.assertIn("page=2", api.request.call_args.args[1])
+        self.assertIn("sort=created", api.request.call_args.args[1])
+        self.assertIn("direction=desc", api.request.call_args.args[1])
 
 
 class WorkerIntegrationTests(unittest.TestCase):
@@ -307,6 +309,17 @@ p.write_text(json.dumps(r))
                     self.prepare(dry_run=True)
             with self.assertRaises(sqlite3.ProgrammingError):
                 database.execute("SELECT 1")
+
+    def test_newest_closed_unmerged_attempt_is_not_overridden_by_an_older_merge(self):
+        self.api.pull_requests.return_value = [
+            {"state": "closed", "merged_at": None},
+            {"state": "closed", "merged_at": "2026-09-18"},
+        ]
+        before = git(self.remote, "show-ref")
+        with self.assertRaisesRegex(worker.ReleaseError, "reopen it to retry"):
+            self.prepare()
+        self.assertEqual(git(self.remote, "show-ref"), before)
+        self.api.request.assert_not_called()
 
     def test_push_then_retry_reuses_draft_pr_and_commit(self):
         self.prepare()

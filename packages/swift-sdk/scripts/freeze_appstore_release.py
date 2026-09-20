@@ -224,7 +224,8 @@ class GitHub:
         page = 1
         while True:
             query = urllib.parse.urlencode({"head": f"dashpay:{branch}", "base": BASE_BRANCH,
-                                            "state": "all", "per_page": 100, "page": page})
+                                            "state": "all", "sort": "created", "direction": "desc",
+                                            "per_page": 100, "page": page})
             rows = self.request("GET", f"pulls?{query}")
             results.extend(rows)
             if len(rows) < 100:
@@ -309,6 +310,8 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
     opened = [pr for pr in pulls if pr["state"] == "open"]
     if len(opened) > 1:
         raise ReleaseError("Multiple open snapshot pull requests need manual reconciliation")
+    # The newest closed attempt records the maintainer's latest decision.
+    # An older merged PR must not override a subsequently rejected follow-up.
     if not opened and pulls and not pulls[0].get("merged_at"):
         raise ReleaseError("The snapshot pull request was closed without merging; reopen it to retry")
     env = git_environment(token)
