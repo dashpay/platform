@@ -19,7 +19,9 @@ pub(in crate::execution::validation::state_transition::state_transitions::contra
 impl ContractUserModerationStateTransitionStructureValidationV0
     for ContractUserModerationTransition
 {
-    /// An identity can not moderate itself, and a suspension ends within the JSON-safe range.
+    /// An identity can not moderate itself, a suspension ends within the JSON-safe range, and
+    /// the text of a ban's or a suspension's reason fits
+    /// `SystemLimits::max_contract_moderation_reason_length`; the reason's code is not checked.
     /// Whether the contract keeps the list, who may
     /// moderate it and what the target's status is all need state, so state validation
     /// decides those.
@@ -44,6 +46,13 @@ impl ContractUserModerationStateTransitionStructureValidationV0
                 ))
                 .into(),
             ));
+        }
+
+        if let Some(reason) = self.action().reason() {
+            let result = reason.validate(platform_version);
+            if !result.is_valid() {
+                return Ok(result);
+            }
         }
 
         Ok(SimpleConsensusValidationResult::new())

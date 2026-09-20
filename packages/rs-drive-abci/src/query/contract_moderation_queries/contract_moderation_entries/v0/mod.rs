@@ -2,7 +2,9 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
-use crate::query::contract_moderation_queries::{identifier_from_request, list_from_request};
+use crate::query::contract_moderation_queries::{
+    identifier_from_request, list_from_request, reason_to_response,
+};
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_contract_moderation_entries_request::GetContractModerationEntriesRequestV0;
@@ -101,6 +103,7 @@ impl<C> Platform<C> {
                                 .map(|entry| ContractModerationEntryProto {
                                     identity_id: entry.identity_id.to_vec(),
                                     until: entry.until,
+                                    reason: Some(reason_to_response(entry.reason)),
                                 })
                                 .collect(),
                         },
@@ -118,12 +121,16 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::contract_moderation_queries::tests::{
-        ban, store_contract, suspend, BANLIST, SUSPENSIONS,
+        ban, store_contract, suspend, BANLIST, BAN_REASON, SUSPENSIONS, SUSPENSION_REASON,
+        SUSPENSION_REASON_CODE,
     };
     use crate::query::tests::setup_platform;
+    use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::config::moderation::ContractModerationList;
+    use dpp::data_contract::config::moderation::{
+        ContractModerationList, ContractModerationReason,
+    };
     use dpp::identifier::Identifier;
     use drive::drive::contract::moderation::types::ContractModerationEntry;
     use drive::drive::Drive;
@@ -269,30 +276,46 @@ mod tests {
             };
             page.entries
                 .into_iter()
-                .map(|entry| (entry.identity_id, entry.until))
+                .map(|entry| (entry.identity_id, entry.until, entry.reason))
                 .collect::<Vec<_>>()
+        };
+        let ban_reason = || {
+            Some(ContractModerationReasonProto {
+                code: None,
+                text: BAN_REASON.to_string(),
+            })
         };
 
         // No limit is the default page, in identity id order.
         assert_eq!(
             entries(BANLIST, None, None),
             vec![
-                (first.to_vec(), None),
-                (second.to_vec(), None),
-                (third.to_vec(), None)
+                (first.to_vec(), None, ban_reason()),
+                (second.to_vec(), None, ban_reason()),
+                (third.to_vec(), None, ban_reason())
             ]
         );
         assert_eq!(
             entries(BANLIST, None, Some(2)),
-            vec![(first.to_vec(), None), (second.to_vec(), None)]
+            vec![
+                (first.to_vec(), None, ban_reason()),
+                (second.to_vec(), None, ban_reason())
+            ]
         );
         assert_eq!(
             entries(BANLIST, Some(second), Some(2)),
-            vec![(third.to_vec(), None)]
+            vec![(third.to_vec(), None, ban_reason())]
         );
         assert_eq!(
             entries(SUSPENSIONS, None, None),
-            vec![(second.to_vec(), Some(1_234))]
+            vec![(
+                second.to_vec(),
+                Some(1_234),
+                Some(ContractModerationReasonProto {
+                    code: Some(SUSPENSION_REASON_CODE as u32),
+                    text: SUSPENSION_REASON.to_string(),
+                })
+            )]
         );
 
         let result = platform
@@ -330,11 +353,13 @@ mod tests {
             vec![
                 ContractModerationEntry {
                     identity_id: second,
-                    until: None
+                    until: None,
+                    reason: ContractModerationReason::from_text(BAN_REASON),
                 },
                 ContractModerationEntry {
                     identity_id: third,
-                    until: None
+                    until: None,
+                    reason: ContractModerationReason::from_text(BAN_REASON),
                 }
             ]
         );

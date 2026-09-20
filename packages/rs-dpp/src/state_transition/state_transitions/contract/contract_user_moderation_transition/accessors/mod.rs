@@ -47,7 +47,7 @@ impl ContractUserModerationTransitionAccessorsV0 for ContractUserModerationTrans
         }
     }
 
-    fn action(&self) -> ContractUserModerationAction {
+    fn action(&self) -> &ContractUserModerationAction {
         match self {
             ContractUserModerationTransition::V0(transition) => transition.action(),
         }

@@ -114,6 +114,7 @@ impl StateTransitionFieldTypes for ContractUserModerationTransition {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::data_contract::config::moderation::ContractModerationReason;
     use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
     use crate::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
     use crate::state_transition::{
@@ -132,6 +133,7 @@ mod test {
             action: ContractUserModerationAction::Suspend {
                 identity_id: Identifier::random(),
                 until: 1_800_000_000_000,
+                reason: ContractModerationReason::from_text("flooding"),
             },
             user_fee_increase: 2,
             signature_public_key_id: 0,
@@ -154,6 +156,10 @@ mod test {
         for action in [
             ContractUserModerationAction::Ban {
                 identity_id: target,
+                reason: ContractModerationReason {
+                    code: Some(u16::MAX),
+                    text: "spam".to_string(),
+                },
             },
             ContractUserModerationAction::Unban {
                 identity_id: target,
@@ -161,6 +167,7 @@ mod test {
             ContractUserModerationAction::Suspend {
                 identity_id: target,
                 until: 5,
+                reason: ContractModerationReason::default(),
             },
             ContractUserModerationAction::Unsuspend {
                 identity_id: target,
@@ -267,6 +274,7 @@ mod test {
 pub(crate) mod json_convertible_tests {
     use super::*;
 
+    use crate::data_contract::config::moderation::ContractModerationReason;
     use platform_value::{platform_value, BinaryData, Identifier};
     use serde_json::json;
 
@@ -278,6 +286,10 @@ pub(crate) mod json_convertible_tests {
             action: ContractUserModerationAction::Suspend {
                 identity_id: Identifier::new([0x77; 32]),
                 until: 1_800_000_000_000,
+                reason: ContractModerationReason {
+                    code: Some(12),
+                    text: "flooding".to_string(),
+                },
             },
             user_fee_increase: 4,
             signature_public_key_id: 6,
@@ -301,6 +313,7 @@ pub(crate) mod json_convertible_tests {
                     "$type": "suspend",
                     "identityId": Identifier::new([0x77; 32]),
                     "until": 1_800_000_000_000u64,
+                    "reason": {"code": 12, "text": "flooding"},
                 },
                 "userFeeIncrease": 4,
                 "signaturePublicKeyId": 6,
@@ -327,6 +340,7 @@ pub(crate) mod json_convertible_tests {
                     "$type": "suspend",
                     "identityId": Identifier::new([0x77; 32]),
                     "until": 1_800_000_000_000u64,
+                    "reason": {"code": 12u16, "text": "flooding"},
                 },
                 "userFeeIncrease": 4u16,
                 "signaturePublicKeyId": 6u32,

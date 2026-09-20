@@ -11,7 +11,10 @@ const CONTRACT_FLAGS: &str =
      created in. System contracts created at genesis carry no flags.";
 const MODERATOR_FLAGS: &str =
     "The owner is the moderator who added the entry. They pay for it, and are \
-     refunded when it is removed.";
+     refunded when it is removed. A suspension replaced with a longer reason \
+     passes to the moderator who replaced it, who pays for the added bytes; \
+     replaced with a shorter or an equally long one it stays the first \
+     moderator's, who is refunded the removed bytes.";
 
 /// Data contracts and their documents
 pub(crate) fn structure() -> StructureNode {
@@ -121,8 +124,12 @@ pub(crate) fn structure() -> StructureNode {
                         )
                         .kind(ElementKind::Item)
                         .flags(&[FlagsKind::EpochOwned], MODERATOR_FLAGS)
-                        .value("empty; the key carries the information")
-                        .describe("One ban, until an unban."),
+                        .value(
+                            "the moderator's reason: a tag byte (0 no code, 1 a \
+                                 code), the code as a u16 big endian when tagged, \
+                                 then the text as UTF-8 to the end of the value",
+                        )
+                        .describe("One ban and why, until an unban."),
                     ),
                     StructureNode::fixed(
                         "suspensions",
@@ -147,10 +154,11 @@ pub(crate) fn structure() -> StructureNode {
                         .flags(&[FlagsKind::EpochOwned], MODERATOR_FLAGS)
                         .value(
                             "the block time in milliseconds the suspension \
-                                 runs until, u64 big endian",
+                                 runs until, u64 big endian, then the moderator's \
+                                 reason as in a banlist entry",
                         )
                         .describe(
-                            "One suspension. A lapsed one stays until the \
+                            "One suspension and why. A lapsed one stays until the \
                                  identity's next document transition sweeps it.",
                         ),
                     ),

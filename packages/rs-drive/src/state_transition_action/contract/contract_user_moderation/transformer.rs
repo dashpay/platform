@@ -4,10 +4,11 @@ use dpp::data_contract::config::moderation::ContractModerationStatus;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
 
 impl ContractUserModerationTransitionAction {
-    /// The action of a borrowed transition, carrying the target's status as it is stored
+    /// The action of a borrowed transition, keeping of the target's stored status what Drive
+    /// needs: whether it carries a suspension
     pub fn from_borrowed_transition_with_status(
         value: &ContractUserModerationTransition,
-        current_status: ContractModerationStatus,
+        current_status: &ContractModerationStatus,
     ) -> Self {
         match value {
             ContractUserModerationTransition::V0(v0) => {

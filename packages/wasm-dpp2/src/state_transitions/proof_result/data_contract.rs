@@ -4,9 +4,12 @@ use super::helpers::js_obj;
 use crate::DataContractWasm;
 use crate::IdentifierWasm;
 use crate::PlatformVersionLikeJs;
-use crate::data_contract::{DataContractJSONJs, DataContractObjectJs};
+use crate::data_contract::{
+    ContractModerationReasonJs, DataContractJSONJs, DataContractObjectJs, moderation_reason_to_js,
+};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
+use dpp::data_contract::config::moderation::ContractModerationReason;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
@@ -87,14 +90,43 @@ pub struct VerifiedContractModerationListStatusesWasm {
     pub lists: Vec<String>,
     /// When `lists` includes `banlist`: the identity is on the banlist
     pub banned: Option<bool>,
+    #[wasm_bindgen(skip)]
+    pub ban_reason: Option<ContractModerationReason>,
     /// When `lists` includes `suspensions`: the block time, in milliseconds, until which the
     /// identity is suspended
     #[wasm_bindgen(js_name = "suspendedUntil")]
     pub suspended_until: Option<u64>,
+    #[wasm_bindgen(skip)]
+    pub suspension_reason: Option<ContractModerationReason>,
+}
+
+impl VerifiedContractModerationListStatusesWasm {
+    fn reason_or_undefined(reason: &Option<ContractModerationReason>) -> JsValue {
+        reason
+            .as_ref()
+            .map(moderation_reason_to_js)
+            .unwrap_or(JsValue::UNDEFINED)
+    }
 }
 
 #[wasm_bindgen(js_class = VerifiedContractModerationListStatuses)]
 impl VerifiedContractModerationListStatusesWasm {
+    /// When the identity is banned: why
+    #[wasm_bindgen(getter = "banReason")]
+    pub fn ban_reason(&self) -> Option<ContractModerationReasonJs> {
+        self.ban_reason
+            .as_ref()
+            .map(|reason| moderation_reason_to_js(reason).into())
+    }
+
+    /// When the identity is suspended: why
+    #[wasm_bindgen(getter = "suspensionReason")]
+    pub fn suspension_reason(&self) -> Option<ContractModerationReasonJs> {
+        self.suspension_reason
+            .as_ref()
+            .map(|reason| moderation_reason_to_js(reason).into())
+    }
+
     #[wasm_bindgen(js_name = toObject)]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
         Ok(js_obj(&[
@@ -114,11 +146,16 @@ impl VerifiedContractModerationListStatusesWasm {
                     .map(JsValue::from_bool)
                     .unwrap_or(JsValue::UNDEFINED),
             ),
+            ("banReason", Self::reason_or_undefined(&self.ban_reason)),
             (
                 "suspendedUntil",
                 self.suspended_until
                     .map(|until| JsValue::from(js_sys::BigInt::from(until)))
                     .unwrap_or(JsValue::UNDEFINED),
+            ),
+            (
+                "suspensionReason",
+                Self::reason_or_undefined(&self.suspension_reason),
             ),
         ]))
     }
@@ -148,11 +185,16 @@ impl VerifiedContractModerationListStatusesWasm {
                     .map(JsValue::from_bool)
                     .unwrap_or(JsValue::UNDEFINED),
             ),
+            ("banReason", Self::reason_or_undefined(&self.ban_reason)),
             (
                 "suspendedUntil",
                 self.suspended_until
                     .map(|until| JsValue::from_f64(until as f64))
                     .unwrap_or(JsValue::UNDEFINED),
+            ),
+            (
+                "suspensionReason",
+                Self::reason_or_undefined(&self.suspension_reason),
             ),
         ]))
     }

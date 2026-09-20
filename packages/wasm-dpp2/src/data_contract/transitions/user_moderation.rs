@@ -4,6 +4,7 @@ use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{try_from_options, try_to_u16, try_to_u32, try_to_u64};
+use dpp::data_contract::config::moderation::ContractModerationReason;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -19,18 +20,34 @@ use dpp::state_transition::{
     StateTransitionSingleSigned,
 };
 use serde::Deserialize;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const CONTRACT_USER_MODERATION_TS: &str = r#"
 /**
+ * Why a moderator banned or suspended an identity. Every ban and every suspension carries
+ * one, and it is stored with the entry. Nothing checks what a moderator writes.
+ */
+export interface ContractModerationReason {
+    /**
+     * Reserved for the ban codes a contract may declare in a later protocol version: a u16,
+     * expected to be left out today. A value is stored as written and never checked. A reason
+     * read back always carries it, `null` when there is none.
+     */
+    code?: number | null;
+    /** Free text, at most 1024 bytes of UTF-8. May be empty. */
+    text: string;
+}
+
+/**
  * What a moderation transition does to one identity on a contract. The wire shape of the
  * action, as the transition's `action` field carries it.
  */
 export type ContractUserModerationActionJSON =
-  | { $type: "ban"; identityId: string }
+  | { $type: "ban"; identityId: string; reason: ContractModerationReason }
   | { $type: "unban"; identityId: string }
-  | { $type: "suspend"; identityId: string; until: number | string }
+  | { $type: "suspend"; identityId: string; until: number | string; reason: ContractModerationReason }
   | { $type: "unsuspend"; identityId: string };
 
 /**
@@ -51,6 +68,8 @@ export interface ContractUserModerationTransitionOptions {
     identityId: IdentifierLike;
     /** For a suspend: the block time, in milliseconds, at which the suspension lapses */
     until?: bigint;
+    /** For a ban and a suspend, which both need one: why. Refused beside another action. */
+    reason?: ContractModerationReason;
     userFeeIncrease?: number;
 }
 
@@ -61,7 +80,12 @@ export interface ContractUserModerationObject {
     ownerId: Uint8Array;
     dataContractId: Uint8Array;
     identityContractNonce: bigint;
-    action: { $type: string; identityId: Uint8Array; until?: bigint };
+    action: {
+        $type: string;
+        identityId: Uint8Array;
+        until?: bigint;
+        reason?: ContractModerationReason;
+    };
     userFeeIncrease: number;
     signature?: Uint8Array;
     signaturePublicKeyId?: number;
@@ -91,6 +115,21 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "ContractUserModerationJSON")]
     pub type ContractUserModerationJSONJs;
+
+    #[wasm_bindgen(typescript_type = "ContractModerationReason")]
+    pub type ContractModerationReasonJs;
+}
+
+/// A reason as the plain object JavaScript reads: `code`, `null` when there is none, and
+/// `text`. The shape `toJSON()` and `toObject()` give the reason inside a transition, so a
+/// reason compares equal whichever call produced it.
+pub fn moderation_reason_to_js(reason: &ContractModerationReason) -> JsValue {
+    let object = js_sys::Object::new();
+    // Setting a property on a fresh plain object cannot fail.
+    let code = reason.code.map_or(JsValue::NULL, JsValue::from);
+    let _ = js_sys::Reflect::set(&object, &"code".into(), &code);
+    let _ = js_sys::Reflect::set(&object, &"text".into(), &JsValue::from_str(&reason.text));
+    object.into()
 }
 
 /// Serde struct for the primitive fields of the options
@@ -101,6 +140,8 @@ struct ContractUserModerationOptionsInput {
     action: String,
     #[serde(default)]
     until: Option<u64>,
+    #[serde(default)]
+    reason: Option<ContractModerationReason>,
     /// `undefined` reaches serde as a unit value, so the fee is read as an option and defaulted
     #[serde(default)]
     user_fee_increase: Option<UserFeeIncrease>,
@@ -123,11 +164,13 @@ impl From<ContractUserModerationWasm> for ContractUserModerationTransition {
     }
 }
 
-/// The action for a name and a target, `until` given for a suspend.
+/// The action for a name and a target, `until` given for a suspend and `reason` for a ban and
+/// a suspend.
 pub fn moderation_action_from_parts(
     action: &str,
     identity_id: dpp::prelude::Identifier,
     until: Option<u64>,
+    reason: Option<ContractModerationReason>,
 ) -> WasmDppResult<ContractUserModerationAction> {
     // Only a suspension ends: an `until` beside another action is refused rather than dropped,
     // or a caller asking for a timed ban would sign a permanent one.
@@ -136,13 +179,33 @@ pub fn moderation_action_from_parts(
             "`until` is only valid for a suspend action, not for `{action}`"
         )));
     }
+    // The same goes for a reason: only an action that adds an entry stores one, and both
+    // need it.
+    let adds_an_entry = matches!(action, "ban" | "suspend");
+    if reason.is_some() && !adds_an_entry {
+        return Err(WasmDppError::invalid_argument(format!(
+            "`reason` is only valid for a ban or a suspend action, not for `{action}`"
+        )));
+    }
+    let reason = |action: &str| {
+        reason.ok_or_else(|| {
+            WasmDppError::invalid_argument(format!("a {action} action needs a `reason`"))
+        })
+    };
     match action {
-        "ban" => Ok(ContractUserModerationAction::Ban { identity_id }),
+        "ban" => Ok(ContractUserModerationAction::Ban {
+            identity_id,
+            reason: reason("ban")?,
+        }),
         "unban" => Ok(ContractUserModerationAction::Unban { identity_id }),
         "suspend" => {
             let until = until
                 .ok_or_else(|| WasmDppError::invalid_argument("a suspend action needs `until`"))?;
-            Ok(ContractUserModerationAction::Suspend { identity_id, until })
+            Ok(ContractUserModerationAction::Suspend {
+                identity_id,
+                until,
+                reason: reason("suspend")?,
+            })
         }
         "unsuspend" => Ok(ContractUserModerationAction::Unsuspend { identity_id }),
         other => Err(WasmDppError::invalid_argument(format!(
@@ -167,7 +230,12 @@ impl ContractUserModerationWasm {
             serde_wasm_bindgen::from_value(options.into())
                 .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
-        let action = moderation_action_from_parts(&input.action, identity_id.into(), input.until)?;
+        let action = moderation_action_from_parts(
+            &input.action,
+            identity_id.into(),
+            input.until,
+            input.reason,
+        )?;
 
         Ok(ContractUserModerationWasm(
             ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
@@ -309,6 +377,15 @@ impl ContractUserModerationWasm {
     #[wasm_bindgen(getter = "until")]
     pub fn until(&self) -> Option<u64> {
         self.0.action().until()
+    }
+
+    /// For a ban and a suspend, why
+    #[wasm_bindgen(getter = "reason")]
+    pub fn reason(&self) -> Option<ContractModerationReasonJs> {
+        self.0
+            .action()
+            .reason()
+            .map(|reason| moderation_reason_to_js(reason).into())
     }
 
     #[wasm_bindgen(js_name = "toStateTransition")]

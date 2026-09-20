@@ -4,8 +4,9 @@ use crate::types::contract_groups::{
     ContractGroupMembershipsForContract,
 };
 use crate::types::contract_moderation::{
-    entries_from_response, list_from_request, lists_from_request, ContractModerationEntries,
-    ContractModerationList, ContractModerationListStatuses, ContractModerationStatus,
+    entries_from_response, list_from_request, lists_from_request, reason_from_response,
+    ContractBan, ContractModerationEntries, ContractModerationList, ContractModerationListStatuses,
+    ContractModerationStatus, ContractSuspension,
 };
 use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
@@ -934,12 +935,23 @@ impl FromUnproved<platform::GetContractModerationStatusRequest> for ContractMode
                     }
                     None => false,
                 };
+                // An entry comes with its reason. Only the lists asked for are decoded, since
+                // only they are reported.
+                let ban = (banned && lists.contains(&ContractModerationList::Banlist))
+                    .then(|| reason_from_response(status.ban_reason))
+                    .transpose()?
+                    .map(|reason| ContractBan { reason });
+                let suspension = status
+                    .suspended_until
+                    .filter(|_| lists.contains(&ContractModerationList::Suspensions))
+                    .map(|until| {
+                        reason_from_response(status.suspension_reason)
+                            .map(|reason| ContractSuspension { until, reason })
+                    })
+                    .transpose()?;
                 Some(ContractModerationListStatuses::from_status(
                     &lists,
-                    &ContractModerationStatus {
-                        banned,
-                        suspended_until: status.suspended_until,
-                    },
+                    &ContractModerationStatus { ban, suspension },
                 ))
             }
             Some(V0Result::Proof(_)) => {
@@ -1393,6 +1405,7 @@ mod contract_groups_tests {
 #[cfg(test)]
 mod contract_moderation_tests {
     use super::*;
+    use crate::types::contract_moderation::ContractModerationReason;
     use dapi_grpc::platform::v0::get_contract_moderation_status_request::{
         GetContractModerationStatusRequestV0, Version as StatusRequestVersion,
     };
@@ -1401,6 +1414,7 @@ mod contract_moderation_tests {
         ContractModerationStatus as ContractModerationStatusProto,
         GetContractModerationStatusResponseV0, Version as StatusResponseVersion,
     };
+    use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
     use dapi_grpc::platform::v0::ResponseMetadata;
     use dpp::dashcore::Network;
     use dpp::version::PlatformVersion;
@@ -1447,6 +1461,14 @@ mod contract_moderation_tests {
                 banned: Some(true),
                 suspended_until: Some(7),
                 lists: vec![BANLIST, SUSPENSIONS],
+                ban_reason: Some(ContractModerationReasonProto {
+                    code: None,
+                    text: "spam".to_string(),
+                }),
+                suspension_reason: Some(ContractModerationReasonProto {
+                    code: Some(9),
+                    text: "flooding".to_string(),
+                }),
             },
         )
         .expect("expected the status to convert")
@@ -1454,6 +1476,58 @@ mod contract_moderation_tests {
 
         assert_eq!(statuses.banned(), Some(true));
         assert_eq!(statuses.suspended_until(), Some(Some(7)));
+        assert_eq!(
+            statuses.ban().flatten().map(|ban| &ban.reason),
+            Some(&ContractModerationReason::from_text("spam"))
+        );
+        assert_eq!(
+            statuses.suspension().flatten().map(|entry| &entry.reason),
+            Some(&ContractModerationReason {
+                code: Some(9),
+                text: "flooding".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn should_refuse_an_entry_without_a_reason_or_with_a_code_past_u16() {
+        let no_reason = status(
+            vec![BANLIST],
+            ContractModerationStatusProto {
+                banned: Some(true),
+                lists: vec![BANLIST],
+                ..Default::default()
+            },
+        );
+        assert!(matches!(no_reason, Err(Error::ResponseDecodeError { .. })));
+
+        let wide_code = status(
+            vec![SUSPENSIONS],
+            ContractModerationStatusProto {
+                suspended_until: Some(7),
+                lists: vec![SUSPENSIONS],
+                suspension_reason: Some(ContractModerationReasonProto {
+                    code: Some(u16::MAX as u32 + 1),
+                    text: String::new(),
+                }),
+                ..Default::default()
+            },
+        );
+        assert!(matches!(wide_code, Err(Error::ResponseDecodeError { .. })));
+
+        // A clean identity has no reason to give.
+        let clean = status(
+            vec![BANLIST, SUSPENSIONS],
+            ContractModerationStatusProto {
+                banned: Some(false),
+                lists: vec![BANLIST, SUSPENSIONS],
+                ..Default::default()
+            },
+        )
+        .expect("expected the status to convert")
+        .expect("expected a status");
+        assert_eq!(clean.ban(), Some(None));
+        assert_eq!(clean.suspension(), Some(None));
     }
 
     #[test]
@@ -1463,9 +1537,8 @@ mod contract_moderation_tests {
         let uncovered = status(
             vec![BANLIST, SUSPENSIONS],
             ContractModerationStatusProto {
-                banned: None,
-                suspended_until: None,
                 lists: vec![SUSPENSIONS],
+                ..Default::default()
             },
         );
         assert!(matches!(uncovered, Err(Error::ResponseDecodeError { .. })));
@@ -1473,9 +1546,8 @@ mod contract_moderation_tests {
         let covered_but_unset = status(
             vec![BANLIST],
             ContractModerationStatusProto {
-                banned: None,
-                suspended_until: None,
                 lists: vec![BANLIST],
+                ..Default::default()
             },
         );
         assert!(matches!(

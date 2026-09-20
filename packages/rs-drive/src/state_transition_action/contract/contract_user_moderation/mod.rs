@@ -5,7 +5,6 @@ pub mod v0;
 
 use crate::state_transition_action::contract::contract_user_moderation::v0::ContractUserModerationTransitionActionV0;
 use derive_more::From;
-use dpp::data_contract::config::moderation::ContractModerationStatus;
 use dpp::platform_value::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
@@ -42,16 +41,16 @@ impl ContractUserModerationTransitionAction {
     }
 
     /// What is done, to whom
-    pub fn action(&self) -> ContractUserModerationAction {
+    pub fn action(&self) -> &ContractUserModerationAction {
         match self {
-            ContractUserModerationTransitionAction::V0(action) => action.action,
+            ContractUserModerationTransitionAction::V0(action) => &action.action,
         }
     }
 
-    /// The target's status as read when the transition was validated
-    pub fn current_status(&self) -> ContractModerationStatus {
+    /// Whether the target carried a suspension when the transition was validated
+    pub fn target_is_suspended(&self) -> bool {
         match self {
-            ContractUserModerationTransitionAction::V0(action) => action.current_status,
+            ContractUserModerationTransitionAction::V0(action) => action.target_is_suspended,
         }
     }
 

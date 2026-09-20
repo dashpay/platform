@@ -331,7 +331,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION`) bans, unbans,
 ///     suspends until a block time (at most
 ///     `SystemLimits::max_contract_suspension_until`) and unsuspends one
-///     identity, signed by the owner or a moderator with a CRITICAL key;
+///     identity, signed by the owner or a moderator with a CRITICAL key; a
+///     ban and a suspension carry a reason, stored with the entry: a text of
+///     at most `SystemLimits::max_contract_moderation_reason_length` bytes and
+///     an optional code nothing checks, reserved for ban codes a contract may
+///     declare in a later version;
 ///     `DRIVE_ABCI_VALIDATION_VERSIONS_V10` turns its gates on, moves the
 ///     contract update's basic structure to 2 and the contract create and
 ///     update state validation (already 1 here) checks the named moderators.
@@ -434,7 +438,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators and max_contract_suspension_until
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until and max_contract_moderation_reason_length
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

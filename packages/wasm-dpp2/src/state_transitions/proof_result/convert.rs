@@ -329,18 +329,22 @@ pub fn convert_proof_result(
         ) => {
             let mut lists = vec![];
             let mut banned = None;
+            let mut ban_reason = None;
             let mut suspended_until = None;
+            let mut suspension_reason = None;
             for status in statuses.0 {
                 match status {
-                    ContractModerationListStatus::Banlist { banned: is_banned } => {
+                    ContractModerationListStatus::Banlist { ban } => {
                         lists.push("banlist".to_string());
-                        banned = Some(is_banned);
+                        banned = Some(ban.is_some());
+                        ban_reason = ban.map(|ban| ban.reason);
                     }
-                    ContractModerationListStatus::Suspensions {
-                        suspended_until: until,
-                    } => {
+                    ContractModerationListStatus::Suspensions { suspension } => {
                         lists.push("suspensions".to_string());
-                        suspended_until = until;
+                        if let Some(suspension) = suspension {
+                            suspended_until = Some(suspension.until);
+                            suspension_reason = Some(suspension.reason);
+                        }
                     }
                 }
             }
@@ -349,7 +353,9 @@ pub fn convert_proof_result(
                 identity_id: identity_id.into(),
                 lists,
                 banned,
+                ban_reason,
                 suspended_until,
+                suspension_reason,
             }
             .into()
         }

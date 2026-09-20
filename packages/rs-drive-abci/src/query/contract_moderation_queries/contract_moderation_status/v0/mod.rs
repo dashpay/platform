@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::contract_moderation_queries::{
-    identifier_from_request, list_from_request, list_to_request,
+    identifier_from_request, list_from_request, list_to_request, reason_to_response,
 };
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
@@ -103,8 +103,12 @@ impl<C> Platform<C> {
                     ContractModerationStatusProto {
                         banned: requested
                             .contains(&ContractModerationList::Banlist)
-                            .then_some(status.banned),
-                        suspended_until: status.suspended_until,
+                            .then_some(status.banned()),
+                        suspended_until: status.suspended_until(),
+                        ban_reason: status.ban.map(|ban| reason_to_response(ban.reason)),
+                        suspension_reason: status
+                            .suspension
+                            .map(|suspension| reason_to_response(suspension.reason)),
                         lists: requested
                             .iter()
                             .map(|list| list_to_request(*list))
@@ -123,13 +127,15 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::contract_moderation_queries::tests::{
-        ban, store_contract, suspend, BANLIST, SUSPENSIONS,
+        ban, store_contract, suspend, BANLIST, BAN_REASON, SUSPENSIONS, SUSPENSION_REASON,
+        SUSPENSION_REASON_CODE,
     };
     use crate::query::tests::setup_platform;
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::config::moderation::{
-        ContractModerationListStatuses, ContractModerationStatus,
+        ContractBan, ContractModerationListStatuses, ContractModerationReason,
+        ContractModerationStatus, ContractSuspension,
     };
     use dpp::identifier::Identifier;
     use drive::drive::Drive;
@@ -264,15 +270,23 @@ mod tests {
             (
                 banned,
                 ContractModerationStatus {
-                    banned: true,
-                    suspended_until: None,
+                    ban: Some(ContractBan {
+                        reason: ContractModerationReason::from_text(BAN_REASON),
+                    }),
+                    suspension: None,
                 },
             ),
             (
                 suspended,
                 ContractModerationStatus {
-                    banned: false,
-                    suspended_until: Some(1_234),
+                    ban: None,
+                    suspension: Some(ContractSuspension {
+                        until: 1_234,
+                        reason: ContractModerationReason {
+                            code: Some(SUSPENSION_REASON_CODE),
+                            text: SUSPENSION_REASON.to_string(),
+                        },
+                    }),
                 },
             ),
             (clean, ContractModerationStatus::default()),
@@ -303,9 +317,23 @@ mod tests {
             else {
                 panic!("expected a status");
             };
-            assert_eq!(status.banned, Some(expected.banned));
+            assert_eq!(status.banned, Some(expected.banned()));
             assert_eq!(status.lists, vec![BANLIST, SUSPENSIONS]);
-            assert_eq!(status.suspended_until, expected.suspended_until);
+            assert_eq!(status.suspended_until, expected.suspended_until());
+            assert_eq!(
+                status.ban_reason,
+                expected
+                    .ban
+                    .clone()
+                    .map(|ban| reason_to_response(ban.reason))
+            );
+            assert_eq!(
+                status.suspension_reason,
+                expected
+                    .suspension
+                    .clone()
+                    .map(|suspension| reason_to_response(suspension.reason))
+            );
 
             let result = platform
                 .query_contract_moderation_status_v0(

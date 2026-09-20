@@ -18,4 +18,7 @@ pub use model::{
 };
 pub use transitions::create::DataContractCreateTransitionWasm;
 pub use transitions::update::DataContractUpdateTransitionWasm;
-pub use transitions::user_moderation::{ContractUserModerationWasm, moderation_action_from_parts};
+pub use transitions::user_moderation::{
+    ContractModerationReasonJs, ContractUserModerationWasm, moderation_action_from_parts,
+    moderation_reason_to_js,
+};

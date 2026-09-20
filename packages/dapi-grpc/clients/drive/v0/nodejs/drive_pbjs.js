@@ -24015,6 +24015,216 @@ $root.org = (function() {
                         return values;
                     })();
 
+                    v0.ContractModerationReason = (function() {
+
+                        /**
+                         * Properties of a ContractModerationReason.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IContractModerationReason
+                         * @property {number|null} [code] ContractModerationReason code
+                         * @property {string|null} [text] ContractModerationReason text
+                         */
+
+                        /**
+                         * Constructs a new ContractModerationReason.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a ContractModerationReason.
+                         * @implements IContractModerationReason
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IContractModerationReason=} [properties] Properties to set
+                         */
+                        function ContractModerationReason(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * ContractModerationReason code.
+                         * @member {number} code
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @instance
+                         */
+                        ContractModerationReason.prototype.code = 0;
+
+                        /**
+                         * ContractModerationReason text.
+                         * @member {string} text
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @instance
+                         */
+                        ContractModerationReason.prototype.text = "";
+
+                        /**
+                         * Creates a new ContractModerationReason instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IContractModerationReason=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.ContractModerationReason} ContractModerationReason instance
+                         */
+                        ContractModerationReason.create = function create(properties) {
+                            return new ContractModerationReason(properties);
+                        };
+
+                        /**
+                         * Encodes the specified ContractModerationReason message. Does not implicitly {@link org.dash.platform.dapi.v0.ContractModerationReason.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IContractModerationReason} message ContractModerationReason message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        ContractModerationReason.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.code != null && Object.hasOwnProperty.call(message, "code"))
+                                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.code);
+                            if (message.text != null && Object.hasOwnProperty.call(message, "text"))
+                                writer.uint32(/* id 2, wireType 2 =*/18).string(message.text);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified ContractModerationReason message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.ContractModerationReason.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IContractModerationReason} message ContractModerationReason message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        ContractModerationReason.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a ContractModerationReason message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.ContractModerationReason} ContractModerationReason
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        ContractModerationReason.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.ContractModerationReason();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.code = reader.uint32();
+                                    break;
+                                case 2:
+                                    message.text = reader.string();
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a ContractModerationReason message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.ContractModerationReason} ContractModerationReason
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        ContractModerationReason.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a ContractModerationReason message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        ContractModerationReason.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.code != null && message.hasOwnProperty("code"))
+                                if (!$util.isInteger(message.code))
+                                    return "code: integer expected";
+                            if (message.text != null && message.hasOwnProperty("text"))
+                                if (!$util.isString(message.text))
+                                    return "text: string expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates a ContractModerationReason message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.ContractModerationReason} ContractModerationReason
+                         */
+                        ContractModerationReason.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.ContractModerationReason)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.ContractModerationReason();
+                            if (object.code != null)
+                                message.code = object.code >>> 0;
+                            if (object.text != null)
+                                message.text = String(object.text);
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a ContractModerationReason message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ContractModerationReason} message ContractModerationReason
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        ContractModerationReason.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults) {
+                                object.code = 0;
+                                object.text = "";
+                            }
+                            if (message.code != null && message.hasOwnProperty("code"))
+                                object.code = message.code;
+                            if (message.text != null && message.hasOwnProperty("text"))
+                                object.text = message.text;
+                            return object;
+                        };
+
+                        /**
+                         * Converts this ContractModerationReason to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.ContractModerationReason
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        ContractModerationReason.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return ContractModerationReason;
+                    })();
+
                     v0.GetContractModerationStatusRequest = (function() {
 
                         /**
@@ -24760,6 +24970,8 @@ $root.org = (function() {
                              * @property {boolean|null} [banned] ContractModerationStatus banned
                              * @property {number|Long|null} [suspendedUntil] ContractModerationStatus suspendedUntil
                              * @property {Array.<org.dash.platform.dapi.v0.ContractModerationList>|null} [lists] ContractModerationStatus lists
+                             * @property {org.dash.platform.dapi.v0.IContractModerationReason|null} [banReason] ContractModerationStatus banReason
+                             * @property {org.dash.platform.dapi.v0.IContractModerationReason|null} [suspensionReason] ContractModerationStatus suspensionReason
                              */
 
                             /**
@@ -24803,6 +25015,22 @@ $root.org = (function() {
                             ContractModerationStatus.prototype.lists = $util.emptyArray;
 
                             /**
+                             * ContractModerationStatus banReason.
+                             * @member {org.dash.platform.dapi.v0.IContractModerationReason|null|undefined} banReason
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @instance
+                             */
+                            ContractModerationStatus.prototype.banReason = null;
+
+                            /**
+                             * ContractModerationStatus suspensionReason.
+                             * @member {org.dash.platform.dapi.v0.IContractModerationReason|null|undefined} suspensionReason
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @instance
+                             */
+                            ContractModerationStatus.prototype.suspensionReason = null;
+
+                            /**
                              * Creates a new ContractModerationStatus instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
@@ -24836,6 +25064,10 @@ $root.org = (function() {
                                         writer.int32(message.lists[i]);
                                     writer.ldelim();
                                 }
+                                if (message.banReason != null && Object.hasOwnProperty.call(message, "banReason"))
+                                    $root.org.dash.platform.dapi.v0.ContractModerationReason.encode(message.banReason, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.suspensionReason != null && Object.hasOwnProperty.call(message, "suspensionReason"))
+                                    $root.org.dash.platform.dapi.v0.ContractModerationReason.encode(message.suspensionReason, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
                                 return writer;
                             };
 
@@ -24885,6 +25117,12 @@ $root.org = (function() {
                                                 message.lists.push(reader.int32());
                                         } else
                                             message.lists.push(reader.int32());
+                                        break;
+                                    case 4:
+                                        message.banReason = $root.org.dash.platform.dapi.v0.ContractModerationReason.decode(reader, reader.uint32());
+                                        break;
+                                    case 5:
+                                        message.suspensionReason = $root.org.dash.platform.dapi.v0.ContractModerationReason.decode(reader, reader.uint32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -24940,6 +25178,16 @@ $root.org = (function() {
                                             break;
                                         }
                                 }
+                                if (message.banReason != null && message.hasOwnProperty("banReason")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ContractModerationReason.verify(message.banReason);
+                                    if (error)
+                                        return "banReason." + error;
+                                }
+                                if (message.suspensionReason != null && message.hasOwnProperty("suspensionReason")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ContractModerationReason.verify(message.suspensionReason);
+                                    if (error)
+                                        return "suspensionReason." + error;
+                                }
                                 return null;
                             };
 
@@ -24987,6 +25235,16 @@ $root.org = (function() {
                                             break;
                                         }
                                 }
+                                if (object.banReason != null) {
+                                    if (typeof object.banReason !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.banReason: object expected");
+                                    message.banReason = $root.org.dash.platform.dapi.v0.ContractModerationReason.fromObject(object.banReason);
+                                }
+                                if (object.suspensionReason != null) {
+                                    if (typeof object.suspensionReason !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.suspensionReason: object expected");
+                                    message.suspensionReason = $root.org.dash.platform.dapi.v0.ContractModerationReason.fromObject(object.suspensionReason);
+                                }
                                 return message;
                             };
 
@@ -25012,6 +25270,8 @@ $root.org = (function() {
                                         object.suspendedUntil = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                     } else
                                         object.suspendedUntil = options.longs === String ? "0" : 0;
+                                    object.banReason = null;
+                                    object.suspensionReason = null;
                                 }
                                 if (message.banned != null && message.hasOwnProperty("banned"))
                                     object.banned = message.banned;
@@ -25025,6 +25285,10 @@ $root.org = (function() {
                                     for (var j = 0; j < message.lists.length; ++j)
                                         object.lists[j] = options.enums === String ? $root.org.dash.platform.dapi.v0.ContractModerationList[message.lists[j]] : message.lists[j];
                                 }
+                                if (message.banReason != null && message.hasOwnProperty("banReason"))
+                                    object.banReason = $root.org.dash.platform.dapi.v0.ContractModerationReason.toObject(message.banReason, options);
+                                if (message.suspensionReason != null && message.hasOwnProperty("suspensionReason"))
+                                    object.suspensionReason = $root.org.dash.platform.dapi.v0.ContractModerationReason.toObject(message.suspensionReason, options);
                                 return object;
                             };
 
@@ -26057,6 +26321,7 @@ $root.org = (function() {
                              * @interface IContractModerationEntry
                              * @property {Uint8Array|null} [identityId] ContractModerationEntry identityId
                              * @property {number|Long|null} [until] ContractModerationEntry until
+                             * @property {org.dash.platform.dapi.v0.IContractModerationReason|null} [reason] ContractModerationEntry reason
                              */
 
                             /**
@@ -26091,6 +26356,14 @@ $root.org = (function() {
                             ContractModerationEntry.prototype.until = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                             /**
+                             * ContractModerationEntry reason.
+                             * @member {org.dash.platform.dapi.v0.IContractModerationReason|null|undefined} reason
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
+                             * @instance
+                             */
+                            ContractModerationEntry.prototype.reason = null;
+
+                            /**
                              * Creates a new ContractModerationEntry instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry
@@ -26118,6 +26391,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identityId);
                                 if (message.until != null && Object.hasOwnProperty.call(message, "until"))
                                     writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.until);
+                                if (message.reason != null && Object.hasOwnProperty.call(message, "reason"))
+                                    $root.org.dash.platform.dapi.v0.ContractModerationReason.encode(message.reason, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                                 return writer;
                             };
 
@@ -26157,6 +26432,9 @@ $root.org = (function() {
                                         break;
                                     case 2:
                                         message.until = reader.uint64();
+                                        break;
+                                    case 3:
+                                        message.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.decode(reader, reader.uint32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -26199,6 +26477,11 @@ $root.org = (function() {
                                 if (message.until != null && message.hasOwnProperty("until"))
                                     if (!$util.isInteger(message.until) && !(message.until && $util.isInteger(message.until.low) && $util.isInteger(message.until.high)))
                                         return "until: integer|Long expected";
+                                if (message.reason != null && message.hasOwnProperty("reason")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ContractModerationReason.verify(message.reason);
+                                    if (error)
+                                        return "reason." + error;
+                                }
                                 return null;
                             };
 
@@ -26228,6 +26511,11 @@ $root.org = (function() {
                                         message.until = object.until;
                                     else if (typeof object.until === "object")
                                         message.until = new $util.LongBits(object.until.low >>> 0, object.until.high >>> 0).toNumber(true);
+                                if (object.reason != null) {
+                                    if (typeof object.reason !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationEntriesResponse.ContractModerationEntry.reason: object expected");
+                                    message.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.fromObject(object.reason);
+                                }
                                 return message;
                             };
 
@@ -26257,6 +26545,7 @@ $root.org = (function() {
                                         object.until = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                     } else
                                         object.until = options.longs === String ? "0" : 0;
+                                    object.reason = null;
                                 }
                                 if (message.identityId != null && message.hasOwnProperty("identityId"))
                                     object.identityId = options.bytes === String ? $util.base64.encode(message.identityId, 0, message.identityId.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityId) : message.identityId;
@@ -26265,6 +26554,8 @@ $root.org = (function() {
                                         object.until = options.longs === String ? String(message.until) : message.until;
                                     else
                                         object.until = options.longs === String ? $util.Long.prototype.toString.call(message.until) : options.longs === Number ? new $util.LongBits(message.until.low >>> 0, message.until.high >>> 0).toNumber(true) : message.until;
+                                if (message.reason != null && message.hasOwnProperty("reason"))
+                                    object.reason = $root.org.dash.platform.dapi.v0.ContractModerationReason.toObject(message.reason, options);
                                 return object;
                             };
 

@@ -94,7 +94,7 @@ impl ContractUserModerationTransitionAccessorsV0 for ContractUserModerationTrans
         self.action = action;
     }
 
-    fn action(&self) -> ContractUserModerationAction {
-        self.action
+    fn action(&self) -> &ContractUserModerationAction {
+        &self.action
     }
 }

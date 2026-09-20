@@ -7,6 +7,7 @@ use crate::queries::contract_moderation::set_status_fields;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::IdentityPublicKey;
@@ -247,10 +248,10 @@ impl WasmSdk {
 #[wasm_bindgen(typescript_custom_section)]
 const CONTRACT_MODERATION_OPTIONS_TS: &'static str = r#"
 /**
- * Options for banning, unbanning, suspending or unsuspending one identity on a moderated data
- * contract (protocol version 14). The signer must hold a CRITICAL authentication key without
- * contract bounds of the moderating identity: the contract owner, or a moderator the contract's
- * config names.
+ * Options for moderating one identity on a moderated data contract (protocol version 14): all
+ * an unban and an unsuspend take, and the base of the options of a ban and a suspend. The signer
+ * must hold a CRITICAL authentication key without contract bounds of the moderating identity:
+ * the contract owner, or a moderator the contract's config names.
  */
 export interface ContractModerationOptions {
   /** The moderating identity: the contract owner or a named moderator */
@@ -259,12 +260,24 @@ export interface ContractModerationOptions {
   contractId: IdentifierLike;
   /** The identity to moderate */
   identityId: IdentifierLike;
-  /** For a suspension: the block time, in milliseconds, at which it lapses */
-  until?: bigint;
   /** Signer holding a CRITICAL authentication key without contract bounds of the identity */
   signer: IdentitySigner;
   /** Optional broadcast settings */
   settings?: PutSettings;
+}
+
+/** Options for banning an identity: a ban needs a reason. */
+export interface ContractBanOptions extends ContractModerationOptions {
+  /** Why. Stored with the banlist entry, so anyone reading the list reads it. */
+  reason: ContractModerationReason;
+}
+
+/** Options for suspending an identity: a suspension needs its end and a reason. */
+export interface ContractSuspendOptions extends ContractModerationOptions {
+  /** The block time, in milliseconds, at which the suspension lapses */
+  until: bigint;
+  /** Why. Stored with the suspension list entry, so anyone reading the list reads it. */
+  reason: ContractModerationReason;
 }
 
 /**
@@ -281,11 +294,15 @@ export interface ContractModerationResult {
   lists: ContractModerationListKind[];
   /** Set when `lists` includes `banlist`: the identity is on the banlist */
   banned?: boolean;
+  /** When the identity is banned: why */
+  banReason?: ContractModerationReason;
   /**
    * When `lists` includes `suspensions`: the block time, in milliseconds, until which the
    * identity is suspended; undefined when it is not suspended
    */
   suspendedUntil?: bigint;
+  /** When the identity is suspended: why */
+  suspensionReason?: ContractModerationReason;
 }
 "#;
 
@@ -293,6 +310,12 @@ export interface ContractModerationResult {
 extern "C" {
     #[wasm_bindgen(typescript_type = "ContractModerationOptions")]
     pub type ContractModerationOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "ContractBanOptions")]
+    pub type ContractBanOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "ContractSuspendOptions")]
+    pub type ContractSuspendOptionsJs;
 
     #[wasm_bindgen(typescript_type = "ContractModerationResult")]
     pub type ContractModerationResultJs;
@@ -303,6 +326,8 @@ extern "C" {
 struct ContractModerationOptionsInput {
     #[serde(default)]
     until: Option<u64>,
+    #[serde(default)]
+    reason: Option<ContractModerationReason>,
 }
 
 impl WasmSdk {
@@ -336,7 +361,7 @@ impl WasmSdk {
                 "contract moderation options",
             )?;
 
-        let action = moderation_action_from_parts(action, identity_id, parsed.until)
+        let action = moderation_action_from_parts(action, identity_id, parsed.until, parsed.reason)
             .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
 
         // The proof of a ban covers every list the contract keeps, which the verifier reads
@@ -383,14 +408,15 @@ impl WasmSdk {
     /// Puts an identity on a moderated contract's banlist. A banned identity cannot act on the
     /// contract at the document level until it is unbanned.
     ///
-    /// @param options - The moderating identity, the contract, the target and the signer
+    /// @param options - The moderating identity, the contract, the target, the `reason` and the signer
     /// @returns The target's status on the contract, proved
     #[wasm_bindgen(js_name = "contractBanUser")]
     pub async fn contract_ban_user(
         &self,
-        options: ContractModerationOptionsJs,
+        options: ContractBanOptionsJs,
     ) -> Result<ContractModerationResultJs, WasmSdkError> {
-        self.moderate_contract_user(options, "ban").await
+        self.moderate_contract_user(options.unchecked_into(), "ban")
+            .await
     }
 
     /// Takes an identity off a moderated contract's banlist.
@@ -409,14 +435,15 @@ impl WasmSdk {
     /// milliseconds, replacing a suspension it already carries. The first document transition
     /// of the identity after the suspension lapses sweeps it.
     ///
-    /// @param options - The moderating identity, the contract, the target, `until` and the signer
+    /// @param options - The moderating identity, the contract, the target, `until`, the `reason` and the signer
     /// @returns The target's status on the contract, proved
     #[wasm_bindgen(js_name = "contractSuspendUser")]
     pub async fn contract_suspend_user(
         &self,
-        options: ContractModerationOptionsJs,
+        options: ContractSuspendOptionsJs,
     ) -> Result<ContractModerationResultJs, WasmSdkError> {
-        self.moderate_contract_user(options, "suspend").await
+        self.moderate_contract_user(options.unchecked_into(), "suspend")
+            .await
     }
 
     /// Takes an identity off a moderated contract's suspension list, lapsed or not.

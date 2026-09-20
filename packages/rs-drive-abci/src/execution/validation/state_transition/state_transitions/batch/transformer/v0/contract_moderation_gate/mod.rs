@@ -150,7 +150,9 @@ mod tests {
     use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::config::moderation::{
+        ContractModerationConfig, ContractModerationReason, ContractModerators,
+    };
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::DefaultForPlatformVersion;
@@ -274,6 +276,7 @@ mod tests {
             .add_contract_ban(
                 contract.id(),
                 identity.id(),
+                &ContractModerationReason::from_text("spam"),
                 contract.owner_id(),
                 &BlockInfo::default(),
                 true,

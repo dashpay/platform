@@ -12,18 +12,30 @@ const TARGET_ID = '2QjL594djCH2NyDsn45vd6yQjEDHupMKo7CEGVTHtQxU';
 interface ModerationOptions {
   action?: 'ban' | 'unban' | 'suspend' | 'unsuspend';
   until?: bigint;
+  /** `null` leaves the reason out; left undefined, a ban and a suspend get `REASON` */
+  reason?: { code?: number; text: string } | null;
   identityContractNonce?: bigint;
   userFeeIncrease?: number;
 }
 
+const REASON = { text: 'spam' };
+
 function createTransition(options: ModerationOptions = {}) {
+  const action = options.action ?? 'ban';
+  const addsAnEntry = action === 'ban' || action === 'suspend';
+  let { reason } = options;
+  if (reason === undefined && addsAnEntry) {
+    reason = REASON;
+  }
+
   return new wasm.ContractUserModeration({
     ownerId: OWNER_ID,
     dataContractId: CONTRACT_ID,
     identityContractNonce: options.identityContractNonce ?? BigInt(7),
-    action: options.action ?? 'ban',
+    action,
     identityId: TARGET_ID,
     until: options.until,
+    reason: reason ?? undefined,
     userFeeIncrease: options.userFeeIncrease,
   });
 }
@@ -40,7 +52,29 @@ describe('ContractUserModeration', () => {
       expect(transition.identityId.toString()).to.equal(TARGET_ID);
       expect(transition.identityContractNonce).to.equal(BigInt(7));
       expect(transition.until).to.equal(undefined);
+      expect(transition.reason).to.deep.equal({ code: null, text: 'spam' });
       expect(transition.userFeeIncrease).to.equal(0);
+    });
+
+    it('should keep a reason code as written, and an empty text', () => {
+      const transition = createTransition({ reason: { code: 65535, text: '' } });
+
+      expect(transition.reason).to.deep.equal({ code: 65535, text: '' });
+    });
+
+    it('should refuse a ban or a suspension without a reason', () => {
+      expect(() => createTransition({ action: 'ban', reason: null })).to.throw();
+      expect(() => createTransition({ action: 'suspend', until: BigInt(5), reason: null })).to.throw();
+    });
+
+    it('should refuse a reason on an unban or an unsuspend', () => {
+      (['unban', 'unsuspend'] as const).forEach((action) => {
+        expect(() => createTransition({ action, reason: REASON })).to.throw();
+      });
+    });
+
+    it('should refuse a reason code that is not a u16', () => {
+      expect(() => createTransition({ reason: { code: 65536, text: 'spam' } })).to.throw();
     });
 
     it('should create a suspension with its end', () => {
@@ -48,6 +82,7 @@ describe('ContractUserModeration', () => {
 
       expect(transition.action).to.equal('suspend');
       expect(transition.until).to.equal(BigInt(1800000000000));
+      expect(transition.reason).to.deep.equal({ code: null, text: 'spam' });
     });
 
     it('should refuse a suspension without an end', () => {
@@ -112,7 +147,14 @@ describe('ContractUserModeration', () => {
       expect(json.ownerId).to.equal(OWNER_ID);
       expect(json.dataContractId).to.equal(CONTRACT_ID);
       expect(json.identityContractNonce).to.equal(7);
-      expect(json.action).to.deep.equal({ $type: 'suspend', identityId: TARGET_ID, until: 1800000000000 });
+      expect(json.action).to.deep.equal({
+        $type: 'suspend',
+        identityId: TARGET_ID,
+        until: 1800000000000,
+        reason: { code: null, text: 'spam' },
+      });
+      // The getter gives the reason the shape it has in the JSON
+      expect(createTransition({ action: 'suspend', until: BigInt(5) }).reason).to.deep.equal(json.action.reason);
       expect(json.userFeeIncrease).to.equal(4);
       expect(json.signature).to.equal('');
       expect(json.signaturePublicKeyId).to.equal(0);
@@ -125,6 +167,7 @@ describe('ContractUserModeration', () => {
 
       const restored = wasm.ContractUserModeration.fromJSON(transition.toJSON());
 
+      expect(restored.reason).to.equal(undefined);
       expect(restored.action).to.equal('unban');
       expect(restored.identityId.toString()).to.equal(TARGET_ID);
       expect(restored.identityContractNonce).to.equal(BigInt(7));
@@ -135,7 +178,11 @@ describe('ContractUserModeration', () => {
 
   describe('toObject() / fromObject()', () => {
     it('should round trip through a plain object', () => {
-      const transition = createTransition({ action: 'suspend', until: BigInt(9) });
+      const transition = createTransition({
+        action: 'suspend',
+        until: BigInt(9),
+        reason: { code: 3, text: 'flooding' },
+      });
 
       const obj = transition.toObject();
       expect(obj.$formatVersion).to.equal('0');
@@ -145,8 +192,11 @@ describe('ContractUserModeration', () => {
       expect(obj.action.$type).to.equal('suspend');
       expect(obj.action.until).to.equal(BigInt(9));
 
+      expect(obj.action.reason).to.deep.equal({ code: 3, text: 'flooding' });
+
       const restored = wasm.ContractUserModeration.fromObject(obj);
       expect(restored.until).to.equal(BigInt(9));
+      expect(restored.reason).to.deep.equal({ code: 3, text: 'flooding' });
       expect(restored.toBytes()).to.deep.equal(transition.toBytes());
     });
   });

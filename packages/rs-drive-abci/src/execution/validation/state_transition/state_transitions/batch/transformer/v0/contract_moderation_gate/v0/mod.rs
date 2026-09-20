@@ -87,11 +87,11 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
         )?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
-        let barred: Option<ConsensusError> = if status.banned {
+        let barred: Option<ConsensusError> = if status.banned() {
             Some(ContractUserBannedError::new(data_contract_id, owner_id).into())
         } else {
             status
-                .suspended_until
+                .suspended_until()
                 .filter(|until| *until > block_info.time_ms)
                 .map(|until| {
                     ContractUserSuspendedError::new(data_contract_id, owner_id, until).into()

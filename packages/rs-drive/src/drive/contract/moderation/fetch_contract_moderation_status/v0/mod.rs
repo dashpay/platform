@@ -1,4 +1,4 @@
-use crate::drive::contract::moderation::types::decode_until;
+use crate::drive::contract::moderation::types::{decode_ban, decode_suspension};
 use crate::drive::contract::paths::contract_moderation_list_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -32,16 +32,19 @@ impl Drive {
                 drive_operations,
                 &platform_version.drive,
             )?;
+            let malformed = |description: String| {
+                Error::Drive(DriveError::CorruptedDriveState(format!(
+                    "entry of {} on contract {} {} is malformed: {}",
+                    identity_id, contract_id, list, description
+                )))
+            };
             match (list, entry) {
                 (_, None) => {}
-                (ContractModerationList::Banlist, Some(_)) => status.banned = true,
+                (ContractModerationList::Banlist, Some(value)) => {
+                    status.ban = Some(decode_ban(&value).map_err(malformed)?);
+                }
                 (ContractModerationList::Suspensions, Some(value)) => {
-                    status.suspended_until = Some(decode_until(&value).map_err(|description| {
-                        Error::Drive(DriveError::CorruptedDriveState(format!(
-                            "suspension of {} on contract {} is malformed: {}",
-                            identity_id, contract_id, description
-                        )))
-                    })?);
+                    status.suspension = Some(decode_suspension(&value).map_err(malformed)?);
                 }
             }
         }

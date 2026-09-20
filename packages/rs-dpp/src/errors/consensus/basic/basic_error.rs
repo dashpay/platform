@@ -12,7 +12,8 @@ use crate::consensus::basic::contract_group::{
     RedundantContractGroupMembershipError,
 };
 use crate::consensus::basic::contract_moderation::{
-    ContractModerationSelfTargetError, InvalidContractModerationConfigError,
+    ContractModerationReasonTooLongError, ContractModerationSelfTargetError,
+    InvalidContractModerationConfigError,
 };
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
@@ -792,6 +793,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     ContractModerationSelfTargetError(ContractModerationSelfTargetError),
+
+    #[error(transparent)]
+    ContractModerationReasonTooLongError(ContractModerationReasonTooLongError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -855,6 +859,12 @@ mod tests {
                 ContractModerationSelfTargetError::new(Identifier::from([1; 32]))
             )),
             190
+        );
+        assert_eq!(
+            discriminant_of(BasicError::ContractModerationReasonTooLongError(
+                ContractModerationReasonTooLongError::new(1025, 1024)
+            )),
+            191
         );
     }
 }
