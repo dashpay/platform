@@ -1882,6 +1882,193 @@ export namespace GetDataContractResponse {
   }
 }
 
+export class GetDataContractsLatestVersionsRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetDataContractsLatestVersionsRequest.GetDataContractsLatestVersionsRequestV0 | undefined;
+  setV0(value?: GetDataContractsLatestVersionsRequest.GetDataContractsLatestVersionsRequestV0): void;
+
+  getVersionCase(): GetDataContractsLatestVersionsRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetDataContractsLatestVersionsRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetDataContractsLatestVersionsRequest): GetDataContractsLatestVersionsRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetDataContractsLatestVersionsRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetDataContractsLatestVersionsRequest;
+  static deserializeBinaryFromReader(message: GetDataContractsLatestVersionsRequest, reader: jspb.BinaryReader): GetDataContractsLatestVersionsRequest;
+}
+
+export namespace GetDataContractsLatestVersionsRequest {
+  export type AsObject = {
+    v0?: GetDataContractsLatestVersionsRequest.GetDataContractsLatestVersionsRequestV0.AsObject,
+  }
+
+  export class GetDataContractsLatestVersionsRequestV0 extends jspb.Message {
+    clearIdsList(): void;
+    getIdsList(): Array<Uint8Array | string>;
+    getIdsList_asU8(): Array<Uint8Array>;
+    getIdsList_asB64(): Array<string>;
+    setIdsList(value: Array<Uint8Array | string>): void;
+    addIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getIncludeContracts(): boolean;
+    setIncludeContracts(value: boolean): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetDataContractsLatestVersionsRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDataContractsLatestVersionsRequestV0): GetDataContractsLatestVersionsRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetDataContractsLatestVersionsRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDataContractsLatestVersionsRequestV0;
+    static deserializeBinaryFromReader(message: GetDataContractsLatestVersionsRequestV0, reader: jspb.BinaryReader): GetDataContractsLatestVersionsRequestV0;
+  }
+
+  export namespace GetDataContractsLatestVersionsRequestV0 {
+    export type AsObject = {
+      idsList: Array<Uint8Array | string>,
+      includeContracts: boolean,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetDataContractsLatestVersionsResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetDataContractsLatestVersionsResponse.GetDataContractsLatestVersionsResponseV0 | undefined;
+  setV0(value?: GetDataContractsLatestVersionsResponse.GetDataContractsLatestVersionsResponseV0): void;
+
+  getVersionCase(): GetDataContractsLatestVersionsResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetDataContractsLatestVersionsResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetDataContractsLatestVersionsResponse): GetDataContractsLatestVersionsResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetDataContractsLatestVersionsResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetDataContractsLatestVersionsResponse;
+  static deserializeBinaryFromReader(message: GetDataContractsLatestVersionsResponse, reader: jspb.BinaryReader): GetDataContractsLatestVersionsResponse;
+}
+
+export namespace GetDataContractsLatestVersionsResponse {
+  export type AsObject = {
+    v0?: GetDataContractsLatestVersionsResponse.GetDataContractsLatestVersionsResponseV0.AsObject,
+  }
+
+  export class DataContractLatestVersionEntry extends jspb.Message {
+    getIdentifier(): Uint8Array | string;
+    getIdentifier_asU8(): Uint8Array;
+    getIdentifier_asB64(): string;
+    setIdentifier(value: Uint8Array | string): void;
+
+    hasVersion(): boolean;
+    clearVersion(): void;
+    getVersion(): number;
+    setVersion(value: number): void;
+
+    hasDataContract(): boolean;
+    clearDataContract(): void;
+    getDataContract(): Uint8Array | string;
+    getDataContract_asU8(): Uint8Array;
+    getDataContract_asB64(): string;
+    setDataContract(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): DataContractLatestVersionEntry.AsObject;
+    static toObject(includeInstance: boolean, msg: DataContractLatestVersionEntry): DataContractLatestVersionEntry.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: DataContractLatestVersionEntry, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): DataContractLatestVersionEntry;
+    static deserializeBinaryFromReader(message: DataContractLatestVersionEntry, reader: jspb.BinaryReader): DataContractLatestVersionEntry;
+  }
+
+  export namespace DataContractLatestVersionEntry {
+    export type AsObject = {
+      identifier: Uint8Array | string,
+      version: number,
+      dataContract: Uint8Array | string,
+    }
+  }
+
+  export class DataContractsLatestVersions extends jspb.Message {
+    clearEntriesList(): void;
+    getEntriesList(): Array<GetDataContractsLatestVersionsResponse.DataContractLatestVersionEntry>;
+    setEntriesList(value: Array<GetDataContractsLatestVersionsResponse.DataContractLatestVersionEntry>): void;
+    addEntries(value?: GetDataContractsLatestVersionsResponse.DataContractLatestVersionEntry, index?: number): GetDataContractsLatestVersionsResponse.DataContractLatestVersionEntry;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): DataContractsLatestVersions.AsObject;
+    static toObject(includeInstance: boolean, msg: DataContractsLatestVersions): DataContractsLatestVersions.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: DataContractsLatestVersions, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): DataContractsLatestVersions;
+    static deserializeBinaryFromReader(message: DataContractsLatestVersions, reader: jspb.BinaryReader): DataContractsLatestVersions;
+  }
+
+  export namespace DataContractsLatestVersions {
+    export type AsObject = {
+      entriesList: Array<GetDataContractsLatestVersionsResponse.DataContractLatestVersionEntry.AsObject>,
+    }
+  }
+
+  export class GetDataContractsLatestVersionsResponseV0 extends jspb.Message {
+    hasDataContractsLatestVersions(): boolean;
+    clearDataContractsLatestVersions(): void;
+    getDataContractsLatestVersions(): GetDataContractsLatestVersionsResponse.DataContractsLatestVersions | undefined;
+    setDataContractsLatestVersions(value?: GetDataContractsLatestVersionsResponse.DataContractsLatestVersions): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetDataContractsLatestVersionsResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetDataContractsLatestVersionsResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDataContractsLatestVersionsResponseV0): GetDataContractsLatestVersionsResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetDataContractsLatestVersionsResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDataContractsLatestVersionsResponseV0;
+    static deserializeBinaryFromReader(message: GetDataContractsLatestVersionsResponseV0, reader: jspb.BinaryReader): GetDataContractsLatestVersionsResponseV0;
+  }
+
+  export namespace GetDataContractsLatestVersionsResponseV0 {
+    export type AsObject = {
+      dataContractsLatestVersions?: GetDataContractsLatestVersionsResponse.DataContractsLatestVersions.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      DATA_CONTRACTS_LATEST_VERSIONS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetDataContractsRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
@@ -1929,6 +2116,87 @@ export namespace GetDataContractsRequest {
     export type AsObject = {
       idsList: Array<Uint8Array | string>,
       prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetDataContractsByRangeRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetDataContractsByRangeRequest.GetDataContractsByRangeRequestV0 | undefined;
+  setV0(value?: GetDataContractsByRangeRequest.GetDataContractsByRangeRequestV0): void;
+
+  getVersionCase(): GetDataContractsByRangeRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetDataContractsByRangeRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetDataContractsByRangeRequest): GetDataContractsByRangeRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetDataContractsByRangeRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetDataContractsByRangeRequest;
+  static deserializeBinaryFromReader(message: GetDataContractsByRangeRequest, reader: jspb.BinaryReader): GetDataContractsByRangeRequest;
+}
+
+export namespace GetDataContractsByRangeRequest {
+  export type AsObject = {
+    v0?: GetDataContractsByRangeRequest.GetDataContractsByRangeRequestV0.AsObject,
+  }
+
+  export class GetDataContractsByRangeRequestV0 extends jspb.Message {
+    hasLimit(): boolean;
+    clearLimit(): void;
+    getLimit(): number;
+    setLimit(value: number): void;
+
+    hasStartAfter(): boolean;
+    clearStartAfter(): void;
+    getStartAfter(): Uint8Array | string;
+    getStartAfter_asU8(): Uint8Array;
+    getStartAfter_asB64(): string;
+    setStartAfter(value: Uint8Array | string): void;
+
+    hasStartAt(): boolean;
+    clearStartAt(): void;
+    getStartAt(): Uint8Array | string;
+    getStartAt_asU8(): Uint8Array;
+    getStartAt_asB64(): string;
+    setStartAt(value: Uint8Array | string): void;
+
+    getIdsOnly(): boolean;
+    setIdsOnly(value: boolean): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    getStartCase(): GetDataContractsByRangeRequestV0.StartCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetDataContractsByRangeRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDataContractsByRangeRequestV0): GetDataContractsByRangeRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetDataContractsByRangeRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDataContractsByRangeRequestV0;
+    static deserializeBinaryFromReader(message: GetDataContractsByRangeRequestV0, reader: jspb.BinaryReader): GetDataContractsByRangeRequestV0;
+  }
+
+  export namespace GetDataContractsByRangeRequestV0 {
+    export type AsObject = {
+      limit: number,
+      startAfter: Uint8Array | string,
+      startAt: Uint8Array | string,
+      idsOnly: boolean,
+      prove: boolean,
+    }
+
+    export enum StartCase {
+      START_NOT_SET = 0,
+      START_AFTER = 2,
+      START_AT = 3,
     }
   }
 
@@ -2373,6 +2641,74 @@ export namespace GetDocumentsRequest {
     }
   }
 
+  export class TimeRangeSelection extends jspb.Message {
+    getSelector(): GetDocumentsRequest.TimeRangeSelection.SelectorMap[keyof GetDocumentsRequest.TimeRangeSelection.SelectorMap];
+    setSelector(value: GetDocumentsRequest.TimeRangeSelection.SelectorMap[keyof GetDocumentsRequest.TimeRangeSelection.SelectorMap]): void;
+
+    hasStartMs(): boolean;
+    clearStartMs(): void;
+    getStartMs(): string;
+    setStartMs(value: string): void;
+
+    hasGrid(): boolean;
+    clearGrid(): void;
+    getGrid(): GetDocumentsRequest.TimeRangeSelection.Grid | undefined;
+    setGrid(value?: GetDocumentsRequest.TimeRangeSelection.Grid): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): TimeRangeSelection.AsObject;
+    static toObject(includeInstance: boolean, msg: TimeRangeSelection): TimeRangeSelection.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: TimeRangeSelection, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): TimeRangeSelection;
+    static deserializeBinaryFromReader(message: TimeRangeSelection, reader: jspb.BinaryReader): TimeRangeSelection;
+  }
+
+  export namespace TimeRangeSelection {
+    export type AsObject = {
+      selector: GetDocumentsRequest.TimeRangeSelection.SelectorMap[keyof GetDocumentsRequest.TimeRangeSelection.SelectorMap],
+      startMs: string,
+      grid?: GetDocumentsRequest.TimeRangeSelection.Grid.AsObject,
+    }
+
+    export class Grid extends jspb.Message {
+      getRange(): string;
+      setRange(value: string): void;
+
+      getStep(): string;
+      setStep(value: string): void;
+
+      getPhase(): string;
+      setPhase(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Grid.AsObject;
+      static toObject(includeInstance: boolean, msg: Grid): Grid.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Grid, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Grid;
+      static deserializeBinaryFromReader(message: Grid, reader: jspb.BinaryReader): Grid;
+    }
+
+    export namespace Grid {
+      export type AsObject = {
+        range: string,
+        step: string,
+        phase: string,
+      }
+    }
+
+    export interface SelectorMap {
+      NEWEST: 0;
+      OLDEST: 1;
+      BY_START: 2;
+    }
+
+    export const Selector: SelectorMap;
+  }
+
   export class WhereClause extends jspb.Message {
     getField(): string;
     setField(value: string): void;
@@ -2384,6 +2720,11 @@ export namespace GetDocumentsRequest {
     clearValue(): void;
     getValue(): GetDocumentsRequest.DocumentFieldValue | undefined;
     setValue(value?: GetDocumentsRequest.DocumentFieldValue): void;
+
+    hasTimeRange(): boolean;
+    clearTimeRange(): void;
+    getTimeRange(): GetDocumentsRequest.TimeRangeSelection | undefined;
+    setTimeRange(value?: GetDocumentsRequest.TimeRangeSelection): void;
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): WhereClause.AsObject;
@@ -2400,6 +2741,7 @@ export namespace GetDocumentsRequest {
       field: string,
       operator: GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap],
       value?: GetDocumentsRequest.DocumentFieldValue.AsObject,
+      timeRange?: GetDocumentsRequest.TimeRangeSelection.AsObject,
     }
   }
 
@@ -2663,6 +3005,11 @@ export namespace GetDocumentsRequest {
     getChained(): GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin | undefined;
     setChained(value?: GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin): void;
 
+    clearSubQueriesList(): void;
+    getSubQueriesList(): Array<GetDocumentsRequest.GetDocumentsRequestV1.SubQuery>;
+    setSubQueriesList(value: Array<GetDocumentsRequest.GetDocumentsRequestV1.SubQuery>): void;
+    addSubQueries(value?: GetDocumentsRequest.GetDocumentsRequestV1.SubQuery, index?: number): GetDocumentsRequest.GetDocumentsRequestV1.SubQuery;
+
     getStartCase(): GetDocumentsRequestV1.StartCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetDocumentsRequestV1.AsObject;
@@ -2689,6 +3036,7 @@ export namespace GetDocumentsRequest {
       havingList: Array<GetDocumentsRequest.HavingClause.AsObject>,
       offset: number,
       chained?: GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin.AsObject,
+      subQueriesList: Array<GetDocumentsRequest.GetDocumentsRequestV1.SubQuery.AsObject>,
     }
 
     export class Select extends jspb.Message {
@@ -2748,6 +3096,95 @@ export namespace GetDocumentsRequest {
         joinProperty: string,
         outerDocumentType: string,
       }
+    }
+
+    export class SubQuery extends jspb.Message {
+      getDataContractId(): Uint8Array | string;
+      getDataContractId_asU8(): Uint8Array;
+      getDataContractId_asB64(): string;
+      setDataContractId(value: Uint8Array | string): void;
+
+      getDocumentType(): string;
+      setDocumentType(value: string): void;
+
+      clearWhereClausesList(): void;
+      getWhereClausesList(): Array<GetDocumentsRequest.WhereClause>;
+      setWhereClausesList(value: Array<GetDocumentsRequest.WhereClause>): void;
+      addWhereClauses(value?: GetDocumentsRequest.WhereClause, index?: number): GetDocumentsRequest.WhereClause;
+
+      clearOrderByList(): void;
+      getOrderByList(): Array<GetDocumentsRequest.OrderClause>;
+      setOrderByList(value: Array<GetDocumentsRequest.OrderClause>): void;
+      addOrderBy(value?: GetDocumentsRequest.OrderClause, index?: number): GetDocumentsRequest.OrderClause;
+
+      hasLimit(): boolean;
+      clearLimit(): void;
+      getLimit(): number;
+      setLimit(value: number): void;
+
+      getKind(): GetDocumentsRequest.GetDocumentsRequestV1.SubQuery.KindMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SubQuery.KindMap];
+      setKind(value: GetDocumentsRequest.GetDocumentsRequestV1.SubQuery.KindMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SubQuery.KindMap]): void;
+
+      hasBind(): boolean;
+      clearBind(): void;
+      getBind(): GetDocumentsRequest.GetDocumentsRequestV1.SubQuery.Binding | undefined;
+      setBind(value?: GetDocumentsRequest.GetDocumentsRequestV1.SubQuery.Binding): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): SubQuery.AsObject;
+      static toObject(includeInstance: boolean, msg: SubQuery): SubQuery.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: SubQuery, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): SubQuery;
+      static deserializeBinaryFromReader(message: SubQuery, reader: jspb.BinaryReader): SubQuery;
+    }
+
+    export namespace SubQuery {
+      export type AsObject = {
+        dataContractId: Uint8Array | string,
+        documentType: string,
+        whereClausesList: Array<GetDocumentsRequest.WhereClause.AsObject>,
+        orderByList: Array<GetDocumentsRequest.OrderClause.AsObject>,
+        limit: number,
+        kind: GetDocumentsRequest.GetDocumentsRequestV1.SubQuery.KindMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SubQuery.KindMap],
+        bind?: GetDocumentsRequest.GetDocumentsRequestV1.SubQuery.Binding.AsObject,
+      }
+
+      export class Binding extends jspb.Message {
+        getSource(): number;
+        setSource(value: number): void;
+
+        getSourceProperty(): string;
+        setSourceProperty(value: string): void;
+
+        getField(): string;
+        setField(value: string): void;
+
+        serializeBinary(): Uint8Array;
+        toObject(includeInstance?: boolean): Binding.AsObject;
+        static toObject(includeInstance: boolean, msg: Binding): Binding.AsObject;
+        static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+        static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+        static serializeBinaryToWriter(message: Binding, writer: jspb.BinaryWriter): void;
+        static deserializeBinary(bytes: Uint8Array): Binding;
+        static deserializeBinaryFromReader(message: Binding, reader: jspb.BinaryReader): Binding;
+      }
+
+      export namespace Binding {
+        export type AsObject = {
+          source: number,
+          sourceProperty: string,
+          field: string,
+        }
+      }
+
+      export interface KindMap {
+        DOCUMENTS: 0;
+        COUNT: 1;
+      }
+
+      export const Kind: KindMap;
     }
 
     export enum StartCase {
@@ -3348,6 +3785,11 @@ export namespace GetDocumentsResponse {
       getChained(): GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments | undefined;
       setChained(value?: GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments): void;
 
+      hasComposite(): boolean;
+      clearComposite(): void;
+      getComposite(): GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments | undefined;
+      setComposite(value?: GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments): void;
+
       getVariantCase(): ResultData.VariantCase;
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): ResultData.AsObject;
@@ -3367,6 +3809,7 @@ export namespace GetDocumentsResponse {
         averages?: GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.AsObject,
         ranked?: GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.AsObject,
         chained?: GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.AsObject,
+        composite?: GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.AsObject,
       }
 
       export enum VariantCase {
@@ -3377,6 +3820,7 @@ export namespace GetDocumentsResponse {
         AVERAGES = 4,
         RANKED = 5,
         CHAINED = 6,
+        COMPOSITE = 7,
       }
     }
 
@@ -3409,6 +3853,71 @@ export namespace GetDocumentsResponse {
       export type AsObject = {
         innerDocumentsList: Array<Uint8Array | string>,
         outerDocumentsList: Array<Uint8Array | string>,
+      }
+    }
+
+    export class CompositeDocuments extends jspb.Message {
+      clearPageDocumentsList(): void;
+      getPageDocumentsList(): Array<Uint8Array | string>;
+      getPageDocumentsList_asU8(): Array<Uint8Array>;
+      getPageDocumentsList_asB64(): Array<string>;
+      setPageDocumentsList(value: Array<Uint8Array | string>): void;
+      addPageDocuments(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+      clearSubResultsList(): void;
+      getSubResultsList(): Array<GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult>;
+      setSubResultsList(value: Array<GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult>): void;
+      addSubResults(value?: GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult, index?: number): GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): CompositeDocuments.AsObject;
+      static toObject(includeInstance: boolean, msg: CompositeDocuments): CompositeDocuments.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: CompositeDocuments, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): CompositeDocuments;
+      static deserializeBinaryFromReader(message: CompositeDocuments, reader: jspb.BinaryReader): CompositeDocuments;
+    }
+
+    export namespace CompositeDocuments {
+      export type AsObject = {
+        pageDocumentsList: Array<Uint8Array | string>,
+        subResultsList: Array<GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult.AsObject>,
+      }
+
+      export class SubQueryResult extends jspb.Message {
+        hasDocuments(): boolean;
+        clearDocuments(): void;
+        getDocuments(): GetDocumentsResponse.GetDocumentsResponseV1.Documents | undefined;
+        setDocuments(value?: GetDocumentsResponse.GetDocumentsResponseV1.Documents): void;
+
+        hasCounts(): boolean;
+        clearCounts(): void;
+        getCounts(): GetDocumentsResponse.GetDocumentsResponseV1.CountEntries | undefined;
+        setCounts(value?: GetDocumentsResponse.GetDocumentsResponseV1.CountEntries): void;
+
+        getResultCase(): SubQueryResult.ResultCase;
+        serializeBinary(): Uint8Array;
+        toObject(includeInstance?: boolean): SubQueryResult.AsObject;
+        static toObject(includeInstance: boolean, msg: SubQueryResult): SubQueryResult.AsObject;
+        static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+        static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+        static serializeBinaryToWriter(message: SubQueryResult, writer: jspb.BinaryWriter): void;
+        static deserializeBinary(bytes: Uint8Array): SubQueryResult;
+        static deserializeBinaryFromReader(message: SubQueryResult, reader: jspb.BinaryReader): SubQueryResult;
+      }
+
+      export namespace SubQueryResult {
+        export type AsObject = {
+          documents?: GetDocumentsResponse.GetDocumentsResponseV1.Documents.AsObject,
+          counts?: GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.AsObject,
+        }
+
+        export enum ResultCase {
+          RESULT_NOT_SET = 0,
+          DOCUMENTS = 1,
+          COUNTS = 2,
+        }
       }
     }
 
@@ -3467,17 +3976,30 @@ export namespace GetDocumentHistoryRequest {
     getLimit(): google_protobuf_wrappers_pb.UInt32Value | undefined;
     setLimit(value?: google_protobuf_wrappers_pb.UInt32Value): void;
 
-    hasOffset(): boolean;
-    clearOffset(): void;
-    getOffset(): google_protobuf_wrappers_pb.UInt32Value | undefined;
-    setOffset(value?: google_protobuf_wrappers_pb.UInt32Value): void;
-
-    getStartAtMs(): string;
-    setStartAtMs(value: string): void;
-
     getProve(): boolean;
     setProve(value: boolean): void;
 
+    hasStartAtMs(): boolean;
+    clearStartAtMs(): void;
+    getStartAtMs(): string;
+    setStartAtMs(value: string): void;
+
+    hasStartAfter(): boolean;
+    clearStartAfter(): void;
+    getStartAfter(): GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.Cursor | undefined;
+    setStartAfter(value?: GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.Cursor): void;
+
+    hasStartAtRevision(): boolean;
+    clearStartAtRevision(): void;
+    getStartAtRevision(): string;
+    setStartAtRevision(value: string): void;
+
+    hasRevision(): boolean;
+    clearRevision(): void;
+    getRevision(): string;
+    setRevision(value: string): void;
+
+    getFilterCase(): GetDocumentHistoryRequestV0.FilterCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetDocumentHistoryRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetDocumentHistoryRequestV0): GetDocumentHistoryRequestV0.AsObject;
@@ -3494,9 +4016,43 @@ export namespace GetDocumentHistoryRequest {
       documentTypeName: string,
       documentId: Uint8Array | string,
       limit?: google_protobuf_wrappers_pb.UInt32Value.AsObject,
-      offset?: google_protobuf_wrappers_pb.UInt32Value.AsObject,
-      startAtMs: string,
       prove: boolean,
+      startAtMs: string,
+      startAfter?: GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.Cursor.AsObject,
+      startAtRevision: string,
+      revision: string,
+    }
+
+    export class Cursor extends jspb.Message {
+      getTimeMs(): string;
+      setTimeMs(value: string): void;
+
+      getRevision(): string;
+      setRevision(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Cursor.AsObject;
+      static toObject(includeInstance: boolean, msg: Cursor): Cursor.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Cursor, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Cursor;
+      static deserializeBinaryFromReader(message: Cursor, reader: jspb.BinaryReader): Cursor;
+    }
+
+    export namespace Cursor {
+      export type AsObject = {
+        timeMs: string,
+        revision: string,
+      }
+    }
+
+    export enum FilterCase {
+      FILTER_NOT_SET = 0,
+      START_AT_MS = 6,
+      START_AFTER = 7,
+      START_AT_REVISION = 8,
+      REVISION = 9,
     }
   }
 
@@ -3529,10 +4085,10 @@ export namespace GetDocumentHistoryResponse {
   }
 
   export class GetDocumentHistoryResponseV0 extends jspb.Message {
-    hasDocumentHistory(): boolean;
-    clearDocumentHistory(): void;
-    getDocumentHistory(): GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory | undefined;
-    setDocumentHistory(value?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory): void;
+    hasHistory(): boolean;
+    clearHistory(): void;
+    getHistory(): GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.History | undefined;
+    setHistory(value?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.History): void;
 
     hasProof(): boolean;
     clearProof(): void;
@@ -3557,62 +4113,103 @@ export namespace GetDocumentHistoryResponse {
 
   export namespace GetDocumentHistoryResponseV0 {
     export type AsObject = {
-      documentHistory?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.AsObject,
+      history?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.History.AsObject,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
 
-    export class DocumentHistoryEntry extends jspb.Message {
-      getDate(): string;
-      setDate(value: string): void;
+    export class Entry extends jspb.Message {
+      getTimeMs(): string;
+      setTimeMs(value: string): void;
 
-      getValue(): Uint8Array | string;
-      getValue_asU8(): Uint8Array;
-      getValue_asB64(): string;
-      setValue(value: Uint8Array | string): void;
+      getRevision(): string;
+      setRevision(value: string): void;
+
+      getDocument(): Uint8Array | string;
+      getDocument_asU8(): Uint8Array;
+      getDocument_asB64(): string;
+      setDocument(value: Uint8Array | string): void;
 
       serializeBinary(): Uint8Array;
-      toObject(includeInstance?: boolean): DocumentHistoryEntry.AsObject;
-      static toObject(includeInstance: boolean, msg: DocumentHistoryEntry): DocumentHistoryEntry.AsObject;
+      toObject(includeInstance?: boolean): Entry.AsObject;
+      static toObject(includeInstance: boolean, msg: Entry): Entry.AsObject;
       static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
       static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-      static serializeBinaryToWriter(message: DocumentHistoryEntry, writer: jspb.BinaryWriter): void;
-      static deserializeBinary(bytes: Uint8Array): DocumentHistoryEntry;
-      static deserializeBinaryFromReader(message: DocumentHistoryEntry, reader: jspb.BinaryReader): DocumentHistoryEntry;
+      static serializeBinaryToWriter(message: Entry, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Entry;
+      static deserializeBinaryFromReader(message: Entry, reader: jspb.BinaryReader): Entry;
     }
 
-    export namespace DocumentHistoryEntry {
+    export namespace Entry {
       export type AsObject = {
-        date: string,
-        value: Uint8Array | string,
+        timeMs: string,
+        revision: string,
+        document: Uint8Array | string,
       }
     }
 
-    export class DocumentHistory extends jspb.Message {
-      clearDocumentEntriesList(): void;
-      getDocumentEntriesList(): Array<GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry>;
-      setDocumentEntriesList(value: Array<GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry>): void;
-      addDocumentEntries(value?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry, index?: number): GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry;
+    export class Lifecycle extends jspb.Message {
+      getState(): GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Lifecycle.StateMap[keyof GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Lifecycle.StateMap];
+      setState(value: GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Lifecycle.StateMap[keyof GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Lifecycle.StateMap]): void;
+
+      getRemainingRevisions(): string;
+      setRemainingRevisions(value: string): void;
 
       serializeBinary(): Uint8Array;
-      toObject(includeInstance?: boolean): DocumentHistory.AsObject;
-      static toObject(includeInstance: boolean, msg: DocumentHistory): DocumentHistory.AsObject;
+      toObject(includeInstance?: boolean): Lifecycle.AsObject;
+      static toObject(includeInstance: boolean, msg: Lifecycle): Lifecycle.AsObject;
       static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
       static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-      static serializeBinaryToWriter(message: DocumentHistory, writer: jspb.BinaryWriter): void;
-      static deserializeBinary(bytes: Uint8Array): DocumentHistory;
-      static deserializeBinaryFromReader(message: DocumentHistory, reader: jspb.BinaryReader): DocumentHistory;
+      static serializeBinaryToWriter(message: Lifecycle, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Lifecycle;
+      static deserializeBinaryFromReader(message: Lifecycle, reader: jspb.BinaryReader): Lifecycle;
     }
 
-    export namespace DocumentHistory {
+    export namespace Lifecycle {
       export type AsObject = {
-        documentEntriesList: Array<GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.AsObject>,
+        state: GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Lifecycle.StateMap[keyof GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Lifecycle.StateMap],
+        remainingRevisions: string,
+      }
+
+      export interface StateMap {
+        ACTIVE: 0;
+        ABSENT: 1;
+      }
+
+      export const State: StateMap;
+    }
+
+    export class History extends jspb.Message {
+      clearEntriesList(): void;
+      getEntriesList(): Array<GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Entry>;
+      setEntriesList(value: Array<GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Entry>): void;
+      addEntries(value?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Entry, index?: number): GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Entry;
+
+      hasLifecycle(): boolean;
+      clearLifecycle(): void;
+      getLifecycle(): GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Lifecycle | undefined;
+      setLifecycle(value?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Lifecycle): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): History.AsObject;
+      static toObject(includeInstance: boolean, msg: History): History.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: History, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): History;
+      static deserializeBinaryFromReader(message: History, reader: jspb.BinaryReader): History;
+    }
+
+    export namespace History {
+      export type AsObject = {
+        entriesList: Array<GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Entry.AsObject>,
+        lifecycle?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.Lifecycle.AsObject,
       }
     }
 
     export enum ResultCase {
       RESULT_NOT_SET = 0,
-      DOCUMENT_HISTORY = 1,
+      HISTORY = 1,
       PROOF = 2,
     }
   }

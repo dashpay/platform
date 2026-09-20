@@ -12,6 +12,20 @@ use grovedb::batch::key_info::KeyInfo;
 #[cfg(feature = "server")]
 use grovedb::batch::KeyInfoPath;
 
+/// Reserved document-type key containing the revision trees.
+pub const DOCUMENT_HISTORY_TREE_KEY: u8 = 2;
+
+/// Path to all retained revisions of one document.
+pub fn document_history_path(
+    contract_id: &[u8],
+    document_type_name: &str,
+    document_id: &[u8],
+) -> Vec<Vec<u8>> {
+    let mut path = contract_document_type_path_vec(contract_id, document_type_name);
+    path.extend([vec![DOCUMENT_HISTORY_TREE_KEY], document_id.to_vec()]);
+    path
+}
+
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Returns the path to a contract document type.
 pub(crate) fn contract_document_type_path<'a>(

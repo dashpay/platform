@@ -29,6 +29,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
             fetch_document_history_query: 0,
             fetch_document_history: 0,
             prove_document_history: 0,
+            primary_key_path_query: 0,
             detect_count_mode: 0,
             detect_sum_mode: 0,
             detect_ranked_mode: 0,

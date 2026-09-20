@@ -225,14 +225,24 @@ pub(crate) fn time_range_index_keys<'a>(
 /// side emits `EstimatedLayerInformation` describing it, and any drift
 /// produces dry-run fees that disagree with applied fees.
 pub(crate) fn terminal_member_tree_type(index_type: &IndexLevelTypeInfo) -> TreeType {
-    let count_provable = matches!(
+    terminal_member_tree_type_for_aggregates(
         index_type.countable,
-        IndexCountability::CountableAllowingOffset
-    );
-    let count_root_only =
-        matches!(index_type.countable, IndexCountability::Countable) && !count_provable;
-    let sum_provable = index_type.range_summable;
-    let sum_root_only = index_type.summable.is_some() && !sum_provable;
+        index_type.summable.is_some(),
+        index_type.range_summable,
+    )
+}
+
+/// The same derivation over an index's own aggregate flags, for callers
+/// that hold the contract's `Index` rather than a resolved level.
+pub(crate) fn terminal_member_tree_type_for_aggregates(
+    countable: IndexCountability,
+    summable: bool,
+    range_summable: bool,
+) -> TreeType {
+    let count_provable = matches!(countable, IndexCountability::CountableAllowingOffset);
+    let count_root_only = matches!(countable, IndexCountability::Countable) && !count_provable;
+    let sum_provable = range_summable;
+    let sum_root_only = summable && !sum_provable;
     match (count_provable, count_root_only, sum_provable, sum_root_only) {
         (false, false, false, false) => TreeType::NormalTree,
         (false, true, false, false) => TreeType::CountTree,

@@ -19,7 +19,7 @@ use dpp::document::DocumentV0Getters;
 #[cfg(feature = "server")]
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
 #[cfg(feature = "server")]
-use grovedb::Element;
+use grovedb::{Element, EstimatedLayerSizes};
 
 #[cfg(feature = "server")]
 mod delete;
@@ -27,12 +27,16 @@ mod delete;
 mod estimation_costs;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod get_fetch;
+/// Composite-key history queries and proof results.
 #[cfg(feature = "server")]
 mod index_uniqueness;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert_contested;
+/// Activation migration and its inventory.
+#[cfg(feature = "server")]
+pub mod migration;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 pub mod query;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
@@ -297,6 +301,92 @@ fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
 }
 
 #[cfg(feature = "server")]
+/// Creates a reference to a document stored with the per-type history tree by
+/// primary-storage writer version 1.
+///
+/// The reference always points at the primary key tree entry. For a
+/// keep-history type that entry is itself a reference to the current revision
+/// in the history tree, so one more hop is allowed.
+fn make_document_reference_v1(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    storage_flags: Option<&StorageFlags>,
+) -> Element {
+    let reference_path = vec![vec![0], document.id().to_vec()];
+    let max_reference_hops = if document_type.documents_keep_history() {
+        2
+    } else {
+        1
+    };
+    Element::Reference(
+        UpstreamRootHeightReference(4, reference_path),
+        Some(max_reference_hops),
+        StorageFlags::map_to_some_element_flags(storage_flags),
+    )
+}
+
+#[cfg(feature = "server")]
+/// [`make_document_reference_v1`] carrying the document's sum contribution for
+/// a summable index.
+pub(crate) fn make_document_reference_with_sum_item_v1(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    sum_value: i64,
+    storage_flags: Option<&StorageFlags>,
+) -> Element {
+    let reference_path = vec![vec![0], document.id().to_vec()];
+    let max_reference_hops = if document_type.documents_keep_history() {
+        2
+    } else {
+        1
+    };
+    Element::new_reference_with_sum_item_with_max_hops_and_flags(
+        UpstreamRootHeightReference(4, reference_path),
+        Some(max_reference_hops),
+        sum_value,
+        StorageFlags::map_to_some_element_flags(storage_flags),
+    )
+}
+
+#[cfg(feature = "server")]
+/// Serialized size of a [`make_document_reference_v1`] reference: the path is
+/// always `[0, document id]`.
+fn document_reference_size_v1() -> u32 {
+    // 1 for type reference
+    // 1 for reference type
+    // 1 for root height offset
+    // 36 for the reference path (vec size, subvec size, 0, subvec size, 32-byte id)
+    // 1 reference_hops option
+    // 1 reference_hops count
+    // 1 element flags option
+    6 + 36
+}
+
+#[cfg(feature = "server")]
+fn document_reference_estimated_layer_sizes_v1(
+    key_size: u8,
+    flags_size: Option<u32>,
+    summable: bool,
+) -> EstimatedLayerSizes {
+    if summable {
+        EstimatedLayerSizes::AllReferencesWithSumItem(
+            key_size,
+            document_reference_size_v1(),
+            flags_size,
+        )
+    } else {
+        EstimatedLayerSizes::AllReference(key_size, document_reference_size_v1(), flags_size)
+    }
+}
+
+#[cfg(feature = "server")]
+fn document_reference_estimated_value_size_v1(flags_size: u32, summable: bool) -> u32 {
+    const SUM_ITEM_SIZE: u32 = 10;
+
+    document_reference_size_v1() + flags_size + if summable { SUM_ITEM_SIZE } else { 0 }
+}
+
+#[cfg(feature = "server")]
 fn unique_event_id() -> [u8; 32] {
     rand::random::<[u8; 32]>()
 }
@@ -307,6 +397,10 @@ fn unique_event_id() -> [u8; 32] {
 pub(crate) mod tests {
     use std::option::Option::None;
 
+    use super::{
+        document_reference_estimated_layer_sizes_v1, document_reference_estimated_value_size_v1,
+        document_reference_size_v1,
+    };
     use crate::drive::Drive;
     use crate::util::storage_flags::StorageFlags;
     use dpp::block::block_info::BlockInfo;
@@ -315,6 +409,31 @@ pub(crate) mod tests {
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
+    use grovedb::EstimatedLayerSizes::{AllReference, AllReferencesWithSumItem};
+
+    #[test]
+    fn summable_document_reference_estimates_include_the_sum_item() {
+        assert_eq!(
+            document_reference_estimated_layer_sizes_v1(32, Some(17), true),
+            AllReferencesWithSumItem(32, document_reference_size_v1(), Some(17))
+        );
+        assert_eq!(
+            document_reference_estimated_value_size_v1(17, true),
+            document_reference_size_v1() + 17 + 10
+        );
+    }
+
+    #[test]
+    fn plain_document_reference_estimates_remain_unchanged() {
+        assert_eq!(
+            document_reference_estimated_layer_sizes_v1(32, Some(17), false),
+            AllReference(32, document_reference_size_v1(), Some(17))
+        );
+        assert_eq!(
+            document_reference_estimated_value_size_v1(17, false),
+            document_reference_size_v1() + 17
+        );
+    }
 
     /// Setup Dashpay
     pub fn setup_dashpay(_prefix: &str, mutable_contact_requests: bool) -> (Drive, DataContract) {

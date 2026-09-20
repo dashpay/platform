@@ -156,7 +156,11 @@ use crate::util::grove_operations::QueryType::StatefulQuery;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod canonicalize;
 #[cfg(any(feature = "server", feature = "verify"))]
+mod primary_key_path_query;
+#[cfg(any(feature = "server", feature = "verify"))]
 pub use canonicalize::validate_and_canonicalize_where_clauses;
+#[cfg(any(feature = "server", feature = "verify"))]
+use primary_key_path_query::{primary_key_path_query_target, PrimaryKeyPathQueryTarget};
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod conditions;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -191,6 +195,15 @@ pub mod vote_poll_contestant_votes_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Vote polls by end date query
 pub mod vote_polls_by_end_date_query;
+
+/// A page of a historical document's retained revisions
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod document_history_drive_query;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult, DocumentHistoryEntry,
+    DocumentHistoryFilter, DocumentHistoryLifecycle, DocumentHistoryState,
+};
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Vote polls by document type query
@@ -1874,6 +1887,26 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
+    /// The cursor lookup for the protocol 15 layout, where a keep-history
+    /// document's primary key tree entry points at its current revision: the
+    /// cursor is always the document id in the primary key tree.
+    pub fn start_at_document_path_and_key_v1(
+        &self,
+        starts_at: &[u8; 32],
+    ) -> (Vec<Vec<u8>>, Vec<u8>) {
+        let document_holding_path = self
+            .contract
+            .documents_primary_key_path(self.document_type.name().as_str());
+        (
+            document_holding_path
+                .into_iter()
+                .map(|key| key.to_vec())
+                .collect::<Vec<_>>(),
+            starts_at.to_vec(),
+        )
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Versioned preflight over the non-primary-key `In` clause shape.
     ///
     /// Runs before any cursor storage lookup or proof processing so the
@@ -1929,6 +1962,16 @@ impl<'a> DriveDocumentQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        if self.document_type.documents_keep_history()
+            && self.block_time_ms.is_some()
+            && primary_key_path_query_target(platform_version)?
+                == PrimaryKeyPathQueryTarget::CurrentDocument
+        {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "point-in-time reads are unavailable for history-keeping document types"
+                    .to_string(),
+            )));
+        }
         self.validate_in_clause_shape(platform_version)?;
         // indexOnly documents have no primary-key tree: nothing is ever
         // addressed by document id, so a by-id query has no tree to land on.
@@ -1984,7 +2027,13 @@ impl<'a> DriveDocumentQuery<'a> {
                 // from the backing store
 
                 let (start_at_document_path, start_at_document_key) =
-                    self.start_at_document_path_and_key(starts_at);
+                    if primary_key_path_query_target(platform_version)?
+                        == PrimaryKeyPathQueryTarget::CurrentDocument
+                    {
+                        self.start_at_document_path_and_key_v1(starts_at)
+                    } else {
+                        self.start_at_document_path_and_key(starts_at)
+                    };
                 let start_at_document = drive
                     .grove_get(
                         start_at_document_path.as_slice().into(),
@@ -2146,6 +2195,16 @@ impl<'a> DriveDocumentQuery<'a> {
         starts_at_document: Option<Document>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        if self.document_type.documents_keep_history()
+            && self.block_time_ms.is_some()
+            && primary_key_path_query_target(platform_version)?
+                == PrimaryKeyPathQueryTarget::CurrentDocument
+        {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "point-in-time reads are unavailable for history-keeping document types"
+                    .to_string(),
+            )));
+        }
         self.validate_in_clause_shape(platform_version)?;
         // indexOnly documents have no primary-key tree: nothing is ever
         // addressed by document id, so a by-id query has no tree to land on.
@@ -2359,6 +2418,8 @@ impl<'a> DriveDocumentQuery<'a> {
         starts_at_document: Option<(Document, bool)>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        let uses_current_document = primary_key_path_query_target(platform_version)?
+            == PrimaryKeyPathQueryTarget::CurrentDocument;
         let mut path = document_type_path;
 
         // Add primary key ($id) subtree
@@ -2373,7 +2434,7 @@ impl<'a> DriveDocumentQuery<'a> {
             )?;
             query.insert_key(key);
 
-            if self.document_type.documents_keep_history() {
+            if self.document_type.documents_keep_history() && !uses_current_document {
                 // if the documents keep history then we should insert a subquery
                 if let Some(block_time) = self.block_time_ms {
                     let encoded_block_time = encode_u64(block_time);
@@ -2452,7 +2513,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     }
                 }
 
-                if self.document_type.documents_keep_history() {
+                if self.document_type.documents_keep_history() && !uses_current_document {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
                         //todo
@@ -2493,7 +2554,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     },
                 }
 
-                if self.document_type.documents_keep_history() {
+                if self.document_type.documents_keep_history() && !uses_current_document {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
                         return Err(Error::Query(QuerySyntaxError::Unsupported(
@@ -3171,6 +3232,8 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::drive::Drive;
+    use crate::error::{drive::DriveError, Error};
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::query::{
         DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator,
     };
@@ -3224,6 +3287,118 @@ mod tests {
             .expect("expected to apply contract successfully");
 
         (drive, contract)
+    }
+
+    fn keep_history_contract() -> DataContract {
+        json_document_to_contract(
+            "tests/supporting_files/contract/family/family-contract-with-history.json",
+            false,
+            PlatformVersion::latest(),
+        )
+        .expect("expected history contract")
+    }
+
+    fn keep_history_primary_query(contract: &DataContract) -> DriveDocumentQuery<'_> {
+        DriveDocumentQuery {
+            contract,
+            document_type: contract
+                .document_type_for_name("person")
+                .expect("person document type"),
+            internal_clauses: InternalClauses::default(),
+            offset: None,
+            limit: Some(10),
+            order_by: IndexMap::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        }
+    }
+
+    #[test]
+    fn should_select_keep_history_primary_path_by_query_version() {
+        let contract = keep_history_contract();
+        let query = keep_history_primary_query(&contract);
+        let legacy = query
+            .construct_path_query(None, PlatformVersion::get(14).expect("protocol 14"))
+            .expect("legacy query");
+        assert_eq!(
+            legacy.query.query.default_subquery_branch.subquery_path,
+            Some(vec![vec![0]])
+        );
+
+        let current = query
+            .construct_path_query(None, PlatformVersion::get(15).expect("protocol 15"))
+            .expect("protocol 15 query");
+        assert_eq!(
+            current.query.query.default_subquery_branch.subquery_path,
+            None
+        );
+    }
+
+    #[test]
+    fn should_reject_unknown_primary_key_path_query_version_in_pure_query() {
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/family/family-contract.json",
+            false,
+            PlatformVersion::latest(),
+        )
+        .expect("expected non-history contract");
+        let query = keep_history_primary_query(&contract);
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .primary_key_path_query = 2;
+
+        let error = query
+            .construct_path_query(None, &platform_version)
+            .expect_err("unknown path-query versions must fail closed");
+        assert!(matches!(
+            error,
+            Error::Drive(DriveError::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received: 2,
+            }) if method == "primary_key_path_query" && known_versions == vec![0, 1]
+        ));
+    }
+
+    #[test]
+    fn should_reject_unknown_primary_key_path_query_version_in_stateful_cursor_lookup() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract = keep_history_contract();
+        let mut query = keep_history_primary_query(&contract);
+        query.start_at = Some([3; 32]);
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .primary_key_path_query = 2;
+        let mut operations: Vec<LowLevelDriveOperation> = vec![];
+
+        let error = query
+            .construct_path_query_operations(
+                &drive,
+                false,
+                None,
+                &mut operations,
+                &platform_version,
+            )
+            .expect_err("unknown path-query versions must fail closed");
+        assert!(matches!(
+            error,
+            Error::Drive(DriveError::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received: 2,
+            }) if method == "primary_key_path_query" && known_versions == vec![0, 1]
+        ));
     }
 
     fn setup_withdrawal_contract() -> (Drive, DataContract) {
