@@ -44,6 +44,7 @@ pub struct DriveContractFeePotMethodVersions {
     pub add_to_contract_fee_pot: FeatureVersion,
     pub deduct_from_contract_fee_pot: FeatureVersion,
     pub fetch_contract_fee_pot: FeatureVersion,
+    pub fetch_action_fee_multiplier: FeatureVersion,
     pub set_contract_last_fee_claim_epoch: FeatureVersion,
     pub prove_contract_fee_pots: FeatureVersion,
     pub add_estimation_costs_for_contract_fee_pot_update: FeatureVersion,

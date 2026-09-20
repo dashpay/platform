@@ -15,7 +15,11 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::batch::{
+    action_fee_operations, action_fees_total, ResolvedDocumentActionFee, ResolvedGasSponsor,
+};
 
 /// What a state transition needs to find in the budget of the key that signed it.
 ///
@@ -41,6 +45,31 @@ pub(in crate::execution::platform_events::state_transition_processing) fn requir
         .saturating_add(user_fee_increase_amount)
 }
 
+/// Whether the gas sponsor pays: their balance covers the estimated gas and the document action
+/// fees they would owe. Whoever pays the gas pays the action fees, so there is one question and
+/// fee validation and execution both ask it here, on the same estimate, and always agree.
+pub(in crate::execution::platform_events::state_transition_processing) fn gas_sponsor_pays(
+    gas_sponsor: &ResolvedGasSponsor,
+    required_gas: Credits,
+    action_fees: &[ResolvedDocumentActionFee],
+) -> Result<bool, ProtocolError> {
+    Ok(gas_sponsor.covers(required_from_gas_sponsor(
+        gas_sponsor,
+        required_gas,
+        action_fees,
+    )?))
+}
+
+/// What the gas sponsor's balance has to cover: the estimated gas and the document action fees
+/// they would owe.
+fn required_from_gas_sponsor(
+    gas_sponsor: &ResolvedGasSponsor,
+    required_gas: Credits,
+    action_fees: &[ResolvedDocumentActionFee],
+) -> Result<Credits, ProtocolError> {
+    Ok(required_gas.saturating_add(action_fees_total(&gas_sponsor.identity_id, action_fees)?))
+}
+
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
@@ -57,11 +86,20 @@ where
     ///   unpaid, and hands a batch that merely prefers them back to the identity's balance. When
     ///   the sponsor pays, the key's budget only has to cover `removed_balance`.
     ///
+    /// * the document action fees a batch owes (the `actionFees` keyword): whoever pays the gas
+    ///   pays them. The sponsor's balance has to cover the gas and the fees the sponsor would
+    ///   owe, and failing that the identity's balance has to cover the gas, its own principal
+    ///   and the fees the identity would owe, which also count against a budgeted key. The gas
+    ///   is estimated once, with the operations that charge the identity: they are those of
+    ///   the sponsor plus, at most, one addition to the owner pot, which a sponsor, being the
+    ///   contract owner, never makes, so the estimate covers either payer.
+    ///
     /// Every failure leaves the state transition unpaid, like an insufficient balance: nobody
     /// was allowed to be charged. This stage runs in check tx with the last committed block time
     /// and at execution with the block's own time.
     ///
-    /// Every event with neither signing key limits nor a gas sponsor is validated by v0.
+    /// Every event with no signing key limits, no gas sponsor and no action fees is validated
+    /// by v0.
     pub(super) fn validate_fees_of_event_v1(
         &self,
         event: &ExecutionEvent,
@@ -79,6 +117,7 @@ where
             user_fee_increase,
             signing_key_limits,
             gas_sponsor,
+            action_fees,
             ..
         } = event
         else {
@@ -91,7 +130,7 @@ where
             );
         };
 
-        if signing_key_limits.is_none() && gas_sponsor.is_none() {
+        if signing_key_limits.is_none() && gas_sponsor.is_none() && action_fees.is_empty() {
             return self.validate_fees_of_event_v0(
                 event,
                 block_info,
@@ -126,10 +165,13 @@ where
                     "partial identity info with no balance in paid execution event",
                 )))?;
         let principal = removed_balance.unwrap_or_default();
+        let identity_action_fees = action_fees_total(&identity.id, action_fees)?;
+        let mut operations = operations.clone();
+        operations.extend(action_fee_operations(identity.id, action_fees)?);
         let mut estimated_fee_result = self
             .drive
             .apply_drive_operations(
-                operations.clone(),
+                operations,
                 false,
                 block_info,
                 transaction,
@@ -169,7 +211,7 @@ where
                         .into()],
                     ));
                 }
-                if gas_sponsor.covers(required_balance) {
+                if gas_sponsor_pays(gas_sponsor, required_balance, action_fees)? {
                     true
                 } else if gas_sponsor.strict {
                     return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -178,7 +220,11 @@ where
                             GasSponsorInsufficientBalanceError::new(
                                 gas_sponsor.identity_id,
                                 gas_sponsor.balance,
-                                required_balance,
+                                required_from_gas_sponsor(
+                                    gas_sponsor,
+                                    required_balance,
+                                    action_fees,
+                                )?,
                             ),
                         )
                         .into()],
@@ -191,6 +237,8 @@ where
         };
 
         if !sponsor_pays {
+            // The identity pays the gas, and with it the action fees it owes.
+            let required_balance = required_balance.saturating_add(identity_action_fees);
             let balance_after_principal_operation = balance.saturating_sub(principal);
             if balance_after_principal_operation < required_balance {
                 let total_required = required_balance.saturating_add(principal);
@@ -209,8 +257,9 @@ where
                 let required_budget = if sponsor_pays {
                     principal
                 } else {
+                    // The action fees leave the identity like a principal does.
                     required_from_key_budget(
-                        *removed_balance,
+                        Some(principal.saturating_add(identity_action_fees)),
                         estimated_fee_result.storage_fee,
                         *additional_fixed_fee_cost,
                         user_fee_increase_amount,

@@ -5,6 +5,7 @@ use dpp::consensus::basic::contract_group::{
     InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
     RedundantContractGroupMembershipError,
 };
+use dpp::consensus::basic::contract_moderation::DocumentActionFeesWithoutModerationError;
 use dpp::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError;
 use dpp::consensus::ConsensusError;
 use dpp::contract_group::ContractGroupMember;
@@ -12,6 +13,7 @@ use dpp::dashcore::Network;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
+use dpp::data_contract::document_type::action_fees::DocumentActionFees;
 use dpp::identifier::Identifier;
 use dpp::state_transition::data_contract_create_transition::accessors::{
     DataContractCreateTransitionAccessorsV0, DataContractCreateTransitionAccessorsV1,
@@ -132,6 +134,21 @@ impl DataContractCreateStateTransitionBasicStructureValidationV2 for DataContrac
             let result = moderation.validate(platform_version)?;
             if !result.is_valid() {
                 return Ok(result);
+            }
+        }
+
+        // Document action fees: a document type may only charge for the moderators when the
+        // contract declares moderation, since the moderation team is who that pot is for.
+        if self.data_contract().config().moderation().is_none() {
+            if let Some(document_type_name) =
+                DocumentActionFees::first_document_type_charging_moderators(
+                    self.data_contract().document_schemas(),
+                )
+            {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DocumentActionFeesWithoutModerationError::new(document_type_name.clone())
+                        .into(),
+                ));
             }
         }
 

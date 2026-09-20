@@ -7,11 +7,17 @@
 //! document type is published and never change.
 
 use crate::balances::credits::{Credits, MAX_CREDITS};
+use crate::data_contract::document_type::class_methods::{
+    consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
+};
+use crate::data_contract::document_type::property_names::ACTION_FEES;
+use crate::data_contract::errors::DataContractError;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonSafeFields;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -169,6 +175,130 @@ fn scale(amount: Credits, fee_multiplier_permille: u64) -> Result<Credits, Proto
 pub enum DocumentActionFees {
     /// Version 0 of the action fees
     V0(DocumentActionFeesV0),
+}
+
+impl DocumentActionFees {
+    /// Reads the `actionFees` keyword of a document type's schema, `None` when the schema
+    /// declares none.
+    ///
+    /// A declaration must price at least one action, every priced action must charge
+    /// something, and no amount (nor the sum of an action's two parts) may exceed
+    /// `MAX_CREDITS`.
+    pub fn try_from_document_schema(
+        schema: &Value,
+        name: &str,
+    ) -> Result<Option<Self>, ProtocolError> {
+        let structure_error = |message: String| {
+            consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+                message,
+            ))
+        };
+
+        let Ok(schema_map) = schema.to_map() else {
+            return Ok(None);
+        };
+        let Some(action_fees) = Value::get_optional_from_map(schema_map, ACTION_FEES) else {
+            return Ok(None);
+        };
+        if !action_fees.is_map() {
+            return Err(structure_error(format!(
+                "document type \"{name}\": `{ACTION_FEES}` must be an object"
+            )));
+        }
+
+        let pricing = match action_fees
+            .get_optional_str("pricing")
+            .map_err(consensus_or_protocol_value_error)?
+        {
+            None => ActionFeePricing::default(),
+            Some(value) => ActionFeePricing::from_schema_value(value).ok_or_else(|| {
+                structure_error(format!(
+                    "document type \"{name}\": `{ACTION_FEES}.pricing` must be \"{}\" or \"{}\", \
+                     got \"{value}\"",
+                    pricing_names::FEE_MULTIPLIER,
+                    pricing_names::FIXED,
+                ))
+            })?,
+        };
+
+        let extract_fee = |action: &str| -> Result<Option<DocumentActionFee>, ProtocolError> {
+            let Some(entry) = action_fees
+                .get_optional_value(action)
+                .map_err(consensus_or_protocol_value_error)?
+            else {
+                return Ok(None);
+            };
+            if !entry.is_map() {
+                return Err(structure_error(format!(
+                    "document type \"{name}\": `{ACTION_FEES}.{action}` must be an object"
+                )));
+            }
+            let part = |key: &str| -> Result<Credits, ProtocolError> {
+                let amount = entry
+                    .get_optional_integer::<Credits>(key)
+                    .map_err(consensus_or_protocol_value_error)?
+                    .unwrap_or_default();
+                if amount > MAX_CREDITS {
+                    return Err(structure_error(format!(
+                        "document type \"{name}\": `{ACTION_FEES}.{action}.{key}` of {amount} \
+                         credits is over the maximum of {MAX_CREDITS}"
+                    )));
+                }
+                Ok(amount)
+            };
+            let fee = DocumentActionFee {
+                owner: part("owner")?,
+                moderators: part("moderators")?,
+            };
+            if fee.non_zero().is_none() {
+                return Err(structure_error(format!(
+                    "document type \"{name}\": `{ACTION_FEES}.{action}` charges nothing; leave the \
+                     action out instead"
+                )));
+            }
+            if fee.total().is_err() {
+                return Err(structure_error(format!(
+                    "document type \"{name}\": the two parts of `{ACTION_FEES}.{action}` add up to \
+                     more than the maximum of {MAX_CREDITS} credits"
+                )));
+            }
+            Ok(Some(fee))
+        };
+
+        let fees = DocumentActionFeesV0 {
+            pricing,
+            create: extract_fee("create")?,
+            replace: extract_fee("replace")?,
+            delete: extract_fee("delete")?,
+            transfer: extract_fee("transfer")?,
+            update_price: extract_fee("update_price")?,
+            purchase: extract_fee("purchase")?,
+        };
+        let fees: DocumentActionFees = fees.into();
+        if fees.all().next().is_none() {
+            return Err(structure_error(format!(
+                "document type \"{name}\": `{ACTION_FEES}` prices no action"
+            )));
+        }
+        Ok(Some(fees))
+    }
+
+    /// The name of the first document type, in name order, whose schema charges a moderators
+    /// part. A schema whose declaration is malformed is skipped: refusing it is the job of the
+    /// document type parser.
+    pub fn first_document_type_charging_moderators<'a>(
+        document_schemas: impl IntoIterator<Item = (&'a String, &'a Value)>,
+    ) -> Option<&'a String> {
+        document_schemas
+            .into_iter()
+            .find(|(name, schema)| {
+                matches!(
+                    Self::try_from_document_schema(schema, name),
+                    Ok(Some(fees)) if fees.charges_moderators_part()
+                )
+            })
+            .map(|(name, _)| name)
+    }
 }
 
 impl DocumentActionFees {

@@ -13,8 +13,9 @@ use dpp::prelude::UserFeeIncrease;
 use dpp::ProtocolError;
 use std::collections::{BTreeMap, BTreeSet};
 use dpp::data_contract::document_type::action_fees::{
-    ActionFeePricing, ContractFeePot, DocumentActionFee,
+    ActionFeePricing, ContractFeePot, DocumentActionFee, FEE_MULTIPLIER_PERMILLE_BASE,
 };
+use dpp::prelude::FeeMultiplier;
 use crate::util::batch::drive_op_batch::{ContractFeePotOperationType, IdentityOperationType};
 use crate::util::batch::DriveOperation;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
@@ -301,18 +302,49 @@ impl BatchTransitionAction {
         }
     }
 
-    /// The action fees the batch owes, priced by the batch transformer (protocol version 14)
-    pub fn action_fees(&self) -> &[ResolvedDocumentActionFee] {
+    /// The fee multiplier, in permille, of the epoch the batch executes in, as the batch
+    /// transformer read it (protocol version 14). Only read when some document transition of
+    /// the batch declares an action fee priced by it.
+    pub fn action_fee_multiplier_permille(&self) -> Option<FeeMultiplier> {
         match self {
-            BatchTransitionAction::V0(v0) => &v0.action_fees,
+            BatchTransitionAction::V0(v0) => v0.action_fee_multiplier_permille,
         }
     }
 
-    /// Records the action fees the batch owes
-    pub fn set_action_fees(&mut self, action_fees: Vec<ResolvedDocumentActionFee>) {
+    /// Records the fee multiplier of the epoch the batch executes in
+    pub fn set_action_fee_multiplier_permille(&mut self, multiplier: Option<FeeMultiplier>) {
         match self {
-            BatchTransitionAction::V0(v0) => v0.action_fees = action_fees,
+            BatchTransitionAction::V0(v0) => v0.action_fee_multiplier_permille = multiplier,
         }
+    }
+
+    /// The action fees the batch owes: what its document transitions declare, priced.
+    ///
+    /// They are read off the transitions as they are now, not as the transformer built them.
+    /// State validation replaces a transition that fails with a nonce bump after the
+    /// transformer ran, and a bump declares nothing, so a fee is only ever owed for an action
+    /// that executes.
+    pub fn resolved_action_fees(&self) -> Result<Vec<ResolvedDocumentActionFee>, ProtocolError> {
+        self.declared_action_fees()
+            .into_iter()
+            .map(|(contract_id, contract_owner_id, pricing, fee)| {
+                let fee_multiplier_permille = match pricing {
+                    ActionFeePricing::Fixed => FEE_MULTIPLIER_PERMILLE_BASE,
+                    ActionFeePricing::FeeMultiplier => self
+                        .action_fee_multiplier_permille()
+                        .ok_or(ProtocolError::CorruptedCodeExecution(
+                            "the batch transformer reads the fee multiplier of every batch that \
+                             declares an action fee priced by it"
+                                .to_string(),
+                        ))?,
+                };
+                Ok(ResolvedDocumentActionFee {
+                    contract_id,
+                    contract_owner_id,
+                    fee: fee.charged(pricing, fee_multiplier_permille)?,
+                })
+            })
+            .collect()
     }
 
     /// Records the contract owner who sponsors the batch's gas, with their balance

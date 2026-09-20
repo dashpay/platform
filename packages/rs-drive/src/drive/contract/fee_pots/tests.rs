@@ -340,3 +340,38 @@ fn should_estimate_a_pot_write_without_writing() {
         actual.total_base_fee()
     );
 }
+
+#[test]
+fn should_read_the_epoch_fee_multiplier_and_fall_back_in_the_first_block_of_an_epoch() {
+    use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use crate::util::batch::GroveDbOpBatch;
+    use dpp::block::epoch::Epoch;
+
+    let (drive, _) = drive_with_contract();
+    let platform_version = PlatformVersion::latest();
+    let epoch = Epoch::new(5).expect("expected an epoch");
+    let schedule_multiplier = platform_version
+        .fee_version
+        .uses_version_fee_multiplier_permille
+        .expect("expected the fee schedule to set a multiplier");
+
+    // The epoch's tree is there but the epoch was not initialized yet: state transitions of
+    // the first block of an epoch execute before the block end initializes it.
+    let (fee, multiplier) = drive
+        .fetch_action_fee_multiplier_with_fee(&epoch, None, platform_version)
+        .expect("expected to read the multiplier");
+    assert_eq!(multiplier, schedule_multiplier);
+    assert!(fee.processing_fee > 0, "the read is billed");
+
+    let mut batch = GroveDbOpBatch::new();
+    batch.push(epoch.update_fee_multiplier_operation(1_500));
+    drive
+        .grove_apply_batch(batch, false, None, &platform_version.drive)
+        .expect("expected to set the epoch's multiplier");
+
+    let (_, multiplier) = drive
+        .fetch_action_fee_multiplier_with_fee(&epoch, None, platform_version)
+        .expect("expected to read the multiplier");
+    assert_eq!(multiplier, 1_500);
+}

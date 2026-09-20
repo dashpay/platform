@@ -8,7 +8,7 @@
 
 use super::*;
 
-mod gas_sponsorship_tests {
+pub(crate) mod gas_sponsorship_tests {
     use super::*;
     use crate::execution::check_tx::CheckTxLevel;
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
@@ -44,8 +44,8 @@ mod gas_sponsorship_tests {
     use simple_signer::signer::SimpleSigner;
 
     const GAS_FEES_PAID_BY_NOT_ALLOWED: u32 = 40129;
-    const GAS_SPONSOR_INSUFFICIENT_BALANCE: u32 = 40222;
-    const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+    pub(crate) const GAS_SPONSOR_INSUFFICIENT_BALANCE: u32 = 40222;
+    pub(crate) const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
     const IDENTITY_DOES_NOT_HAVE_ENOUGH_TOKEN_BALANCE: u32 = 40700;
     const REQUIRED_TOKEN_PAYMENT_INFO_NOT_SET: u32 = 40115;
     const INVALID_DOCUMENT_REVISION: u32 = 40106;
@@ -53,17 +53,17 @@ mod gas_sponsorship_tests {
     /// Creating a card costs 10 gold, transferred to the contract owner.
     const CARD_COST: TokenAmount = 10;
 
-    struct Sponsorship {
-        platform: TempPlatform<MockCoreRPCLike>,
-        platform_version: &'static PlatformVersion,
-        contract: DataContract,
+    pub(crate) struct Sponsorship {
+        pub(crate) platform: TempPlatform<MockCoreRPCLike>,
+        pub(crate) platform_version: &'static PlatformVersion,
+        pub(crate) contract: DataContract,
         gold_token_id: Identifier,
-        contract_owner: Identity,
+        pub(crate) contract_owner: Identity,
         contract_owner_signer: SimpleSigner,
         contract_owner_key: IdentityPublicKey,
-        user: Identity,
-        user_signer: SimpleSigner,
-        user_key: IdentityPublicKey,
+        pub(crate) user: Identity,
+        pub(crate) user_signer: SimpleSigner,
+        pub(crate) user_key: IdentityPublicKey,
     }
 
     impl Sponsorship {
@@ -116,6 +116,31 @@ mod gas_sponsorship_tests {
             user_credits: Credits,
             user_gold: TokenAmount,
             user_key_budget: Option<Credits>,
+        ) -> Self {
+            Self::build_customized(
+                platform_version,
+                offered,
+                optional,
+                owner_credits,
+                user_credits,
+                user_gold,
+                user_key_budget,
+                |_| {},
+            )
+        }
+
+        /// Like `build`, with `customize` changing the contract after everything else was set
+        /// on it and before it is stored.
+        #[allow(clippy::too_many_arguments)]
+        pub(crate) fn build_customized(
+            platform_version: &'static PlatformVersion,
+            offered: GasFeesPaidBy,
+            optional: bool,
+            owner_credits: Credits,
+            user_credits: Credits,
+            user_gold: TokenAmount,
+            user_key_budget: Option<Credits>,
+            customize: impl FnOnce(&mut DataContract),
         ) -> Self {
             let mut platform = TestPlatformBuilder::new()
                 .with_initial_protocol_version(platform_version.protocol_version)
@@ -214,6 +239,7 @@ mod gas_sponsorship_tests {
                         .expect("expected the replacement token cost to be set")
                         .set_value("gasFeesPaidBy", offered_int.into())
                         .expect("expected to set who pays the gas of a replacement");
+                    customize(data_contract);
                 }),
                 None,
                 Some(platform_version),
@@ -239,7 +265,7 @@ mod gas_sponsorship_tests {
         }
 
         /// The user's card creation, asking `requested` for the gas
-        async fn card_creation(&self, requested: GasFeesPaidBy) -> StateTransition {
+        pub(crate) async fn card_creation(&self, requested: GasFeesPaidBy) -> StateTransition {
             self.card_creation_by(
                 &self.user,
                 &self.user_key,
@@ -276,7 +302,7 @@ mod gas_sponsorship_tests {
         }
 
         /// The contract owner's own card creation, asking `requested` for the gas
-        async fn card_creation_by_the_contract_owner(
+        pub(crate) async fn card_creation_by_the_contract_owner(
             &self,
             requested: GasFeesPaidBy,
         ) -> StateTransition {
@@ -320,7 +346,7 @@ mod gas_sponsorship_tests {
         }
 
         /// The card `creator` creates, always the same one, with the entropy of its id
-        fn card_of(&self, creator: &Identity) -> (Document, Bytes32) {
+        pub(crate) fn card_of(&self, creator: &Identity) -> (Document, Bytes32) {
             let mut rng = StdRng::seed_from_u64(433);
             let card_document_type = self
                 .contract
@@ -342,7 +368,7 @@ mod gas_sponsorship_tests {
             (document, entropy)
         }
 
-        async fn card_creation_by(
+        pub(crate) async fn card_creation_by(
             &self,
             creator: &Identity,
             key: &IdentityPublicKey,
@@ -377,7 +403,7 @@ mod gas_sponsorship_tests {
             .expect("expected a batch transition")
         }
 
-        fn process(
+        pub(crate) fn process(
             &self,
             transition: &StateTransition,
             tx: &drive::grovedb::Transaction,
@@ -402,7 +428,7 @@ mod gas_sponsorship_tests {
             result.execution_results()[0].clone()
         }
 
-        fn check_tx(&self, transition: &StateTransition) -> Vec<u32> {
+        pub(crate) fn check_tx(&self, transition: &StateTransition) -> Vec<u32> {
             self.check_tx_at(transition, FirstTimeCheck)
         }
 
@@ -427,7 +453,11 @@ mod gas_sponsorship_tests {
                 .collect()
         }
 
-        fn credits(&self, identity: &Identity, tx: &drive::grovedb::Transaction) -> Credits {
+        pub(crate) fn credits(
+            &self,
+            identity: &Identity,
+            tx: &drive::grovedb::Transaction,
+        ) -> Credits {
             self.platform
                 .drive
                 .fetch_identity_balance(identity.id().to_buffer(), Some(tx), self.platform_version)
@@ -449,7 +479,7 @@ mod gas_sponsorship_tests {
         }
     }
 
-    fn total_fee(result: &StateTransitionExecutionResult) -> Credits {
+    pub(crate) fn total_fee(result: &StateTransitionExecutionResult) -> Credits {
         match result {
             SuccessfulExecution { fee_result, .. } => fee_result.total_base_fee(),
             PaidConsensusError { actual_fees, .. } => actual_fees.total_base_fee(),

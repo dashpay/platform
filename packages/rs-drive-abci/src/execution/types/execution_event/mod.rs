@@ -21,7 +21,7 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use drive::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
-use drive::state_transition_action::batch::ResolvedGasSponsor;
+use drive::state_transition_action::batch::{ResolvedDocumentActionFee, ResolvedGasSponsor};
 use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNonceActionAccessorsV0;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionAccessorsV0;
 use drive::util::batch::DriveOperation;
@@ -55,6 +55,11 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// execution v1 charges the sponsor instead of the identity when it covers the fee, both
         /// from protocol version 14; the identity always funds `removed_balance` itself.
         gas_sponsor: Option<ResolvedGasSponsor>,
+        /// The action fees the batch's document transitions owe (the `actionFees` keyword,
+        /// protocol version 14), priced by the batch transformer. Whoever pays the gas pays
+        /// them: fee validation and execution turn them into operations for that payer. Empty
+        /// for every other transition.
+        action_fees: Vec<ResolvedDocumentActionFee>,
     },
     /// A drive event that is paid by address inputs, this one can also be used by asset lock to address
     PaidFromAddressInputs {
@@ -259,6 +264,7 @@ impl ExecutionEvent<'_> {
                         user_fee_increase,
                         signing_key_limits,
                         gas_sponsor: None,
+                        action_fees: vec![],
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -282,6 +288,7 @@ impl ExecutionEvent<'_> {
                         user_fee_increase,
                         signing_key_limits,
                         gas_sponsor: None,
+                        action_fees: vec![],
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -303,6 +310,9 @@ impl ExecutionEvent<'_> {
                         )
                     })
                 });
+                // Read off the transitions as state validation left them: one it replaced with
+                // a nonce bump owes no action fee.
+                let action_fees = batch_action.resolved_action_fees()?;
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
@@ -316,6 +326,7 @@ impl ExecutionEvent<'_> {
                         user_fee_increase,
                         signing_key_limits,
                         gas_sponsor,
+                        action_fees,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -353,6 +364,7 @@ impl ExecutionEvent<'_> {
                         user_fee_increase,
                         signing_key_limits,
                         gas_sponsor: None,
+                        action_fees: vec![],
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -380,6 +392,7 @@ impl ExecutionEvent<'_> {
                         user_fee_increase,
                         signing_key_limits,
                         gas_sponsor: None,
+                        action_fees: vec![],
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -553,6 +566,7 @@ impl ExecutionEvent<'_> {
                         user_fee_increase,
                         signing_key_limits,
                         gas_sponsor: None,
+                        action_fees: vec![],
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -629,6 +643,7 @@ impl ExecutionEvent<'_> {
                         user_fee_increase,
                         signing_key_limits,
                         gas_sponsor: None,
+                        action_fees: vec![],
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -788,6 +803,7 @@ impl ExecutionEvent<'_> {
                         user_fee_increase,
                         signing_key_limits,
                         gas_sponsor: None,
+                        action_fees: vec![],
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

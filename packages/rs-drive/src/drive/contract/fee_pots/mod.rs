@@ -23,6 +23,8 @@ mod deduct_from_contract_fee_pot;
 #[cfg(feature = "server")]
 mod estimated_costs;
 #[cfg(feature = "server")]
+mod fetch_action_fee_multiplier;
+#[cfg(feature = "server")]
 mod fetch_contract_fee_pot;
 #[cfg(feature = "server")]
 mod insert_contract_fee_pot_trees;
