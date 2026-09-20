@@ -380,7 +380,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     staying in the pot. `DRIVE_ABCI_VALIDATION_VERSIONS_V10` turns its gates
 ///     on, `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds its converter, and
 ///     the verify table gains `verify_contract_fee_pots`.
-///
 /// 18. **Document ids commit to the identity contract nonce**: up to v13 a new
 ///     document's id hashed the contract, owner, document type and the entropy
 ///     of the create transition, and the create check only asks whether a
@@ -404,7 +403,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the new derivation either. A client that still derives the entropy
 ///     only id has every create rejected with
 ///     `InvalidDocumentTransitionIdError`.
-///
 /// 19. **Document deletion by moderators**: a document type of a contract
 ///     that declares moderation may set `canBeDeletedByModerators` (meta-schema
 ///     v3, fixed when the type is created, refused on a type that keeps
@@ -429,6 +427,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     fee is charged.
 ///     The moderation method table, the verify table and the query table gain
 ///     the document removal methods (`getContractDocumentRemovals`).
+/// 20. **Document transitions agree to their action fee**: version 2 of the
+///     document base transition, the default from this version
+///     (`STATE_TRANSITION_SERIALIZATION_VERSIONS_V3`) and inactive before it
+///     (`StateTransition::active_version_range`, since earlier software
+///     cannot decode it), carries an action fee agreement: the owner and moderators amounts the signer saw declared,
+///     which must match the document type's exactly, and for a fee priced by
+///     the fee multiplier the multiplier they knew with the increase, in
+///     percent, they accept. Batch advanced structure 1
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`) refuses, as a paid nonce bump
+///     that charges no fee, an action that charges a fee without an agreement
+///     (40132), with one to other amounts or another pricing (40133), or
+///     whose epoch's multiplier rose beyond the tolerance (40134), so a
+///     contract whose fees change cannot make a signed transition pay them.
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in

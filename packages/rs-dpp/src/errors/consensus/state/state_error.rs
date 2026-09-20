@@ -29,6 +29,9 @@ use crate::consensus::state::data_contract::data_contract_already_present_error:
 use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use crate::consensus::state::data_trigger::DataTriggerError;
+use crate::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
+use crate::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
+use crate::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
 use crate::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use crate::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
@@ -532,6 +535,16 @@ pub enum StateError {
     // Document deletion by moderators (protocol version 14).
     #[error(transparent)]
     DocumentTypeNotDeletableByModeratorsError(DocumentTypeNotDeletableByModeratorsError),
+
+    // Document action fee agreements (protocol version 14).
+    #[error(transparent)]
+    DocumentActionFeeAgreementNotSetError(DocumentActionFeeAgreementNotSetError),
+
+    #[error(transparent)]
+    DocumentActionFeeAgreementMismatchError(DocumentActionFeeAgreementMismatchError),
+
+    #[error(transparent)]
+    DocumentActionFeeMultiplierNotToleratedError(DocumentActionFeeMultiplierNotToleratedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -546,7 +559,12 @@ mod tests {
     use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
     use crate::data_contract::config::moderation::ContractModerationList;
-    use crate::data_contract::document_type::action_fees::ContractFeePot;
+    use crate::data_contract::document_type::action_fees::agreement::{
+        AgreedFeeMultiplier, DocumentActionFeeAgreement,
+    };
+    use crate::data_contract::document_type::action_fees::{
+        ActionFeePricing, ContractFeePot, DocumentActionFee,
+    };
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use platform_value::Identifier;
 
@@ -896,12 +914,59 @@ mod tests {
             )),
             129
         );
-        // Document deletion by moderators (protocol version 14): the tail of the enum.
+        // Document deletion by moderators (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::DocumentTypeNotDeletableByModeratorsError(
                 DocumentTypeNotDeletableByModeratorsError::new(group_id, "post".to_string())
             )),
             130
+        );
+        // Document action fee agreements (protocol version 14): the tail of the enum.
+        let declared_fee = DocumentActionFee {
+            owner: 1,
+            moderators: 2,
+        };
+        let agreed_fee_multiplier = AgreedFeeMultiplier {
+            known_permille: 1000,
+            increase_tolerance_percent: 20,
+        };
+        assert_eq!(
+            discriminant_of(StateError::DocumentActionFeeAgreementNotSetError(
+                DocumentActionFeeAgreementNotSetError::new(
+                    "post".to_string(),
+                    "create".to_string(),
+                    ActionFeePricing::Fixed,
+                    declared_fee,
+                )
+            )),
+            131
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentActionFeeAgreementMismatchError(
+                DocumentActionFeeAgreementMismatchError::new(
+                    "post".to_string(),
+                    "create".to_string(),
+                    ActionFeePricing::Fixed,
+                    declared_fee,
+                    &DocumentActionFeeAgreement::for_declared_fee(
+                        ActionFeePricing::FeeMultiplier,
+                        declared_fee,
+                        agreed_fee_multiplier,
+                    ),
+                )
+            )),
+            132
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentActionFeeMultiplierNotToleratedError(
+                DocumentActionFeeMultiplierNotToleratedError::new(
+                    "post".to_string(),
+                    "create".to_string(),
+                    agreed_fee_multiplier,
+                    1500,
+                )
+            )),
+            133
         );
     }
 }

@@ -12,6 +12,7 @@ use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+use dpp::state_transition::batch_transition::document_base_transition::v2::v2_methods::DocumentBaseTransitionV2Methods;
 use dpp::tokens::calculate_token_id;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
@@ -19,7 +20,7 @@ use dpp::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessors
 use dpp::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::error::Error;
-use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionV0;
+use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DeclaredDocumentActionFee, DocumentBaseTransitionActionV0};
 
 impl DocumentBaseTransitionActionV0 {
     /// try from borrowed base transition with contract lookup
@@ -121,9 +122,18 @@ impl DocumentBaseTransitionActionV0 {
         // The fee the document type declares for this action, with how it is priced. Only a v3
         // meta-schema contract (protocol version 14) carries one. What is charged is settled
         // where state is read, since the default pricing follows the epoch's fee multiplier.
-        let declared_action_fee = document_type
-            .action_fees()
-            .and_then(|fees| get_action_fee(fees).map(|fee| Box::new((fees.pricing(), fee))));
+        // What the transition agreed to pay travels beside it: the batch's advanced structure
+        // validation judges the two once the fee multiplier is known. An agreement on an action
+        // that declares no fee is dropped, since nothing is charged.
+        let declared_action_fee = document_type.action_fees().and_then(|fees| {
+            get_action_fee(fees).map(|fee| {
+                Box::new(DeclaredDocumentActionFee {
+                    pricing: fees.pricing(),
+                    fee,
+                    agreement: value.action_fee_agreement(),
+                })
+            })
+        });
         Ok(DocumentBaseTransitionActionV0 {
             id: value.id(),
             identity_contract_nonce: value.identity_contract_nonce(),

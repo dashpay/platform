@@ -93,6 +93,7 @@ use crate::state_transition::address_funds_transfer_transition::{
     AddressFundsTransferTransition, AddressFundsTransferTransitionSignable,
 };
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
@@ -949,6 +950,19 @@ fn active_version_range_for_contract(
     }
 }
 
+/// Whether a document transition of `batch_transition` has a base of version 2 or later, the
+/// format that can carry an action fee agreement.
+fn batch_carries_a_version_2_document_base(batch_transition: &BatchTransition) -> bool {
+    batch_transition
+        .transitions_iter()
+        .any(|transition| match transition {
+            BatchedTransitionRef::Document(document_transition) => {
+                document_transition.base().feature_version() >= 2
+            }
+            BatchedTransitionRef::Token(_) => false,
+        })
+}
+
 impl StateTransition {
     #[allow(unused_variables)]
     pub fn deserialize_from_bytes_untrusted_in_version(
@@ -1003,10 +1017,18 @@ impl StateTransition {
             StateTransition::DataContractUpdate(data_contract_update_transition) => {
                 active_version_range_for_contract(data_contract_update_transition.data_contract())
             }
-            StateTransition::Batch(batch_transition) => match batch_transition {
-                BatchTransition::V0(_) => ALL_VERSIONS,
-                BatchTransition::V1(_) => 9..=LATEST_VERSION,
-            },
+            StateTransition::Batch(batch_transition) => {
+                // Version 2 of the document base (the action fee agreement) exists from
+                // protocol version 14. Binaries from before it cannot decode one, so an
+                // earlier version rejects the batch without charging, exactly as they do.
+                if batch_carries_a_version_2_document_base(batch_transition) {
+                    return 14..=LATEST_VERSION;
+                }
+                match batch_transition {
+                    BatchTransition::V0(_) => ALL_VERSIONS,
+                    BatchTransition::V1(_) => 9..=LATEST_VERSION,
+                }
+            }
             // A key bound to a contract group, and a version 1 key, exist from protocol version
             // 14, so a transition carrying one is inactive before that: an earlier version
             // rejects it without charging, exactly as a binary that cannot decode it does.
@@ -2858,6 +2880,68 @@ mod tests {
             signature_public_key_id: 7,
             signature: BinaryData::new(vec![0xEE; 65]),
         }))
+    }
+
+    fn sample_batch_st_with_base(base: DocumentBaseTransition) -> StateTransition {
+        let delete =
+            DocumentTransition::Delete(DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
+                base,
+            }));
+        StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::from([8u8; 32]),
+            transitions: vec![delete],
+            user_fee_increase: 2,
+            signature_public_key_id: 7,
+            signature: BinaryData::new(vec![0xEE; 65]),
+        }))
+    }
+
+    // Version 2 of the document base carries the action fee agreement, which exists from
+    // protocol version 14. Software from before it cannot decode the base, so new software
+    // must refuse the batch while an earlier version is active; version 1, which every
+    // version since 9 builds, stays active everywhere its batch is.
+    #[test]
+    fn should_not_activate_a_version_2_document_base_before_protocol_version_14() {
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
+        use crate::state_transition::batch_transition::document_base_transition::v2::DocumentBaseTransitionV2;
+
+        let version_1 =
+            sample_batch_st_with_base(DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
+                id: Identifier::from([1u8; 32]),
+                identity_contract_nonce: 3,
+                document_type_name: "preorder".to_string(),
+                data_contract_id: Identifier::from([2u8; 32]),
+                token_payment_info: None,
+            }));
+        assert_eq!(version_1.active_version_range(), ALL_VERSIONS);
+
+        let version_2 =
+            sample_batch_st_with_base(DocumentBaseTransition::V2(DocumentBaseTransitionV2 {
+                id: Identifier::from([1u8; 32]),
+                identity_contract_nonce: 3,
+                document_type_name: "preorder".to_string(),
+                data_contract_id: Identifier::from([2u8; 32]),
+                token_payment_info: None,
+                action_fee_agreement: None,
+            }));
+        assert_eq!(version_2.active_version_range(), 14..=LATEST_VERSION);
+
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&version_2).expect("serialize succeeds");
+        let version_13 = PlatformVersion::get(13).expect("platform version 13 exists");
+        assert!(matches!(
+            StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_13),
+            Err(ProtocolError::StateTransitionError(
+                StateTransitionIsNotActiveError { .. }
+            ))
+        ));
+        let recovered = StateTransition::deserialize_from_bytes_untrusted_in_version(
+            &bytes,
+            PlatformVersion::latest(),
+        )
+        .expect("expected protocol version 14 to decode a version 2 base");
+        assert_eq!(recovered, version_2);
     }
 
     fn sample_batch_st_empty() -> StateTransition {

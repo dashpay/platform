@@ -111,10 +111,10 @@ impl DocumentTypeRef<'_> {
 
     /// The action fees of a document type are fixed when it is published: an
     /// update may not add, change or remove them, nor switch their pricing.
-    /// Those who act on the documents agreed to the amounts the contract
-    /// showed them, and nobody signs the fee on a transition, so there is
-    /// nothing a changed amount could be checked against. A document type
-    /// added by the update is not judged here and may declare its own.
+    /// A document type added by the update is not judged here and may declare
+    /// its own. A transition names the fee it agrees to pay (its action fee
+    /// agreement), so lifting this later cannot make a signed transition pay
+    /// a fee its signer never saw.
     fn validate_action_fees_unchanged(
         &self,
         new_document_type: DocumentTypeRef,
@@ -622,8 +622,8 @@ mod tests {
         .expect("failed to create document type")
     }
 
-    // Nobody signs the fee on a transition, so the amounts a contract showed when it was
-    // published are the only thing its users agreed to.
+    // The fees of a published document type do not change yet, although a transition names
+    // the fee it agrees to pay.
     #[test]
     fn should_reject_adding_changing_or_removing_action_fees() {
         let platform_version = PlatformVersion::latest();

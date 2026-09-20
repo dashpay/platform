@@ -21,11 +21,18 @@ mod action_fee_tests {
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
     use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-    use dpp::data_contract::document_type::action_fees::ContractFeePot;
+    use dpp::data_contract::document_type::action_fees::agreement::{
+        AgreedFeeMultiplier, DocumentActionFeeAgreement,
+    };
+    use dpp::data_contract::document_type::action_fees::{
+        ActionFeePricing, ContractFeePot, DocumentActionFee,
+    };
     use dpp::data_contract::document_type::DocumentType;
     use dpp::data_contract::DataContract;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::{platform_value, Value};
+    use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+    use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
     use dpp::state_transition::StateTransition;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::tokens::calculate_token_id;
@@ -220,7 +227,18 @@ mod action_fee_tests {
                 .grove_apply_batch(batch, false, None, &setup.platform_version.drive)
                 .expect("expected to set the multiplier of epoch 0");
 
-            let transition = setup.card_creation(GasFeesPaidBy::DocumentOwner).await;
+            let transition = setup
+                .card_creation_agreeing(
+                    GasFeesPaidBy::DocumentOwner,
+                    setup.card_action_fee_agreement(
+                        DocumentTransitionActionType::Create,
+                        AgreedFeeMultiplier {
+                            known_permille: 1_500,
+                            increase_tolerance_percent: 0,
+                        },
+                    ),
+                )
+                .await;
             // The mempool prices the fee as a block does: a fee priced by the multiplier must
             // reach the execution event with the multiplier read, on this route too.
             assert_eq!(setup.check_tx(&transition), Vec::<u32>::new(), "{pricing}");
@@ -466,6 +484,360 @@ mod action_fee_tests {
         );
     }
 
+    const DOCUMENT_ACTION_FEE_AGREEMENT_NOT_SET: u32 = 40132;
+    const DOCUMENT_ACTION_FEE_AGREEMENT_MISMATCH: u32 = 40133;
+    const DOCUMENT_ACTION_FEE_MULTIPLIER_NOT_TOLERATED: u32 = 40134;
+
+    fn paid_codes(result: &StateTransitionExecutionResult) -> Vec<u32> {
+        match result {
+            PaidConsensusError { error, .. } => vec![error.code()],
+            other => panic!("expected a paid rejection, got {other:?}"),
+        }
+    }
+
+    /// Sets the fee multiplier of epoch 0, the epoch the harness executes in
+    fn set_fee_multiplier(setup: &Sponsorship, fee_multiplier_permille: u64) {
+        let mut batch = GroveDbOpBatch::new();
+        batch.push(
+            Epoch::new(0)
+                .expect("expected epoch 0")
+                .update_fee_multiplier_operation(fee_multiplier_permille),
+        );
+        setup
+            .platform
+            .drive
+            .grove_apply_batch(batch, false, None, &setup.platform_version.drive)
+            .expect("expected to set the multiplier of epoch 0");
+    }
+
+    /// Processes `transition` and expects a paid rejection with `code` that charged the gas
+    /// of a nonce bump and no fee.
+    fn assert_refused_without_a_fee(setup: &Sponsorship, transition: &StateTransition, code: u32) {
+        assert_eq!(setup.check_tx(transition), vec![code]);
+        let tx = setup.platform.drive.grove.start_transaction();
+
+        let result = setup.process(transition, &tx);
+
+        assert_eq!(paid_codes(&result), vec![code]);
+        assert_eq!(
+            setup.credits(&setup.user, &tx),
+            dash_to_credits!(0.1) - total_fee(&result),
+            "a refused transition pays its gas and nothing else"
+        );
+        assert_eq!(pots(setup, &tx), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_transition_that_does_not_say_what_it_agrees_to_pay() {
+        for pricing in ["fixed", "feeMultiplier"] {
+            let setup = game(
+                GasFeesPaidBy::DocumentOwner,
+                pricing,
+                dash_to_credits!(0.1),
+                dash_to_credits!(0.1),
+                None,
+            );
+            let transition = setup
+                .card_creation_agreeing(GasFeesPaidBy::DocumentOwner, None)
+                .await;
+
+            assert_refused_without_a_fee(
+                &setup,
+                &transition,
+                DOCUMENT_ACTION_FEE_AGREEMENT_NOT_SET,
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_agreement_to_other_amounts_than_the_declared_ones() {
+        // What a signer holds when the contract owner changed the fee after they read it:
+        // an agreement to the old amounts, higher or lower, for either pot.
+        for (owner, moderators) in [
+            (OWNER_PART - 1, MODERATORS_PART),
+            (OWNER_PART + 1, MODERATORS_PART),
+            (OWNER_PART, MODERATORS_PART - 1),
+            (OWNER_PART, MODERATORS_PART + 1),
+            (MODERATORS_PART, OWNER_PART),
+        ] {
+            let setup = game(
+                GasFeesPaidBy::DocumentOwner,
+                "fixed",
+                dash_to_credits!(0.1),
+                dash_to_credits!(0.1),
+                None,
+            );
+            let transition = setup
+                .card_creation_agreeing(
+                    GasFeesPaidBy::DocumentOwner,
+                    Some(DocumentActionFeeAgreement::for_declared_fee(
+                        ActionFeePricing::Fixed,
+                        DocumentActionFee { owner, moderators },
+                        setup.fee_schedule_multiplier(),
+                    )),
+                )
+                .await;
+
+            assert_refused_without_a_fee(
+                &setup,
+                &transition,
+                DOCUMENT_ACTION_FEE_AGREEMENT_MISMATCH,
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_agreement_to_another_pricing_than_the_declared_one() {
+        for (declared, agreed) in [
+            ("fixed", ActionFeePricing::FeeMultiplier),
+            ("feeMultiplier", ActionFeePricing::Fixed),
+        ] {
+            let setup = game(
+                GasFeesPaidBy::DocumentOwner,
+                declared,
+                dash_to_credits!(0.1),
+                dash_to_credits!(0.1),
+                None,
+            );
+            let transition = setup
+                .card_creation_agreeing(
+                    GasFeesPaidBy::DocumentOwner,
+                    Some(DocumentActionFeeAgreement::for_declared_fee(
+                        agreed,
+                        DocumentActionFee {
+                            owner: OWNER_PART,
+                            moderators: MODERATORS_PART,
+                        },
+                        setup.fee_schedule_multiplier(),
+                    )),
+                )
+                .await;
+
+            assert_refused_without_a_fee(
+                &setup,
+                &transition,
+                DOCUMENT_ACTION_FEE_AGREEMENT_MISMATCH,
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_accept_a_fee_multiplier_that_rose_within_the_tolerance() {
+        // Signed knowing a multiplier of 1000 and accepting 20% more; the epoch's is 1200.
+        let setup = game(
+            GasFeesPaidBy::DocumentOwner,
+            "feeMultiplier",
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            None,
+        );
+        set_fee_multiplier(&setup, 1_200);
+        let transition = setup
+            .card_creation_agreeing(
+                GasFeesPaidBy::DocumentOwner,
+                setup.card_action_fee_agreement(
+                    DocumentTransitionActionType::Create,
+                    AgreedFeeMultiplier {
+                        known_permille: 1_000,
+                        increase_tolerance_percent: 20,
+                    },
+                ),
+            )
+            .await;
+        assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+        let tx = setup.platform.drive.grove.start_transaction();
+
+        let result = setup.process(&transition, &tx);
+
+        assert_matches!(result, SuccessfulExecution { .. });
+        // What is charged follows the multiplier of the epoch, not the one the signer knew.
+        assert_eq!(
+            pots(&setup, &tx),
+            (OWNER_PART * 6 / 5, MODERATORS_PART * 6 / 5)
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_fee_multiplier_that_rose_beyond_the_tolerance() {
+        let setup = game(
+            GasFeesPaidBy::DocumentOwner,
+            "feeMultiplier",
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            None,
+        );
+        set_fee_multiplier(&setup, 1_201);
+        let transition = setup
+            .card_creation_agreeing(
+                GasFeesPaidBy::DocumentOwner,
+                setup.card_action_fee_agreement(
+                    DocumentTransitionActionType::Create,
+                    AgreedFeeMultiplier {
+                        known_permille: 1_000,
+                        increase_tolerance_percent: 20,
+                    },
+                ),
+            )
+            .await;
+
+        assert_refused_without_a_fee(
+            &setup,
+            &transition,
+            DOCUMENT_ACTION_FEE_MULTIPLIER_NOT_TOLERATED,
+        );
+    }
+
+    #[tokio::test]
+    async fn should_accept_a_fee_multiplier_that_fell() {
+        let setup = game(
+            GasFeesPaidBy::DocumentOwner,
+            "feeMultiplier",
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            None,
+        );
+        set_fee_multiplier(&setup, 500);
+        let transition = setup
+            .card_creation_agreeing(
+                GasFeesPaidBy::DocumentOwner,
+                setup.card_action_fee_agreement(
+                    DocumentTransitionActionType::Create,
+                    AgreedFeeMultiplier {
+                        known_permille: 1_000,
+                        increase_tolerance_percent: 0,
+                    },
+                ),
+            )
+            .await;
+        let tx = setup.platform.drive.grove.start_transaction();
+
+        let result = setup.process(&transition, &tx);
+
+        assert_matches!(result, SuccessfulExecution { .. });
+        assert_eq!(pots(&setup, &tx), (OWNER_PART / 2, MODERATORS_PART / 2));
+    }
+
+    #[tokio::test]
+    async fn should_require_the_agreement_of_a_sponsored_transition_too() {
+        // The contract owner pays the gas and the fee, and a preference can fall back to the
+        // signer, so who pays changes nothing: the transition says what it agrees to.
+        let setup = game(
+            GasFeesPaidBy::ContractOwner,
+            "fixed",
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            None,
+        );
+        let transition = setup
+            .card_creation_agreeing(GasFeesPaidBy::ContractOwner, None)
+            .await;
+
+        assert_refused_without_a_fee(&setup, &transition, DOCUMENT_ACTION_FEE_AGREEMENT_NOT_SET);
+    }
+
+    #[tokio::test]
+    async fn should_ignore_an_agreement_on_an_action_that_charges_nothing() {
+        // The harness without action fees: the card type charges nothing for a creation.
+        let setup = Sponsorship::build_customized(
+            PlatformVersion::latest(),
+            GasFeesPaidBy::DocumentOwner,
+            false,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+            None,
+            |_| {},
+        );
+        let transition = setup
+            .card_creation_agreeing(
+                GasFeesPaidBy::DocumentOwner,
+                Some(DocumentActionFeeAgreement::for_declared_fee(
+                    ActionFeePricing::Fixed,
+                    DocumentActionFee {
+                        owner: OWNER_PART,
+                        moderators: MODERATORS_PART,
+                    },
+                    setup.fee_schedule_multiplier(),
+                )),
+            )
+            .await;
+        assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+        let tx = setup.platform.drive.grove.start_transaction();
+
+        let result = setup.process(&transition, &tx);
+
+        assert_matches!(result, SuccessfulExecution { .. });
+        assert_eq!(
+            setup.credits(&setup.user, &tx),
+            dash_to_credits!(0.1) - total_fee(&result)
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_base_carrying_an_agreement_at_protocol_version_13() {
+        // Version 2 of the document base cannot decode on 4.1 software, so while protocol
+        // version 13 is active new software treats a batch carrying one as inactive: the same
+        // refusal, charging nothing, that every format added since the fork gets. The version
+        // 1 base that protocol version 13 builds keeps working, which
+        // `should_ignore_who_is_asked_to_pay_the_gas_at_protocol_version_13` covers.
+        let platform_version =
+            PlatformVersion::get(13).expect("expected protocol version 13 to exist");
+        let setup = Sponsorship::build_customized(
+            platform_version,
+            GasFeesPaidBy::DocumentOwner,
+            false,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+            None,
+            |_| {},
+        );
+        let (document, entropy) = setup.card_of(&setup.user);
+        let transition = BatchTransition::new_document_creation_transition_from_document(
+            document,
+            setup
+                .contract
+                .document_type_for_name("card")
+                .expect("expected the card document type"),
+            entropy.0,
+            &setup.user_key,
+            2,
+            0,
+            None,
+            &setup.user_signer,
+            platform_version,
+            Some(StateTransitionCreationOptions {
+                base_feature_version: Some(2),
+                action_fee_agreement: Some(DocumentActionFeeAgreement::for_declared_fee(
+                    ActionFeePricing::Fixed,
+                    DocumentActionFee {
+                        owner: OWNER_PART,
+                        moderators: MODERATORS_PART,
+                    },
+                    AgreedFeeMultiplier {
+                        known_permille: 1_000,
+                        increase_tolerance_percent: 0,
+                    },
+                )),
+                ..Default::default()
+            }),
+        )
+        .await
+        .expect("expected a batch transition");
+
+        let tx = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&transition, &tx);
+        assert!(
+            matches!(
+                &result,
+                StateTransitionExecutionResult::InternalError(message)
+                    if message.contains("DocumentsBatch") && message.contains("not active")
+            ),
+            "expected the batch to be inactive before protocol version 14, got {result:?}"
+        );
+        assert_eq!(setup.credits(&setup.user, &tx), dash_to_credits!(0.1));
+    }
+
     /// What each action on a card costs on top of the gas, all to the contract owner: every
     /// amount is different, so a fee charged for the wrong action shows.
     const CREATE_FEE: Credits = 1_000;
@@ -580,6 +952,20 @@ mod action_fee_tests {
             owner_pot(&tx) - before
         };
         let by = |identity: &Identity| identity.id();
+        // The fees are fixed, so the agreement names no fee multiplier whatever is known.
+        let agreeing_to = |action: DocumentTransitionActionType| {
+            Some(StateTransitionCreationOptions {
+                action_fee_agreement: DocumentActionFeeAgreement::for_document_type_action(
+                    card,
+                    action,
+                    AgreedFeeMultiplier {
+                        known_permille: 1_000,
+                        increase_tolerance_percent: 0,
+                    },
+                ),
+                ..Default::default()
+            })
+        };
         let signed_by_the_seller: (&IdentityPublicKey, &SimpleSigner) =
             (&seller_key, &seller_signer);
         let signed_by_the_buyer: (&IdentityPublicKey, &SimpleSigner) = (&buyer_key, &buyer_signer);
@@ -594,7 +980,7 @@ mod action_fee_tests {
             None,
             signed_by_the_seller.1,
             platform_version,
-            None,
+            agreeing_to(DocumentTransitionActionType::Create),
         )
         .await
         .expect("expected the creation");
@@ -611,7 +997,7 @@ mod action_fee_tests {
             None,
             signed_by_the_seller.1,
             platform_version,
-            None,
+            agreeing_to(DocumentTransitionActionType::Replace),
         )
         .await
         .expect("expected the replacement");
@@ -629,7 +1015,7 @@ mod action_fee_tests {
             None,
             signed_by_the_seller.1,
             platform_version,
-            None,
+            agreeing_to(DocumentTransitionActionType::UpdatePrice),
         )
         .await
         .expect("expected the price update");
@@ -647,7 +1033,7 @@ mod action_fee_tests {
             None,
             signed_by_the_buyer.1,
             platform_version,
-            None,
+            agreeing_to(DocumentTransitionActionType::Purchase),
         )
         .await
         .expect("expected the purchase");
@@ -665,7 +1051,7 @@ mod action_fee_tests {
             None,
             signed_by_the_buyer.1,
             platform_version,
-            None,
+            agreeing_to(DocumentTransitionActionType::Transfer),
         )
         .await
         .expect("expected the transfer");
@@ -682,7 +1068,7 @@ mod action_fee_tests {
             None,
             signed_by_the_seller.1,
             platform_version,
-            None,
+            agreeing_to(DocumentTransitionActionType::Delete),
         )
         .await
         .expect("expected the deletion");

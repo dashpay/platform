@@ -119,6 +119,28 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
             ));
         }
 
+        // Every transition that owes an action fee must have agreed to it: it names the amounts
+        // and the pricing its document type declares, and accepts the fee multiplier of the
+        // epoch the batch executes in. The contract is read when the action executes, so
+        // without this its owner could change what a signed transition pays. The declaration,
+        // the agreement and the multiplier all travel on the action, so this reads no state.
+        if let Err(error) = action.validate_action_fee_agreements()? {
+            let first_transition = self.first_transition().ok_or(Error::Execution(
+                ExecutionError::CorruptedCodeExecution("empty validated batch"),
+            ))?;
+            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                BumpIdentityDataContractNonceAction::from_batched_transition_ref(
+                    first_transition,
+                    self.owner_id(),
+                    self.user_fee_increase(),
+                ),
+            );
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                vec![error],
+            ));
+        }
+
         // A contract-bound AUTHENTICATION key may only act inside its contract (and document
         // type), or inside the members of its contract group. The signer is authenticated, so
         // an out-of-bounds member is a paid failure.

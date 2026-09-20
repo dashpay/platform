@@ -899,7 +899,7 @@
     },
     "actionFees": {
       "type": "object",
-      "description": "A fixed fee in credits charged, on top of the gas, for actions on documents of this type, split between the contract's owner pot and its moderators pot (each paid out by a ContractFeeClaim state transition). Whoever pays the gas of the action pays its fee. At least one action must be priced and a priced action must charge something. Fixed when the document type is published: a contract update cannot add, change or remove the fees of an existing document type. Available from protocol version 14.",
+      "description": "A fixed fee in credits charged, on top of the gas, for actions on documents of this type, split between the contract's owner pot and its moderators pot (each paid out by a ContractFeeClaim state transition). Whoever pays the gas of the action pays its fee. A transition on a priced action must name the declared owner and moderators amounts, and for feeMultiplier pricing the fee multiplier its signer knew with the increase in percent they accept, in $actionFeeAgreement; it is refused without one (DocumentActionFeeAgreementNotSetError, code 40132), with other amounts or another pricing (code 40133), or when the epoch's multiplier rose beyond the accepted increase (code 40134). At least one action must be priced and a priced action must charge something. Fixed when the document type is published: a contract update cannot add, change or remove the fees of an existing document type. Available from protocol version 14.",
       "properties": {
         "pricing": {
           "type": "string",
