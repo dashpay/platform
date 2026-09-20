@@ -45,12 +45,12 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
     contract_structure_version: 1,
     created_data_contract_structure: 0,
     // Config V2 (protocol version 14) carries the optional contract moderation declaration.
-    // The default stays 1: a contract without moderation serializes exactly as before, and
-    // only a declared moderation raises the config to V2 (`config_valid_for_platform_version`).
+    // The default is 2 too: from this protocol version every new contract carries a V2
+    // config, moderated or not. The config version follows the platform version.
     config: FeatureVersionBounds {
         min_version: 1,
         max_version: 2,
-        default_current_version: 1,
+        default_current_version: 2,
     },
     methods: DataContractMethodVersions {
         validate_document: 0,

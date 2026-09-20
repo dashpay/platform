@@ -2,9 +2,10 @@ use crate::drive::contract::moderation::types::{
     ContractModerationEntriesQuery, ContractModerationEntry,
 };
 use crate::drive::contract::paths::{
-    contract_root_path, CONTRACT_BANLIST_KEY, CONTRACT_SUSPENSIONS_KEY,
+    contract_other_path, CONTRACT_BANLIST_KEY, CONTRACT_OTHER_KEY, CONTRACT_SUSPENSIONS_KEY,
+    CONTRACT_VERSION_KEY,
 };
-use crate::drive::Drive;
+use crate::drive::{Drive, RootTree};
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
@@ -18,6 +19,7 @@ use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::version::PlatformVersion;
+use grovedb::Element;
 
 fn identity(seed: u8) -> Identifier {
     Identifier::from([seed; 32])
@@ -45,7 +47,7 @@ fn insert(drive: &Drive, contract: &DataContract, platform_version: &PlatformVer
 fn has_list_tree(drive: &Drive, contract_id: Identifier, key: u8) -> bool {
     drive
         .grove_has_raw(
-            (&contract_root_path(contract_id.as_slice())).into(),
+            (&contract_other_path(contract_id.as_slice())).into(),
             &[key],
             DirectQueryType::StatefulDirectQuery,
             None,
@@ -701,4 +703,60 @@ fn should_say_nothing_about_a_list_the_status_proof_does_not_cover() {
     assert_eq!(proved.suspended_until(), Some(None));
     assert!(!proved.is_barred_on_queried_lists_at(0));
     assert_eq!(proved.0.len(), 1);
+}
+
+/// The root key of the Merk at `path`/`key`, read from the tree element that points at it.
+fn merk_root_key(drive: &Drive, path: &[&[u8]], key: &[u8]) -> Option<Vec<u8>> {
+    let platform_version = PlatformVersion::latest();
+    let element = drive
+        .grove
+        .get_raw(
+            path.into(),
+            key,
+            None,
+            &platform_version.drive.grove_version,
+        )
+        .unwrap()
+        .expect("expected the tree element");
+    match element {
+        Element::Tree(root_key, _) => root_key,
+        other => panic!("expected a tree, got {other:?}"),
+    }
+}
+
+#[test]
+fn should_keep_the_documents_on_top_of_the_contract_subtree_and_the_banlist_on_top_of_the_other_tree(
+) {
+    let platform_version = PlatformVersion::latest();
+    // (banlist, suspensions) -> the key on top of the contract's other tree
+    for (banlist, suspensions, top_of_other) in [
+        (false, false, CONTRACT_VERSION_KEY),
+        (true, false, CONTRACT_BANLIST_KEY),
+        (false, true, CONTRACT_SUSPENSIONS_KEY),
+        (true, true, CONTRACT_BANLIST_KEY),
+    ] {
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = moderated_contract(banlist, suspensions);
+        insert(&drive, &contract, platform_version);
+        let contract_id = contract.id();
+        let contracts_root: &[u8] = Into::<&[u8; 1]>::into(RootTree::DataContractDocuments);
+
+        // Three keys under the contract (itself, its documents, its other tree), so the
+        // documents, which every document proof and write goes through, stay on top whatever
+        // the contract keeps in its other tree.
+        assert_eq!(
+            merk_root_key(&drive, &[contracts_root], contract_id.as_slice()),
+            Some(vec![1]),
+            "banlist {banlist}, suspensions {suspensions}"
+        );
+        assert_eq!(
+            merk_root_key(
+                &drive,
+                &[contracts_root, contract_id.as_slice()],
+                &[CONTRACT_OTHER_KEY]
+            ),
+            Some(vec![top_of_other]),
+            "banlist {banlist}, suspensions {suspensions}"
+        );
+    }
 }

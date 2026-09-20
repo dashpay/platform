@@ -1,18 +1,24 @@
-use crate::drive::contract::paths::{contract_root_path, CONTRACT_VERSION_KEY};
+use crate::drive::contract::paths::{
+    contract_other_path, contract_root_path, CONTRACT_OTHER_KEY, CONTRACT_VERSION_KEY,
+};
 use crate::drive::contract::version_item::encode_contract_version;
 use crate::drive::Drive;
 use crate::drive::LowLevelDriveOperation;
 use crate::error::Error;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::DriveKeyInfo;
 use crate::util::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElementSize,
 };
+use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -53,19 +59,69 @@ impl Drive {
             drive_version,
         )?;
 
+        // The version item lives in the contract's other tree (`[64, id, 2]`). An insertion
+        // writes the tree unconditionally, like the contract's documents tree beside it: the
+        // contract's root subtree is (re)created in the same batch, so whatever state holds
+        // under it is gone anyway. An update normally finds the tree, from the insertion or
+        // from the migration on the first block of protocol version 14, but inserts it `if not
+        // exists` rather than trusting that: it must never be replaced, it may hold the
+        // moderation lists.
+        let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
+        if is_first_insert {
+            self.batch_insert_empty_tree(
+                contract_root_path(contract.id_ref().as_bytes()),
+                DriveKeyInfo::Key(vec![CONTRACT_OTHER_KEY]),
+                storage_flags.as_ref(),
+                insert_operations,
+                drive_version,
+            )?;
+        } else {
+            let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
+            } else {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                    in_tree_type: TreeType::NormalTree,
+                    tree_type: TreeType::NormalTree,
+                    flags_len: storage_flags
+                        .as_ref()
+                        .map(|flags| flags.serialized_size())
+                        .unwrap_or_default(),
+                }
+            };
+            self.batch_insert_empty_tree_if_not_exists(
+                PathFixedSizeKeyRef((
+                    contract_root_path(contract.id_ref().as_bytes()),
+                    &[CONTRACT_OTHER_KEY],
+                )),
+                TreeType::NormalTree,
+                storage_flags.as_ref(),
+                apply_type,
+                transaction,
+                &mut None,
+                insert_operations,
+                drive_version,
+            )?;
+        }
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Drive::add_estimation_costs_for_contract_other_tree(
+                contract.id_ref().to_buffer(),
+                estimated_costs_only_with_layer_info,
+            );
+        }
+
         let version_element =
             Element::Item(encode_contract_version(contract.version()), element_flags);
-        let contract_root_path = contract_root_path(contract.id_ref().as_bytes());
+        let contract_other_path = contract_other_path(contract.id_ref().as_bytes());
 
         let path_key_element_info = if estimated_costs_only_with_layer_info.is_none() {
             PathFixedSizeKeyRefElement((
-                contract_root_path,
+                contract_other_path,
                 &[CONTRACT_VERSION_KEY],
                 version_element,
             ))
         } else {
             PathKeyElementSize((
-                KeyInfoPath::from_known_path(contract_root_path),
+                KeyInfoPath::from_known_path(contract_other_path),
                 KeyInfo::KnownKey(vec![CONTRACT_VERSION_KEY]),
                 version_element,
             ))

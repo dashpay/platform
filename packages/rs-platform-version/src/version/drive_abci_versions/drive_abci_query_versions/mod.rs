@@ -56,7 +56,7 @@ pub struct DriveAbciDataContractQueryHelperVersions {
     /// * `0`: state holds no contract version items (before protocol
     ///   version 14); the answer is read from the serialized contracts and
     ///   the proof is the multi-contract proof, so it carries the contracts.
-    /// * `1`: every contract has a version item beside it (`[64, id] / 2`,
+    /// * `1`: every contract has a version item beside it (`[64, id, 2] / 64`,
     ///   written from protocol version 14 and backfilled on its first block);
     ///   the answer is read from the item and the proof carries the items,
     ///   four bytes per contract, instead of the contracts.

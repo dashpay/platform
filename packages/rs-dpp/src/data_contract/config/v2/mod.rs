@@ -17,8 +17,8 @@ use std::collections::BTreeMap;
 
 /// Config V2 (protocol version 14): V1 plus the optional contract moderation declaration.
 ///
-/// A config whose `moderation` is `None` is stored as V1 so that unmoderated contracts keep the
-/// bytes they had before (`DataContractConfig::config_valid_for_platform_version`).
+/// From protocol version 14 this is the config of every new contract, moderated or not; the
+/// config version follows the platform version, not the config's content.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, DecodeUntrusted)]
 #[serde(rename_all = "camelCase", default)]

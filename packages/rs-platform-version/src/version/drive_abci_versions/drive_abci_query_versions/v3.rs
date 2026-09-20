@@ -10,7 +10,7 @@ use crate::version::drive_abci_versions::drive_abci_query_versions::{
 ///
 /// `data_contract_query_helpers.latest_versions_read` is 1 rather than 0:
 /// from protocol version 14 every contract carries a four-byte version item
-/// beside it (`[64, id] / 2`, backfilled on the first block of the version),
+/// beside it (`[64, id, 2] / 64`, backfilled on the first block of the version),
 /// so `getDataContractsLatestVersions` without `include_contracts` reads that
 /// item and proves it instead of the contracts. The tables protocol versions
 /// 1 to 13 select keep helper version 0, which reads and proves the contracts

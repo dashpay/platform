@@ -1,4 +1,4 @@
-use crate::drive::contract::paths::{contract_moderation_list_key, contract_root_path};
+use crate::drive::contract::paths::{contract_moderation_list_key, contract_other_path};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -46,13 +46,13 @@ impl Drive {
             }
         };
 
-        let contract_root_path = contract_root_path(&contract_id);
+        let contract_other_path = contract_other_path(&contract_id);
 
         for list in moderation.lists() {
             // `if not exists` costs one check on a fresh contract and keeps the insert from
             // ever replacing a list tree that holds entries.
             self.batch_insert_empty_tree_if_not_exists(
-                PathFixedSizeKeyRef((contract_root_path, contract_moderation_list_key(list))),
+                PathFixedSizeKeyRef((contract_other_path, contract_moderation_list_key(list))),
                 TreeType::NormalTree,
                 storage_flags,
                 apply_type,

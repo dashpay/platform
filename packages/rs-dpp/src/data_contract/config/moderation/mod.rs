@@ -4,7 +4,7 @@
 //! An identity on the banlist, or on the suspension list with a suspension that has not lapsed,
 //! cannot act on the contract at the document level: every document transition it signs against
 //! the contract is refused. Token transitions are not affected. The lists live under the
-//! contract's own subtree in Drive (keys `3` and `4`) and are edited by the
+//! contract's own subtree in Drive (keys `128` and `192` of its other tree, `[64, id, 2]`) and are edited by the
 //! `ContractUserModeration` state transition.
 
 use crate::consensus::basic::contract_moderation::InvalidContractModerationConfigError;
@@ -188,10 +188,10 @@ impl fmt::Display for ContractModerationList {
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContractModerationConfig {
-    /// The contract keeps a banlist (Drive key `3` under the contract).
+    /// The contract keeps a banlist (Drive key `128` of the contract's other tree).
     #[serde(default)]
     pub banlist: bool,
-    /// The contract keeps a suspension list (Drive key `4` under the contract).
+    /// The contract keeps a suspension list (Drive key `192` of the contract's other tree).
     #[serde(default)]
     pub suspensions: bool,
     /// Who may edit the lists.

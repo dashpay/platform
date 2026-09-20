@@ -320,7 +320,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     a banlist and/or a suspension list of identities and who edits them
 ///     (the owner, or the owner and up to `SystemLimits::max_contract_moderators`
 ///     named identities, each of which must exist). `CONTRACT_VERSIONS_V6`
-///     admits config V2 (`max_version: 2`, the default stays 1), which carries
+///     makes config V2 the config of every new contract (`max_version` and
+///     `default_current_version` 2), which carries
 ///     the declaration; a contract create or update carrying a V2 config is
 ///     inactive before this version (`StateTransition::active_version_range`).
 ///     `DPP_VALIDATION_VERSIONS_V5.validate_config_update = 2` fixes the lists
@@ -343,7 +344,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     party of a transfer or a purchase, so a barred identity neither
 ///     receives nor sells a document. Token transitions are not gated.
 ///     `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2,
-///     which creates the list trees (`[64, contract] / 3` and `/ 4`), and
+///     which creates the list trees (`[64, contract, 2] / 128` and `/ 192`, inside the contract's other tree), and
 ///     adds the `moderation` method table; the verify and
 ///     query tables gain the status and entries methods.
 ///

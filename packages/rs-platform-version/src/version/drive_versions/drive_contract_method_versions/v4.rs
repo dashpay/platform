@@ -9,7 +9,7 @@ use crate::version::drive_versions::drive_contract_method_versions::{
 /// Relative to [`super::v3::DRIVE_CONTRACT_METHOD_VERSIONS_V3`]:
 ///
 /// * `insert.add_contract_to_storage` is bumped to `1`. The v1 storage writer stores, beside
-///   the contract, a four-byte item holding the contract's version number (`[64, id] / 2`) on
+///   the contract, a four-byte item holding the contract's version number (`[64, id, 2] / 64`) on
 ///   every contract create and update. That item is what lets
 ///   `getDataContractsLatestVersions` read and prove a contract's version without the contract
 ///   bytes. Contracts stored before this version get their item on the first block of protocol
@@ -27,7 +27,7 @@ use crate::version::drive_versions::drive_contract_method_versions::{
 ///   holding any of it. Nothing is minted retroactively for a token added by an update
 ///   before this version.
 /// * `insert.insert_contract` is bumped to `2`: a contract whose config declares moderation
-///   gets its banlist (`[64, id] / 3`) and suspension list (`[64, id] / 4`) trees created at
+///   gets its banlist (`[64, id, 2] / 128`) and suspension list (`[64, id, 2] / 192`) trees created at
 ///   insertion. Which lists a contract keeps never changes afterwards, so a contract update
 ///   creates none.
 /// * The `moderation` table is new: the ban and suspension entry writers, readers and provers.

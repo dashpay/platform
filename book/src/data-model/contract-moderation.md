@@ -36,7 +36,7 @@ pub struct ContractModerationStatus {
 }
 ```
 
-The config is `DataContractConfig::V2`, a new variant of the config's own bincode enum inside the contract. A V2 config whose `moderation` is `None` is lowered to V1 before storage (`config_valid_for_platform_version`), so an unmoderated contract keeps the bytes it had before. A V2 config that declares moderation is never lowered: lowering would silently drop the declaration. A contract create or update carrying a V2 config is active from protocol version 14 only (`StateTransition::active_version_range`): before that a node rejects it at decoding, unpaid, exactly as a binary that cannot decode the V2 discriminant does, so upgraded and older nodes agree on every block before activation. The JSON shape of the moderators is a flat `{"$type": "contractOwner"}` or `{"$type": "ownerAndIdentities", "identities": [...]}`, the style of `AuthorizedActionTakers`.
+The config is `DataContractConfig::V2`, a new variant of the config's own bincode enum inside the contract. The config version follows the platform version, as V1 did from protocol version 9: from protocol version 14 every new contract carries a V2 config, moderated or not (`CONTRACT_VERSIONS_V6` sets both `max_version` and `default_current_version` to 2), and an existing V1 contract moves to V2 with its next update. `config_valid_for_platform_version` lowers a V2 only where the platform version does not admit it, never because of what it declares. A contract create or update carrying a V2 config is active from protocol version 14 only (`StateTransition::active_version_range`): before that a node rejects it at decoding, unpaid, exactly as a binary that cannot decode the V2 discriminant does, so upgraded and older nodes agree on every block before activation. The JSON shape of the moderators is a flat `{"$type": "contractOwner"}` or `{"$type": "ownerAndIdentities", "identities": [...]}`, the style of `AuthorizedActionTakers`.
 
 ## The Transition
 
@@ -94,10 +94,13 @@ Basic, in the data contract sub-band: `InvalidContractModerationConfigError` (10
 └── <contract id>
     ├── [0] the contract (or its history subtree)
     ├── [1] documents
-    ├── [2] contract version item
-    ├── [3] banlist       -> <identity id> -> Item([])                    (when declared)
-    └── [4] suspensions   -> <identity id> -> Item(until, u64 BE millis)   (when declared)
+    └── [2] other
+        ├── [64]  contract version item (every contract)
+        ├── [128] banlist       -> <identity id> -> Item([])                    (when declared)
+        └── [192] suspensions   -> <identity id> -> Item(until, u64 BE millis)   (when declared)
 ```
+
+The contract's own subtree holds three keys whatever the contract keeps, so its Merk keeps `1`, the documents, on top: every document proof and write goes through that key, and a fourth key beside it would have pushed it one level down (a Merk built from one sorted batch roots at the middle key). Everything else a contract keeps goes into `2`, its **other tree**, which protocol version 14 introduces together with the version item. Inside, the keys are spread like the root tree's, so the tree stays balanced as it fills and the most read entry sits on top: the banlist at `128`, read by every document transition on a moderated contract, the version item at `64`, the suspension list at `192`. A key added later should sort below `128` to keep the banlist on top when four keys are created at once.
 
 The trees are created by `insert_contract` generation 2 for a contract that declares them, and by nothing else: the lists are fixed at creation, so a contract update creates none and leaves the existing ones and their entries alone, and no tree is made lazily by the first ban. An entry's storage flags name the moderator that wrote it, so the storage refund of its deletion goes to that moderator whichever transition deletes it: the explicit unban or unsuspend, the ban over a suspension, or the document transition that sweeps a lapsed suspension. The sweep's processing fee is charged to the batch signer.
 
@@ -116,7 +119,7 @@ A status query answers for the lists it names and no others: `Drive::verify_cont
 
 ## Versioning Touchpoints
 
-All in place for protocol version 14: `CONTRACT_VERSIONS_V6` admits config V2 (`max_version: 2`, default stays 1) and `validate_config_update` 2; `STATE_TRANSITION_SERIALIZATION_VERSIONS_V3` and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` carry the transition's slots and `batch_state_transition.contract_moderation_gate`, and the contract update's basic structure moves to 2 to validate the declaration; `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2 and adds the `moderation` table (its `update_contract` 2 belongs to token distribution and does nothing for moderation); `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds the converter slot and bumps `documents_batch_transition` to 1 for the sweep; `DRIVE_VERIFY_METHOD_VERSIONS` and `DRIVE_ABCI_QUERY_VERSIONS` gain their moderation tables; `SYSTEM_LIMITS_V4` gains `max_contract_moderators` and `max_contract_suspension_until`.
+All in place for protocol version 14: `CONTRACT_VERSIONS_V6` makes config V2 the config of every new contract (`max_version` and `default_current_version` 2) and `validate_config_update` 2; `STATE_TRANSITION_SERIALIZATION_VERSIONS_V3` and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` carry the transition's slots and `batch_state_transition.contract_moderation_gate`, and the contract update's basic structure moves to 2 to validate the declaration; `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2 and adds the `moderation` table (its `update_contract` 2 belongs to token distribution and does nothing for moderation); `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds the converter slot and bumps `documents_batch_transition` to 1 for the sweep; `DRIVE_VERIFY_METHOD_VERSIONS` and `DRIVE_ABCI_QUERY_VERSIONS` gain their moderation tables; `SYSTEM_LIMITS_V4` gains `max_contract_moderators` and `max_contract_suspension_until`.
 
 ## What Is Not There Yet
 

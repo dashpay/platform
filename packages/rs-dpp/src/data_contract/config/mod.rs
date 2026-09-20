@@ -98,12 +98,12 @@ impl DataContractConfig {
 
     /// Adjusts the current `DataContractConfig` to be valid for the provided platform version.
     ///
-    /// A V1 config is lowered to V0 where the platform version admits no V1. A V2 config that
-    /// declares no moderation is lowered to V1, so an unmoderated contract keeps the bytes it
-    /// had before protocol version 14; a V2 config that declares moderation is never lowered,
-    /// because lowering would silently drop the declaration (a contract create or update
-    /// carrying a V2 config is inactive before protocol version 14, see
-    /// `StateTransition::active_version_range`, so it never gets this far there).
+    /// The config version follows the platform version, never the config's content: a config
+    /// is lowered only where the platform version does not admit it (V1 to V0 below protocol
+    /// version 9, V2 to V1 below protocol version 14). From protocol version 14 every new
+    /// contract carries a V2 config, moderated or not. Lowering a V2 drops a moderation
+    /// declaration, which consensus never sees: a contract create or update carrying a V2
+    /// config is inactive before protocol version 14 (`StateTransition::active_version_range`).
     pub fn config_valid_for_platform_version(
         self,
         platform_version: &PlatformVersion,
@@ -119,11 +119,11 @@ impl DataContractConfig {
                 }
             }
             DataContractConfig::V2(v2) => {
-                if v2.moderation.is_some() {
-                    DataContractConfig::V2(v2)
-                } else {
+                if max_version < 2 {
                     DataContractConfig::V1(v2.into())
                         .config_valid_for_platform_version(platform_version)
+                } else {
+                    DataContractConfig::V2(v2)
                 }
             }
         }
@@ -149,21 +149,12 @@ impl DataContractConfig {
                 Ok(config.into())
             }
             1 => {
-                // A `moderation` key is only meaningful once the platform version admits config
-                // V2; parsing as V2 and lowering keeps every other value byte-identical to V1.
-                if platform_version.dpp.contract_versions.config.max_version >= 2 {
-                    let config: DataContractConfigV2 = platform_value::from_value(value)?;
-                    Ok(DataContractConfig::from(config)
-                        .config_valid_for_platform_version(platform_version))
-                } else {
-                    let config: DataContractConfigV1 = platform_value::from_value(value)?;
-                    Ok(config.into())
-                }
+                let config: DataContractConfigV1 = platform_value::from_value(value)?;
+                Ok(config.into())
             }
             2 => {
                 let config: DataContractConfigV2 = platform_value::from_value(value)?;
-                Ok(DataContractConfig::from(config)
-                    .config_valid_for_platform_version(platform_version))
+                Ok(config.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractConfig::from_value".to_string(),
@@ -671,6 +662,41 @@ mod tests {
                 assert_eq!(result.version(), 0);
                 // The converted V0 should preserve basic fields
                 assert!(result.can_be_deleted());
+            }
+        }
+
+        #[test]
+        fn v2_follows_the_platform_version_whatever_it_declares() {
+            let moderated = DataContractConfig::V2(DataContractConfigV2 {
+                moderation: Some(ContractModerationConfig {
+                    banlist: true,
+                    suspensions: false,
+                    moderators: Default::default(),
+                }),
+                ..DataContractConfigV2::default()
+            });
+            let unmoderated = DataContractConfig::V2(DataContractConfigV2::default());
+
+            // Protocol version 14 admits V2, so both stay V2: the version is the platform
+            // version's, not a function of whether moderation is declared.
+            let latest = PlatformVersion::latest();
+            for config in [moderated.clone(), unmoderated.clone()] {
+                assert_eq!(
+                    config.config_valid_for_platform_version(latest).version(),
+                    2
+                );
+            }
+            assert_eq!(
+                DataContractConfig::default_for_version(latest)
+                    .expect("default config")
+                    .version(),
+                2
+            );
+
+            // Protocol version 13 does not, so both are lowered to V1.
+            let v13 = PlatformVersion::get(13).expect("protocol version 13");
+            for config in [moderated, unmoderated] {
+                assert_eq!(config.config_valid_for_platform_version(v13).version(), 1);
             }
         }
 

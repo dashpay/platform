@@ -17,6 +17,8 @@ mod insert;
 mod migration;
 /// The banlist and the suspension list a moderated contract keeps.
 pub mod moderation;
+#[cfg(feature = "server")]
+mod other_tree;
 /// Various paths for contract operations
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod paths;

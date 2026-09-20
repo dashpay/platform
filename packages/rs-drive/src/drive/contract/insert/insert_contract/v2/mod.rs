@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Generation 2 (protocol version 14): generation 1, and a contract whose config declares
-    /// moderation also gets its banlist and suspension list trees under keys `3` and `4`.
+    /// moderation also gets its banlist and suspension list trees under keys `128` and `192` of the contract's other tree (`[64, id, 2]`).
     #[inline(always)]
     pub(super) fn insert_contract_v2(
         &self,

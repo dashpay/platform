@@ -1,7 +1,7 @@
 use crate::drive::contract::moderation::types::{
     ContractModerationEntriesQuery, ContractModerationEntry,
 };
-use crate::drive::contract::paths::{contract_moderation_list_key, contract_root_path};
+use crate::drive::contract::paths::{contract_moderation_list_key, contract_other_path};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -24,7 +24,7 @@ impl Drive {
 
         // A path query over a missing list tree is an error in GroveDB, so check first.
         let exists = self.grove_has_raw(
-            (&contract_root_path(contract_id.as_slice())).into(),
+            (&contract_other_path(contract_id.as_slice())).into(),
             contract_moderation_list_key(query.list),
             DirectQueryType::StatefulDirectQuery,
             transaction,

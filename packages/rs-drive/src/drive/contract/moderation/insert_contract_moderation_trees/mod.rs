@@ -13,8 +13,9 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds the operations that create the moderation list trees a contract's config declares
-    /// and that do not exist yet: the banlist under key `3`, the suspension list under key
-    /// `4`. Called by the contract insertion only: the lists a contract keeps are fixed when it is
+    /// and that do not exist yet: the banlist under key `128`, the suspension list under key
+    /// `192`, both in the contract's other tree (`[64, id, 2]`). Called by the contract insertion
+    /// only: the lists a contract keeps are fixed when it is
     /// created, so a contract update never adds one.
     ///
     /// # Parameters
