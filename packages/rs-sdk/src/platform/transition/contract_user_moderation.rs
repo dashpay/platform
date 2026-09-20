@@ -247,7 +247,7 @@ impl ModerateContractUser for Identity {
 
 /// The first enabled CRITICAL authentication key without contract bounds (a bound key may
 /// only sign batches) that the signer can sign with.
-fn signing_key_for_moderation<S: Signer<IdentityPublicKey>>(
+pub(super) fn signing_key_for_moderation<S: Signer<IdentityPublicKey>>(
     identity: &Identity,
     signer: &S,
 ) -> Result<KeyID, Error> {
