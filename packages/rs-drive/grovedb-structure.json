@@ -1095,7 +1095,7 @@
                                 "since": 1,
                                 "presence": "lazy",
                                 "source": "packages/rs-drive/src/drive/identity/contract_info/mod.rs",
-                                "description": "The current key of the purpose, stored at the empty key: the single key when the contract asks for a unique bound key, otherwise a sibling reference to the latest key, for keys bound to a document type and for bound authentication keys.",
+                                "description": "The current key of the purpose, stored at the empty key: the single key when the contract asks for a unique bound key, otherwise a sibling reference to the latest key.",
                                 "children": []
                               },
                               {

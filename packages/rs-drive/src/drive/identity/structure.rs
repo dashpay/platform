@@ -129,8 +129,7 @@ pub(crate) fn structure() -> StructureNode {
                                     "The current key of the purpose, stored at the \
                                          empty key: the single key when the contract asks \
                                          for a unique bound key, otherwise a sibling \
-                                         reference to the latest key, for keys bound to a \
-                                         document type and for bound authentication keys.",
+                                         reference to the latest key.",
                                 ),
                             key_reference("One bound key, when the contract allows several."),
                         ])]),

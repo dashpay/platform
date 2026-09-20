@@ -803,14 +803,10 @@ mod fixtures {
     }
 
     /// Contract groups with every kind of member, and an identity whose keys
-    /// are bound to a contract that wants one key per purpose, to a document
-    /// type of a contract that allows several, and to a contract group; one
-    /// of its keys has a budget.
-    ///
-    /// Not covered, because Drive cannot write it: an encryption or decryption
-    /// key bound to a whole contract that keeps a reference to the latest key.
-    /// Its sibling reference is placed beside the purpose subtrees, one level
-    /// above the key it names, and the insert fails.
+    /// are bound to a contract that wants one key per purpose, to a contract
+    /// that keeps a reference to the latest key of each purpose, to a document
+    /// type of that contract, and to a contract group; one of its keys has a
+    /// budget.
     fn contract_groups_and_bound_keys() -> ConformanceReport {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
@@ -906,6 +902,22 @@ mod fixtures {
                 Purpose::AUTHENTICATION,
                 ContractBounds::ContractGroup { id: group_id },
                 Some(5_000_000),
+            ),
+            bound_key(
+                13,
+                Purpose::ENCRYPTION,
+                ContractBounds::SingleContract {
+                    id: contracts[1].id(),
+                },
+                None,
+            ),
+            bound_key(
+                14,
+                Purpose::DECRYPTION,
+                ContractBounds::SingleContract {
+                    id: contracts[1].id(),
+                },
+                None,
             ),
         ] {
             identity.add_public_key(key);

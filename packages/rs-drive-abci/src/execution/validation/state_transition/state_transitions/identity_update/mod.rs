@@ -1976,6 +1976,352 @@ mod tests {
         );
     }
 
+    /// A contract-level bound ENCRYPTION or DECRYPTION key whose contract opts in with
+    /// `MultipleReferenceToLatest` (2): the mode the JS SDK publishes by default. Drive used
+    /// to write the current-key alias one level above the purpose subtree, where its sibling
+    /// reference could not resolve, so the update died as an `InternalError`.
+    #[tokio::test]
+    async fn test_identity_update_adding_contract_bound_key_multiple_reference_to_latest() {
+        use crate::execution::validation::state_transition::tests::{
+            register_contract_from_bytes, IdentityTestInfo,
+        };
+        use drive::config::DriveConfig;
+        use drive::drive::identity::key::fetch::{
+            IdentityKeysRequest, KeyIDVec, KeyKindRequestType, KeyRequestType,
+        };
+
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            // Consistency verification makes GroveDB reject two pending operations on one
+            // slot, so a duplicated alias write would fail here instead of silently winning.
+            drive: DriveConfig {
+                batching_consistency_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform_version = PlatformVersion::latest();
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // The bytes below decode to this contract (bound-key requirements `0`); the test
+        // flips both requirements to `2` before registering it.
+        // {
+        //   "$formatVersion": "1",
+        //   "id": "5pkMhyeaFjJfVMkFhLtJdDp2ofx6iqt7i9k6ckkHBwbs",
+        //   "config": {
+        //     "$formatVersion": "1",
+        //     "canBeDeleted": false,
+        //     "readonly": false,
+        //     "keepsHistory": false,
+        //     "documentsKeepHistoryContractDefault": false,
+        //     "documentsMutableContractDefault": true,
+        //     "documentsCanBeDeletedContractDefault": true,
+        //     "requiresIdentityEncryptionBoundedKey": 0,
+        //     "requiresIdentityDecryptionBoundedKey": 0,
+        //     "sizedIntegerTypes": true
+        //   },
+        //   "version": 1,
+        //   "ownerId": "DicUmimv71VqxNBzZHXb887RgssSEjjx7DyLfxrt8q1X",
+        //   "schemaDefs": null,
+        //   "documentSchemas": {
+        //     "preorder": {
+        //       "documentsMutable": false,
+        //       "canBeDeleted": true,
+        //       "type": "object",
+        //       "indices": [
+        //         {
+        //           "name": "saltedHash",
+        //           "properties": [
+        //             {
+        //               "saltedDomainHash": "asc"
+        //             }
+        //           ],
+        //           "unique": true
+        //         }
+        //       ],
+        //       "properties": {
+        //         "saltedDomainHash": {
+        //           "type": "array",
+        //           "byteArray": true,
+        //           "minItems": 32,
+        //           "maxItems": 32,
+        //           "position": 0,
+        //           "description": "Double sha-256 of the concatenation of a 32 byte random salt and a normalized domain name"
+        //         }
+        //       },
+        //       "required": [
+        //         "saltedDomainHash"
+        //       ],
+        //       "additionalProperties": false,
+        //       "$comment": "Preorder documents are immutable: modification and deletion are restricted"
+        //     }
+        //   },
+        //   "createdAt": 1749816974718,
+        //   "updatedAt": null,
+        //   "createdAtBlockHeight": 159130,
+        //   "updatedAtBlockHeight": null,
+        //   "createdAtEpoch": 7906,
+        //   "updatedAtEpoch": null,
+        //   "groups": {},
+        //   "tokens": {},
+        //   "keywords": [],
+        //   "description": null
+        // }
+        let contract_bytes = hex::decode("0147aa11d517710d509edaf84bb54902394dcb8f6cc68775138d1cdd8334600d2e01000000000101010001000101bcf52c1c5d57d2e21530c5d03ef4c6e7b39a91da7c444fdb17e0a7746b6285860001087072656f7264657216081210646f63756d656e74734d757461626c651300120c63616e426544656c65746564130012047479706512066f626a6563741207696e64696365731501160312046e616d65120a73616c74656448617368120a70726f7065727469657315011601121073616c746564446f6d61696e4861736812036173631206756e697175651301120a70726f706572746965731601121073616c746564446f6d61696e486173681606120474797065120561727261791209627974654172726179130112086d696e4974656d73022012086d61784974656d7302201208706f736974696f6e0200120b6465736372697074696f6e1259446f75626c65207368612d323536206f662074686520636f6e636174656e6174696f6e206f66206120333220627974652072616e646f6d2073616c7420616e642061206e6f726d616c697a656420646f6d61696e206e616d65120872657175697265641501121073616c746564446f6d61696e4861736812146164646974696f6e616c50726f706572746965731300120824636f6d6d656e74124a5072656f7264657220646f63756d656e74732061726520696d6d757461626c653a206d6f64696669636174696f6e20616e642064656c6574696f6e20617265207265737472696374656401fd0000019769381d7e0001fc00026d9a0001fb1ee20000000000").expect("expected to decode contract bytes");
+
+        let (identity, signer, critical_key, master_key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(5.0));
+
+        let platform_state = platform.state.load();
+
+        // Same contract, but opting bound ENCRYPTION and DECRYPTION keys in with
+        // `MultipleReferenceToLatest` (2), the mode the DashPay contract and every
+        // contract published from the JS SDK use, instead of `Unique` (0).
+        let contract_bytes = {
+            use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+            use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+            use dpp::serialization::{
+                PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
+                PlatformSerializableWithPlatformVersion,
+            };
+            let mut contract = dpp::data_contract::DataContract::versioned_deserialize_untrusted(
+                &contract_bytes,
+                false,
+                platform_version,
+            )
+            .expect("expected to deserialize data contract");
+            contract
+                .config_mut()
+                .set_requires_identity_encryption_bounded_key(Some(
+                    StorageKeyRequirements::MultipleReferenceToLatest,
+                ));
+            contract
+                .config_mut()
+                .set_requires_identity_decryption_bounded_key(Some(
+                    StorageKeyRequirements::MultipleReferenceToLatest,
+                ));
+            contract
+                .serialize_to_bytes_with_platform_version(platform_version)
+                .expect("expected to serialize data contract")
+        };
+
+        // Register the contract
+        let data_contract = register_contract_from_bytes(
+            &mut platform,
+            &platform_state,
+            contract_bytes,
+            IdentityTestInfo::Given {
+                identity: &identity,
+                signer: &signer,
+                public_key: &critical_key,
+                identity_nonce: 1,
+            },
+            platform_version,
+        )
+        .await;
+
+        let bounds = ContractBounds::SingleContract {
+            id: data_contract.id(),
+        };
+        let secp = Secp256k1::new();
+        let mut rng = StdRng::seed_from_u64(1292);
+        // Two encryption keys, the newer one listed first: both write the encryption
+        // current-key alias, and the one naming the highest key id must win.
+        let pairs: Vec<(u32, Purpose, Keypair)> = vec![
+            (4, Purpose::ENCRYPTION, Keypair::new(&secp, &mut rng)),
+            (2, Purpose::ENCRYPTION, Keypair::new(&secp, &mut rng)),
+            (3, Purpose::DECRYPTION, Keypair::new(&secp, &mut rng)),
+        ];
+        let mut adds: Vec<IdentityPublicKeyInCreationV0> = pairs
+            .iter()
+            .map(|(id, purpose, pair)| IdentityPublicKeyInCreationV0 {
+                id: *id,
+                purpose: *purpose,
+                security_level: SecurityLevel::MEDIUM,
+                key_type: ECDSA_SECP256K1,
+                read_only: false,
+                data: pair.public_key().serialize().to_vec().into(),
+                signature: Default::default(),
+                contract_bounds: Some(bounds.clone()),
+            })
+            .collect();
+        let unsigned = |revision: u64,
+                        nonce: u64,
+                        add: Vec<IdentityPublicKeyInCreationV0>,
+                        disable: Vec<u32>|
+         -> StateTransition {
+            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision,
+                nonce,
+                add_public_keys: add
+                    .into_iter()
+                    .map(IdentityPublicKeyInCreation::V0)
+                    .collect(),
+                disable_public_keys: disable,
+                user_fee_increase: 0,
+                signature_public_key_id: master_key.id(),
+                signature: Default::default(),
+            })
+            .into()
+        };
+        let apply = |transition: &StateTransition, time_ms: u64| {
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition.serialize_to_bytes().unwrap()],
+                    &platform_state,
+                    &BlockInfo {
+                        time_ms,
+                        ..Default::default()
+                    },
+                    &transaction,
+                    platform_version,
+                    true,
+                    None,
+                )
+                .expect("expected to process state transition");
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "update at {time_ms} must apply"
+            );
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+        };
+        let key_ids = |purpose: Purpose, kind: KeyKindRequestType| -> Vec<u32> {
+            platform
+                .drive
+                .fetch_identity_keys::<KeyIDVec>(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type: KeyRequestType::ContractBoundKey(
+                            data_contract.id().to_buffer(),
+                            purpose,
+                            kind,
+                        ),
+                        limit: Some(16),
+                        offset: None,
+                    },
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch bound key ids")
+        };
+        let fetch_key = |key_id: u32| {
+            platform
+                .drive
+                .fetch_identity_keys_as_partial_identity(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type: KeyRequestType::SpecificKeys(vec![key_id]),
+                        limit: Some(1),
+                        offset: None,
+                    },
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch identity")
+                .expect("expected identity to exist")
+                .loaded_public_keys
+                .remove(&key_id)
+                .expect("expected the key")
+        };
+        let assert_no_grovedb_issues = || {
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to verify grovedb");
+            assert!(issues.is_empty(), "grovedb issues: {issues:?}");
+        };
+
+        // Register every key in one update: one current-key alias per purpose subtree.
+        let signable = unsigned(1, 2, adds.clone(), vec![])
+            .signable_bytes()
+            .expect("expected signable bytes");
+        for (key, (_, _, pair)) in adds.iter_mut().zip(&pairs) {
+            key.signature = signer::sign(&signable, &pair.secret_key().secret_bytes())
+                .expect("expected to sign")
+                .to_vec()
+                .into();
+        }
+        let mut registration = unsigned(1, 2, adds, vec![]);
+        registration.set_signature(
+            signer
+                .sign(&master_key, &signable)
+                .await
+                .expect("expected to sign"),
+        );
+        apply(&registration, 1000);
+        assert_no_grovedb_issues();
+
+        for (id, _, _) in &pairs {
+            assert_eq!(fetch_key(*id).contract_bounds(), Some(&bounds));
+        }
+        for (purpose, current, all) in [
+            (Purpose::ENCRYPTION, 4, vec![2, 4]),
+            (Purpose::DECRYPTION, 3, vec![3]),
+        ] {
+            assert_eq!(
+                key_ids(purpose, KeyKindRequestType::CurrentKeyOfKindRequest),
+                vec![current],
+                "{purpose:?} current key is the newest, whatever the order in the update"
+            );
+            assert_eq!(
+                key_ids(purpose, KeyKindRequestType::AllKeysOfKindRequest),
+                all,
+                "{purpose:?} listing must not repeat the current key alias"
+            );
+        }
+
+        // Disabling the older encryption key refreshes its references, including the alias,
+        // which keeps naming the newer key.
+        let mut revocation = unsigned(2, 3, vec![], vec![2]);
+        revocation.set_signature(
+            signer
+                .sign(
+                    &master_key,
+                    &revocation
+                        .signable_bytes()
+                        .expect("expected signable bytes"),
+                )
+                .await
+                .expect("expected to sign"),
+        );
+        apply(&revocation, 2000);
+        assert_no_grovedb_issues();
+
+        assert_eq!(fetch_key(2).disabled_at(), Some(2000));
+        assert_eq!(
+            key_ids(
+                Purpose::ENCRYPTION,
+                KeyKindRequestType::CurrentKeyOfKindRequest
+            ),
+            vec![4]
+        );
+        assert_eq!(
+            key_ids(
+                Purpose::DECRYPTION,
+                KeyKindRequestType::CurrentKeyOfKindRequest
+            ),
+            vec![3]
+        );
+    }
+
     #[tokio::test]
     async fn test_identity_update_adding_contract_bound_key_on_document_level() {
         use crate::execution::validation::state_transition::tests::{
