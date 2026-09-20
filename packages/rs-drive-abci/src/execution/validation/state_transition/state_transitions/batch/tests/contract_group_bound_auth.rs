@@ -134,6 +134,9 @@ async fn should_authorize_documents_by_the_contract_group_memberships_of_their_c
                 version,
             )
             .unwrap();
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, version)
+            .expect("expected to set the document id");
         set_valid_profile_payment_addresses(&mut document, profile);
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
         let batch = BatchTransition::new_document_creation_transition_from_document(
@@ -514,6 +517,9 @@ async fn should_resolve_contract_group_memberships_only_for_a_group_bound_signin
                 version,
             )
             .unwrap();
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, version)
+            .expect("expected to set the document id");
         set_valid_profile_payment_addresses(&mut document, profile);
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
         let batch = if fails_in_state {

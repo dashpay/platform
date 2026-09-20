@@ -378,6 +378,27 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     on, `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds its converter, and
 ///     the verify table gains `verify_contract_fee_pots`.
 ///
+/// 18. **Document ids commit to the identity contract nonce**: up to v13 a new
+///     document's id hashed the contract, owner, document type and the entropy
+///     of the create transition, and the create check only asks whether a
+///     document exists under the id right now. The owner of a deleted
+///     document could therefore create another one under the same id by
+///     reusing the entropy, with different content, and everything that
+///     referenced the id (a `refersTo` property, a like, a moderation removal
+///     record) then pointed at the new content, which defeats
+///     `documentsMutable: false` for a deletable document type.
+///     `DOCUMENT_VERSIONS_V4` sets `generate_document_id` to 1: the id also
+///     hashes a domain tag and the identity contract nonce of the create
+///     transition, which is consumed at most once, so an id can be produced
+///     at most once. The entropy stays in the hash (ids remain
+///     unpredictable) and on the wire (the transition format is unchanged);
+///     batch advanced structure validation 1, which only this version
+///     selects, recomputes the id through `Document::generate_document_id`.
+///     Ids of documents created before the upgrade can not be produced by
+///     the new derivation either. A client that still derives the entropy
+///     only id has every create rejected with
+///     `InvalidDocumentTransitionIdError`.
+///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
 ///   `is_allowed`, and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` is the first

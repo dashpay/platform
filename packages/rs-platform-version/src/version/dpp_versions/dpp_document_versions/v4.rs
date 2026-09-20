@@ -33,5 +33,6 @@ pub const DOCUMENT_VERSIONS_V4: DPPDocumentVersions = DPPDocumentVersions {
         get_raw_for_contract: 0,
         get_raw_for_document_type: 0,
         try_into_asset_unlock_base_transaction_info: 1,
+        generate_document_id: 1,
     },
 };

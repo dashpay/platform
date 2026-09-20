@@ -365,6 +365,11 @@ pub(crate) mod gas_sponsorship_tests {
                 .expect("expected a random document");
             document.set("attack", 4.into());
             document.set("defense", 7.into());
+            // the id commits to the nonce of the creation, which `card_creation_by` sends
+            // with the first identity contract nonce
+            document
+                .set_id_for_creation(card_document_type, &entropy.0, 2, self.platform_version)
+                .expect("expected to set the document id");
             (document, entropy)
         }
 

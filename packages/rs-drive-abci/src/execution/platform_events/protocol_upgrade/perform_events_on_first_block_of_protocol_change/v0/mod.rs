@@ -1494,6 +1494,9 @@ mod tests {
                 platform_version_13,
             )
             .expect("expected a random v1 profile document");
+        document
+            .set_id_for_creation(profile_v1, &entropy.0, 2, platform_version_13)
+            .expect("expected to set the document id");
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
         let stored_profile_id = document.id();
 

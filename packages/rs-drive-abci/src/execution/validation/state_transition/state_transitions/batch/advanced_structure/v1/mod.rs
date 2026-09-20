@@ -195,16 +195,28 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
             if let BatchedTransitionRef::Document(DocumentTransition::Create(create_transition)) =
                 transition
             {
-                // Validate the ID
-                let generated_document_id = Document::generate_document_id_v0(
+                // Validate the ID. It commits to the identity contract nonce
+                // of this transition, which is consumed at most once, so an id
+                // can be produced at most once: a deleted document can not be
+                // created again under the id it had.
+                let generated_document_id = Document::generate_document_id(
                     create_transition.base().data_contract_id_ref(),
                     &self.owner_id(),
                     create_transition.base().document_type_name(),
                     &create_transition.entropy(),
-                );
+                    create_transition.base().identity_contract_nonce(),
+                    platform_version,
+                )?;
 
-                // This hash will take 2 blocks (128 bytes)
-                execution_context.add_operation(ValidationOperation::DoubleSha256(2));
+                // The nonce derived preimage is longer than the entropy only
+                // one, so it is billed by its real length (3 blocks for most
+                // document type names) instead of the 2 blocks up to v13.
+                execution_context.add_operation(ValidationOperation::DoubleSha256(
+                    Document::generate_document_id_sha256_blocks(
+                        create_transition.base().document_type_name(),
+                        platform_version,
+                    )?,
+                ));
 
                 let id = create_transition.base().id();
                 if generated_document_id != id {

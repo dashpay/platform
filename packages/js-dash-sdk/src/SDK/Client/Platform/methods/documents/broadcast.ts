@@ -53,6 +53,27 @@ export default async function broadcast(
 
   this.logger.silly('[Document#broadcast] Created documents batch transition');
 
+  // From protocol version 14 the id of a new document commits to the identity
+  // contract nonce of its create transition, so it only exists now that the
+  // transition is built: the id a document was created with is a placeholder.
+  // Hand the final ids back so callers can keep using `document.getId()`.
+  if (documents.create) {
+    const createdIds = new Map<string, any>();
+    documentsBatchTransition.getTransitions().forEach((transition) => {
+      const entropy = transition.getEntropy && transition.getEntropy();
+      if (entropy) {
+        createdIds.set(Buffer.from(entropy).toString('hex'), transition.getId());
+      }
+    });
+
+    documents.create.forEach((document) => {
+      const id = createdIds.get(Buffer.from(document.getEntropy()).toString('hex'));
+      if (id) {
+        document.setId(id);
+      }
+    });
+  }
+
   await signStateTransition(this, documentsBatchTransition, identity, 1);
 
   // Broadcast state transition also wait for the result to be obtained

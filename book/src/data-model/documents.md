@@ -43,7 +43,7 @@ pub struct DocumentV0 {
 
 Let us walk through the key fields:
 
-- **`id`**: A 32-byte unique identifier. Unlike contract IDs, document IDs are *derived* from a combination of the contract ID, owner ID, document type name, and entropy. This makes them deterministic yet unique.
+- **`id`**: A 32-byte unique identifier. Unlike contract IDs, document IDs are *derived* from a combination of the contract ID, owner ID, document type name, entropy and (protocol v14+) the identity contract nonce of the create transition. This makes them deterministic, unique, and impossible to produce twice.
 
 - **`owner_id`**: The identity that currently owns this document. Ownership can change if the document type supports transfers.
 
@@ -63,27 +63,44 @@ Document IDs are not random -- they are derived deterministically. From `package
 
 ```rust
 impl Document {
-    pub fn generate_document_id_v0(
+    pub fn generate_document_id_v1(
         contract_id: &Identifier,
         owner_id: &Identifier,
         document_type_name: &str,
         entropy: &[u8],
+        identity_contract_nonce: IdentityNonce,
     ) -> Identifier {
-        let mut buf: Vec<u8> = vec![];
-        buf.extend_from_slice(&contract_id.to_buffer());
-        buf.extend_from_slice(&owner_id.to_buffer());
+        let mut buf: Vec<u8> = Vec::with_capacity(/* ... */);
+
+        buf.extend_from_slice(DOCUMENT_ID_V1_DOMAIN_TAG); // b"dash:document-id:v1"
+        buf.extend_from_slice(contract_id.as_slice());
+        buf.extend_from_slice(owner_id.as_slice());
         buf.extend_from_slice(document_type_name.as_bytes());
         buf.extend_from_slice(entropy);
+        buf.extend_from_slice(&identity_contract_nonce.to_be_bytes());
 
-        Identifier::from_bytes(&hash_double_to_vec(&buf)).unwrap()
+        Identifier::from(hash_double(&buf))
     }
 }
 ```
 
-The ID is a double SHA-256 hash of the concatenation of the contract ID, owner ID, document type name, and client-provided entropy. This means:
-- The same entropy in the same context always produces the same ID (deterministic).
-- Different entropy always produces a different ID (unique in practice).
-- The ID commits to both the contract and document type, preventing cross-contract collisions.
+The ID is a double SHA-256 hash of a domain tag, the contract ID, owner ID, document type name, client-provided entropy and the identity contract nonce of the create transition. `Document::generate_document_id` picks the derivation from the platform version; consensus recomputes it for every create and rejects a mismatch with `InvalidDocumentTransitionIdError`. This means:
+- The ID commits to the owner, so nobody else can take it, and to the contract and document type, preventing cross-contract collisions.
+- The entropy keeps the ID unpredictable: nobody can compute the ID of a document you have not created yet and point other documents at it in advance.
+- The nonce makes the ID single use. An identity contract nonce is consumed at most once, so an ID can be produced at most once.
+
+### Why the nonce is part of the ID
+
+Up to protocol version 13 the ID was `generate_document_id_v0`: the same hash without the domain tag and the nonce. The create check only asks whether a document exists under the ID *right now*, so the owner of a deleted document could create a new document with the same entropy and get the same ID back, with different content. Everything that referenced the ID (likes, replies, a `refersTo` property, a moderation removal record) then pointed at the new content. For a document type with `documentsMutable: false` and `canBeDeleted: true` that is content substitution, the very thing immutability is supposed to rule out.
+
+From protocol version 14 a reference to a document ID means that one document or nothing. This also holds for documents created before the upgrade: their entropy-only IDs can not be produced by the new derivation, and the old derivation is no longer accepted.
+
+### What this means for clients
+
+The ID of a new document only exists once the nonce of its create transition is assigned, and it changes if the transition is rebuilt with another nonce:
+- The ID a `Document` carries before its create transition is built (for example the one `create_document_from_data` gives it) is a **placeholder**. `DocumentCreateTransitionV0::from_document` replaces it with the derived ID, so every transition built through dpp carries the right one.
+- Read the ID from the transition, or from the confirmed document `put_to_platform_and_wait_for_response` returns, not from the document you passed in.
+- To know IDs up front (a chain of documents that reference each other), assign the nonces first: nonces may be used out of order within a window of 24.
 
 ## The Accessor Traits
 
@@ -297,6 +314,7 @@ In Rust the lists are `DocumentTypeV2Getters::immutable_fields()` and `immutable
 
 **Do not:**
 - Assume a document carries its contract reference. The contract and document type are always passed as separate arguments.
-- Manually construct document IDs. Use `generate_document_id_v0()` with proper entropy.
+- Manually construct document IDs. Use `Document::generate_document_id()` with proper entropy, the nonce of the create transition and the network's platform version.
+- Rely on the ID of a document that has not been sent yet. It is a placeholder until the create transition is built.
 - Treat serialized document bytes as self-describing. Without the document type schema, the bytes are meaningless.
 - Set time-based fields from client code. The platform sets `created_at`, `updated_at`, block heights, and similar fields during state transition processing.
