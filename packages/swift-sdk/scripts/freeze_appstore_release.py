@@ -255,8 +255,8 @@ def fetch_sources(clone, commits, env):
             raise ReleaseError("A registered source SHA does not identify a commit")
 
 
-def retain_source(clone, commit, env):
-    """Publish a lightweight immutable source tag, reconciling concurrent retries."""
+def retain_source(clone, commit, env, *, dry_run=False):
+    """Validate an existing source tag; create a missing tag only in write mode."""
     require_string(commit, SHA, "source commit")
     ref = SOURCE_TAG_PREFIX + commit
 
@@ -268,7 +268,7 @@ def retain_source(clone, commit, env):
             raise ReleaseError(f"Source retention tag points to a different object: {ref}")
         return True
 
-    if existing():
+    if existing() or dry_run:
         return
     try:
         git(clone, "push", "origin", f"{commit}:{ref}", env=env)
@@ -334,9 +334,8 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
             commits = source_commits(merged_registry) | {manifest["platform_sha"]}
             fetch_sources(clone, commits, env)
             generate("--check")
-            if not dry_run:
-                for commit in sorted(commits):
-                    retain_source(clone, commit, env)
+            for commit in sorted(commits):
+                retain_source(clone, commit, env, dry_run=dry_run)
             print("This release is already present in the merged registry.")
             return
         remote_branch = git(clone, "ls-remote", "--heads", "origin", branch, env=env)
@@ -382,12 +381,13 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
             raise ReleaseError("The generator changed files outside the snapshot allowlist")
         print(json.dumps({"branch": branch, "release_id": release_id,
                           "files": sorted(changed), "dry_run": dry_run}, indent=2))
-        if dry_run:
-            return
         # The source objects must remain reachable in a fresh checkout before
         # the PR references them. Neither tags nor source history are rewritten.
+        # Dry runs verify existing references too, but never create missing tags.
         for commit in sorted(source_commits(registry) | {manifest["platform_sha"]}):
-            retain_source(clone, commit, env)
+            retain_source(clone, commit, env, dry_run=dry_run)
+        if dry_run:
+            return
         if changed:
             git(clone, "add", "--", *sorted(changed))
         staged = git(clone, "diff", "--cached", "--name-only")

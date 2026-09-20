@@ -407,9 +407,31 @@ p.write_text(json.dumps(r))
         self.commit = self.save()
         wrong = git(self.remote, "rev-parse", worker.BASE_BRANCH)
         git(self.remote, "update-ref", worker.SOURCE_TAG_PREFIX + source, wrong)
-        with self.assertRaisesRegex(worker.ReleaseError, "different object"):
-            self.prepare()
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run), self.assertRaisesRegex(worker.ReleaseError, "different object"):
+                self.prepare(dry_run=dry_run)
         self.assertEqual(git(self.remote, "rev-parse", worker.SOURCE_TAG_PREFIX + source), wrong)
+        self.api.request.assert_not_called()
+
+    def test_annotated_source_tag_is_rejected_even_when_it_peels_to_the_named_commit(self):
+        source = self.manifest["platform_sha"]
+        tag = worker.SOURCE_TAG_PREFIX.removeprefix("refs/tags/") + source
+        git(self.platform, "tag", "--no-sign", "-a", tag, "-m", "annotated, not a direct commit ref", source)
+        git(self.platform, "push", str(self.remote), f"refs/tags/{tag}")
+        self.assertEqual(git(self.remote, "rev-parse", f"refs/tags/{tag}^{{commit}}"), source)
+        before = git(self.remote, "show-ref")
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run), self.assertRaisesRegex(worker.ReleaseError, "different object"):
+                self.prepare(dry_run=dry_run)
+        self.assertEqual(git(self.remote, "show-ref"), before)
+        self.api.request.assert_not_called()
+
+    def test_valid_source_tag_passes_dry_run_without_writes(self):
+        source = self.manifest["platform_sha"]
+        git(self.remote, "update-ref", worker.SOURCE_TAG_PREFIX + source, source)
+        before = git(self.remote, "show-ref")
+        self.prepare(dry_run=True)
+        self.assertEqual(git(self.remote, "show-ref"), before)
         self.api.request.assert_not_called()
 
     def test_source_tag_retry_reconciles_a_concurrent_matching_creation(self):
@@ -431,7 +453,29 @@ p.write_text(json.dumps(r))
         self.api.pull_requests.return_value = [{"state": "closed", "merged_at": "2026-09-18"}]
         self.api.request.reset_mock()
         before = git(self.remote, "show-ref")
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run):
+                self.prepare(dry_run=dry_run)
+                self.assertEqual(git(self.remote, "show-ref"), before)
+        self.api.request.assert_not_called()
+
+    def test_already_merged_release_checks_source_tags_without_creating_missing_tags_in_dry_run(self):
         self.prepare()
+        branch = "codex/freeze-swift-schema-v2.0.0"
+        merged_commit = git(self.remote, "rev-parse", branch)
+        git(self.remote, "update-ref", f"refs/heads/{worker.BASE_BRANCH}", merged_commit)
+        self.api.pull_requests.return_value = [{"state": "closed", "merged_at": "2026-09-18"}]
+        self.api.request.reset_mock()
+        ref = worker.SOURCE_TAG_PREFIX + self.manifest["platform_sha"]
+        git(self.remote, "update-ref", "-d", ref)
+        before = git(self.remote, "show-ref")
+        self.prepare(dry_run=True)
+        self.assertEqual(git(self.remote, "show-ref"), before)
+        git(self.remote, "update-ref", ref, merged_commit)
+        before = git(self.remote, "show-ref")
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run), self.assertRaisesRegex(worker.ReleaseError, "different object"):
+                self.prepare(dry_run=dry_run)
         self.assertEqual(git(self.remote, "show-ref"), before)
         self.api.request.assert_not_called()
 

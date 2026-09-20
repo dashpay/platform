@@ -68,6 +68,8 @@ all required releases, not merely a commit from before the snapshot merge.
    on `schema-release-data`. Select `dry_run` to validate and generate the patch
    without committing, creating source tags, pushing or creating a PR. Dry runs still require read
    credentials and query GitHub.
+   Existing source tags are validated in dry runs too, including for already
+   merged releases; missing tags are allowed and are not created.
 
 Do not use the Platform workflow to bypass App Store publication: it requires
 a published-state proof written by the trusted iOS monitor. Protect the data
