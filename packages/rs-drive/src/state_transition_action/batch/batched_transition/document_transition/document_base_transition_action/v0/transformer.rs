@@ -1,4 +1,6 @@
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::action_fees::{DocumentActionFee, DocumentActionFees};
 use dpp::data_contract::document_type::DocumentType;
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
@@ -25,6 +27,7 @@ impl DocumentBaseTransitionActionV0 {
         value: &DocumentBaseTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         get_token_cost: impl Fn(&DocumentType) -> Option<DocumentActionTokenCost>,
+        get_action_fee: impl Fn(&DocumentActionFees) -> Option<DocumentActionFee>,
         action: &str,
     ) -> Result<ConsensusValidationResult<Self>, Error> {
         let data_contract_id = value.data_contract_id();
@@ -115,6 +118,12 @@ impl DocumentBaseTransitionActionV0 {
         let contract_gas_fees_paid_by = document_action_token_cost
             .map(|cost| cost.gas_fees_paid_by)
             .unwrap_or(GasFeesPaidBy::DocumentOwner);
+        // The fee the document type declares for this action, with how it is priced. Only a v3
+        // meta-schema contract (protocol version 14) carries one. What is charged is settled
+        // where state is read, since the default pricing follows the epoch's fee multiplier.
+        let declared_action_fee = document_type
+            .action_fees()
+            .and_then(|fees| get_action_fee(fees).map(|fee| (fees.pricing(), fee)));
         Ok(DocumentBaseTransitionActionV0 {
             id: value.id(),
             identity_contract_nonce: value.identity_contract_nonce(),
@@ -123,6 +132,7 @@ impl DocumentBaseTransitionActionV0 {
             token_cost,
             gas_fees_paid_by,
             contract_gas_fees_paid_by,
+            declared_action_fee,
         }
         .into())
     }

@@ -133,6 +133,7 @@ fn test_document_base_v0() -> DocumentBaseTransitionActionV0 {
         token_cost: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
         contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+        declared_action_fee: None,
     }
 }
 
@@ -2936,6 +2937,7 @@ fn stamp_test_create_action(protocol_version: u32) -> DocumentCreateTransitionAc
         token_cost: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
         contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+        declared_action_fee: None,
     });
     DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0 {
         base,
@@ -2956,6 +2958,7 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         token_cost: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
         contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+        declared_action_fee: None,
     });
     DocumentReplaceTransitionAction::V0(DocumentReplaceTransitionActionV0 {
         base,
@@ -3224,4 +3227,130 @@ fn should_not_let_a_failed_transition_name_a_payer() {
         .resolve_gas_payer(),
         Ok(GasPayer::DocumentOwner)
     );
+}
+
+mod action_fees {
+    use crate::state_transition_action::batch::{
+        action_fee_operations, action_fees_total, ResolvedDocumentActionFee,
+    };
+    use crate::util::batch::drive_op_batch::{ContractFeePotOperationType, IdentityOperationType};
+    use crate::util::batch::DriveOperation;
+    use dpp::data_contract::document_type::action_fees::{ContractFeePot, DocumentActionFee};
+    use dpp::platform_value::Identifier;
+
+    fn id(seed: u8) -> Identifier {
+        Identifier::from([seed; 32])
+    }
+
+    fn fee(
+        contract: u8,
+        contract_owner: u8,
+        owner: u64,
+        moderators: u64,
+    ) -> ResolvedDocumentActionFee {
+        ResolvedDocumentActionFee {
+            contract_id: id(contract),
+            contract_owner_id: id(contract_owner),
+            fee: DocumentActionFee { owner, moderators },
+        }
+    }
+
+    /// The operations as `(removed from the payer, [(contract, pot, amount)])`
+    fn summarize(
+        operations: Vec<DriveOperation<'static>>,
+    ) -> (
+        Option<(Identifier, u64)>,
+        Vec<(Identifier, ContractFeePot, u64)>,
+    ) {
+        let mut removed = None;
+        let mut added = vec![];
+        for operation in operations {
+            match operation {
+                DriveOperation::IdentityOperation(
+                    IdentityOperationType::RemoveFromIdentityBalance {
+                        identity_id,
+                        balance_to_remove,
+                    },
+                ) => {
+                    assert!(removed.is_none(), "expected a single removal");
+                    removed = Some((Identifier::from(identity_id), balance_to_remove));
+                }
+                DriveOperation::ContractFeePotOperation(
+                    ContractFeePotOperationType::AddToPot {
+                        contract_id,
+                        pot,
+                        amount,
+                    },
+                ) => added.push((contract_id, pot, amount)),
+                other => panic!("unexpected operation {other:?}"),
+            }
+        }
+        (removed, added)
+    }
+
+    #[test]
+    fn should_charge_both_parts_to_a_payer_who_is_not_the_contract_owner() {
+        let fees = [fee(1, 9, 10, 100)];
+        assert_eq!(action_fees_total(&id(5), &fees).expect("total"), 110);
+        let (removed, added) = summarize(action_fee_operations(id(5), &fees).expect("operations"));
+        assert_eq!(removed, Some((id(5), 110)));
+        assert_eq!(
+            added,
+            vec![
+                (id(1), ContractFeePot::Owner, 10),
+                (id(1), ContractFeePot::Moderators, 100)
+            ]
+        );
+    }
+
+    #[test]
+    fn should_drop_the_owner_part_when_the_contract_owner_pays() {
+        let fees = [fee(1, 9, 10, 100)];
+        assert_eq!(action_fees_total(&id(9), &fees).expect("total"), 100);
+        let (removed, added) = summarize(action_fee_operations(id(9), &fees).expect("operations"));
+        assert_eq!(removed, Some((id(9), 100)));
+        assert_eq!(added, vec![(id(1), ContractFeePot::Moderators, 100)]);
+    }
+
+    #[test]
+    fn should_charge_nothing_when_nothing_is_owed() {
+        assert!(action_fee_operations(id(5), &[])
+            .expect("operations")
+            .is_empty());
+        // The contract owner pays a fee that only has an owner part: nothing moves.
+        let fees = [fee(1, 9, 10, 0)];
+        assert_eq!(action_fees_total(&id(9), &fees).expect("total"), 0);
+        assert!(action_fee_operations(id(9), &fees)
+            .expect("operations")
+            .is_empty());
+    }
+
+    #[test]
+    fn should_add_to_each_pot_once_however_many_transitions_pay_into_it() {
+        // A pot's new total is computed from the committed one, so two additions to the same
+        // pot in one batch would lose the first.
+        let fees = [fee(1, 9, 10, 100), fee(1, 9, 1, 2), fee(2, 9, 0, 7)];
+        let (removed, added) = summarize(action_fee_operations(id(5), &fees).expect("operations"));
+        assert_eq!(removed, Some((id(5), 120)));
+        assert_eq!(
+            added,
+            vec![
+                (id(1), ContractFeePot::Owner, 11),
+                (id(1), ContractFeePot::Moderators, 102),
+                (id(2), ContractFeePot::Moderators, 7)
+            ]
+        );
+        let paid_into_pots: u64 = added.iter().map(|(_, _, amount)| amount).sum();
+        assert_eq!(
+            paid_into_pots, 120,
+            "what leaves the payer is what reaches the pots"
+        );
+    }
+
+    #[test]
+    fn should_refuse_fees_that_overflow_credits() {
+        let fees = [fee(1, 9, u64::MAX / 2, 0), fee(1, 9, u64::MAX / 2, 5)];
+        assert!(action_fees_total(&id(5), &fees).is_err());
+        assert!(action_fee_operations(id(5), &fees).is_err());
+    }
 }

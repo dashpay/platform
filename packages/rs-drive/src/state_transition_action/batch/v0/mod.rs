@@ -1,5 +1,7 @@
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use crate::state_transition_action::batch::{GasPayer, ResolvedContractGroupMemberships, ResolvedGasSponsor};
+use crate::state_transition_action::batch::{
+    GasPayer, ResolvedContractGroupMemberships, ResolvedDocumentActionFee, ResolvedGasSponsor,
+};
 use dpp::consensus::state::token::{GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -33,6 +35,10 @@ pub struct BatchTransitionActionV0 {
     /// The contract owner sponsoring the batch's gas, resolved by the batch transformer from
     /// protocol version 14 (see `ResolvedGasSponsor`)
     pub gas_sponsor: Option<ResolvedGasSponsor>,
+    /// The action fees the batch's document transitions owe, priced by the batch transformer
+    /// from protocol version 14 (see `ResolvedDocumentActionFee`). Empty for a batch on
+    /// document types that declare none and under earlier transformer versions.
+    pub action_fees: Vec<ResolvedDocumentActionFee>,
 
     /// The contracts, among those the batch touches, on which the transformer found the batch
     /// owner's suspension lapsed (protocol version 14). Each such suspension is deleted when

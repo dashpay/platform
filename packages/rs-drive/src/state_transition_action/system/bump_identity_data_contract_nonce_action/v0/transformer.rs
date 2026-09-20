@@ -309,6 +309,7 @@ mod tests {
             token_cost: None,
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
             contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+            declared_action_fee: None,
         });
         let action = BumpIdentityDataContractNonceActionV0::from_document_base_transition_action(
             base_action,
@@ -334,6 +335,7 @@ mod tests {
             token_cost: None,
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
             contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+            declared_action_fee: None,
         });
         let action =
             BumpIdentityDataContractNonceActionV0::from_borrowed_document_base_transition_action(

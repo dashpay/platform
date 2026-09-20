@@ -3,6 +3,7 @@ pub mod transformer;
 
 use crate::drive::contract::DataContractFetchInfo;
 use dpp::balances::credits::TokenAmount;
+use dpp::data_contract::document_type::action_fees::{ActionFeePricing, DocumentActionFee};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
@@ -29,6 +30,9 @@ pub struct DocumentBaseTransitionActionV0 {
     /// Who the document type's token cost offers to pay the gas: `DocumentOwner` when the action
     /// has no token cost, since only a token payment can be sponsored
     pub contract_gas_fees_paid_by: GasFeesPaidBy,
+    /// The fee the document type declares for this action and how it is priced, `None` when
+    /// it declares none (protocol version 14)
+    pub declared_action_fee: Option<(ActionFeePricing, DocumentActionFee)>,
 }
 
 /// document base transition action accessors v0
@@ -65,4 +69,6 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     /// Who the document type's token cost offers to pay the gas (`DocumentOwner` without a
     /// token cost)
     fn contract_gas_fees_paid_by(&self) -> GasFeesPaidBy;
+    /// The fee the document type declares for this action and how it is priced
+    fn declared_action_fee(&self) -> Option<(ActionFeePricing, DocumentActionFee)>;
 }

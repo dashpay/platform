@@ -11,7 +11,12 @@ use dpp::identity::SecurityLevel;
 use dpp::platform_value::Identifier;
 use dpp::prelude::UserFeeIncrease;
 use dpp::ProtocolError;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use dpp::data_contract::document_type::action_fees::{
+    ActionFeePricing, ContractFeePot, DocumentActionFee,
+};
+use crate::util::batch::drive_op_batch::{ContractFeePotOperationType, IdentityOperationType};
+use crate::util::batch::DriveOperation;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 
 /// batched transition
@@ -57,6 +62,102 @@ impl ResolvedGasSponsor {
     pub fn covers(&self, required_balance: Credits) -> bool {
         self.balance >= required_balance
     }
+}
+
+/// The action fee one document transition of a batch owes (protocol version 14): what its
+/// document type declares for the action, priced for the epoch the batch executes in.
+///
+/// It names no payer. Whoever pays the batch's gas pays its action fees, and that is settled
+/// by fee validation: [`action_fee_operations`] turns the fees into operations once it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolvedDocumentActionFee {
+    /// The contract the document type belongs to, whose pots the fee goes to
+    pub contract_id: Identifier,
+    /// The owner of that contract, who never pays into their own owner pot
+    pub contract_owner_id: Identifier,
+    /// The credits charged
+    pub fee: DocumentActionFee,
+}
+
+impl ResolvedDocumentActionFee {
+    /// What `payer_id` owes for this fee. The owner part is dropped when the payer is the
+    /// contract owner: it would travel through the owner pot back to them and only cost
+    /// writes. The moderators part is always owed.
+    pub fn owed_by(&self, payer_id: &Identifier) -> DocumentActionFee {
+        if *payer_id == self.contract_owner_id {
+            DocumentActionFee {
+                owner: 0,
+                moderators: self.fee.moderators,
+            }
+        } else {
+            self.fee
+        }
+    }
+}
+
+/// What `payer_id` owes for all of `action_fees`.
+pub fn action_fees_total(
+    payer_id: &Identifier,
+    action_fees: &[ResolvedDocumentActionFee],
+) -> Result<Credits, ProtocolError> {
+    action_fees.iter().try_fold(0 as Credits, |total, fee| {
+        total
+            .checked_add(fee.owed_by(payer_id).total()?)
+            .ok_or(ProtocolError::Overflow(
+                "document action fees of a batch overflow credits",
+            ))
+    })
+}
+
+/// The operations that charge `action_fees` to `payer_id`: one removal from the payer's
+/// balance and one addition per contract fee pot that receives something. Empty when nothing
+/// is owed.
+///
+/// The additions are summed per pot because a pot's new total is computed from the committed
+/// one: two additions to the same pot in one batch would lose the first. The credits only
+/// move, from an identity balance into pots under the prefunded balances sum tree, so the sum
+/// of all credits is unchanged.
+///
+/// Fee validation and execution both build the operations here, for the payer fee validation
+/// settled on, so what is estimated is what is applied.
+pub fn action_fee_operations(
+    payer_id: Identifier,
+    action_fees: &[ResolvedDocumentActionFee],
+) -> Result<Vec<DriveOperation<'static>>, ProtocolError> {
+    let mut per_pot: BTreeMap<(Identifier, ContractFeePot), Credits> = BTreeMap::new();
+    for action_fee in action_fees {
+        let owed = action_fee.owed_by(&payer_id);
+        for pot in [ContractFeePot::Owner, ContractFeePot::Moderators] {
+            let amount = owed.part(pot);
+            if amount == 0 {
+                continue;
+            }
+            let pot_total = per_pot.entry((action_fee.contract_id, pot)).or_default();
+            *pot_total = pot_total
+                .checked_add(amount)
+                .ok_or(ProtocolError::Overflow(
+                    "document action fees of a batch overflow credits",
+                ))?;
+        }
+    }
+    let total = action_fees_total(&payer_id, action_fees)?;
+    if total == 0 {
+        return Ok(vec![]);
+    }
+    let mut operations = vec![DriveOperation::IdentityOperation(
+        IdentityOperationType::RemoveFromIdentityBalance {
+            identity_id: payer_id.to_buffer(),
+            balance_to_remove: total,
+        },
+    )];
+    operations.extend(per_pot.into_iter().map(|((contract_id, pot), amount)| {
+        DriveOperation::ContractFeePotOperation(ContractFeePotOperationType::AddToPot {
+            contract_id,
+            pot,
+            amount,
+        })
+    }));
+    Ok(operations)
 }
 
 /// Who pays the gas of a whole batch, as `GasFeesPaidBy::resolve` names it for each of its
@@ -174,6 +275,43 @@ impl BatchTransitionAction {
     pub fn gas_sponsor(&self) -> Option<&ResolvedGasSponsor> {
         match self {
             BatchTransitionAction::V0(v0) => v0.gas_sponsor.as_ref(),
+        }
+    }
+
+    /// The fee each document transition of the batch declares for its action, with the
+    /// contract it goes to, that contract's owner, and how it is priced. A transition that
+    /// became a nonce bump declares nothing: only an action that executes is charged.
+    pub fn declared_action_fees(
+        &self,
+    ) -> Vec<(Identifier, Identifier, ActionFeePricing, DocumentActionFee)> {
+        match self {
+            BatchTransitionAction::V0(v0) => v0
+                .transitions
+                .iter()
+                .filter_map(|transition| match transition {
+                    BatchedTransitionAction::DocumentAction(document_action) => {
+                        let base = document_action.base();
+                        let (pricing, fee) = base.declared_action_fee()?;
+                        let contract = &base.data_contract_fetch_info_ref().contract;
+                        Some((contract.id(), contract.owner_id(), pricing, fee))
+                    }
+                    _ => None,
+                })
+                .collect(),
+        }
+    }
+
+    /// The action fees the batch owes, priced by the batch transformer (protocol version 14)
+    pub fn action_fees(&self) -> &[ResolvedDocumentActionFee] {
+        match self {
+            BatchTransitionAction::V0(v0) => &v0.action_fees,
+        }
+    }
+
+    /// Records the action fees the batch owes
+    pub fn set_action_fees(&mut self, action_fees: Vec<ResolvedDocumentActionFee>) {
+        match self {
+            BatchTransitionAction::V0(v0) => v0.action_fees = action_fees,
         }
     }
 
