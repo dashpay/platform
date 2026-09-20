@@ -29,10 +29,11 @@ pub enum ContractModerators {
     /// Only the contract owner moderates.
     #[default]
     ContractOwner,
-    /// The contract owner and a fixed set of identities moderate. Non-empty, at most
-    /// `SystemLimits::max_contract_moderators`. The owner may be named in the set, and then
-    /// counts toward that limit; naming it changes nothing about who may moderate.
-    OwnerAndIdentities(BTreeSet<Identifier>),
+    /// The moderators the contract appoints, beside its owner, who always may moderate.
+    /// Non-empty, at most `SystemLimits::max_contract_moderators`, each an identity that
+    /// exists. The owner may be appointed too, and then counts toward that limit; appointing
+    /// it changes nothing about who may moderate.
+    AppointedModerators(BTreeSet<Identifier>),
 }
 
 impl ContractModerators {
@@ -41,7 +42,7 @@ impl ContractModerators {
     pub fn identity_ids(&self) -> Option<&BTreeSet<Identifier>> {
         match self {
             ContractModerators::ContractOwner => None,
-            ContractModerators::OwnerAndIdentities(ids) => Some(ids),
+            ContractModerators::AppointedModerators(ids) => Some(ids),
         }
     }
 
@@ -58,7 +59,7 @@ impl ContractModerators {
 }
 
 // The wire shape is a flat `{"$type": "contractOwner"}` or
-// `{"$type": "ownerAndIdentities", "identities": [...]}` map, the style of
+// `{"$type": "appointedModerators", "identities": [...]}` map, the style of
 // `AuthorizedActionTakers`. Bincode is untouched.
 impl Serialize for ContractModerators {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -69,9 +70,9 @@ impl Serialize for ContractModerators {
                 m.serialize_entry("$type", "contractOwner")?;
                 m.end()
             }
-            ContractModerators::OwnerAndIdentities(ids) => {
+            ContractModerators::AppointedModerators(ids) => {
                 let mut m = serializer.serialize_map(Some(2))?;
-                m.serialize_entry("$type", "ownerAndIdentities")?;
+                m.serialize_entry("$type", "appointedModerators")?;
                 m.serialize_entry("identities", ids)?;
                 m.end()
             }
@@ -92,7 +93,7 @@ impl<'de> Deserialize<'de> for ContractModerators {
                 f.write_str(
                     "ContractModerators as a map with a `$type` discriminator, \
                      e.g. {\"$type\": \"contractOwner\"} or \
-                     {\"$type\": \"ownerAndIdentities\", \"identities\": [\"<base58>\"]}",
+                     {\"$type\": \"appointedModerators\", \"identities\": [\"<base58>\"]}",
                 )
             }
 
@@ -123,14 +124,14 @@ impl<'de> Deserialize<'de> for ContractModerators {
                 let variant = variant.ok_or_else(|| de::Error::missing_field("$type"))?;
                 match variant.as_str() {
                     "contractOwner" => Ok(ContractModerators::ContractOwner),
-                    "ownerAndIdentities" => {
+                    "appointedModerators" => {
                         let ids =
                             identities.ok_or_else(|| de::Error::missing_field("identities"))?;
-                        Ok(ContractModerators::OwnerAndIdentities(ids))
+                        Ok(ContractModerators::AppointedModerators(ids))
                     }
                     other => Err(de::Error::unknown_variant(
                         other,
-                        &["contractOwner", "ownerAndIdentities"],
+                        &["contractOwner", "appointedModerators"],
                     )),
                 }
             }
@@ -144,8 +145,8 @@ impl fmt::Display for ContractModerators {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ContractModerators::ContractOwner => write!(f, "contract owner"),
-            ContractModerators::OwnerAndIdentities(ids) => {
-                write!(f, "contract owner and {} identities", ids.len())
+            ContractModerators::AppointedModerators(ids) => {
+                write!(f, "contract owner and {} appointed moderators", ids.len())
             }
         }
     }
@@ -440,15 +441,15 @@ mod tests {
     fn should_round_trip_moderators_through_json() {
         for moderators in [
             ContractModerators::ContractOwner,
-            ContractModerators::OwnerAndIdentities(set(&[1, 2])),
+            ContractModerators::AppointedModerators(set(&[1, 2])),
         ] {
             let json = serde_json::to_value(&moderators).expect("serialize");
             let back: ContractModerators = serde_json::from_value(json).expect("deserialize");
             assert_eq!(moderators, back);
         }
-        let json = serde_json::to_value(ContractModerators::OwnerAndIdentities(set(&[1])))
+        let json = serde_json::to_value(ContractModerators::AppointedModerators(set(&[1])))
             .expect("serialize");
-        assert_eq!(json["$type"], "ownerAndIdentities");
+        assert_eq!(json["$type"], "appointedModerators");
         assert_eq!(json["identities"].as_array().map(|a| a.len()), Some(1));
     }
 
@@ -471,7 +472,7 @@ mod tests {
         let config = ContractModerationConfig {
             banlist: true,
             suspensions: false,
-            moderators: ContractModerators::OwnerAndIdentities(set(&[9, 1])),
+            moderators: ContractModerators::AppointedModerators(set(&[9, 1])),
         };
         let result = config
             .validate(PlatformVersion::latest())
@@ -490,7 +491,7 @@ mod tests {
         let config = |count: u8| ContractModerationConfig {
             banlist: true,
             suspensions: false,
-            moderators: ContractModerators::OwnerAndIdentities(set(
+            moderators: ContractModerators::AppointedModerators(set(
                 &(1..=count).collect::<Vec<u8>>()
             )),
         };
@@ -510,7 +511,7 @@ mod tests {
         let empty = ContractModerationConfig {
             banlist: true,
             suspensions: true,
-            moderators: ContractModerators::OwnerAndIdentities(BTreeSet::new()),
+            moderators: ContractModerators::AppointedModerators(BTreeSet::new()),
         };
         assert!(!empty
             .validate(platform_version)
@@ -521,7 +522,7 @@ mod tests {
         let oversized = ContractModerationConfig {
             banlist: true,
             suspensions: true,
-            moderators: ContractModerators::OwnerAndIdentities(set(&too_many)),
+            moderators: ContractModerators::AppointedModerators(set(&too_many)),
         };
         assert!(!oversized
             .validate(platform_version)
@@ -535,7 +536,7 @@ mod tests {
         let config = ContractModerationConfig {
             banlist: true,
             suspensions: true,
-            moderators: ContractModerators::OwnerAndIdentities(set(&[1, 2, 3])),
+            moderators: ContractModerators::AppointedModerators(set(&[1, 2, 3])),
         };
         assert!(config
             .validate(PlatformVersion::latest())

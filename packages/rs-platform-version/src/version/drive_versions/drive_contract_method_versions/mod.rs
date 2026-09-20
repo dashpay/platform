@@ -30,6 +30,7 @@ pub struct DriveContractModerationMethodVersions {
     pub prove_contract_moderation_entries: FeatureVersion,
     pub insert_contract_moderation_trees: FeatureVersion,
     pub add_estimation_costs_for_contract_moderation_trees: FeatureVersion,
+    pub add_estimation_costs_for_contract_moderation_entry: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

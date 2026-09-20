@@ -22,15 +22,29 @@ impl Drive {
     ) -> Result<Vec<ContractModerationEntry>, Error> {
         Self::check_contract_moderation_entries_limit(query.limit, platform_version)?;
 
-        // A path query over a missing list tree is an error in GroveDB, so check first.
-        let exists = self.grove_has_raw(
+        // A path query over a missing list tree is an error in GroveDB, so check first. The
+        // check itself reads under the contract's other tree, which a contract id nobody has
+        // (or a contract stored before the tree existed) does not have either: that reads as
+        // no list, like the list's own absence.
+        let exists = match self.grove_has_raw(
             (&contract_other_path(contract_id.as_slice())).into(),
             contract_moderation_list_key(query.list),
             DirectQueryType::StatefulDirectQuery,
             transaction,
             &mut vec![],
             &platform_version.drive,
-        )?;
+        ) {
+            Ok(exists) => exists,
+            Err(Error::GroveDB(error))
+                if matches!(
+                    *error,
+                    grovedb::Error::PathParentLayerNotFound(_) | grovedb::Error::PathNotFound(_)
+                ) =>
+            {
+                false
+            }
+            Err(error) => return Err(error),
+        };
         if !exists {
             return Ok(vec![]);
         }

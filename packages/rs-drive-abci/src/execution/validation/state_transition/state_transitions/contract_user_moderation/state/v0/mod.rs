@@ -12,8 +12,8 @@ use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::state::contract_moderation::{
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationTargetNotFoundError, ContractSuspensionNotInFutureError,
-    ContractUserAlreadyBannedError, ContractUserNotBannedError, ContractUserNotSuspendedError,
-    IdentityNotContractModeratorError,
+    ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
+    ContractUserNotSuspendedError, IdentityNotContractModeratorError,
 };
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -216,8 +216,9 @@ fn refusal_for_status(
             (!status.banned).then(|| ContractUserNotBannedError::new(contract_id, target_id).into())
         }
         ContractUserModerationAction::Suspend { until, .. } => {
+            // A suspend blocked by a ban is not a duplicate ban: it gets the "is banned" code.
             if status.banned {
-                return Some(ContractUserAlreadyBannedError::new(contract_id, target_id).into());
+                return Some(ContractUserBannedError::new(contract_id, target_id).into());
             }
             (*until <= block_info.time_ms).then(|| {
                 ContractSuspensionNotInFutureError::new(

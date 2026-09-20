@@ -123,7 +123,7 @@ trait BatchTransitionInternalTransformerV0 {
         owner_id: Identifier,
         document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
         user_fee_increase: UserFeeIncrease,
-        lapsed_suspensions: &mut BTreeSet<(Identifier, Identifier)>,
+        lapsed_suspensions: &mut BTreeSet<Identifier>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -267,7 +267,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
             }
         }
 
-        let mut lapsed_suspensions: BTreeSet<(Identifier, Identifier)> = BTreeSet::new();
+        let mut lapsed_suspensions: BTreeSet<Identifier> = BTreeSet::new();
 
         let validation_result_documents = document_transitions_by_contracts_and_types
             .iter()
@@ -422,7 +422,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         owner_id: Identifier,
         document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
         user_fee_increase: UserFeeIncrease,
-        lapsed_suspensions: &mut BTreeSet<(Identifier, Identifier)>,
+        lapsed_suspensions: &mut BTreeSet<Identifier>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

@@ -34,7 +34,7 @@ pub(super) trait BatchTransitionContractModerationGateV0 {
         contract: &DataContract,
         owner_id: Identifier,
         document_transitions: &BTreeMap<&'a String, Vec<&'a DocumentTransition>>,
-        lapsed_suspensions: &mut BTreeSet<(Identifier, Identifier)>,
+        lapsed_suspensions: &mut BTreeSet<Identifier>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -66,7 +66,7 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
         contract: &DataContract,
         owner_id: Identifier,
         document_transitions: &BTreeMap<&'a String, Vec<&'a DocumentTransition>>,
-        lapsed_suspensions: &mut BTreeSet<(Identifier, Identifier)>,
+        lapsed_suspensions: &mut BTreeSet<Identifier>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -100,7 +100,7 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
 
         let Some(error) = barred else {
             if status.has_lapsed_suspension_at(block_info.time_ms) {
-                lapsed_suspensions.insert((data_contract_id, owner_id));
+                lapsed_suspensions.insert(data_contract_id);
             }
             return Ok(None);
         };

@@ -39,7 +39,7 @@ impl DriveHighLevelOperationConverter for BatchTransitionAction {
             }
             // Protocol version 14: the batch also sweeps the lapsed suspensions the transformer
             // found for its owner, one delete per (contract, identity) after the transitions'
-            // own operations.
+            // own operations, always the owner's own suspension.
             1 => {
                 let owner_id = self.owner_id();
                 let lapsed_suspensions = self.lapsed_suspensions().clone();
@@ -57,16 +57,14 @@ impl DriveHighLevelOperationConverter for BatchTransitionAction {
                     .into_iter()
                     .flatten()
                     .collect::<Vec<_>>();
-                operations.extend(lapsed_suspensions.into_iter().map(
-                    |(contract_id, identity_id)| {
-                        DriveOperation::ContractModerationOperation(
-                            ContractModerationOperationType::RemoveSuspension {
-                                contract_id,
-                                identity_id,
-                            },
-                        )
-                    },
-                ));
+                operations.extend(lapsed_suspensions.into_iter().map(|contract_id| {
+                    DriveOperation::ContractModerationOperation(
+                        ContractModerationOperationType::RemoveSuspension {
+                            contract_id,
+                            identity_id: owner_id,
+                        },
+                    )
+                }));
                 Ok(operations)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

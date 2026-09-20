@@ -13,7 +13,10 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::execution::validation::state_transition::data_contract_common::data_contract_reference_validation::validate_data_contract_references;
 use crate::execution::validation::state_transition::state_transitions::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
@@ -80,7 +83,14 @@ impl DataContractUpdateStateTransitionStateValidationV1 for DataContractUpdateTr
                     platform_version,
                 )?,
                 contract.id(),
-                moderators_added_by_the_update(contract, platform, tx, platform_version)?,
+                moderators_added_by_the_update(
+                    contract,
+                    platform,
+                    block_info,
+                    execution_context,
+                    tx,
+                    platform_version,
+                )?,
             )
         };
 
@@ -126,11 +136,14 @@ impl DataContractUpdateStateTransitionStateValidationV1 for DataContractUpdateTr
 /// The moderator identities `contract` names that the stored contract does not, the owner
 /// left out (it signed this transition, so it exists). The ones the stored contract names
 /// were checked when they were added, and identities are never removed, so they are not
-/// looked up again. The stored contract is the one the version 0 validation just fetched,
-/// so this read comes from the cache.
+/// looked up again. The read of the stored contract is billed like every other read here, from
+/// the fee the fetch returns (never from the fee a cached fetch info carries, which depends on
+/// the node's cache), whether it was served from the cache or from disk.
 fn moderators_added_by_the_update<C: CoreRPCLike>(
     contract: &DataContract,
     platform: &PlatformRef<C>,
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
     tx: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<Identifier>, Error> {
@@ -142,12 +155,16 @@ fn moderators_added_by_the_update<C: CoreRPCLike>(
         return Ok(vec![]);
     };
 
-    let stored = platform.drive.get_contract_with_fetch_info(
+    let (fee, stored) = platform.drive.get_contract_with_fetch_info_and_fee(
         contract.id().to_buffer(),
+        Some(&block_info.epoch),
         false,
         tx,
         platform_version,
     )?;
+    if let Some(fee) = fee {
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+    }
     let already_named = |identity_id: &Identifier| {
         stored.as_ref().is_some_and(|stored| {
             stored

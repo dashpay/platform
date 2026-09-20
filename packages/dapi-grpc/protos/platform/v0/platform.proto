@@ -722,11 +722,17 @@ message GetContractModerationStatusRequest {
 }
 
 message GetContractModerationStatusResponse {
+  // The identity's status on the lists the request named, and on no other: a
+  // list that was not read says nothing, so its field is left unset.
   message ContractModerationStatus {
-    bool banned = 1; // The identity is on the banlist
+    optional bool banned =
+        1; // Set only when the banlist was read: the identity is on it
     optional uint64 suspended_until =
         2; // The block time, in milliseconds, until which the identity is
-           // suspended; a lapsed suspension stays until it is swept
+           // suspended; a lapsed suspension stays until it is swept. Unset
+           // when the identity is not suspended or the list was not read
+    repeated ContractModerationList lists =
+        3; // The lists this status covers, as the request named them
   }
 
   message GetContractModerationStatusResponseV0 {

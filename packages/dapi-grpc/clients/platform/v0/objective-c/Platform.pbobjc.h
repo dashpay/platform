@@ -3042,17 +3042,32 @@ void GetContractModerationStatusResponse_ClearVersionOneOfCase(GetContractModera
 typedef GPB_ENUM(GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber) {
   GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_Banned = 1,
   GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_SuspendedUntil = 2,
+  GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_ListsArray = 3,
 };
 
+/**
+ * The identity's status on the lists the request named, and on no other: a
+ * list that was not read says nothing, so its field is left unset.
+ **/
 GPB_FINAL @interface GetContractModerationStatusResponse_ContractModerationStatus : GPBMessage
 
-/** The identity is on the banlist */
+/** Set only when the banlist was read: the identity is on it */
 @property(nonatomic, readwrite) BOOL banned;
 
+@property(nonatomic, readwrite) BOOL hasBanned;
 /** The block time, in milliseconds, until which the identity is */
 @property(nonatomic, readwrite) uint64_t suspendedUntil;
 
 @property(nonatomic, readwrite) BOOL hasSuspendedUntil;
+/**
+ * suspended; a lapsed suspension stays until it is swept. Unset
+ * when the identity is not suspended or the list was not read
+ **/
+// |listsArray| contains |ContractModerationList|
+@property(nonatomic, readwrite, strong, null_resettable) GPBEnumArray *listsArray;
+/** The number of items in @c listsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger listsArray_Count;
+
 @end
 
 #pragma mark - GetContractModerationStatusResponse_GetContractModerationStatusResponseV0

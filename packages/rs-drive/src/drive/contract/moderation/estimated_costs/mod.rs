@@ -48,7 +48,7 @@ impl Drive {
             .methods
             .contract
             .moderation
-            .add_estimation_costs_for_contract_moderation_trees
+            .add_estimation_costs_for_contract_moderation_entry
         {
             0 => Self::add_estimation_costs_for_contract_moderation_entry_v0(
                 contract_id,

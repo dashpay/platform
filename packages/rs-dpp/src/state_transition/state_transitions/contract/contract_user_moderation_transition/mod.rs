@@ -186,7 +186,8 @@ mod test {
         assert_eq!(t.state_transition_protocol_version(), 0);
         assert_eq!(t.modified_data_ids(), vec![t.data_contract_id()]);
         assert_eq!(t.unique_identifiers().len(), 1);
-        assert_eq!(t.owner_id(), t.owner_id());
+        let ContractUserModerationTransition::V0(v0) = &t;
+        assert_eq!(t.owner_id(), v0.owner_id);
         assert_eq!(t.action().identity_id(), t.target_identity_id());
     }
 

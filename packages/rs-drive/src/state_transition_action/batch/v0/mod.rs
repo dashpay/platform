@@ -34,10 +34,11 @@ pub struct BatchTransitionActionV0 {
     /// protocol version 14 (see `ResolvedGasSponsor`)
     pub gas_sponsor: Option<ResolvedGasSponsor>,
 
-    /// The suspensions the transformer found lapsed for the owner on the contracts the batch
-    /// touches, as `(contract id, identity id)` (protocol version 14). Each is deleted when
+    /// The contracts, among those the batch touches, on which the transformer found the batch
+    /// owner's suspension lapsed (protocol version 14). Each such suspension is deleted when
     /// the batch executes: the first document transition after a suspension lapses sweeps it.
-    pub lapsed_suspensions: BTreeSet<(Identifier, Identifier)>,
+    /// Only ever the owner's own: the identity is not stored, so nothing can queue another's.
+    pub lapsed_suspensions: BTreeSet<Identifier>,
 }
 
 impl BatchTransitionActionV0 {

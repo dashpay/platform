@@ -311,6 +311,7 @@ impl WasmSdk {
         options: ContractModerationOptionsJs,
         action: &str,
     ) -> Result<ContractModerationResultJs, WasmSdkError> {
+        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
         use dash_sdk::platform::transition::contract_user_moderation::ModerateContractUser;
         use wasm_dpp2::data_contract::moderation_action_from_parts;
         use wasm_dpp2::identity::IdentityWasm;
@@ -340,8 +341,11 @@ impl WasmSdk {
 
         // The proof of a ban covers every list the contract keeps, which the verifier reads
         // from the contract, so the contract is resolved and cached before anything is paid
-        // for; a cold cache would otherwise refuse a result the network already accepted.
-        self.get_or_fetch_contract(contract_id).await?;
+        // for; a cold cache would otherwise refuse a result the network already accepted. The
+        // other actions prove the one entry they edit and need no contract.
+        if matches!(action, ContractUserModerationAction::Ban { .. }) {
+            self.get_or_fetch_contract(contract_id).await?;
+        }
 
         let status = identity
             .moderate_contract_user(

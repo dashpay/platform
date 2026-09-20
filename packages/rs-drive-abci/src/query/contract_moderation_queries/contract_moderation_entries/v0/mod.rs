@@ -42,9 +42,19 @@ impl<C> Platform<C> {
             // The page size when the request names none: the largest page, the number the
             // proof verifier assumes as well.
             None => platform_version.drive_abci.query.max_returned_elements,
-            Some(limit) => check_validation_result_with_data!(u16::try_from(limit).map_err(|_| {
-                QueryError::InvalidArgument(format!("limit {limit} is out of bounds"))
-            })),
+            // Refused here, as an invalid argument: Drive refuses it too, but as an error of its
+            // own that would reach the client as an unknown node failure.
+            Some(limit) => check_validation_result_with_data!(u16::try_from(limit)
+                .ok()
+                .filter(|limit| {
+                    (1..=platform_version.drive_abci.query.max_returned_elements).contains(limit)
+                })
+                .ok_or_else(|| {
+                    QueryError::InvalidArgument(format!(
+                        "limit {limit} is out of bounds, it must be between 1 and {}",
+                        platform_version.drive_abci.query.max_returned_elements
+                    ))
+                })),
         };
 
         let kept = check_validation_result_with_data!(
@@ -170,10 +180,12 @@ mod tests {
             query(request(id.clone(), BANLIST, Some(vec![0; 8]), None, false)),
             "start_after",
         );
-        assert_invalid_argument(
-            query(request(id, BANLIST, None, Some(70_000), false)),
-            "out of bounds",
-        );
+        for limit in [0, 101, 70_000] {
+            assert_invalid_argument(
+                query(request(id.clone(), BANLIST, None, Some(limit), false)),
+                "out of bounds",
+            );
+        }
     }
 
     #[test]

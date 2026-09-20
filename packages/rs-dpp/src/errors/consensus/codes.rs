@@ -223,10 +223,6 @@ impl ErrorWithCode for BasicError {
             Self::IdentityPublicKeyLimitsNotAllowedInShieldedIdentityCreationError(_) => 10538,
             Self::IdentityKeyLimitsUpdateEmptyError(_) => 10539,
 
-            // Contract moderation errors: 10462-10463 (data contract band)
-            Self::InvalidContractModerationConfigError(_) => 10462,
-            Self::ContractModerationSelfTargetError(_) => 10463,
-
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,
             Self::MissingStateTransitionTypeError { .. } => 10601,
@@ -267,6 +263,11 @@ impl ErrorWithCode for BasicError {
             Self::ShieldedInvalidDenominationError(_) => 10827,
             Self::InvalidTokenDistributionEpochIntervalTooShortError(_) => 10828,
             Self::InvalidTokenOncePerIdentityDistributionAmountError(_) => 10829,
+
+            // Contract Moderation Errors: 10900-10949
+            Self::InvalidContractModerationConfigError(_) => 10900,
+            Self::ContractModerationSelfTargetError(_) => 10901,
+            // 10902 is reserved for the moderation earnings follow-up.
         }
     }
 }

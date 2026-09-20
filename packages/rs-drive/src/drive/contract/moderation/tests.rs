@@ -197,7 +197,7 @@ fn should_keep_the_list_trees_and_their_entries_across_a_contract_update() {
             .with_moderation(Some(ContractModerationConfig {
                 banlist: true,
                 suspensions: false,
-                moderators: ContractModerators::OwnerAndIdentities(
+                moderators: ContractModerators::AppointedModerators(
                     [identity(0x42)].into_iter().collect(),
                 ),
             })),

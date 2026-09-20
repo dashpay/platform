@@ -2857,6 +2857,8 @@ export namespace GetContractModerationStatusResponse {
   }
 
   export class ContractModerationStatus extends jspb.Message {
+    hasBanned(): boolean;
+    clearBanned(): void;
     getBanned(): boolean;
     setBanned(value: boolean): void;
 
@@ -2864,6 +2866,11 @@ export namespace GetContractModerationStatusResponse {
     clearSuspendedUntil(): void;
     getSuspendedUntil(): number;
     setSuspendedUntil(value: number): void;
+
+    clearListsList(): void;
+    getListsList(): Array<ContractModerationListMap[keyof ContractModerationListMap]>;
+    setListsList(value: Array<ContractModerationListMap[keyof ContractModerationListMap]>): void;
+    addLists(value: ContractModerationListMap[keyof ContractModerationListMap], index?: number): ContractModerationListMap[keyof ContractModerationListMap];
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): ContractModerationStatus.AsObject;
@@ -2879,6 +2886,7 @@ export namespace GetContractModerationStatusResponse {
     export type AsObject = {
       banned: boolean,
       suspendedUntil: number,
+      listsList: Array<ContractModerationListMap[keyof ContractModerationListMap]>,
     }
   }
 

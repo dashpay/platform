@@ -127,7 +127,7 @@ export interface DataContractConfig {
  */
 export type ContractModerators =
   | { $type: "contractOwner" }
-  | { $type: "ownerAndIdentities"; identities: string[] };
+  | { $type: "appointedModerators"; identities: string[] };
 
 /**
  * The moderation a data contract declares. At least one list must be kept, and a list that is

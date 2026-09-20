@@ -140,7 +140,7 @@ mod tests {
             moderation: Some(ContractModerationConfig {
                 banlist: true,
                 suspensions: false,
-                moderators: ContractModerators::OwnerAndIdentities(
+                moderators: ContractModerators::AppointedModerators(
                     [Identifier::new([5u8; 32])].into_iter().collect(),
                 ),
             }),

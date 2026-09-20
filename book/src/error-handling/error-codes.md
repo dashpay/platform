@@ -53,7 +53,6 @@ Error codes are organized into ranges that correspond to error categories and su
 | 10200-10277 | Data Contract | `DataContractMaxDepthExceedError` (10200), `DuplicateIndexError` (10201), `InvalidDataContractIdError` (10204), `DataContractInvalidRequiredFieldsUpdateError` (10276), `PreProgrammedDistributionAmountOverLimitError` (10277) |
 | 10350-10359 | Groups | `GroupPositionDoesNotExistError` (10350), `GroupExceedsMaxMembersError` (10354) |
 | 10360-10367 | Contract Groups | `ContractGroupMembershipsOverLimitError` (10360), `InvalidContractGroupAdminsError` (10364), `InvalidContractGroupDescriptionLengthError` (10367); 10365 unassigned |
-| 10462-10463 | Contract Moderation | `InvalidContractModerationConfigError` (10462), `ContractModerationSelfTargetError` (10463) |
 | 10400-10418 | Documents | `DataContractNotPresentError` (10400), `DuplicateDocumentTransitionsWithIdsError` (10401) |
 | 10450-10460 | Tokens | `InvalidTokenIdError` (10450), `TokenTransferToOurselfError` (10456) |
 | 10500-10535 | Identity | `DuplicatedIdentityPublicKeyBasicError` (10500), `InvalidIdentityPublicKeyDataError` (10511) |
@@ -61,6 +60,7 @@ Error codes are organized into ranges that correspond to error categories and su
 | 10700-10700 | General | `OverflowError` (10700) |
 | 10800-10818 | Address | `TransitionOverMaxInputsError` (10800), `WithdrawalBelowMinAmountError` (10818) |
 | 10819-10827 | Shielded | `ShieldedNoActionsError` (10819), `ShieldedTooManyActionsError` (10825), `ShieldedImplicitFeeCapExceededError` (10826), `ShieldedInvalidDenominationError` (10827 — `IdentityCreateFromShieldedPool` exit amount not a member of the versioned denomination set) |
+| 10900-10949 | Contract Moderation | `InvalidContractModerationConfigError` (10900), `ContractModerationSelfTargetError` (10901); 10902 reserved |
 
 ### SignatureError codes (20000-20012)
 

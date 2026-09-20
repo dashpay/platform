@@ -57,7 +57,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
-const CONTRACT_MODERATION_SELF_TARGET: u32 = 10463;
+const CONTRACT_MODERATION_SELF_TARGET: u32 = 10901;
 const OVERFLOW: u32 = 10700;
 const CONTRACT_MODERATION_NOT_ENABLED: u32 = 41100;
 const IDENTITY_NOT_CONTRACT_MODERATOR: u32 = 41101;
@@ -142,7 +142,7 @@ fn moderation(banlist: bool, suspensions: bool, moderator: Identifier) -> Contra
     ContractModerationConfig {
         banlist,
         suspensions,
-        moderators: ContractModerators::OwnerAndIdentities([moderator].into_iter().collect()),
+        moderators: ContractModerators::AppointedModerators([moderator].into_iter().collect()),
     }
 }
 
@@ -172,7 +172,7 @@ impl Setup {
         )
         .data_contract_owned();
         let moderation = moderation.map(|mut moderation| {
-            if let ContractModerators::OwnerAndIdentities(ids) = &mut moderation.moderators {
+            if let ContractModerators::AppointedModerators(ids) = &mut moderation.moderators {
                 if ids.remove(&THE_MODERATOR) {
                     ids.insert(moderator.id());
                 }
@@ -723,9 +723,10 @@ async fn should_refuse_actions_that_do_not_fit_the_targets_status() {
     let suspend_banned = setup
         .moderate(&setup.owner, suspend_action(user_id, BLOCK_TIME_MS + 5))
         .await;
+    // Not a duplicate ban: a suspend blocked by a ban gets the "is banned" code.
     assert_paid_with_code(
         &setup.process(&suspend_banned, &transaction),
-        CONTRACT_USER_ALREADY_BANNED,
+        CONTRACT_USER_BANNED,
     );
 
     let unknown = setup
@@ -979,7 +980,7 @@ async fn should_refuse_an_update_adding_a_moderator_that_does_not_exist() {
             .with_moderation(Some(ContractModerationConfig {
                 banlist: true,
                 suspensions: true,
-                moderators: ContractModerators::OwnerAndIdentities(
+                moderators: ContractModerators::AppointedModerators(
                     [setup.moderator.id(), unknown].into_iter().collect(),
                 ),
             })),
@@ -1006,7 +1007,7 @@ async fn should_accept_an_update_that_keeps_the_existing_moderators() {
             .with_moderation(Some(ContractModerationConfig {
                 banlist: true,
                 suspensions: true,
-                moderators: ContractModerators::OwnerAndIdentities(
+                moderators: ContractModerators::AppointedModerators(
                     [setup.moderator.id(), setup.user.id()]
                         .into_iter()
                         .collect(),
@@ -1026,7 +1027,7 @@ async fn should_accept_an_update_that_keeps_the_existing_moderators() {
             .with_moderation(Some(ContractModerationConfig {
                 banlist: true,
                 suspensions: true,
-                moderators: ContractModerators::OwnerAndIdentities(
+                moderators: ContractModerators::AppointedModerators(
                     [setup.moderator.id(), setup.user.id()]
                         .into_iter()
                         .collect(),
@@ -1042,7 +1043,7 @@ async fn should_accept_the_owner_named_among_the_moderators() {
     let setup = Setup::new(Some(ContractModerationConfig {
         banlist: true,
         suspensions: true,
-        moderators: ContractModerators::OwnerAndIdentities(
+        moderators: ContractModerators::AppointedModerators(
             [THE_OWNER, THE_MODERATOR].into_iter().collect(),
         ),
     }))

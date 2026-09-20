@@ -2,7 +2,9 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
-use crate::query::contract_moderation_queries::{identifier_from_request, list_from_request};
+use crate::query::contract_moderation_queries::{
+    identifier_from_request, list_from_request, list_to_request,
+};
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_contract_moderation_status_request::GetContractModerationStatusRequestV0;
@@ -96,9 +98,17 @@ impl<C> Platform<C> {
 
             GetContractModerationStatusResponseV0 {
                 result: Some(get_contract_moderation_status_response_v0::Result::Status(
+                    // Only the lists read are reported: `banned` stays unset when the banlist was
+                    // not read, rather than saying "not banned" about it.
                     ContractModerationStatusProto {
-                        banned: status.banned,
+                        banned: requested
+                            .contains(&ContractModerationList::Banlist)
+                            .then_some(status.banned),
                         suspended_until: status.suspended_until,
+                        lists: requested
+                            .iter()
+                            .map(|list| list_to_request(*list))
+                            .collect(),
                     },
                 )),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
@@ -293,7 +303,8 @@ mod tests {
             else {
                 panic!("expected a status");
             };
-            assert_eq!(status.banned, expected.banned);
+            assert_eq!(status.banned, Some(expected.banned));
+            assert_eq!(status.lists, vec![BANLIST, SUSPENSIONS]);
             assert_eq!(status.suspended_until, expected.suspended_until);
 
             let result = platform
@@ -327,5 +338,35 @@ mod tests {
                 ContractModerationListStatuses::from_status(&lists, &expected)
             );
         }
+    }
+    #[test]
+    fn should_leave_a_list_that_was_not_read_unset_on_the_wire() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = store_contract(&platform, true, true, version);
+        let banned = Identifier::from([0x31; 32]);
+        ban(&platform, &contract, banned, version);
+
+        // Only the suspension list is read: a client that does not remember what it asked for
+        // must not read "not banned" about a banned identity.
+        let result = platform
+            .query_contract_moderation_status_v0(
+                request(
+                    contract.id().to_vec(),
+                    banned.to_vec(),
+                    vec![SUSPENSIONS],
+                    false,
+                ),
+                &state,
+                version,
+            )
+            .expect("expected query to succeed");
+        let Some(get_contract_moderation_status_response_v0::Result::Status(status)) =
+            result.data.expect("expected data").result
+        else {
+            panic!("expected a status");
+        };
+        assert_eq!(status.banned, None);
+        assert_eq!(status.suspended_until, None);
+        assert_eq!(status.lists, vec![SUSPENSIONS]);
     }
 }

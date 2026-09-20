@@ -41,6 +41,14 @@ pub(super) fn list_from_request(
     }
 }
 
+/// The wire number of a list.
+pub(super) fn list_to_request(list: ContractModerationList) -> i32 {
+    match list {
+        ContractModerationList::Banlist => ContractModerationListProto::Banlist as i32,
+        ContractModerationList::Suspensions => ContractModerationListProto::Suspensions as i32,
+    }
+}
+
 impl<C> Platform<C> {
     /// The moderation lists the contract keeps, or a query error when the contract does not
     /// exist or keeps no list. A list the contract does not keep has no tree, so a query over

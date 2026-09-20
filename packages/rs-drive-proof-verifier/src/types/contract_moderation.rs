@@ -108,9 +108,18 @@ pub fn entries_query_from_request(
 ) -> Result<ContractModerationEntriesQuery, Error> {
     let limit = match limit {
         None => default_contract_moderation_entries_limit(platform_version),
-        Some(limit) => u16::try_from(limit).map_err(|_| Error::RequestError {
-            error: format!("limit {limit} is out of bounds"),
-        })?,
+        // The bounds the node enforces: a request outside them never got a proof.
+        Some(limit) => u16::try_from(limit)
+            .ok()
+            .filter(|limit| {
+                (1..=default_contract_moderation_entries_limit(platform_version)).contains(limit)
+            })
+            .ok_or_else(|| Error::RequestError {
+                error: format!(
+                    "limit {limit} is out of bounds, it must be between 1 and {}",
+                    default_contract_moderation_entries_limit(platform_version)
+                ),
+            })?,
     };
     Ok(ContractModerationEntriesQuery {
         list: list_from_request(list, "list")?,
@@ -255,6 +264,8 @@ mod tests {
             (0, None, None, "not a moderation list"),
             (1, Some(&[1u8; 5][..]), None, "start_after"),
             (1, None, Some(u16::MAX as u32 + 1), "out of bounds"),
+            (1, None, Some(0), "out of bounds"),
+            (1, None, Some(101), "out of bounds"),
         ] {
             let err =
                 entries_query_from_request(list, start_after, limit, platform_version).unwrap_err();

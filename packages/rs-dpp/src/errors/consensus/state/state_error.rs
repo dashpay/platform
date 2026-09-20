@@ -762,13 +762,60 @@ mod tests {
             )),
             113
         );
-        // Contract moderation (protocol version 14): its first variant and the last three,
-        // the tail of the enum.
+        // Contract moderation (protocol version 14): every variant, the tail of the enum.
         assert_eq!(
             discriminant_of(StateError::ContractModerationNotEnabledError(
                 ContractModerationNotEnabledError::new(group_id, ContractModerationList::Banlist,)
             )),
             114
+        );
+        assert_eq!(
+            discriminant_of(StateError::IdentityNotContractModeratorError(
+                IdentityNotContractModeratorError::new(group_id, identity_id)
+            )),
+            115
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationTargetNotAllowedError(
+                ContractModerationTargetNotAllowedError::new(group_id, identity_id)
+            )),
+            116
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserAlreadyBannedError(
+                ContractUserAlreadyBannedError::new(group_id, identity_id)
+            )),
+            117
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserNotBannedError(
+                ContractUserNotBannedError::new(group_id, identity_id)
+            )),
+            118
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserNotSuspendedError(
+                ContractUserNotSuspendedError::new(group_id, identity_id)
+            )),
+            119
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractSuspensionNotInFutureError(
+                ContractSuspensionNotInFutureError::new(group_id, identity_id, 1, 2)
+            )),
+            120
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserBannedError(
+                ContractUserBannedError::new(group_id, identity_id)
+            )),
+            121
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractUserSuspendedError(
+                ContractUserSuspendedError::new(group_id, identity_id, 1)
+            )),
+            122
         );
         assert_eq!(
             discriminant_of(StateError::ContractModerationTargetNotFoundError(

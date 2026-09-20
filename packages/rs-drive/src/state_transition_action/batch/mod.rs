@@ -154,19 +154,10 @@ impl BatchTransitionAction {
         }
     }
 
-    /// The lapsed suspensions the batch sweeps when it executes, as `(contract id, identity id)`
-    pub fn lapsed_suspensions(&self) -> &BTreeSet<(Identifier, Identifier)> {
+    /// The contracts on which the batch sweeps its owner's lapsed suspension when it executes
+    pub fn lapsed_suspensions(&self) -> &BTreeSet<Identifier> {
         match self {
             BatchTransitionAction::V0(v0) => &v0.lapsed_suspensions,
-        }
-    }
-
-    /// Records a lapsed suspension of `identity_id` on `contract_id` for the batch to sweep
-    pub fn add_lapsed_suspension(&mut self, contract_id: Identifier, identity_id: Identifier) {
-        match self {
-            BatchTransitionAction::V0(v0) => {
-                v0.lapsed_suspensions.insert((contract_id, identity_id));
-            }
         }
     }
 }

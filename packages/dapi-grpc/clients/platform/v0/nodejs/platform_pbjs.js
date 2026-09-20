@@ -24251,6 +24251,7 @@ $root.org = (function() {
                              * @interface IContractModerationStatus
                              * @property {boolean|null} [banned] ContractModerationStatus banned
                              * @property {number|Long|null} [suspendedUntil] ContractModerationStatus suspendedUntil
+                             * @property {Array.<org.dash.platform.dapi.v0.ContractModerationList>|null} [lists] ContractModerationStatus lists
                              */
 
                             /**
@@ -24262,6 +24263,7 @@ $root.org = (function() {
                              * @param {org.dash.platform.dapi.v0.GetContractModerationStatusResponse.IContractModerationStatus=} [properties] Properties to set
                              */
                             function ContractModerationStatus(properties) {
+                                this.lists = [];
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -24283,6 +24285,14 @@ $root.org = (function() {
                              * @instance
                              */
                             ContractModerationStatus.prototype.suspendedUntil = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * ContractModerationStatus lists.
+                             * @member {Array.<org.dash.platform.dapi.v0.ContractModerationList>} lists
+                             * @memberof org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus
+                             * @instance
+                             */
+                            ContractModerationStatus.prototype.lists = $util.emptyArray;
 
                             /**
                              * Creates a new ContractModerationStatus instance using the specified properties.
@@ -24312,6 +24322,12 @@ $root.org = (function() {
                                     writer.uint32(/* id 1, wireType 0 =*/8).bool(message.banned);
                                 if (message.suspendedUntil != null && Object.hasOwnProperty.call(message, "suspendedUntil"))
                                     writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.suspendedUntil);
+                                if (message.lists != null && message.lists.length) {
+                                    writer.uint32(/* id 3, wireType 2 =*/26).fork();
+                                    for (var i = 0; i < message.lists.length; ++i)
+                                        writer.int32(message.lists[i]);
+                                    writer.ldelim();
+                                }
                                 return writer;
                             };
 
@@ -24351,6 +24367,16 @@ $root.org = (function() {
                                         break;
                                     case 2:
                                         message.suspendedUntil = reader.uint64();
+                                        break;
+                                    case 3:
+                                        if (!(message.lists && message.lists.length))
+                                            message.lists = [];
+                                        if ((tag & 7) === 2) {
+                                            var end2 = reader.uint32() + reader.pos;
+                                            while (reader.pos < end2)
+                                                message.lists.push(reader.int32());
+                                        } else
+                                            message.lists.push(reader.int32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -24393,6 +24419,19 @@ $root.org = (function() {
                                 if (message.suspendedUntil != null && message.hasOwnProperty("suspendedUntil"))
                                     if (!$util.isInteger(message.suspendedUntil) && !(message.suspendedUntil && $util.isInteger(message.suspendedUntil.low) && $util.isInteger(message.suspendedUntil.high)))
                                         return "suspendedUntil: integer|Long expected";
+                                if (message.lists != null && message.hasOwnProperty("lists")) {
+                                    if (!Array.isArray(message.lists))
+                                        return "lists: array expected";
+                                    for (var i = 0; i < message.lists.length; ++i)
+                                        switch (message.lists[i]) {
+                                        default:
+                                            return "lists: enum value[] expected";
+                                        case 0:
+                                        case 1:
+                                        case 2:
+                                            break;
+                                        }
+                                }
                                 return null;
                             };
 
@@ -24419,6 +24458,27 @@ $root.org = (function() {
                                         message.suspendedUntil = object.suspendedUntil;
                                     else if (typeof object.suspendedUntil === "object")
                                         message.suspendedUntil = new $util.LongBits(object.suspendedUntil.low >>> 0, object.suspendedUntil.high >>> 0).toNumber(true);
+                                if (object.lists) {
+                                    if (!Array.isArray(object.lists))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.lists: array expected");
+                                    message.lists = [];
+                                    for (var i = 0; i < object.lists.length; ++i)
+                                        switch (object.lists[i]) {
+                                        default:
+                                        case "CONTRACT_MODERATION_LIST_UNSPECIFIED":
+                                        case 0:
+                                            message.lists[i] = 0;
+                                            break;
+                                        case "CONTRACT_MODERATION_LIST_BANLIST":
+                                        case 1:
+                                            message.lists[i] = 1;
+                                            break;
+                                        case "CONTRACT_MODERATION_LIST_SUSPENSIONS":
+                                        case 2:
+                                            message.lists[i] = 2;
+                                            break;
+                                        }
+                                }
                                 return message;
                             };
 
@@ -24435,6 +24495,8 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.lists = [];
                                 if (options.defaults) {
                                     object.banned = false;
                                     if ($util.Long) {
@@ -24450,6 +24512,11 @@ $root.org = (function() {
                                         object.suspendedUntil = options.longs === String ? String(message.suspendedUntil) : message.suspendedUntil;
                                     else
                                         object.suspendedUntil = options.longs === String ? $util.Long.prototype.toString.call(message.suspendedUntil) : options.longs === Number ? new $util.LongBits(message.suspendedUntil.low >>> 0, message.suspendedUntil.high >>> 0).toNumber(true) : message.suspendedUntil;
+                                if (message.lists && message.lists.length) {
+                                    object.lists = [];
+                                    for (var j = 0; j < message.lists.length; ++j)
+                                        object.lists[j] = options.enums === String ? $root.org.dash.platform.dapi.v0.ContractModerationList[message.lists[j]] : message.lists[j];
+                                }
                                 return object;
                             };
 

@@ -6414,11 +6414,13 @@ void GetContractModerationStatusResponse_ClearVersionOneOfCase(GetContractModera
 
 @implementation GetContractModerationStatusResponse_ContractModerationStatus
 
-@dynamic banned;
+@dynamic hasBanned, banned;
 @dynamic hasSuspendedUntil, suspendedUntil;
+@dynamic listsArray, listsArray_Count;
 
 typedef struct GetContractModerationStatusResponse_ContractModerationStatus__storage_ {
   uint32_t _has_storage_[1];
+  GPBEnumArray *listsArray;
   uint64_t suspendedUntil;
 } GetContractModerationStatusResponse_ContractModerationStatus__storage_;
 
@@ -6434,7 +6436,7 @@ typedef struct GetContractModerationStatusResponse_ContractModerationStatus__sto
         .number = GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_Banned,
         .hasIndex = 0,
         .offset = 1,  // Stored in _has_storage_ to save space.
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeBool,
       },
       {
@@ -6445,6 +6447,15 @@ typedef struct GetContractModerationStatusResponse_ContractModerationStatus__sto
         .offset = (uint32_t)offsetof(GetContractModerationStatusResponse_ContractModerationStatus__storage_, suspendedUntil),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "listsArray",
+        .dataTypeSpecific.enumDescFunc = ContractModerationList_EnumDescriptor,
+        .number = GetContractModerationStatusResponse_ContractModerationStatus_FieldNumber_ListsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContractModerationStatusResponse_ContractModerationStatus__storage_, listsArray),
+        .flags = (GPBFieldFlags)(GPBFieldRepeated | GPBFieldPacked | GPBFieldHasEnumDescriptor),
+        .dataType = GPBDataTypeEnum,
       },
     };
     GPBDescriptor *localDescriptor =

@@ -911,7 +911,7 @@ impl FromUnproved<platform::GetContractModerationStatusRequest> for ContractMode
             Some(V0Result::Status(status)) => Some(ContractModerationListStatuses::from_status(
                 &lists,
                 &ContractModerationStatus {
-                    banned: status.banned,
+                    banned: status.banned.unwrap_or_default(),
                     suspended_until: status.suspended_until,
                 },
             )),

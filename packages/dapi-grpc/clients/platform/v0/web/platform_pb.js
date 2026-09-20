@@ -2669,7 +2669,7 @@ if (goog.DEBUG && !COMPILED) {
  * @constructor
  */
 proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.repeatedFields_, null);
 };
 goog.inherits(proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
@@ -29768,6 +29768,13 @@ proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.serializeBin
 
 
 
+/**
+ * List of repeated fields within this message type.
+ * @private {!Array<number>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.repeatedFields_ = [3];
+
 
 
 if (jspb.Message.GENERATE_TO_OBJECT) {
@@ -29800,7 +29807,8 @@ proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractMode
 proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.toObject = function(includeInstance, msg) {
   var f, obj = {
     banned: jspb.Message.getBooleanFieldWithDefault(msg, 1, false),
-    suspendedUntil: jspb.Message.getFieldWithDefault(msg, 2, 0)
+    suspendedUntil: jspb.Message.getFieldWithDefault(msg, 2, 0),
+    listsList: (f = jspb.Message.getRepeatedField(msg, 3)) == null ? undefined : f
   };
 
   if (includeInstance) {
@@ -29845,6 +29853,12 @@ proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractMode
       var value = /** @type {number} */ (reader.readUint64());
       msg.setSuspendedUntil(value);
       break;
+    case 3:
+      var values = /** @type {!Array<!proto.org.dash.platform.dapi.v0.ContractModerationList>} */ (reader.isDelimited() ? reader.readPackedEnum() : [reader.readEnum()]);
+      for (var i = 0; i < values.length; i++) {
+        msg.addLists(values[i]);
+      }
+      break;
     default:
       reader.skipField();
       break;
@@ -29874,8 +29888,8 @@ proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractMode
  */
 proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getBanned();
-  if (f) {
+  f = /** @type {boolean} */ (jspb.Message.getField(message, 1));
+  if (f != null) {
     writer.writeBool(
       1,
       f
@@ -29885,6 +29899,13 @@ proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractMode
   if (f != null) {
     writer.writeUint64(
       2,
+      f
+    );
+  }
+  f = message.getListsList();
+  if (f.length > 0) {
+    writer.writePackedEnum(
+      3,
       f
     );
   }
@@ -29905,7 +29926,25 @@ proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractMode
  * @return {!proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus} returns this
  */
 proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.prototype.setBanned = function(value) {
-  return jspb.Message.setProto3BooleanField(this, 1, value);
+  return jspb.Message.setField(this, 1, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.prototype.clearBanned = function() {
+  return jspb.Message.setField(this, 1, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.prototype.hasBanned = function() {
+  return jspb.Message.getField(this, 1) != null;
 };
 
 
@@ -29942,6 +29981,43 @@ proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractMode
  */
 proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.prototype.hasSuspendedUntil = function() {
   return jspb.Message.getField(this, 2) != null;
+};
+
+
+/**
+ * repeated ContractModerationList lists = 3;
+ * @return {!Array<!proto.org.dash.platform.dapi.v0.ContractModerationList>}
+ */
+proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.prototype.getListsList = function() {
+  return /** @type {!Array<!proto.org.dash.platform.dapi.v0.ContractModerationList>} */ (jspb.Message.getRepeatedField(this, 3));
+};
+
+
+/**
+ * @param {!Array<!proto.org.dash.platform.dapi.v0.ContractModerationList>} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.prototype.setListsList = function(value) {
+  return jspb.Message.setField(this, 3, value || []);
+};
+
+
+/**
+ * @param {!proto.org.dash.platform.dapi.v0.ContractModerationList} value
+ * @param {number=} opt_index
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.prototype.addLists = function(value, opt_index) {
+  return jspb.Message.addToRepeatedField(this, 3, value, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
+ * @return {!proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetContractModerationStatusResponse.ContractModerationStatus.prototype.clearListsList = function() {
+  return this.setListsList([]);
 };
 
 
