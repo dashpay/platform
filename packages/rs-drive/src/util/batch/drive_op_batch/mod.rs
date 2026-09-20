@@ -251,6 +251,17 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
 }
 
 impl DriveOperation<'_> {
+    /// Whether the batch this operation is in refunds nobody for the storage it removes: see
+    /// [`ContractModerationOperationType::ForfeitStorageRefunds`].
+    pub fn forfeits_storage_refunds(&self) -> bool {
+        matches!(
+            self,
+            Self::ContractModerationOperation(
+                ContractModerationOperationType::ForfeitStorageRefunds
+            )
+        )
+    }
+
     /// Convert a member of a batch whose document TTL cleanup is complete.
     pub(crate) fn into_low_level_drive_operations_after_ttl_drain(
         self,

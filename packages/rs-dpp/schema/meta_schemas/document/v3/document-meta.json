@@ -889,6 +889,10 @@
       "type": "boolean",
       "description": "Syntactic sugar: `rangeAverageable: true` is shorthand for `rangeCountable: true` + `rangeSummable: true`. Requires `documentsAverageable` to be set. Same caveat as `rangeSummable` — rarely useful on the primary key; per-index `rangeAverageable` is what most callers want."
     },
+    "canBeDeletedByModerators": {
+      "type": "boolean",
+      "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract. Independent of `canBeDeleted`, which rules what a document's own owner may do. Requires the contract to declare `moderation` in its config, and is refused on a type that keeps history, is indexOnly, or restricts document creation. Fixed when the document type is created. A type carrying it can not be the target of a permanentDocument reference. Available from protocol version 14."
+    },
     "indexOnly": {
       "type": "boolean",
       "description": "When true, documents of this type are never written to primary storage: the index entries are the rows, each terminating in an Item keyed by the index's `terminal` property instead of a Reference keyed by the document id. Only what is in the indexes exists and is recoverable. Requires: every property required and appearing in at least one index (except a `skipIfAbsent` index's optional first property), $ownerId in at least one index (as a property or terminal), documentsMutable: false, no transfers/trading/history/transient properties, and no doctype-level aggregate keywords (use the index-level count flags). Available from protocol version 14."

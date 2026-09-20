@@ -29,7 +29,8 @@ fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Ident
             .map(|transition| transition.data_contract_id())
             .collect(),
         // A ban's proof covers every list the contract keeps, which the verifier reads from
-        // the contract. The other moderations prove the one entry they edit and need none.
+        // the contract. The other moderations prove the one entry they edit, or for a document
+        // deletion the removal record it wrote, and need none.
         StateTransition::ContractUserModeration(moderation)
             if matches!(
                 moderation.action(),
@@ -440,6 +441,20 @@ mod tests {
             },
         ));
         assert!(referenced_contract_ids(&unban).is_empty());
+
+        // A document deletion is proved by the removal record it wrote, contract unread.
+        let deletion = StateTransition::ContractUserModeration(
+            ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
+                data_contract_id: contract_id,
+                action: ContractUserModerationAction::DeleteDocument {
+                    document_type_name: "post".to_string(),
+                    document_id: Identifier::new([0x66; 32]),
+                    reason: Default::default(),
+                },
+                ..Default::default()
+            }),
+        );
+        assert!(referenced_contract_ids(&deletion).is_empty());
     }
 
     #[test]

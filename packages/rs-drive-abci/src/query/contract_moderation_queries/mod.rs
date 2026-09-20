@@ -2,6 +2,7 @@
 //! contract's banlist or suspension list, and the fee pots a contract's document action fees
 //! collect in.
 
+mod contract_document_removals;
 mod contract_fee_pots;
 mod contract_moderation_entries;
 mod contract_moderation_status;

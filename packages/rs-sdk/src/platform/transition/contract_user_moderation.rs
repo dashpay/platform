@@ -1,22 +1,31 @@
-//! Ban, unban, suspend and unsuspend identities on a moderated data contract (protocol
-//! version 14).
+//! Ban, unban, suspend and unsuspend identities on a moderated data contract, and delete
+//! documents of the document types that let moderators do so (protocol version 14).
 //!
 //! A contract whose config declares moderation keeps a banlist and/or a suspension list. The
 //! contract owner, or a moderator the config names, edits them with a
 //! [`ContractUserModerationTransition`] signed by a CRITICAL authentication key. A banned or
 //! suspended identity cannot act on the contract at the document level.
 //!
+//! The same transition deletes one document of a document type that sets
+//! `canBeDeletedByModerators`, whoever owns it, and leaves a record of the deletion under the
+//! contract.
+//!
 //! ```ignore
 //! let reason = ContractModerationReason::from_text("spam");
 //! let status = moderator_identity
-//!     .ban_contract_user(&sdk, contract_id, user_id, reason, None, signer, None)
+//!     .ban_contract_user(&sdk, contract_id, user_id, reason.clone(), None, &signer, None)
+//!     .await?;
+//! let removal = moderator_identity
+//!     .delete_contract_document(
+//!         &sdk, contract_id, "post".to_string(), document_id, reason, None, &signer, None,
+//!     )
 //!     .await?;
 //! ```
 
 use crate::platform::Fetch;
 use dash_context_provider::ContextProvider;
 use dpp::data_contract::config::moderation::{
-    ContractModerationListStatuses, ContractModerationReason,
+    ContractDocumentRemoval, ContractModerationListStatuses, ContractModerationReason,
 };
 use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -69,6 +78,26 @@ impl TryFrom<StateTransitionProofResult> for ModeratedUserStatus {
             }),
             other => Err(Error::Generic(format!(
                 "expected a contract moderation status proof result, got {other}"
+            ))),
+        }
+    }
+}
+
+/// The record a document deletion left under the contract, as its proof shows it. The proof
+/// binds the record to the transition that wrote it, so only the record itself is kept here:
+/// the contract, the document type and the document id are the caller's own arguments.
+struct VerifiedDocumentRemoval(ContractDocumentRemoval);
+
+impl TryFrom<StateTransitionProofResult> for VerifiedDocumentRemoval {
+    type Error = Error;
+
+    fn try_from(value: StateTransitionProofResult) -> Result<Self, Self::Error> {
+        match value {
+            StateTransitionProofResult::VerifiedContractDocumentRemoval(_, _, _, removal) => {
+                Ok(Self(removal))
+            }
+            other => Err(Error::Generic(format!(
+                "expected a contract document removal proof result, got {other}"
             ))),
         }
     }
@@ -191,6 +220,26 @@ pub trait ModerateContractUser: Waitable {
         )
         .await
     }
+
+    /// Deletes document `document_id` of `document_type_name` on `contract_id`, whoever owns
+    /// it, for `reason` (as for a ban). The document type must set
+    /// `canBeDeletedByModerators`. Resolves with the record the deletion left under the
+    /// contract: whose the document was, who removed it, why and when.
+    ///
+    /// The document's owner gets no storage refund, and nothing ever deletes the record, so
+    /// the author may create the same document id again without the record going away.
+    #[allow(clippy::too_many_arguments)]
+    async fn delete_contract_document<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        document_type_name: String,
+        document_id: Identifier,
+        reason: ContractModerationReason,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<ContractDocumentRemoval, Error>;
 }
 
 #[async_trait::async_trait]
@@ -204,42 +253,54 @@ impl ModerateContractUser for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<ModeratedUserStatus, Error> {
-        let signing_key_id = match signing_key_to_use {
-            Some(key) => key.id(),
-            None => signing_key_for_moderation(self, &signer)?,
-        };
-
-        // The proof of a ban covers every list the contract keeps, which the verifier reads
-        // from the contract through the context provider. A provider that can not resolve the
-        // contract would refuse a result the network already accepted, so before the nonce is
-        // taken and anything is signed or paid for, the provider is asked, and only when it
-        // does not have the contract (the lists never change, so whatever copy it holds will
-        // do) is the contract fetched and registered with it.
-        if matches!(action, ContractUserModerationAction::Ban { .. }) {
-            ensure_provider_resolves_contract(sdk, contract_id, false).await?;
+        // A document deletion is proved by its removal record, not by a status. Refused before
+        // the nonce is taken: sent from here it would execute, be paid for, and then fail to
+        // read its own result.
+        if matches!(action, ContractUserModerationAction::DeleteDocument { .. }) {
+            return Err(Error::Generic(
+                "a document deletion names no identity to report a status of: send it with \
+                 `delete_contract_document`, which returns the removal record"
+                    .to_string(),
+            ));
         }
-
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(self.id(), contract_id, true, settings)
-            .await?;
-        let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
-        let state_transition = ContractUserModerationTransition::try_from_identity_with_signer(
+        broadcast_moderation(
             self,
-            &signing_key_id,
+            sdk,
             contract_id,
             action,
-            identity_contract_nonce,
-            user_fee_increase.unwrap_or_default(),
-            &signer,
-            sdk.version(),
-            None,
+            signing_key_to_use,
+            signer,
+            settings,
+        )
+        .await
+    }
+
+    async fn delete_contract_document<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        document_type_name: String,
+        document_id: Identifier,
+        reason: ContractModerationReason,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<ContractDocumentRemoval, Error> {
+        let VerifiedDocumentRemoval(removal) = broadcast_moderation(
+            self,
+            sdk,
+            contract_id,
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name,
+                document_id,
+                reason,
+            },
+            signing_key_to_use,
+            signer,
+            settings,
         )
         .await?;
-        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-
-        state_transition
-            .broadcast_and_wait_for_affected_state(sdk, settings)
-            .await
+        Ok(removal)
     }
 }
 
@@ -271,6 +332,60 @@ pub(super) async fn ensure_provider_resolves_contract(
         provider.register_data_contract(Arc::new(contract));
     }
     Ok(())
+}
+
+/// Signs `action` for `contract_id` with an identity's CRITICAL authentication key, broadcasts
+/// it and waits for the state it affected: what every moderation of the trait does, whatever
+/// its proof shows.
+async fn broadcast_moderation<S: Signer<IdentityPublicKey> + Send, R>(
+    identity: &Identity,
+    sdk: &Sdk,
+    contract_id: Identifier,
+    action: ContractUserModerationAction,
+    signing_key_to_use: Option<&IdentityPublicKey>,
+    signer: S,
+    settings: Option<PutSettings>,
+) -> Result<R, Error>
+where
+    R: TryFrom<StateTransitionProofResult> + Send,
+{
+    let signing_key_id = match signing_key_to_use {
+        Some(key) => key.id(),
+        None => signing_key_for_moderation(identity, &signer)?,
+    };
+
+    // The proof of a ban covers every list the contract keeps, which the verifier reads from
+    // the contract through the context provider. A provider that can not resolve the contract
+    // would refuse a result the network already accepted, so before the nonce is taken and
+    // anything is signed or paid for, the provider is asked, and only when it does not have
+    // the contract (the lists never change, so whatever copy it holds will do) is the contract
+    // fetched and registered with it. A document deletion is proved by its own removal record
+    // and needs no contract.
+    if matches!(action, ContractUserModerationAction::Ban { .. }) {
+        ensure_provider_resolves_contract(sdk, contract_id, false).await?;
+    }
+
+    let identity_contract_nonce = sdk
+        .get_identity_contract_nonce(identity.id(), contract_id, true, settings)
+        .await?;
+    let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
+    let state_transition = ContractUserModerationTransition::try_from_identity_with_signer(
+        identity,
+        &signing_key_id,
+        contract_id,
+        action,
+        identity_contract_nonce,
+        user_fee_increase.unwrap_or_default(),
+        &signer,
+        sdk.version(),
+        None,
+    )
+    .await?;
+    ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+
+    state_transition
+        .broadcast_and_wait_for_affected_state(sdk, settings)
+        .await
 }
 
 /// The first enabled CRITICAL authentication key without contract bounds (a bound key may

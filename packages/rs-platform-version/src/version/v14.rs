@@ -405,6 +405,31 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     only id has every create rejected with
 ///     `InvalidDocumentTransitionIdError`.
 ///
+/// 19. **Document deletion by moderators**: a document type of a contract
+///     that declares moderation may set `canBeDeletedByModerators` (meta-schema
+///     v3, fixed when the type is created, refused on a type that keeps
+///     history, is indexOnly or restricts creation; for references such a type
+///     is deletable, so a permanentDocument reference refuses it and a
+///     deletableDocument reference accepts it). A moderation declaration may then keep
+///     no list at all. `ContractUserModeration` gains the `DeleteDocument`
+///     action: the owner or a moderator deletes a document of such a type,
+///     except the owner's and the moderators' own, with a reason like a
+///     ban's. The deletion leaves a record under the contract
+///     (`[64, contract, 2] / 16 / <document type> / <document id>`: the
+///     document's owner, the moderator, the block time and the reason), paid
+///     for by the moderator and never deleted; `insert_contract` 2 creates
+///     the records tree of each such document type, `update_contract` 2 the
+///     tree of one an update adds, and either the tree above them with the
+///     contract's first. The deleted document's
+///     owner gets no storage refund: `apply_drive_operations = 1`
+///     (`DRIVE_VERSION_V9`) attributes the removal of a batch that carries
+///     the forfeiture to nobody, so the credits stay in the storage pools.
+///     A record is final, since a document id is produced at most once (18).
+///     Neither the type's deletion token cost nor its `actionFees` deletion
+///     fee is charged.
+///     The moderation method table, the verify table and the query table gain
+///     the document removal methods (`getContractDocumentRemovals`).
+///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
 ///   `is_allowed`, and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` is the first
@@ -461,7 +486,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees and the moderation method table
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit

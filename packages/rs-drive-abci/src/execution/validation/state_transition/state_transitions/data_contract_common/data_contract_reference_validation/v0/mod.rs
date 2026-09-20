@@ -1,6 +1,6 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
@@ -199,8 +199,12 @@ pub(super) fn validate_data_contract_references_v0(
             // `permanentDocument` one demands a document type that forbids
             // deletion, a `deletableDocument` one a document type that
             // allows it, so the declaration always states which guarantee
-            // the reference carries
-            let target_is_deletable = referenced_document_type.documents_can_be_deleted();
+            // the reference carries. Deletable means by anyone: a document type moderators
+            // can delete from is deletable whatever its `canBeDeleted` says about a document's
+            // own owner, since a reference to it could dangle. Neither flag can change on an
+            // update, so the answer holds for good.
+            let target_is_deletable = referenced_document_type.documents_can_be_deleted()
+                || referenced_document_type.documents_can_be_deleted_by_moderators();
             if permanent && target_is_deletable {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentTypeDeletableError::new(

@@ -19,7 +19,7 @@ use crate::consensus::state::contract_moderation::{
     ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
     ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
-    IdentityNotContractModeratorError,
+    DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
 };
 use crate::consensus::state::contract_group::{
     ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
@@ -528,6 +528,10 @@ pub enum StateError {
     // away from the other reference errors, because the enum is append-only.
     #[error(transparent)]
     ReferencedDocumentTypeNotDeletableError(ReferencedDocumentTypeNotDeletableError),
+
+    // Document deletion by moderators (protocol version 14).
+    #[error(transparent)]
+    DocumentTypeNotDeletableByModeratorsError(DocumentTypeNotDeletableByModeratorsError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -858,7 +862,7 @@ mod tests {
             )),
             125
         );
-        // Contract fee claims (protocol version 14): the tail of the enum.
+        // Contract fee claims (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ContractFeesAlreadyClaimedThisEpochError(
                 ContractFeesAlreadyClaimedThisEpochError::new(
@@ -881,8 +885,7 @@ mod tests {
             )),
             128
         );
-        // `refersTo: deletableDocument` (protocol version 14): the tail of
-        // the enum.
+        // `refersTo: deletableDocument` (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentTypeNotDeletableError(
                 ReferencedDocumentTypeNotDeletableError::new(
@@ -892,6 +895,13 @@ mod tests {
                 )
             )),
             129
+        );
+        // Document deletion by moderators (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentTypeNotDeletableByModeratorsError(
+                DocumentTypeNotDeletableByModeratorsError::new(group_id, "post".to_string())
+            )),
+            130
         );
     }
 }

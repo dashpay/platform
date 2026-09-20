@@ -1,11 +1,18 @@
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
+use crate::state_transition_action::contract::contract_user_moderation::v0::ContractDocumentDeletionContext;
 use crate::state_transition_action::contract::contract_user_moderation::v0::ContractUserModerationTransitionActionV0;
 use crate::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
-use crate::util::batch::DriveOperation::{ContractModerationOperation, IdentityOperation};
-use crate::util::batch::{ContractModerationOperationType, DriveOperation, IdentityOperationType};
+use crate::util::batch::DriveOperation::{
+    ContractModerationOperation, DocumentOperation, IdentityOperation,
+};
+use crate::util::batch::{
+    ContractModerationOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
+};
+use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::config::moderation::ContractDocumentRemoval;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::version::PlatformVersion;
 
@@ -30,6 +37,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         identity_contract_nonce,
                         action,
                         target_is_suspended,
+                        document_deletion,
                         ..
                     },
                 ) = self;
@@ -97,6 +105,53 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                             },
                         ));
                     }
+                    ContractUserModerationAction::DeleteDocument {
+                        document_type_name,
+                        document_id,
+                        reason,
+                    } => {
+                        let ContractDocumentDeletionContext {
+                            data_contract_fetch_info,
+                            document_owner_id,
+                            removed_at,
+                        } =
+                            document_deletion
+                                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "a document deletion action must carry what its validation read",
+                            )))?;
+                        // The deletion of the document, which keeps every index and aggregate
+                        // of its type right and does not ask `canBeDeleted` (that is the
+                        // owner's rule, not the moderators'), then its record. The marker makes
+                        // the batch refund nobody: the document's owner forfeits the storage
+                        // fee.
+                        operations.push(DocumentOperation(
+                            DocumentOperationType::DeleteDocumentByModerator {
+                                document_id,
+                                contract_info: DataContractInfo::DataContractFetchInfo(
+                                    data_contract_fetch_info,
+                                ),
+                                document_type_info: DocumentTypeInfo::DocumentTypeName(
+                                    document_type_name.clone(),
+                                ),
+                            },
+                        ));
+                        operations.push(ContractModerationOperation(
+                            ContractModerationOperationType::AddDocumentRemoval {
+                                contract_id,
+                                document_type_name,
+                                document_id,
+                                removal: ContractDocumentRemoval {
+                                    document_owner_id,
+                                    moderator_id,
+                                    reason,
+                                    removed_at,
+                                },
+                            },
+                        ));
+                        operations.push(ContractModerationOperation(
+                            ContractModerationOperationType::ForfeitStorageRefunds,
+                        ));
+                    }
                 }
 
                 Ok(operations)
@@ -127,6 +182,7 @@ mod tests {
             identity_contract_nonce: 4,
             action,
             target_is_suspended,
+            document_deletion: None,
             user_fee_increase: 0,
         })
     }

@@ -20,9 +20,10 @@ use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
     GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
-    GetContestedResourcesRequest, GetContestedResourcesResponse, GetContractFeePotsRequest,
-    GetContractFeePotsResponse, GetContractGroupInfoRequest, GetContractGroupInfoResponse,
-    GetContractGroupMembersRequest, GetContractGroupMembersResponse,
+    GetContestedResourcesRequest, GetContestedResourcesResponse,
+    GetContractDocumentRemovalsRequest, GetContractDocumentRemovalsResponse,
+    GetContractFeePotsRequest, GetContractFeePotsResponse, GetContractGroupInfoRequest,
+    GetContractGroupInfoResponse, GetContractGroupMembersRequest, GetContractGroupMembersResponse,
     GetContractGroupsForContractRequest, GetContractGroupsForContractResponse,
     GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
     GetContractModerationStatusRequest, GetContractModerationStatusResponse,
@@ -456,6 +457,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_contract_moderation_status,
             "get_contract_moderation_status",
+        )
+        .await
+    }
+
+    async fn get_contract_document_removals(
+        &self,
+        request: Request<GetContractDocumentRemovalsRequest>,
+    ) -> Result<Response<GetContractDocumentRemovalsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_document_removals,
+            "get_contract_document_removals",
         )
         .await
     }

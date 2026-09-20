@@ -6,6 +6,10 @@
 //! the contract is refused. Token transitions are not affected. The lists live under the
 //! contract's own subtree in Drive (keys `128` and `192` of its other tree, `[64, id, 2]`) and are edited by the
 //! `ContractUserModeration` state transition.
+//!
+//! The same moderators may delete the documents of the document types that say so
+//! (`canBeDeletedByModerators`), with the same transition. Each removal leaves a
+//! [`ContractDocumentRemoval`] under the contract (key `16` of its other tree).
 
 use crate::consensus::basic::contract_moderation::InvalidContractModerationConfigError;
 use crate::identity::TimestampMillis;
@@ -20,7 +24,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
 
+mod document_removal;
 mod reason;
+pub use document_removal::ContractDocumentRemoval;
 pub use reason::ContractModerationReason;
 
 /// Who may send a `ContractUserModeration` transition for the contract.
@@ -259,13 +265,17 @@ impl ContractModerationConfig {
         self.moderators.team(owner_id)
     }
 
-    /// The pure-data rules of the declaration: at least one list is kept, and a moderator set
-    /// is non-empty and within `SystemLimits::max_contract_moderators` (a named owner counts).
+    /// The pure-data rules of the declaration: it gives the moderators something to do, and a
+    /// moderator set is non-empty and within `SystemLimits::max_contract_moderators` (a named
+    /// owner counts). Something to do is a list to edit or, failing that, a document type whose
+    /// documents they may delete (`has_document_type_deletable_by_moderators`, which the
+    /// caller reads from the contract the declaration belongs to).
     /// Whether the named identities exist is state validation, done by the contract create
     /// and update transitions: a moderator that does not exist can never sign, so naming one
     /// is a mistake, caught where it is cheapest.
     pub fn validate(
         &self,
+        has_document_type_deletable_by_moderators: bool,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
@@ -274,7 +284,7 @@ impl ContractModerationConfig {
             .methods
             .validate_moderation_config
         {
-            0 => Ok(self.validate_v0(platform_version)),
+            0 => Ok(self.validate_v0(has_document_type_deletable_by_moderators, platform_version)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ContractModerationConfig::validate".to_string(),
                 known_versions: vec![0],
@@ -284,11 +294,17 @@ impl ContractModerationConfig {
     }
 
     #[inline(always)]
-    fn validate_v0(&self, platform_version: &PlatformVersion) -> SimpleConsensusValidationResult {
-        if !self.banlist && !self.suspensions {
+    fn validate_v0(
+        &self,
+        has_document_type_deletable_by_moderators: bool,
+        platform_version: &PlatformVersion,
+    ) -> SimpleConsensusValidationResult {
+        if !self.banlist && !self.suspensions && !has_document_type_deletable_by_moderators {
             return SimpleConsensusValidationResult::new_with_error(
                 InvalidContractModerationConfigError::new(
-                    "moderation declares neither a banlist nor a suspension list".to_string(),
+                    "moderation declares neither a banlist nor a suspension list, and no \
+                     document type can be deleted by moderators"
+                        .to_string(),
                 )
                 .into(),
             );
@@ -551,9 +567,23 @@ mod tests {
             moderators: ContractModerators::ContractOwner,
         };
         let result = config
-            .validate(PlatformVersion::latest())
+            .validate(false, PlatformVersion::latest())
             .expect("validate");
         assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn should_accept_a_config_with_no_list_when_a_document_type_can_be_deleted_by_moderators() {
+        let config = ContractModerationConfig {
+            banlist: false,
+            suspensions: false,
+            moderators: ContractModerators::ContractOwner,
+        };
+        let result = config
+            .validate(true, PlatformVersion::latest())
+            .expect("validate");
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert_eq!(config.lists().count(), 0);
     }
 
     #[test]
@@ -565,7 +595,7 @@ mod tests {
             moderators: ContractModerators::AppointedModerators(set(&[9, 1])),
         };
         let result = config
-            .validate(PlatformVersion::latest())
+            .validate(false, PlatformVersion::latest())
             .expect("validate");
         assert!(result.is_valid(), "{:?}", result.errors);
         // Naming the owner changes nothing about who may moderate or who is protected.
@@ -585,11 +615,11 @@ mod tests {
             )),
         };
         assert!(config(max)
-            .validate(platform_version)
+            .validate(false, platform_version)
             .expect("validate")
             .is_valid());
         assert!(!config(max + 1)
-            .validate(platform_version)
+            .validate(false, platform_version)
             .expect("validate")
             .is_valid());
     }
@@ -603,7 +633,7 @@ mod tests {
             moderators: ContractModerators::AppointedModerators(BTreeSet::new()),
         };
         assert!(!empty
-            .validate(platform_version)
+            .validate(false, platform_version)
             .expect("validate")
             .is_valid());
         let too_many: Vec<u8> =
@@ -614,7 +644,7 @@ mod tests {
             moderators: ContractModerators::AppointedModerators(set(&too_many)),
         };
         assert!(!oversized
-            .validate(platform_version)
+            .validate(false, platform_version)
             .expect("validate")
             .is_valid());
     }
@@ -628,7 +658,7 @@ mod tests {
             moderators: ContractModerators::AppointedModerators(set(&[1, 2, 3])),
         };
         assert!(config
-            .validate(PlatformVersion::latest())
+            .validate(false, PlatformVersion::latest())
             .expect("validate")
             .is_valid());
         assert!(config.may_moderate(&owner, &owner));

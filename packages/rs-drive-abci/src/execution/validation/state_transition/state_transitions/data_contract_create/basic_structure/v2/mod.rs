@@ -127,11 +127,15 @@ impl DataContractCreateStateTransitionBasicStructureValidationV2 for DataContrac
             }
         }
 
-        // Contract moderation: a config that declares it must be well formed (at least one
-        // list, a non-empty moderator set within the limit). That the named moderators exist
+        // Contract moderation: a config that declares it must be well formed (a list or a
+        // document type moderators can delete, a non-empty moderator set within the limit). That the named moderators exist
         // is checked against the state.
         if let Some(moderation) = self.data_contract().config().moderation() {
-            let result = moderation.validate(platform_version)?;
+            let result = moderation.validate(
+                self.data_contract()
+                    .has_document_type_deletable_by_moderators(),
+                platform_version,
+            )?;
             if !result.is_valid() {
                 return Ok(result);
             }

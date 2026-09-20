@@ -3,25 +3,31 @@
 //! This module provides WASM bindings for contract operations like create and update.
 
 use crate::error::WasmSdkError;
-use crate::queries::contract_moderation::set_status_fields;
+use crate::queries::contract_moderation::{set_removal_fields, set_status_fields};
+use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::config::moderation::ContractModerationReason;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dash_sdk::dpp::identity::Identity;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
+use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dash_sdk::dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dash_sdk::dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::platform::transition::contract_user_moderation::ModerateContractUser;
 use dash_sdk::platform::transition::put_contract::PutContract;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
-use wasm_dpp2::data_contract::DataContractWasm;
-use wasm_dpp2::identity::IdentityPublicKeyWasm;
+use wasm_dpp2::data_contract::{
+    moderation_action_from_parts, ContractUserModerationActionParts, DataContractWasm,
+};
+use wasm_dpp2::identity::{IdentityPublicKeyWasm, IdentityWasm};
 use wasm_dpp2::utils::try_from_options_optional;
-use wasm_dpp2::IdentitySignerWasm;
+use wasm_dpp2::{IdentifierWasm, IdentitySignerWasm};
 
 // ============================================================================
 // Contract Publish
@@ -304,6 +310,51 @@ export interface ContractModerationResult {
   /** When the identity is suspended: why */
   suspensionReason?: ContractModerationReason;
 }
+
+/**
+ * Options for deleting one document on a moderated data contract as a moderator (protocol
+ * version 14), whoever owns it, except the contract owner and the moderators. The document
+ * type must set `canBeDeletedByModerators`. As for the other moderations, the signer must hold
+ * a CRITICAL authentication key without contract bounds of the moderating identity.
+ */
+export interface ContractDeleteDocumentOptions {
+  /** The moderating identity: the contract owner or a named moderator */
+  identity: Identity;
+  /** The moderated contract */
+  contractId: IdentifierLike;
+  /** The document type of the document */
+  documentTypeName: string;
+  /** The document to delete */
+  documentId: IdentifierLike;
+  /**
+   * Why. Stored with the removal record, so anyone reading the records reads it. Both of its
+   * parts are optional for a deletion: left out, no code and an empty text are stored.
+   */
+  reason?: ContractModerationReason;
+  /** Signer holding a CRITICAL authentication key without contract bounds of the identity */
+  signer: IdentitySigner;
+  /** Optional broadcast settings */
+  settings?: PutSettings;
+}
+
+/**
+ * The record a document deletion left under the contract, as its proof shows it. The document
+ * itself is gone, its owner gets no storage refund, and nothing ever deletes the record. Use
+ * `getContractDocumentRemovals` to read the records later.
+ */
+export interface ContractDocumentRemovalResult {
+  contractId: Identifier;
+  documentTypeName: string;
+  documentId: Identifier;
+  /** The identity that owned the document when it was removed */
+  documentOwnerId: Identifier;
+  /** The moderating identity */
+  moderatorId: Identifier;
+  /** Why, as it was stored */
+  reason: ContractModerationReason;
+  /** The time of the block that removed the document, in milliseconds */
+  removedAt: bigint;
+}
 "#;
 
 #[wasm_bindgen]
@@ -319,6 +370,12 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "ContractModerationResult")]
     pub type ContractModerationResultJs;
+
+    #[wasm_bindgen(typescript_type = "ContractDeleteDocumentOptions")]
+    pub type ContractDeleteDocumentOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "ContractDocumentRemovalResult")]
+    pub type ContractDocumentRemovalResultJs;
 }
 
 #[derive(serde::Deserialize)]
@@ -330,21 +387,22 @@ struct ContractModerationOptionsInput {
     reason: Option<ContractModerationReason>,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContractDeleteDocumentOptionsInput {
+    document_type_name: String,
+    #[serde(default)]
+    reason: Option<ContractModerationReason>,
+}
+
 impl WasmSdk {
     async fn moderate_contract_user(
         &self,
         options: ContractModerationOptionsJs,
         action: &str,
     ) -> Result<ContractModerationResultJs, WasmSdkError> {
-        use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
-        use dash_sdk::platform::transition::contract_user_moderation::ModerateContractUser;
-        use wasm_dpp2::data_contract::moderation_action_from_parts;
-        use wasm_dpp2::identity::IdentityWasm;
-        use wasm_dpp2::IdentifierWasm;
-
         // Extract complex types first (borrows &options)
-        let identity: dash_sdk::dpp::identity::Identity =
-            IdentityWasm::try_from_options(&options, "identity")?.into();
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
         let contract_id: Identifier =
             IdentifierWasm::try_from_options(&options, "contractId")?.into();
         let identity_id: Identifier =
@@ -354,15 +412,22 @@ impl WasmSdk {
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Deserialize simple fields last (consumes options)
-        let parsed: ContractModerationOptionsInput =
-            crate::queries::utils::deserialize_required_query(
-                options,
-                "Options object is required",
-                "contract moderation options",
-            )?;
+        let parsed: ContractModerationOptionsInput = deserialize_required_query(
+            options,
+            "Options object is required",
+            "contract moderation options",
+        )?;
 
-        let action = moderation_action_from_parts(action, identity_id, parsed.until, parsed.reason)
-            .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
+        let action = moderation_action_from_parts(
+            action,
+            ContractUserModerationActionParts {
+                identity_id: Some(identity_id),
+                until: parsed.until,
+                reason: parsed.reason,
+                ..Default::default()
+            },
+        )
+        .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
 
         // The proof of a ban covers every list the contract keeps, which the verifier reads
         // from the contract, so the contract is resolved and cached before anything is paid
@@ -456,6 +521,68 @@ impl WasmSdk {
         options: ContractModerationOptionsJs,
     ) -> Result<ContractModerationResultJs, WasmSdkError> {
         self.moderate_contract_user(options, "unsuspend").await
+    }
+
+    /// Deletes one document on a moderated contract as a moderator, whoever owns it, except
+    /// the contract owner and the moderators. The document type must set
+    /// `canBeDeletedByModerators`. The document's owner gets no storage refund, and a record
+    /// of the deletion stays under the contract, which `getContractDocumentRemovals` reads.
+    ///
+    /// @param options - The moderating identity, the contract, the document type, the document, an optional `reason` and the signer
+    /// @returns The record the deletion left under the contract, proved
+    #[wasm_bindgen(js_name = "contractDeleteDocument")]
+    pub async fn contract_delete_document(
+        &self,
+        options: ContractDeleteDocumentOptionsJs,
+    ) -> Result<ContractDocumentRemovalResultJs, WasmSdkError> {
+        // Extract complex types first (borrows &options)
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let contract_id: Identifier =
+            IdentifierWasm::try_from_options(&options, "contractId")?.into();
+        let document_id: Identifier =
+            IdentifierWasm::try_from_options(&options, "documentId")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        // Deserialize simple fields last (consumes options)
+        let parsed: ContractDeleteDocumentOptionsInput = deserialize_required_query(
+            options,
+            "Options object is required",
+            "contract document deletion options",
+        )?;
+
+        // A deletion is proved by the removal record it wrote, which the verifier reads without
+        // the contract, so unlike a ban nothing is resolved before anything is paid for.
+        let removal = identity
+            .delete_contract_document(
+                self.inner_sdk(),
+                contract_id,
+                parsed.document_type_name.clone(),
+                document_id,
+                // Both parts of a deletion's reason are optional, and so is the reason itself.
+                parsed.reason.unwrap_or_default(),
+                None,
+                signer,
+                settings,
+            )
+            .await?;
+
+        let result = js_sys::Object::new();
+        let set = |key: &str, value: JsValue| {
+            js_sys::Reflect::set(&result, &key.into(), &value).map_err(|_| {
+                WasmSdkError::generic(format!("failed to set `{key}` on the removal result"))
+            })
+        };
+        set("contractId", IdentifierWasm::from(contract_id).into())?;
+        set(
+            "documentTypeName",
+            JsValue::from_str(&parsed.document_type_name),
+        )?;
+        set("documentId", IdentifierWasm::from(document_id).into())?;
+        // The record, with the fields `getContractDocumentRemovals` answers with.
+        set_removal_fields(&result, &removal, |id| IdentifierWasm::from(id).into())?;
+        Ok(JsValue::from(result).into())
     }
 }
 

@@ -2,6 +2,7 @@ use super::EMPTY_KEYWORDS;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::property_names::CAN_BE_DELETED_BY_MODERATORS;
 use crate::data_contract::group::Group;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
@@ -139,6 +140,20 @@ impl DataContractInSerializationFormat {
             DataContractInSerializationFormat::V0(v0) => &v0.document_schemas,
             DataContractInSerializationFormat::V1(v1) => &v1.document_schemas,
         }
+    }
+
+    /// Whether any document schema sets `canBeDeletedByModerators: true`, read from the raw
+    /// schemas: a contract in this format has no parsed document types. Used where a
+    /// moderation declaration is validated before the contract is parsed, since a
+    /// declaration that keeps no list is only valid with such a document type.
+    pub fn has_document_type_deletable_by_moderators(&self) -> bool {
+        self.document_schemas().values().any(|schema| {
+            schema
+                .get_optional_bool(CAN_BE_DELETED_BY_MODERATORS)
+                .ok()
+                .flatten()
+                .unwrap_or(false)
+        })
     }
 
     pub fn document_schemas_mut(&mut self) -> &mut BTreeMap<DocumentName, Value> {

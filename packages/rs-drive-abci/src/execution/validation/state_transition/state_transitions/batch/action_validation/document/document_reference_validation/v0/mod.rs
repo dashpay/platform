@@ -6,7 +6,9 @@ use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
@@ -390,8 +392,11 @@ fn validate_document_type_references_v0(
                 // `deletableDocument` reference makes no such promise, and
                 // admits only document types whose documents CAN be deleted:
                 // the referenced document must exist now, and may be deleted
-                // later
-                let target_is_deletable = referenced_document_type.documents_can_be_deleted();
+                // later. Deletable means by anyone, the contract's moderators
+                // included (`canBeDeletedByModerators`), as at contract
+                // registration
+                let target_is_deletable = referenced_document_type.documents_can_be_deleted()
+                    || referenced_document_type.documents_can_be_deleted_by_moderators();
                 if permanent && target_is_deletable {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         ReferencedDocumentTypeDeletableError::new(

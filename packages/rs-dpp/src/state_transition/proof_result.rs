@@ -1,7 +1,9 @@
 use crate::address_funds::PlatformAddress;
 use crate::asset_lock::StoredAssetLockInfo;
 use crate::balances::credits::TokenAmount;
-use crate::data_contract::config::moderation::ContractModerationListStatuses;
+use crate::data_contract::config::moderation::{
+    ContractDocumentRemoval, ContractModerationListStatuses,
+};
 use crate::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use crate::data_contract::group::GroupSumPower;
 use crate::data_contract::DataContract;
@@ -153,6 +155,12 @@ pub enum StateTransitionProofResult {
         )]
         BTreeMap<Identifier, Credits>,
     ),
+    /// Returned by a `ContractUserModeration` that deletes a document: the record the removal
+    /// left under the contract (contract id, document type name, document id, record). The
+    /// proof shows the record, and the verifier checks that it names the transition's signer
+    /// and carries the transition's reason. A document id is produced at most once, so the
+    /// record is of this document and of no other.
+    VerifiedContractDocumentRemoval(Identifier, String, Identifier, ContractDocumentRemoval),
 }
 
 /// A verified state-transition proof result, tagged with the guarantee the

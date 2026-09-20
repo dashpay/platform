@@ -1,15 +1,20 @@
 //! Contract moderation queries: one identity's status on a moderated contract
-//! (`getContractModerationStatus`) and one page of a contract's banlist or suspension list
-//! (`getContractModerationEntries`).
+//! (`getContractModerationStatus`), one page of a contract's banlist or suspension list
+//! (`getContractModerationEntries`) and the records of the documents its moderators deleted
+//! (`getContractDocumentRemovals`).
 
 use crate::error::WasmSdkError;
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::contract_moderation::{
-    ContractModerationEntries, ContractModerationEntriesPageQuery, ContractModerationList,
-    ContractModerationListStatus, ContractModerationListStatuses, ContractModerationStatusQuery,
+    ContractDocumentRemoval, ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
+    ContractDocumentRemovalsSelection, ContractModerationEntries,
+    ContractModerationEntriesPageQuery, ContractModerationList, ContractModerationListStatus,
+    ContractModerationListStatuses, ContractModerationStatusQuery,
 };
 use dash_sdk::platform::{DataContract, Fetch, Identifier};
 use js_sys::Array;
@@ -98,6 +103,56 @@ export interface ContractModerationEntriesPage {
   entries: ContractModerationEntry[];
   nextStartAfter?: string;
 }
+
+/**
+ * Query parameters for the records of the documents a contract's moderators deleted within one
+ * document type (`getContractDocumentRemovals`): the records of the documents `documentIds`
+ * names, or else one page of them all.
+ */
+export interface ContractDocumentRemovalsQuery {
+  /** The moderated contract. */
+  contractId: IdentifierLike;
+  /** The document type; it must set `canBeDeletedByModerators`, as no other keeps records. */
+  documentTypeName: string;
+  /**
+   * Read the records of these documents alone, 1 to 100 distinct ids. A document with no
+   * record is left out of the answer. Refused beside `startAfter` or `limit`.
+   */
+  documentIds?: IdentifierLike[];
+  /** Continue after this document; omit for the first page. Use the page's `nextStartAfter`. */
+  startAfter?: IdentifierLike;
+  /**
+   * Maximum number of records to return, 1 to 100.
+   * @default 100
+   */
+  limit?: number;
+}
+
+/**
+ * The record a contract keeps of one document a moderator deleted. It is final: a document id
+ * is produced at most once, so the removed id can not be created again.
+ */
+export interface ContractDocumentRemovalEntry {
+  documentId: string;
+  /** The identity that owned the document when it was removed. */
+  documentOwnerId: string;
+  /** The contract owner or moderator that removed it. */
+  moderatorId: string;
+  /** Why, as the moderator wrote it: the text may be empty. */
+  reason: ContractModerationReason;
+  /** The time of the block that removed it, in milliseconds. */
+  removedAt: bigint;
+}
+
+/**
+ * Removal records in document id order. For a page, `nextStartAfter` is the cursor of the next
+ * page and is absent when this page holds fewer records than the limit, which makes it the
+ * last one. A read by `documentIds` never carries one.
+ */
+export interface ContractDocumentRemovalsPage {
+  removals: ContractDocumentRemovalEntry[];
+  nextStartAfter?: string;
+}
 "#;
 
 #[wasm_bindgen]
@@ -107,6 +162,9 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "ContractModerationEntriesQuery")]
     pub type ContractModerationEntriesQueryJs;
+
+    #[wasm_bindgen(typescript_type = "ContractDocumentRemovalsQuery")]
+    pub type ContractDocumentRemovalsQueryJs;
 }
 
 #[derive(Deserialize, Clone, Copy)]
@@ -145,6 +203,19 @@ struct ContractModerationEntriesQueryInput {
     limit: Option<u32>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContractDocumentRemovalsQueryInput {
+    contract_id: IdentifierWasm,
+    document_type_name: String,
+    #[serde(default)]
+    document_ids: Option<Vec<IdentifierWasm>>,
+    #[serde(default)]
+    start_after: Option<IdentifierWasm>,
+    #[serde(default)]
+    limit: Option<u32>,
+}
+
 impl WasmSdk {
     /// The status query for `query`. Without `lists`, the contract is fetched and every list
     /// it keeps is read, because the node refuses a list the contract does not keep.
@@ -172,7 +243,14 @@ impl WasmSdk {
             .await?
             .ok_or_else(|| WasmSdkError::not_found(format!("contract {contract_id} not found")))?;
         ContractModerationStatusQuery::for_contract(&contract, identity_id).ok_or_else(|| {
-            WasmSdkError::invalid_argument(format!("contract {contract_id} is not moderated"))
+            // A moderated contract may keep no list at all, when its moderators only delete
+            // documents: there is then no status to read, which is not the same as no
+            // moderation.
+            let reason = match contract.config().moderation() {
+                Some(_) => "keeps no moderation list, so no identity has a status on it",
+                None => "is not moderated",
+            };
+            WasmSdkError::invalid_argument(format!("contract {contract_id} {reason}"))
         })
     }
 }
@@ -197,6 +275,57 @@ fn parse_entries_query(
             WasmSdkError::invalid_argument(format!("limit {limit} exceeds maximum of {}", u16::MAX))
         })?;
         page_query = page_query.with_limit(limit);
+    }
+    Ok(page_query)
+}
+
+fn parse_removals_query(
+    query: ContractDocumentRemovalsQueryJs,
+    platform_version: &PlatformVersion,
+) -> Result<ContractDocumentRemovalsPageQuery, WasmSdkError> {
+    let input: ContractDocumentRemovalsQueryInput = deserialize_required_query(
+        query,
+        "Query object is required",
+        "contract document removals query",
+    )?;
+    let contract_id = Identifier::from(input.contract_id);
+
+    if let Some(document_ids) = input.document_ids {
+        // A read by ids is not paged: a cursor or a limit beside it is refused rather than
+        // dropped, or a caller expecting a page would read something else.
+        if input.start_after.is_some() || input.limit.is_some() {
+            return Err(WasmSdkError::invalid_argument(
+                "`startAfter` and `limit` page through every record and are not valid beside `documentIds`",
+            ));
+        }
+        // No id named is not a page of every record either, and the node refuses it.
+        if document_ids.is_empty() {
+            return Err(WasmSdkError::invalid_argument(
+                "`documentIds` must name at least one document",
+            ));
+        }
+        return Ok(ContractDocumentRemovalsPageQuery::for_document_ids(
+            contract_id,
+            input.document_type_name,
+            document_ids.into_iter().map(Identifier::from).collect(),
+        ));
+    }
+
+    let mut page_query = ContractDocumentRemovalsPageQuery::new(
+        contract_id,
+        input.document_type_name,
+        platform_version,
+    );
+    if let Some(limit) = input.limit {
+        let limit = u16::try_from(limit).map_err(|_| {
+            WasmSdkError::invalid_argument(format!("limit {limit} exceeds maximum of {}", u16::MAX))
+        })?;
+        page_query = page_query.with_limit(limit);
+    }
+    if let ContractDocumentRemovalsSelection::Page { start_after, .. } =
+        &mut page_query.query.selection
+    {
+        *start_after = input.start_after.map(Identifier::from);
     }
     Ok(page_query)
 }
@@ -280,6 +409,58 @@ fn entries_to_js(
             "nextStartAfter",
             JsValue::from_str(&IdentifierWasm::from(start_after).to_base58()),
         )?;
+    }
+    Ok(result.into())
+}
+
+/// Sets `documentOwnerId`, `moderatorId`, `reason` and `removedAt` on `target`. The removals
+/// query and the result of a deletion carry the same record, so they share this. Each writes
+/// identifiers its own way, which `id_to_js` decides: base58 strings in a query answer, as the
+/// entries of a moderation list are, and `Identifier`s in the result of a transition.
+pub(crate) fn set_removal_fields(
+    target: &js_sys::Object,
+    removal: &ContractDocumentRemoval,
+    id_to_js: impl Fn(Identifier) -> JsValue,
+) -> Result<(), WasmSdkError> {
+    let set = |key: &str, value: JsValue| {
+        js_sys::Reflect::set(target, &key.into(), &value)
+            .map(|_| ())
+            .map_err(|_| WasmSdkError::generic(format!("failed to set `{key}` on the removal")))
+    };
+    set("documentOwnerId", id_to_js(removal.document_owner_id))?;
+    set("moderatorId", id_to_js(removal.moderator_id))?;
+    set("reason", moderation_reason_to_js(&removal.reason))?;
+    set("removedAt", js_sys::BigInt::from(removal.removed_at).into())
+}
+
+fn removals_to_js(
+    page: ContractDocumentRemovals,
+    query: &ContractDocumentRemovalsPageQuery,
+) -> Result<JsValue, WasmSdkError> {
+    let result = js_sys::Object::new();
+    let set = |target: &js_sys::Object, key: &str, value: JsValue| {
+        js_sys::Reflect::set(target, &key.into(), &value)
+            .map_err(|_| WasmSdkError::generic(format!("failed to set `{key}` on the page")))
+    };
+    let id_to_js = |id: Identifier| JsValue::from_str(&IdentifierWasm::from(id).to_base58());
+    let removals = Array::new();
+    for entry in page.removals() {
+        let js_entry = js_sys::Object::new();
+        set(&js_entry, "documentId", id_to_js(entry.document_id))?;
+        set_removal_fields(&js_entry, &entry.removal, id_to_js)?;
+        removals.push(&js_entry);
+    }
+    set(&result, "removals", removals.into())?;
+    // A page shorter than the limit is the last one, and a read by ids has no page after it:
+    // neither carries a cursor.
+    let next_start_after = query
+        .after(&page)
+        .and_then(|next| match next.query.selection {
+            ContractDocumentRemovalsSelection::Page { start_after, .. } => start_after,
+            ContractDocumentRemovalsSelection::DocumentIds(_) => None,
+        });
+    if let Some(start_after) = next_start_after {
+        set(&result, "nextStartAfter", id_to_js(start_after))?;
     }
     Ok(result.into())
 }
@@ -378,6 +559,55 @@ impl WasmSdk {
         .await?;
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             entries_to_js(page.unwrap_or_default(), &query)?,
+            metadata,
+            proof,
+        ))
+    }
+
+    /// The records of the documents a contract's moderators deleted within one document type,
+    /// in document id order: the records of the `documentIds` named, where a document with no
+    /// record is left out, or else one page of them all. Pass a page's `nextStartAfter` as the
+    /// next query's `startAfter`; a page without one is the last. The document type must set
+    /// `canBeDeletedByModerators`: no other keeps records, and the node refuses the query.
+    ///
+    /// # Example
+    /// ```javascript
+    /// const { removals } = await sdk.getContractDocumentRemovals({ contractId, documentTypeName: 'post', documentIds: [documentId] });
+    /// if (removals.length) console.log('removed by', removals[0].moderatorId);
+    /// ```
+    #[wasm_bindgen(
+        js_name = "getContractDocumentRemovals",
+        unchecked_return_type = "ContractDocumentRemovalsPage"
+    )]
+    pub async fn get_contract_document_removals(
+        &self,
+        query: ContractDocumentRemovalsQueryJs,
+    ) -> Result<JsValue, WasmSdkError> {
+        let query = parse_removals_query(query, self.inner_sdk().version())?;
+        let page = ContractDocumentRemovals::fetch(self.as_ref(), query.clone())
+            .await?
+            .unwrap_or_default();
+        removals_to_js(page, &query)
+    }
+
+    /// The removal records of a document type together with their proof and metadata.
+    #[wasm_bindgen(
+        js_name = "getContractDocumentRemovalsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<ContractDocumentRemovalsPage>"
+    )]
+    pub async fn get_contract_document_removals_with_proof_info(
+        &self,
+        query: ContractDocumentRemovalsQueryJs,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let query = parse_removals_query(query, self.inner_sdk().version())?;
+        let (page, metadata, proof) = ContractDocumentRemovals::fetch_with_metadata_and_proof(
+            self.as_ref(),
+            query.clone(),
+            None,
+        )
+        .await?;
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            removals_to_js(page.unwrap_or_default(), &query)?,
             metadata,
             proof,
         ))

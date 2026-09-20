@@ -63,4 +63,57 @@ impl Drive {
             })),
         }
     }
+
+    /// Adds the layers a contract insertion or update touches when it creates the trees of
+    /// the document removal records.
+    pub(crate) fn add_estimation_costs_for_contract_document_removal_trees(
+        contract_id: [u8; 32],
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        match drive_version
+            .methods
+            .contract
+            .moderation
+            .add_estimation_costs_for_contract_document_removal
+        {
+            0 => Self::add_estimation_costs_for_contract_document_removal_trees_v0(
+                contract_id,
+                estimated_costs_only_with_layer_info,
+                drive_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_estimation_costs_for_contract_document_removal_trees".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    /// Adds the layers the record of a moderator's document deletion is written through.
+    pub(crate) fn add_estimation_costs_for_contract_document_removal(
+        contract_id: [u8; 32],
+        document_type_name: &str,
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        match drive_version
+            .methods
+            .contract
+            .moderation
+            .add_estimation_costs_for_contract_document_removal
+        {
+            0 => Self::add_estimation_costs_for_contract_document_removal_v0(
+                contract_id,
+                document_type_name,
+                estimated_costs_only_with_layer_info,
+                drive_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_estimation_costs_for_contract_document_removal".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
 }
