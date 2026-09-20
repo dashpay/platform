@@ -126,6 +126,14 @@ impl StateTransitionStateValidation for StateTransition {
                 execution_context,
                 tx,
             ),
+            StateTransition::ContractFeeClaim(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
             StateTransition::IdentityTopUp(_) => {
                 Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "identity top up should not have state validation",
@@ -294,6 +302,7 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::IdentityUpdate(_)
             | StateTransition::IdentityKeyLimitsUpdate(_)
             | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_) => true,
             StateTransition::AddressFundsTransfer(_)

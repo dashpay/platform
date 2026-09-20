@@ -1774,6 +1774,47 @@
         "description": "Credits put aside in advance to fund specific state transitions, such as masternode votes on a contested resource.",
         "children": [
           {
+            "id": "prefunded_balances.owner_fee_pots",
+            "key": {
+              "type": "fixed",
+              "hex": "40",
+              "label": "ContractOwnerFees",
+              "constant": "PREFUNDED_BALANCES_FOR_CONTRACT_OWNER_FEES"
+            },
+            "kinds": [
+              "SumTree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/contract/paths.rs",
+            "book": "fees/overview.md",
+            "description": "The owner parts of every contract's document action fees, until the contract owner claims them.",
+            "children": [
+              {
+                "id": "prefunded_balances.owner_fee_pots.pot",
+                "key": {
+                  "type": "dynamic",
+                  "name": "contract_id",
+                  "matcher": {
+                    "type": "len",
+                    "len": 32
+                  },
+                  "encoding": "identifier32",
+                  "description": "The data contract id"
+                },
+                "kinds": [
+                  "SumItem"
+                ],
+                "value": "credits",
+                "since": 14,
+                "presence": "lazy",
+                "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                "description": "What the contract's owner can claim, at most once per epoch.",
+                "children": []
+              }
+            ]
+          },
+          {
             "id": "prefunded_balances.for_voting",
             "key": {
               "type": "fixed",
@@ -1809,6 +1850,47 @@
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
                 "description": "What is left to pay for votes on this poll.",
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "prefunded_balances.moderators_fee_pots",
+            "key": {
+              "type": "fixed",
+              "hex": "c0",
+              "label": "ContractModeratorFees",
+              "constant": "PREFUNDED_BALANCES_FOR_CONTRACT_MODERATOR_FEES"
+            },
+            "kinds": [
+              "SumTree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/contract/paths.rs",
+            "book": "fees/overview.md",
+            "description": "The moderators parts of every contract's document action fees, until a member of the moderation team claims them for the team.",
+            "children": [
+              {
+                "id": "prefunded_balances.moderators_fee_pots.pot",
+                "key": {
+                  "type": "dynamic",
+                  "name": "contract_id",
+                  "matcher": {
+                    "type": "len",
+                    "len": 32
+                  },
+                  "encoding": "identifier32",
+                  "description": "The data contract id"
+                },
+                "kinds": [
+                  "SumItem"
+                ],
+                "value": "credits",
+                "since": 14,
+                "presence": "lazy",
+                "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                "description": "What the contract's moderation team shares equally, at most once per epoch.",
                 "children": []
               }
             ]
@@ -2873,6 +2955,24 @@
                 "description": "Everything a contract keeps beside itself and its documents. One key, so that the contract's layer holds three and its Merk keeps the documents on top. Inside, the keys are spread like the root layer's, with the most read one, the banlist, in the middle.",
                 "children": [
                   {
+                    "id": "contracts.contract.other.last_owner_fee_claim_epoch",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "20",
+                      "label": "LastOwnerFeeClaimEpoch",
+                      "constant": "CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY"
+                    },
+                    "kinds": [
+                      "Item"
+                    ],
+                    "value": "epoch index, u16 big endian",
+                    "since": 14,
+                    "presence": "lazy",
+                    "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                    "description": "The epoch the contract's owner fee pot was last claimed in. Written by the first claim; a pot is claimed at most once per epoch.",
+                    "children": []
+                  },
+                  {
                     "id": "contracts.contract.other.version",
                     "key": {
                       "type": "fixed",
@@ -2893,6 +2993,24 @@
                     "presence": "always",
                     "source": "packages/rs-drive/src/drive/contract/paths.rs",
                     "description": "The contract's version, readable without deserializing the contract. Rewritten on every update.",
+                    "children": []
+                  },
+                  {
+                    "id": "contracts.contract.other.last_moderators_fee_claim_epoch",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "60",
+                      "label": "LastModeratorsFeeClaimEpoch",
+                      "constant": "CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY"
+                    },
+                    "kinds": [
+                      "Item"
+                    ],
+                    "value": "epoch index, u16 big endian",
+                    "since": 14,
+                    "presence": "lazy",
+                    "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                    "description": "The epoch the contract's moderators fee pot was last claimed in. Written by the first claim; a pot is claimed at most once per epoch.",
                     "children": []
                   },
                   {
@@ -4865,7 +4983,13 @@
       "tree": {
         "hex": "80",
         "left": {
-          "hex": "40"
+          "hex": "40",
+          "left": {
+            "hex": "20"
+          },
+          "right": {
+            "hex": "60"
+          }
         },
         "right": {
           "hex": "c0"
@@ -5124,6 +5248,18 @@
           }
         }
       ]
+    },
+    "prefunded_balances": {
+      "origin": "genesis@14",
+      "tree": {
+        "hex": "80",
+        "left": {
+          "hex": "40"
+        },
+        "right": {
+          "hex": "c0"
+        }
+      }
     },
     "root": {
       "origin": "genesis@14",

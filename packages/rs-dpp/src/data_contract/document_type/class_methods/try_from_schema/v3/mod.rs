@@ -19,6 +19,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 // Only the ranked key-length rule below names `Index`, and it is validation-only.
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index::IndexGrammarAdmissions;
@@ -250,6 +251,14 @@ fn try_from_schema_generation_3(
     // consumes `schema`.
     let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
     let index_only = common::parse_index_only_keyword(&schema)?;
+    // Like every doctype-level keyword of this generation, `actionFees` is read wherever it
+    // appears and its shape is enforced on the validating and the stored path alike: no keyword
+    // is softened for a stored contract. The frozen v0 meta-schema (protocol versions 1 to 11)
+    // did not refuse unknown top-level keys, but a census of every contract create and update
+    // on mainnet and testnet (2026-09-20) found no contract it admitted carrying this key, and
+    // every create and update since is validated by a meta-schema that refuses it. So every
+    // declaration a node reads from state was validated.
+    let action_fees = DocumentActionFees::try_from_document_schema(&schema, name)?;
     let immutable_fields =
         common::parse_property_name_list_keyword(&schema, name, property_names::IMMUTABLE)?;
     let immutable_fields_allow_setting = common::parse_property_name_list_keyword(
@@ -320,6 +329,7 @@ fn try_from_schema_generation_3(
     )?;
 
     let mut v2: DocumentTypeV2 = v1.into();
+    v2.action_fees = action_fees;
     common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
     // After the aggregates: `apply_index_only` rejects the doctype-level
     // aggregate flags (they describe the primary-key tree, which an

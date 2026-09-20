@@ -75,6 +75,11 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V1: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
+        contract_fee_claim_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
         batch_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,

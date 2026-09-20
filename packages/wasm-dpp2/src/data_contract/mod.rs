@@ -17,6 +17,7 @@ pub use model::{
     DataContractJSONJs, DataContractObjectJs, DataContractWasm, tokens_configuration_from_js_value,
 };
 pub use transitions::create::DataContractCreateTransitionWasm;
+pub use transitions::fee_claim::{ContractFeeClaimWasm, contract_fee_pot_from_str};
 pub use transitions::update::DataContractUpdateTransitionWasm;
 pub use transitions::user_moderation::{
     ContractModerationReasonJs, ContractUserModerationWasm, moderation_action_from_parts,

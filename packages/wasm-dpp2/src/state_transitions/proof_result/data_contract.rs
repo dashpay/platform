@@ -9,7 +9,9 @@ use crate::data_contract::{
 };
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
+use crate::serialization::conversions::normalize_js_value_for_json;
 use dpp::data_contract::config::moderation::ContractModerationReason;
+use js_sys::{BigInt, Map};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
@@ -204,3 +206,94 @@ impl_wasm_type_info!(
     VerifiedContractModerationListStatusesWasm,
     VerifiedContractModerationListStatuses
 );
+
+/// `VerifiedContractFeeClaim` proof-result wrapper: the pot a contract fee claim paid out (the
+/// contract, the pot, the epoch the pot was last claimed in, the credits left in it) and the
+/// balance of every identity the claim paid, after the claim. A pot is paid out at most once
+/// per epoch, so while `lastClaimEpoch` is the epoch of the claim the proof is of that claim.
+#[wasm_bindgen(js_name = "VerifiedContractFeeClaim")]
+#[derive(Clone)]
+pub struct VerifiedContractFeeClaimWasm {
+    #[wasm_bindgen(getter_with_clone, js_name = "contractId")]
+    pub contract_id: IdentifierWasm,
+    /// The pot that was paid out: `owner` or `moderators`
+    #[wasm_bindgen(getter_with_clone)]
+    pub pot: String,
+    /// The epoch the pot was last claimed in: this claim's own, unless the pot was claimed
+    /// again since
+    #[wasm_bindgen(js_name = "lastClaimEpoch")]
+    pub last_claim_epoch: u16,
+    pub(super) remaining_credits: u64,
+    pub(super) balances: Map, // Map<string(base58), BigInt>
+}
+
+#[wasm_bindgen(js_class = VerifiedContractFeeClaim)]
+impl VerifiedContractFeeClaimWasm {
+    /// The credits left in the pot after the claim
+    #[wasm_bindgen(getter = "remainingCredits")]
+    pub fn remaining_credits(&self) -> JsValue {
+        BigInt::from(self.remaining_credits).into()
+    }
+
+    /// The balance of every identity the claim paid, after the claim
+    #[wasm_bindgen(getter)]
+    pub fn balances(&self) -> Map {
+        self.balances.clone()
+    }
+
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        Ok(js_obj(&[
+            ("contractId", self.contract_id.into()),
+            ("pot", JsValue::from_str(&self.pot)),
+            (
+                "lastClaimEpoch",
+                JsValue::from_f64(self.last_claim_epoch as f64),
+            ),
+            (
+                "remainingCredits",
+                BigInt::from(self.remaining_credits).into(),
+            ),
+            ("balances", self.balances.clone().into()),
+        ]))
+    }
+
+    /// Returns a `JSON.stringify`-friendly form: the `balances` `Map` is normalised to a plain
+    /// object so its entries survive serialisation (otherwise `JSON.stringify({balances: <Map>})`
+    /// produces `{"balances":{}}`).
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        Ok(js_obj(&[
+            (
+                "contractId",
+                JsValue::from_str(&self.contract_id.to_base58()),
+            ),
+            ("pot", JsValue::from_str(&self.pot)),
+            (
+                "lastClaimEpoch",
+                JsValue::from_f64(self.last_claim_epoch as f64),
+            ),
+            (
+                "remainingCredits",
+                json_safe_credits(self.remaining_credits),
+            ),
+            (
+                "balances",
+                normalize_js_value_for_json(&self.balances.clone().into())?,
+            ),
+        ]))
+    }
+}
+
+/// Credits in JSON: a number while it is exact in JavaScript, a decimal string past
+/// `Number.MAX_SAFE_INTEGER`, where a number would silently round.
+fn json_safe_credits(credits: u64) -> JsValue {
+    const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
+    if credits <= MAX_SAFE_INTEGER {
+        JsValue::from_f64(credits as f64)
+    } else {
+        JsValue::from_str(&credits.to_string())
+    }
+}
+
+impl_wasm_type_info!(VerifiedContractFeeClaimWasm, VerifiedContractFeeClaim);

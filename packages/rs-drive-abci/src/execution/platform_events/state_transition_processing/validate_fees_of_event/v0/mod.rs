@@ -391,6 +391,7 @@ mod tests {
             user_fee_increase: 0,
             signing_key_limits: None,
             gas_sponsor: None,
+            action_fees: vec![],
         };
 
         let previous_fee_versions = Default::default();
@@ -658,6 +659,7 @@ mod tests {
             user_fee_increase: 0,
             signing_key_limits: None,
             gas_sponsor: None,
+            action_fees: vec![],
         };
 
         let result = platform

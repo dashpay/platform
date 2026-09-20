@@ -96,6 +96,14 @@ impl Drive {
         // (`Platform::transition_to_version_14`) calls the same helper.
         self.insert_once_per_identity_distributions_root_tree(transaction, platform_version)?;
 
+        // Contract fee pot trees (protocol version 14): the two sum trees, beside the voting
+        // balances, that hold what every contract's document action fees have collected. They
+        // go in after the batch apply, which creates the voting balances tree, and one after
+        // the other, exactly as the upgrade path (`Platform::transition_to_version_14`) does
+        // through the same helper: the prefunded balances Merk is then built by the same
+        // sequence of inserts on both node populations.
+        self.insert_contract_fee_pot_trees(transaction, platform_version)?;
+
         Ok(())
     }
 }

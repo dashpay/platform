@@ -74,7 +74,7 @@ const CONTRACT_MODERATION_TARGET_NOT_FOUND: u32 = 41109;
 const CONTRACT_MODERATOR_IDENTITY_NOT_FOUND: u32 = 41110;
 const CONTRACT_MODERATION_COUNTERPARTY_BARRED: u32 = 41114;
 
-const CRITICAL_KEY_ID: KeyID = 1;
+pub(crate) const CRITICAL_KEY_ID: KeyID = 1;
 const DOCUMENT_TYPE: &str = "niceDocument";
 const BLOCK_TIME_MS: TimestampMillis = 1_000_000;
 
@@ -85,16 +85,16 @@ const BOTH: [ContractModerationList; 2] = [
 
 /// A registered identity with its signer and its CRITICAL key, plus the nonces the tests hand
 /// out: gaps are allowed, reuse is not.
-struct Actor {
-    identity: Identity,
-    signer: SimpleSigner,
-    key: IdentityPublicKey,
+pub(crate) struct Actor {
+    pub(crate) identity: Identity,
+    pub(crate) signer: SimpleSigner,
+    pub(crate) key: IdentityPublicKey,
     next_identity_nonce: Cell<IdentityNonce>,
-    next_contract_nonce: Cell<IdentityNonce>,
+    pub(crate) next_contract_nonce: Cell<IdentityNonce>,
 }
 
 impl Actor {
-    fn new(platform: &mut TempPlatform<MockCoreRPCLike>, seed: u64) -> Self {
+    pub(crate) fn new(platform: &mut TempPlatform<MockCoreRPCLike>, seed: u64) -> Self {
         let (identity, signer, key) = setup_identity(platform, seed, dash_to_credits!(10));
         Self {
             identity,
@@ -105,17 +105,17 @@ impl Actor {
         }
     }
 
-    fn id(&self) -> Identifier {
+    pub(crate) fn id(&self) -> Identifier {
         self.identity.id()
     }
 
-    fn identity_nonce(&self) -> IdentityNonce {
+    pub(crate) fn identity_nonce(&self) -> IdentityNonce {
         let nonce = self.next_identity_nonce.get();
         self.next_identity_nonce.set(nonce + 1);
         nonce
     }
 
-    fn contract_nonce(&self) -> IdentityNonce {
+    pub(crate) fn contract_nonce(&self) -> IdentityNonce {
         let nonce = self.next_contract_nonce.get();
         self.next_contract_nonce.set(nonce + 1);
         nonce
@@ -443,7 +443,7 @@ impl Setup {
     }
 }
 
-fn assert_success(execution: &StateTransitionExecutionResult) {
+pub(crate) fn assert_success(execution: &StateTransitionExecutionResult) {
     assert!(
         matches!(
             execution,
@@ -453,14 +453,14 @@ fn assert_success(execution: &StateTransitionExecutionResult) {
     );
 }
 
-fn assert_paid_with_code(execution: &StateTransitionExecutionResult, code: u32) {
+pub(crate) fn assert_paid_with_code(execution: &StateTransitionExecutionResult, code: u32) {
     assert!(
         matches!(execution, StateTransitionExecutionResult::PaidConsensusError { error, .. } if error.code() == code),
         "expected a paid error {code}, got {execution:?}"
     );
 }
 
-fn assert_unpaid_with_code(execution: &StateTransitionExecutionResult, code: u32) {
+pub(crate) fn assert_unpaid_with_code(execution: &StateTransitionExecutionResult, code: u32) {
     assert!(
         matches!(execution, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.code() == code),
         "expected an unpaid error {code}, got {execution:?}"

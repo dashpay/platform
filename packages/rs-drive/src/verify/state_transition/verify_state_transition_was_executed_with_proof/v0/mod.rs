@@ -31,6 +31,7 @@ use dpp::state_transition::identity_credit_transfer_to_addresses_transition::acc
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::config::moderation::ContractModerationList;
+use dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
@@ -54,7 +55,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1216,6 +1217,80 @@ impl Drive {
                 Ok((
                     root_hash,
                     VerifiedContractModerationListStatuses(contract_id, identity_id, statuses),
+                ))
+            }
+            StateTransition::ContractFeeClaim(transition) => {
+                let contract_id = transition.data_contract_id();
+                let pot = transition.pot();
+                let contract = known_contracts_provider_fn(&contract_id)?.ok_or(Error::Proof(
+                    ProofError::UnknownContract(format!(
+                        "unknown contract with id {} in contract fee claim verification",
+                        contract_id
+                    )),
+                ))?;
+                let recipients: Vec<[u8; 32]> = pot
+                    .recipients(&contract)
+                    .into_iter()
+                    .map(|recipient| recipient.to_buffer())
+                    .collect();
+
+                // The proof holds the pot with its last claim epoch and the recipients'
+                // balances; each part is verified as a subset of it, and they must agree on
+                // the state they are read from.
+                let (root_hash, fee_pots) = Drive::verify_contract_fee_pots(
+                    proof,
+                    contract_id,
+                    &[pot],
+                    true,
+                    platform_version,
+                )?;
+                let (balances_root_hash, balances): (
+                    RootHash,
+                    BTreeMap<Identifier, Option<Credits>>,
+                ) = Drive::verify_identity_balances_for_identity_ids(
+                    proof,
+                    true,
+                    &recipients,
+                    platform_version,
+                )?;
+                if balances_root_hash != root_hash {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "the pot and the balances of a contract fee claim proof are read from different states"
+                            .to_string(),
+                    )));
+                }
+
+                let fee_pot = fee_pots.pot(pot);
+                // A pot that was never claimed has no last claim epoch: the claim did not
+                // execute. A later claim leaves a later epoch and verifies just the same, so
+                // this only authenticates the affected state.
+                let last_claim_epoch =
+                    fee_pot
+                        .last_claim_epoch
+                        .ok_or(Error::Proof(ProofError::IncorrectProof(format!(
+                            "proof of state transition execution does not show a claim of the {} fee pot of contract {}",
+                            pot, contract_id
+                        ))))?;
+                let balances = balances
+                    .into_iter()
+                    .map(|(recipient, balance)| {
+                        balance.map(|balance| (recipient, balance)).ok_or(Error::Proof(
+                            ProofError::IncorrectProof(format!(
+                                "proof did not contain the balance of {}, a recipient of the {} fee pot of contract {}",
+                                recipient, pot, contract_id
+                            )),
+                        ))
+                    })
+                    .collect::<Result<BTreeMap<Identifier, Credits>, Error>>()?;
+                Ok((
+                    root_hash,
+                    VerifiedContractFeeClaim(
+                        contract_id,
+                        pot,
+                        last_claim_epoch,
+                        fee_pot.credits,
+                        balances,
+                    ),
                 ))
             }
             StateTransition::IdentityKeyLimitsUpdate(transition) => {
@@ -2523,6 +2598,10 @@ impl Drive {
             // moderation leaving the same entry verifies just the same, so this only
             // authenticates the affected state.
             StateTransition::ContractUserModeration(_) => false,
+            // The proven pot shows that it was claimed and what it holds now; a later claim
+            // of the same pot verifies just the same, so this only authenticates the affected
+            // state.
+            StateTransition::ContractFeeClaim(_) => false,
             // The proven vote is stored under the masternode's identity and
             // must equal the transition's declared vote.
             StateTransition::MasternodeVote(_) => true,

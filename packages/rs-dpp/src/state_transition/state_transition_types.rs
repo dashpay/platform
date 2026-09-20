@@ -46,6 +46,7 @@ pub enum StateTransitionType {
     IdentityTopUpFromShieldedPool = 22,
     IdentityKeyLimitsUpdate = 23,
     ContractUserModeration = 24,
+    ContractFeeClaim = 25,
 }
 
 impl std::fmt::Display for StateTransitionType {
@@ -144,6 +145,7 @@ mod tests {
                 StateTransitionType::ContractUserModeration,
                 "ContractUserModeration",
             ),
+            (StateTransitionType::ContractFeeClaim, "ContractFeeClaim"),
         ];
         for (variant, expected) in cases {
             assert_eq!(
@@ -183,6 +185,7 @@ mod tests {
             (22, StateTransitionType::IdentityTopUpFromShieldedPool),
             (23, StateTransitionType::IdentityKeyLimitsUpdate),
             (24, StateTransitionType::ContractUserModeration),
+            (25, StateTransitionType::ContractFeeClaim),
         ];
         for (val, expected) in pairs {
             let result = StateTransitionType::try_from(val).unwrap();
@@ -192,7 +195,7 @@ mod tests {
 
     #[test]
     fn test_try_from_u8_invalid() {
-        assert!(StateTransitionType::try_from(25u8).is_err());
+        assert!(StateTransitionType::try_from(26u8).is_err());
         assert!(StateTransitionType::try_from(255u8).is_err());
     }
 
@@ -224,6 +227,7 @@ mod tests {
             StateTransitionType::IdentityTopUpFromShieldedPool,
             StateTransitionType::IdentityKeyLimitsUpdate,
             StateTransitionType::ContractUserModeration,
+            StateTransitionType::ContractFeeClaim,
         ];
         for variant in all_variants {
             let val: u8 = variant.into();

@@ -14,6 +14,7 @@ pub struct DriveContractMethodVersions {
     pub costs: DriveContractCostsMethodVersions,
     pub get: DriveContractGetMethodVersions,
     pub moderation: DriveContractModerationMethodVersions,
+    pub fee_pots: DriveContractFeePotMethodVersions,
 }
 
 /// Drive methods for contract moderation: the banlist and the suspension list a moderated
@@ -31,6 +32,22 @@ pub struct DriveContractModerationMethodVersions {
     pub insert_contract_moderation_trees: FeatureVersion,
     pub add_estimation_costs_for_contract_moderation_trees: FeatureVersion,
     pub add_estimation_costs_for_contract_moderation_entry: FeatureVersion,
+}
+
+/// Drive methods for the two fee pots a contract's document action fees accumulate in
+/// (`[40, 64, contract id]` the owner pot, `[40, 192, contract id]` the moderators pot) and
+/// the epoch each pot was last claimed in (keys `32` and `96` of the contract's other tree,
+/// `[64, id, 2]`). Protocol version 14.
+#[derive(Clone, Debug, Default)]
+pub struct DriveContractFeePotMethodVersions {
+    pub insert_contract_fee_pot_trees: FeatureVersion,
+    pub add_to_contract_fee_pot: FeatureVersion,
+    pub deduct_from_contract_fee_pot: FeatureVersion,
+    pub fetch_contract_fee_pot: FeatureVersion,
+    pub fetch_action_fee_multiplier: FeatureVersion,
+    pub set_contract_last_fee_claim_epoch: FeatureVersion,
+    pub prove_contract_fee_pots: FeatureVersion,
+    pub add_estimation_costs_for_contract_fee_pot_update: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

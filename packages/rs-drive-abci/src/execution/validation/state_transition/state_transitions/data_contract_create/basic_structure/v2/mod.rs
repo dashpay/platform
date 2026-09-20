@@ -5,6 +5,7 @@ use dpp::consensus::basic::contract_group::{
     InvalidContractGroupDescriptionLengthError, InvalidContractGroupNameLengthError,
     RedundantContractGroupMembershipError,
 };
+use dpp::consensus::basic::contract_moderation::DocumentActionFeesWithoutModerationError;
 use dpp::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError;
 use dpp::consensus::ConsensusError;
 use dpp::contract_group::ContractGroupMember;
@@ -12,6 +13,7 @@ use dpp::dashcore::Network;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
+use dpp::data_contract::document_type::action_fees::DocumentActionFees;
 use dpp::identifier::Identifier;
 use dpp::state_transition::data_contract_create_transition::accessors::{
     DataContractCreateTransitionAccessorsV0, DataContractCreateTransitionAccessorsV1,
@@ -132,6 +134,21 @@ impl DataContractCreateStateTransitionBasicStructureValidationV2 for DataContrac
             let result = moderation.validate(platform_version)?;
             if !result.is_valid() {
                 return Ok(result);
+            }
+        }
+
+        // Document action fees: a document type may only charge for the moderators when the
+        // contract declares moderation, since the moderation team is who that pot is for.
+        if self.data_contract().config().moderation().is_none() {
+            if let Some(document_type_name) =
+                DocumentActionFees::first_document_type_charging_moderators(
+                    self.data_contract().document_schemas(),
+                )
+            {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DocumentActionFeesWithoutModerationError::new(document_type_name.clone())
+                        .into(),
+                ));
             }
         }
 
@@ -270,6 +287,7 @@ mod tests {
     use dpp::balances::credits::TokenAmount;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::ConsensusError;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::accessors::v1::DataContractV1Setters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
@@ -279,7 +297,9 @@ mod tests {
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
-    use dpp::platform_value::platform_value;
+    use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+    use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+    use dpp::platform_value::{platform_value, Value};
     use dpp::prelude::IdentityNonce;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
     use dpp::tests::fixtures::get_data_contract_fixture;
@@ -413,6 +433,89 @@ mod tests {
             signature: Default::default(),
         }
         .into()
+    }
+
+    /// A create transition whose `niceDocument` document type charges `action_fees`, on a
+    /// contract that declares moderation or not
+    fn create_transition_with_action_fees(
+        action_fees: Value,
+        moderated: bool,
+        platform_version: &PlatformVersion,
+    ) -> DataContractCreateTransition {
+        let identity_nonce = IdentityNonce::default();
+        let mut data_contract =
+            get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                .data_contract_owned();
+        if moderated {
+            data_contract.set_config(data_contract.config().clone().with_moderation(Some(
+                ContractModerationConfig {
+                    banlist: true,
+                    suspensions: false,
+                    moderators: ContractModerators::ContractOwner,
+                },
+            )));
+        }
+        let mut serialized: DataContractInSerializationFormat = data_contract
+            .try_into_platform_versioned(platform_version)
+            .expect("failed to convert data contract");
+        serialized
+            .document_schemas_mut()
+            .get_mut("niceDocument")
+            .expect("expected the niceDocument schema")
+            .insert("actionFees".to_string(), action_fees)
+            .expect("expected to declare the action fees");
+
+        DataContractCreateTransitionV0 {
+            data_contract: serialized,
+            identity_nonce,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into()
+    }
+
+    // The moderators pot is for the moderation team, and a contract that declares no
+    // moderation has none: the credits could never be claimed.
+    #[test]
+    fn should_reject_a_moderators_action_fee_on_a_contract_without_moderation() {
+        let platform_version = PlatformVersion::latest();
+        let transition = create_transition_with_action_fees(
+            platform_value!({"create": {"owner": 5_u64, "moderators": 10_u64}}),
+            false,
+            platform_version,
+        );
+
+        let result = transition
+            .validate_basic_structure(Network::Testnet, platform_version)
+            .expect("failed to validate basic structure");
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DocumentActionFeesWithoutModerationError(e)
+            )] if e.document_type_name() == "niceDocument"
+        );
+    }
+
+    #[test]
+    fn should_accept_action_fees_the_contract_can_pay_out() {
+        let platform_version = PlatformVersion::latest();
+        // An owner fee needs no moderation, and a moderators fee is fine once it is declared.
+        for (action_fees, moderated) in [
+            (platform_value!({"create": {"owner": 5_u64}}), false),
+            (
+                platform_value!({"create": {"owner": 5_u64, "moderators": 10_u64}}),
+                true,
+            ),
+        ] {
+            let transition =
+                create_transition_with_action_fees(action_fees, moderated, platform_version);
+            let result = transition
+                .validate_basic_structure(Network::Testnet, platform_version)
+                .expect("failed to validate basic structure");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
     }
 
     #[test]

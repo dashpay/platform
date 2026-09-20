@@ -1,4 +1,5 @@
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::action_fees::ActionFeePricing;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{PartialIdentity, Purpose};
@@ -147,6 +148,28 @@ impl DocumentsBatchStateTransitionStateValidationV2 for BatchTransition {
                         strict,
                     }));
                 }
+            }
+        }
+
+        // Document action fees (the `actionFees` keyword): a fee priced by the fee multiplier
+        // follows the multiplier of the epoch the batch executes in. It is read here, where
+        // state is read, once, only when some transition declares such a fee, and billed to the
+        // batch. The fees themselves are settled when the batch executes, off the transitions
+        // state validation left standing: one it replaced with a nonce bump owes nothing.
+        if let Some(action) = validation_result.data.as_mut() {
+            let priced_by_the_fee_multiplier = action
+                .declared_action_fees()
+                .iter()
+                .any(|(_, _, pricing, _)| *pricing == ActionFeePricing::FeeMultiplier);
+            if priced_by_the_fee_multiplier {
+                let platform_version = platform.state.current_platform_version()?;
+                let (fee, multiplier) = platform.drive.fetch_action_fee_multiplier_with_fee(
+                    &block_info.epoch,
+                    tx,
+                    platform_version,
+                )?;
+                execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+                action.set_action_fee_multiplier_permille(Some(multiplier));
             }
         }
 

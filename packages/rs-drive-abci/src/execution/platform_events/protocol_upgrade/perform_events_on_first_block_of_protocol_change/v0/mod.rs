@@ -789,6 +789,13 @@ impl<C> Platform<C> {
                 platform_version,
             )?;
 
+        // Contract fee pot trees: the two sum trees, beside the voting balances, that hold what
+        // every contract's document action fees have collected. Fresh chains call the same
+        // helper from `create_initial_state_structure` v4, after the voting balances tree
+        // exists, so both node populations build the same prefunded balances Merk.
+        self.drive
+            .insert_contract_fee_pot_trees(Some(transaction), platform_version)?;
+
         Ok(())
     }
 }
@@ -1833,6 +1840,75 @@ mod tests {
             .expect("expected to fetch the group info")
             .expect("expected the group to be stored");
         assert_eq!(stored.owner(), &ContractGroupOwner::SingleOwner(owner_id));
+    }
+
+    /// The only way a running network gets the contract fee pot trees is this upgrade hook.
+    /// They are absent at 13 and present after the transition, and the prefunded balances
+    /// subtree they sit in is then byte-identical to the one of a chain born at 14: a
+    /// different insert order would shape that Merk differently on the two node populations
+    /// and fork them on the first block that writes to a pot.
+    #[test]
+    fn test_transition_to_version_14_creates_contract_fee_pot_trees() {
+        use dpp::data_contract::document_type::action_fees::ContractFeePot;
+        use drive::drive::contract::paths::contract_fee_pots_key;
+        use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances_path;
+        use drive::util::grove_operations::DirectQueryType;
+
+        let platform_version = PlatformVersion::latest();
+        let born_at_14 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+
+        let pot_tree_exists = |pot: ContractFeePot, transaction: &Transaction| {
+            upgraded
+                .drive
+                .grove_has_raw(
+                    (&prefunded_specialized_balances_path()).into(),
+                    contract_fee_pots_key(pot),
+                    DirectQueryType::StatefulDirectQuery,
+                    Some(transaction),
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to query the pot tree")
+        };
+        for pot in [ContractFeePot::Owner, ContractFeePot::Moderators] {
+            assert!(
+                !pot_tree_exists(pot, &transaction),
+                "protocol version 13 has no {pot} fee pot tree"
+            );
+        }
+
+        upgraded
+            .transition_to_version_14(&BlockInfo::default(), &transaction, platform_version)
+            .expect("expected version 14 transition to succeed");
+
+        for pot in [ContractFeePot::Owner, ContractFeePot::Moderators] {
+            assert!(
+                pot_tree_exists(pot, &transaction),
+                "the {pot} fee pot tree must exist after the transition"
+            );
+        }
+
+        let diffs = collect_subtree_diffs(
+            &born_at_14,
+            &upgraded,
+            &transaction,
+            vec![vec![RootTree::PreFundedSpecializedBalances as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "the prefunded balances subtree differs between a chain born at version 14 and one \
+             upgraded to it:\n{}",
+            diffs.join("\n"),
+        );
     }
 
     #[test]

@@ -86,6 +86,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
     contract_moderation: DriveVerifyContractModerationMethodVersions {
         verify_contract_moderation_status: 0,
         verify_contract_moderation_entries: 0,
+        verify_contract_fee_pots: 0,
     },
     token: DriveVerifyTokenMethodVersions {
         verify_token_balances_for_identity_ids: 0,

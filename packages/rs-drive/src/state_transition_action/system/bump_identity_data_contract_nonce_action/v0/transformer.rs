@@ -2,6 +2,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::Identifier;
 use dpp::prelude::UserFeeIncrease;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+use dpp::state_transition::contract_fee_claim_transition::v0::ContractFeeClaimTransitionV0;
 use dpp::state_transition::contract_user_moderation_transition::v0::ContractUserModerationTransitionV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
@@ -176,6 +177,23 @@ impl BumpIdentityDataContractNonceActionV0 {
         }
     }
 
+    /// from borrowed contract fee claim transition
+    pub fn from_borrowed_contract_fee_claim(value: &ContractFeeClaimTransitionV0) -> Self {
+        let ContractFeeClaimTransitionV0 {
+            owner_id,
+            data_contract_id,
+            identity_contract_nonce,
+            user_fee_increase,
+            ..
+        } = value;
+        BumpIdentityDataContractNonceActionV0 {
+            identity_id: *owner_id,
+            data_contract_id: *data_contract_id,
+            identity_contract_nonce: *identity_contract_nonce,
+            user_fee_increase: *user_fee_increase,
+        }
+    }
+
     /// from data contract update action
     pub fn from_data_contract_update_action(value: DataContractUpdateTransitionActionV0) -> Self {
         let DataContractUpdateTransitionActionV0 {
@@ -309,6 +327,7 @@ mod tests {
             token_cost: None,
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
             contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+            declared_action_fee: None,
         });
         let action = BumpIdentityDataContractNonceActionV0::from_document_base_transition_action(
             base_action,
@@ -334,6 +353,7 @@ mod tests {
             token_cost: None,
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
             contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+            declared_action_fee: None,
         });
         let action =
             BumpIdentityDataContractNonceActionV0::from_borrowed_document_base_transition_action(

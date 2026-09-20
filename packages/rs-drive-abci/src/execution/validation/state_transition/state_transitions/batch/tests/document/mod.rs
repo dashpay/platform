@@ -1,3 +1,4 @@
+mod action_fees;
 mod creation;
 mod deletion;
 mod dpns;

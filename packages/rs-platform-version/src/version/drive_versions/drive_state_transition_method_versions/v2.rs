@@ -38,6 +38,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 identity_update_transition: 1, //changed
                 identity_key_limits_update_transition: 0,
                 contract_user_moderation_transition: 0,
+                contract_fee_claim_transition: 0,
                 masternode_vote_transition: 0,
                 bump_identity_data_contract_nonce: 0,
                 bump_identity_nonce: 0,

@@ -1,5 +1,6 @@
 mod address_funds;
 mod contract;
+mod contract_fee_pot;
 mod contract_group;
 mod contract_moderation;
 mod document;
@@ -23,6 +24,7 @@ use dpp::fee::Credits;
 
 pub use address_funds::AddressFundsOperationType;
 pub use contract::DataContractOperationType;
+pub use contract_fee_pot::ContractFeePotOperationType;
 pub use contract_group::ContractGroupOperationType;
 pub use contract_moderation::ContractModerationOperationType;
 pub use document::DocumentOperation;
@@ -99,6 +101,8 @@ pub enum DriveOperation<'a> {
     ContractGroupOperation(ContractGroupOperationType),
     /// A contract moderation operation: an entry of a banlist or a suspension list
     ContractModerationOperation(ContractModerationOperationType),
+    /// A contract fee pot operation: credits of a contract's document action fees
+    ContractFeePotOperation(ContractFeePotOperationType),
     /// An address funds operation
     AddressFundsOperation(AddressFundsOperationType),
     /// A shielded pool operation
@@ -216,6 +220,15 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
             }
             DriveOperation::ContractModerationOperation(contract_moderation_operation_type) => {
                 contract_moderation_operation_type.into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                )
+            }
+            DriveOperation::ContractFeePotOperation(contract_fee_pot_operation_type) => {
+                contract_fee_pot_operation_type.into_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,

@@ -2,6 +2,7 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV0MutGetters, DocumentTypeV0Setters, DocumentTypeV1Getters,
     DocumentTypeV2Getters, DocumentTypeV2Setters,
 };
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
@@ -237,6 +238,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
 
     fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
         &self.immutable_fields_allow_setting
+    }
+
+    fn action_fees(&self) -> Option<&DocumentActionFees> {
+        self.action_fees.as_ref()
     }
 }
 

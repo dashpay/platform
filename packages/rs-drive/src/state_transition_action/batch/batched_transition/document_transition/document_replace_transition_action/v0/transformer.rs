@@ -44,6 +44,7 @@ impl DocumentReplaceTransitionActionV0 {
                 base,
                 get_data_contract,
                 |document_type| document_type.document_replacement_token_cost(),
+                |action_fees| action_fees.document_replacement_action_fee(),
                 "replace",
             )?;
 

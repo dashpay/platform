@@ -1,4 +1,5 @@
 pub mod accessors;
+pub mod action_fees;
 mod property;
 pub use property::*;
 pub mod class_methods;
@@ -75,6 +76,11 @@ pub(crate) mod property_names {
     /// (protocol version 14). See `apply_immutable_fields` in
     /// `try_from_schema::common` for the structural rules.
     pub const IMMUTABLE: &str = "immutable";
+    /// Doctype-level object declaring a fixed fee in credits for actions on documents of
+    /// the type, split between the contract's owner pot and its moderators pot. Meta-schema
+    /// v3+ (protocol version 14). See `parse_action_fees_keyword` in
+    /// `try_from_schema::common`.
+    pub const ACTION_FEES: &str = "actionFees";
     /// Doctype-level array naming the [`IMMUTABLE`] properties a replace may
     /// still set when the stored document has no value for them. Once set
     /// they are frozen like the rest of the list. Every entry must also be in

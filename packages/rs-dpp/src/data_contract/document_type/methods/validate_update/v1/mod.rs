@@ -89,8 +89,46 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
+        // Validate that the action fees are unchanged
+        let result = self.validate_action_fees_unchanged(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         // Validate schema compatibility
         self.validate_schema_with_options(new_document_type, platform_version, &options)
+    }
+
+    /// The action fees of a document type are fixed when it is published: an
+    /// update may not add, change or remove them, nor switch their pricing.
+    /// Those who act on the documents agreed to the amounts the contract
+    /// showed them, and nobody signs the fee on a transition, so there is
+    /// nothing a changed amount could be checked against. A document type
+    /// added by the update is not judged here and may declare its own.
+    fn validate_action_fees_unchanged(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        if self.action_fees() == new_document_type.action_fees() {
+            return SimpleConsensusValidationResult::new();
+        }
+        let change = match (self.action_fees(), new_document_type.action_fees()) {
+            (None, Some(_)) => "add",
+            (Some(_), None) => "remove",
+            _ => "change",
+        };
+        SimpleConsensusValidationResult::new_with_error(
+            DocumentTypeUpdateError::new(
+                self.data_contract_id(),
+                self.name(),
+                format!(
+                    "document type can not {change} its action fees: they are fixed when the \
+                     document type is published"
+                ),
+            )
+            .into(),
+        )
     }
 
     /// Top-level requiredness may only change in one way: a brand-new
@@ -439,6 +477,92 @@ mod tests {
             "an unchanged (reordered) immutable list must be accepted, got {:?}",
             result.errors
         );
+    }
+
+    /// A document type with one string property and, when given, `actionFees`.
+    fn doc_type_with_action_fees(
+        action_fees: Option<Value>,
+        platform_version: &PlatformVersion,
+    ) -> DocumentType {
+        let mut schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+            },
+            "additionalProperties": false,
+        });
+        if let Some(action_fees) = action_fees {
+            schema
+                .insert("actionFees".to_string(), action_fees)
+                .expect("expected to set the action fees");
+        }
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create document type")
+    }
+
+    // Nobody signs the fee on a transition, so the amounts a contract showed when it was
+    // published are the only thing its users agreed to.
+    #[test]
+    fn should_reject_adding_changing_or_removing_action_fees() {
+        let platform_version = PlatformVersion::latest();
+        let free = doc_type_with_action_fees(None, platform_version);
+        let priced = doc_type_with_action_fees(
+            Some(platform_value!({"create": {"owner": 10_u64}})),
+            platform_version,
+        );
+        let repriced = doc_type_with_action_fees(
+            Some(platform_value!({"create": {"owner": 11_u64}})),
+            platform_version,
+        );
+        let fixed = doc_type_with_action_fees(
+            Some(platform_value!({"pricing": "fixed", "create": {"owner": 10_u64}})),
+            platform_version,
+        );
+
+        for (old, new, change) in [
+            (&free, &priced, "add"),
+            (&priced, &free, "remove"),
+            (&priced, &repriced, "change"),
+            (&priced, &fixed, "change"),
+        ] {
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 2, platform_version)
+                .expect("expected the update to be judged");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.additional_message().contains(&format!("can not {change} its action fees"))
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_unchanged_action_fees() {
+        let platform_version = PlatformVersion::latest();
+        let priced = doc_type_with_action_fees(
+            Some(platform_value!({"create": {"owner": 10_u64, "moderators": 3_u64}})),
+            platform_version,
+        );
+        let result = priced
+            .as_ref()
+            .validate_update(priced.as_ref(), 2, platform_version)
+            .expect("expected the update to be judged");
+        assert!(result.is_valid(), "{:?}", result.errors);
     }
 
     /// Like `doc_type_with_immutable`, with an `immutableAllowSetting` list

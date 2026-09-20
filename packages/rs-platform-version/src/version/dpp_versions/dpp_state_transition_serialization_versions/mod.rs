@@ -24,6 +24,7 @@ pub struct DPPStateTransitionSerializationVersions {
     /// `ContractUserModeration` (protocol version 14): bans and suspends identities on a
     /// moderated contract.
     pub contract_user_moderation_state_transition: FeatureVersionBounds,
+    pub contract_fee_claim_state_transition: FeatureVersionBounds,
     pub batch_state_transition: FeatureVersionBounds,
     pub document_base_state_transition: FeatureVersionBounds,
     pub document_create_state_transition: DocumentFeatureVersionBounds,

@@ -180,6 +180,7 @@ mod tests {
             token_cost: None,
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
             contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+            declared_action_fee: None,
         }
         .into();
 
@@ -327,6 +328,7 @@ mod tests {
                     token_cost: None,
                     gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
                     contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+                    declared_action_fee: None,
                 }),
             }),
         );

@@ -49,6 +49,7 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub identity_update_transition: FeatureVersion,
     pub identity_key_limits_update_transition: FeatureVersion,
     pub contract_user_moderation_transition: FeatureVersion,
+    pub contract_fee_claim_transition: FeatureVersion,
     pub masternode_vote_transition: FeatureVersion,
     pub bump_identity_data_contract_nonce: FeatureVersion,
     pub bump_identity_nonce: FeatureVersion,

@@ -216,24 +216,7 @@ impl ModerateContractUser for Identity {
         // does not have the contract (the lists never change, so whatever copy it holds will
         // do) is the contract fetched and registered with it.
         if matches!(action, ContractUserModerationAction::Ban { .. }) {
-            if let Some(provider) = sdk.context_provider() {
-                let resolved = provider
-                    .get_data_contract(&contract_id, sdk.version())
-                    .ok()
-                    .flatten()
-                    .is_some();
-                if !resolved {
-                    let contract =
-                        DataContract::fetch(sdk, contract_id)
-                            .await?
-                            .ok_or_else(|| {
-                                Error::Generic(format!(
-                                    "data contract {contract_id} does not exist"
-                                ))
-                            })?;
-                    provider.register_data_contract(Arc::new(contract));
-                }
-            }
+            ensure_provider_resolves_contract(sdk, contract_id, false).await?;
         }
 
         let identity_contract_nonce = sdk
@@ -260,9 +243,39 @@ impl ModerateContractUser for Identity {
     }
 }
 
+/// Makes sure the SDK's context provider can resolve `contract_id`, which the verifier of an
+/// execution proof reads the contract through. A provider that can not resolve the contract
+/// would refuse a result the network already accepted, so this runs before the nonce is taken
+/// and anything is signed or paid for.
+///
+/// With `refresh` the contract is fetched and registered even when the provider already holds
+/// a copy, for a proof that depends on a part of the contract an update may have changed.
+/// Without it, a copy the provider holds will do.
+pub(super) async fn ensure_provider_resolves_contract(
+    sdk: &Sdk,
+    contract_id: Identifier,
+    refresh: bool,
+) -> Result<(), Error> {
+    let Some(provider) = sdk.context_provider() else {
+        return Ok(());
+    };
+    let resolved = provider
+        .get_data_contract(&contract_id, sdk.version())
+        .ok()
+        .flatten()
+        .is_some();
+    if refresh || !resolved {
+        let contract = DataContract::fetch(sdk, contract_id)
+            .await?
+            .ok_or_else(|| Error::Generic(format!("data contract {contract_id} does not exist")))?;
+        provider.register_data_contract(Arc::new(contract));
+    }
+    Ok(())
+}
+
 /// The first enabled CRITICAL authentication key without contract bounds (a bound key may
 /// only sign batches) that the signer can sign with.
-fn signing_key_for_moderation<S: Signer<IdentityPublicKey>>(
+pub(super) fn signing_key_for_moderation<S: Signer<IdentityPublicKey>>(
     identity: &Identity,
     signer: &S,
 ) -> Result<KeyID, Error> {

@@ -1,6 +1,8 @@
 use crate::error::Error;
+use dpp::consensus::basic::contract_moderation::DocumentActionFeesWithoutModerationError;
 use dpp::dashcore::Network;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
+use dpp::data_contract::document_type::action_fees::DocumentActionFees;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -37,6 +39,21 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV2 for DataContrac
             let result = moderation.validate(platform_version)?;
             if !result.is_valid() {
                 return Ok(result);
+            }
+        }
+
+        // Document action fees: a document type may only charge for the moderators when the
+        // contract declares moderation, since the moderation team is who that pot is for.
+        if self.data_contract().config().moderation().is_none() {
+            if let Some(document_type_name) =
+                DocumentActionFees::first_document_type_charging_moderators(
+                    self.data_contract().document_schemas(),
+                )
+            {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DocumentActionFeesWithoutModerationError::new(document_type_name.clone())
+                        .into(),
+                ));
             }
         }
 

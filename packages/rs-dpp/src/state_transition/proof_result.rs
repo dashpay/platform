@@ -1,7 +1,9 @@
 use crate::address_funds::PlatformAddress;
 use crate::asset_lock::StoredAssetLockInfo;
 use crate::balances::credits::TokenAmount;
+use crate::block::epoch::EpochIndex;
 use crate::data_contract::config::moderation::ContractModerationListStatuses;
+use crate::data_contract::document_type::action_fees::ContractFeePot;
 use crate::data_contract::group::GroupSumPower;
 use crate::data_contract::DataContract;
 use crate::document::Document;
@@ -135,6 +137,23 @@ pub enum StateTransitionProofResult {
     /// suspension; an unban, a suspend and an unsuspend prove the one list they edit, and say
     /// nothing about the other.
     VerifiedContractModerationListStatuses(Identifier, Identifier, ContractModerationListStatuses),
+    /// A contract fee claim's execution proof shows the pot it paid out (contract id, pot, the
+    /// epoch the pot was last claimed in, the credits left in it) and the balance of every
+    /// identity it paid, after the claim. The epoch is the claim's own: a pot is paid out at
+    /// most once per epoch, so within that epoch the proof is of this claim.
+    VerifiedContractFeeClaim(
+        Identifier,
+        ContractFeePot,
+        EpochIndex,
+        Credits,
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(
+                with = "crate::serialization::json::safe_integer_map::json_safe_identifier_u64_map"
+            )
+        )]
+        BTreeMap<Identifier, Credits>,
+    ),
 }
 
 /// A verified state-transition proof result, tagged with the guarantee the

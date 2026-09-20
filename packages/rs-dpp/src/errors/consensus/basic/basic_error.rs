@@ -13,7 +13,7 @@ use crate::consensus::basic::contract_group::{
 };
 use crate::consensus::basic::contract_moderation::{
     ContractModerationReasonTooLongError, ContractModerationSelfTargetError,
-    InvalidContractModerationConfigError,
+    DocumentActionFeesWithoutModerationError, InvalidContractModerationConfigError,
 };
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
@@ -796,6 +796,10 @@ pub enum BasicError {
 
     #[error(transparent)]
     ContractModerationReasonTooLongError(ContractModerationReasonTooLongError),
+
+    // Document action fees (protocol version 14).
+    #[error(transparent)]
+    DocumentActionFeesWithoutModerationError(DocumentActionFeesWithoutModerationError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -847,7 +851,7 @@ mod tests {
             )),
             188
         );
-        // Contract moderation (protocol version 14): the tail of the enum.
+        // Contract moderation (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::InvalidContractModerationConfigError(
                 InvalidContractModerationConfigError::new("reason".to_string())
@@ -865,6 +869,13 @@ mod tests {
                 ContractModerationReasonTooLongError::new(1025, 1024)
             )),
             191
+        );
+        // Document action fees (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::DocumentActionFeesWithoutModerationError(
+                DocumentActionFeesWithoutModerationError::new("post".to_string())
+            )),
+            192
         );
     }
 }

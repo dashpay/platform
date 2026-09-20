@@ -13,7 +13,9 @@ use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShie
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
-    ContractModerationCounterpartyBarredError, ContractModerationTargetNotFoundError,
+    ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
+    ContractFeesNothingToClaimError, ContractModerationCounterpartyBarredError,
+    ContractModerationTargetNotFoundError,
     ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
     ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
@@ -510,6 +512,16 @@ pub enum StateError {
 
     #[error(transparent)]
     ContractModerationCounterpartyBarredError(ContractModerationCounterpartyBarredError),
+
+    // Contract fee claims (protocol version 14).
+    #[error(transparent)]
+    ContractFeesAlreadyClaimedThisEpochError(ContractFeesAlreadyClaimedThisEpochError),
+
+    #[error(transparent)]
+    ContractFeesNothingToClaimError(ContractFeesNothingToClaimError),
+
+    #[error(transparent)]
+    ContractFeeClaimNotAllowedError(ContractFeeClaimNotAllowedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -524,6 +536,7 @@ mod tests {
     use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
     use crate::data_contract::config::moderation::ContractModerationList;
+    use crate::data_contract::document_type::action_fees::ContractFeePot;
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use platform_value::Identifier;
 
@@ -838,6 +851,29 @@ mod tests {
                 )
             )),
             125
+        );
+        // Contract fee claims (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ContractFeesAlreadyClaimedThisEpochError(
+                ContractFeesAlreadyClaimedThisEpochError::new(
+                    group_id,
+                    ContractFeePot::Moderators,
+                    7
+                )
+            )),
+            126
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractFeesNothingToClaimError(
+                ContractFeesNothingToClaimError::new(group_id, ContractFeePot::Owner)
+            )),
+            127
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractFeeClaimNotAllowedError(
+                ContractFeeClaimNotAllowedError::new(group_id, ContractFeePot::Owner, identity_id)
+            )),
+            128
         );
     }
 }

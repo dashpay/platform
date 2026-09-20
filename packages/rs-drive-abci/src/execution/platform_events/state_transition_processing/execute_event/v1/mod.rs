@@ -1,6 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::platform_events::state_transition_processing::record_added_balance_outputs::AddedBalanceOutputsOrigin;
+use crate::execution::platform_events::state_transition_processing::validate_fees_of_event::v1::gas_sponsor_pays;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::signing_key_limits::SigningKeyLimits;
@@ -20,6 +21,7 @@ use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
 use drive::grovedb::Transaction;
+use drive::state_transition_action::batch::{action_fee_operations, action_fees_total};
 use drive::util::batch::DriveOperation;
 use std::collections::BTreeMap;
 
@@ -27,9 +29,14 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// v1 executes a `Paid` event whose signing key carries a budget or whose batch names a gas
-    /// sponsor, both recorded on the event from protocol version 14. Every other event, including
-    /// one signed by a key that only expires, is executed by v0.
+    /// v1 executes a `Paid` event whose signing key carries a budget, whose batch names a gas
+    /// sponsor, or whose batch owes document action fees, all recorded on the event from protocol
+    /// version 14. Every other event, including one signed by a key that only expires, is
+    /// executed by v0.
+    ///
+    /// Whoever pays the gas pays the document action fees: they move from the payer's balance to
+    /// the contract's fee pots with the batch's own operations, and count against a budgeted key
+    /// when its identity pays them. They are no part of the fee, which goes to the fee pools.
     ///
     /// The fee is charged to the gas sponsor when their balance covers the estimated fee, the
     /// same question fee validation asked, and to the identity otherwise. Storage refunds still
@@ -65,10 +72,11 @@ where
                 *gas_sponsor = None;
             }
         }
-        let (signed_by_budgeted_key, has_gas_sponsor) = match &event {
+        let (signed_by_budgeted_key, has_gas_sponsor, has_action_fees) = match &event {
             ExecutionEvent::Paid {
                 signing_key_limits,
                 gas_sponsor,
+                action_fees,
                 ..
             } => (
                 matches!(
@@ -79,10 +87,11 @@ where
                     })
                 ),
                 gas_sponsor.is_some(),
+                !action_fees.is_empty(),
             ),
-            _ => (false, false),
+            _ => (false, false, false),
         };
-        if !signed_by_budgeted_key && !has_gas_sponsor {
+        if !signed_by_budgeted_key && !has_gas_sponsor && !has_action_fees {
             return self.execute_event_v0(
                 event,
                 consensus_errors,
@@ -113,6 +122,7 @@ where
             user_fee_increase,
             signing_key_limits,
             gas_sponsor,
+            action_fees,
         } = event
         else {
             return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -131,11 +141,39 @@ where
                 )))?
                 .total_base_fee()
                 .saturating_add(additional_fixed_fee_cost.unwrap_or_default());
-            let paying_sponsor =
-                gas_sponsor.filter(|gas_sponsor| gas_sponsor.covers(estimated_required_balance));
+            let paying_sponsor = match gas_sponsor {
+                Some(gas_sponsor)
+                    if gas_sponsor_pays(
+                        &gas_sponsor,
+                        estimated_required_balance,
+                        &action_fees,
+                    )? =>
+                {
+                    Some(gas_sponsor)
+                }
+                _ => None,
+            };
             let payer_id = paying_sponsor
                 .map(|gas_sponsor| gas_sponsor.identity_id)
                 .unwrap_or(identity.id);
+
+            // Whoever pays the gas pays the document action fees: they leave the payer's
+            // balance for the contract's fee pots in the same batch as the documents. They are
+            // no part of the fee below, which goes to the fee pools.
+            //
+            // They are a price the contract set, like the price of a purchase, and move as that
+            // principal does: with the operations, before the gas is metered and debited. Fee
+            // validation admitted the batch only with a balance covering them and the estimated
+            // gas, so should the metered gas ever exceed its estimate, what falls short is the
+            // gas, by the rule that already governs a principal, and never the pots against
+            // credits that were not there.
+            let mut operations = operations;
+            operations.extend(action_fee_operations(payer_id, &action_fees)?);
+            let action_fees_owed_by_identity = if paying_sponsor.is_some() {
+                0
+            } else {
+                action_fees_total(&identity.id, &action_fees)?
+            };
 
             let credit_mints = DriveOperation::credit_mints(&operations);
             let mut individual_fee_result = self
@@ -181,6 +219,7 @@ where
             };
             let spent_from_key_budget = removed_balance
                 .unwrap_or_default()
+                .saturating_add(action_fees_owed_by_identity)
                 .saturating_add(fee_owed_by_identity);
 
             let outcome = self.drive.apply_balance_change_from_fee_to_identity(

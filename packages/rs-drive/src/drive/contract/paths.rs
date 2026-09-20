@@ -1,6 +1,7 @@
 use crate::drive::RootTree;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::ContractModerationList;
+use dpp::data_contract::document_type::action_fees::ContractFeePot;
 
 use crate::drive::votes::paths::{ACTIVE_POLLS_TREE_KEY, CONTESTED_RESOURCE_TREE_KEY};
 use dpp::data_contract::DataContract;
@@ -246,4 +247,59 @@ pub fn contract_moderation_list_path_vec(
         vec![CONTRACT_OTHER_KEY],
         contract_moderation_list_key(list).to_vec(),
     ]
+}
+
+/// The key under the prefunded specialized balances tree (`[40]`) of the sum tree holding every
+/// contract's owner fee pot (protocol version 14): `contract id -> SumItem(credits)`. The
+/// `owner` parts of the contract's document action fees accumulate there until the owner
+/// claims them. With the voting balances at `128` on top, `64` and `192` keep the tree
+/// balanced.
+pub const PREFUNDED_BALANCES_FOR_CONTRACT_OWNER_FEES: u8 = 64;
+
+/// The key under the prefunded specialized balances tree (`[40]`) of the sum tree holding every
+/// contract's moderators fee pot (protocol version 14): `contract id -> SumItem(credits)`. The
+/// `moderators` parts of the contract's document action fees accumulate there until a member
+/// of the moderation team claims them for the team.
+pub const PREFUNDED_BALANCES_FOR_CONTRACT_MODERATOR_FEES: u8 = 192;
+
+/// The key under a contract's other tree (`[64, id, 2]`) of the epoch its owner fee pot was last
+/// claimed in, a two-byte big-endian item (protocol version 14). Absent until the first claim.
+/// Below `128`, so the banlist stays on top of the other tree.
+pub const CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY: u8 = 32;
+
+/// The key under a contract's other tree (`[64, id, 2]`) of the epoch its moderators fee pot was
+/// last claimed in, a two-byte big-endian item (protocol version 14). Absent until the first
+/// claim. Below `128`, so the banlist stays on top of the other tree.
+pub const CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY: u8 = 96;
+
+/// The key, under the prefunded specialized balances tree, of the sum tree of a kind of pot.
+pub fn contract_fee_pots_key(pot: ContractFeePot) -> &'static [u8; 1] {
+    match pot {
+        ContractFeePot::Owner => &[PREFUNDED_BALANCES_FOR_CONTRACT_OWNER_FEES],
+        ContractFeePot::Moderators => &[PREFUNDED_BALANCES_FOR_CONTRACT_MODERATOR_FEES],
+    }
+}
+
+/// `[40, 64]` or `[40, 192]`: the sum tree holding every contract's pot of one kind.
+pub fn contract_fee_pots_path(pot: ContractFeePot) -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances),
+        contract_fee_pots_key(pot),
+    ]
+}
+
+/// `[40, 64]` or `[40, 192]`: the sum tree holding every contract's pot of one kind.
+pub fn contract_fee_pots_path_vec(pot: ContractFeePot) -> Vec<Vec<u8>> {
+    vec![
+        Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances).to_vec(),
+        contract_fee_pots_key(pot).to_vec(),
+    ]
+}
+
+/// The key, under a contract's other tree, of the epoch a pot was last claimed in.
+pub fn contract_last_fee_claim_epoch_key(pot: ContractFeePot) -> &'static [u8; 1] {
+    match pot {
+        ContractFeePot::Owner => &[CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY],
+        ContractFeePot::Moderators => &[CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY],
+    }
 }

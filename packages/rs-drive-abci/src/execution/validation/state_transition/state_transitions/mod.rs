@@ -31,6 +31,9 @@ pub mod data_contract_update;
 /// Module for banning and suspending identities on a moderated data contract.
 pub mod contract_user_moderation;
 
+/// Module for paying out the fee pots a data contract's document action fees collect in.
+pub mod contract_fee_claim;
+
 /// Module for voting from a masternode.
 pub mod masternode_vote;
 
