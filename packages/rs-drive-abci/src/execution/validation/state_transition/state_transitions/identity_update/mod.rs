@@ -2133,7 +2133,10 @@ mod tests {
         };
         let secp = Secp256k1::new();
         let mut rng = StdRng::seed_from_u64(1292);
+        // Two encryption keys, the newer one listed first: both write the encryption
+        // current-key alias, and the one naming the highest key id must win.
         let pairs: Vec<(u32, Purpose, Keypair)> = vec![
+            (4, Purpose::ENCRYPTION, Keypair::new(&secp, &mut rng)),
             (2, Purpose::ENCRYPTION, Keypair::new(&secp, &mut rng)),
             (3, Purpose::DECRYPTION, Keypair::new(&secp, &mut rng)),
         ];
@@ -2246,7 +2249,7 @@ mod tests {
             assert!(issues.is_empty(), "grovedb issues: {issues:?}");
         };
 
-        // Register both keys in one update: one current-key alias per purpose subtree.
+        // Register every key in one update: one current-key alias per purpose subtree.
         let signable = unsigned(1, 2, adds.clone(), vec![])
             .signable_bytes()
             .expect("expected signable bytes");
@@ -2266,21 +2269,27 @@ mod tests {
         apply(&registration, 1000);
         assert_no_grovedb_issues();
 
-        for (id, purpose, _) in &pairs {
+        for (id, _, _) in &pairs {
             assert_eq!(fetch_key(*id).contract_bounds(), Some(&bounds));
+        }
+        for (purpose, current, all) in [
+            (Purpose::ENCRYPTION, 4, vec![2, 4]),
+            (Purpose::DECRYPTION, 3, vec![3]),
+        ] {
             assert_eq!(
-                key_ids(*purpose, KeyKindRequestType::CurrentKeyOfKindRequest),
-                vec![*id],
-                "{purpose:?} current key"
+                key_ids(purpose, KeyKindRequestType::CurrentKeyOfKindRequest),
+                vec![current],
+                "{purpose:?} current key is the newest, whatever the order in the update"
             );
             assert_eq!(
-                key_ids(*purpose, KeyKindRequestType::AllKeysOfKindRequest),
-                vec![*id],
+                key_ids(purpose, KeyKindRequestType::AllKeysOfKindRequest),
+                all,
                 "{purpose:?} listing must not repeat the current key alias"
             );
         }
 
-        // Disabling the encryption key refreshes its references, including the alias.
+        // Disabling the older encryption key refreshes its references, including the alias,
+        // which keeps naming the newer key.
         let mut revocation = unsigned(2, 3, vec![], vec![2]);
         revocation.set_signature(
             signer
@@ -2302,7 +2311,7 @@ mod tests {
                 Purpose::ENCRYPTION,
                 KeyKindRequestType::CurrentKeyOfKindRequest
             ),
-            vec![2]
+            vec![4]
         );
         assert_eq!(
             key_ids(

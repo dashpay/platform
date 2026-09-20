@@ -1768,6 +1768,153 @@ mod tests {
         assert!(issues.is_empty(), "grovedb issues: {issues:?}");
     }
 
+    /// Two bound keys of one purpose registered in one batch both write the current-key alias
+    /// of their purpose subtree. The write naming the highest key id is the one kept, whatever
+    /// the order of the keys, and the batch passes consistency verification.
+    #[test]
+    fn test_current_key_of_two_bound_encryption_keys_added_in_one_batch_is_the_newest() {
+        use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+        use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+        use dpp::identity::contract_bounds::ContractBounds;
+        use dpp::identity::{KeyType, Purpose, SecurityLevel};
+        use dpp::tests::fixtures::get_dashpay_contract_fixture;
+        use rand::SeedableRng;
+
+        let platform_version = PlatformVersion::latest();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(4246);
+
+        for order in [[5u32, 7], [7, 5]] {
+            // The helper turns batching consistency verification on.
+            let drive = setup_drive_with_initial_state_structure(None);
+
+            let identity = Identity::random_identity(2, Some(4247), platform_version)
+                .expect("expected a random identity");
+            drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to insert identity");
+
+            // The DashPay contract opts `contactRequest` keys in with `2`; opt the contract
+            // itself in as well.
+            let mut contract = get_dashpay_contract_fixture(
+                Some(identity.id()),
+                1,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+            contract
+                .config_mut()
+                .set_requires_identity_encryption_bounded_key(Some(
+                    StorageKeyRequirements::MultipleReferenceToLatest,
+                ));
+            drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract");
+
+            for (bounds, first_key_id) in [
+                (ContractBounds::SingleContract { id: contract.id() }, 0),
+                (
+                    ContractBounds::SingleContractDocumentType {
+                        id: contract.id(),
+                        document_type_name: "contactRequest".to_string(),
+                    },
+                    10,
+                ),
+            ] {
+                let keys: Vec<IdentityPublicKey> = order
+                    .iter()
+                    .map(|id| {
+                        IdentityPublicKey::random_key_with_known_attributes(
+                            first_key_id + id,
+                            &mut rng,
+                            Purpose::ENCRYPTION,
+                            SecurityLevel::MEDIUM,
+                            KeyType::ECDSA_SECP256K1,
+                            Some(bounds.clone()),
+                            platform_version,
+                        )
+                        .expect("expected a bound key")
+                        .0
+                    })
+                    .collect();
+                drive
+                    .add_new_unique_keys_to_identity(
+                        identity.id().to_buffer(),
+                        keys,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to add both bound keys in one batch");
+            }
+
+            let key_ids = |request_type: KeyRequestType| -> KeyIDVec {
+                drive
+                    .fetch_identity_keys(
+                        IdentityKeysRequest {
+                            identity_id: identity.id().to_buffer(),
+                            request_type,
+                            limit: Some(16),
+                            offset: None,
+                        },
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch bound key ids")
+            };
+            let contract_id = contract.id().to_buffer();
+            assert_eq!(
+                key_ids(ContractBoundKey(
+                    contract_id,
+                    Purpose::ENCRYPTION,
+                    CurrentKeyOfKindRequest
+                )),
+                vec![7],
+                "keys added in the order {order:?}"
+            );
+            assert_eq!(
+                key_ids(ContractBoundKey(
+                    contract_id,
+                    Purpose::ENCRYPTION,
+                    AllKeysOfKindRequest
+                )),
+                vec![5, 7]
+            );
+            assert_eq!(
+                key_ids(ContractDocumentTypeBoundKey(
+                    contract_id,
+                    "contactRequest".to_string(),
+                    Purpose::ENCRYPTION,
+                    CurrentKeyOfKindRequest
+                )),
+                vec![17],
+                "document type keys added in the order {order:?}"
+            );
+
+            let issues = drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to verify grovedb");
+            assert!(issues.is_empty(), "grovedb issues: {issues:?}");
+        }
+    }
+
     /// A contract-level bound ENCRYPTION or DECRYPTION key stored under `Unique` is the only
     /// element of its purpose subtree, at the empty key. It has no key id entry, so listing the
     /// keys of that kind returns nothing and the key is read as the current one.

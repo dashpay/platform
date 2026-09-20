@@ -29,10 +29,11 @@ mod refresh_potential_contract_info_key_references;
 
 /// Coalesces the current-key alias writes of contract-info purpose subtrees in one batch.
 ///
-/// Every contract-bound authentication key covering a contract (or a contract document type)
-/// writes the alias at the empty key of the AUTHENTICATION purpose subtree, and disabling such a
-/// key refreshes it. An identity update can therefore queue several operations for one slot: two
-/// registered keys, or a registration and a revocation built by separate operation builders.
+/// Every bound key stored under `MultipleReferenceToLatest` (every authentication key, and an
+/// encryption or decryption key when the contract asks for it) writes the alias at the empty key
+/// of its purpose subtree, and disabling such a key refreshes it. An identity update can
+/// therefore queue several operations for one slot: two registered keys of one purpose, or a
+/// registration and a revocation built by separate operation builders.
 /// GroveDB rejects two operations on one slot under batching consistency verification, and would
 /// otherwise apply whichever came last. Keep exactly one per slot: an insertion beats a refresh
 /// (the insertion rewrites the element and its hash), the insertion naming the highest key id wins
@@ -73,14 +74,12 @@ pub(crate) fn coalesce_current_key_alias_operations(operations: &mut Vec<LowLeve
     });
 }
 
-/// Recognizes a bound authentication key's current-key alias write: a sibling reference inserted
-/// at, or refreshed at, the empty key of an AUTHENTICATION contract-info purpose subtree. Returns
-/// the subtree path and, for an insertion, the key id the alias names.
+/// Recognizes a bound key's current-key alias write: a sibling reference inserted at, or
+/// refreshed at, the empty key of a contract-info purpose subtree. Returns the subtree path and,
+/// for an insertion, the key id the alias names.
 ///
-/// Only that subtree is recognized. Encryption and decryption keys bound under
-/// `MultipleReferenceToLatest` keep their alias at the same slot of their own purpose subtree,
-/// but their writes are not coalesced: two writes to one such slot in a batch keep the
-/// last-write-wins semantics they have always had.
+/// A key bound under `Unique` sits at the same empty key but is a reference to the key itself,
+/// not a sibling reference, so it is not recognized.
 fn current_key_alias_write(
     operation: &LowLevelDriveOperation,
 ) -> Option<(&KeyInfoPath, Option<KeyID>)> {
@@ -92,7 +91,7 @@ fn current_key_alias_write(
     else {
         return None;
     };
-    if !key.is_empty() || !is_bound_authentication_keys_path(path) {
+    if !key.is_empty() || !is_bound_keys_purpose_path(path) {
         return None;
     }
     match op {
@@ -110,17 +109,24 @@ fn current_key_alias_write(
     }
 }
 
-/// Whether `path` is the AUTHENTICATION purpose subtree of an identity's contract-info group:
-/// `Identities / <identity id> / IdentityContractInfo / <contract id or contract id and document
-/// type name> / ContractInfoKeysKey / AUTHENTICATION`.
-fn is_bound_authentication_keys_path(path: &KeyInfoPath) -> bool {
+/// Whether `path` is a purpose subtree of an identity's contract-info group, for one of the
+/// purposes a bound key can have: `Identities / <identity id> / IdentityContractInfo / <contract
+/// id, contract id and document type name, or contract group id> / ContractInfoKeysKey /
+/// <AUTHENTICATION, ENCRYPTION or DECRYPTION>`.
+fn is_bound_keys_purpose_path(path: &KeyInfoPath) -> bool {
     let segments = path.to_path_refs();
     segments.len() == 6
         && segments[0] == [RootTree::Identities as u8]
         && segments[1].len() == 32
         && segments[2] == [IdentityRootStructure::IdentityContractInfo as u8]
         && segments[4] == [ContractInfoStructure::ContractInfoKeysKey as u8]
-        && segments[5] == [Purpose::AUTHENTICATION as u8]
+        && [
+            Purpose::AUTHENTICATION,
+            Purpose::ENCRYPTION,
+            Purpose::DECRYPTION,
+        ]
+        .iter()
+        .any(|purpose| segments[5] == [*purpose as u8])
 }
 
 pub enum IdentityDataContractKeyApplyInfo {
@@ -349,7 +355,7 @@ mod tests {
     }
 
     #[test]
-    fn should_coalesce_only_bound_authentication_alias_writes() {
+    fn should_coalesce_only_bound_current_key_alias_writes() {
         let identity_id = [1u8; 32];
         let contract_id = [2u8; 32];
         let document_type_group = [contract_id.as_slice(), b"preorder"].concat();
@@ -369,11 +375,23 @@ mod tests {
         // at its empty key is not a slot and must not be recognized.
         let keys_level_path =
             identity_contract_info_group_keys_path_vec(&identity_id, &contract_id);
-        // The alias slot of another purpose is not coalesced either.
+        // Encryption and decryption keys bound under `MultipleReferenceToLatest` keep the same
+        // slot in their own purpose subtree.
         let encryption_purpose_path = identity_contract_info_group_path_key_purpose_vec(
             &identity_id,
             &contract_id,
             Purpose::ENCRYPTION,
+        );
+        let decryption_purpose_path = identity_contract_info_group_path_key_purpose_vec(
+            &identity_id,
+            &contract_id,
+            Purpose::DECRYPTION,
+        );
+        // A key of another purpose cannot be bound, so its path is not a slot.
+        let transfer_purpose_path = identity_contract_info_group_path_key_purpose_vec(
+            &identity_id,
+            &contract_id,
+            Purpose::TRANSFER,
         );
 
         let mut operations = vec![
@@ -385,7 +403,11 @@ mod tests {
             alias_insert(keys_level_path.clone(), 6),
             alias_refresh(encryption_purpose_path.clone(), 7),
             alias_insert(encryption_purpose_path.clone(), 8),
+            alias_insert(decryption_purpose_path.clone(), 12),
+            alias_insert(transfer_purpose_path.clone(), 13),
             alias_insert(document_type_auth_path.clone(), 10),
+            alias_insert(decryption_purpose_path.clone(), 11),
+            alias_insert(transfer_purpose_path.clone(), 14),
             alias_refresh(contract_auth_path.clone(), 4),
         ];
 
@@ -397,12 +419,14 @@ mod tests {
                 alias_insert(keys_level_path.clone(), 5),
                 alias_insert(contract_auth_path, 3),
                 alias_insert(keys_level_path, 6),
-                alias_refresh(encryption_purpose_path.clone(), 7),
                 alias_insert(encryption_purpose_path, 8),
+                alias_insert(decryption_purpose_path, 12),
+                alias_insert(transfer_purpose_path.clone(), 13),
                 alias_insert(document_type_auth_path, 10),
+                alias_insert(transfer_purpose_path, 14),
             ],
-            "each AUTHENTICATION slot keeps the insertion naming its highest key id, in place; \
-             keys-level and other-purpose writes are untouched"
+            "each slot keeps the insertion naming its highest key id, in place; keys-level \
+             writes and the paths of purposes that cannot be bound are untouched"
         );
     }
 
