@@ -2,6 +2,7 @@
 
 import contextlib
 import hashlib
+import http.client
 import io
 import json
 import os
@@ -183,6 +184,38 @@ class GitHubTests(unittest.TestCase):
         with self.assertRaisesRegex(worker.ReleaseError, "reconcile"):
             worker.GitHub("secret", opener=opener).request("POST", "pulls", {})
         self.assertEqual(opener.call_count, 1)
+
+    def test_retries_invalid_json_and_encoding_on_reads(self):
+        for broken in (b'{truncated', b'<html>gateway</html>', b'\xff'):
+            with self.subTest(broken=broken):
+                opener = mock.Mock(side_effect=[io.BytesIO(broken), io.BytesIO(b'[]')])
+                sleep = mock.Mock()
+                self.assertEqual(worker.GitHub("secret", opener=opener, sleep=sleep).request("GET", "pulls"), [])
+                self.assertEqual(opener.call_count, 2)
+                sleep.assert_called_once_with(1)
+
+    def test_invalid_read_response_has_bounded_retries_and_a_clear_error(self):
+        opener = mock.Mock(side_effect=lambda *_args, **_kwargs: io.BytesIO(b'{truncated'))
+        sleep = mock.Mock()
+        with self.assertRaisesRegex(worker.ReleaseError, "GET response could not be read or decoded"):
+            worker.GitHub("secret", opener=opener, sleep=sleep).request("GET", "pulls")
+        self.assertEqual(opener.call_count, 4)
+        self.assertEqual(sleep.call_args_list, [mock.call(1), mock.call(2), mock.call(4)])
+
+    def test_retries_connection_failure_while_reading_response_body(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.side_effect = http.client.IncompleteRead(b'partial')
+        opener = mock.Mock(side_effect=[response, io.BytesIO(b'[]')])
+        self.assertEqual(worker.GitHub("secret", opener=opener, sleep=lambda _: None).request("GET", "pulls"), [])
+        self.assertEqual(opener.call_count, 2)
+
+    def test_does_not_repeat_writes_after_an_unreadable_response(self):
+        for method in ("POST", "PATCH"):
+            with self.subTest(method=method):
+                opener = mock.Mock(return_value=io.BytesIO(b'{truncated'))
+                with self.assertRaisesRegex(worker.ReleaseError, "reconcile"):
+                    worker.GitHub("secret", opener=opener).request(method, "pulls", {})
+                self.assertEqual(opener.call_count, 1)
 
     def test_pr_listing_is_paginated(self):
         api = worker.GitHub("secret")

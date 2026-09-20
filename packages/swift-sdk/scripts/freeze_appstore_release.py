@@ -12,6 +12,7 @@ import argparse
 import base64
 import contextlib
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -210,11 +211,13 @@ class GitHub:
                     self.sleep(min(30, 2 ** attempt))
                     continue
                 raise ReleaseError(f"GitHub {method} failed with HTTP {error.code}") from error
-            except urllib.error.URLError as error:
+            except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException,
+                    json.JSONDecodeError, UnicodeDecodeError) as error:
                 if method == "GET" and attempt < 3:
                     self.sleep(2 ** attempt)
                     continue
-                raise ReleaseError("GitHub request failed; retry the workflow to reconcile its state") from error
+                raise ReleaseError(f"GitHub {method} response could not be read or decoded; "
+                                   "retry the workflow to reconcile its state") from error
 
     def pull_requests(self, branch):
         results = []
