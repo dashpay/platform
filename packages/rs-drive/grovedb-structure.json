@@ -1028,6 +1028,47 @@
             "presence": "always",
             "source": "packages/rs-drive/src/drive/identity/mod.rs",
             "description": "One identity.",
+            "states": [
+              {
+                "name": "created",
+                "title": "As created",
+                "description": "One batch creates the identity with its nonce, its negative credit, its revision, its keys and the key reference trees.",
+                "keys": [
+                  "nonce",
+                  "negative_credit",
+                  "keys",
+                  "key_references",
+                  "revision"
+                ]
+              },
+              {
+                "name": "used_with_a_contract",
+                "title": "Used with a contract",
+                "description": "The identity's first state transition on a data contract adds the contract info tree, which holds its nonce for that contract.",
+                "keys": [
+                  "contract_info",
+                  "nonce",
+                  "negative_credit",
+                  "keys",
+                  "key_references",
+                  "revision"
+                ]
+              },
+              {
+                "name": "budgeted_key_and_contract",
+                "title": "Created with a budgeted key, then used with a contract",
+                "description": "An identity created with a budgeted key gets the key budgets tree in its creation batch (protocol version 14). Its first use with a contract then adds the contract info tree.",
+                "keys": [
+                  "contract_info",
+                  "nonce",
+                  "negative_credit",
+                  "keys",
+                  "key_references",
+                  "revision",
+                  "key_budgets"
+                ]
+              }
+            ],
             "children": [
               {
                 "id": "identities.identity.contract_info",
@@ -1889,6 +1930,44 @@
             "presence": "always",
             "source": "packages/rs-drive/src/drive/credit_pools/epochs/epoch_key_constants.rs",
             "description": "One epoch. Trees for 50 eras of epochs are created at genesis so storage fees can be spread forward.",
+            "states": [
+              {
+                "name": "future",
+                "title": "Future",
+                "description": "Created at genesis with every epoch of the next 50 eras, so that storage fees can be spread forward to it. It holds only its share of those fees.",
+                "keys": [
+                  "storage_fees"
+                ]
+              },
+              {
+                "name": "running",
+                "title": "Running, or ended and not paid yet",
+                "description": "Started by its first block, which in one batch writes the start fields, the protocol version, the fee multiplier and the proposers tree, and pays the block's processing fees in. The epoch stays like this after it ends, until its proposers are paid.",
+                "keys": [
+                  "start_block_core_height",
+                  "start_block_height",
+                  "proposers",
+                  "processing_fees",
+                  "storage_fees",
+                  "start_time",
+                  "protocol_version",
+                  "fee_multiplier"
+                ]
+              },
+              {
+                "name": "paid",
+                "title": "Paid out",
+                "description": "One batch pays the proposers, deletes the proposers tree and both fee items, and writes the finished epoch info. The summary exists since protocol version 9; before that a paid epoch kept its start fields only.",
+                "keys": [
+                  "start_block_core_height",
+                  "finished_epoch_info",
+                  "start_block_height",
+                  "start_time",
+                  "protocol_version",
+                  "fee_multiplier"
+                ]
+              }
+            ],
             "children": [
               {
                 "id": "pools.epoch.start_block_core_height",
@@ -1922,10 +2001,10 @@
                   "Item"
                 ],
                 "value": "serialized FinalizedEpochInfo",
-                "since": 1,
+                "since": 9,
                 "presence": "lazy",
                 "source": "packages/rs-drive/src/drive/credit_pools/epochs/epoch_key_constants.rs",
-                "description": "A summary written when the epoch is paid out.",
+                "description": "A summary of the epoch, written by the batch that pays it out and deletes its proposers and fee items.",
                 "children": []
               },
               {
@@ -4742,6 +4821,215 @@
         }
       }
     },
+    "contract_groups.groups.group": {
+      "origin": "fixture contract_groups_and_bound_keys@14",
+      "tree": {
+        "hex": "02",
+        "left": {
+          "hex": "01",
+          "left": {
+            "hex": "00"
+          }
+        },
+        "right": {
+          "hex": "03"
+        }
+      }
+    },
+    "contract_groups.members.contract": {
+      "origin": "fixture contract_groups_and_bound_keys@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        },
+        "right": {
+          "hex": "02"
+        }
+      }
+    },
+    "contracts.contract": {
+      "origin": "fixture contracts_with_documents@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        },
+        "right": {
+          "hex": "02"
+        }
+      }
+    },
+    "contracts.contract.other": {
+      "origin": "fixture moderated_contract@14",
+      "tree": {
+        "hex": "80",
+        "left": {
+          "hex": "40"
+        },
+        "right": {
+          "hex": "c0"
+        }
+      }
+    },
+    "group_actions.contract.group": {
+      "origin": "fixture tokens_and_group_actions@14",
+      "tree": {
+        "hex": "4d",
+        "left": {
+          "hex": "49"
+        },
+        "right": {
+          "hex": "58"
+        }
+      }
+    },
+    "group_actions.contract.group.active.action": {
+      "origin": "fixture tokens_and_group_actions@14",
+      "tree": {
+        "hex": "53",
+        "left": {
+          "hex": "49"
+        }
+      }
+    },
+    "group_actions.contract.group.closed.action": {
+      "origin": "fixture tokens_and_group_actions@14",
+      "tree": {
+        "hex": "53",
+        "left": {
+          "hex": "49"
+        }
+      }
+    },
+    "identities.identity": {
+      "origin": "fixture contract_groups_and_bound_keys@14",
+      "tree": {
+        "hex": "80",
+        "left": {
+          "hex": "40",
+          "left": {
+            "hex": "20"
+          },
+          "right": {
+            "hex": "60"
+          }
+        },
+        "right": {
+          "hex": "c0",
+          "left": {
+            "hex": "a0"
+          },
+          "right": {
+            "hex": "e0"
+          }
+        }
+      },
+      "states": [
+        {
+          "state": "created",
+          "origin": "fixture identities@14",
+          "tree": {
+            "hex": "80",
+            "left": {
+              "hex": "60",
+              "left": {
+                "hex": "40"
+              }
+            },
+            "right": {
+              "hex": "c0",
+              "left": {
+                "hex": "a0"
+              }
+            }
+          }
+        },
+        {
+          "state": "used_with_a_contract",
+          "origin": "fixture identities@14",
+          "tree": {
+            "hex": "80",
+            "left": {
+              "hex": "40",
+              "left": {
+                "hex": "20"
+              },
+              "right": {
+                "hex": "60"
+              }
+            },
+            "right": {
+              "hex": "c0",
+              "left": {
+                "hex": "a0"
+              }
+            }
+          }
+        },
+        {
+          "state": "budgeted_key_and_contract",
+          "origin": "fixture contract_groups_and_bound_keys@14",
+          "tree": {
+            "hex": "80",
+            "left": {
+              "hex": "40",
+              "left": {
+                "hex": "20"
+              },
+              "right": {
+                "hex": "60"
+              }
+            },
+            "right": {
+              "hex": "c0",
+              "left": {
+                "hex": "a0"
+              },
+              "right": {
+                "hex": "e0"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "identities.identity.contract_info.bound": {
+      "origin": "fixture contract_groups_and_bound_keys@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        }
+      }
+    },
+    "identities.identity.key_references": {
+      "origin": "fixture identities@14",
+      "tree": {
+        "hex": "03",
+        "left": {
+          "hex": "00"
+        },
+        "right": {
+          "hex": "05"
+        }
+      }
+    },
+    "identities.identity.key_references.authentication": {
+      "origin": "fixture identities@14",
+      "tree": {
+        "hex": "02",
+        "left": {
+          "hex": "01",
+          "left": {
+            "hex": "00"
+          }
+        },
+        "right": {
+          "hex": "03"
+        }
+      }
+    },
     "misc": {
       "origin": "genesis@14",
       "tree": {
@@ -4750,6 +5038,92 @@
           "hex": "44"
         }
       }
+    },
+    "pools.epoch": {
+      "origin": "fixture current_epoch@14",
+      "tree": {
+        "hex": "6d",
+        "left": {
+          "hex": "68",
+          "left": {
+            "hex": "63"
+          }
+        },
+        "right": {
+          "hex": "76",
+          "left": {
+            "hex": "73",
+            "left": {
+              "hex": "70"
+            },
+            "right": {
+              "hex": "74"
+            }
+          },
+          "right": {
+            "hex": "78"
+          }
+        }
+      },
+      "states": [
+        {
+          "state": "future",
+          "origin": "fixture current_epoch@14",
+          "tree": {
+            "hex": "73"
+          }
+        },
+        {
+          "state": "running",
+          "origin": "fixture current_epoch@14",
+          "tree": {
+            "hex": "6d",
+            "left": {
+              "hex": "68",
+              "left": {
+                "hex": "63"
+              }
+            },
+            "right": {
+              "hex": "76",
+              "left": {
+                "hex": "73",
+                "left": {
+                  "hex": "70"
+                },
+                "right": {
+                  "hex": "74"
+                }
+              },
+              "right": {
+                "hex": "78"
+              }
+            }
+          }
+        },
+        {
+          "state": "paid",
+          "origin": "fixture paid_epoch@14",
+          "tree": {
+            "hex": "74",
+            "left": {
+              "hex": "66",
+              "left": {
+                "hex": "63"
+              },
+              "right": {
+                "hex": "68"
+              }
+            },
+            "right": {
+              "hex": "76",
+              "right": {
+                "hex": "78"
+              }
+            }
+          }
+        }
+      ]
     },
     "root": {
       "origin": "genesis@14",
@@ -4874,6 +5248,15 @@
         }
       }
     },
+    "tokens.distributions.perpetual.token": {
+      "origin": "fixture token_distributions_unclaimed@14",
+      "tree": {
+        "hex": "c0",
+        "left": {
+          "hex": "80"
+        }
+      }
+    },
     "tokens.distributions.timed": {
       "origin": "genesis@14",
       "tree": {
@@ -4913,6 +5296,24 @@
         "hex": "70",
         "left": {
           "hex": "69"
+        }
+      }
+    },
+    "votes.contested_resource.active_polls.contract.document_type": {
+      "origin": "fixture contested_documents@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        }
+      }
+    },
+    "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender": {
+      "origin": "fixture contested_documents@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
         }
       }
     },

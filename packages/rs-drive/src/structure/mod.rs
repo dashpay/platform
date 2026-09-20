@@ -161,6 +161,22 @@ pub enum Presence {
     UntilDeleted,
 }
 
+/// One of the states the layer below a node goes through. A layer that gains
+/// and loses keys over its life, as an epoch's does when it starts and when it
+/// is paid out, holds a different set of keys in each state, and so its Merk
+/// has a different shape in each.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct LayerState {
+    /// The identifier of the state within the node, for example `running`
+    pub name: String,
+    /// A short human readable name
+    pub title: String,
+    /// What the state means, and what moves the layer into it
+    pub description: String,
+    /// The segments of the children the layer holds in this state
+    pub keys: Vec<String>,
+}
+
 /// One level of the GroveDB structure.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct StructureNode {
@@ -213,6 +229,10 @@ pub struct StructureNode {
     /// trees, MMR trees, bulk append trees); says what they hold instead.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub opaque: Option<String>,
+    /// The states the layer below goes through, in the order it goes through
+    /// them. Empty when the layer holds the same keys all its life.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub states: Vec<LayerState>,
     /// The levels below
     pub children: Vec<StructureNode>,
 }

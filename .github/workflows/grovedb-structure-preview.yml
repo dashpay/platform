@@ -85,7 +85,10 @@ jobs:
             const now = index(head);
             const added = [...now.nodes.keys()].filter((id) => !old.nodes.has(id));
             const removed = [...old.nodes.keys()].filter((id) => !now.nodes.has(id));
-            const changed = [...now.nodes.keys()].filter((id) => old.nodes.has(id) && old.nodes.get(id) !== now.nodes.get(id));
+            // A node also changed when the recorded Merk shape of its layer did
+            const shapeOf = (doc, id) => JSON.stringify(doc && doc.layer_shapes ? doc.layer_shapes[id] : undefined);
+            const changed = [...now.nodes.keys()].filter((id) => old.nodes.has(id)
+              && (old.nodes.get(id) !== now.nodes.get(id) || shapeOf(before, id) !== shapeOf(head, id)));
             // A subtree that is new or gone as a whole is listed once, by its top
             const tops = (ids, side) => ids.filter((id) => !ids.includes(side.parents.get(id)));
             const list = (title, ids, all) => (ids.length === 0 ? [] : [

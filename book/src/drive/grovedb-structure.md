@@ -140,10 +140,46 @@ nodes of a Merk, but a proof does: the proof of a query for everything in a
 layer lists every node and how they connect, so replaying its operations
 rebuilds the tree. The viewer draws it when you switch a layer to *Merk tree*.
 
-The shape depends on the order of insertion, not only on the keys. The
-recorded shapes are those of a fresh chain at the latest protocol version
-(`"origin": "genesis@14"`). A chain that upgraded through earlier versions
-inserted the same keys in another order and can differ.
+The shape depends on the order of insertion, not only on the keys. For a
+layer reached through fixed keys only, the recorded shape is that of a fresh
+chain at the latest protocol version (`"origin": "genesis@14"`). A chain that
+upgraded through earlier versions inserted the same keys in another order and
+can differ.
+
+A layer below a template exists once per identity, contract, epoch and so on.
+Its shape is recorded from one instance: the fullest one the test fixtures
+build (`"origin": "fixture contracts_with_documents@14"`). That is where
+layouts designed around the Merk show: a contract's layer keeps its documents
+on top with the contract and everything else below, the `other` tree keeps
+the banlist in the middle, and an identity's seven keys form a full tree with
+the keys at the root. Another instance can differ when it holds fewer keys or
+got them in another order.
+
+Some layers gain and lose keys over their life, and then one shape is not
+enough. An epoch's layer is created at genesis holding only its storage fees;
+its first block adds the start fields, the proposers tree and the processing
+fees in one batch; and the batch that pays it out deletes the proposers and
+both fee items and writes the finished epoch info. No epoch ever holds all nine
+keys. A node declares such **states** in the order the layer goes through
+them, each with a title, what it means and what moves the layer into it, and
+the keys it holds then:
+
+```rust
+.state(
+    "paid",
+    "Paid out",
+    "One batch pays the proposers, deletes the proposers tree and both fee \
+     items, and writes the finished epoch info.",
+    &["start_block_core_height", "finished_epoch_info", "start_block_height", ...],
+)
+```
+
+The fixtures record one shape per state, and a state's shape must come from an
+instance holding exactly the keys the state declares. The viewer shows them as
+*State 0*, *State 1*, ... with their explanations. What matters for a faithful
+shape is that the fixture writes the same keys in the same batches as the
+block pipeline does, since a Merk batch of several keys gives another tree
+than the same keys written one at a time.
 
 ## Pull requests that change the structure
 

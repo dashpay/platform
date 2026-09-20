@@ -79,6 +79,33 @@ pub fn lint(root: &StructureNode, repository_root: Option<&Path>) -> Vec<String>
             ));
         }
 
+        if node.states.len() == 1 {
+            problems.push(format!("{}: a single state says nothing", node.id));
+        }
+        let mut state_names = BTreeSet::new();
+        for state in &node.states {
+            if !state_names.insert(state.name.as_str()) {
+                problems.push(format!("{}: state `{}` listed twice", node.id, state.name));
+            }
+            if state.description.is_empty() || state.title.is_empty() {
+                problems.push(format!(
+                    "{}: state `{}` needs a title and a description",
+                    node.id, state.name
+                ));
+            }
+            for key in &state.keys {
+                let fixed_child = node.children.iter().any(|child| {
+                    child.segment == *key && matches!(child.key, KeySpec::Fixed { .. })
+                });
+                if !fixed_child {
+                    problems.push(format!(
+                        "{}: state `{}` names `{key}`, which is not a fixed key of the layer",
+                        node.id, state.name
+                    ));
+                }
+            }
+        }
+
         lint_layer(node, &mut problems);
     });
 

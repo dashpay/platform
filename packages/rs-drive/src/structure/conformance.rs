@@ -119,9 +119,28 @@ pub struct ConformanceReport {
     pub visited: BTreeSet<NodeId>,
     /// The kinds of element flags found on the elements of each node
     pub flags: BTreeMap<NodeId, BTreeSet<FlagsKind>>,
+    /// For each node whose layer holds fixed keys only: the path of the
+    /// instance of the layer that holds the most of them, and how many. An
+    /// identity's layer is one such layer per identity; this names the fullest.
+    pub fullest_layers: BTreeMap<NodeId, (usize, Vec<Vec<u8>>)>,
 }
 
 impl ConformanceReport {
+    /// Keeps the fuller of two instances of a node's layer, and of two equally
+    /// full ones the one whose path sorts first, so the choice is stable
+    fn note_layer(&mut self, node: &NodeId, count: usize, path: &[Vec<u8>]) {
+        let fuller = match self.fullest_layers.get(node) {
+            Some((best, best_path)) => {
+                count > *best || (count == *best && path < best_path.as_slice())
+            }
+            None => true,
+        };
+        if fuller {
+            self.fullest_layers
+                .insert(node.clone(), (count, path.to_vec()));
+        }
+    }
+
     /// Panics with every violation listed if there is any
     pub fn assert_conforms(&self) {
         assert!(
@@ -197,8 +216,17 @@ impl Walk<'_> {
             &self.platform_version.drive,
         )?;
 
+        let elements = elements.to_key_elements();
+        let fixed_keys_only = described.len() > 1
+            && described
+                .iter()
+                .all(|child| matches!(child.key, KeySpec::Fixed { .. }));
+        if fixed_keys_only {
+            report.note_layer(&node.id, elements.len(), path);
+        }
+
         let mut found = BTreeSet::new();
-        for (key, element) in elements.to_key_elements() {
+        for (key, element) in elements {
             let kind = ElementKind::of(&element);
             let candidates = candidates(described, &key, kind);
             let Some(first) = candidates.first() else {
@@ -230,6 +258,9 @@ impl Walk<'_> {
             report.visited.append(&mut chosen.1.visited);
             for (id, kinds) in chosen.1.flags {
                 report.flags.entry(id).or_default().extend(kinds);
+            }
+            for (id, (count, layer_path)) in chosen.1.fullest_layers {
+                report.note_layer(&id, count, &layer_path);
             }
         }
 
