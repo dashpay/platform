@@ -995,6 +995,14 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
     fn immutable_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentType::V0(_) => &NO_IMMUTABLE_FIELDS,
@@ -1103,6 +1111,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
     fn immutable_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentTypeRef::V0(_) => &NO_IMMUTABLE_FIELDS,
@@ -1174,6 +1190,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.documents_can_be_deleted_by_moderators(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
         }
     }
 

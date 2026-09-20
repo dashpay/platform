@@ -133,6 +133,13 @@ pub struct DocumentTypeV2 {
     /// declares moderation, and refuses it on a type that keeps history, is
     /// indexOnly or restricts document creation.
     pub(in crate::data_contract) documents_can_be_deleted_by_moderators: bool,
+    /// For how many seconds after a document's last modification the moderators
+    /// may still delete it (`canBeDeletedByModeratorsFor` keyword, protocol
+    /// version 14). `None` means no limit. Only ever `Some` beside
+    /// `documents_can_be_deleted_by_moderators`, on a type that requires the
+    /// clock: `$updatedAt`, or `$createdAt` when its documents never change
+    /// (`apply_can_be_deleted_by_moderators_for`).
+    pub(in crate::data_contract) documents_can_be_deleted_by_moderators_for: Option<u32>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -205,6 +212,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             index_only: false,
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
+            documents_can_be_deleted_by_moderators_for: None,
         }
     }
 }
@@ -249,6 +257,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             index_only: false,
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
+            documents_can_be_deleted_by_moderators_for: None,
         }
     }
 }

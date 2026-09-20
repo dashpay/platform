@@ -289,6 +289,8 @@ fn try_from_schema_generation_3(
     let index_only = common::parse_index_only_keyword(&schema)?;
     let action_fees = DocumentActionFees::try_from_document_schema(&schema, name)?;
     let can_be_deleted_by_moderators = common::parse_can_be_deleted_by_moderators_keyword(&schema)?;
+    let can_be_deleted_by_moderators_for =
+        common::parse_can_be_deleted_by_moderators_for_keyword(&schema)?;
     let immutable_fields =
         common::parse_property_name_list_keyword(&schema, name, property_names::IMMUTABLE)?;
     let immutable_fields_allow_setting = common::parse_property_name_list_keyword(
@@ -381,6 +383,11 @@ fn try_from_schema_generation_3(
         &mut v2,
         can_be_deleted_by_moderators,
         data_contact_config,
+        name,
+    )?;
+    common::apply_can_be_deleted_by_moderators_for(
+        &mut v2,
+        can_be_deleted_by_moderators_for,
         name,
     )?;
 

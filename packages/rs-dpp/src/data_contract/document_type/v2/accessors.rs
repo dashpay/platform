@@ -236,6 +236,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         self.documents_can_be_deleted_by_moderators
     }
 
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        self.documents_can_be_deleted_by_moderators_for
+    }
+
     fn immutable_fields(&self) -> &BTreeSet<String> {
         &self.immutable_fields
     }

@@ -19,7 +19,8 @@ use crate::consensus::state::contract_moderation::{
     ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
     ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
-    DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
+    DocumentModerationWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
+    IdentityNotContractModeratorError,
 };
 use crate::consensus::state::contract_group::{
     ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
@@ -545,6 +546,10 @@ pub enum StateError {
 
     #[error(transparent)]
     DocumentActionFeeMultiplierNotToleratedError(DocumentActionFeeMultiplierNotToleratedError),
+
+    // The moderators' deletion window (protocol version 14).
+    #[error(transparent)]
+    DocumentModerationWindowElapsedError(DocumentModerationWindowElapsedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -921,7 +926,7 @@ mod tests {
             )),
             130
         );
-        // Document action fee agreements (protocol version 14): the tail of the enum.
+        // Document action fee agreements (protocol version 14).
         let declared_fee = DocumentActionFee {
             owner: 1,
             moderators: 2,
@@ -967,6 +972,13 @@ mod tests {
                 )
             )),
             133
+        );
+        // The moderators' deletion window (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentModerationWindowElapsedError(
+                DocumentModerationWindowElapsedError::new(group_id, identity_id, 1, 2, 3)
+            )),
+            134
         );
     }
 }

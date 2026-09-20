@@ -427,6 +427,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     fee is charged.
 ///     The moderation method table, the verify table and the query table gain
 ///     the document removal methods (`getContractDocumentRemovals`).
+///     `canBeDeletedByModeratorsFor` bounds the deletion in time: so many
+///     seconds after a document's last modification (`$updatedAt`, or
+///     `$createdAt` on a type whose documents never change; the type must
+///     require its clock), past which no moderator deletes it, the
+///     contract owner included (`DocumentModerationWindowElapsedError`); a
+///     document's own owner still deletes it as `canBeDeleted` allows. A
+///     replace opens the window again. Fixed with the type, like the flag.
+///
 /// 20. **Document transitions agree to their action fee**: version 2 of the
 ///     document base transition, the default from this version
 ///     (`STATE_TRANSITION_SERIALIZATION_VERSIONS_V3`) and inactive before it

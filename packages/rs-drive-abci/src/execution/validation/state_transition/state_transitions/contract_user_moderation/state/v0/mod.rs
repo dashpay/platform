@@ -14,8 +14,8 @@ use dpp::consensus::state::contract_moderation::{
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractModerationTargetNotFoundError, ContractSuspensionNotInFutureError,
     ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
-    ContractUserNotSuspendedError, DocumentTypeNotDeletableByModeratorsError,
-    IdentityNotContractModeratorError,
+    ContractUserNotSuspendedError, DocumentModerationWindowElapsedError,
+    DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
 };
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::state_error::StateError;
@@ -41,6 +41,10 @@ use drive::state_transition_action::contract::contract_user_moderation::Contract
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use drive::state_transition_action::StateTransitionAction;
 use std::sync::Arc;
+
+/// `canBeDeletedByModeratorsFor` is declared in seconds, as the other durations of a document
+/// type are; block time, `$updatedAt` and `$createdAt` are in milliseconds.
+const MILLIS_PER_SECOND: u64 = 1_000;
 
 pub(in crate::execution::validation::state_transition::state_transitions::contract_user_moderation) trait ContractUserModerationStateTransitionStateValidationV0
 {
@@ -214,7 +218,8 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
 
 /// A document deletion: the document type exists and says moderators may delete its
 /// documents, the signer is the contract's owner or one of its moderators, the document
-/// exists, and it is not the owner's or a moderator's. Every refusal is paid for by
+/// exists, it is not the owner's or a moderator's, and it was last modified within the window
+/// the document type gives its moderators, if it gives one. Every refusal is paid for by
 /// bumping the signer's contract nonce.
 ///
 /// The action carries the contract and the document's owner, so Drive deletes the document
@@ -297,6 +302,35 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
         return refuse(
             ContractModerationTargetNotAllowedError::new(contract_id, document_owner_id).into(),
         );
+    }
+
+    // A document type may give its moderators a window: so many seconds after a document's
+    // last modification, past which the document is settled and no moderator deletes it (its
+    // own owner's deletion is `canBeDeleted`'s business, at any age). The last modification is
+    // `$updatedAt`, which a replace moves, opening the window again since what it wrote is new
+    // content; a type whose documents never change may carry `$createdAt` alone, and that is
+    // then the clock. The type requires one of the two, so every document carries it; one that
+    // carried neither would read as modified at time zero, which is settled: the refusal that
+    // protects the author.
+    if let Some(window_seconds) = document_type.documents_can_be_deleted_by_moderators_for() {
+        let last_modified_at = document
+            .updated_at()
+            .or(document.created_at())
+            .unwrap_or_default();
+        let settled_at = last_modified_at
+            .saturating_add(u64::from(window_seconds).saturating_mul(MILLIS_PER_SECOND));
+        if block_info.time_ms > settled_at {
+            return refuse(
+                DocumentModerationWindowElapsedError::new(
+                    contract_id,
+                    document_id,
+                    last_modified_at,
+                    window_seconds,
+                    block_info.time_ms,
+                )
+                .into(),
+            );
+        }
     }
 
     // The record this deletion leaves is always new: a document id is produced at most once

@@ -27,10 +27,11 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CAN_BE_DELETED_BY_MODERATORS, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE,
-    DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
-    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE,
-    RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
+    CAN_BE_DELETED, CAN_BE_DELETED_BY_MODERATORS, CAN_BE_DELETED_BY_MODERATORS_FOR,
+    CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY,
+    DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY, KEEPS_PRICING_HISTORY,
+    KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
+    RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
@@ -41,6 +42,7 @@ use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
+use crate::document::property_names::{CREATED_AT, UPDATED_AT};
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -2061,6 +2063,88 @@ pub(super) fn apply_can_be_deleted_by_moderators(
     }
 
     document_type.documents_can_be_deleted_by_moderators = true;
+    Ok(())
+}
+
+/// Reads the doctype-level `canBeDeletedByModeratorsFor` keyword, a number of
+/// seconds, before the core parse consumes `schema`. Its shape is enforced here
+/// and not left to the meta-schema: a stored contract is read without one, and
+/// no doctype-level keyword of this generation is read more leniently there.
+pub(super) fn parse_can_be_deleted_by_moderators_for_keyword(
+    schema: &Value,
+) -> Result<Option<u32>, ProtocolError> {
+    schema
+        .get_optional_integer::<u32>(CAN_BE_DELETED_BY_MODERATORS_FOR)
+        .map_err(consensus_or_protocol_value_error)
+}
+
+/// Applies the `canBeDeletedByModeratorsFor` window and checks what it
+/// requires.
+///
+/// The window limits how long after a document's last modification the
+/// moderators may delete it, so:
+/// - the type must let moderators delete its documents at all, or the window
+///   would limit nothing;
+/// - the type must require the clock the window is measured on. That is
+///   `$updatedAt`, set at creation and moved by every replace, and where a type
+///   does not carry it, `$createdAt`. A type whose documents can be replaced
+///   must require `$updatedAt`: measured from creation alone, its author could
+///   wait the window out and then rewrite the document into something no
+///   moderator can remove any more. A type whose documents never change has
+///   no modification after the creation, so `$createdAt` says as much;
+/// - it lasts at least a second: a window of none would be a type moderators
+///   can never delete from, which is said by not setting the flag.
+///
+/// Runs after `apply_can_be_deleted_by_moderators`, which sets the flag read
+/// here.
+pub(super) fn apply_can_be_deleted_by_moderators_for(
+    document_type: &mut DocumentTypeV2,
+    can_be_deleted_by_moderators_for: Option<u32>,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    let Some(seconds) = can_be_deleted_by_moderators_for else {
+        return Ok(());
+    };
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if !document_type.documents_can_be_deleted_by_moderators {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which limits \
+             `canBeDeletedByModerators: true` and means nothing without it",
+            name,
+        )));
+    }
+    if seconds == 0 {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor: 0`: a window lasts at \
+             least one second (leave `canBeDeletedByModerators` out for a type moderators can \
+             not delete from)",
+            name,
+        )));
+    }
+    let requires_updated_at = document_type.required_fields.contains(UPDATED_AT);
+    if document_type.documents_mutable && !requires_updated_at {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which is measured from \
+             a document's last modification, and its documents can be replaced: list \
+             `$updatedAt` in `required`",
+            name,
+        )));
+    }
+    if !requires_updated_at && !document_type.required_fields.contains(CREATED_AT) {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which is measured from \
+             a document's last modification: list `$updatedAt`, or `$createdAt` for documents \
+             that never change, in `required`",
+            name,
+        )));
+    }
+
+    document_type.documents_can_be_deleted_by_moderators_for = Some(seconds);
     Ok(())
 }
 
