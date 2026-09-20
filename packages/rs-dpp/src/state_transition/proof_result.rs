@@ -1,11 +1,10 @@
 use crate::address_funds::PlatformAddress;
 use crate::asset_lock::StoredAssetLockInfo;
 use crate::balances::credits::TokenAmount;
-use crate::block::epoch::EpochIndex;
 use crate::data_contract::config::moderation::{
     ContractDocumentRemoval, ContractModerationListStatuses,
 };
-use crate::data_contract::document_type::action_fees::ContractFeePot;
+use crate::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use crate::data_contract::group::GroupSumPower;
 use crate::data_contract::DataContract;
 use crate::document::Document;
@@ -140,13 +139,13 @@ pub enum StateTransitionProofResult {
     /// nothing about the other.
     VerifiedContractModerationListStatuses(Identifier, Identifier, ContractModerationListStatuses),
     /// A contract fee claim's execution proof shows the pot it paid out (contract id, pot, the
-    /// epoch the pot was last claimed in, the credits left in it) and the balance of every
-    /// identity it paid, after the claim. The epoch is the claim's own: a pot is paid out at
-    /// most once per epoch, so within that epoch the proof is of this claim.
+    /// pot's last claim, the credits left in it) and the balance of every identity it paid,
+    /// after the claim. A pot is paid out at most once per epoch, so within its epoch the last
+    /// claim is this claim, and its claimant and block time say so.
     VerifiedContractFeeClaim(
         Identifier,
         ContractFeePot,
-        EpochIndex,
+        ContractFeePotLastClaim,
         Credits,
         #[cfg_attr(
             feature = "json-conversion",

@@ -271,15 +271,15 @@ pub const PREFUNDED_BALANCES_FOR_CONTRACT_OWNER_FEES: u8 = 64;
 /// of the moderation team claims them for the team.
 pub const PREFUNDED_BALANCES_FOR_CONTRACT_MODERATOR_FEES: u8 = 192;
 
-/// The key under a contract's other tree (`[64, id, 2]`) of the epoch its owner fee pot was last
-/// claimed in, a two-byte big-endian item (protocol version 14). Absent until the first claim.
-/// Below `128`, so the banlist stays on top of the other tree.
-pub const CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY: u8 = 32;
+/// The key under a contract's other tree (`[64, id, 2]`) of the last claim of its owner fee pot,
+/// a 42 byte item: the epoch, the block time and the claimant (protocol version 14). Absent
+/// until the first claim. Below `128`, so the banlist stays on top of the other tree.
+pub const CONTRACT_LAST_OWNER_FEE_CLAIM_KEY: u8 = 32;
 
-/// The key under a contract's other tree (`[64, id, 2]`) of the epoch its moderators fee pot was
-/// last claimed in, a two-byte big-endian item (protocol version 14). Absent until the first
-/// claim. Below `128`, so the banlist stays on top of the other tree.
-pub const CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY: u8 = 96;
+/// The key under a contract's other tree (`[64, id, 2]`) of the last claim of its moderators
+/// fee pot, a 42 byte item: the epoch, the block time and the claimant (protocol version 14).
+/// Absent until the first claim. Below `128`, so the banlist stays on top of the other tree.
+pub const CONTRACT_LAST_MODERATORS_FEE_CLAIM_KEY: u8 = 96;
 
 /// The key, under the prefunded specialized balances tree, of the sum tree of a kind of pot.
 pub fn contract_fee_pots_key(pot: ContractFeePot) -> &'static [u8; 1] {
@@ -305,11 +305,11 @@ pub fn contract_fee_pots_path_vec(pot: ContractFeePot) -> Vec<Vec<u8>> {
     ]
 }
 
-/// The key, under a contract's other tree, of the epoch a pot was last claimed in.
-pub fn contract_last_fee_claim_epoch_key(pot: ContractFeePot) -> &'static [u8; 1] {
+/// The key, under a contract's other tree, of the last claim of a pot.
+pub fn contract_last_fee_claim_key(pot: ContractFeePot) -> &'static [u8; 1] {
     match pot {
-        ContractFeePot::Owner => &[CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY],
-        ContractFeePot::Moderators => &[CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY],
+        ContractFeePot::Owner => &[CONTRACT_LAST_OWNER_FEE_CLAIM_KEY],
+        ContractFeePot::Moderators => &[CONTRACT_LAST_MODERATORS_FEE_CLAIM_KEY],
     }
 }
 

@@ -3030,21 +3030,21 @@
                     ]
                   },
                   {
-                    "id": "contracts.contract.other.last_owner_fee_claim_epoch",
+                    "id": "contracts.contract.other.last_owner_fee_claim",
                     "key": {
                       "type": "fixed",
                       "hex": "20",
-                      "label": "LastOwnerFeeClaimEpoch",
-                      "constant": "CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY"
+                      "label": "LastOwnerFeeClaim",
+                      "constant": "CONTRACT_LAST_OWNER_FEE_CLAIM_KEY"
                     },
                     "kinds": [
                       "Item"
                     ],
-                    "value": "epoch index, u16 big endian",
+                    "value": "42 bytes: epoch index, u16 big endian; block time in milliseconds, u64 big endian; claimant identity id",
                     "since": 14,
                     "presence": "lazy",
                     "source": "packages/rs-drive/src/drive/contract/paths.rs",
-                    "description": "The epoch the contract's owner fee pot was last claimed in. Written by the first claim; a pot is claimed at most once per epoch.",
+                    "description": "The last claim of the contract's owner fee pot: the epoch and the block time it was paid out in, and the identity that claimed, which is the contract owner. Written by the first claim and replaced by every later one; a pot is claimed at most once per epoch.",
                     "children": []
                   },
                   {
@@ -3071,21 +3071,21 @@
                     "children": []
                   },
                   {
-                    "id": "contracts.contract.other.last_moderators_fee_claim_epoch",
+                    "id": "contracts.contract.other.last_moderators_fee_claim",
                     "key": {
                       "type": "fixed",
                       "hex": "60",
-                      "label": "LastModeratorsFeeClaimEpoch",
-                      "constant": "CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY"
+                      "label": "LastModeratorsFeeClaim",
+                      "constant": "CONTRACT_LAST_MODERATORS_FEE_CLAIM_KEY"
                     },
                     "kinds": [
                       "Item"
                     ],
-                    "value": "epoch index, u16 big endian",
+                    "value": "42 bytes: epoch index, u16 big endian; block time in milliseconds, u64 big endian; claimant identity id",
                     "since": 14,
                     "presence": "lazy",
                     "source": "packages/rs-drive/src/drive/contract/paths.rs",
-                    "description": "The epoch the contract's moderators fee pot was last claimed in. Written by the first claim; a pot is claimed at most once per epoch.",
+                    "description": "The last claim of the contract's moderators fee pot: the epoch and the block time it was paid out in, and the member of the moderation team that claimed it for the team. Written by the first claim and replaced by every later one; a pot is claimed at most once per epoch.",
                     "children": []
                   },
                   {

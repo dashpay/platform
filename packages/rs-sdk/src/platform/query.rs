@@ -157,6 +157,7 @@ impl_wire_query!(
     proto::GetContestedResourceVotersForIdentityRequest,
     proto::GetContestedResourcesRequest,
     proto::GetContractDocumentRemovalsRequest,
+    proto::GetContractFeePotsRequest,
     proto::GetContractGroupInfoRequest,
     proto::GetContractGroupMembersRequest,
     proto::GetContractGroupsForContractRequest,

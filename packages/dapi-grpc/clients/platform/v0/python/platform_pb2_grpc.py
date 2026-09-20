@@ -129,6 +129,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetContractDocumentRemovalsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetContractDocumentRemovalsResponse.FromString,
                 )
+        self.getContractFeePots = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractFeePots',
+                request_serializer=platform__pb2.GetContractFeePotsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractFeePotsResponse.FromString,
+                )
         self.getDocumentHistory = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDocumentHistory',
                 request_serializer=platform__pb2.GetDocumentHistoryRequest.SerializeToString,
@@ -498,6 +503,12 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getContractDocumentRemovals(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractFeePots(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -902,6 +913,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getContractDocumentRemovals,
                     request_deserializer=platform__pb2.GetContractDocumentRemovalsRequest.FromString,
                     response_serializer=platform__pb2.GetContractDocumentRemovalsResponse.SerializeToString,
+            ),
+            'getContractFeePots': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractFeePots,
+                    request_deserializer=platform__pb2.GetContractFeePotsRequest.FromString,
+                    response_serializer=platform__pb2.GetContractFeePotsResponse.SerializeToString,
             ),
             'getDocumentHistory': grpc.unary_unary_rpc_method_handler(
                     servicer.getDocumentHistory,
@@ -1531,6 +1547,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractDocumentRemovals',
             platform__pb2.GetContractDocumentRemovalsRequest.SerializeToString,
             platform__pb2.GetContractDocumentRemovalsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractFeePots(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractFeePots',
+            platform__pb2.GetContractFeePotsRequest.SerializeToString,
+            platform__pb2.GetContractFeePotsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

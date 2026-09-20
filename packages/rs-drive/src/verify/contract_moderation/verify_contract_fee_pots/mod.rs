@@ -11,7 +11,7 @@ use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Verifies the proof of a contract's fee pots: the credits each proved pot holds and the
-    /// epoch it was last claimed in.
+    /// last claim: its epoch, its block time and who claimed.
     ///
     /// Only the pots in `pots` are proved. The other one is returned empty and never claimed,
     /// which says nothing about it: callers that did not ask for a pot must not read it.

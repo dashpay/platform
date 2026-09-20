@@ -28,7 +28,7 @@ use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Set
 use dpp::data_contract::config::moderation::{
     ContractDocumentRemoval, ContractModerationConfig, ContractModerationReason, ContractModerators,
 };
-use dpp::data_contract::document_type::action_fees::ContractFeePot;
+use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
@@ -397,7 +397,7 @@ fn should_keep_the_banlist_on_top_of_the_other_tree_when_every_tree_is_created_a
 
 #[test]
 fn should_lose_the_top_of_the_other_tree_to_the_version_item_once_both_fee_pots_were_claimed() {
-    // The fullest other tree: both lists, the removals tree and the last claim epoch of both
+    // The fullest other tree: both lists, the removals tree and the last claim of both
     // fee pots. Four of its six keys then sort below the banlist, and no balanced tree roots
     // at a key with four keys on one side and one on the other: the version item takes the
     // top and the banlist sits one level down. Any key above the banlist would instead cost
@@ -441,10 +441,14 @@ fn should_lose_the_top_of_the_other_tree_to_the_version_item_once_both_fee_pots_
         apply(
             &drive,
             vec![DriveOperation::ContractFeePotOperation(
-                ContractFeePotOperationType::SetLastClaimEpoch {
+                ContractFeePotOperationType::SetLastClaim {
                     contract_id: contract.id(),
                     pot,
-                    epoch_index: 3,
+                    last_claim: ContractFeePotLastClaim {
+                        epoch_index: 3,
+                        time_ms: 1_000,
+                        claimant_id: contract.owner_id(),
+                    },
                 },
             )],
             true,

@@ -543,6 +543,26 @@
              responseClass:[GetContractDocumentRemovalsResponse class]];
 }
 
+#pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
+
+- (void)getContractFeePotsWithRequest:(GetContractFeePotsRequest *)request handler:(void(^)(GetContractFeePotsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractFeePotsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractFeePotsWithRequest:(GetContractFeePotsRequest *)request handler:(void(^)(GetContractFeePotsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractFeePots"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractFeePotsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractFeePotsWithMessage:(GetContractFeePotsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractFeePots"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractFeePotsResponse class]];
+}
+
 #pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)
 
 - (void)getDocumentHistoryWithRequest:(GetDocumentHistoryRequest *)request handler:(void(^)(GetDocumentHistoryResponse *_Nullable response, NSError *_Nullable error))handler{

@@ -585,3 +585,156 @@ impl WasmSdk {
         Ok(JsValue::from(result).into())
     }
 }
+
+// ============================================================================
+// Contract Fee Claim
+// ============================================================================
+
+#[wasm_bindgen(typescript_custom_section)]
+const CONTRACT_FEE_CLAIM_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for paying out a fee pot of a data contract (protocol version 14). The signer must
+ * hold a CRITICAL authentication key without contract bounds of the claiming identity: the
+ * contract owner for the owner pot, any member of the contract's moderation team for the
+ * moderators pot.
+ */
+export interface ContractClaimFeesOptions {
+  /** The claiming identity */
+  identity: Identity;
+  /** The contract whose pot is paid out */
+  contractId: IdentifierLike;
+  /** The pot to pay out */
+  pot: ContractFeePotKind;
+  /** Signer holding a CRITICAL authentication key without contract bounds of the identity */
+  signer: IdentitySigner;
+  /** Optional broadcast settings */
+  settings?: PutSettings;
+}
+
+/** A fee pot after a claim, as the proof of the claim shows it. */
+export interface ContractClaimFeesResult {
+  contractId: Identifier;
+  pot: ContractFeePotKind;
+  /** The epoch the pot was last paid out in: the epoch of this claim, unless it was claimed again since */
+  lastClaimEpoch: number;
+  /** The time, in milliseconds, of the block that last paid the pot out */
+  lastClaimTimeMs: bigint;
+  /** The identity that signed the last claim of the pot: the claiming identity, unless it was claimed again since */
+  lastClaimantId: Identifier;
+  /** The credits left in the pot: what an equal split left over, and any fee collected since */
+  remainingCredits: bigint;
+  /** The balance, after the claim, of every identity the pot pays, keyed by base58 identity id */
+  balances: Map<string, bigint>;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ContractClaimFeesOptions")]
+    pub type ContractClaimFeesOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "ContractClaimFeesResult")]
+    pub type ContractClaimFeesResultJs;
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContractClaimFeesOptionsInput {
+    pot: String,
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Pays out a fee pot of a data contract: the owner pot whole to the contract owner, the
+    /// moderators pot in equal shares to the contract's moderation team, whichever member
+    /// claims it. A pot is paid out at most once per epoch; `getContractFeePots` tells what a
+    /// claim would pay and when the pot was last paid out.
+    ///
+    /// @param options - The claiming identity, the contract, the `pot` and the signer
+    /// @returns The pot and the balances of the identities it paid, proved
+    #[wasm_bindgen(js_name = "contractClaimFees")]
+    pub async fn contract_claim_fees(
+        &self,
+        options: ContractClaimFeesOptionsJs,
+    ) -> Result<ContractClaimFeesResultJs, WasmSdkError> {
+        use dash_sdk::dpp::data_contract::document_type::action_fees::ContractFeePot;
+        use dash_sdk::platform::transition::contract_fee_claim::ClaimContractFees;
+        use wasm_dpp2::data_contract::contract_fee_pot_from_str;
+        use wasm_dpp2::identity::IdentityWasm;
+        use wasm_dpp2::IdentifierWasm;
+
+        // Extract complex types first (borrows &options)
+        let identity: dash_sdk::dpp::identity::Identity =
+            IdentityWasm::try_from_options(&options, "identity")?.into();
+        let contract_id: Identifier =
+            IdentifierWasm::try_from_options(&options, "contractId")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        // Deserialize simple fields last (consumes options)
+        let parsed: ContractClaimFeesOptionsInput =
+            crate::queries::utils::deserialize_required_query(
+                options,
+                "Options object is required",
+                "contract fee claim options",
+            )?;
+        let pot = contract_fee_pot_from_str(&parsed.pot)
+            .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
+
+        // The proof of a claim covers the balance of every identity the pot pays, and the
+        // verifier reads who they are from the contract. The moderation team can change by a
+        // contract update, so the contract is fetched again, whatever copy is cached, before
+        // anything is paid for. The Rust SDK fetches it too, but what it registers with the
+        // context provider does not reach the trusted context of this SDK.
+        self.refresh_contract(contract_id).await?;
+
+        let claimed = identity
+            .claim_contract_fees(self.inner_sdk(), contract_id, pot, None, signer, settings)
+            .await?;
+
+        let result = js_sys::Object::new();
+        let set = |key: &str, value: JsValue| {
+            js_sys::Reflect::set(&result, &key.into(), &value).map_err(|_| {
+                WasmSdkError::generic(format!("failed to set `{key}` on the fee claim result"))
+            })
+        };
+        set(
+            "contractId",
+            IdentifierWasm::from(claimed.contract_id).into(),
+        )?;
+        set(
+            "pot",
+            match claimed.pot {
+                ContractFeePot::Owner => "owner",
+                ContractFeePot::Moderators => "moderators",
+            }
+            .into(),
+        )?;
+        set(
+            "lastClaimEpoch",
+            JsValue::from(claimed.last_claim.epoch_index),
+        )?;
+        set(
+            "lastClaimTimeMs",
+            js_sys::BigInt::from(claimed.last_claim.time_ms).into(),
+        )?;
+        set(
+            "lastClaimantId",
+            IdentifierWasm::from(claimed.last_claim.claimant_id).into(),
+        )?;
+        set(
+            "remainingCredits",
+            js_sys::BigInt::from(claimed.remaining_credits).into(),
+        )?;
+        let balances = js_sys::Map::new();
+        for (identity_id, balance) in &claimed.balances {
+            balances.set(
+                &JsValue::from_str(&IdentifierWasm::from(*identity_id).to_base58()),
+                &js_sys::BigInt::from(*balance).into(),
+            );
+        }
+        set("balances", balances.into())?;
+        Ok(JsValue::from(result).into())
+    }
+}

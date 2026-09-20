@@ -368,7 +368,7 @@ pub fn convert_proof_result(
         StateTransitionProofResult::VerifiedContractFeeClaim(
             contract_id,
             pot,
-            last_claim_epoch,
+            last_claim,
             remaining_credits,
             balances,
         ) => {
@@ -380,7 +380,9 @@ pub fn convert_proof_result(
             VerifiedContractFeeClaimWasm {
                 contract_id: contract_id.into(),
                 pot: pot.to_string(),
-                last_claim_epoch,
+                last_claim_epoch: last_claim.epoch_index,
+                last_claim_time_ms: last_claim.time_ms,
+                last_claimant_id: last_claim.claimant_id.into(),
                 remaining_credits,
                 balances,
             }

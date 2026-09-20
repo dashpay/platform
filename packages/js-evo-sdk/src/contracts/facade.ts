@@ -205,4 +205,33 @@ export class ContractsFacade {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContractDocumentRemovalsWithProofInfo(query);
   }
+
+  /**
+   * What the document action fees of a contract (the `actionFees` keyword, protocol version
+   * 14) have collected for its owner and for its moderation team, and the last claim of each
+   * pot: the epoch and the block time it was paid out in, and the identity that claimed it. A
+   * contract that charges no fees has two empty pots.
+   */
+  async feePots(contractId: wasm.IdentifierLike): Promise<wasm.ContractFeePots> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractFeePots(contractId);
+  }
+
+  async feePotsWithProof(
+    contractId: wasm.IdentifierLike,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractFeePots>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractFeePotsWithProofInfo(contractId);
+  }
+
+  /**
+   * Pays out a fee pot of a contract: the `owner` pot whole to the contract owner, who alone
+   * may claim it, and the `moderators` pot in equal shares to the contract's moderation team,
+   * any member of which may claim it for all of them. Signed with a CRITICAL authentication
+   * key. A pot is paid out at most once per epoch, and an empty pot refuses the claim.
+   */
+  async claimFees(options: wasm.ContractClaimFeesOptions): Promise<wasm.ContractClaimFeesResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractClaimFees(options);
+  }
 }

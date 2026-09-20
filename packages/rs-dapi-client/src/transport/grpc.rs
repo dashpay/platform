@@ -330,6 +330,15 @@ impl_transport_request_grpc!(
     get_contract_document_removals
 );
 
+// rpc getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractFeePotsRequest,
+    platform_proto::GetContractFeePotsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_fee_pots
+);
+
 // rpc getContractGroupMembers(GetContractGroupMembersRequest) returns (GetContractGroupMembersResponse);
 impl_transport_request_grpc!(
     platform_proto::GetContractGroupMembersRequest,

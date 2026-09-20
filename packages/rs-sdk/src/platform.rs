@@ -7,6 +7,7 @@
 
 pub mod address_sync;
 pub mod block_info_from_metadata;
+pub mod contract_fee_pots;
 pub mod contract_groups;
 pub mod contract_moderation;
 pub mod dashpay;

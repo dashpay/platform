@@ -36,6 +36,8 @@
 @class GetContestedResourcesResponse;
 @class GetContractDocumentRemovalsRequest;
 @class GetContractDocumentRemovalsResponse;
+@class GetContractFeePotsRequest;
+@class GetContractFeePotsResponse;
 @class GetContractGroupInfoRequest;
 @class GetContractGroupInfoResponse;
 @class GetContractGroupMembersRequest;
@@ -274,6 +276,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getContractDocumentRemovals(GetContractDocumentRemovalsRequest) returns (GetContractDocumentRemovalsResponse)
 
 - (GRPCUnaryProtoCall *)getContractDocumentRemovalsWithMessage:(GetContractDocumentRemovalsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
+
+- (GRPCUnaryProtoCall *)getContractFeePotsWithMessage:(GetContractFeePotsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)
 
@@ -654,6 +660,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getContractDocumentRemovalsWithRequest:(GetContractDocumentRemovalsRequest *)request handler:(void(^)(GetContractDocumentRemovalsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetContractDocumentRemovalsWithRequest:(GetContractDocumentRemovalsRequest *)request handler:(void(^)(GetContractDocumentRemovalsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
+
+- (void)getContractFeePotsWithRequest:(GetContractFeePotsRequest *)request handler:(void(^)(GetContractFeePotsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractFeePotsWithRequest:(GetContractFeePotsRequest *)request handler:(void(^)(GetContractFeePotsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)

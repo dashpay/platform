@@ -1,17 +1,18 @@
-//! Proof verification of the contract moderation queries.
+//! Proof verification of the contract moderation queries and of the fee pots query.
 
 use crate::error::MapGroveDbError;
 use crate::types::contract_moderation::{
     entries_query_from_request, identifier_from_request, lists_from_request,
-    removals_query_from_request, ContractDocumentRemovals, ContractModerationEntries,
-    ContractModerationListStatuses,
+    removals_query_from_request, ContractDocumentRemovals, ContractFeePots,
+    ContractModerationEntries, ContractModerationListStatuses, CONTRACT_FEE_POTS_QUERIED,
 };
 use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
-    get_contract_document_removals_request, get_contract_moderation_entries_request,
-    get_contract_moderation_status_request, GetContractDocumentRemovalsRequest,
-    GetContractDocumentRemovalsResponse, GetContractModerationEntriesRequest,
+    get_contract_document_removals_request, get_contract_fee_pots_request,
+    get_contract_moderation_entries_request, get_contract_moderation_status_request,
+    GetContractDocumentRemovalsRequest, GetContractDocumentRemovalsResponse,
+    GetContractFeePotsRequest, GetContractFeePotsResponse, GetContractModerationEntriesRequest,
     GetContractModerationEntriesResponse, GetContractModerationStatusRequest,
     GetContractModerationStatusResponse, Proof, ResponseMetadata,
 };
@@ -114,6 +115,51 @@ impl FromProof<GetContractModerationEntriesRequest> for ContractModerationEntrie
     }
 }
 
+impl FromProof<GetContractFeePotsRequest> for ContractFeePots {
+    type Request = GetContractFeePotsRequest;
+    type Response = GetContractFeePotsResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let get_contract_fee_pots_request::Version::V0(v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let contract_id = identifier_from_request(&v0.contract_id, "contract_id")?;
+
+        let metadata = response
+            .metadata()
+            .or(Err(Error::EmptyResponseMetadata))?
+            .clone();
+        let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
+
+        let (root_hash, pots) = Drive::verify_contract_fee_pots(
+            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            contract_id,
+            &CONTRACT_FEE_POTS_QUERIED,
+            false,
+            platform_version,
+        )
+        .map_drive_error(&proof, &metadata)?;
+
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+
+        // A pot nothing was ever paid into proves as absent and reads as zero credits, so the
+        // pots themselves are always the answer. The proof says nothing about the contract: a
+        // node refuses the query for a contract it does not hold before it proves anything.
+        Ok((Some(pots), metadata, proof))
+    }
+}
+
 impl FromProof<GetContractDocumentRemovalsRequest> for ContractDocumentRemovals {
     type Request = GetContractDocumentRemovalsRequest;
     type Response = GetContractDocumentRemovalsResponse;
@@ -169,6 +215,11 @@ mod tests {
     use dapi_grpc::platform::v0::get_contract_document_removals_response::{
         get_contract_document_removals_response_v0::Result as RemovalsResult,
         GetContractDocumentRemovalsResponseV0, Version as RemovalsResponseVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_fee_pots_request::GetContractFeePotsRequestV0;
+    use dapi_grpc::platform::v0::get_contract_fee_pots_response::{
+        get_contract_fee_pots_response_v0::Result as FeePotsResult, GetContractFeePotsResponseV0,
+        Version as FeePotsResponseVersion,
     };
     use dapi_grpc::platform::v0::get_contract_moderation_entries_request::GetContractModerationEntriesRequestV0;
     use dapi_grpc::platform::v0::get_contract_moderation_entries_response::{
@@ -429,6 +480,79 @@ mod tests {
         let err = entries_error(
             entries_request(vec![1; 32], 2, Some(vec![2; 32]), Some(10)),
             entries_response(Some(EntriesResult::Proof(Proof::default()))),
+        );
+        assert!(
+            !matches!(err, Error::RequestError { .. } | Error::NoProofInResult),
+            "got: {err:?}"
+        );
+    }
+
+    fn fee_pots_request(contract_id: Vec<u8>) -> GetContractFeePotsRequest {
+        GetContractFeePotsRequest {
+            version: Some(get_contract_fee_pots_request::Version::V0(
+                GetContractFeePotsRequestV0 {
+                    contract_id,
+                    prove: true,
+                },
+            )),
+        }
+    }
+
+    fn fee_pots_response(result: Option<FeePotsResult>) -> GetContractFeePotsResponse {
+        GetContractFeePotsResponse {
+            version: Some(FeePotsResponseVersion::V0(GetContractFeePotsResponseV0 {
+                result,
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        }
+    }
+
+    fn fee_pots_error(
+        request: GetContractFeePotsRequest,
+        response: GetContractFeePotsResponse,
+    ) -> Error {
+        <ContractFeePots as FromProof<_>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+            &UnreachableProvider,
+        )
+        .unwrap_err()
+    }
+
+    #[test]
+    fn fee_pots_should_fail_with_empty_version_when_request_has_no_version() {
+        let err = fee_pots_error(
+            GetContractFeePotsRequest { version: None },
+            fee_pots_response(Some(FeePotsResult::Proof(Proof::default()))),
+        );
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn fee_pots_should_reject_a_malformed_contract_id() {
+        let err = fee_pots_error(
+            fee_pots_request(vec![1; 5]),
+            fee_pots_response(Some(FeePotsResult::Proof(Proof::default()))),
+        );
+        assert!(
+            matches!(&err, Error::RequestError { error } if error.contains("contract_id")),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn fee_pots_should_fail_without_proof_when_response_carries_none() {
+        let err = fee_pots_error(fee_pots_request(vec![1; 32]), fee_pots_response(None));
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn fee_pots_should_fail_on_a_proof_that_does_not_verify() {
+        let err = fee_pots_error(
+            fee_pots_request(vec![1; 32]),
+            fee_pots_response(Some(FeePotsResult::Proof(Proof::default()))),
         );
         assert!(
             !matches!(err, Error::RequestError { .. } | Error::NoProofInResult),

@@ -1254,7 +1254,7 @@ impl Drive {
                     .map(|recipient| recipient.to_buffer())
                     .collect();
 
-                // The proof holds the pot with its last claim epoch and the recipients'
+                // The proof holds the pot with its last claim and the recipients'
                 // balances; each part is verified as a subset of it, and they must agree on
                 // the state they are read from.
                 let (root_hash, fee_pots) = Drive::verify_contract_fee_pots(
@@ -1281,12 +1281,13 @@ impl Drive {
                 }
 
                 let fee_pot = fee_pots.pot(pot);
-                // A pot that was never claimed has no last claim epoch: the claim did not
-                // execute. A later claim leaves a later epoch and verifies just the same, so
-                // this only authenticates the affected state.
-                let last_claim_epoch =
+                // A pot that was never claimed has no last claim: the claim did not execute.
+                // A later claim leaves its own and verifies just the same, so this only
+                // authenticates the affected state. The last claim names its claimant and
+                // its block time, which tell the caller whether it is this claim.
+                let last_claim =
                     fee_pot
-                        .last_claim_epoch
+                        .last_claim
                         .ok_or(Error::Proof(ProofError::IncorrectProof(format!(
                             "proof of state transition execution does not show a claim of the {} fee pot of contract {}",
                             pot, contract_id
@@ -1307,7 +1308,7 @@ impl Drive {
                     VerifiedContractFeeClaim(
                         contract_id,
                         pot,
-                        last_claim_epoch,
+                        last_claim,
                         fee_pot.credits,
                         balances,
                     ),

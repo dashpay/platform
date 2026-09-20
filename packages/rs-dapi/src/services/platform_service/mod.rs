@@ -437,6 +437,12 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_contract_fee_pots,
+        dapi_grpc::platform::v0::GetContractFeePotsRequest,
+        dapi_grpc::platform::v0::GetContractFeePotsResponse
+    );
+
+    drive_method!(
         get_contract_group_members,
         dapi_grpc::platform::v0::GetContractGroupMembersRequest,
         dapi_grpc::platform::v0::GetContractGroupMembersResponse

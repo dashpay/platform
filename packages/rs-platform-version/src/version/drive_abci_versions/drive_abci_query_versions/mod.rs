@@ -90,13 +90,15 @@ pub struct DriveAbciQueryGroupVersions {
     pub group_action_signers: FeatureVersionBounds,
 }
 
-/// The contract moderation queries: one identity's status on a moderated contract, and one page
-/// of a contract's banlist or suspension list.
+/// The contract moderation queries: one identity's status on a moderated contract, one page of a
+/// contract's banlist or suspension list, and the contract's fee pots.
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciQueryContractModerationVersions {
     pub contract_moderation_status: FeatureVersionBounds,
     pub contract_moderation_entries: FeatureVersionBounds,
     pub contract_document_removals: FeatureVersionBounds,
+    /// The two fee pots a contract's document action fees collect in
+    pub contract_fee_pots: FeatureVersionBounds,
 }
 
 /// The contract group queries: a group's stored information, one page of its members of one

@@ -22,22 +22,23 @@ use dapi_grpc::platform::v0::{
     GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
     GetContestedResourcesRequest, GetContestedResourcesResponse,
     GetContractDocumentRemovalsRequest, GetContractDocumentRemovalsResponse,
-    GetContractGroupInfoRequest, GetContractGroupInfoResponse, GetContractGroupMembersRequest,
-    GetContractGroupMembersResponse, GetContractGroupsForContractRequest,
-    GetContractGroupsForContractResponse, GetContractModerationEntriesRequest,
-    GetContractModerationEntriesResponse, GetContractModerationStatusRequest,
-    GetContractModerationStatusResponse, GetCurrentQuorumsInfoRequest,
-    GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
-    GetDataContractRequest, GetDataContractResponse, GetDataContractsByRangeRequest,
-    GetDataContractsLatestVersionsRequest, GetDataContractsLatestVersionsResponse,
-    GetDataContractsRequest, GetDataContractsResponse, GetDocumentHistoryRequest,
-    GetDocumentHistoryResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
-    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
-    GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest,
-    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
-    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
-    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetContractFeePotsRequest, GetContractFeePotsResponse, GetContractGroupInfoRequest,
+    GetContractGroupInfoResponse, GetContractGroupMembersRequest, GetContractGroupMembersResponse,
+    GetContractGroupsForContractRequest, GetContractGroupsForContractResponse,
+    GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
+    GetContractModerationStatusRequest, GetContractModerationStatusResponse,
+    GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest,
+    GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse,
+    GetDataContractsByRangeRequest, GetDataContractsLatestVersionsRequest,
+    GetDataContractsLatestVersionsResponse, GetDataContractsRequest, GetDataContractsResponse,
+    GetDocumentHistoryRequest, GetDocumentHistoryResponse, GetDocumentsRequest,
+    GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
+    GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
+    GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse,
+    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
+    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -480,6 +481,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_contract_moderation_entries,
             "get_contract_moderation_entries",
+        )
+        .await
+    }
+
+    async fn get_contract_fee_pots(
+        &self,
+        request: Request<GetContractFeePotsRequest>,
+    ) -> Result<Response<GetContractFeePotsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_fee_pots,
+            "get_contract_fee_pots",
         )
         .await
     }
