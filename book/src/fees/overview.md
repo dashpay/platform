@@ -294,10 +294,13 @@ Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The
 (permille = divide by 1000; a value of 1000 means no change).
 
 `fee_version_number` keys the persisted fee history and the storage refund
-rates, so it only changes when a storage rate changes. A schedule that changes
-only a group the history never serves keeps the number of the generation it
-agrees with and is not appended to `FEE_VERSIONS`: `FEE_VERSION2` (protocol
-version 9) and `FEE_VERSION3` (protocol version 17) both carry number 1.
+rates, so it changes whenever a group the history serves changes: the storage,
+processing, hashing or signature rates. A schedule that changes only a group
+the history never serves keeps the number of the generation it agrees with and
+is not appended to `FEE_VERSIONS`: `FEE_VERSION2` (protocol version 9) and
+`FEE_VERSION3` (protocol version 17) both carry number 1, and a test on
+`FEE_VERSION3` pins that it agrees with the registered generation on every
+served group.
 
 The epoch fee history (`previous_fee_versions` in platform state) records a
 schedule only when its number changes, is saved as numbers and restored through
@@ -311,6 +314,13 @@ history and a restart resolves the existing entry to `FEE_VERSION1`; contract
 pricing is unaffected because nothing reads it from there.
 
 ### Smart-contract computation (protocol version 17, 5.0)
+
+This section describes the contract the tables define. Protocol version 17
+carries the limits and the price, but nothing dispatches on them yet: the
+runtime that meters invocations, the block loop that reserves against the
+per-block ledger and the fee pipeline that charges the units arrive with later
+5.0 tasks, so a node at protocol version 17 today enforces no computation
+limit and charges no computation fee.
 
 Smart-contract work is metered by the runtime in *computation units*
 (`ComputationUnits` in `rs-platform-version`): a deterministic count of the

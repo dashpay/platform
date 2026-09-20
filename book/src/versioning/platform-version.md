@@ -58,20 +58,20 @@ function version so that execution is deterministic.
 
 ## The Version Array
 
-Each protocol version gets its own constant, defined in a separate file. At
-the time of writing, the platform has twelve versions:
+Each protocol version gets its own constant, defined in a separate file. On
+the 5.0 development branch the platform has seventeen versions:
 
 ```rust
 // packages/rs-platform-version/src/version/mod.rs
 
 pub type ProtocolVersion = u32;
 
-pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_12;
+pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_17;
 pub const INITIAL_PROTOCOL_VERSION: ProtocolVersion = 1;
 pub const ALL_VERSIONS: RangeInclusive<ProtocolVersion> = 1..=LATEST_VERSION;
 ```
 
-These twelve snapshots are collected into a single static array in
+These seventeen snapshots are collected into a single static array in
 `protocol_version.rs`:
 
 ```rust
@@ -88,14 +88,19 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
     PLATFORM_V10,
     PLATFORM_V11,
     PLATFORM_V12,
+    PLATFORM_V13,
+    PLATFORM_V14,
+    PLATFORM_V15,
+    PLATFORM_V16,
+    PLATFORM_V17,
 ];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V12;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V17;
 pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 ```
 
 The array is indexed by protocol version number minus one (since versions are
-1-indexed). `PLATFORM_V1` sits at index 0, `PLATFORM_V12` at index 11. This
+1-indexed). `PLATFORM_V1` sits at index 0, `PLATFORM_V17` at index 16. This
 simple layout is what makes the `get` function so fast.
 
 Because the array is indexed by number, a version cannot be registered without
@@ -225,8 +230,8 @@ impl PlatformVersion {
 }
 ```
 
-This is a simple array lookup. Protocol version 1 maps to index 0, version 12
-to index 11. If the version number is out of range, you get a clear error. No
+This is a simple array lookup. Protocol version 1 maps to index 0, version 17
+to index 16. If the version number is out of range, you get a clear error. No
 hash maps, no runtime registration, no dynamic dispatch -- just a static array
 of compile-time constants.
 
