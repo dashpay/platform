@@ -1,6 +1,6 @@
 //! The fee pots of a data contract (`getContractFeePots`): what the document action fees of
-//! the contract have paid into the owner pot and the moderators pot, and the epoch each pot was
-//! last paid out in.
+//! the contract have paid into the owner pot and the moderators pot, and the last claim of each
+//! pot: the epoch and the block time it was paid out in, and the identity that claimed it.
 //!
 //! A document type prices its actions with the `actionFees` keyword. What a fee collects waits
 //! in a pot until a [`ContractFeeClaim`](dpp::state_transition::contract_fee_claim_transition)
@@ -8,7 +8,8 @@
 //! which a pot allows once per epoch. The pots tell a recipient whether a claim is worth
 //! sending: [`ContractFeePotState::credits`] is what it would pay, and a
 //! [`ContractFeePotState::last_claim_epoch`] equal to the current epoch means the pot was
-//! already paid out in it.
+//! already paid out in it. [`ContractFeePotState::last_claim`] also tells a member of the
+//! moderation team which member last claimed for the team, and when.
 //!
 //! [`ContractFeePots::fetch`] takes the contract id, or a [`ContractFeePotsQuery`]. A contract
 //! that charges no fees, or whose fees nobody has paid yet, reads as two empty pots. A contract
@@ -21,7 +22,7 @@ use crate::Error;
 use dapi_grpc::platform::v0::get_contract_fee_pots_request::GetContractFeePotsRequestV0;
 use dapi_grpc::platform::v0::{get_contract_fee_pots_request, GetContractFeePotsRequest};
 pub use drive_proof_verifier::types::contract_moderation::{
-    ContractFeePot, ContractFeePotState, ContractFeePots,
+    ContractFeePot, ContractFeePotLastClaim, ContractFeePotState, ContractFeePots,
 };
 
 /// Query for the fee pots of a contract.

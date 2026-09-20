@@ -8,6 +8,7 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_contract_fee_pots_request::GetContractFeePotsRequestV0;
 use dapi_grpc::platform::v0::get_contract_fee_pots_response::{
     get_contract_fee_pots_response_v0, ContractFeePot as ContractFeePotProto,
+    ContractFeePotLastClaim as ContractFeePotLastClaimProto,
     ContractFeePots as ContractFeePotsProto, GetContractFeePotsResponseV0,
 };
 use dpp::check_validation_result_with_data;
@@ -21,11 +22,12 @@ use drive::util::grove_operations::GroveDBToUse;
 const BOTH_POTS: [ContractFeePot; 2] = [ContractFeePot::Owner, ContractFeePot::Moderators];
 
 impl<C> Platform<C> {
-    /// Returns the two fee pots of a contract: what each holds and the epoch it was last paid
-    /// out in. A pot that never received a fee holds nothing, and one that was never paid out
-    /// has no epoch. The proved form proves both pots and both epochs, present or absent.
+    /// Returns the two fee pots of a contract: what each holds and its last claim, which is
+    /// the epoch and the block time it was last paid out in and the identity that claimed. A
+    /// pot that never received a fee holds nothing, and one that was never paid out has no
+    /// last claim. The proved form proves both pots and both last claims, present or absent.
     ///
-    /// The contract has to exist: its last claim epochs live under it, and a proof of them
+    /// The contract has to exist: its last claims live under it, and a proof of them
     /// under a contract that is not there would prove nothing a client can use.
     pub(super) fn query_contract_fee_pots_v0(
         &self,
@@ -93,7 +95,13 @@ impl<C> Platform<C> {
 fn pot_to_response(pot: ContractFeePotState) -> ContractFeePotProto {
     ContractFeePotProto {
         credits: pot.credits,
-        last_claim_epoch: pot.last_claim_epoch.map(u32::from),
+        last_claim: pot
+            .last_claim
+            .map(|last_claim| ContractFeePotLastClaimProto {
+                epoch: u32::from(last_claim.epoch_index),
+                time_ms: last_claim.time_ms,
+                claimant_id: last_claim.claimant_id.to_vec(),
+            }),
     }
 }
 
@@ -107,6 +115,7 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::action_fees::ContractFeePotLastClaim;
     use dpp::identifier::Identifier;
     use drive::drive::contract::fee_pots::types::ContractFeePots;
     use drive::drive::Drive;
@@ -190,7 +199,7 @@ mod tests {
 
         let empty = ContractFeePotProto {
             credits: 0,
-            last_claim_epoch: None,
+            last_claim: None,
         };
         assert_eq!(pots.owner, Some(empty.clone()));
         assert_eq!(pots.moderators, Some(empty));
@@ -214,10 +223,14 @@ mod tests {
                     amount: 300,
                 },
                 // Epoch 0 is an epoch like any other: it must not read as "never claimed".
-                ContractFeePotOperationType::SetLastClaimEpoch {
+                ContractFeePotOperationType::SetLastClaim {
                     contract_id: contract.id(),
                     pot: ContractFeePot::Moderators,
-                    epoch_index: 0,
+                    last_claim: ContractFeePotLastClaim {
+                        epoch_index: 0,
+                        time_ms: 1_700_000_000_000,
+                        claimant_id: Identifier::from([9; 32]),
+                    },
                 },
             ],
             version,
@@ -233,14 +246,18 @@ mod tests {
             pots.owner,
             Some(ContractFeePotProto {
                 credits: 700,
-                last_claim_epoch: None,
+                last_claim: None,
             })
         );
         assert_eq!(
             pots.moderators,
             Some(ContractFeePotProto {
                 credits: 300,
-                last_claim_epoch: Some(0),
+                last_claim: Some(ContractFeePotLastClaimProto {
+                    epoch: 0,
+                    time_ms: 1_700_000_000_000,
+                    claimant_id: vec![9; 32],
+                }),
             })
         );
     }
@@ -257,10 +274,14 @@ mod tests {
                     pot: ContractFeePot::Owner,
                     amount: 42,
                 },
-                ContractFeePotOperationType::SetLastClaimEpoch {
+                ContractFeePotOperationType::SetLastClaim {
                     contract_id: contract.id(),
                     pot: ContractFeePot::Owner,
-                    epoch_index: 6,
+                    last_claim: ContractFeePotLastClaim {
+                        epoch_index: 6,
+                        time_ms: 1_700_000_006_000,
+                        claimant_id: contract.owner_id(),
+                    },
                 },
             ],
             version,
@@ -285,8 +306,15 @@ mod tests {
         )
         .expect("expected the proof to verify");
         assert_eq!(proved.owner.credits, 42);
-        assert_eq!(proved.owner.last_claim_epoch, Some(6));
+        assert_eq!(
+            proved.owner.last_claim,
+            Some(ContractFeePotLastClaim {
+                epoch_index: 6,
+                time_ms: 1_700_000_006_000,
+                claimant_id: contract.owner_id(),
+            })
+        );
         assert_eq!(proved.moderators.credits, 0);
-        assert_eq!(proved.moderators.last_claim_epoch, None);
+        assert_eq!(proved.moderators.last_claim, None);
     }
 }

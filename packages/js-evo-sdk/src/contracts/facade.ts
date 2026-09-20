@@ -176,8 +176,9 @@ export class ContractsFacade {
 
   /**
    * What the document action fees of a contract (the `actionFees` keyword, protocol version
-   * 14) have collected for its owner and for its moderation team, and the epoch each pot was
-   * last paid out in. A contract that charges no fees has two empty pots.
+   * 14) have collected for its owner and for its moderation team, and the last claim of each
+   * pot: the epoch and the block time it was paid out in, and the identity that claimed it. A
+   * contract that charges no fees has two empty pots.
    */
   async feePots(contractId: wasm.IdentifierLike): Promise<wasm.ContractFeePots> {
     const w = await this.sdk.getWasmSdkConnected();

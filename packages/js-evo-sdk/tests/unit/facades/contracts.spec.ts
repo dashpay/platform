@@ -331,10 +331,15 @@ describe('ContractsFacade', () => {
     const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
     const moderatorId = 'H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1';
 
-    it('should fetch the pots, and a pot never paid out carries no epoch', async function run() {
+    it('should fetch the pots, and a pot never paid out carries no last claim', async function run() {
       const pots = {
         owner: { credits: BigInt(10000000) },
-        moderators: { credits: BigInt(100000000), lastClaimEpoch: 0 },
+        moderators: {
+          credits: BigInt(100000000),
+          lastClaimEpoch: 0,
+          lastClaimTimeMs: BigInt(1700000000000),
+          lastClaimantId: moderatorId,
+        },
       };
       const stub = this.sinon.stub(wasmSdk, 'getContractFeePots').resolves(pots);
 
@@ -342,7 +347,10 @@ describe('ContractsFacade', () => {
 
       expect(stub).to.be.calledOnceWithExactly(contractId);
       expect(result.owner.lastClaimEpoch).to.equal(undefined);
+      expect(result.owner.lastClaimantId).to.equal(undefined);
       expect(result.moderators.lastClaimEpoch).to.equal(0);
+      expect(result.moderators.lastClaimTimeMs).to.equal(BigInt(1700000000000));
+      expect(result.moderators.lastClaimantId).to.equal(moderatorId);
     });
 
     it('should fetch the pots with proof', async function run() {
@@ -364,6 +372,8 @@ describe('ContractsFacade', () => {
         contractId,
         pot: 'moderators' as const,
         lastClaimEpoch: 12,
+        lastClaimTimeMs: BigInt(1700000000000),
+        lastClaimantId: Object.create(wasmSDKPackage.Identifier.prototype),
         remainingCredits: BigInt(1),
         balances: new Map([[moderatorId, BigInt(50000000)]]),
       };
@@ -379,6 +389,7 @@ describe('ContractsFacade', () => {
 
       expect(stub).to.be.calledOnceWithExactly(options);
       expect(result.pot).to.equal('moderators');
+      expect(result.lastClaimTimeMs).to.equal(BigInt(1700000000000));
       expect(result.balances.get(moderatorId)).to.equal(BigInt(50000000));
     });
   });

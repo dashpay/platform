@@ -161,7 +161,7 @@ async fn test_mock_fetch_document() {
 /// I get the same pots, a pot paid out in epoch 0 apart from one that never was
 async fn should_fetch_mocked_contract_fee_pots_by_contract_id() {
     use dash_sdk::platform::contract_fee_pots::{
-        ContractFeePotState, ContractFeePots, ContractFeePotsQuery,
+        ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractFeePotsQuery,
     };
 
     let mut sdk = Sdk::new_mock();
@@ -170,11 +170,15 @@ async fn should_fetch_mocked_contract_fee_pots_by_contract_id() {
     let expected = ContractFeePots {
         owner: ContractFeePotState {
             credits: 10_000_000,
-            last_claim_epoch: None,
+            last_claim: None,
         },
         moderators: ContractFeePotState {
             credits: u64::MAX,
-            last_claim_epoch: Some(0),
+            last_claim: Some(ContractFeePotLastClaim {
+                epoch_index: 0,
+                time_ms: 1_700_000_000_000,
+                claimant_id: Identifier::from([9u8; 32]),
+            }),
         },
     };
 

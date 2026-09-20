@@ -806,12 +806,22 @@ message GetContractFeePotsRequest {
 }
 
 message GetContractFeePotsResponse {
+  // The last payout of a pot, which the claim that made it left in state
+  message ContractFeePotLastClaim {
+    uint32 epoch = 1; // The epoch (u16) the pot was paid out in; a pot is paid
+                      // out at most once per epoch
+    uint64 time_ms = 2
+        [ jstype = JS_STRING ]; // The time of the block that paid the pot out
+    bytes claimant_id = 3; // The identity that signed the claim: the contract
+                           // owner for the owner pot, the member of the
+                           // moderation team that claimed for the moderators pot
+  }
+
   // One of the two pots a contract's document action fees collect in
   message ContractFeePot {
     uint64 credits = 1 [ jstype = JS_STRING ]; // What the pot holds
-    optional uint32 last_claim_epoch =
-        2; // The epoch the pot was last paid out in, unset when it never was;
-           // a pot is paid out at most once per epoch
+    ContractFeePotLastClaim last_claim =
+        2; // Unset when the pot was never paid out
   }
 
   message ContractFeePots {

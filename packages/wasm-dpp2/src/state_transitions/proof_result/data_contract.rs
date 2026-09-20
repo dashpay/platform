@@ -208,9 +208,10 @@ impl_wasm_type_info!(
 );
 
 /// `VerifiedContractFeeClaim` proof-result wrapper: the pot a contract fee claim paid out (the
-/// contract, the pot, the epoch the pot was last claimed in, the credits left in it) and the
-/// balance of every identity the claim paid, after the claim. A pot is paid out at most once
-/// per epoch, so while `lastClaimEpoch` is the epoch of the claim the proof is of that claim.
+/// contract, the pot, its last claim, the credits left in it) and the balance of every identity
+/// the claim paid, after the claim. A pot is paid out at most once per epoch, so while
+/// `lastClaimEpoch` is the epoch of the claim the proof is of that claim, and `lastClaimantId`
+/// and `lastClaimTimeMs` are its own.
 #[wasm_bindgen(js_name = "VerifiedContractFeeClaim")]
 #[derive(Clone)]
 pub struct VerifiedContractFeeClaimWasm {
@@ -223,12 +224,22 @@ pub struct VerifiedContractFeeClaimWasm {
     /// again since
     #[wasm_bindgen(js_name = "lastClaimEpoch")]
     pub last_claim_epoch: u16,
+    pub(super) last_claim_time_ms: u64,
+    /// The identity that signed the last claim of the pot
+    #[wasm_bindgen(getter_with_clone, js_name = "lastClaimantId")]
+    pub last_claimant_id: IdentifierWasm,
     pub(super) remaining_credits: u64,
     pub(super) balances: Map, // Map<string(base58), BigInt>
 }
 
 #[wasm_bindgen(js_class = VerifiedContractFeeClaim)]
 impl VerifiedContractFeeClaimWasm {
+    /// The time, in milliseconds, of the block the pot was last paid out in
+    #[wasm_bindgen(getter = "lastClaimTimeMs")]
+    pub fn last_claim_time_ms(&self) -> JsValue {
+        BigInt::from(self.last_claim_time_ms).into()
+    }
+
     /// The credits left in the pot after the claim
     #[wasm_bindgen(getter = "remainingCredits")]
     pub fn remaining_credits(&self) -> JsValue {
@@ -251,6 +262,11 @@ impl VerifiedContractFeeClaimWasm {
                 JsValue::from_f64(self.last_claim_epoch as f64),
             ),
             (
+                "lastClaimTimeMs",
+                BigInt::from(self.last_claim_time_ms).into(),
+            ),
+            ("lastClaimantId", self.last_claimant_id.into()),
+            (
                 "remainingCredits",
                 BigInt::from(self.remaining_credits).into(),
             ),
@@ -272,6 +288,15 @@ impl VerifiedContractFeeClaimWasm {
             (
                 "lastClaimEpoch",
                 JsValue::from_f64(self.last_claim_epoch as f64),
+            ),
+            // A block time in milliseconds stays exact as a JavaScript number.
+            (
+                "lastClaimTimeMs",
+                JsValue::from_f64(self.last_claim_time_ms as f64),
+            ),
+            (
+                "lastClaimantId",
+                JsValue::from_str(&self.last_claimant_id.to_base58()),
             ),
             (
                 "remainingCredits",

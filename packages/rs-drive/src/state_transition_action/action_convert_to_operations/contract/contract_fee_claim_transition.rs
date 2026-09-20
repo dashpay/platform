@@ -24,12 +24,12 @@ impl DriveHighLevelOperationConverter for ContractFeeClaimTransitionAction {
             .contract_fee_claim_transition
         {
             0 => {
+                let last_claim = self.last_claim();
                 let ContractFeeClaimTransitionAction::V0(ContractFeeClaimTransitionActionV0 {
                     claimant_id,
                     data_contract_id: contract_id,
                     identity_contract_nonce,
                     pot,
-                    epoch_index,
                     payouts,
                     ..
                 }) = self;
@@ -62,10 +62,10 @@ impl DriveHighLevelOperationConverter for ContractFeeClaimTransitionAction {
                     })
                 }));
                 operations.push(ContractFeePotOperation(
-                    ContractFeePotOperationType::SetLastClaimEpoch {
+                    ContractFeePotOperationType::SetLastClaim {
                         contract_id,
                         pot,
-                        epoch_index,
+                        last_claim,
                     },
                 ));
                 Ok(operations)

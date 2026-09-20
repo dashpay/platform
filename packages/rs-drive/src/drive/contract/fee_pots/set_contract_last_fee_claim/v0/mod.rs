@@ -1,11 +1,10 @@
-use crate::drive::contract::fee_pots::types::encode_epoch_index;
-use crate::drive::contract::paths::{contract_last_fee_claim_epoch_key, contract_other_path_vec};
+use crate::drive::contract::fee_pots::types::encode_last_claim;
+use crate::drive::contract::paths::{contract_last_fee_claim_key, contract_other_path_vec};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
-use dpp::block::epoch::EpochIndex;
-use dpp::data_contract::document_type::action_fees::ContractFeePot;
+use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
@@ -14,11 +13,11 @@ use std::collections::HashMap;
 
 impl Drive {
     #[inline(always)]
-    pub(super) fn set_contract_last_fee_claim_epoch_operations_v0(
+    pub(super) fn set_contract_last_fee_claim_operations_v0(
         &self,
         contract_id: Identifier,
         pot: ContractFeePot,
-        epoch_index: EpochIndex,
+        last_claim: &ContractFeePotLastClaim,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -37,11 +36,12 @@ impl Drive {
             );
         }
         // The item carries no storage flags: it is never deleted, so there is no refund to
-        // attribute, and its two bytes are the same whoever claims.
+        // attribute, and every last claim has the same size, so the claim that replaces it
+        // adds no bytes for anyone to own.
         let op = QualifiedGroveDbOp::insert_or_replace_op(
             contract_other_path_vec(contract_id.as_slice()),
-            contract_last_fee_claim_epoch_key(pot).to_vec(),
-            Element::new_item(encode_epoch_index(epoch_index)),
+            contract_last_fee_claim_key(pot).to_vec(),
+            Element::new_item(encode_last_claim(last_claim)),
         )
         .dont_check_for_backwards_references();
         Ok(vec![GroveOperation(op)])

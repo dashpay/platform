@@ -490,6 +490,10 @@ export interface ContractClaimFeesResult {
   pot: ContractFeePotKind;
   /** The epoch the pot was last paid out in: the epoch of this claim, unless it was claimed again since */
   lastClaimEpoch: number;
+  /** The time, in milliseconds, of the block that last paid the pot out */
+  lastClaimTimeMs: bigint;
+  /** The identity that signed the last claim of the pot: the claiming identity, unless it was claimed again since */
+  lastClaimantId: Identifier;
   /** The credits left in the pot: what an equal split left over, and any fee collected since */
   remainingCredits: bigint;
   /** The balance, after the claim, of every identity the pot pays, keyed by base58 identity id */
@@ -580,7 +584,18 @@ impl WasmSdk {
             }
             .into(),
         )?;
-        set("lastClaimEpoch", JsValue::from(claimed.last_claim_epoch))?;
+        set(
+            "lastClaimEpoch",
+            JsValue::from(claimed.last_claim.epoch_index),
+        )?;
+        set(
+            "lastClaimTimeMs",
+            js_sys::BigInt::from(claimed.last_claim.time_ms).into(),
+        )?;
+        set(
+            "lastClaimantId",
+            IdentifierWasm::from(claimed.last_claim.claimant_id).into(),
+        )?;
         set(
             "remainingCredits",
             js_sys::BigInt::from(claimed.remaining_credits).into(),

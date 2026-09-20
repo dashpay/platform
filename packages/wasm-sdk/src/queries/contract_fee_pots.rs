@@ -1,5 +1,6 @@
 //! The fee pots of a data contract (`getContractFeePots`): what its document action fees have
-//! paid into the owner pot and the moderators pot, and the epoch each was last paid out in.
+//! paid into the owner pot and the moderators pot, and the last claim of each: the epoch and
+//! the block time it was paid out in, and the identity that claimed it.
 
 use crate::error::WasmSdkError;
 use crate::queries::ProofMetadataResponseWasm;
@@ -8,7 +9,7 @@ use dash_sdk::platform::contract_fee_pots::{ContractFeePotState, ContractFeePots
 use dash_sdk::platform::{Fetch, Identifier};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::identifier::IdentifierLikeJs;
+use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 
 #[wasm_bindgen(typescript_custom_section)]
 const CONTRACT_FEE_POTS_TS: &'static str = r#"
@@ -24,6 +25,14 @@ export interface ContractFeePotState {
    * most once per epoch, so a claim in this epoch is refused.
    */
   lastClaimEpoch?: number;
+  /** The time, in milliseconds, of the block that last paid the pot out; set with `lastClaimEpoch`. */
+  lastClaimTimeMs?: bigint;
+  /**
+   * The identity that signed the last claim, base58; set with `lastClaimEpoch`. The contract
+   * owner for the owner pot, and for the moderators pot the member of the moderation team
+   * that claimed it for the team.
+   */
+  lastClaimantId?: string;
 }
 
 /**
@@ -51,9 +60,17 @@ fn pot_to_js(pot: &ContractFeePotState) -> Result<JsValue, WasmSdkError> {
             .map_err(|_| WasmSdkError::generic(format!("failed to set `{key}` on the fee pot")))
     };
     set("credits", js_sys::BigInt::from(pot.credits).into())?;
-    // Epoch 0 is an epoch a pot can have been paid out in, so "never" is the absent field.
-    if let Some(epoch) = pot.last_claim_epoch {
-        set("lastClaimEpoch", JsValue::from(epoch))?;
+    // Epoch 0 is an epoch a pot can have been paid out in, so "never" is the absent fields.
+    if let Some(last_claim) = pot.last_claim {
+        set("lastClaimEpoch", JsValue::from(last_claim.epoch_index))?;
+        set(
+            "lastClaimTimeMs",
+            js_sys::BigInt::from(last_claim.time_ms).into(),
+        )?;
+        set(
+            "lastClaimantId",
+            JsValue::from_str(&IdentifierWasm::from(last_claim.claimant_id).to_base58()),
+        )?;
     }
     Ok(result.into())
 }
@@ -70,8 +87,8 @@ fn pots_to_js(pots: &ContractFeePots) -> Result<JsValue, WasmSdkError> {
 #[wasm_bindgen]
 impl WasmSdk {
     /// What the document action fees of a contract have collected for its owner and for its
-    /// moderation team, and the epoch each pot was last paid out in. Use it to decide whether
-    /// a `contractClaimFees` is worth sending.
+    /// moderation team, and the last claim of each pot: its epoch, its block time and who
+    /// claimed. Use it to decide whether a `contractClaimFees` is worth sending.
     ///
     /// # Example
     /// ```javascript
