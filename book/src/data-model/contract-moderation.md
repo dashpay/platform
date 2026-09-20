@@ -119,13 +119,47 @@ The writers, readers and provers live in `packages/rs-drive/src/drive/contract/m
 
 A status query answers for the lists it names and no others: `Drive::verify_contract_moderation_status` and the SDK result both return `ContractModerationListStatuses`, one `ContractModerationListStatus` per list queried, so a list that was not read is absent rather than reported as empty (`banned()` is `None` unless the banlist was queried). `ContractModerationStatusQuery::for_contract` names every list the contract keeps; the wasm-sdk does the same, fetching the contract, when the query names no list. Both have `Fetch` and `FetchUnproved` impls in the Rust SDK (`platform::contract_moderation`), wasm-sdk functions and `contracts.moderationStatus` / `contracts.moderationEntries` on the JavaScript SDK. The proof of a moderation transition's execution covers the lists the moderation touched and is classified as affected state: an earlier or later moderation leaving the same entries verifies just the same. A ban does two things, adds the ban and removes a suspension, so its proof covers every list the contract keeps (the banlist entry present, the suspension absent), which the prover and the verifier both read from the contract's config (so the SDKs fetch and cache the contract before broadcasting a ban, as they do for the contracts a document batch touches); an unban, a suspend and an unsuspend prove the one entry they edit. The result, `VerifiedContractModerationListStatuses`, holds one `ContractModerationListStatus` per list proved, never a full status: a list that was not proved is left unknown rather than reported as empty. An identity whose unsuspend was just proved may be banned; the status query answers that.
 
+## Fee Pots and the Claim
+
+A moderation team can be paid. A document type may charge a fixed fee in credits for an action on its documents (the `actionFees` keyword, see [Document action fees](../fees/overview.md#document-action-fees)), split in two parts. The `owner` parts collect in the contract's **owner pot**, the `moderators` parts in its **moderators pot**.
+
+```text
+[40] PreFundedSpecializedBalances (sum tree)
+├── [64]  owner fee pots      (sum tree) -> <contract id> -> SumItem(credits)
+├── [128] voting balances
+└── [192] moderators fee pots (sum tree) -> <contract id> -> SumItem(credits)
+
+[64] DataContractDocuments -> <contract id> -> [2] other
+    ├── [32] epoch the owner pot was last claimed in       Item(u16 BE)   (after a claim)
+    └── [96] epoch the moderators pot was last claimed in  Item(u16 BE)   (after a claim)
+```
+
+The pots are not under the contract. The per-block total credits check (`calculate_total_credits_balance`) sums a fixed set of root sum trees, and `DataContractDocuments` is a normal tree: credits parked under a contract would leave that sum and fail every block with `CorruptedCreditsNotBalanced`. `PreFundedSpecializedBalances` is one of the summed trees, so the pots live there, in two sum trees beside the voting balances, created at genesis (state structure 4) and by the upgrade to protocol version 14 through the same helper, one after the other, so that both node populations build the same Merk. A pot is created by the first fee it receives. The two last claim epochs are plain items of the contract's other tree, below `128` so the banlist stays on top, written by the first claim.
+
+**The team** that shares the moderators pot is the set of identities the contract appoints, the owner among them only when appointed, and the owner alone when nobody is appointed (`ContractModerators::team`). It is about earnings, not authority: an owner who is not appointed still may moderate. `ContractFeePot::recipients` names who a payout of a pot goes to: the contract owner for the owner pot, the team for the moderators pot, nobody for the moderators pot of a contract that declares no moderation.
+
+`ContractFeeClaim` (state transition type 25) names a contract and a pot and pays the pot out. It is signed with a CRITICAL authentication key under the signer's contract nonce, and the claimant pays its gas like any other transition.
+
+| Stage | Check | Error |
+|---|---|---|
+| Transform (state, paid) | the contract exists | `DataContractNotPresentError`, unpaid |
+| | the signer is a recipient of the pot: the owner for the owner pot, a member of the team for the moderators pot | 41113 |
+| | the pot was not paid out in this epoch yet | 41111 |
+| | every recipient gets at least a credit | 41112 |
+
+The owner pot goes to the owner whole. The moderators pot is split equally between the team, and what the split leaves over, less than a credit per member, stays in the pot for the next claim, so no member is favoured by the order of the identity ids. Each pot is paid out at most once per epoch and the two are independent: the owner's claim does not use up the team's, nor the reverse. A refused claim is paid for by a nonce bump and leaves the pot and its last claim epoch alone. As for moderation, state validation *is* the transform, so the mempool refuses with the same codes as a block.
+
+The team is read when the claim executes. An owner who changes the appointed set by a contract update and then claims pays the new set: that follows from the owner controlling the contract's config, and is not prevented. The claim credits every recipient's balance, which is why a named moderator must exist (41110): crediting a balance that is not there is an internal error.
+
+The proof of a claim's execution shows the pot with its last claim epoch and the balance of every recipient, which the prover and the verifier both read from the contract. `VerifiedContractFeeClaim` carries the contract id, the pot, that epoch, the credits left in the pot and the balances. A pot that was never claimed proves no claim; a later claim of the same pot verifies just the same, so the result is classified as affected state.
+
 ## Versioning Touchpoints
 
 All in place for protocol version 14: `CONTRACT_VERSIONS_V6` makes config V2 the config of every new contract (`max_version` and `default_current_version` 2) and `validate_config_update` 2; `STATE_TRANSITION_SERIALIZATION_VERSIONS_V3` and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` carry the transition's slots and `batch_state_transition.contract_moderation_gate`, and the contract update's basic structure moves to 2 to validate the declaration; `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2 and adds the `moderation` table (its `update_contract` 2 belongs to token distribution and does nothing for moderation); `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds the converter slot and bumps `documents_batch_transition` to 1 for the sweep; `DRIVE_VERIFY_METHOD_VERSIONS` and `DRIVE_ABCI_QUERY_VERSIONS` gain their moderation tables; `SYSTEM_LIMITS_V4` gains `max_contract_moderators` and `max_contract_suspension_until`.
 
 ## What Is Not There Yet
 
-Group-based moderators (`AuthorizedActionTakers::Group` through group actions), keys bound to the contract allowed to sign its moderation, entry metadata such as a reason or a timestamp, and the Swift and Kotlin SDKs.
+Action fees on token transitions, a DAPI query and SDK methods for the fee pots and the claim, group-based moderators (`AuthorizedActionTakers::Group` through group actions), keys bound to the contract allowed to sign its moderation, entry metadata such as a reason or a timestamp, and the Swift and Kotlin SDKs.
 
 ## Tests
 

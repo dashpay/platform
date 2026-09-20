@@ -232,6 +232,77 @@ the client chooses between token and credits before signing. Together with
 contract-owner gas this is the "free usage" pattern: an app hands out tokens,
 a user posts for free while they last, and keeps posting on credits after.
 
+### Document action fees
+
+From protocol version 14 a document type may charge a fixed fee in credits for
+an action on one of its documents, on top of the gas. The `actionFees` keyword
+(v3 document meta-schema) sits beside `tokenCost` and prices the same six
+actions:
+
+```json
+"post": {
+  "type": "object",
+  "actionFees": {
+    "pricing": "feeMultiplier",
+    "create": { "moderators": 100000000, "owner": 10000000 }
+  }
+}
+```
+
+Creating a post here costs an extra 0.001 Dash for the contract's moderation
+team and 0.0001 Dash for its owner. Each fee has those two parts, either of
+which may be left out. The `owner` parts collect in the contract's **owner
+pot** and the `moderators` parts in its **moderators pot**, and a
+`ContractFeeClaim` state transition pays a pot out (see
+[Contract Moderation](../data-model/contract-moderation.md#fee-pots-and-the-claim)).
+A `moderators` part needs a contract that declares moderation
+(`DocumentActionFeesWithoutModerationError`, 10902): the moderation team is
+who that pot is for.
+
+**Pricing.** `fixed` charges the declared amounts as written. `feeMultiplier`,
+the default, scales them by the fee multiplier of the epoch the action
+executes in (`declared * multiplier_permille / 1000`, rounded down), so a fee
+follows the network's fees. The multiplier is the item every epoch tree
+records, read once per batch and billed to it
+(`fetch_action_fee_multiplier_with_fee`). In the first block of an epoch that
+item is not there yet, because state transitions execute before the end of the
+block, where the epoch is initialized; the multiplier the epoch is about to be
+initialized with, the fee schedule's, is used then. Nothing else reads the
+epoch multiplier today: the metered fees do not scale with it.
+
+**The amounts never change.** Nobody signs the fee on a transition, so what a
+contract showed when it was published is the only thing its users agreed to.
+A contract update may not add, change or remove the `actionFees` of an
+existing document type, nor switch their pricing (`DocumentTypeUpdateError`).
+A document type *added* by an update may declare its own, so a live contract
+gets fees through new document types only.
+
+**Who pays.** Whoever pays the gas pays the action fee: the signer, or the
+contract owner when they sponsor the gas. A sponsor's balance has to cover the
+gas *and* the fees they would owe; one that insisted and falls short is the
+same unpaid refusal as before (40222), and one that only preferred hands the
+gas and the fees back to the signer. Fee validation and execution ask that one
+question through one function (`gas_sponsor_pays`), on one estimate, so they
+always name the same payer. The contract owner never pays the `owner` part:
+it would travel through the owner pot back to them and only cost writes. A
+sponsor is always the contract owner, so a sponsored action pays into the
+moderators pot only, which a contract that sponsors gas should price in. The
+fee counts against the budget of a budgeted signing key when its identity pays
+it.
+
+**Only an action that executes is charged.** A transition that fails, in the
+transformer or later in state validation, becomes a nonce bump, and a bump owes
+nothing. The fees are therefore read off the transitions when the execution
+event is built, after state validation had its say, not when the transformer
+ran.
+
+**The fee is not part of the `FeeResult`.** It moves as balance operations in
+the batch's own operation list: one removal from the payer, one addition per
+pot. The fee pools and the proposers see exactly what they saw before. The
+pots sit under the `PreFundedSpecializedBalances` root sum tree, which the
+per-block total credits check already sums, so the credits stay accounted for
+while they wait to be claimed.
+
 ## FeeResult
 
 All fee calculations produce a `FeeResult`:
