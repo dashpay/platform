@@ -206,7 +206,9 @@ mod fixtures {
     use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
     use crate::structure::conformance::ConformanceReport;
-    use crate::util::batch::drive_op_batch::AddressFundsOperationType;
+    use crate::util::batch::drive_op_batch::{
+        AddressFundsOperationType, ContractFeePotOperationType,
+    };
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::util::batch::DriveOperation;
     use crate::util::batch::GroveDbOpBatch;
@@ -240,6 +242,7 @@ mod fixtures {
     use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::document_type::action_fees::ContractFeePot;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;
@@ -455,6 +458,36 @@ mod fixtures {
                 platform_version,
             )
             .expect("expected to suspend");
+        // Both fee pots hold credits and were claimed once: the pots and the last claim
+        // epochs are created on first use.
+        let fee_pot_operations = [ContractFeePot::Owner, ContractFeePot::Moderators]
+            .into_iter()
+            .flat_map(|pot| {
+                [
+                    ContractFeePotOperationType::AddToPot {
+                        contract_id: contract.id(),
+                        pot,
+                        amount: 1_000,
+                    },
+                    ContractFeePotOperationType::SetLastClaimEpoch {
+                        contract_id: contract.id(),
+                        pot,
+                        epoch_index: 3,
+                    },
+                ]
+            })
+            .map(DriveOperation::ContractFeePotOperation)
+            .collect();
+        drive
+            .apply_drive_operations(
+                fee_pot_operations,
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to fill and claim the fee pots");
         conformance_of(&drive, "moderated_contract")
     }
 

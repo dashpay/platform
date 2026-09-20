@@ -1,0 +1,342 @@
+//! Drive-level tests of the contract fee pots.
+
+use crate::drive::contract::fee_pots::types::{ContractFeePotState, ContractFeePots};
+use crate::drive::Drive;
+use crate::util::batch::drive_op_batch::ContractFeePotOperationType;
+use crate::util::batch::DriveOperation;
+use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::action_fees::ContractFeePot;
+use dpp::data_contract::DataContract;
+use dpp::fee::fee_result::FeeResult;
+use dpp::identifier::Identifier;
+use dpp::tests::fixtures::get_data_contract_fixture;
+use dpp::version::PlatformVersion;
+
+const BOTH: [ContractFeePot; 2] = [ContractFeePot::Owner, ContractFeePot::Moderators];
+
+/// A drive holding one contract, whose other tree the last claim epochs live in.
+fn drive_with_contract() -> (Drive, DataContract) {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract =
+        get_data_contract_fixture(None, 0, platform_version.protocol_version).data_contract_owned();
+    drive
+        .insert_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to insert the contract");
+    (drive, contract)
+}
+
+fn apply(drive: &Drive, operations: Vec<ContractFeePotOperationType>, apply: bool) -> FeeResult {
+    drive
+        .apply_drive_operations(
+            operations
+                .into_iter()
+                .map(DriveOperation::ContractFeePotOperation)
+                .collect(),
+            apply,
+            &BlockInfo::default(),
+            None,
+            PlatformVersion::latest(),
+            None,
+        )
+        .expect("expected to apply the fee pot operations")
+}
+
+fn add(drive: &Drive, contract_id: Identifier, pot: ContractFeePot, amount: u64) {
+    apply(
+        drive,
+        vec![ContractFeePotOperationType::AddToPot {
+            contract_id,
+            pot,
+            amount,
+        }],
+        true,
+    );
+}
+
+fn fetch(drive: &Drive, contract_id: Identifier, pot: ContractFeePot) -> ContractFeePotState {
+    drive
+        .fetch_contract_fee_pot(contract_id, pot, None, PlatformVersion::latest())
+        .expect("expected to fetch the pot")
+}
+
+/// Proves and verifies `pots` and checks the result against a fetch of each.
+fn assert_proved(drive: &Drive, contract_id: Identifier, pots: &[ContractFeePot]) {
+    let platform_version = PlatformVersion::latest();
+    let proof = drive
+        .prove_contract_fee_pots(contract_id, pots, None, platform_version)
+        .expect("expected to prove the pots");
+    let (root_hash, proved) =
+        Drive::verify_contract_fee_pots(&proof, contract_id, pots, platform_version)
+            .expect("expected to verify the pots");
+    assert_eq!(
+        root_hash,
+        drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected a root hash")
+    );
+    for pot in pots {
+        assert_eq!(proved.pot(*pot), &fetch(drive, contract_id, *pot));
+    }
+}
+
+#[test]
+fn should_hold_nothing_and_no_claim_before_the_first_fee() {
+    let (drive, contract) = drive_with_contract();
+    for pot in BOTH {
+        assert_eq!(
+            fetch(&drive, contract.id(), pot),
+            ContractFeePotState::default()
+        );
+    }
+    assert_proved(&drive, contract.id(), &BOTH);
+}
+
+#[test]
+fn should_accumulate_each_pot_of_each_contract_on_its_own() {
+    let (drive, contract) = drive_with_contract();
+    let other_contract_id = Identifier::from([7; 32]);
+
+    add(&drive, contract.id(), ContractFeePot::Owner, 10);
+    add(&drive, contract.id(), ContractFeePot::Owner, 5);
+    add(&drive, contract.id(), ContractFeePot::Moderators, 100);
+    add(&drive, other_contract_id, ContractFeePot::Moderators, 3);
+
+    assert_eq!(
+        fetch(&drive, contract.id(), ContractFeePot::Owner).credits,
+        15
+    );
+    assert_eq!(
+        fetch(&drive, contract.id(), ContractFeePot::Moderators).credits,
+        100
+    );
+    assert_eq!(
+        fetch(&drive, other_contract_id, ContractFeePot::Owner).credits,
+        0
+    );
+    assert_eq!(
+        fetch(&drive, other_contract_id, ContractFeePot::Moderators).credits,
+        3
+    );
+}
+
+#[test]
+fn should_deduct_from_a_pot_and_refuse_more_than_it_holds() {
+    let (drive, contract) = drive_with_contract();
+    add(&drive, contract.id(), ContractFeePot::Moderators, 100);
+
+    apply(
+        &drive,
+        vec![ContractFeePotOperationType::DeductFromPot {
+            contract_id: contract.id(),
+            pot: ContractFeePot::Moderators,
+            amount: 99,
+        }],
+        true,
+    );
+    assert_eq!(
+        fetch(&drive, contract.id(), ContractFeePot::Moderators).credits,
+        1
+    );
+
+    let result = drive.apply_drive_operations(
+        vec![DriveOperation::ContractFeePotOperation(
+            ContractFeePotOperationType::DeductFromPot {
+                contract_id: contract.id(),
+                pot: ContractFeePot::Moderators,
+                amount: 2,
+            },
+        )],
+        true,
+        &BlockInfo::default(),
+        None,
+        PlatformVersion::latest(),
+        None,
+    );
+    assert!(result.is_err(), "a pot can not go below zero");
+    assert_eq!(
+        fetch(&drive, contract.id(), ContractFeePot::Moderators).credits,
+        1
+    );
+}
+
+#[test]
+fn should_record_the_last_claim_epoch_of_each_pot_on_its_own() {
+    let (drive, contract) = drive_with_contract();
+    let set = |pot, epoch_index| {
+        apply(
+            &drive,
+            vec![ContractFeePotOperationType::SetLastClaimEpoch {
+                contract_id: contract.id(),
+                pot,
+                epoch_index,
+            }],
+            true,
+        );
+    };
+
+    set(ContractFeePot::Moderators, 7);
+    assert_eq!(
+        fetch(&drive, contract.id(), ContractFeePot::Moderators).last_claim_epoch,
+        Some(7)
+    );
+    assert_eq!(
+        fetch(&drive, contract.id(), ContractFeePot::Owner).last_claim_epoch,
+        None
+    );
+
+    // A later claim replaces the epoch; epoch 0 is an epoch like any other.
+    set(ContractFeePot::Moderators, 300);
+    set(ContractFeePot::Owner, 0);
+    assert_eq!(
+        fetch(&drive, contract.id(), ContractFeePot::Moderators).last_claim_epoch,
+        Some(300)
+    );
+    assert_eq!(
+        fetch(&drive, contract.id(), ContractFeePot::Owner).last_claim_epoch,
+        Some(0)
+    );
+}
+
+#[test]
+fn should_prove_the_pots_asked_for_and_nothing_about_the_other() {
+    let (drive, contract) = drive_with_contract();
+    add(&drive, contract.id(), ContractFeePot::Owner, 10);
+    add(&drive, contract.id(), ContractFeePot::Moderators, 100);
+    apply(
+        &drive,
+        vec![ContractFeePotOperationType::SetLastClaimEpoch {
+            contract_id: contract.id(),
+            pot: ContractFeePot::Moderators,
+            epoch_index: 4,
+        }],
+        true,
+    );
+
+    assert_proved(&drive, contract.id(), &BOTH);
+    assert_proved(&drive, contract.id(), &[ContractFeePot::Owner]);
+    assert_proved(&drive, contract.id(), &[ContractFeePot::Moderators]);
+
+    // A proof of one pot leaves the other at its default rather than reading it.
+    let platform_version = PlatformVersion::latest();
+    let proof = drive
+        .prove_contract_fee_pots(
+            contract.id(),
+            &[ContractFeePot::Owner],
+            None,
+            platform_version,
+        )
+        .expect("expected to prove the owner pot");
+    let (_, proved) = Drive::verify_contract_fee_pots(
+        &proof,
+        contract.id(),
+        &[ContractFeePot::Owner],
+        platform_version,
+    )
+    .expect("expected to verify the owner pot");
+    assert_eq!(
+        proved,
+        ContractFeePots {
+            owner: ContractFeePotState {
+                credits: 10,
+                last_claim_epoch: None,
+            },
+            moderators: ContractFeePotState::default(),
+        }
+    );
+
+    // A proof of one pot does not verify as a proof of the other.
+    assert!(Drive::verify_contract_fee_pots(
+        &proof,
+        contract.id(),
+        &[ContractFeePot::Moderators],
+        platform_version,
+    )
+    .is_err());
+}
+
+#[test]
+fn should_count_the_pots_in_the_total_credits_of_the_platform() {
+    let (drive, contract) = drive_with_contract();
+    let platform_version = PlatformVersion::latest();
+    let balanced = |drive: &Drive| {
+        drive
+            .calculate_total_credits_balance(None, &platform_version.drive)
+            .expect("expected to sum the credits")
+            .ok()
+            .expect("expected the sum to be judged")
+    };
+    assert!(balanced(&drive));
+
+    // Credits that appear in a pot out of nowhere unbalance the platform: the pots are inside
+    // the sum every block is checked against.
+    add(&drive, contract.id(), ContractFeePot::Owner, 40);
+    add(&drive, contract.id(), ContractFeePot::Moderators, 60);
+    assert!(!balanced(&drive));
+
+    // Once the platform accounts for them, it balances again.
+    drive
+        .add_to_system_credits(100, None, platform_version)
+        .expect("expected to add to the system credits");
+    assert!(balanced(&drive));
+}
+
+#[test]
+fn should_estimate_a_pot_write_without_writing() {
+    let (drive, contract) = drive_with_contract();
+    let estimated = apply(
+        &drive,
+        vec![
+            ContractFeePotOperationType::AddToPot {
+                contract_id: contract.id(),
+                pot: ContractFeePot::Moderators,
+                amount: 100,
+            },
+            ContractFeePotOperationType::SetLastClaimEpoch {
+                contract_id: contract.id(),
+                pot: ContractFeePot::Moderators,
+                epoch_index: 1,
+            },
+        ],
+        false,
+    );
+    assert!(estimated.processing_fee > 0);
+    assert_eq!(
+        fetch(&drive, contract.id(), ContractFeePot::Moderators),
+        ContractFeePotState::default()
+    );
+
+    // The estimate covers what the write then costs.
+    let actual = apply(
+        &drive,
+        vec![
+            ContractFeePotOperationType::AddToPot {
+                contract_id: contract.id(),
+                pot: ContractFeePot::Moderators,
+                amount: 100,
+            },
+            ContractFeePotOperationType::SetLastClaimEpoch {
+                contract_id: contract.id(),
+                pot: ContractFeePot::Moderators,
+                epoch_index: 1,
+            },
+        ],
+        true,
+    );
+    assert!(
+        estimated.total_base_fee() >= actual.total_base_fee(),
+        "estimated {} < actual {}",
+        estimated.total_base_fee(),
+        actual.total_base_fee()
+    );
+}

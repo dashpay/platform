@@ -1,5 +1,7 @@
 use crate::drive::contract::paths::{
-    CONTRACT_BANLIST_KEY, CONTRACT_OTHER_KEY, CONTRACT_SUSPENSIONS_KEY, CONTRACT_VERSION_KEY,
+    CONTRACT_BANLIST_KEY, CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY,
+    CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY, CONTRACT_OTHER_KEY, CONTRACT_SUSPENSIONS_KEY,
+    CONTRACT_VERSION_KEY,
 };
 use crate::drive::document::structure::document_type;
 use crate::drive::RootTree;
@@ -88,6 +90,34 @@ pub(crate) fn structure() -> StructureNode {
                         "The contract's version, readable without \
                              deserializing the contract. Rewritten on every \
                              update.",
+                    ),
+                    StructureNode::fixed(
+                        "last_owner_fee_claim_epoch",
+                        &[CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY],
+                        "LastOwnerFeeClaimEpoch",
+                        "CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY",
+                    )
+                    .kind(ElementKind::Item)
+                    .lazy()
+                    .value("epoch index, u16 big endian")
+                    .describe(
+                        "The epoch the contract's owner fee pot was last \
+                             claimed in. Written by the first claim; a pot is \
+                             claimed at most once per epoch.",
+                    ),
+                    StructureNode::fixed(
+                        "last_moderators_fee_claim_epoch",
+                        &[CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY],
+                        "LastModeratorsFeeClaimEpoch",
+                        "CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY",
+                    )
+                    .kind(ElementKind::Item)
+                    .lazy()
+                    .value("epoch index, u16 big endian")
+                    .describe(
+                        "The epoch the contract's moderators fee pot was \
+                             last claimed in. Written by the first claim; a \
+                             pot is claimed at most once per epoch.",
                     ),
                     StructureNode::fixed(
                         "banlist",

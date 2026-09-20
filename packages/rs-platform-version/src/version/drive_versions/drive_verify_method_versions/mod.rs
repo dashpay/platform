@@ -40,6 +40,7 @@ pub struct DriveVerifyContractGroupMethodVersions {
 pub struct DriveVerifyContractModerationMethodVersions {
     pub verify_contract_moderation_status: FeatureVersion,
     pub verify_contract_moderation_entries: FeatureVersion,
+    pub verify_contract_fee_pots: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

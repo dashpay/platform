@@ -9,6 +9,9 @@ mod apply;
 mod contract_fetch_info;
 #[cfg(feature = "server")]
 mod estimation_costs;
+/// The fee pots a contract's document action fees accumulate in
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod fee_pots;
 #[cfg(feature = "server")]
 pub(crate) mod get_fetch;
 #[cfg(feature = "server")]
