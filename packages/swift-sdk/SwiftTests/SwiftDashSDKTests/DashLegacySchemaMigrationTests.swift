@@ -184,6 +184,30 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         }
     }
 
+    func testCheckpointRejectsBusyWALAndConfirmsDeleteMode() throws {
+        try withStore { url in
+            try autoreleasepool {
+                let writer = try DashLegacyStoreSQLite.Connection(url, writable: true)
+                try writer.execute("PRAGMA journal_mode=WAL")
+                try writer.execute("PRAGMA wal_autocheckpoint=0")
+                let reader = try DashLegacyStoreSQLite.Connection(url, writable: false)
+                try reader.execute("BEGIN")
+                try reader.query("SELECT ZNAME FROM ZPERSISTENTWALLET") { _ in }
+                try writer.execute("UPDATE ZPERSISTENTWALLET SET ZNAME='checkpointed'")
+                XCTAssertThrowsError(try DashLegacyStoreSQLite.checkpoint(url))
+                try reader.execute("ROLLBACK")
+            }
+            try DashLegacyStoreSQLite.checkpoint(url)
+            let connection = try DashLegacyStoreSQLite.Connection(url, writable: false)
+            var mode = ""
+            try connection.query("PRAGMA journal_mode") {
+                mode = String(cString: sqlite3_column_text($0, 0))
+            }
+            XCTAssertEqual(mode, "delete")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + "-wal"))
+        }
+    }
+
     func testChangedSourceIsNotOverwrittenAndRetryPreservesNewWrite() throws {
         try withStore { url in
             XCTAssertThrowsError(try open(url, hooks: .init(visit: { phase, source in

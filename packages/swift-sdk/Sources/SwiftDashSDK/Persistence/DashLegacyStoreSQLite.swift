@@ -116,7 +116,11 @@ enum DashLegacyStoreSQLite {
         guard sqlite3_wal_checkpoint_v2(connection.handle, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil) == SQLITE_OK else {
             throw Failure.database("Cannot close the migrated WAL")
         }
-        try connection.execute("PRAGMA journal_mode=DELETE")
+        var modes: [String] = []
+        try connection.query("PRAGMA journal_mode=DELETE") { modes.append(string($0, 0).lowercased()) }
+        guard modes == ["delete"] else {
+            throw Failure.database("Migrated store did not leave WAL mode")
+        }
     }
 
     struct Column: Equatable {
