@@ -29,7 +29,10 @@ container failure and never resets the store.
 Applications with their own database paths must use
 `DashModelContainer.create(url:)` before opening the store elsewhere. Direct
 `ModelContainer` construction bypasses this compatibility bridge. The iOS host
-uses the shared factory while retaining its existing store path and lifecycle.
+uses `DashModelContainer.createAsync(url:)` while retaining its existing store
+path and lifecycle. This async variant opens/migrates on a dedicated serial
+queue and returns only the Sendable container; callers create and use contexts
+on their owning actor. Coalesce concurrent opens of the same URL in the app.
 The bridge is for local stores; CloudKit and in-memory containers continue to
 use their ordinary migration plan.
 

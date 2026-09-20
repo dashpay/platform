@@ -34,15 +34,20 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
     private enum Injected: Error { case stop }
 
     private func withStore(baseline: Bool = false, _ body: (URL) throws -> Void) throws {
+        let (directory, url) = try makeStore(baseline: baseline)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try autoreleasepool { try body(url) }
+    }
+
+    private func makeStore(baseline: Bool = false) throws -> (URL, URL) {
         let source = try XCTUnwrap(Bundle.module.url(
             forResource: baseline ? "dash-v1" : "fixture", withExtension: "store",
             subdirectory: baseline ? "Fixtures/SchemaStores" : "Fixtures/SchemaStores/legacy-fd8d8d13e5"))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("DashModel.store")
         try FileManager.default.copyItem(at: source, to: url)
-        try autoreleasepool { try body(url) }
+        return (directory, url)
     }
     private func open(_ url: URL, hooks: DashLegacySchemaBridge.Hooks = .init()) throws -> ModelContainer {
         let schema = DashModelContainer.schema
@@ -416,5 +421,57 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         XCTAssertThrowsError(try DashLegacyStoreSQLite.validatePreservation(from: original, to: candidate), "Declared storage type changes must be rejected even when cells agree")
         try copy.execute("ALTER TABLE ZPERSISTENTWALLET DROP COLUMN T")
         XCTAssertThrowsError(try DashLegacyStoreSQLite.validatePreservation(from: original, to: candidate), "Removed original columns must fail validation")
+    }
+
+    func testLargeHistoricalStoreMigratesAsynchronouslyWhileMainActorRemainsResponsive() async throws {
+        let (directory, url) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // Synthetic storage load only: these payloads are not broadcastable
+        // transactions or a production wallet. Populate the pinned old layout.
+        try autoreleasepool {
+            let connection = try DashLegacyStoreSQLite.Connection(url, writable: true)
+            try connection.execute("""
+                WITH RECURSIVE rows(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM rows WHERE n<10000)
+                INSERT INTO ZPERSISTENTTRANSACTION
+                (Z_PK,Z_ENT,Z_OPT,ZBLOCKHEIGHT,ZBLOCKPOSITION,ZBLOCKTIMESTAMP,ZCONTEXT,ZDIRECTION,
+                 ZFIRSTSEEN,ZHASBLOCKPOSITION,ZNETAMOUNT,ZPROVIDERCOLLATERALVOUT,ZTRANSACTIONTYPEKIND,
+                 ZCREATEDAT,ZLASTUPDATED,ZLABEL,ZTRANSACTIONTYPE,ZTRANSACTIONDATA,ZTXID)
+                SELECT n,(SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME='PersistentTransaction'),1,
+                       0,0,0,0,0,n,0,0,0,255,0,0,'synthetic','Standard',zeroblob(8192),
+                       CAST(printf('%032d',n) AS BLOB) FROM rows;
+                UPDATE Z_PRIMARYKEY SET Z_MAX=10000 WHERE Z_NAME='PersistentTransaction';
+                """)
+        }
+        let bytes = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+        let heartbeat = Task { @MainActor in
+            var ticks = 0
+            var longestGap = 0.0
+            var previous = Date.timeIntervalSinceReferenceDate
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+                let now = Date.timeIntervalSinceReferenceDate
+                longestGap = max(longestGap, now - previous)
+                previous = now
+                ticks += 1
+            }
+            return (ticks, longestGap)
+        }
+        defer { heartbeat.cancel() }
+        let started = Date.timeIntervalSinceReferenceDate
+        let container = try await DashModelContainer.createAsync(url: url)
+        let elapsed = Date.timeIntervalSinceReferenceDate - started
+        heartbeat.cancel()
+        let (ticks, longestGap) = await heartbeat.value
+        XCTAssertGreaterThan(ticks, 1, "The main actor must keep executing while migration runs")
+        XCTAssertEqual(try container.mainContext.fetchCount(FetchDescriptor<PersistentTransaction>()), 10_000)
+        try verifyRows(container.mainContext)
+        let report = "Legacy migration benchmark: bytes=\(bytes) transactions=10000 seconds=\(elapsed) mainTicks=\(ticks) maxMainGap=\(longestGap)"
+        Swift.print(report)
+        let attachment = XCTAttachment(string: report)
+        attachment.name = "legacy-migration-benchmark"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let reopened = try await DashModelContainer.createAsync(url: url)
+        XCTAssertEqual(try reopened.mainContext.fetchCount(FetchDescriptor<PersistentTransaction>()), 10_000)
     }
 }

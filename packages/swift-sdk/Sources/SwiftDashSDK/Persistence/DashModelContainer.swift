@@ -1,4 +1,5 @@
 import Foundation
+import Dispatch
 import SwiftData
 
 /// Factory for creating SwiftData model containers for Dash Platform persistence
@@ -131,6 +132,26 @@ public enum DashModelContainer {
             cloudKitDatabase: .none
         )
         return try makeContainer(configuration: modelConfiguration)
+    }
+
+    private static let storeOpenQueue = DispatchQueue(
+        label: "org.dash.swift-sdk.store-open", qos: .userInitiated)
+
+    /// Open and migrate a local store without blocking the caller's actor.
+    /// Only the Sendable container crosses the queue; create/use contexts on
+    /// their owning actor after this returns. Callers sharing a URL should
+    /// coalesce in-flight opens and retain one container for that store.
+    public static func createAsync(url: URL) async throws -> ModelContainer {
+        try await withCheckedThrowingContinuation { continuation in
+            storeOpenQueue.async {
+                do {
+                    let container = try autoreleasepool { try create(url: url) }
+                    continuation.resume(returning: container)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 
     /// The one place a persistent container is built: the live schema is
