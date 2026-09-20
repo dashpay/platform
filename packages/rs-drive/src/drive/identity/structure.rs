@@ -44,7 +44,10 @@ pub(crate) fn structure() -> StructureNode {
     .kind(ElementKind::Tree)
     .source("packages/rs-drive/src/drive/mod.rs")
     .book("data-model/identities.md")
-    .describe("Every identity: its keys, revision and nonces. Balances live in their own root tree.")
+    .describe(
+        "Every identity: its keys, revision and nonces. \
+         Balances live in their own root tree.",
+    )
     .child(
         StructureNode::identifier("identity", "identity_id", "The identity id")
             .kind(ElementKind::Tree)
@@ -59,18 +62,26 @@ pub(crate) fn structure() -> StructureNode {
                 )
                 .kind(ElementKind::Tree)
                 .lazy()
-                .describe("What the identity keeps per data contract: a nonce and the keys bound to the contract.")
+                .describe(
+                    "What the identity keeps per data contract: a \
+                     nonce and the keys bound to the contract.",
+                )
                 .child(
                     StructureNode::dynamic(
                         "bound",
                         "contract_or_document_type",
                         KeyMatcher::Any,
                         KeyEncoding::Composite,
-                        "A contract id, or a contract id followed by a document type name for keys bound to one document type",
+                        "A contract id, or a contract id followed by a \
+                         document type name for keys bound to one \
+                         document type",
                     )
                     .kind(ElementKind::Tree)
                     .source("packages/rs-drive/src/drive/identity/contract_info/mod.rs")
-                    .describe("The identity's state for one contract or one of its document types.")
+                    .describe(
+                        "The identity's state for one contract or one of \
+                         its document types.",
+                    )
                     .children(vec![
                         StructureNode::fixed(
                             "nonce",
@@ -80,8 +91,14 @@ pub(crate) fn structure() -> StructureNode {
                         )
                         .kind(ElementKind::Item)
                         .lazy()
-                        .value("u64 big endian: the nonce and a bitmap of recently missed nonces")
-                        .describe("Stops replays of the identity's transitions on this contract."),
+                        .value(
+                            "u64 big endian: the nonce and a bitmap of \
+                             recently missed nonces",
+                        )
+                        .describe(
+                            "Stops replays of the identity's transitions on \
+                             this contract.",
+                        ),
                         StructureNode::fixed(
                             "keys",
                             &[ContractInfoStructure::ContractInfoKeysKey as u8],
@@ -90,13 +107,19 @@ pub(crate) fn structure() -> StructureNode {
                         )
                         .kind(ElementKind::Tree)
                         .lazy()
-                        .describe("The identity's keys bound to this contract, by purpose.")
+                        .describe(
+                            "The identity's keys bound to this contract, by \
+                             purpose.",
+                        )
                         .children(vec![
                             StructureNode::fixed("latest", &[], "LatestKey", "")
                                 .kind(ElementKind::Reference)
                                 .lazy()
                                 .reference(KEYS)
-                                .describe("The most recently added bound key, stored at the empty key."),
+                                .describe(
+                                    "The most recently added bound key, stored at the \
+                                     empty key.",
+                                ),
                             StructureNode::dynamic(
                                 "purpose",
                                 "purpose",
@@ -111,7 +134,10 @@ pub(crate) fn structure() -> StructureNode {
                                     .kind(ElementKind::Reference)
                                     .lazy()
                                     .reference(KEYS)
-                                    .describe("The single key, stored at the empty key, when the contract asks for a unique bound key."),
+                                    .describe(
+                                        "The single key, stored at the empty key, when \
+                                         the contract asks for a unique bound key.",
+                                    ),
                                 key_reference("One bound key, when the contract allows several."),
                             ]),
                         ]),
@@ -124,8 +150,14 @@ pub(crate) fn structure() -> StructureNode {
                     "IdentityRootStructure::IdentityTreeNonce",
                 )
                 .kind(ElementKind::Item)
-                .value("u64 big endian: the nonce and a bitmap of recently missed nonces")
-                .describe("Stops replays of identity level transitions such as credit transfers."),
+                .value(
+                    "u64 big endian: the nonce and a bitmap of \
+                     recently missed nonces",
+                )
+                .describe(
+                    "Stops replays of identity level transitions such \
+                     as credit transfers.",
+                ),
                 StructureNode::fixed(
                     "negative_credit",
                     &[IdentityRootStructure::IdentityTreeNegativeCredit as u8],
@@ -134,7 +166,10 @@ pub(crate) fn structure() -> StructureNode {
                 )
                 .kind(ElementKind::Item)
                 .value("credits, u64 big endian")
-                .describe("Debt the identity owes, taken out of its next top up."),
+                .describe(
+                    "Debt the identity owes, taken out of its next \
+                     top up.",
+                ),
                 StructureNode::fixed(
                     "keys",
                     &[IdentityRootStructure::IdentityTreeKeys as u8],
@@ -145,10 +180,16 @@ pub(crate) fn structure() -> StructureNode {
                 .book("sdk/identity-keys.md")
                 .describe("The identity's public keys.")
                 .child(
-                    StructureNode::dynamic("key", "key_id", KeyMatcher::Any, KeyEncoding::VarInt, "The key id")
-                        .kind(ElementKind::Item)
-                        .value("serialized IdentityPublicKey")
-                        .describe("One public key."),
+                    StructureNode::dynamic(
+                        "key",
+                        "key_id",
+                        KeyMatcher::Any,
+                        KeyEncoding::VarInt,
+                        "The key id",
+                    )
+                    .kind(ElementKind::Item)
+                    .value("serialized IdentityPublicKey")
+                    .describe("One public key."),
                 ),
                 StructureNode::fixed(
                     "key_references",
@@ -158,28 +199,46 @@ pub(crate) fn structure() -> StructureNode {
                 )
                 .kind(ElementKind::Tree)
                 .book("sdk/identity-keys.md")
-                .describe("Keys by purpose and security level, so a query can ask for the authentication keys of a level.")
+                .describe(
+                    "Keys by purpose and security level, so a query \
+                     can ask for the authentication keys of a level.",
+                )
                 .children(vec![
-                    StructureNode::fixed("authentication", &[Purpose::AUTHENTICATION as u8], "AUTHENTICATION", "Purpose::AUTHENTICATION")
-                        .kind(ElementKind::Tree)
-                        .source("packages/rs-dpp/src/identity/identity_public_key/purpose.rs")
-                        .describe("Authentication keys, by security level.")
-                        .children(vec![
-                            security_level("master", SecurityLevel::MASTER, "MASTER"),
-                            security_level("critical", SecurityLevel::CRITICAL, "CRITICAL"),
-                            security_level("high", SecurityLevel::HIGH, "HIGH"),
-                            security_level("medium", SecurityLevel::MEDIUM, "MEDIUM"),
-                        ]),
-                    StructureNode::fixed("transfer", &[Purpose::TRANSFER as u8], "TRANSFER", "Purpose::TRANSFER")
-                        .kind(ElementKind::Tree)
-                        .source("packages/rs-dpp/src/identity/identity_public_key/purpose.rs")
-                        .describe("Keys that can move credits out of the identity.")
-                        .child(key_reference("One transfer key.")),
-                    StructureNode::fixed("voting", &[Purpose::VOTING as u8], "VOTING", "Purpose::VOTING")
-                        .kind(ElementKind::Tree)
-                        .source("packages/rs-dpp/src/identity/identity_public_key/purpose.rs")
-                        .describe("Keys a masternode identity votes with.")
-                        .child(key_reference("One voting key.")),
+                    StructureNode::fixed(
+                        "authentication",
+                        &[Purpose::AUTHENTICATION as u8],
+                        "AUTHENTICATION",
+                        "Purpose::AUTHENTICATION",
+                    )
+                    .kind(ElementKind::Tree)
+                    .source("packages/rs-dpp/src/identity/identity_public_key/purpose.rs")
+                    .describe("Authentication keys, by security level.")
+                    .children(vec![
+                        security_level("master", SecurityLevel::MASTER, "MASTER"),
+                        security_level("critical", SecurityLevel::CRITICAL, "CRITICAL"),
+                        security_level("high", SecurityLevel::HIGH, "HIGH"),
+                        security_level("medium", SecurityLevel::MEDIUM, "MEDIUM"),
+                    ]),
+                    StructureNode::fixed(
+                        "transfer",
+                        &[Purpose::TRANSFER as u8],
+                        "TRANSFER",
+                        "Purpose::TRANSFER",
+                    )
+                    .kind(ElementKind::Tree)
+                    .source("packages/rs-dpp/src/identity/identity_public_key/purpose.rs")
+                    .describe("Keys that can move credits out of the identity.")
+                    .child(key_reference("One transfer key.")),
+                    StructureNode::fixed(
+                        "voting",
+                        &[Purpose::VOTING as u8],
+                        "VOTING",
+                        "Purpose::VOTING",
+                    )
+                    .kind(ElementKind::Tree)
+                    .source("packages/rs-dpp/src/identity/identity_public_key/purpose.rs")
+                    .describe("Keys a masternode identity votes with.")
+                    .child(key_reference("One voting key.")),
                 ]),
                 StructureNode::fixed(
                     "revision",
@@ -200,12 +259,21 @@ pub(crate) fn structure() -> StructureNode {
                 .since(14)
                 .lazy()
                 .book("data-model/key-limits.md")
-                .describe("What is left of each budgeted key's limit. Created with the identity's first budgeted key.")
+                .describe(
+                    "What is left of each budgeted key's limit. \
+                     Created with the identity's first budgeted key.",
+                )
                 .child(
-                    StructureNode::dynamic("key", "key_id", KeyMatcher::Any, KeyEncoding::VarInt, "The key id")
-                        .kind(ElementKind::Item)
-                        .value("remaining budget, u64 big endian")
-                        .describe("The remaining budget of one key."),
+                    StructureNode::dynamic(
+                        "key",
+                        "key_id",
+                        KeyMatcher::Any,
+                        KeyEncoding::VarInt,
+                        "The key id",
+                    )
+                    .kind(ElementKind::Item)
+                    .value("remaining budget, u64 big endian")
+                    .describe("The remaining budget of one key."),
                 ),
             ]),
     )
@@ -249,7 +317,8 @@ pub(crate) fn non_unique_key_hashes_structure() -> StructureNode {
     .source("packages/rs-drive/src/drive/mod.rs")
     .book("data-model/identities.md")
     .describe(
-        "Finds the identities sharing a public key, as masternode owner and voting keys can be.",
+        "Finds the identities sharing a public key, as \
+         masternode owner and voting keys can be.",
     )
     .child(
         StructureNode::dynamic(

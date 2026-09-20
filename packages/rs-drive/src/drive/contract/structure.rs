@@ -16,7 +16,11 @@ pub(crate) fn structure() -> StructureNode {
     .kind(ElementKind::Tree)
     .source("packages/rs-drive/src/drive/mod.rs")
     .book("data-model/data-contracts.md")
-    .describe("Every data contract with its documents and their indexes. The root of the root layer, since it is read most.")
+    .describe(
+        "Every data contract with its documents and their \
+         indexes. The root of the root layer, since it is \
+         read most.",
+    )
     .child(
         StructureNode::identifier("contract", "contract_id", "The data contract id")
             .kind(ElementKind::Tree)
@@ -26,7 +30,8 @@ pub(crate) fn structure() -> StructureNode {
                 StructureNode::fixed("contract", &[0], "Contract", "")
                     .kinds(
                         &[ElementKind::Item, ElementKind::Tree],
-                        "An item holding the contract; a tree of revisions when the contract keeps history.",
+                        "An item holding the contract; a tree of \
+                         revisions when the contract keeps history.",
                     )
                     .value("serialized DataContract")
                     .describe("The contract itself.")
@@ -35,21 +40,37 @@ pub(crate) fn structure() -> StructureNode {
                             .kind(ElementKind::Reference)
                             .reference("contracts.contract.contract.revision")
                             .describe("A sibling reference to the newest revision."),
-                        StructureNode::dynamic("revision", "block_time", KeyMatcher::Len(8), KeyEncoding::U64Be, "The block time of the revision in milliseconds, u64 big endian with the sign bit flipped")
-                            .kind(ElementKind::Item)
-                            .value("serialized DataContract")
-                            .describe("The contract as it was at that time."),
+                        StructureNode::dynamic(
+                            "revision",
+                            "block_time",
+                            KeyMatcher::Len(8),
+                            KeyEncoding::U64Be,
+                            "The block time of the revision in milliseconds, \
+                             u64 big endian with the sign bit flipped",
+                        )
+                        .kind(ElementKind::Item)
+                        .value("serialized DataContract")
+                        .describe("The contract as it was at that time."),
                     ]),
                 StructureNode::fixed("documents", &[1], "Documents", "")
                     .kind(ElementKind::Tree)
                     .book("drive/indexes.md")
                     .describe("The documents of the contract, by document type.")
                     .child(document_type()),
-                StructureNode::fixed("version", &[CONTRACT_VERSION_KEY], "ContractVersion", "CONTRACT_VERSION_KEY")
-                    .kind(ElementKind::Item)
-                    .since(14)
-                    .value("u32 big endian")
-                    .describe("The contract's version, readable without deserializing the contract. Rewritten on every update."),
+                StructureNode::fixed(
+                    "version",
+                    &[CONTRACT_VERSION_KEY],
+                    "ContractVersion",
+                    "CONTRACT_VERSION_KEY",
+                )
+                .kind(ElementKind::Item)
+                .since(14)
+                .value("u32 big endian")
+                .describe(
+                    "The contract's version, readable without \
+                     deserializing the contract. Rewritten on every \
+                     update.",
+                ),
             ]),
     )
 }

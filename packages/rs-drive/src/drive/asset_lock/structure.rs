@@ -12,7 +12,8 @@ pub(crate) fn structure() -> StructureNode {
     .kind(ElementKind::Tree)
     .source("packages/rs-drive/src/drive/mod.rs")
     .describe(
-        "Every asset lock outpoint that funded an identity or an address, so none is used twice.",
+        "Every asset lock outpoint that funded an \
+         identity or an address, so none is used twice.",
     )
     .child(
         StructureNode::dynamic(
@@ -24,7 +25,10 @@ pub(crate) fn structure() -> StructureNode {
         )
         .kind(ElementKind::Item)
         .source("packages/rs-drive/src/drive/asset_lock/mod.rs")
-        .value("serialized StoredAssetLockInfo: fully used, or the credits remaining")
+        .value(
+            "serialized StoredAssetLockInfo: fully used, or \
+             the credits remaining",
+        )
         .describe("One asset lock and how much of it is left."),
     )
 }
