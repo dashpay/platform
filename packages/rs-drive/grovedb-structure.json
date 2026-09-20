@@ -1061,24 +1061,6 @@
                         "description": "The identity's keys bound to this contract, by purpose.",
                         "children": [
                           {
-                            "id": "identities.identity.contract_info.bound.keys.latest",
-                            "key": {
-                              "type": "fixed",
-                              "hex": "",
-                              "label": "LatestKey",
-                              "constant": ""
-                            },
-                            "kinds": [
-                              "Reference"
-                            ],
-                            "reference": "identities.identity.keys.key",
-                            "since": 1,
-                            "presence": "lazy",
-                            "source": "packages/rs-drive/src/drive/identity/contract_info/mod.rs",
-                            "description": "The most recently added bound key, stored at the empty key.",
-                            "children": []
-                          },
-                          {
                             "id": "identities.identity.contract_info.bound.keys.purpose",
                             "key": {
                               "type": "dynamic",
@@ -1099,11 +1081,11 @@
                             "description": "Bound keys of one purpose.",
                             "children": [
                               {
-                                "id": "identities.identity.contract_info.bound.keys.purpose.unique",
+                                "id": "identities.identity.contract_info.bound.keys.purpose.current",
                                 "key": {
                                   "type": "fixed",
                                   "hex": "",
-                                  "label": "UniqueKey",
+                                  "label": "CurrentKey",
                                   "constant": ""
                                 },
                                 "kinds": [
@@ -1113,7 +1095,7 @@
                                 "since": 1,
                                 "presence": "lazy",
                                 "source": "packages/rs-drive/src/drive/identity/contract_info/mod.rs",
-                                "description": "The single key, stored at the empty key, when the contract asks for a unique bound key.",
+                                "description": "The current key of the purpose, stored at the empty key: the single key when the contract asks for a unique bound key, otherwise a sibling reference to the latest key, for keys bound to a document type and for bound authentication keys.",
                                 "children": []
                               },
                               {

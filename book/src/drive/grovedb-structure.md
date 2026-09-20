@@ -100,11 +100,12 @@ fixtures do: votes, withdrawals, token distributions, epochs changing, protocol
 upgrades. Whatever a change's own strategy tests write is walked, so structure
 created only during some operation is caught too.
 
-**Coverage.** Every node must be reached by some rs-drive fixture, or be listed
-as reached by the strategy tests, or be listed in `UNVERIFIED`: written from
-reading the code and not yet checked against a real GroveDB. The test also
-fails when a listed node does get reached by a fixture, so the lists can only
-shrink.
+**Coverage.** Every node must be reached by some rs-drive fixture or be listed
+as reached by the strategy tests. `UNVERIFIED`, the list for nodes written from
+reading the code and never checked against a real GroveDB, is empty and meant
+to stay so: whoever describes a node can write a fixture that creates it. The
+test also fails when a listed node does get reached by a fixture, so the lists
+can only shrink.
 
 **The exported file.** The description is serialized to
 `packages/rs-drive/grovedb-structure.json`, which is what the viewer reads. A
