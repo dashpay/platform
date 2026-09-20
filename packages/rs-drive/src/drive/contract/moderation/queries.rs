@@ -1,5 +1,10 @@
-use crate::drive::contract::moderation::types::ContractModerationEntriesQuery;
-use crate::drive::contract::paths::contract_moderation_list_path_vec;
+use crate::drive::contract::moderation::types::{
+    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+    ContractModerationEntriesQuery,
+};
+use crate::drive::contract::paths::{
+    contract_document_type_removals_path_vec, contract_moderation_list_path_vec,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::{Query, QueryItem};
@@ -63,6 +68,42 @@ impl Drive {
             query: SizedQuery {
                 query,
                 limit: Some(entries_query.limit),
+                offset: None,
+            },
+        }
+    }
+
+    /// The query for the records of the documents a contract's moderators deleted, within one
+    /// document type: the ids named, each proved present with its record or absent, or one
+    /// page in document id order continuing after the cursor. The limit of an id read is the
+    /// number of ids, so the prover and the verifier bound the proof alike.
+    pub fn contract_document_removals_query(
+        contract_id: [u8; 32],
+        removals_query: &ContractDocumentRemovalsQuery,
+    ) -> PathQuery {
+        let mut query = Query::new_with_direction(true);
+        match &removals_query.selection {
+            ContractDocumentRemovalsSelection::DocumentIds(ids) => {
+                for id in ids {
+                    query.insert_item(QueryItem::Key(id.to_vec()));
+                }
+            }
+            ContractDocumentRemovalsSelection::Page {
+                start_after: None, ..
+            } => query.insert_item(QueryItem::RangeFull(RangeFull)),
+            ContractDocumentRemovalsSelection::Page {
+                start_after: Some(document_id),
+                ..
+            } => query.insert_item(QueryItem::RangeAfter(document_id.to_vec()..)),
+        }
+        PathQuery {
+            path: contract_document_type_removals_path_vec(
+                &contract_id,
+                &removals_query.document_type_name,
+            ),
+            query: SizedQuery {
+                query,
+                limit: Some(removals_query.limit()),
                 offset: None,
             },
         }

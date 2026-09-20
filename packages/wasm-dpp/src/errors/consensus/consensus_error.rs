@@ -103,7 +103,8 @@ use dpp::consensus::state::contract_moderation::{
     ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError,
     ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
-    ContractUserNotSuspendedError, ContractUserSuspendedError, IdentityNotContractModeratorError,
+    ContractUserNotSuspendedError, ContractUserSuspendedError,
+    DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
 };
 use dpp::consensus::state::contract_group::{
     ContractGroupAdminNotFoundError, ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
@@ -631,6 +632,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ContractFeeClaimNotAllowedError(e) => {
             generic_consensus_error!(ContractFeeClaimNotAllowedError, e).into()
+        }
+        StateError::DocumentTypeNotDeletableByModeratorsError(e) => {
+            generic_consensus_error!(DocumentTypeNotDeletableByModeratorsError, e).into()
         }
     }
 }

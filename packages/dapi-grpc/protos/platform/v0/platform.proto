@@ -51,6 +51,8 @@ service Platform {
       returns (GetContractModerationStatusResponse);
   rpc getContractModerationEntries(GetContractModerationEntriesRequest)
       returns (GetContractModerationEntriesResponse);
+  rpc getContractDocumentRemovals(GetContractDocumentRemovalsRequest)
+      returns (GetContractDocumentRemovalsResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
       returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
@@ -793,6 +795,63 @@ message GetContractModerationEntriesResponse {
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetContractModerationEntriesResponseV0 v0 = 1; }
+}
+
+// The records of the documents a contract's moderators deleted, within one
+// document type whose documents they may delete (`canBeDeletedByModerators`):
+// the ones of the document ids named, or one page in document id order.
+message GetContractDocumentRemovalsRequest {
+  message DocumentIds {
+    repeated bytes document_ids =
+        1; // 32-byte document ids, from 1 to the protocol's
+           // max_returned_elements (100), none twice; an id with no record is
+           // left out of the response, and proved absent when a proof is asked
+  }
+
+  message Page {
+    optional bytes start_after =
+        1; // 32-byte document id; the page starts after it
+    optional uint32 limit =
+        2; // Maximum number of records to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
+  }
+
+  message GetContractDocumentRemovalsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the moderated contract
+    string document_type_name =
+        2; // The document type, which must let moderators delete its documents
+    oneof selection {
+      DocumentIds document_ids = 3; // The records of these documents
+      Page page = 4;                // One page of the type's records
+    }
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractDocumentRemovalsRequestV0 v0 = 1; }
+}
+
+message GetContractDocumentRemovalsResponse {
+  message ContractDocumentRemoval {
+    bytes document_id = 1;       // The id the removed document had
+    bytes document_owner_id = 2; // The identity that owned it
+    bytes moderator_id = 3; // The contract owner or moderator that removed it
+    uint64 removed_at =
+        4; // The time of the block that removed it, in milliseconds
+    ContractModerationReason reason = 5; // Why the moderator removed it
+  }
+
+  message ContractDocumentRemovals {
+    repeated ContractDocumentRemoval removals =
+        1; // The records, in document id order
+  }
+
+  message GetContractDocumentRemovalsResponseV0 {
+    oneof result {
+      ContractDocumentRemovals removals = 1; // The records read
+      Proof proof = 2; // Cryptographic proof of the records, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractDocumentRemovalsResponseV0 v0 = 1; }
 }
 
 message GetContractGroupsForContractRequest {

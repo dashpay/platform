@@ -5,6 +5,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
@@ -122,6 +123,30 @@ impl Drive {
                 &mut batch_operations,
                 platform_version,
             )?;
+
+            // The records of the documents the moderators delete: one tree per document type
+            // moderators can delete documents of, and above them their common tree, which a
+            // contract without such a document type does not get. Its other tree then holds
+            // what it would have held, in the shape it would have had; the update that adds
+            // the first such document type creates the common tree.
+            let document_type_names: Vec<&str> = contract
+                .document_types()
+                .values()
+                .filter(|document_type| document_type.documents_can_be_deleted_by_moderators())
+                .map(|document_type| document_type.name().as_str())
+                .collect();
+            if !document_type_names.is_empty() {
+                self.insert_contract_document_removal_trees_operations(
+                    contract.id().to_buffer(),
+                    true,
+                    &document_type_names,
+                    storage_flags.as_ref(),
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    &mut batch_operations,
+                    platform_version,
+                )?;
+            }
         }
 
         Ok(batch_operations)

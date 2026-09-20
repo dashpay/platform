@@ -2955,6 +2955,81 @@
                 "description": "Everything a contract keeps beside itself and its documents. One key, so that the contract's layer holds three and its Merk keeps the documents on top. Inside, the keys are spread like the root layer's, with the most read one, the banlist, in the middle.",
                 "children": [
                   {
+                    "id": "contracts.contract.other.document_removals",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "10",
+                      "label": "DocumentRemovals",
+                      "constant": "CONTRACT_DOCUMENT_REMOVALS_KEY"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "flags": [
+                      "EpochOwned",
+                      "None"
+                    ],
+                    "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
+                    "since": 14,
+                    "presence": "lazy",
+                    "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                    "description": "The records of the documents the contract's moderators deleted. Created with the first document type that sets canBeDeletedByModerators, by the contract's creation or by an update. Read by clients, never by a document transition, so it sorts below the rest.",
+                    "children": [
+                      {
+                        "id": "contracts.contract.other.document_removals.document_type",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "document_type_name",
+                          "matcher": {
+                            "type": "any"
+                          },
+                          "encoding": "utf8",
+                          "description": "The document type name"
+                        },
+                        "kinds": [
+                          "Tree"
+                        ],
+                        "flags": [
+                          "EpochOwned",
+                          "None"
+                        ],
+                        "flags_note": "The owner is the contract owner, and the epoch the one the contract was created in. System contracts created at genesis carry no flags.",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                        "description": "The removed documents of one document type that sets canBeDeletedByModerators. Created with the document type, by the contract's creation or by the update that adds the type.",
+                        "children": [
+                          {
+                            "id": "contracts.contract.other.document_removals.document_type.document",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "document_id",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The id the removed document had"
+                            },
+                            "kinds": [
+                              "Item"
+                            ],
+                            "flags": [
+                              "EpochOwned"
+                            ],
+                            "flags_note": "The owner is the moderator who deleted the document. They pay for the record, which nothing deletes. A record replaced with a reason of another length passes to the moderator who replaced it.",
+                            "value": "the document owner's id, the moderator's id, the block time in milliseconds of the removal as a u64 big endian, then the moderator's reason as in a banlist entry",
+                            "since": 14,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                            "description": "One removal: whose document it was, who removed it, when and why. Never deleted; replaced when a document of the same id is created and removed again.",
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
                     "id": "contracts.contract.other.last_owner_fee_claim_epoch",
                     "key": {
                       "type": "fixed",

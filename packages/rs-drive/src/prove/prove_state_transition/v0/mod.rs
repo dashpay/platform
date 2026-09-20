@@ -1,5 +1,9 @@
+use crate::drive::contract::moderation::types::{
+    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+};
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::{Drive, RootTree};
+use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::prove::prove_state_transition::ProofCreationResult;
@@ -252,43 +256,68 @@ impl Drive {
             // The lists the moderation touched: a ban also removes a suspension, so it proves
             // every list the contract keeps (the banlist entry present, the suspension absent);
             // an unban, a suspend and an unsuspend prove the one entry they edit.
+            // A document deletion proves the record it left, and nothing about the document,
+            // whose id its author may create again.
             StateTransition::ContractUserModeration(st) => {
                 let contract_id = st.data_contract_id();
-                let lists = match st.action() {
-                    ContractUserModerationAction::Ban { .. } => {
-                        let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
-                            contract_id.to_buffer(),
-                            false,
-                            None,
-                            platform_version,
-                        )?
-                        else {
-                            return Err(Error::Proof(ProofError::UnknownContract(format!(
-                                "unknown contract with id {} in contract moderation proving",
-                                contract_id
-                            ))));
-                        };
-                        contract_fetch_info
-                            .contract
-                            .config()
-                            .moderation()
-                            .map(|moderation| moderation.lists().collect::<Vec<_>>())
-                            .unwrap_or_else(|| vec![ContractModerationList::Banlist])
-                    }
-                    ContractUserModerationAction::Unban { .. } => {
-                        vec![ContractModerationList::Banlist]
-                    }
-                    ContractUserModerationAction::Suspend { .. }
-                    | ContractUserModerationAction::Unsuspend { .. } => {
-                        vec![ContractModerationList::Suspensions]
-                    }
-                };
-                Drive::contract_moderation_status_query(
-                    contract_id.to_buffer(),
-                    st.target_identity_id().to_buffer(),
-                    &lists,
-                    &platform_version.drive.grove_version,
-                )?
+                if let Some((document_type_name, document_id)) = st.action().document() {
+                    // The query the verifier rebuilds from the transition.
+                    Drive::contract_document_removals_query(
+                        contract_id.to_buffer(),
+                        &ContractDocumentRemovalsQuery {
+                            document_type_name: document_type_name.to_string(),
+                            selection: ContractDocumentRemovalsSelection::DocumentIds(vec![
+                                document_id,
+                            ]),
+                        },
+                    )
+                } else {
+                    let target_identity_id = st.target_identity_id().ok_or(Error::Drive(
+                        DriveError::CorruptedCodeExecution(
+                            "a moderation that names no document names an identity",
+                        ),
+                    ))?;
+                    let lists = match st.action() {
+                        ContractUserModerationAction::Ban { .. } => {
+                            let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
+                                contract_id.to_buffer(),
+                                false,
+                                None,
+                                platform_version,
+                            )?
+                            else {
+                                return Err(Error::Proof(ProofError::UnknownContract(format!(
+                                    "unknown contract with id {} in contract moderation proving",
+                                    contract_id
+                                ))));
+                            };
+                            contract_fetch_info
+                                .contract
+                                .config()
+                                .moderation()
+                                .map(|moderation| moderation.lists().collect::<Vec<_>>())
+                                .unwrap_or_else(|| vec![ContractModerationList::Banlist])
+                        }
+                        ContractUserModerationAction::Unban { .. } => {
+                            vec![ContractModerationList::Banlist]
+                        }
+                        ContractUserModerationAction::Suspend { .. }
+                        | ContractUserModerationAction::Unsuspend { .. } => {
+                            vec![ContractModerationList::Suspensions]
+                        }
+                        ContractUserModerationAction::DeleteDocument { .. } => {
+                            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "a document deletion is proved by the arm above",
+                            )))
+                        }
+                    };
+                    Drive::contract_moderation_status_query(
+                        contract_id.to_buffer(),
+                        target_identity_id.to_buffer(),
+                        &lists,
+                        &platform_version.drive.grove_version,
+                    )?
+                }
             }
             // The pot the claim paid out with the epoch it was last claimed in, and the balance
             // of every identity a payout of that pot goes to.

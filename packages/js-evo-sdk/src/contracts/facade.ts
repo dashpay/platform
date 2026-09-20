@@ -143,6 +143,20 @@ export class ContractsFacade {
   }
 
   /**
+   * Deletes one document on a moderated contract as a moderator, whoever owns it, except the
+   * contract owner and the moderators. The document type must set `canBeDeletedByModerators`.
+   * Signed like the other moderations. `options.reason` is optional here: left out, no code and
+   * an empty text are stored. Resolves with the record the deletion left under the contract;
+   * the document's owner gets no storage refund.
+   */
+  async moderatorDeleteDocument(
+    options: wasm.ContractDeleteDocumentOptions,
+  ): Promise<wasm.ContractDocumentRemovalResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractDeleteDocument(options);
+  }
+
+  /**
    * One identity's status on a moderated contract: whether it is banned, and until when it is
    * suspended. Every list named must be one the contract keeps.
    */
@@ -172,5 +186,23 @@ export class ContractsFacade {
   ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractModerationEntriesPage>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContractModerationEntriesWithProofInfo(query);
+  }
+
+  /**
+   * The records of the documents a contract's moderators deleted within one document type, in
+   * document id order: the records of the `documentIds` named, where a document with no record
+   * is left out, or else one page of them all. Pass a page's `nextStartAfter` as the next
+   * query's `startAfter`; a page without one (it holds fewer records than the limit) is the last.
+   */
+  async documentRemovals(query: wasm.ContractDocumentRemovalsQuery): Promise<wasm.ContractDocumentRemovalsPage> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractDocumentRemovals(query);
+  }
+
+  async documentRemovalsWithProof(
+    query: wasm.ContractDocumentRemovalsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ContractDocumentRemovalsPage>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContractDocumentRemovalsWithProofInfo(query);
   }
 }

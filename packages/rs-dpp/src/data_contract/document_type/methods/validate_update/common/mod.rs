@@ -390,6 +390,28 @@ impl DocumentTypeRef<'_> {
             );
         }
 
+        // Whether moderators may delete documents of a type is fixed when the
+        // type is created: whoever wrote a document knows from the type's first
+        // version who may take it down, and a type that is the target of a
+        // permanentDocument reference was admitted as one nobody can delete.
+        // A document type added by an update declares the flag freely.
+        if new_document_type.documents_can_be_deleted_by_moderators()
+            != self.documents_can_be_deleted_by_moderators()
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether its documents can be deleted by moderators: changing from {} to {}",
+                        self.documents_can_be_deleted_by_moderators(),
+                        new_document_type.documents_can_be_deleted_by_moderators()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 
@@ -1358,6 +1380,74 @@ mod tests {
                     StateError::DocumentTypeUpdateError(e)
                 )] if e.additional_message() == "document type can not change whether it is indexOnly: changing from true to false"
             );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_can_be_deleted_by_moderators_is_changed() {
+            use crate::data_contract::config::moderation::{
+                ContractModerationConfig, ContractModerators,
+            };
+
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+
+            let schema = |deletable_by_moderators: bool| {
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "text": { "type": "string", "maxLength": 50, "position": 0 },
+                    },
+                    "additionalProperties": false,
+                    "canBeDeletedByModerators": deletable_by_moderators,
+                })
+            };
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config")
+                .with_moderation(Some(ContractModerationConfig {
+                    banlist: true,
+                    suspensions: false,
+                    moderators: ContractModerators::ContractOwner,
+                }));
+
+            let make_document_type = |schema: platform_value::Value| {
+                DocumentType::try_from_schema(
+                    data_contract_id,
+                    1,
+                    config.version(),
+                    "post",
+                    schema,
+                    None,
+                    &BTreeMap::new(),
+                    &config,
+                    false,
+                    &mut Vec::new(),
+                    platform_version,
+                )
+                .expect("document type should parse")
+            };
+
+            // Neither direction is allowed: authors keep the rules they wrote under, and a
+            // permanentDocument reference was admitted against a type nobody can delete.
+            for (old_flag, new_flag) in [(false, true), (true, false)] {
+                let old_document_type = make_document_type(schema(old_flag));
+                let new_document_type = make_document_type(schema(new_flag));
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_config(new_document_type.as_ref());
+
+                let expected = format!(
+                    "document type can not change whether its documents can be deleted by moderators: changing from {} to {}",
+                    old_flag, new_flag
+                );
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::StateError(
+                        StateError::DocumentTypeUpdateError(e)
+                    )] if e.additional_message() == expected
+                );
+            }
         }
 
         #[test]

@@ -431,6 +431,12 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_contract_document_removals,
+        dapi_grpc::platform::v0::GetContractDocumentRemovalsRequest,
+        dapi_grpc::platform::v0::GetContractDocumentRemovalsResponse
+    );
+
+    drive_method!(
         get_contract_group_members,
         dapi_grpc::platform::v0::GetContractGroupMembersRequest,
         dapi_grpc::platform::v0::GetContractGroupMembersResponse

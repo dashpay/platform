@@ -1,6 +1,6 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property,
     DocumentPropertyReferenceTarget, DocumentPropertyType,
@@ -190,7 +190,12 @@ pub(super) fn validate_data_contract_references_v0(
                 ));
             };
 
-            if referenced_document_type.documents_can_be_deleted() {
+            // A document type moderators can delete from is deletable too, whatever its
+            // `canBeDeleted` says about a document's own owner: a reference to it could dangle.
+            // Neither flag can change on an update, so the answer holds for good.
+            if referenced_document_type.documents_can_be_deleted()
+                || referenced_document_type.documents_can_be_deleted_by_moderators()
+            {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentTypeDeletableError::new(
                         effective_contract_id,

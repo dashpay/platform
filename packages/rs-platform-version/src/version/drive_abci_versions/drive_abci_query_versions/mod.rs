@@ -96,6 +96,7 @@ pub struct DriveAbciQueryGroupVersions {
 pub struct DriveAbciQueryContractModerationVersions {
     pub contract_moderation_status: FeatureVersionBounds,
     pub contract_moderation_entries: FeatureVersionBounds,
+    pub contract_document_removals: FeatureVersionBounds,
 }
 
 /// The contract group queries: a group's stored information, one page of its members of one

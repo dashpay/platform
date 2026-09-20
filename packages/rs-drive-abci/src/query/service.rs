@@ -20,23 +20,24 @@ use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
     GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
-    GetContestedResourcesRequest, GetContestedResourcesResponse, GetContractGroupInfoRequest,
-    GetContractGroupInfoResponse, GetContractGroupMembersRequest, GetContractGroupMembersResponse,
-    GetContractGroupsForContractRequest, GetContractGroupsForContractResponse,
-    GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
-    GetContractModerationStatusRequest, GetContractModerationStatusResponse,
-    GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest,
-    GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse,
-    GetDataContractsByRangeRequest, GetDataContractsLatestVersionsRequest,
-    GetDataContractsLatestVersionsResponse, GetDataContractsRequest, GetDataContractsResponse,
-    GetDocumentHistoryRequest, GetDocumentHistoryResponse, GetDocumentsRequest,
-    GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
-    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
-    GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
-    GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse,
-    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
-    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetContestedResourcesRequest, GetContestedResourcesResponse,
+    GetContractDocumentRemovalsRequest, GetContractDocumentRemovalsResponse,
+    GetContractGroupInfoRequest, GetContractGroupInfoResponse, GetContractGroupMembersRequest,
+    GetContractGroupMembersResponse, GetContractGroupsForContractRequest,
+    GetContractGroupsForContractResponse, GetContractModerationEntriesRequest,
+    GetContractModerationEntriesResponse, GetContractModerationStatusRequest,
+    GetContractModerationStatusResponse, GetCurrentQuorumsInfoRequest,
+    GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
+    GetDataContractRequest, GetDataContractResponse, GetDataContractsByRangeRequest,
+    GetDataContractsLatestVersionsRequest, GetDataContractsLatestVersionsResponse,
+    GetDataContractsRequest, GetDataContractsResponse, GetDocumentHistoryRequest,
+    GetDocumentHistoryResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
+    GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest,
+    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
+    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
+    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -455,6 +456,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_contract_moderation_status,
             "get_contract_moderation_status",
+        )
+        .await
+    }
+
+    async fn get_contract_document_removals(
+        &self,
+        request: Request<GetContractDocumentRemovalsRequest>,
+    ) -> Result<Response<GetContractDocumentRemovalsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_document_removals,
+            "get_contract_document_removals",
         )
         .await
     }

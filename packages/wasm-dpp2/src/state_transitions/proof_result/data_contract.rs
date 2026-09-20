@@ -297,3 +297,89 @@ fn json_safe_credits(credits: u64) -> JsValue {
 }
 
 impl_wasm_type_info!(VerifiedContractFeeClaimWasm, VerifiedContractFeeClaim);
+
+/// `VerifiedContractDocumentRemoval` proof-result wrapper: the record a moderator's document
+/// deletion left under the contract. The document itself is gone; the record says whose it
+/// was, who removed it, why and when.
+#[wasm_bindgen(js_name = "VerifiedContractDocumentRemoval")]
+#[derive(Clone)]
+pub struct VerifiedContractDocumentRemovalWasm {
+    #[wasm_bindgen(getter_with_clone, js_name = "contractId")]
+    pub contract_id: IdentifierWasm,
+    #[wasm_bindgen(getter_with_clone, js_name = "documentTypeName")]
+    pub document_type_name: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "documentId")]
+    pub document_id: IdentifierWasm,
+    /// The identity that owned the document when it was removed
+    #[wasm_bindgen(getter_with_clone, js_name = "documentOwnerId")]
+    pub document_owner_id: IdentifierWasm,
+    /// The contract owner or moderator that removed it
+    #[wasm_bindgen(getter_with_clone, js_name = "moderatorId")]
+    pub moderator_id: IdentifierWasm,
+    #[wasm_bindgen(skip)]
+    pub reason: ContractModerationReason,
+    /// The time of the block that removed it, in milliseconds
+    #[wasm_bindgen(js_name = "removedAt")]
+    pub removed_at: u64,
+}
+
+#[wasm_bindgen(js_class = VerifiedContractDocumentRemoval)]
+impl VerifiedContractDocumentRemovalWasm {
+    /// Why the moderator removed the document: the text may be empty
+    #[wasm_bindgen(getter = "reason")]
+    pub fn reason(&self) -> ContractModerationReasonJs {
+        moderation_reason_to_js(&self.reason).into()
+    }
+
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        Ok(js_obj(&[
+            ("contractId", self.contract_id.into()),
+            (
+                "documentTypeName",
+                JsValue::from_str(&self.document_type_name),
+            ),
+            ("documentId", self.document_id.into()),
+            ("documentOwnerId", self.document_owner_id.into()),
+            ("moderatorId", self.moderator_id.into()),
+            ("reason", moderation_reason_to_js(&self.reason)),
+            (
+                "removedAt",
+                JsValue::from(js_sys::BigInt::from(self.removed_at)),
+            ),
+        ]))
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        Ok(js_obj(&[
+            (
+                "contractId",
+                JsValue::from_str(&self.contract_id.to_base58()),
+            ),
+            (
+                "documentTypeName",
+                JsValue::from_str(&self.document_type_name),
+            ),
+            (
+                "documentId",
+                JsValue::from_str(&self.document_id.to_base58()),
+            ),
+            (
+                "documentOwnerId",
+                JsValue::from_str(&self.document_owner_id.to_base58()),
+            ),
+            (
+                "moderatorId",
+                JsValue::from_str(&self.moderator_id.to_base58()),
+            ),
+            ("reason", moderation_reason_to_js(&self.reason)),
+            ("removedAt", JsValue::from_f64(self.removed_at as f64)),
+        ]))
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedContractDocumentRemovalWasm,
+    VerifiedContractDocumentRemoval
+);

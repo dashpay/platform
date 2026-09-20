@@ -1,6 +1,7 @@
 //! Contract moderation queries: one identity's status on a moderated contract, and one page of
 //! a contract's banlist or suspension list.
 
+mod contract_document_removals;
 mod contract_moderation_entries;
 mod contract_moderation_status;
 

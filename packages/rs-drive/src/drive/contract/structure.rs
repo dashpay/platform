@@ -1,7 +1,7 @@
 use crate::drive::contract::paths::{
-    CONTRACT_BANLIST_KEY, CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY,
-    CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY, CONTRACT_OTHER_KEY, CONTRACT_SUSPENSIONS_KEY,
-    CONTRACT_VERSION_KEY,
+    CONTRACT_BANLIST_KEY, CONTRACT_DOCUMENT_REMOVALS_KEY,
+    CONTRACT_LAST_MODERATORS_FEE_CLAIM_EPOCH_KEY, CONTRACT_LAST_OWNER_FEE_CLAIM_EPOCH_KEY,
+    CONTRACT_OTHER_KEY, CONTRACT_SUSPENSIONS_KEY, CONTRACT_VERSION_KEY,
 };
 use crate::drive::document::structure::document_type;
 use crate::drive::RootTree;
@@ -11,6 +11,10 @@ const SOURCE: &str = "packages/rs-drive/src/drive/contract/paths.rs";
 const CONTRACT_FLAGS: &str =
     "The owner is the contract owner, and the epoch the one the contract was \
      created in. System contracts created at genesis carry no flags.";
+const REMOVAL_FLAGS: &str =
+    "The owner is the moderator who deleted the document. They pay for the record, \
+     which nothing deletes. A record replaced with a reason of another length passes \
+     to the moderator who replaced it.";
 const MODERATOR_FLAGS: &str =
     "The owner is the moderator who added the entry. They pay for it, and are \
      refunded when it is removed. A suspension replaced with a longer reason \
@@ -91,6 +95,59 @@ pub(crate) fn structure() -> StructureNode {
                          with the most read one, the banlist, in the middle.",
                 )
                 .children(vec![
+                    StructureNode::fixed(
+                        "document_removals",
+                        &[CONTRACT_DOCUMENT_REMOVALS_KEY],
+                        "DocumentRemovals",
+                        "CONTRACT_DOCUMENT_REMOVALS_KEY",
+                    )
+                    .kind(ElementKind::Tree)
+                    .lazy()
+                    .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
+                    .describe(
+                        "The records of the documents the contract's moderators \
+                             deleted. Created with the first document type that \
+                             sets canBeDeletedByModerators, by the contract's \
+                             creation or by an update. Read by clients, never by a \
+                             document transition, so it sorts below the rest.",
+                    )
+                    .child(
+                        StructureNode::dynamic(
+                            "document_type",
+                            "document_type_name",
+                            KeyMatcher::Any,
+                            KeyEncoding::Utf8,
+                            "The document type name",
+                        )
+                        .kind(ElementKind::Tree)
+                        .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
+                        .describe(
+                            "The removed documents of one document type that sets \
+                                 canBeDeletedByModerators. Created with the document \
+                                 type, by the contract's creation or by the update \
+                                 that adds the type.",
+                        )
+                        .child(
+                            StructureNode::identifier(
+                                "document",
+                                "document_id",
+                                "The id the removed document had",
+                            )
+                            .kind(ElementKind::Item)
+                            .flags(&[FlagsKind::EpochOwned], REMOVAL_FLAGS)
+                            .value(
+                                "the document owner's id, the moderator's id, the block \
+                                     time in milliseconds of the removal as a u64 big \
+                                     endian, then the moderator's reason as in a banlist \
+                                     entry",
+                            )
+                            .describe(
+                                "One removal: whose document it was, who removed it, \
+                                     when and why. Never deleted; replaced when a document \
+                                     of the same id is created and removed again.",
+                            ),
+                        ),
+                    ),
                     StructureNode::fixed(
                         "version",
                         &[CONTRACT_VERSION_KEY],

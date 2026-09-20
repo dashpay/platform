@@ -12,8 +12,8 @@ pub trait ContractUserModerationTransitionAccessorsV0 {
     fn set_action(&mut self, action: ContractUserModerationAction);
     /// What is done, to whom
     fn action(&self) -> &ContractUserModerationAction;
-    /// The identity the action targets
-    fn target_identity_id(&self) -> Identifier {
+    /// The identity the action targets, `None` for a document deletion
+    fn target_identity_id(&self) -> Option<Identifier> {
         self.action().identity_id()
     }
 }

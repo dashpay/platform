@@ -54,6 +54,11 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V4: DriveContractMethodVersions =
             insert_contract_moderation_trees: 0,
             add_estimation_costs_for_contract_moderation_trees: 0,
             add_estimation_costs_for_contract_moderation_entry: 0,
+            add_contract_document_removal: 0,
+            fetch_contract_document_removals: 0,
+            prove_contract_document_removals: 0,
+            insert_contract_document_removal_trees: 0,
+            add_estimation_costs_for_contract_document_removal: 0,
         },
         ..DRIVE_CONTRACT_METHOD_VERSIONS_V3
     };

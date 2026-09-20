@@ -202,6 +202,15 @@ type PlatformgetContractModerationEntries = {
   readonly responseType: typeof platform_pb.GetContractModerationEntriesResponse;
 };
 
+type PlatformgetContractDocumentRemovals = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractDocumentRemovalsRequest;
+  readonly responseType: typeof platform_pb.GetContractDocumentRemovalsResponse;
+};
+
 type PlatformgetDocumentHistory = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -640,6 +649,7 @@ export class Platform {
   static readonly getContractGroupsForContract: PlatformgetContractGroupsForContract;
   static readonly getContractModerationStatus: PlatformgetContractModerationStatus;
   static readonly getContractModerationEntries: PlatformgetContractModerationEntries;
+  static readonly getContractDocumentRemovals: PlatformgetContractDocumentRemovals;
   static readonly getDocumentHistory: PlatformgetDocumentHistory;
   static readonly getDocuments: PlatformgetDocuments;
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
@@ -917,6 +927,15 @@ export class PlatformClient {
   getContractModerationEntries(
     requestMessage: platform_pb.GetContractModerationEntriesRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationEntriesResponse|null) => void
+  ): UnaryResponse;
+  getContractDocumentRemovals(
+    requestMessage: platform_pb.GetContractDocumentRemovalsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractDocumentRemovalsResponse|null) => void
+  ): UnaryResponse;
+  getContractDocumentRemovals(
+    requestMessage: platform_pb.GetContractDocumentRemovalsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractDocumentRemovalsResponse|null) => void
   ): UnaryResponse;
   getDocumentHistory(
     requestMessage: platform_pb.GetDocumentHistoryRequest,

@@ -27,6 +27,7 @@ use dpp::{
 use drive::grovedb::Element;
 use drive_proof_verifier::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use drive_proof_verifier::types::contract_moderation::{
+    ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
     ContractModerationEntries, ContractModerationEntry, ContractModerationListStatus,
     ContractModerationListStatuses, ContractModerationReason,
 };
@@ -434,6 +435,62 @@ impl MockResponse for ContractModerationEntries {
                     until,
                     reason,
                 })
+                .collect(),
+        )
+    }
+}
+
+/// One removal record as a fixture holds it: the document id, its owner, the moderator, when
+/// the removal happened and why. `ContractDocumentRemoval` has no bincode encoding of its own.
+type EncodedContractDocumentRemoval = (
+    Identifier,
+    Identifier,
+    Identifier,
+    u64,
+    ContractModerationReason,
+);
+
+impl MockResponse for ContractDocumentRemovals {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let removals: Vec<EncodedContractDocumentRemoval> = self
+            .removals()
+            .iter()
+            .map(|entry| {
+                (
+                    entry.document_id,
+                    entry.removal.document_owner_id,
+                    entry.removal.moderator_id,
+                    entry.removal.removed_at,
+                    entry.removal.reason.clone(),
+                )
+            })
+            .collect();
+        bincode::encode_to_vec(removals, BINCODE_CONFIG).expect("encode ContractDocumentRemovals")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (removals, _): (Vec<EncodedContractDocumentRemoval>, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG)
+                .expect("decode ContractDocumentRemovals");
+        ContractDocumentRemovals(
+            removals
+                .into_iter()
+                .map(
+                    |(document_id, document_owner_id, moderator_id, removed_at, reason)| {
+                        ContractDocumentRemovalEntry {
+                            document_id,
+                            removal: ContractDocumentRemoval {
+                                document_owner_id,
+                                moderator_id,
+                                reason,
+                                removed_at,
+                            },
+                        }
+                    },
+                )
                 .collect(),
         )
     }

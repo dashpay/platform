@@ -282,6 +282,7 @@ mod fixtures {
         AddressFundsOperationType, ContractFeePotOperationType,
     };
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use crate::util::batch::ContractModerationOperationType;
     use crate::util::batch::DriveOperation;
     use crate::util::batch::GroveDbOpBatch;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -320,7 +321,8 @@ mod fixtures {
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::data_contract::config::moderation::{
-        ContractModerationConfig, ContractModerationReason, ContractModerators,
+        ContractDocumentRemoval, ContractModerationConfig, ContractModerationReason,
+        ContractModerators,
     };
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
@@ -328,6 +330,7 @@ mod fixtures {
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
     use dpp::data_contract::v1::DataContractV1;
     use dpp::data_contract::DataContract;
@@ -342,6 +345,7 @@ mod fixtures {
     use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
     use dpp::identity::Identity;
     use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::platform_value;
     use dpp::platform_value::BinaryData;
     use dpp::platform_value::Value;
     use dpp::tests::fixtures::get_dashpay_contract_fixture;
@@ -656,6 +660,72 @@ mod fixtures {
             }
         }
         conformance_of(&drive, "contracts_with_documents", run);
+    }
+
+    /// A contract whose moderators only delete documents: no list, one document type they can
+    /// delete from, one removal record. Kept apart from the contract with both lists, whose
+    /// other tree is the fullest one and the one whose shape is recorded.
+    fn contract_with_document_removals(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract.json",
+            Some([9; 32]),
+            None,
+            Some(|contract: &mut DataContract| {
+                contract.set_config(contract.config().clone().with_moderation(Some(
+                    ContractModerationConfig {
+                        banlist: false,
+                        suspensions: false,
+                        moderators: ContractModerators::ContractOwner,
+                    },
+                )));
+                // After the config: the keyword is refused on a contract without moderation.
+                contract
+                    .set_document_schema(
+                        "post",
+                        platform_value!({
+                            "type": "object",
+                            "properties": {
+                                "text": { "type": "string", "maxLength": 50, "position": 0 },
+                            },
+                            "additionalProperties": false,
+                            "canBeDeletedByModerators": true,
+                        }),
+                        true,
+                        &mut vec![],
+                        PlatformVersion::latest(),
+                    )
+                    .expect("expected to add a document type moderators can delete from");
+            }),
+            None,
+            Some(platform_version),
+        );
+        drive
+            .apply_drive_operations(
+                vec![DriveOperation::ContractModerationOperation(
+                    ContractModerationOperationType::AddDocumentRemoval {
+                        contract_id: contract.id(),
+                        document_type_name: "post".to_string(),
+                        document_id: Identifier::from([0x23; 32]),
+                        removal: ContractDocumentRemoval {
+                            document_owner_id: Identifier::from([0x24; 32]),
+                            moderator_id: contract.owner_id(),
+                            reason: ContractModerationReason::from_text("spam"),
+                            removed_at: 1_000,
+                        },
+                        replaces_existing: false,
+                    },
+                )],
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to record a document removal");
+        conformance_of(&drive, "contract_with_document_removals", run);
     }
 
     /// A contract that keeps both moderation lists, with one ban and one suspension
@@ -1377,6 +1447,7 @@ mod fixtures {
         identities(&mut run);
         contracts_with_documents(&mut run);
         moderated_contract(&mut run);
+        contract_with_document_removals(&mut run);
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);
         current_then_paid_epoch(&mut run);

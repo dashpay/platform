@@ -19,7 +19,7 @@ use crate::consensus::state::contract_moderation::{
     ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
     ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
-    IdentityNotContractModeratorError,
+    DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
 };
 use crate::consensus::state::contract_group::{
     ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
@@ -522,6 +522,10 @@ pub enum StateError {
 
     #[error(transparent)]
     ContractFeeClaimNotAllowedError(ContractFeeClaimNotAllowedError),
+
+    // Document deletion by moderators (protocol version 14).
+    #[error(transparent)]
+    DocumentTypeNotDeletableByModeratorsError(DocumentTypeNotDeletableByModeratorsError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -852,7 +856,7 @@ mod tests {
             )),
             125
         );
-        // Contract fee claims (protocol version 14): the tail of the enum.
+        // Contract fee claims (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ContractFeesAlreadyClaimedThisEpochError(
                 ContractFeesAlreadyClaimedThisEpochError::new(
@@ -874,6 +878,13 @@ mod tests {
                 ContractFeeClaimNotAllowedError::new(group_id, ContractFeePot::Owner, identity_id)
             )),
             128
+        );
+        // Document deletion by moderators (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentTypeNotDeletableByModeratorsError(
+                DocumentTypeNotDeletableByModeratorsError::new(group_id, "post".to_string())
+            )),
+            129
         );
     }
 }

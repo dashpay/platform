@@ -1,5 +1,6 @@
 use dpp::data_contract::config::moderation::{
-    ContractBan, ContractModerationList, ContractModerationReason, ContractSuspension,
+    ContractBan, ContractDocumentRemoval, ContractModerationList, ContractModerationReason,
+    ContractSuspension,
 };
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::Identifier;
@@ -83,6 +84,118 @@ pub fn estimated_entry_value_size(list: ContractModerationList) -> u32 {
     until_size
         + CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
         + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE
+}
+
+/// Which removal records of one document type to read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContractDocumentRemovalsSelection {
+    /// The records of these document ids. An id with no record is proved absent.
+    DocumentIds(Vec<Identifier>),
+    /// One page: at most `limit` records in document id order, continuing after
+    /// `start_after`. A page shorter than the limit is the last one.
+    Page {
+        /// Continue after this document id.
+        start_after: Option<Identifier>,
+        /// At most this many records.
+        limit: u16,
+    },
+}
+
+/// A read of the records of the documents a contract's moderators deleted, within one document
+/// type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractDocumentRemovalsQuery {
+    /// The document type the documents belonged to.
+    pub document_type_name: String,
+    /// Which records.
+    pub selection: ContractDocumentRemovalsSelection,
+}
+
+impl ContractDocumentRemovalsQuery {
+    /// The most records the read can return: what bounds its proof.
+    pub fn limit(&self) -> u16 {
+        match &self.selection {
+            ContractDocumentRemovalsSelection::DocumentIds(ids) => {
+                ids.len().min(u16::MAX as usize) as u16
+            }
+            ContractDocumentRemovalsSelection::Page { limit, .. } => *limit,
+        }
+    }
+}
+
+/// The record of one document a moderator deleted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractDocumentRemovalEntry {
+    /// The id the document had.
+    pub document_id: Identifier,
+    /// Whose it was, who removed it, why and when.
+    pub removal: ContractDocumentRemoval,
+}
+
+impl ContractDocumentRemovalEntry {
+    /// Decodes one stored record: see [`encode_document_removal`].
+    pub fn from_key_element(key: &[u8], element: &Element) -> Result<Self, String> {
+        let document_id = Identifier::from_bytes(key)
+            .map_err(|_| format!("document removal key is not a document id: {:?}", key))?;
+        let Element::Item(value, _) = element else {
+            return Err("document removal is not an item".to_string());
+        };
+        Ok(Self {
+            document_id,
+            removal: decode_document_removal(value)?,
+        })
+    }
+}
+
+/// The stored size of what a document removal starts with: the document owner's id, the
+/// moderator's id and the removal time as a u64.
+pub const CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE: usize = 32 + 32 + 8;
+
+/// The size a document removal record is estimated at when its value is not known: the
+/// records a write walks past, sized like a list entry's typical reason. A record being
+/// written is priced by its own size.
+pub fn estimated_document_removal_value_size() -> u32 {
+    CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE as u32
+        + CONTRACT_MODERATION_REASON_CODE_MAX_SIZE
+        + ESTIMATED_CONTRACT_MODERATION_REASON_TEXT_SIZE
+}
+
+/// Encodes a document removal record: the document owner's id, the moderator's id, the removal
+/// time as eight big-endian bytes, then the reason as in [`encode_ban`].
+pub fn encode_document_removal(removal: &ContractDocumentRemoval) -> Vec<u8> {
+    let mut value = Vec::with_capacity(
+        CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + reason_encoded_size(&removal.reason),
+    );
+    value.extend_from_slice(removal.document_owner_id.as_slice());
+    value.extend_from_slice(removal.moderator_id.as_slice());
+    value.extend_from_slice(&removal.removed_at.to_be_bytes());
+    encode_reason_into(&removal.reason, &mut value);
+    value
+}
+
+/// Decodes a document removal record.
+pub fn decode_document_removal(value: &[u8]) -> Result<ContractDocumentRemoval, String> {
+    let cut_short = || {
+        format!(
+            "document removal holds {} bytes, expected at least {}",
+            value.len(),
+            CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE
+        )
+    };
+    let (document_owner_id, rest) = value.split_first_chunk::<32>().ok_or_else(cut_short)?;
+    let (moderator_id, rest) = rest.split_first_chunk::<32>().ok_or_else(cut_short)?;
+    let (removed_at, reason) = rest.split_first_chunk::<8>().ok_or_else(cut_short)?;
+    // A list entry with no reason bytes is one written before entries carried a reason. No
+    // record was ever written without one, so here the same bytes are a record cut short.
+    if reason.is_empty() {
+        return Err("document removal holds no reason".to_string());
+    }
+    Ok(ContractDocumentRemoval {
+        document_owner_id: Identifier::from(*document_owner_id),
+        moderator_id: Identifier::from(*moderator_id),
+        reason: decode_reason(reason)?,
+        removed_at: TimestampMillis::from_be_bytes(*removed_at),
+    })
 }
 
 const REASON_WITHOUT_CODE: u8 = 0;
@@ -208,6 +321,60 @@ mod tests {
             decode_suspension(&value).expect("decode"),
             ContractSuspension { until: 77, reason }
         );
+    }
+
+    #[test]
+    fn should_round_trip_a_document_removal() {
+        let removal = ContractDocumentRemoval {
+            document_owner_id: Identifier::from([1; 32]),
+            moderator_id: Identifier::from([2; 32]),
+            reason: ContractModerationReason {
+                code: Some(3),
+                text: "spam".to_string(),
+            },
+            removed_at: 1_700_000_000_123,
+        };
+        let value = encode_document_removal(&removal);
+        assert_eq!(&value[..32], &[1; 32]);
+        assert_eq!(&value[32..64], &[2; 32]);
+        assert_eq!(&value[64..72], &1_700_000_000_123u64.to_be_bytes());
+        assert_eq!(&value[72..], [&[1u8, 0, 3][..], b"spam"].concat());
+        assert_eq!(decode_document_removal(&value).expect("decode"), removal);
+
+        // No code and no text: what a moderator that gives no reason leaves.
+        let bare = ContractDocumentRemoval {
+            reason: ContractModerationReason::default(),
+            ..removal
+        };
+        let value = encode_document_removal(&bare);
+        assert_eq!(value.len(), CONTRACT_DOCUMENT_REMOVAL_FIXED_SIZE + 1);
+        assert_eq!(decode_document_removal(&value).expect("decode"), bare);
+
+        let id = Identifier::from([9; 32]);
+        assert_eq!(
+            ContractDocumentRemovalEntry::from_key_element(
+                id.as_slice(),
+                &Element::new_item(value)
+            )
+            .expect("decode"),
+            ContractDocumentRemovalEntry {
+                document_id: id,
+                removal: bare,
+            }
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_malformed_document_removal() {
+        decode_document_removal(&[0; 71]).expect_err("cut short");
+        decode_document_removal(&[0; 72]).expect_err("no reason");
+        let mut unknown_tag = vec![0; 72];
+        unknown_tag.push(7);
+        decode_document_removal(&unknown_tag).expect_err("unknown tag");
+        ContractDocumentRemovalEntry::from_key_element(&[1, 2, 3], &Element::new_item(vec![0; 73]))
+            .expect_err("key is not an id");
+        ContractDocumentRemovalEntry::from_key_element(&[4; 32], &Element::empty_tree())
+            .expect_err("not an item");
     }
 
     #[test]

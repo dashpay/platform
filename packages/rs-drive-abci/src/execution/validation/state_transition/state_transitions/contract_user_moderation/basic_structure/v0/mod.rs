@@ -20,8 +20,10 @@ impl ContractUserModerationStateTransitionStructureValidationV0
     for ContractUserModerationTransition
 {
     /// An identity can not moderate itself, a suspension ends within the JSON-safe range, and
-    /// the text of a ban's or a suspension's reason fits
+    /// the text of the reason a ban, a suspension or a document deletion carries fits
     /// `SystemLimits::max_contract_moderation_reason_length`; the reason's code is not checked.
+    /// A document deletion names a document, not an identity: whose it is, and so whether the
+    /// moderator may delete it, is only known once the state is read.
     /// Whether the contract keeps the list, who may
     /// moderate it and what the target's status is all need state, so state validation
     /// decides those.
@@ -29,7 +31,7 @@ impl ContractUserModerationStateTransitionStructureValidationV0
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        if self.target_identity_id() == self.owner_id() {
+        if self.target_identity_id() == Some(self.owner_id()) {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::from(ContractModerationSelfTargetError::new(self.owner_id())),
             ));

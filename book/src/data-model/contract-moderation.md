@@ -8,7 +8,7 @@ An application that stores user content needs a way to keep an abusive identity 
 
 Three facts define a contract's moderation:
 
-1. **The contract declares it.** `DataContractConfigV2::moderation` is an optional `ContractModerationConfig { banlist, suspensions, moderators }`. At least one list must be kept. Which lists a contract keeps is decided when it is created and never changes: an update can not make an unmoderated contract moderated, turn a second list on, or turn a list off (`validate_config_update` 2, `DataContractConfigUpdateError`). Whoever writes documents under a contract knows from its first version whether and how they can be barred from it, which matters most where documents are assets: a ban also stops transfers and sales. And a list that is on may hold entries. Only the moderators may be changed by an update.
+1. **The contract declares it.** `DataContractConfigV2::moderation` is an optional `ContractModerationConfig { banlist, suspensions, moderators }`. At least one list must be kept, unless a document type lets the moderators delete its documents (see Deleting Documents below), in which case the declaration may keep none. Which lists a contract keeps is decided when it is created and never changes: an update can not make an unmoderated contract moderated, turn a second list on, or turn a list off (`validate_config_update` 2, `DataContractConfigUpdateError`). Whoever writes documents under a contract knows from its first version whether and how they can be barred from it, which matters most where documents are assets: a ban also stops transfers and sales. And a list that is on may hold entries. Only the moderators may be changed by an update.
 2. **The owner moderates, alone or with a fixed set.** `ContractModerators` is `ContractOwner` or `AppointedModerators(set)`: at most `SystemLimits::max_contract_moderators` (16) identities. The owner may always moderate and need not be named; it may be named, and then counts toward the 16. Naming it changes nothing about authority. Every identity named must exist: the contract create, and the contract update for the identities it adds, look each one up in state and refuse, paid, with `ContractModeratorIdentityNotFoundError` (41110). A moderator that does not exist can never sign, so naming one is a mistake, and catching it once at the declaration is cheaper than guarding every later reader of the set. Moderators act alone: there is no threshold and no vote. Neither the owner nor a moderator can be banned or suspended. An entry one of them already carries can still be lifted: a contract update may name as moderator an identity that is banned or suspended, the entry keeps binding it, and the owner or another moderator unbans or unsuspends it without demoting it first (never the identity itself: a moderation cannot target its own signer).
 3. **A ban lasts until an unban; a suspension lasts until a block time.** A suspension names the block time, in milliseconds, at which it lapses. A lapsed suspension is not deleted by the clock: the first document transition of the identity that runs at or after that time executes normally and, in the same execution, sweeps the stale entry. An explicit unsuspend deletes it too. A ban supersedes a suspension: banning a suspended identity removes the suspension, and suspending a banned identity is refused.
 
@@ -97,6 +97,54 @@ Deletions (`Delete` and `IndexOnlyDelete`) are never refused: a barred identity 
 
 Basic, in their own band (10900-10949): `InvalidContractModerationConfigError` (10900), `ContractModerationSelfTargetError` (10901), `ContractModerationReasonTooLongError` (10903; 10902 is reserved). State, in their own sub-band: `ContractModerationNotEnabledError` (41100), `IdentityNotContractModeratorError` (41101), `ContractModerationTargetNotAllowedError` (41102), `ContractUserAlreadyBannedError` (41103), `ContractUserNotBannedError` (41104), `ContractUserNotSuspendedError` (41105), `ContractSuspensionNotInFutureError` (41106), `ContractUserBannedError` (41107), `ContractUserSuspendedError` (41108), `ContractModerationTargetNotFoundError` (41109), `ContractModeratorIdentityNotFoundError` (41110, from the contract create and update, not from the moderation transition), `ContractModerationCounterpartyBarredError` (41114, from the document gate; 41111 to 41113 are reserved). A contract update that turns a list on or off is refused with the existing `DataContractConfigUpdateError` (40002).
 
+## Deleting Documents
+
+A banlist keeps an identity out; it does not take down what the identity already wrote. A document type may let the contract's moderators do that:
+
+```json
+"post": {
+  "type": "object",
+  "canBeDeletedByModerators": true,
+  "properties": { "text": { "type": "string", "maxLength": 280, "position": 0 } },
+  "additionalProperties": false
+}
+```
+
+`canBeDeletedByModerators` is a document type keyword of meta-schema v3 (`DocumentTypeV2::documents_can_be_deleted_by_moderators`), parsed by `apply_can_be_deleted_by_moderators`. Its rules:
+
+- **The contract declares moderation.** The keyword on a contract without a `moderation` block is refused (`InvalidContractStructure`, 10231): moderation can not be switched on later, so nobody could ever delete anything. In return a `moderation` block may keep no list at all when at least one document type carries the keyword (`ContractModerationConfig::validate` takes that fact from the contract): a contract can moderate content without moderating users.
+- **It is fixed with the type.** A contract update can not add the keyword to an existing document type or take it away (`DocumentTypeUpdateError`, 40212): authors keep the rules they wrote under. A document type an update adds may carry it.
+- **It is independent of `canBeDeleted`**, which rules what a document's own owner may do. `canBeDeleted: false` with `canBeDeletedByModerators: true` is a post its author can not retract and moderation can remove.
+- **Some types can not carry it**: one that keeps history (Drive refuses to delete such documents), an indexOnly one (there is no stored row to name by id), and one that restricts creation (its documents are the contract owner's, which no moderator may delete). Transferable and tradeable types may, and so may a type with a deletion token cost, which a moderator does not pay.
+- **It is never the target of a `permanentDocument` reference.** Reference validation treats such a type as deletable (`ReferencedDocumentTypeDeletableError`, 40122), whatever its `canBeDeleted` says, so the guarantee that a validated reference never dangles holds.
+
+The deletion is a fifth action of the same transition:
+
+```rust
+ContractUserModerationAction::DeleteDocument {
+    document_type_name: String,
+    document_id: Identifier,
+    reason: ContractModerationReason,   // as on a ban: a code nothing checks, a text that may be empty
+}
+```
+
+It names no identity (`identity_id()` is `None`): whose document it is is only known once the document is read. The transform checks, in order and each refusal paid: the document type exists (10406), it carries the keyword (`DocumentTypeNotDeletableByModeratorsError`, 41115), the signer is the owner or a moderator (41101), the document exists (`DocumentNotFoundError`), and its owner is neither the contract owner nor a moderator (41102, the rule that protects them from a ban protects what they wrote). The document is read the way a document's own deletion reads it, billed the same. The action carries the contract, the document's owner, the block time and whether a record of that document id is already stored, so Drive reads nothing again.
+
+Drive then runs the ordinary `DeleteDocument` operation, which keeps every index and aggregate of the type right, and writes a **removal record**:
+
+```rust
+pub struct ContractDocumentRemoval {
+    pub document_owner_id: Identifier,
+    pub moderator_id: Identifier,
+    pub reason: ContractModerationReason,
+    pub removed_at: TimestampMillis,   // the block time
+}
+```
+
+The record is what is left to say that a document was removed, not lost: a client holding a dangling id (a reply whose parent is gone) can prove who removed it, whose it was, when and why. The moderator pays for it, reason included, and nothing ever deletes it. A document id can be created again by its author (the id derives from the entropy the author picks); removing it again replaces the record, so a record means "a document of this id was removed at this time", not "this id is gone for good".
+
+**The deleted document's owner gets no storage refund.** The batch carries `ContractModerationOperationType::ForfeitStorageRefunds`, a marker that writes nothing, and `apply_drive_operations` generation 1 turns every removal such a batch attributes to an identity into a removal attributed to nobody: the bytes still leave the system (`FeeResult::removed_bytes_from_system`), no refund is computed, and the credits stay in the storage pools they were distributed to when the document was written. The estimate forfeits too, so the mempool and the block agree. One edge follows from forfeiting the whole batch: when a record is replaced by a shorter one, the few bytes the earlier moderator would have been refunded are forfeited as well. An author who deletes the same document with an ordinary document transition is refunded as always.
+
 ## Storage
 
 ```text
@@ -105,12 +153,16 @@ Basic, in their own band (10900-10949): `InvalidContractModerationConfigError` (
     ├── [0] the contract (or its history subtree)
     ├── [1] documents
     └── [2] other
+        ├── [16]  document removals -> <document type name> -> <document id>
+        │                            -> Item(owner id ‖ moderator id ‖ removed at ‖ reason)   (with such a document type)
         ├── [64]  contract version item (every contract)
         ├── [128] banlist       -> <identity id> -> Item(reason)                 (when declared)
         └── [192] suspensions   -> <identity id> -> Item(until ‖ reason)         (when declared)
 ```
 
-`until` is a u64 of block time in milliseconds, big-endian. A reason is a tag byte (`0`: no code, `1`: a code), the code as a big-endian u16 when tagged, then the text as UTF-8 up to the end of the value, so an entry with an empty reason and no code costs one byte more than the bare entry would. A value without the tag byte is an entry written before entries carried a reason and reads as the empty reason.
+`until` is a u64 of block time in milliseconds, big-endian. A reason is a tag byte (`0`: no code, `1`: a code), the code as a big-endian u16 when tagged, then the text as UTF-8 up to the end of the value, so an entry with an empty reason and no code costs one byte more than the bare entry would. A value without the tag byte is an entry written before entries carried a reason and reads as the empty reason. A document removal is the document owner's id, the moderator's id, `removed at` as a u64 of block time in milliseconds, big-endian, then the reason the same way (`types::encode_document_removal`).
+
+The document removals tree exists exactly when the contract has a document type that carries `canBeDeletedByModerators`: a contract without one keeps the other tree, and the shape, it would have had. One subtree per such document type is created with the type, by `insert_contract` generation 2 or by `update_contract` generation 2 for a type an update adds, and the tree above them with the first: whether it is there is read off the stored contract, since an existing type never changes the keyword, so the update needs no read. Nothing is created lazily by the first removal. The key sorts below `128`, as a key added later should: a contract that keeps both lists, the one whose other tree then holds four keys, still has the banlist on top. With fewer keys the version item is on top, and the list one level down.
 
 The contract's own subtree holds three keys whatever the contract keeps, so its Merk keeps `1`, the documents, on top: every document proof and write goes through that key, and a fourth key beside it would have pushed it one level down (a Merk built from one sorted batch roots at the middle key). Everything else a contract keeps goes into `2`, its **other tree**, which protocol version 14 introduces together with the version item. Inside, the keys are spread like the root tree's, so the tree stays balanced as it fills and the most read entry sits on top: the banlist at `128`, read by every document transition on a moderated contract, the version item at `64`, the suspension list at `192`. A key added later should sort below `128` to keep the banlist on top when four keys are created at once.
 
@@ -128,6 +180,7 @@ The writers, readers and provers live in `packages/rs-drive/src/drive/contract/m
 
 - `getContractModerationStatus(contract_id, identity_id, lists, prove)`: the identity's status on the lists named.
 - `getContractModerationEntries(contract_id, list, start_after, limit, prove)`: one page of a list.
+- `getContractDocumentRemovals(contract_id, document_type_name, document_ids | page, prove)`: the records of the documents moderators deleted, within one document type that carries `canBeDeletedByModerators` (no other keeps records, so the node refuses any other). By document ids, up to `max_returned_elements` of them and none twice: an id with no record is left out of the response, and proved absent by a proof. Or one page in document id order, with the last document id as the cursor. `Drive::verify_contract_document_removals` rebuilds the path query from the same request.
 
 A status query answers for the lists it names and no others: `Drive::verify_contract_moderation_status` and the SDK result both return `ContractModerationListStatuses`, one `ContractModerationListStatus` per list queried, so a list that was not read is absent rather than reported as empty (`banned()` is `None` unless the banlist was queried). `ContractModerationStatusQuery::for_contract` names every list the contract keeps; the wasm-sdk does the same, fetching the contract, when the query names no list. Both have `Fetch` and `FetchUnproved` impls in the Rust SDK (`platform::contract_moderation`), wasm-sdk functions and `contracts.moderationStatus` / `contracts.moderationEntries` on the JavaScript SDK. The proof of a moderation transition's execution covers the lists the moderation touched and is classified as affected state: an earlier or later moderation leaving the same entries verifies just the same. A ban does two things, adds the ban and removes a suspension, so its proof covers every list the contract keeps (the banlist entry present, the suspension absent), which the prover and the verifier both read from the contract's config (so the SDKs fetch and cache the contract before broadcasting a ban, as they do for the contracts a document batch touches); an unban, a suspend and an unsuspend prove the one entry they edit. The result, `VerifiedContractModerationListStatuses`, holds one `ContractModerationListStatus` per list proved, never a full status: a list that was not proved is left unknown rather than reported as empty. An identity whose unsuspend was just proved may be banned; the status query answers that.
 
@@ -169,13 +222,18 @@ The proof of a claim's execution shows the pot with its last claim epoch and the
 
 All in place for protocol version 14: `CONTRACT_VERSIONS_V6` makes config V2 the config of every new contract (`max_version` and `default_current_version` 2) and `validate_config_update` 2; `STATE_TRANSITION_SERIALIZATION_VERSIONS_V3` and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` carry the transition's slots and `batch_state_transition.contract_moderation_gate`, and the contract update's basic structure moves to 2 to validate the declaration; `DRIVE_CONTRACT_METHOD_VERSIONS_V4` bumps `insert_contract` to 2 and adds the `moderation` table (its `update_contract` 2 belongs to token distribution and does nothing for moderation); `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds the converter slot and bumps `documents_batch_transition` to 1 for the sweep; `DRIVE_VERIFY_METHOD_VERSIONS` and `DRIVE_ABCI_QUERY_VERSIONS` gain their moderation tables; `SYSTEM_LIMITS_V4` gains `max_contract_moderators`, `max_contract_suspension_until` and `max_contract_moderation_reason_length`.
 
+The document deletion adds, all for protocol version 14 as well: the `canBeDeletedByModerators` keyword in meta-schema v3 (`CONTRACT_VERSIONS_V6` already selects it); five slots in `DriveContractModerationMethodVersions` and one in the verify and query tables; and `batch_operations.apply_drive_operations = 1` in `DRIVE_VERSION_V9`, the generation that forfeits the refund. The transition's own tables do not move: the action joins a transition no release contains.
+
 ## What Is Not There Yet
 
-Action fees on token transitions, a DAPI query and SDK methods for the fee pots and the claim, group-based moderators (`AuthorizedActionTakers::Group` through group actions), keys bound to the contract allowed to sign its moderation, ban codes declared by the contract (the reason's `code` is where they will go), further entry metadata such as a timestamp or the moderator's id, and the Swift and Kotlin SDKs. The refusal a barred identity receives (41107, 41108, 41114) does not repeat the reason: the status query does.
+Deleting indexOnly documents (the action would have to carry the owner and the values), deleting every document of an identity at once, a document type that is both deletable by moderators and the target of a `permanentDocument` reference (references, and the chained queries that verify them, would have to learn about removal records), action fees on token transitions, a DAPI query and SDK methods for the fee pots and the claim, group-based moderators (`AuthorizedActionTakers::Group` through group actions), keys bound to the contract allowed to sign its moderation, ban codes declared by the contract (the reason's `code` is where they will go), further entry metadata such as a timestamp or the moderator's id, and the Swift and Kotlin SDKs. The refusal a barred identity receives (41107, 41108, 41114) does not repeat the reason: the status query does.
 
 ## Tests
 
+- `packages/rs-dpp/src/data_contract/document_type/class_methods/try_from_schema/v3/moderators_delete_tests.rs`: the keyword's rules; `validate_update/common`: the keyword frozen across updates.
+- `packages/rs-drive/src/drive/contract/moderation/document_removal_tests.rs`: the trees created with the contract and with a document type an update adds, records written, replaced, read by ids and by page with proofs that verify to the same, the bounds of a read, estimate against applied cost, and a moderator's deletion refunding nobody where the author's own refunds the author.
+- `packages/rs-drive-abci/src/query/contract_moderation_queries/contract_document_removals`: the query by ids and by page, its proof read back by the verifier, and every request it refuses.
 - `packages/rs-dpp/src/data_contract/config/moderation/mod.rs` and `config/methods/validate_update/v2`: the declaration's rules and the update rules.
 - `packages/rs-drive/src/drive/contract/moderation/tests.rs`: tree creation on insert, the trees and their entries surviving a contract update, every writer with estimation, status and page proofs, paging, the refund going to the first moderator after another one replaces its suspension, and a status proof over one list saying nothing about the other.
 - `packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/batch/transformer/v0/contract_moderation_gate/mod.rs`: the gate is silent before protocol version 14 and for an unmoderated contract, and refuses each barred operation of one batch on its own while keeping the deletions.
-- `packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/contract_user_moderation/tests.rs`: the whole pipeline, including the mempool refusal, the lapse sweep, the moderator set, every refusal code, the lists staying as the contract was created with them, a barred identity deleting its own documents in a block and in the mempool, a barred identity refused as the recipient of a transfer and as the seller of a purchase, the ban's proof covering the suspension it removed, lifting the entry of an identity an update made moderator, the per-list execution proof, a named owner, a create or an update naming a moderator that does not exist, an update keeping its moderators, and inactivity of the transition and of a moderated contract create or update before protocol version 14.
+- `packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/contract_user_moderation/tests.rs`: the whole pipeline, including a moderator deleting a post (record, execution proof, the author's balance unchanged, and the control where the author deletes it and is refunded), every refusal of a deletion, a post created again and removed again, an update adding a document type moderators can delete from, a permanent reference to such a type refused, the mempool refusal, the lapse sweep, the moderator set, every refusal code, the lists staying as the contract was created with them, a barred identity deleting its own documents in a block and in the mempool, a barred identity refused as the recipient of a transfer and as the seller of a purchase, the ban's proof covering the suspension it removed, lifting the entry of an identity an update made moderator, the per-list execution proof, a named owner, a create or an update naming a moderator that does not exist, an update keeping its moderators, and inactivity of the transition and of a moderated contract create or update before protocol version 14.

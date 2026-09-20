@@ -15,20 +15,23 @@ use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
-    ContractBan, ContractModerationConfig, ContractModerationList, ContractModerationListStatus,
-    ContractModerationListStatuses, ContractModerationReason, ContractModerationStatus,
-    ContractModerators, ContractSuspension,
+    ContractBan, ContractDocumentRemoval, ContractModerationConfig, ContractModerationList,
+    ContractModerationListStatus, ContractModerationListStatuses, ContractModerationReason,
+    ContractModerationStatus, ContractModerators, ContractSuspension,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
 };
+use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::document::DocumentV0Setters;
+use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use dpp::platform_value::{Bytes32, Identifier};
+use dpp::platform_value::{platform_value, Bytes32, Identifier, Value};
 use dpp::prelude::IdentityNonce;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -48,6 +51,10 @@ use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
+use drive::drive::contract::moderation::types::{
+    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+};
 use drive::drive::Drive;
 use drive::grovedb::Transaction;
 use drive::util::storage_flags::StorageFlags;
@@ -73,9 +80,17 @@ const CONTRACT_USER_SUSPENDED: u32 = 41108;
 const CONTRACT_MODERATION_TARGET_NOT_FOUND: u32 = 41109;
 const CONTRACT_MODERATOR_IDENTITY_NOT_FOUND: u32 = 41110;
 const CONTRACT_MODERATION_COUNTERPARTY_BARRED: u32 = 41114;
+const DOCUMENT_TYPE_NOT_DELETABLE_BY_MODERATORS: u32 = 41115;
+const INVALID_DOCUMENT_TYPE: u32 = 10406;
+const INVALID_CONTRACT_STRUCTURE: u32 = 10231;
+const INVALID_CONTRACT_MODERATION_CONFIG: u32 = 10900;
+const DOCUMENT_TYPE_UPDATE: u32 = 40212;
+const REFERENCED_DOCUMENT_TYPE_DELETABLE: u32 = 40122;
 
 pub(crate) const CRITICAL_KEY_ID: KeyID = 1;
 const DOCUMENT_TYPE: &str = "niceDocument";
+/// The document type `Setup::new_with_posts` adds: moderators may delete its documents.
+const POST: &str = "post";
 const BLOCK_TIME_MS: TimestampMillis = 1_000_000;
 
 const BOTH: [ContractModerationList; 2] = [
@@ -157,6 +172,23 @@ impl Setup {
         moderation: Option<ContractModerationConfig>,
         platform_version: &PlatformVersion,
     ) -> Self {
+        Self::new_at_with(moderation, platform_version, |_| {}).await
+    }
+
+    /// A contract that also has the `post` document type, whose documents moderators may
+    /// delete
+    async fn new_with_posts(moderation: Option<ContractModerationConfig>) -> Self {
+        Self::new_at_with(moderation, PlatformVersion::latest(), |contract| {
+            add_document_type(contract, POST, post_schema(true))
+        })
+        .await
+    }
+
+    async fn new_at_with(
+        moderation: Option<ContractModerationConfig>,
+        platform_version: &PlatformVersion,
+        modify_contract: impl FnOnce(&mut DataContract),
+    ) -> Self {
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
@@ -185,6 +217,8 @@ impl Setup {
             moderation
         });
         contract.set_config(contract.config().clone().with_moderation(moderation));
+        // After the config: a document type moderators can delete from needs the declaration.
+        modify_contract(&mut contract);
 
         let mut setup = Self {
             platform,
@@ -269,15 +303,30 @@ impl Setup {
 
     /// A document creation by `actor` on the contract, and the document it creates
     async fn create_document_keeping_it(&self, actor: &Actor) -> (Document, StateTransition) {
+        let (document, _, transition) = self
+            .create_document_of_type(actor, DOCUMENT_TYPE, None)
+            .await;
+        (document, transition)
+    }
+
+    /// A creation by `actor` of a document of `document_type_name`, with the document and the
+    /// entropy its id derives from. Given the entropy of an earlier creation by the same actor,
+    /// the document gets the same id again.
+    async fn create_document_of_type(
+        &self,
+        actor: &Actor,
+        document_type_name: &str,
+        entropy: Option<Bytes32>,
+    ) -> (Document, Bytes32, StateTransition) {
         let platform_version = PlatformVersion::latest();
         let document_type = self
             .contract
-            .document_type_for_name(DOCUMENT_TYPE)
+            .document_type_for_name(document_type_name)
             .expect("expected the document type");
         // The borrow ends before the await below (clippy::await_holding_refcell_ref).
         let (entropy, document) = {
             let mut rng = self.rng.borrow_mut();
-            let entropy = Bytes32::random_with_rng(&mut rng);
+            let entropy = entropy.unwrap_or_else(|| Bytes32::random_with_rng(&mut rng));
             let document = document_type
                 .random_document_with_identifier_and_entropy(
                     &mut rng,
@@ -304,7 +353,77 @@ impl Setup {
         )
         .await
         .expect("expected to build the document creation");
-        (document, transition)
+        (document, entropy, transition)
+    }
+
+    /// The record of a moderator's deletion of `document_id`, if there is one
+    fn post_removal(
+        &self,
+        document_id: Identifier,
+        transaction: Option<&Transaction>,
+    ) -> Option<ContractDocumentRemoval> {
+        self.platform
+            .drive
+            .fetch_contract_document_removals(
+                self.contract.id(),
+                &ContractDocumentRemovalsQuery {
+                    document_type_name: POST.to_string(),
+                    selection: ContractDocumentRemovalsSelection::DocumentIds(vec![document_id]),
+                },
+                transaction,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to fetch the removal")
+            .pop()
+            .map(|entry| entry.removal)
+    }
+
+    fn balance(&self, identity_id: Identifier, transaction: Option<&Transaction>) -> Credits {
+        self.platform
+            .drive
+            .fetch_identity_balance(
+                identity_id.to_buffer(),
+                transaction,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to fetch the balance")
+            .expect("expected the identity to have a balance")
+    }
+
+    /// Proves the committed state for a document deletion and checks the proof shows its
+    /// record.
+    fn assert_removal_proved(&self, transition: &StateTransition) -> ContractDocumentRemoval {
+        let platform_version = PlatformVersion::latest();
+        let proof = self
+            .platform
+            .drive
+            .prove_state_transition(transition, None, platform_version)
+            .expect("expected to prove the state transition")
+            .into_data()
+            .expect("expected proof bytes");
+        let (_, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            transition,
+            &BlockInfo::default(),
+            &proof,
+            &|_| Ok(None),
+            platform_version,
+        )
+        .expect("expected the proof to verify");
+        match outcome {
+            StateTransitionProofOutcome::AffectedState(
+                StateTransitionProofResult::VerifiedContractDocumentRemoval(
+                    contract_id,
+                    document_type_name,
+                    _,
+                    removal,
+                ),
+            ) => {
+                assert_eq!(contract_id, self.contract.id());
+                assert_eq!(document_type_name, POST);
+                removal
+            }
+            other => panic!("expected a document removal, got {other:?}"),
+        }
     }
 
     /// The deletion of `document` by `actor`, its owner
@@ -1520,4 +1639,444 @@ async fn should_keep_a_barred_identity_from_receiving_or_selling_documents() {
     .await
     .expect("expected the purchase");
     assert_success(&process(&purchase, &transaction));
+}
+
+// ---- document deletion by moderators ----------------------------------------------------
+
+fn post_schema(deletable_by_moderators: bool) -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "text": { "type": "string", "maxLength": 50, "position": 0 },
+        },
+        "required": ["text"],
+        "additionalProperties": false,
+        "canBeDeletedByModerators": deletable_by_moderators,
+    })
+}
+
+fn add_document_type(contract: &mut DataContract, name: &str, schema: Value) {
+    contract
+        .set_document_schema(name, schema, true, &mut vec![], PlatformVersion::latest())
+        .expect("expected to add the document type");
+}
+
+fn delete_action(
+    document_type_name: &str,
+    document_id: Identifier,
+) -> ContractUserModerationAction {
+    ContractUserModerationAction::DeleteDocument {
+        document_type_name: document_type_name.to_string(),
+        document_id,
+        reason: deletion_reason(),
+    }
+}
+
+fn deletion_reason() -> ContractModerationReason {
+    ContractModerationReason {
+        code: Some(3),
+        text: "spam".to_string(),
+    }
+}
+
+/// No list at all: the moderators of this contract only delete posts.
+fn moderators_without_lists() -> ContractModerationConfig {
+    moderation(false, false, THE_MODERATOR)
+}
+
+#[tokio::test]
+async fn should_let_a_moderator_delete_a_post_leave_its_record_and_refund_nobody() {
+    let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
+    let user_id = setup.user.id();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    assert_success(&setup.process(&create, &transaction));
+    setup.commit(transaction);
+    let balance_before = setup.balance(user_id, None);
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    // The mempool takes it, as it does a ban.
+    assert!(setup.check_tx(&delete).is_empty());
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process(&delete, &transaction));
+    setup.commit(transaction);
+
+    // The post is gone: its author can not delete it any more.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let own_delete = BatchTransition::new_document_deletion_transition_from_document(
+        post.clone(),
+        setup
+            .contract
+            .document_type_for_name(POST)
+            .expect("expected the post type"),
+        &setup.user.key,
+        setup.user.contract_nonce(),
+        0,
+        None,
+        &setup.user.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the document deletion");
+    let execution = setup.process(&own_delete, &transaction);
+    assert!(
+        matches!(&execution, StateTransitionExecutionResult::PaidConsensusError { error, .. }
+            if matches!(error, ConsensusError::StateError(StateError::DocumentNotFoundError(_)))),
+        "expected the post to be gone, got {execution:?}"
+    );
+    drop(transaction);
+
+    // Its record says whose it was, who removed it, why and when.
+    let expected = ContractDocumentRemoval {
+        document_owner_id: user_id,
+        moderator_id: setup.moderator.id(),
+        reason: deletion_reason(),
+        removed_at: BLOCK_TIME_MS,
+    };
+    assert_eq!(setup.post_removal(post.id(), None), Some(expected.clone()));
+    assert_eq!(setup.assert_removal_proved(&delete), expected);
+
+    // The author paid for the post's storage and gets nothing back.
+    assert_eq!(setup.balance(user_id, None), balance_before);
+}
+
+#[tokio::test]
+async fn should_refund_the_author_who_deletes_the_same_post_themselves() {
+    // The control of the test above: the forfeiture is the moderator's deletion, not the
+    // document type.
+    let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
+    let user_id = setup.user.id();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    assert_success(&setup.process(&create, &transaction));
+    setup.commit(transaction);
+    let balance_before = setup.balance(user_id, None);
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let own_delete = BatchTransition::new_document_deletion_transition_from_document(
+        post.clone(),
+        setup
+            .contract
+            .document_type_for_name(POST)
+            .expect("expected the post type"),
+        &setup.user.key,
+        setup.user.contract_nonce(),
+        0,
+        None,
+        &setup.user.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the document deletion");
+    assert_success(&setup.process(&own_delete, &transaction));
+    setup.commit(transaction);
+
+    assert!(
+        setup.balance(user_id, None) > balance_before,
+        "the storage refund outweighs the deletion's processing fee"
+    );
+    assert_eq!(setup.post_removal(post.id(), None), None);
+}
+
+#[tokio::test]
+async fn should_refuse_a_document_deletion_that_breaks_a_rule() {
+    let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    assert_success(&setup.process(&create, &transaction));
+    let (owners_post, _, create) = setup
+        .create_document_of_type(&setup.owner, POST, None)
+        .await;
+    assert_success(&setup.process(&create, &transaction));
+    let (moderators_post, _, create) = setup
+        .create_document_of_type(&setup.moderator, POST, None)
+        .await;
+    assert_success(&setup.process(&create, &transaction));
+    let (nice_document, create) = setup.create_document_keeping_it(&setup.user).await;
+    assert_success(&setup.process(&create, &transaction));
+
+    // Nobody but the owner and the moderators.
+    let by_stranger = setup
+        .moderate(&setup.stranger, delete_action(POST, post.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&by_stranger, &transaction),
+        IDENTITY_NOT_CONTRACT_MODERATOR,
+    );
+    assert_eq!(
+        setup.check_tx(&by_stranger)[0].code(),
+        IDENTITY_NOT_CONTRACT_MODERATOR
+    );
+    // Not the author through this transition either: an author uses a document deletion.
+    let by_author = setup
+        .moderate(&setup.user, delete_action(POST, post.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&by_author, &transaction),
+        IDENTITY_NOT_CONTRACT_MODERATOR,
+    );
+
+    // Only a document type that says so.
+    let of_another_type = setup
+        .moderate(
+            &setup.moderator,
+            delete_action(DOCUMENT_TYPE, nice_document.id()),
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process(&of_another_type, &transaction),
+        DOCUMENT_TYPE_NOT_DELETABLE_BY_MODERATORS,
+    );
+    let of_no_type = setup
+        .moderate(&setup.moderator, delete_action("comment", post.id()))
+        .await;
+    assert_paid_with_code(
+        &setup.process(&of_no_type, &transaction),
+        INVALID_DOCUMENT_TYPE,
+    );
+
+    // Only a document that exists.
+    let of_nothing = setup
+        .moderate(
+            &setup.moderator,
+            delete_action(POST, Identifier::from([0x5a; 32])),
+        )
+        .await;
+    let execution = setup.process(&of_nothing, &transaction);
+    assert!(
+        matches!(&execution, StateTransitionExecutionResult::PaidConsensusError { error, .. }
+            if matches!(error, ConsensusError::StateError(StateError::DocumentNotFoundError(_)))),
+        "expected a paid document not found error, got {execution:?}"
+    );
+
+    // Never the owner's or a moderator's, whoever asks.
+    for (actor, document) in [
+        (&setup.moderator, &owners_post),
+        (&setup.owner, &moderators_post),
+    ] {
+        let protected = setup
+            .moderate(actor, delete_action(POST, document.id()))
+            .await;
+        assert_paid_with_code(
+            &setup.process(&protected, &transaction),
+            CONTRACT_MODERATION_TARGET_NOT_ALLOWED,
+        );
+    }
+
+    // A reason within the limit, refused before anything is paid.
+    let too_long = setup
+        .moderate(
+            &setup.moderator,
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name: POST.to_string(),
+                document_id: post.id(),
+                reason: ContractModerationReason::from_text(
+                    &"x".repeat(
+                        PlatformVersion::latest()
+                            .system_limits
+                            .max_contract_moderation_reason_length as usize
+                            + 1,
+                    ),
+                ),
+            },
+        )
+        .await;
+    assert_unpaid_with_code(
+        &setup.process(&too_long, &transaction),
+        CONTRACT_MODERATION_REASON_TOO_LONG,
+    );
+
+    // None of it touched the post, and the owner may delete it as any moderator may, with no
+    // reason at all.
+    assert_eq!(setup.post_removal(post.id(), Some(&transaction)), None);
+    let by_owner = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name: POST.to_string(),
+                document_id: post.id(),
+                reason: ContractModerationReason::default(),
+            },
+        )
+        .await;
+    assert_success(&setup.process(&by_owner, &transaction));
+    let removal = setup
+        .post_removal(post.id(), Some(&transaction))
+        .expect("expected the record");
+    assert_eq!(removal.moderator_id, setup.owner.id());
+    assert_eq!(removal.reason, ContractModerationReason::default());
+}
+
+#[tokio::test]
+async fn should_replace_the_record_when_a_post_created_again_is_removed_again() {
+    let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, entropy, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    assert_success(&setup.process(&create, &transaction));
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+
+    // Nothing stops the author from creating the same id again: a record says a document of
+    // that id was removed, not that the id is gone for good.
+    let (again, _, create_again) = setup
+        .create_document_of_type(&setup.user, POST, Some(entropy))
+        .await;
+    assert_eq!(again.id(), post.id());
+    let later = BLOCK_TIME_MS + 60_000;
+    assert_success(&setup.process_at(&create_again, later, &transaction));
+
+    let delete_again = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name: POST.to_string(),
+                document_id: post.id(),
+                reason: ContractModerationReason::from_text("spam, again, and at more length"),
+            },
+        )
+        .await;
+    assert_success(&setup.process_at(&delete_again, later, &transaction));
+    let removal = setup
+        .post_removal(post.id(), Some(&transaction))
+        .expect("expected the record");
+    assert_eq!(removal.moderator_id, setup.owner.id());
+    assert_eq!(removal.removed_at, later);
+    assert_eq!(removal.reason.text, "spam, again, and at more length");
+}
+
+#[tokio::test]
+async fn should_tie_the_document_type_keyword_to_the_moderation_declaration() {
+    // A document type moderators could delete from on a contract without moderation is
+    // refused where the document type is parsed (`moderators_delete_tests` in dpp), with the
+    // consensus error a contract create turns into a paid refusal.
+    let mut unmoderated = get_data_contract_fixture(None, 0, 14).data_contract_owned();
+    let refusal = unmoderated
+        .set_document_schema(
+            POST,
+            post_schema(true),
+            true,
+            &mut vec![],
+            PlatformVersion::latest(),
+        )
+        .expect_err("expected the document type to be refused");
+    assert!(
+        matches!(&refusal, ProtocolError::ConsensusError(error)
+            if error.code() == INVALID_CONTRACT_STRUCTURE),
+        "expected an invalid contract structure, got {refusal:?}"
+    );
+
+    // No list and no such document type: the moderators would have nothing to do.
+    let setup = Setup::new(None).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let identity_nonce = setup.owner.identity_nonce();
+    let mut idle = get_data_contract_fixture(
+        Some(setup.owner.id()),
+        identity_nonce,
+        PlatformVersion::latest().protocol_version,
+    )
+    .data_contract_owned();
+    idle.set_config(
+        idle.config()
+            .clone()
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+            })),
+    );
+    let create = DataContractCreateTransition::new_from_data_contract(
+        idle,
+        identity_nonce,
+        &setup.owner.identity.clone().into_partial_identity_info(),
+        CRITICAL_KEY_ID,
+        &setup.owner.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the contract create");
+    assert_unpaid_with_code(
+        &setup.process(&create, &transaction),
+        INVALID_CONTRACT_MODERATION_CONFIG,
+    );
+}
+
+#[tokio::test]
+async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_with_it() {
+    // Lists only to start with.
+    let mut setup = Setup::new(Some(moderation(true, false, THE_MODERATOR))).await;
+
+    // An existing document type can not become one moderators delete from.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let mut flipped = setup.contract.clone();
+    flipped.increment_version();
+    let mut nice_document_schema = flipped
+        .document_type_for_name(DOCUMENT_TYPE)
+        .expect("expected the document type")
+        .schema()
+        .clone();
+    nice_document_schema
+        .insert("canBeDeletedByModerators".to_string(), Value::Bool(true))
+        .expect("expected to set the keyword");
+    add_document_type(&mut flipped, DOCUMENT_TYPE, nice_document_schema);
+    let update = setup.contract_update(flipped).await;
+    assert_paid_with_code(&setup.process(&update, &transaction), DOCUMENT_TYPE_UPDATE);
+    drop(transaction);
+
+    // A document type the update adds may be one, and then its documents can be deleted.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let mut with_posts = setup.contract.clone();
+    with_posts.increment_version();
+    add_document_type(&mut with_posts, POST, post_schema(true));
+    let update = setup.contract_update(with_posts.clone()).await;
+    assert_success(&setup.process(&update, &transaction));
+    setup.contract = with_posts;
+
+    let (post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    assert_success(&setup.process(&create, &transaction));
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+    assert!(setup.post_removal(post.id(), Some(&transaction)).is_some());
+
+    // And it can not be the target of a permanent reference: its documents can vanish.
+    let mut referring = setup.contract.clone();
+    referring.increment_version();
+    add_document_type(
+        &mut referring,
+        "bookmark",
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "refersTo": { "type": "permanentDocument", "documentType": POST },
+                    "position": 0,
+                },
+            },
+            "required": ["postId"],
+            "additionalProperties": false,
+        }),
+    );
+    let update = setup.contract_update(referring).await;
+    assert_paid_with_code(
+        &setup.process(&update, &transaction),
+        REFERENCED_DOCUMENT_TYPE_DELETABLE,
+    );
 }

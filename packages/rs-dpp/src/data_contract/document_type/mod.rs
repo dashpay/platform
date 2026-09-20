@@ -143,6 +143,13 @@ pub(crate) mod property_names {
     /// 14). See `apply_index_only` in `try_from_schema::common` for the
     /// structural constraints the flag imposes.
     pub const INDEX_ONLY: &str = "indexOnly";
+    /// Doctype-level flag letting the contract's moderators (its owner and the
+    /// identities its moderation config appoints) delete documents of this type
+    /// with a `ContractUserModeration` transition, whatever `canBeDeleted` says
+    /// about the documents' own owners. Meta-schema v3+ (protocol version 14).
+    /// See `apply_can_be_deleted_by_moderators` in `try_from_schema::common`
+    /// for what the flag requires of the type and of the contract.
+    pub const CAN_BE_DELETED_BY_MODERATORS: &str = "canBeDeletedByModerators";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

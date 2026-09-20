@@ -19,6 +19,7 @@
 //! generation 2 (schema 1 and 2).
 
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
+use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
 use crate::data_contract::document_type::index::Index;
@@ -26,8 +27,8 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
-    DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
+    CAN_BE_DELETED, CAN_BE_DELETED_BY_MODERATORS, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE,
+    DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
     KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE,
     RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
@@ -1975,6 +1976,91 @@ pub(super) fn parse_index_only_keyword(schema: &Value) -> Result<bool, ProtocolE
         })
         .transpose()?
         .unwrap_or(false))
+}
+
+/// Reads the doctype-level `canBeDeletedByModerators` flag before the core
+/// parse consumes `schema`, same shape as [`parse_index_only_keyword`]. Only
+/// the generation-3 driver calls this; earlier generations predate the keyword
+/// and their meta-schemas reject it under `full_validation`.
+pub(super) fn parse_can_be_deleted_by_moderators_keyword(
+    schema: &Value,
+) -> Result<bool, ProtocolError> {
+    let schema_map_opt = schema.to_map().ok();
+
+    Ok(schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED_BY_MODERATORS)
+                .map_err(consensus_or_protocol_value_error)
+                .transpose()
+        })
+        .transpose()?
+        .unwrap_or(false))
+}
+
+/// Applies the `canBeDeletedByModerators` flag and checks what it requires.
+///
+/// The flag lets the contract's moderators delete documents of the type, so:
+/// - the contract must declare moderation, or there would be nobody to delete
+///   anything (moderation can not be switched on by a later update);
+/// - the type must not keep history: Drive refuses to delete such documents;
+/// - the type must not be indexOnly: such a document has no stored row a
+///   moderator could name by id;
+/// - the type must not restrict creation: its documents are the contract
+///   owner's, which no moderator may delete.
+///
+/// The rules hold for every contract that could be stored (the keyword and
+/// the moderation config both arrive with protocol version 14), so they are
+/// not skipped when a stored contract is read back.
+pub(super) fn apply_can_be_deleted_by_moderators(
+    document_type: &mut DocumentTypeV2,
+    can_be_deleted_by_moderators: bool,
+    data_contract_config: &DataContractConfig,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !can_be_deleted_by_moderators {
+        return Ok(());
+    }
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if data_contract_config.moderation().is_none() {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModerators: true`, but the contract \
+             declares no `moderation` in its config, so nobody could delete its documents \
+             (moderation can only be declared when the contract is created)",
+            name,
+        )));
+    }
+    if document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets both `documentsKeepHistory: true` and \
+             `canBeDeletedByModerators: true`, but the storage layer refuses to delete a \
+             document whose type keeps history",
+            name,
+        )));
+    }
+    if document_type.index_only {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" must not set `canBeDeletedByModerators`: there \
+             is no stored row a moderator could name by id",
+            name,
+        )));
+    }
+    if document_type.creation_restriction_mode != CreationRestrictionMode::NoRestrictions {
+        return Err(structure_error(format!(
+            "document type \"{}\" restricts document creation and must not set \
+             `canBeDeletedByModerators`: its documents belong to the contract owner, whose \
+             documents no moderator may delete",
+            name,
+        )));
+    }
+
+    document_type.documents_can_be_deleted_by_moderators = true;
+    Ok(())
 }
 
 /// Reads a doctype-level array of top-level property names (`immutable`, the

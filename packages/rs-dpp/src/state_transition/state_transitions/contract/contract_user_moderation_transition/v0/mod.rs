@@ -20,7 +20,7 @@ use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
 use crate::ProtocolError;
 use std::fmt;
 
-/// What the moderator does to one identity on the contract.
+/// What the moderator does on the contract: to one identity, or to one document.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -54,6 +54,17 @@ pub enum ContractUserModerationAction {
         #[cfg_attr(feature = "serde-conversion", serde(rename = "identityId"))]
         identity_id: Identifier,
     },
+    /// Deletes a document of a document type that sets `canBeDeletedByModerators`, whoever
+    /// owns it, except the contract owner and the moderators. The document's owner gets no
+    /// storage refund, and a `ContractDocumentRemoval` stays under the contract.
+    DeleteDocument {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "documentTypeName"))]
+        document_type_name: String,
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "documentId"))]
+        document_id: Identifier,
+        /// Why, stored with the removal record.
+        reason: ContractModerationReason,
+    },
 }
 
 impl Default for ContractUserModerationAction {
@@ -66,13 +77,28 @@ impl Default for ContractUserModerationAction {
 }
 
 impl ContractUserModerationAction {
-    /// The identity the action targets.
-    pub fn identity_id(&self) -> Identifier {
+    /// The identity the action targets. `None` for a document deletion: it names a document,
+    /// and whose it is is only known once the document is read.
+    pub fn identity_id(&self) -> Option<Identifier> {
         match self {
             ContractUserModerationAction::Ban { identity_id, .. }
             | ContractUserModerationAction::Unban { identity_id }
             | ContractUserModerationAction::Suspend { identity_id, .. }
-            | ContractUserModerationAction::Unsuspend { identity_id } => *identity_id,
+            | ContractUserModerationAction::Unsuspend { identity_id } => Some(*identity_id),
+            ContractUserModerationAction::DeleteDocument { .. } => None,
+        }
+    }
+
+    /// The document a deletion targets, as its document type name and its id. `None` for an
+    /// action on an identity.
+    pub fn document(&self) -> Option<(&str, Identifier)> {
+        match self {
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name,
+                document_id,
+                ..
+            } => Some((document_type_name.as_str(), *document_id)),
+            _ => None,
         }
     }
 
@@ -84,12 +110,13 @@ impl ContractUserModerationAction {
         }
     }
 
-    /// The reason a ban or a suspend carries, `None` for an action that takes an identity off
-    /// a list.
+    /// The reason a ban, a suspend or a document deletion carries, `None` for an action that
+    /// takes an identity off a list.
     pub fn reason(&self) -> Option<&ContractModerationReason> {
         match self {
             ContractUserModerationAction::Ban { reason, .. }
-            | ContractUserModerationAction::Suspend { reason, .. } => Some(reason),
+            | ContractUserModerationAction::Suspend { reason, .. }
+            | ContractUserModerationAction::DeleteDocument { reason, .. } => Some(reason),
             ContractUserModerationAction::Unban { .. }
             | ContractUserModerationAction::Unsuspend { .. } => None,
         }
@@ -102,6 +129,7 @@ impl ContractUserModerationAction {
             ContractUserModerationAction::Unban { .. } => "unban",
             ContractUserModerationAction::Suspend { .. } => "suspend",
             ContractUserModerationAction::Unsuspend { .. } => "unsuspend",
+            ContractUserModerationAction::DeleteDocument { .. } => "deleteDocument",
         }
     }
 }
@@ -114,7 +142,18 @@ impl fmt::Display for ContractUserModerationAction {
             } => {
                 write!(f, "suspend {} until {}", identity_id, until)
             }
-            other => write!(f, "{} {}", other.name(), other.identity_id()),
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name,
+                document_id,
+                ..
+            } => {
+                write!(f, "delete {} document {}", document_type_name, document_id)
+            }
+            ContractUserModerationAction::Ban { identity_id, .. }
+            | ContractUserModerationAction::Unban { identity_id }
+            | ContractUserModerationAction::Unsuspend { identity_id } => {
+                write!(f, "{} {}", self.name(), identity_id)
+            }
         }
     }
 }
@@ -125,7 +164,8 @@ impl fmt::Display for ContractUserModerationAction {
 #[cfg(feature = "json-conversion")]
 impl JsonSafeFields for ContractUserModerationAction {}
 
-/// Edits the banlist or the suspension list of a moderated data contract. Signed by the
+/// Edits the banlist or the suspension list of a moderated data contract, or deletes a
+/// document of one of its document types that moderators may delete. Signed by the
 /// contract owner or a moderator named in the contract's config, with a CRITICAL
 /// authentication key, under the signer's contract-scoped nonce.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
@@ -233,7 +273,8 @@ mod test {
             until: 12,
             reason: reason.clone(),
         };
-        assert_eq!(action.identity_id(), target);
+        assert_eq!(action.identity_id(), Some(target));
+        assert_eq!(action.document(), None);
         assert_eq!(action.until(), Some(12));
         assert_eq!(action.reason(), Some(&reason));
         assert_eq!(action.name(), "suspend");
@@ -245,11 +286,51 @@ mod test {
     }
 
     #[test]
+    fn should_name_the_document_of_a_deletion() {
+        let document_id = Identifier::random();
+        let reason = ContractModerationReason {
+            code: Some(2),
+            text: "spam".to_string(),
+        };
+        let action = ContractUserModerationAction::DeleteDocument {
+            document_type_name: "post".to_string(),
+            document_id,
+            reason: reason.clone(),
+        };
+        // A deletion names a document: whose it is is only known once it is read.
+        assert_eq!(action.identity_id(), None);
+        assert_eq!(action.document(), Some(("post", document_id)));
+        assert_eq!(action.until(), None);
+        assert_eq!(action.reason(), Some(&reason));
+        assert_eq!(action.name(), "deleteDocument");
+        assert_eq!(
+            action.to_string(),
+            format!("delete post document {}", document_id)
+        );
+    }
+
+    #[cfg(feature = "json-conversion")]
+    #[test]
+    fn should_tag_a_deletion_on_the_wire() {
+        let action = ContractUserModerationAction::DeleteDocument {
+            document_type_name: "post".to_string(),
+            document_id: Identifier::from([7; 32]),
+            reason: ContractModerationReason::default(),
+        };
+        let json = serde_json::to_value(&action).expect("to json");
+        assert_eq!(json["$type"], "deleteDocument");
+        assert_eq!(json["documentTypeName"], "post");
+        assert!(json.get("documentId").is_some());
+        let back: ContractUserModerationAction = serde_json::from_value(json).expect("from json");
+        assert_eq!(back, action);
+    }
+
+    #[test]
     fn should_sign_the_reason() {
         let a = make_v0();
         let mut b = a.clone();
         b.action = ContractUserModerationAction::Ban {
-            identity_id: a.action.identity_id(),
+            identity_id: a.action.identity_id().expect("a ban names an identity"),
             reason: ContractModerationReason::from_text("something else"),
         };
         assert_ne!(

@@ -7,8 +7,8 @@ use super::address_funds::{
     VerifiedIdentityWithAddressInfosWasm,
 };
 use super::data_contract::{
-    VerifiedContractFeeClaimWasm, VerifiedContractModerationListStatusesWasm,
-    VerifiedDataContractWasm,
+    VerifiedContractDocumentRemovalWasm, VerifiedContractFeeClaimWasm,
+    VerifiedContractModerationListStatusesWasm, VerifiedDataContractWasm,
 };
 use super::document::VerifiedDocumentsWasm;
 use super::helpers::{
@@ -75,7 +75,8 @@ export type StateTransitionProofResultType =
   | VerifiedShieldedNullifiersWithWithdrawalDocument
   | VerifiedIdentityWithShieldedNullifiers
   | VerifiedContractModerationListStatuses
-  | VerifiedContractFeeClaim;
+  | VerifiedContractFeeClaim
+  | VerifiedContractDocumentRemoval;
 "#;
 
 #[wasm_bindgen]
@@ -385,6 +386,21 @@ pub fn convert_proof_result(
             }
             .into()
         }
+        StateTransitionProofResult::VerifiedContractDocumentRemoval(
+            contract_id,
+            document_type_name,
+            document_id,
+            removal,
+        ) => VerifiedContractDocumentRemovalWasm {
+            contract_id: contract_id.into(),
+            document_type_name,
+            document_id: document_id.into(),
+            document_owner_id: removal.document_owner_id.into(),
+            moderator_id: removal.moderator_id.into(),
+            reason: removal.reason,
+            removed_at: removal.removed_at,
+        }
+        .into(),
     };
 
     Ok(js_value.into())

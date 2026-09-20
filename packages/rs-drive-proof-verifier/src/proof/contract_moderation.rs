@@ -3,15 +3,17 @@
 use crate::error::MapGroveDbError;
 use crate::types::contract_moderation::{
     entries_query_from_request, identifier_from_request, lists_from_request,
-    ContractModerationEntries, ContractModerationListStatuses,
+    removals_query_from_request, ContractDocumentRemovals, ContractModerationEntries,
+    ContractModerationListStatuses,
 };
 use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
-    get_contract_moderation_entries_request, get_contract_moderation_status_request,
-    GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
-    GetContractModerationStatusRequest, GetContractModerationStatusResponse, Proof,
-    ResponseMetadata,
+    get_contract_document_removals_request, get_contract_moderation_entries_request,
+    get_contract_moderation_status_request, GetContractDocumentRemovalsRequest,
+    GetContractDocumentRemovalsResponse, GetContractModerationEntriesRequest,
+    GetContractModerationEntriesResponse, GetContractModerationStatusRequest,
+    GetContractModerationStatusResponse, Proof, ResponseMetadata,
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
@@ -112,9 +114,62 @@ impl FromProof<GetContractModerationEntriesRequest> for ContractModerationEntrie
     }
 }
 
+impl FromProof<GetContractDocumentRemovalsRequest> for ContractDocumentRemovals {
+    type Request = GetContractDocumentRemovalsRequest;
+    type Response = GetContractDocumentRemovalsResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let get_contract_document_removals_request::Version::V0(v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let contract_id = identifier_from_request(&v0.contract_id, "contract_id")?;
+        let query =
+            removals_query_from_request(v0.document_type_name, v0.selection, platform_version)?;
+
+        let metadata = response
+            .metadata()
+            .or(Err(Error::EmptyResponseMetadata))?
+            .clone();
+        let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
+
+        let (root_hash, removals) = Drive::verify_contract_document_removals(
+            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            contract_id,
+            &query,
+            platform_version,
+        )
+        .map_drive_error(&proof, &metadata)?;
+
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+
+        // A document type nobody moderated proves as no records at all, and an id with no
+        // record is proved absent rather than missing, so the records are always the answer.
+        Ok((Some(ContractDocumentRemovals(removals)), metadata, proof))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contract_document_removals_request_v0::Selection;
+    use dapi_grpc::platform::v0::get_contract_document_removals_request::{
+        DocumentIds, GetContractDocumentRemovalsRequestV0, Page,
+    };
+    use dapi_grpc::platform::v0::get_contract_document_removals_response::{
+        get_contract_document_removals_response_v0::Result as RemovalsResult,
+        GetContractDocumentRemovalsResponseV0, Version as RemovalsResponseVersion,
+    };
     use dapi_grpc::platform::v0::get_contract_moderation_entries_request::GetContractModerationEntriesRequestV0;
     use dapi_grpc::platform::v0::get_contract_moderation_entries_response::{
         get_contract_moderation_entries_response_v0::Result as EntriesResult,
@@ -374,6 +429,140 @@ mod tests {
         let err = entries_error(
             entries_request(vec![1; 32], 2, Some(vec![2; 32]), Some(10)),
             entries_response(Some(EntriesResult::Proof(Proof::default()))),
+        );
+        assert!(
+            !matches!(err, Error::RequestError { .. } | Error::NoProofInResult),
+            "got: {err:?}"
+        );
+    }
+
+    fn removals_request(
+        contract_id: Vec<u8>,
+        document_type_name: &str,
+        selection: Option<Selection>,
+    ) -> GetContractDocumentRemovalsRequest {
+        GetContractDocumentRemovalsRequest {
+            version: Some(get_contract_document_removals_request::Version::V0(
+                GetContractDocumentRemovalsRequestV0 {
+                    contract_id,
+                    document_type_name: document_type_name.to_string(),
+                    selection,
+                    prove: true,
+                },
+            )),
+        }
+    }
+
+    fn removals_response(result: Option<RemovalsResult>) -> GetContractDocumentRemovalsResponse {
+        GetContractDocumentRemovalsResponse {
+            version: Some(RemovalsResponseVersion::V0(
+                GetContractDocumentRemovalsResponseV0 {
+                    result,
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        }
+    }
+
+    fn removals_error(
+        request: GetContractDocumentRemovalsRequest,
+        response: GetContractDocumentRemovalsResponse,
+    ) -> Error {
+        <ContractDocumentRemovals as FromProof<_>>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+            &UnreachableProvider,
+        )
+        .unwrap_err()
+    }
+
+    fn removals_page(start_after: Option<Vec<u8>>, limit: Option<u32>) -> Option<Selection> {
+        Some(Selection::Page(Page { start_after, limit }))
+    }
+
+    #[test]
+    fn removals_should_fail_with_empty_version_when_request_has_no_version() {
+        let err = removals_error(
+            GetContractDocumentRemovalsRequest { version: None },
+            removals_response(Some(RemovalsResult::Proof(Proof::default()))),
+        );
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn removals_should_reject_malformed_requests() {
+        let id = vec![1; 32];
+        for (request, needle) in [
+            (
+                removals_request(vec![1; 5], "post", removals_page(None, None)),
+                "contract_id",
+            ),
+            (
+                removals_request(id.clone(), "post", None),
+                "either document_ids or page must be set",
+            ),
+            (
+                removals_request(
+                    id.clone(),
+                    "post",
+                    Some(Selection::DocumentIds(DocumentIds {
+                        document_ids: vec![],
+                    })),
+                ),
+                "it must be between 1 and",
+            ),
+            (
+                removals_request(
+                    id.clone(),
+                    "post",
+                    Some(Selection::DocumentIds(DocumentIds {
+                        document_ids: vec![id.clone(), id.clone()],
+                    })),
+                ),
+                "named twice",
+            ),
+            (
+                removals_request(id.clone(), "post", removals_page(Some(vec![1; 5]), None)),
+                "start_after",
+            ),
+            (
+                removals_request(id.clone(), "post", removals_page(None, Some(70_000))),
+                "out of bounds",
+            ),
+        ] {
+            let err = removals_error(
+                request,
+                removals_response(Some(RemovalsResult::Proof(Proof::default()))),
+            );
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains(needle)),
+                "{needle}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn removals_should_fail_without_proof_when_response_carries_none() {
+        let err = removals_error(
+            removals_request(vec![1; 32], "post", removals_page(None, None)),
+            removals_response(None),
+        );
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn removals_should_fail_on_a_proof_that_does_not_verify() {
+        let err = removals_error(
+            removals_request(
+                vec![1; 32],
+                "post",
+                Some(Selection::DocumentIds(DocumentIds {
+                    document_ids: vec![vec![2; 32]],
+                })),
+            ),
+            removals_response(Some(RemovalsResult::Proof(Proof::default()))),
         );
         assert!(
             !matches!(err, Error::RequestError { .. } | Error::NoProofInResult),
