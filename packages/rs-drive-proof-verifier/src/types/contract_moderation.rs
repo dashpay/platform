@@ -1,9 +1,13 @@
 //! Contract moderation query results and the wire conversions the proved and unproved paths
 //! share: one identity's status on the lists queried ([`ContractModerationListStatuses`]) and one
 //! page of a contract's banlist or suspension list ([`ContractModerationEntries`], read with a
-//! [`ContractModerationEntriesQuery`]).
+//! [`ContractModerationEntriesQuery`]). The fee pots of a contract ([`ContractFeePots`]) are
+//! read here too: they are what its document action fees pay its owner and its moderators.
 
 use crate::Error;
+use dapi_grpc::platform::v0::get_contract_fee_pots_response::{
+    ContractFeePot as ContractFeePotProto, ContractFeePots as ContractFeePotsProto,
+};
 use dapi_grpc::platform::v0::get_contract_moderation_entries_response::ContractModerationEntry as ContractModerationEntryProto;
 use dapi_grpc::platform::v0::ContractModerationList as ContractModerationListProto;
 use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
@@ -12,8 +16,10 @@ pub use dpp::data_contract::config::moderation::{
     ContractModerationListStatuses, ContractModerationReason, ContractModerationStatus,
     ContractSuspension,
 };
+pub use dpp::data_contract::document_type::action_fees::ContractFeePot;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
+pub use drive::drive::contract::fee_pots::types::{ContractFeePotState, ContractFeePots};
 pub use drive::drive::contract::moderation::types::{
     ContractModerationEntriesQuery, ContractModerationEntry,
 };
@@ -51,6 +57,11 @@ impl ContractModerationEntries {
         })
     }
 }
+
+/// The pots a fee pots request reads, in the order its proof is built and verified in: always
+/// both.
+pub const CONTRACT_FEE_POTS_QUERIED: [ContractFeePot; 2] =
+    [ContractFeePot::Owner, ContractFeePot::Moderators];
 
 /// The 32 byte identifier a request field holds, naming the field in the error.
 pub fn identifier_from_request(bytes: &[u8], what: &str) -> Result<Identifier, Error> {
@@ -177,6 +188,40 @@ pub fn entries_from_response(
         })
         .collect::<Result<Vec<_>, Error>>()
         .map(ContractModerationEntries)
+}
+
+/// One pot of an unproved response. The epoch a pot was last paid out in is a u16 on the chain,
+/// so a response naming a larger one is refused: no pot of any version can hold it.
+fn fee_pot_from_response(
+    pot: Option<ContractFeePotProto>,
+    what: &str,
+) -> Result<ContractFeePotState, Error> {
+    let ContractFeePotProto {
+        credits,
+        last_claim_epoch,
+    } = pot.ok_or_else(|| Error::ResponseDecodeError {
+        error: format!("contract fee pots response holds no {what} pot"),
+    })?;
+    let last_claim_epoch = last_claim_epoch
+        .map(|epoch| {
+            u16::try_from(epoch).map_err(|_| Error::ResponseDecodeError {
+                error: format!("last claim epoch {epoch} of the {what} pot is not a u16"),
+            })
+        })
+        .transpose()?;
+    Ok(ContractFeePotState {
+        credits,
+        last_claim_epoch,
+    })
+}
+
+/// The fee pots of an unproved response. A node always answers with both pots, an empty one as
+/// zero credits, so a response that leaves one out is refused.
+pub fn fee_pots_from_response(pots: ContractFeePotsProto) -> Result<ContractFeePots, Error> {
+    Ok(ContractFeePots {
+        owner: fee_pot_from_response(pots.owner, "owner")?,
+        moderators: fee_pot_from_response(pots.moderators, "moderators")?,
+    })
 }
 
 #[cfg(test)]
@@ -419,5 +464,74 @@ mod tests {
             reason: ContractModerationReason::default(),
         }]);
         assert_eq!(short.next_query(&query), None);
+    }
+
+    #[test]
+    fn should_read_the_fee_pots_of_an_unproved_response() {
+        let pots = fee_pots_from_response(ContractFeePotsProto {
+            owner: Some(ContractFeePotProto {
+                credits: 10_000_000,
+                last_claim_epoch: None,
+            }),
+            moderators: Some(ContractFeePotProto {
+                credits: u64::MAX,
+                // Epoch 0 is an epoch a pot can have been paid out in, not "never".
+                last_claim_epoch: Some(0),
+            }),
+        })
+        .expect("expected the pots to be read");
+        assert_eq!(
+            pots,
+            ContractFeePots {
+                owner: ContractFeePotState {
+                    credits: 10_000_000,
+                    last_claim_epoch: None,
+                },
+                moderators: ContractFeePotState {
+                    credits: u64::MAX,
+                    last_claim_epoch: Some(0),
+                },
+            }
+        );
+        assert_eq!(pots.pot(ContractFeePot::Moderators).credits, u64::MAX);
+    }
+
+    #[test]
+    fn should_refuse_fee_pots_a_node_cannot_have_read() {
+        let pot = |last_claim_epoch| {
+            Some(ContractFeePotProto {
+                credits: 1,
+                last_claim_epoch,
+            })
+        };
+        for (pots, needle) in [
+            (
+                ContractFeePotsProto {
+                    owner: None,
+                    moderators: pot(None),
+                },
+                "no owner pot",
+            ),
+            (
+                ContractFeePotsProto {
+                    owner: pot(None),
+                    moderators: None,
+                },
+                "no moderators pot",
+            ),
+            (
+                ContractFeePotsProto {
+                    owner: pot(None),
+                    moderators: pot(Some(u32::from(u16::MAX) + 1)),
+                },
+                "is not a u16",
+            ),
+        ] {
+            let err = fee_pots_from_response(pots).expect_err("expected the pots to be refused");
+            assert!(
+                matches!(&err, Error::ResponseDecodeError { error } if error.contains(needle)),
+                "{needle}: {err:?}"
+            );
+        }
     }
 }

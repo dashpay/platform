@@ -4,9 +4,10 @@ use crate::types::contract_groups::{
     ContractGroupMembershipsForContract,
 };
 use crate::types::contract_moderation::{
-    entries_from_response, list_from_request, lists_from_request, reason_from_response,
-    ContractBan, ContractModerationEntries, ContractModerationList, ContractModerationListStatuses,
-    ContractModerationStatus, ContractSuspension,
+    entries_from_response, fee_pots_from_response, list_from_request, lists_from_request,
+    reason_from_response, ContractBan, ContractFeePots, ContractModerationEntries,
+    ContractModerationList, ContractModerationListStatuses, ContractModerationStatus,
+    ContractSuspension,
 };
 use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
@@ -998,6 +999,41 @@ impl FromUnproved<platform::GetContractModerationEntriesRequest> for ContractMod
         };
 
         Ok((entries, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractFeePotsRequest> for ContractFeePots {
+    type Request = platform::GetContractFeePotsRequest;
+    type Response = platform::GetContractFeePotsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_fee_pots_response::get_contract_fee_pots_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_fee_pots_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let pots = match v0.result {
+            Some(V0Result::Pots(pots)) => Some(fee_pots_from_response(pots)?),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract fee pots, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((pots, metadata))
     }
 }
 
