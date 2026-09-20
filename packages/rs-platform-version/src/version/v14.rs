@@ -348,6 +348,32 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     adds the `moderation` method table; the verify and
 ///     query tables gain the status and entries methods.
 ///
+/// 17. **Document action fees and the contract fee claim**: a document type
+///     may charge a fixed fee in credits for an action on one of its documents
+///     (the `actionFees` keyword of the v3 document meta-schema, read by
+///     `try_from_schema` 3), split between the contract's owner pot and its
+///     moderators pot and priced as written or scaled by the fee multiplier of
+///     the epoch. The fees of a document type never change (document type
+///     `validate_update` 1), and a `moderators` part needs declared moderation
+///     (contract create and update basic structure 2). Whoever pays the gas
+///     pays the fee, the contract owner never into their own owner pot, and
+///     only for an action that executes: `validate_fees_of_event` 1 and
+///     `execute_event` 1 (`DRIVE_ABCI_METHOD_VERSIONS_V10`) settle the payer
+///     and move the credits with the batch's own operations, outside the fee.
+///     `DRIVE_CONTRACT_METHOD_VERSIONS_V4` gains the `fee_pots` method table:
+///     the pots are sum items under two sum trees of the prefunded specialized
+///     balances (`[40, 64]` and `[40, 192]`), which `create_initial_state_structure`
+///     4 and the upgrade to this version create, so they stay inside the total
+///     credits the platform checks every block, and the epoch each pot was
+///     last claimed in is an item of the contract's other tree (`32` and `96`).
+///     `ContractFeeClaim` (state transition type 25, gated by
+///     `CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION`) pays a pot out, at most
+///     once per epoch each: the owner pot to the contract owner, the moderators
+///     pot in equal shares to the moderation team, what the split leaves over
+///     staying in the pot. `DRIVE_ABCI_VALIDATION_VERSIONS_V10` turns its gates
+///     on, `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds its converter, and
+///     the verify table gains `verify_contract_fee_pots`.
+///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in
 ///   `is_allowed`, and `DRIVE_ABCI_VALIDATION_VERSIONS_V10` is the first
