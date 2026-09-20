@@ -17,10 +17,10 @@ impl Drive {
     ///
     /// Rebuilds the exact path query the prover used, verifies the proof against it with
     /// absence, then reads every proved row back. A row is either the version item (or its
-    /// absence) at key `2` under the contract's root subtree, or the absence of the contract
-    /// subtree itself directly under the contracts root; both absences mean there is no
-    /// contract with that id. Every distinct requested id must appear exactly once and
-    /// nothing else may.
+    /// absence) at key `64` of the contract's other tree (`[64, id, 2]`), the absence of that
+    /// tree under the contract's root subtree, or the absence of the contract subtree itself
+    /// directly under the contracts root; every absence means there is no version for that id.
+    /// Every distinct requested id must appear exactly once and nothing else may.
     #[inline(always)]
     pub(super) fn verify_contracts_versions_v0(
         proof: &[u8],

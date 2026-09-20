@@ -44,6 +44,38 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
+        let contract_element =
+            Self::contract_element_for_insert_v1(contract, &block_info, platform_version)?;
+
+        self.insert_contract_element_v1(
+            contract_element,
+            contract,
+            &block_info,
+            apply,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )?;
+
+        Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            self.config.epochs_per_era,
+            platform_version,
+            None,
+        )
+    }
+
+    /// The element a contract is stored as on insertion: the serialized contract, refused when
+    /// it is over the size limit, flagged with its owner unless the contract can never change
+    /// or be deleted. Shared with the later generations of the insert, which store the same
+    /// element.
+    pub(super) fn contract_element_for_insert_v1(
+        contract: &DataContract,
+        block_info: &BlockInfo,
+        platform_version: &PlatformVersion,
+    ) -> Result<Element, Error> {
         let storage_flags = if contract.config().can_be_deleted() || !contract.config().readonly() {
             Some(StorageFlags::new_single_epoch(
                 block_info.epoch.index,
@@ -65,29 +97,10 @@ impl Drive {
             return Err(Error::DataContract(DataContractError::ContractTooBig(format!("Trying to insert a data contract of size {} that is over the max allowed insertion size {}", serialized_contract.len(), platform_version.dpp.contract_versions.max_serialized_size))));
         }
 
-        let contract_element = Element::Item(
+        Ok(Element::Item(
             serialized_contract,
             StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
-        );
-
-        self.insert_contract_element_v1(
-            contract_element,
-            contract,
-            &block_info,
-            apply,
-            transaction,
-            &mut drive_operations,
-            platform_version,
-        )?;
-
-        Drive::calculate_fee(
-            None,
-            Some(drive_operations),
-            &block_info.epoch,
-            self.config.epochs_per_era,
-            platform_version,
-            None,
-        )
+        ))
     }
 
     /// Adds a contract to storage using `add_contract_to_storage`

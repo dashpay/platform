@@ -96,14 +96,35 @@ impl DataContractConfig {
         DataContractConfig::V2(v2)
     }
 
+    /// Refuses a config that declares moderation where the platform version cannot carry the
+    /// declaration (before protocol version 14). Lowering it would quietly store an unmoderated
+    /// contract, and moderation can never be turned on by an update.
+    pub fn ensure_admitted_by_platform_version(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        if self.moderation().is_some()
+            && platform_version.dpp.contract_versions.config.max_version < 2
+        {
+            return Err(ProtocolError::NotSupported(format!(
+                "contract moderation is not supported at protocol version {}",
+                platform_version.protocol_version
+            )));
+        }
+        Ok(())
+    }
+
     /// Adjusts the current `DataContractConfig` to be valid for the provided platform version.
     ///
     /// The config version follows the platform version, never the config's content: a config
     /// is lowered only where the platform version does not admit it (V1 to V0 below protocol
     /// version 9, V2 to V1 below protocol version 14). From protocol version 14 every new
-    /// contract carries a V2 config, moderated or not. Lowering a V2 drops a moderation
-    /// declaration, which consensus never sees: a contract create or update carrying a V2
-    /// config is inactive before protocol version 14 (`StateTransition::active_version_range`).
+    /// contract carries a V2 config, moderated or not. Lowering a V2 would drop a moderation
+    /// declaration, so a contract is only serialized once
+    /// [`ensure_admitted_by_platform_version`](Self::ensure_admitted_by_platform_version) has
+    /// refused that case. Consensus never sees it either way: a contract create or update
+    /// carrying a V2 config is inactive before protocol version 14
+    /// (`StateTransition::active_version_range`).
     pub fn config_valid_for_platform_version(
         self,
         platform_version: &PlatformVersion,
@@ -129,6 +150,28 @@ impl DataContractConfig {
         }
     }
 
+    /// A config version below 2 has no `moderation` key and would parse a value around one,
+    /// dropping it. Refused instead, like lowering a moderated config.
+    fn refuse_moderation_the_version_can_not_parse(
+        declares_moderation: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        if declares_moderation
+            && platform_version
+                .dpp
+                .contract_versions
+                .config
+                .default_current_version
+                < 2
+        {
+            return Err(ProtocolError::NotSupported(format!(
+                "contract moderation is not supported at protocol version {}",
+                platform_version.protocol_version
+            )));
+        }
+        Ok(())
+    }
+
     /// **KEEP-AS-EXCEPTION** in the JSON/Value canonical-trait migration —
     /// this is a context-aware constructor, not a parallel conversion path:
     /// it dispatches the config variant on `platform_version` (the input map
@@ -138,6 +181,15 @@ impl DataContractConfig {
         value: Value,
         platform_version: &PlatformVersion,
     ) -> Result<DataContractConfig, ProtocolError> {
+        if let Value::Map(map) = &value {
+            let declares_moderation = map.iter().any(|(key, value)| {
+                key.as_text() == Some(property::MODERATION) && !value.is_null()
+            });
+            Self::refuse_moderation_the_version_can_not_parse(
+                declares_moderation,
+                platform_version,
+            )?;
+        }
         match platform_version
             .dpp
             .contract_versions
@@ -187,6 +239,12 @@ impl DataContractConfig {
         contract: &BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<DataContractConfig, ProtocolError> {
+        Self::refuse_moderation_the_version_can_not_parse(
+            contract
+                .get(property::MODERATION)
+                .is_some_and(|value| !value.is_null()),
+            platform_version,
+        )?;
         match platform_version
             .dpp
             .contract_versions
@@ -698,6 +756,44 @@ mod tests {
             for config in [moderated, unmoderated] {
                 assert_eq!(config.config_valid_for_platform_version(v13).version(), 1);
             }
+        }
+
+        #[test]
+        fn a_moderation_declaration_is_refused_where_the_version_can_not_carry_it() {
+            let moderated = DataContractConfig::V2(DataContractConfigV2 {
+                moderation: Some(ContractModerationConfig {
+                    banlist: true,
+                    suspensions: false,
+                    moderators: Default::default(),
+                }),
+                ..DataContractConfigV2::default()
+            });
+            let unmoderated = DataContractConfig::V2(DataContractConfigV2::default());
+            let latest = PlatformVersion::latest();
+            let v13 = PlatformVersion::get(13).expect("protocol version 13");
+
+            // Lowering would drop the declaration for good, so it is refused, not dropped.
+            assert!(moderated
+                .ensure_admitted_by_platform_version(latest)
+                .is_ok());
+            assert!(matches!(
+                moderated.ensure_admitted_by_platform_version(v13),
+                Err(ProtocolError::NotSupported(_))
+            ));
+            assert!(unmoderated.ensure_admitted_by_platform_version(v13).is_ok());
+
+            // The same for a value parsed by a config version that has no such key.
+            let value = platform_value::platform_value!({
+                "moderation": { "banlist": true },
+            });
+            assert!(matches!(
+                DataContractConfig::from_value(value.clone(), v13),
+                Err(ProtocolError::NotSupported(_))
+            ));
+            assert!(DataContractConfig::from_value(value, latest)
+                .expect("from_value")
+                .moderation()
+                .is_some());
         }
 
         #[test]

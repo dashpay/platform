@@ -5,7 +5,7 @@ use crate::drive::contract::version_item::encode_contract_version;
 use crate::drive::Drive;
 use crate::drive::LowLevelDriveOperation;
 use crate::error::Error;
-use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
 use crate::util::object_size_info::DriveKeyInfo;
 use crate::util::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElementSize,
@@ -23,8 +23,8 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds a contract to storage as v0 does, then writes the contract's version number as a
-    /// four-byte item beside it, at key `2` of the contract's root subtree, whether the
-    /// contract keeps history or not.
+    /// four-byte item in the contract's other tree (`[64, id, 2] / 64`), whether the contract
+    /// keeps history or not.
     ///
     /// The item is written on the first insert and overwritten on every update, so it always
     /// holds the version of the stored contract (for a contract that keeps history, of its
@@ -62,10 +62,10 @@ impl Drive {
         // The version item lives in the contract's other tree (`[64, id, 2]`). An insertion
         // writes the tree unconditionally, like the contract's documents tree beside it: the
         // contract's root subtree is (re)created in the same batch, so whatever state holds
-        // under it is gone anyway. An update normally finds the tree, from the insertion or
-        // from the migration on the first block of protocol version 14, but inserts it `if not
-        // exists` rather than trusting that: it must never be replaced, it may hold the
-        // moderation lists.
+        // under it is gone anyway. An update finds the tree, from the insertion or from the
+        // migration on the first block of protocol version 14, so its estimate writes none;
+        // applied, it still inserts the tree `if not exists` rather than trusting that: it must
+        // never be replaced, it may hold the moderation lists.
         let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
         if is_first_insert {
             self.batch_insert_empty_tree(
@@ -75,32 +75,40 @@ impl Drive {
                 insert_operations,
                 drive_version,
             )?;
-        } else {
-            let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                BatchInsertTreeApplyType::StatefulBatchInsertTree
-            } else {
-                BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                    in_tree_type: TreeType::NormalTree,
-                    tree_type: TreeType::NormalTree,
-                    flags_len: storage_flags
-                        .as_ref()
-                        .map(|flags| flags.serialized_size())
-                        .unwrap_or_default(),
-                }
-            };
-            self.batch_insert_empty_tree_if_not_exists(
+        } else if estimated_costs_only_with_layer_info.is_none() {
+            let inserted = self.batch_insert_empty_tree_if_not_exists(
                 PathFixedSizeKeyRef((
                     contract_root_path(contract.id_ref().as_bytes()),
                     &[CONTRACT_OTHER_KEY],
                 )),
                 TreeType::NormalTree,
                 storage_flags.as_ref(),
-                apply_type,
+                BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 transaction,
                 &mut None,
                 insert_operations,
                 drive_version,
             )?;
+            // The 4.2 betas wrote the version item itself at this key (`[64, id] / 2`), before
+            // the other tree existed. A contract stored by one of them still holds that item,
+            // and the write below needs a tree there, so the tree takes the item's place. The
+            // look is not billed: no contract stored by a release has the item, and an update
+            // must cost the same whether or not a beta ever ran on the network.
+            if !inserted
+                && self.contract_other_key_holds_the_beta_version_item(
+                    contract.id_ref().as_bytes(),
+                    transaction,
+                    drive_version,
+                )?
+            {
+                self.batch_insert_empty_tree(
+                    contract_root_path(contract.id_ref().as_bytes()),
+                    DriveKeyInfo::Key(vec![CONTRACT_OTHER_KEY]),
+                    storage_flags.as_ref(),
+                    insert_operations,
+                    drive_version,
+                )?;
+            }
         }
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Drive::add_estimation_costs_for_contract_other_tree(
@@ -128,6 +136,25 @@ impl Drive {
         };
 
         self.batch_insert(path_key_element_info, insert_operations, drive_version)
+    }
+
+    /// Whether key `2` of the contract's root subtree holds an item rather than the other tree:
+    /// the layout of the 4.2 betas, which kept the version item there.
+    fn contract_other_key_holds_the_beta_version_item(
+        &self,
+        contract_id: &[u8; 32],
+        transaction: TransactionArg,
+        drive_version: &DriveVersion,
+    ) -> Result<bool, Error> {
+        let element = self.grove_get_raw_optional(
+            (&contract_root_path(contract_id)).into(),
+            &[CONTRACT_OTHER_KEY],
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            &mut vec![],
+            drive_version,
+        )?;
+        Ok(matches!(element, Some(Element::Item(..))))
     }
 }
 
@@ -229,6 +256,76 @@ mod tests {
                 "the contract itself was updated too"
             );
         }
+    }
+
+    #[test]
+    fn should_give_a_contract_stored_by_a_beta_its_other_tree_on_update() {
+        use crate::drive::contract::paths::{
+            contract_other_path, contract_root_path, CONTRACT_OTHER_KEY, CONTRACT_VERSION_KEY,
+        };
+        use crate::drive::contract::version_item::encode_contract_version;
+        use grovedb::Element;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let grove_version = &platform_version.drive.grove_version;
+
+        let mut contract = dashpay_contract(false, platform_version);
+        apply(&drive, &contract, 1000, platform_version);
+
+        // Back to the layout the 4.2 betas wrote: the version item itself at `[64, id] / 2`.
+        let contract_id = contract.id().to_buffer();
+        drive
+            .grove
+            .delete(
+                &contract_other_path(&contract_id),
+                &[CONTRACT_VERSION_KEY],
+                None,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("expected to delete the version item");
+        drive
+            .grove
+            .delete(
+                &contract_root_path(&contract_id),
+                &[CONTRACT_OTHER_KEY],
+                None,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("expected to delete the other tree");
+        drive
+            .grove
+            .insert(
+                &contract_root_path(&contract_id),
+                &[CONTRACT_OTHER_KEY],
+                Element::new_item(encode_contract_version(contract.version())),
+                None,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("expected to write the beta version item");
+
+        // Until the contract is updated there is no version item where this build reads it.
+        let before_the_update =
+            drive.fetch_contract_version(contract_id, None, platform_version);
+        assert!(
+            matches!(before_the_update, Ok(None)),
+            "expected no version item, got {before_the_update:?}"
+        );
+
+        contract.increment_version();
+        apply(&drive, &contract, 2000, platform_version);
+
+        assert_eq!(
+            stored_version(&drive, &contract, platform_version),
+            Some(contract.version()),
+            "the update put the other tree in the item's place and the item under it"
+        );
     }
 
     #[test]

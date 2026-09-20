@@ -4,8 +4,8 @@ use crate::types::contract_groups::{
     ContractGroupMembershipsForContract,
 };
 use crate::types::contract_moderation::{
-    entries_from_response, lists_from_request, ContractModerationEntries,
-    ContractModerationListStatuses, ContractModerationStatus,
+    entries_from_response, list_from_request, lists_from_request, ContractModerationEntries,
+    ContractModerationList, ContractModerationListStatuses, ContractModerationStatus,
 };
 use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
@@ -894,8 +894,8 @@ impl FromUnproved<platform::GetContractModerationStatusRequest> for ContractMode
     {
         use platform::get_contract_moderation_status_response::get_contract_moderation_status_response_v0::Result as V0Result;
 
-        // The response holds a flat status; which of its fields were actually read is what the
-        // request named, so only those lists are reported.
+        // The response holds a flat status. Only the lists the request named are reported, and
+        // only when the response says it read them.
         let request: Self::Request = request.into();
         let platform::get_contract_moderation_status_request::Version::V0(request_v0) =
             request.version.ok_or(Error::EmptyVersion)?;
@@ -908,13 +908,40 @@ impl FromUnproved<platform::GetContractModerationStatusRequest> for ContractMode
         let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
 
         let status = match v0.result {
-            Some(V0Result::Status(status)) => Some(ContractModerationListStatuses::from_status(
-                &lists,
-                &ContractModerationStatus {
-                    banned: status.banned.unwrap_or_default(),
-                    suspended_until: status.suspended_until,
-                },
-            )),
+            Some(V0Result::Status(status)) => {
+                // The response says which lists it read. A list asked for and not among them
+                // was not read, so nothing may be reported about it, least of all "not banned".
+                let covered: Vec<ContractModerationList> = status
+                    .lists
+                    .iter()
+                    .filter_map(|list| list_from_request(*list, "lists").ok())
+                    .collect();
+                if let Some(missing) = lists.iter().find(|list| !covered.contains(list)) {
+                    return Err(Error::ResponseDecodeError {
+                        error: format!(
+                            "contract moderation status does not cover the {missing} asked for"
+                        ),
+                    });
+                }
+                let banned = match status.banned {
+                    Some(banned) => banned,
+                    None if lists.contains(&ContractModerationList::Banlist) => {
+                        return Err(Error::ResponseDecodeError {
+                            error: "contract moderation status covers the banlist but does not \
+                                    say whether the identity is banned"
+                                .to_string(),
+                        })
+                    }
+                    None => false,
+                };
+                Some(ContractModerationListStatuses::from_status(
+                    &lists,
+                    &ContractModerationStatus {
+                        banned,
+                        suspended_until: status.suspended_until,
+                    },
+                ))
+            }
             Some(V0Result::Proof(_)) => {
                 return Err(Error::ResponseDecodeError {
                     error: "expected unproved contract moderation status, got a proof".to_string(),
@@ -1360,5 +1387,100 @@ mod contract_groups_tests {
                 Identifier::new([3; 32])
             ])
         );
+    }
+}
+
+#[cfg(test)]
+mod contract_moderation_tests {
+    use super::*;
+    use dapi_grpc::platform::v0::get_contract_moderation_status_request::{
+        GetContractModerationStatusRequestV0, Version as StatusRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_moderation_status_response::{
+        get_contract_moderation_status_response_v0::Result as StatusResult,
+        ContractModerationStatus as ContractModerationStatusProto,
+        GetContractModerationStatusResponseV0, Version as StatusResponseVersion,
+    };
+    use dapi_grpc::platform::v0::ResponseMetadata;
+    use dpp::dashcore::Network;
+    use dpp::version::PlatformVersion;
+
+    const BANLIST: i32 = 1;
+    const SUSPENSIONS: i32 = 2;
+
+    fn status(
+        requested: Vec<i32>,
+        response: ContractModerationStatusProto,
+    ) -> Result<Option<ContractModerationListStatuses>, Error> {
+        let request = platform::GetContractModerationStatusRequest {
+            version: Some(StatusRequestVersion::V0(
+                GetContractModerationStatusRequestV0 {
+                    contract_id: vec![1; 32],
+                    identity_id: vec![2; 32],
+                    lists: requested,
+                    prove: false,
+                },
+            )),
+        };
+        let response = platform::GetContractModerationStatusResponse {
+            version: Some(StatusResponseVersion::V0(
+                GetContractModerationStatusResponseV0 {
+                    result: Some(StatusResult::Status(response)),
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+        ContractModerationListStatuses::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .map(|(status, _)| status)
+    }
+
+    #[test]
+    fn should_report_the_lists_the_response_covers() {
+        let statuses = status(
+            vec![BANLIST, SUSPENSIONS],
+            ContractModerationStatusProto {
+                banned: Some(true),
+                suspended_until: Some(7),
+                lists: vec![BANLIST, SUSPENSIONS],
+            },
+        )
+        .expect("expected the status to convert")
+        .expect("expected a status");
+
+        assert_eq!(statuses.banned(), Some(true));
+        assert_eq!(statuses.suspended_until(), Some(Some(7)));
+    }
+
+    #[test]
+    fn should_refuse_a_status_that_does_not_cover_a_list_asked_for() {
+        // The banlist was asked for and the response does not say it was read: reporting "not
+        // banned" would be a guess.
+        let uncovered = status(
+            vec![BANLIST, SUSPENSIONS],
+            ContractModerationStatusProto {
+                banned: None,
+                suspended_until: None,
+                lists: vec![SUSPENSIONS],
+            },
+        );
+        assert!(matches!(uncovered, Err(Error::ResponseDecodeError { .. })));
+
+        let covered_but_unset = status(
+            vec![BANLIST],
+            ContractModerationStatusProto {
+                banned: None,
+                suspended_until: None,
+                lists: vec![BANLIST],
+            },
+        );
+        assert!(matches!(
+            covered_but_unset,
+            Err(Error::ResponseDecodeError { .. })
+        ));
     }
 }

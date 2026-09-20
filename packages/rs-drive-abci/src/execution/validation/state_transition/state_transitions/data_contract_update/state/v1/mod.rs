@@ -62,37 +62,23 @@ impl DataContractUpdateStateTransitionStateValidationV1 for DataContractUpdateTr
 
         // The updated contract may add document types or properties carrying
         // reference declarations, so they are re-validated on every update
-        let (reference_result, contract_id, added_moderators) = {
-            let StateTransitionAction::DataContractUpdateAction(update_action) =
-                action.data_as_borrowed()?
-            else {
-                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "a valid data contract update state validation must contain an update action",
-                )));
-            };
-
-            let contract = update_action.data_contract_ref();
-
-            (
-                validate_data_contract_references(
-                    contract,
-                    platform.drive,
-                    block_info,
-                    execution_context,
-                    tx,
-                    platform_version,
-                )?,
-                contract.id(),
-                moderators_added_by_the_update(
-                    contract,
-                    platform,
-                    block_info,
-                    execution_context,
-                    tx,
-                    platform_version,
-                )?,
-            )
+        let StateTransitionAction::DataContractUpdateAction(update_action) =
+            action.data_as_borrowed()?
+        else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "a valid data contract update state validation must contain an update action",
+            )));
         };
+        let contract = update_action.data_contract_ref();
+
+        let reference_result = validate_data_contract_references(
+            contract,
+            platform.drive,
+            block_info,
+            execution_context,
+            tx,
+            platform_version,
+        )?;
 
         if !reference_result.is_valid() {
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -108,7 +94,17 @@ impl DataContractUpdateStateTransitionStateValidationV1 for DataContractUpdateTr
         // Contract moderation: an identity the update names as a moderator must exist. One
         // that does not can never sign a moderation, so naming it is a mistake, caught here
         // once rather than in every feature that will read the set. Each lookup is billed; a
-        // miss is paid like the one above.
+        // miss is paid like the one above. The stored contract is only read, and billed, for
+        // an update that got this far.
+        let contract_id = contract.id();
+        let added_moderators = moderators_added_by_the_update(
+            contract,
+            platform,
+            block_info,
+            execution_context,
+            tx,
+            platform_version,
+        )?;
         for moderator_id in &added_moderators {
             if !validate_identity_exists(
                 platform.drive,

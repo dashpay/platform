@@ -3,10 +3,10 @@
 //! This module provides WASM bindings for contract operations like create and update.
 
 use crate::error::WasmSdkError;
+use crate::queries::contract_moderation::set_status_fields;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::data_contract::config::moderation::ContractModerationListStatus;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::IdentityPublicKey;
@@ -372,24 +372,8 @@ impl WasmSdk {
             "identityId",
             IdentifierWasm::from(status.identity_id).into(),
         )?;
-        // Only the lists proved are reported: a field for a list that was not proved stays
-        // undefined (unknown) rather than reading as "not banned" or "not suspended".
-        let lists = js_sys::Array::new();
-        for list_status in &status.status.0 {
-            match list_status {
-                ContractModerationListStatus::Banlist { banned } => {
-                    lists.push(&"banlist".into());
-                    set("banned", (*banned).into())?;
-                }
-                ContractModerationListStatus::Suspensions { suspended_until } => {
-                    lists.push(&"suspensions".into());
-                    if let Some(until) = suspended_until {
-                        set("suspendedUntil", js_sys::BigInt::from(*until).into())?;
-                    }
-                }
-            }
-        }
-        set("lists", lists.into())?;
+        // The status fields, in the shape `getContractModerationStatus` answers with.
+        set_status_fields(&result, &status.status)?;
         Ok(JsValue::from(result).into())
     }
 }

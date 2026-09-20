@@ -2,8 +2,8 @@
 
 use crate::error::MapGroveDbError;
 use crate::types::contract_moderation::{
-    entries_query_from_request, lists_from_request, ContractModerationEntries,
-    ContractModerationListStatuses,
+    entries_query_from_request, identifier_from_request, lists_from_request,
+    ContractModerationEntries, ContractModerationListStatuses,
 };
 use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
@@ -15,18 +15,8 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
-use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-
-fn identifier_from_request(bytes: Vec<u8>, what: &str) -> Result<Identifier, Error> {
-    Identifier::from_bytes(&bytes).map_err(|_| Error::RequestError {
-        error: format!(
-            "{what} must be a 32 byte identifier, got {} bytes",
-            bytes.len()
-        ),
-    })
-}
 
 impl FromProof<GetContractModerationStatusRequest> for ContractModerationListStatuses {
     type Request = GetContractModerationStatusRequest;
@@ -47,8 +37,8 @@ impl FromProof<GetContractModerationStatusRequest> for ContractModerationListSta
 
         let get_contract_moderation_status_request::Version::V0(v0) =
             request.version.ok_or(Error::EmptyVersion)?;
-        let contract_id = identifier_from_request(v0.contract_id, "contract_id")?;
-        let identity_id = identifier_from_request(v0.identity_id, "identity_id")?;
+        let contract_id = identifier_from_request(&v0.contract_id, "contract_id")?;
+        let identity_id = identifier_from_request(&v0.identity_id, "identity_id")?;
         let lists = lists_from_request(&v0.lists)?;
 
         let metadata = response
@@ -93,7 +83,7 @@ impl FromProof<GetContractModerationEntriesRequest> for ContractModerationEntrie
 
         let get_contract_moderation_entries_request::Version::V0(v0) =
             request.version.ok_or(Error::EmptyVersion)?;
-        let contract_id = identifier_from_request(v0.contract_id, "contract_id")?;
+        let contract_id = identifier_from_request(&v0.contract_id, "contract_id")?;
         let query = entries_query_from_request(
             v0.list,
             v0.start_after.as_deref(),
@@ -137,6 +127,7 @@ mod tests {
     };
     use dash_context_provider::ContextProviderError;
     use dpp::data_contract::TokenConfiguration;
+    use dpp::identifier::Identifier;
     use dpp::prelude::{CoreBlockHeight, DataContract};
     use std::sync::Arc;
 

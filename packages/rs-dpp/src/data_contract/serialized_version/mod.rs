@@ -1,4 +1,5 @@
 use super::EMPTY_KEYWORDS;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::group::Group;
@@ -266,6 +267,9 @@ impl TryFromPlatformVersioned<DataContractV0> for DataContractInSerializationFor
         value: DataContractV0,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        value
+            .config
+            .ensure_admitted_by_platform_version(platform_version)?;
         match platform_version
             .dpp
             .contract_versions
@@ -298,6 +302,9 @@ impl TryFromPlatformVersioned<&DataContractV0> for DataContractInSerializationFo
         value: &DataContractV0,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        value
+            .config
+            .ensure_admitted_by_platform_version(platform_version)?;
         match platform_version
             .dpp
             .contract_versions
@@ -330,6 +337,9 @@ impl TryFromPlatformVersioned<DataContractV1> for DataContractInSerializationFor
         value: DataContractV1,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        value
+            .config
+            .ensure_admitted_by_platform_version(platform_version)?;
         match platform_version
             .dpp
             .contract_versions
@@ -362,6 +372,9 @@ impl TryFromPlatformVersioned<&DataContractV1> for DataContractInSerializationFo
         value: &DataContractV1,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        value
+            .config
+            .ensure_admitted_by_platform_version(platform_version)?;
         match platform_version
             .dpp
             .contract_versions
@@ -394,6 +407,9 @@ impl TryFromPlatformVersioned<&DataContract> for DataContractInSerializationForm
         value: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        value
+            .config()
+            .ensure_admitted_by_platform_version(platform_version)?;
         match platform_version
             .dpp
             .contract_versions
@@ -426,6 +442,9 @@ impl TryFromPlatformVersioned<DataContract> for DataContractInSerializationForma
         value: DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        value
+            .config()
+            .ensure_admitted_by_platform_version(platform_version)?;
         match platform_version
             .dpp
             .contract_versions

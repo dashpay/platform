@@ -54,6 +54,13 @@ describe('ContractUserModeration', () => {
       expect(() => createTransition({ action: 'suspend' })).to.throw();
     });
 
+    it('should refuse an end on anything but a suspension', () => {
+      // Dropped, a caller asking for a timed ban would sign a permanent one.
+      (['ban', 'unban', 'unsuspend'] as const).forEach((action) => {
+        expect(() => createTransition({ action, until: BigInt(1800000000000) })).to.throw();
+      });
+    });
+
     it('should refuse an unknown action', () => {
       expect(() => new wasm.ContractUserModeration({
         ownerId: OWNER_ID,

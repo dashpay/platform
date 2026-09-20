@@ -193,30 +193,13 @@ impl ModerateContractUser for Identity {
             Some(key) => key.id(),
             None => signing_key_for_moderation(self, &signer)?,
         };
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(self.id(), contract_id, true, settings)
-            .await?;
-        let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
-        let state_transition = ContractUserModerationTransition::try_from_identity_with_signer(
-            self,
-            &signing_key_id,
-            contract_id,
-            action,
-            identity_contract_nonce,
-            user_fee_increase.unwrap_or_default(),
-            &signer,
-            sdk.version(),
-            None,
-        )
-        .await?;
-        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
         // The proof of a ban covers every list the contract keeps, which the verifier reads
         // from the contract through the context provider. A provider that can not resolve the
-        // contract would refuse a result the network already accepted, so before anything is
-        // paid for the provider is asked, and only when it does not have the contract (the
-        // lists never change, so whatever copy it holds will do) is the contract fetched and
-        // registered with it.
+        // contract would refuse a result the network already accepted, so before the nonce is
+        // taken and anything is signed or paid for, the provider is asked, and only when it
+        // does not have the contract (the lists never change, so whatever copy it holds will
+        // do) is the contract fetched and registered with it.
         if matches!(action, ContractUserModerationAction::Ban { .. }) {
             if let Some(provider) = sdk.context_provider() {
                 let resolved = provider
@@ -237,6 +220,24 @@ impl ModerateContractUser for Identity {
                 }
             }
         }
+
+        let identity_contract_nonce = sdk
+            .get_identity_contract_nonce(self.id(), contract_id, true, settings)
+            .await?;
+        let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
+        let state_transition = ContractUserModerationTransition::try_from_identity_with_signer(
+            self,
+            &signing_key_id,
+            contract_id,
+            action,
+            identity_contract_nonce,
+            user_fee_increase.unwrap_or_default(),
+            &signer,
+            sdk.version(),
+            None,
+        )
+        .await?;
+        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
         state_transition
             .broadcast_and_wait_for_affected_state(sdk, settings)

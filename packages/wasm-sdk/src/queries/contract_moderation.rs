@@ -6,6 +6,7 @@ use crate::error::WasmSdkError;
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
+use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::contract_moderation::{
     ContractModerationEntries, ContractModerationEntriesPageQuery, ContractModerationList,
     ContractModerationListStatus, ContractModerationListStatuses, ContractModerationStatusQuery,
@@ -171,6 +172,7 @@ impl WasmSdk {
 
 fn parse_entries_query(
     query: ContractModerationEntriesQueryJs,
+    platform_version: &PlatformVersion,
 ) -> Result<ContractModerationEntriesPageQuery, WasmSdkError> {
     let input: ContractModerationEntriesQueryInput = deserialize_required_query(
         query,
@@ -180,6 +182,7 @@ fn parse_entries_query(
     let mut page_query = ContractModerationEntriesPageQuery::new(
         Identifier::from(input.contract_id),
         input.list.into(),
+        platform_version,
     );
     page_query.query.start_after = input.start_after.map(Identifier::from);
     if let Some(limit) = input.limit {
@@ -191,13 +194,19 @@ fn parse_entries_query(
     Ok(page_query)
 }
 
-fn status_to_js(statuses: ContractModerationListStatuses) -> Result<JsValue, WasmSdkError> {
-    let result = js_sys::Object::new();
+/// Sets `lists`, and `banned` and `suspendedUntil` for the lists read, on `target`. Only the
+/// lists read are reported: the field of a list that was not read stays undefined (unknown)
+/// rather than reading as "not banned" or "not suspended". The status query and the moderation
+/// result share the shape, so they share this.
+pub(crate) fn set_status_fields(
+    target: &js_sys::Object,
+    statuses: &ContractModerationListStatuses,
+) -> Result<(), WasmSdkError> {
     let set = |key: &str, value: JsValue| {
-        js_sys::Reflect::set(&result, &key.into(), &value)
+        js_sys::Reflect::set(target, &key.into(), &value)
+            .map(|_| ())
             .map_err(|_| WasmSdkError::generic(format!("failed to set `{key}` on the status")))
     };
-    // Only the lists read are reported: the other field stays undefined (unknown).
     let lists = Array::new();
     for status in &statuses.0 {
         match status {
@@ -213,7 +222,12 @@ fn status_to_js(statuses: ContractModerationListStatuses) -> Result<JsValue, Was
             }
         }
     }
-    set("lists", lists.into())?;
+    set("lists", lists.into())
+}
+
+fn status_to_js(statuses: ContractModerationListStatuses) -> Result<JsValue, WasmSdkError> {
+    let result = js_sys::Object::new();
+    set_status_fields(&result, &statuses)?;
     Ok(result.into())
 }
 
@@ -320,7 +334,7 @@ impl WasmSdk {
         &self,
         query: ContractModerationEntriesQueryJs,
     ) -> Result<JsValue, WasmSdkError> {
-        let query = parse_entries_query(query)?;
+        let query = parse_entries_query(query, self.inner_sdk().version())?;
         let page = ContractModerationEntries::fetch(self.as_ref(), query.clone())
             .await?
             .unwrap_or_default();
@@ -336,7 +350,7 @@ impl WasmSdk {
         &self,
         query: ContractModerationEntriesQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let query = parse_entries_query(query)?;
+        let query = parse_entries_query(query, self.inner_sdk().version())?;
         let (page, metadata, proof) = ContractModerationEntries::fetch_with_metadata_and_proof(
             self.as_ref(),
             query.clone(),

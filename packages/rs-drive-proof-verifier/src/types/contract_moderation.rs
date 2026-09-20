@@ -50,7 +50,8 @@ impl ContractModerationEntries {
     }
 }
 
-fn identifier_from(bytes: &[u8], what: &str) -> Result<Identifier, Error> {
+/// The 32 byte identifier a request field holds, naming the field in the error.
+pub fn identifier_from_request(bytes: &[u8], what: &str) -> Result<Identifier, Error> {
     Identifier::from_bytes(bytes).map_err(|_| Error::RequestError {
         error: format!(
             "{what} must be a 32 byte identifier, got {} bytes",
@@ -124,7 +125,7 @@ pub fn entries_query_from_request(
     Ok(ContractModerationEntriesQuery {
         list: list_from_request(list, "list")?,
         start_after: start_after
-            .map(|bytes| identifier_from(bytes, "start_after"))
+            .map(|bytes| identifier_from_request(bytes, "start_after"))
             .transpose()?,
         limit,
     })

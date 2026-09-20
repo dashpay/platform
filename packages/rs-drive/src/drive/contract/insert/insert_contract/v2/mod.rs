@@ -1,15 +1,12 @@
 use crate::drive::Drive;
-use crate::error::contract::DataContractError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -29,31 +26,8 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let storage_flags = if contract.config().can_be_deleted() || !contract.config().readonly() {
-            Some(StorageFlags::new_single_epoch(
-                block_info.epoch.index,
-                Some(contract.owner_id().to_buffer()),
-            ))
-        } else {
-            None
-        };
-
-        let serialized_contract =
-            contract.serialize_to_bytes_with_platform_version(platform_version)?;
-
-        if serialized_contract.len() as u64 > u32::MAX as u64
-            || serialized_contract.len() as u32
-                > platform_version.dpp.contract_versions.max_serialized_size
-        {
-            // This should normally be caught by DPP, but there is a rare possibility that the
-            // re-serialized size is bigger than the original serialized data contract.
-            return Err(Error::DataContract(DataContractError::ContractTooBig(format!("Trying to insert a data contract of size {} that is over the max allowed insertion size {}", serialized_contract.len(), platform_version.dpp.contract_versions.max_serialized_size))));
-        }
-
-        let contract_element = Element::Item(
-            serialized_contract,
-            StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
-        );
+        let contract_element =
+            Self::contract_element_for_insert_v1(contract, &block_info, platform_version)?;
 
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>

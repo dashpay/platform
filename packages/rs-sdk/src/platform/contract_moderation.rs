@@ -90,14 +90,19 @@ pub struct ContractModerationEntriesPageQuery {
 }
 
 impl ContractModerationEntriesPageQuery {
-    /// The first page of `list`, up to the protocol page cap.
-    pub fn new(contract_id: Identifier, list: ContractModerationList) -> Self {
+    /// The first page of `list`, up to the page cap of `platform_version`: the version of the
+    /// network queried (`Sdk::version`), whose cap is the one the node enforces.
+    pub fn new(
+        contract_id: Identifier,
+        list: ContractModerationList,
+        platform_version: &PlatformVersion,
+    ) -> Self {
         Self {
             contract_id,
             query: ContractModerationEntriesQuery {
                 list,
                 start_after: None,
-                limit: default_contract_moderation_entries_limit(PlatformVersion::latest()),
+                limit: default_contract_moderation_entries_limit(platform_version),
             },
         }
     }
@@ -108,7 +113,8 @@ impl ContractModerationEntriesPageQuery {
         self
     }
 
-    /// The query for the page after `page`, or `None` when `page` is empty and so was the last.
+    /// The query for the page after `page`, or `None` when `page` holds fewer entries than the
+    /// limit and so was the last.
     pub fn after(&self, page: &ContractModerationEntries) -> Option<Self> {
         page.next_query(&self.query).map(|query| Self {
             contract_id: self.contract_id,

@@ -129,6 +129,13 @@ pub fn moderation_action_from_parts(
     identity_id: dpp::prelude::Identifier,
     until: Option<u64>,
 ) -> WasmDppResult<ContractUserModerationAction> {
+    // Only a suspension ends: an `until` beside another action is refused rather than dropped,
+    // or a caller asking for a timed ban would sign a permanent one.
+    if until.is_some() && action != "suspend" {
+        return Err(WasmDppError::invalid_argument(format!(
+            "`until` is only valid for a suspend action, not for `{action}`"
+        )));
+    }
     match action {
         "ban" => Ok(ContractUserModerationAction::Ban { identity_id }),
         "unban" => Ok(ContractUserModerationAction::Unban { identity_id }),

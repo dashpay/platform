@@ -115,15 +115,24 @@ impl<'de> Deserialize<'de> for ContractModerators {
                             }
                             identities = Some(map.next_value()?);
                         }
-                        _ => {
-                            let _: de::IgnoredAny = map.next_value()?;
+                        // Refused rather than skipped: the declaration can hardly be changed
+                        // after the contract is created, so a misspelled key must not pass.
+                        other => {
+                            return Err(de::Error::unknown_field(other, &["$type", "identities"]));
                         }
                     }
                 }
 
                 let variant = variant.ok_or_else(|| de::Error::missing_field("$type"))?;
                 match variant.as_str() {
-                    "contractOwner" => Ok(ContractModerators::ContractOwner),
+                    "contractOwner" => {
+                        if identities.is_some() {
+                            return Err(de::Error::custom(
+                                "`identities` is only valid for `appointedModerators`",
+                            ));
+                        }
+                        Ok(ContractModerators::ContractOwner)
+                    }
                     "appointedModerators" => {
                         let ids =
                             identities.ok_or_else(|| de::Error::missing_field("identities"))?;
@@ -186,8 +195,11 @@ impl fmt::Display for ContractModerationList {
 }
 
 /// The moderation a data contract declares in its config.
+///
+/// An unknown key is refused: which lists a contract keeps is fixed when it is created, so a
+/// misspelled `suspensions` must not quietly leave the contract without the list for good.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContractModerationConfig {
     /// The contract keeps a banlist (Drive key `128` of the contract's other tree).
     #[serde(default)]
@@ -219,15 +231,10 @@ impl ContractModerationConfig {
         .filter(|list| self.keeps(*list))
     }
 
-    /// Whether `identity_id` may moderate a contract owned by `owner_id`.
+    /// Whether `identity_id` may moderate a contract owned by `owner_id`. Whoever may moderate
+    /// cannot be put on a list either, though an entry it already carries may be removed.
     pub fn may_moderate(&self, owner_id: &Identifier, identity_id: &Identifier) -> bool {
         self.moderators.may_moderate(owner_id, identity_id)
-    }
-
-    /// Whether `identity_id` is the owner or a named moderator and cannot be put on a list.
-    /// An entry the identity already carries may still be removed.
-    pub fn is_owner_or_moderator(&self, owner_id: &Identifier, identity_id: &Identifier) -> bool {
-        self.may_moderate(owner_id, identity_id)
     }
 
     /// The pure-data rules of the declaration: at least one list is kept, and a moderator set
@@ -320,7 +327,8 @@ pub struct ContractModerationStatus {
 }
 
 impl ContractModerationStatus {
-    /// Whether the identity may act on the contract at the document level at `block_time_ms`.
+    /// Whether the identity is barred from acting on the contract at the document level at
+    /// `block_time_ms`: it is banned, or under a suspension that has not lapsed.
     pub fn is_barred_at(&self, block_time_ms: TimestampMillis) -> bool {
         self.banned
             || self
@@ -454,6 +462,31 @@ mod tests {
     }
 
     #[test]
+    fn should_refuse_a_misspelled_key_instead_of_dropping_it() {
+        // `suspension` for `suspensions`: dropped, it would leave the contract without the
+        // list for good.
+        let misspelled_list = serde_json::json!({ "banlist": true, "suspension": true });
+        assert!(serde_json::from_value::<ContractModerationConfig>(misspelled_list).is_err());
+
+        let misspelled_moderators = serde_json::json!({
+            "banlist": true,
+            "moderators": { "$type": "appointedModerators", "identity": [] },
+        });
+        assert!(serde_json::from_value::<ContractModerationConfig>(misspelled_moderators).is_err());
+
+        let identities_under_the_owner = serde_json::json!({
+            "$type": "contractOwner",
+            "identities": [],
+        });
+        assert!(serde_json::from_value::<ContractModerators>(identities_under_the_owner).is_err());
+
+        let well_formed = serde_json::json!({ "banlist": true, "suspensions": true });
+        let config: ContractModerationConfig =
+            serde_json::from_value(well_formed).expect("deserialize");
+        assert!(config.banlist && config.suspensions);
+    }
+
+    #[test]
     fn should_reject_a_config_with_no_list() {
         let config = ContractModerationConfig {
             banlist: false,
@@ -480,7 +513,6 @@ mod tests {
         assert!(result.is_valid(), "{:?}", result.errors);
         // Naming the owner changes nothing about who may moderate or who is protected.
         assert!(config.may_moderate(&owner, &owner));
-        assert!(config.is_owner_or_moderator(&owner, &owner));
     }
 
     #[test]

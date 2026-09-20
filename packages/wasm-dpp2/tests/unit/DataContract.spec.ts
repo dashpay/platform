@@ -257,7 +257,7 @@ describe('DataContract', () => {
       expect(dataContract.config).to.not.have.property('moderation');
     });
 
-    it('should drop the declaration before protocol version 14', () => {
+    it('should refuse the declaration before protocol version 14 instead of dropping it', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
       const moderation = {
         banlist: true,
@@ -265,8 +265,11 @@ describe('DataContract', () => {
         moderators: { $type: 'contractOwner' },
       };
 
-      dataContract.setConfig({ ...dataContract.config, moderation }, new PlatformVersion(13));
-
+      // Dropped, it would leave the contract unmoderated for good: the lists never change.
+      expect(() => dataContract.setConfig(
+        { ...dataContract.config, moderation },
+        new PlatformVersion(13),
+      )).to.throw();
       expect(dataContract.config).to.not.have.property('moderation');
     });
   });
