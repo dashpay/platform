@@ -6,6 +6,7 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
@@ -120,6 +121,10 @@ pub struct DocumentTypeV2 {
     /// indexed, `$ownerId` recoverable from at least one index, immutable /
     /// non-transferable / no history, and per-index terminal typing.
     pub(in crate::data_contract) index_only: bool,
+    /// The fixed fees in credits this document type charges for actions on its documents
+    /// (`actionFees` keyword, protocol version 14), `None` when it declares none. Fixed when
+    /// the document type is published: a contract update cannot add, change or remove them.
+    pub(in crate::data_contract) action_fees: Option<DocumentActionFees>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -190,6 +195,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             documents_summable: None,
             range_summable: false,
             index_only: false,
+            action_fees: None,
         }
     }
 }
@@ -232,6 +238,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             documents_summable: None,
             range_summable: false,
             index_only: false,
+            action_fees: None,
         }
     }
 }

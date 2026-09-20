@@ -56,6 +56,19 @@ impl ContractModerators {
     pub fn may_moderate(&self, owner_id: &Identifier, identity_id: &Identifier) -> bool {
         owner_id == identity_id || self.names(identity_id)
     }
+
+    /// The moderation team of a contract owned by `owner_id`: the identities that share its
+    /// moderators fee pot. It is the set the contract appoints, the owner among them only
+    /// when appointed, and the owner alone when nobody is appointed.
+    ///
+    /// The team is about earnings, not authority: an owner who is not on it still may
+    /// moderate ([`Self::may_moderate`]).
+    pub fn team(&self, owner_id: &Identifier) -> BTreeSet<Identifier> {
+        match self {
+            ContractModerators::ContractOwner => BTreeSet::from([*owner_id]),
+            ContractModerators::AppointedModerators(ids) => ids.clone(),
+        }
+    }
 }
 
 // The wire shape is a flat `{"$type": "contractOwner"}` or
@@ -235,6 +248,12 @@ impl ContractModerationConfig {
     /// cannot be put on a list either, though an entry it already carries may be removed.
     pub fn may_moderate(&self, owner_id: &Identifier, identity_id: &Identifier) -> bool {
         self.moderators.may_moderate(owner_id, identity_id)
+    }
+
+    /// The moderation team of a contract owned by `owner_id`: the identities that share its
+    /// moderators fee pot. See [`ContractModerators::team`].
+    pub fn team(&self, owner_id: &Identifier) -> BTreeSet<Identifier> {
+        self.moderators.team(owner_id)
     }
 
     /// The pure-data rules of the declaration: at least one list is kept, and a moderator set
@@ -578,6 +597,23 @@ mod tests {
         assert!(config.may_moderate(&owner, &Identifier::from([2; 32])));
         assert!(!config.may_moderate(&owner, &Identifier::from([7; 32])));
         assert_eq!(config.lists().count(), 2);
+    }
+
+    #[test]
+    fn should_put_the_owner_on_the_team_only_when_appointed_or_alone() {
+        let owner = Identifier::from([9; 32]);
+        assert_eq!(
+            ContractModerators::ContractOwner.team(&owner),
+            BTreeSet::from([owner])
+        );
+        assert_eq!(
+            ContractModerators::AppointedModerators(set(&[1, 2])).team(&owner),
+            set(&[1, 2])
+        );
+        assert_eq!(
+            ContractModerators::AppointedModerators(set(&[1, 9])).team(&owner),
+            set(&[1, 9])
+        );
     }
 
     #[test]

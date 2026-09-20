@@ -267,7 +267,7 @@ impl ErrorWithCode for BasicError {
             // Contract Moderation Errors: 10900-10949
             Self::InvalidContractModerationConfigError(_) => 10900,
             Self::ContractModerationSelfTargetError(_) => 10901,
-            // 10902 is reserved for the moderation earnings follow-up.
+            Self::DocumentActionFeesWithoutModerationError(_) => 10902,
         }
     }
 }
@@ -456,7 +456,9 @@ impl ErrorWithCode for StateError {
             Self::ContractUserSuspendedError(_) => 41108,
             Self::ContractModerationTargetNotFoundError(_) => 41109,
             Self::ContractModeratorIdentityNotFoundError(_) => 41110,
-            // 41111 to 41113 are reserved for the moderation earnings follow-up.
+            Self::ContractFeesAlreadyClaimedThisEpochError(_) => 41111,
+            Self::ContractFeesNothingToClaimError(_) => 41112,
+            Self::ContractFeeClaimNotAllowedError(_) => 41113,
             Self::ContractModerationCounterpartyBarredError(_) => 41114,
         }
     }

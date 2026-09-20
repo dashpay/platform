@@ -18,16 +18,21 @@
 //! `v1/mod.rs`, whose entry point serves generation 1 (schema 0) *and* backs
 //! generation 2 (schema 1 and 2).
 
+use crate::balances::credits::{Credits, MAX_CREDITS};
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::action_fees::v0::DocumentActionFeesV0;
+use crate::data_contract::document_type::action_fees::{
+    pricing_names, ActionFeePricing, DocumentActionFee, DocumentActionFees,
+};
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
-    DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
+    ACTION_FEES, CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE,
+    DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
     KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE,
     RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
@@ -2025,6 +2030,133 @@ pub(super) fn parse_property_name_list_keyword(
             })
         })
         .collect()
+}
+
+/// Reads the doctype-level `actionFees` keyword before the core parse consumes
+/// `schema`, same shape as [`parse_index_only_keyword`]. Only the generation-3
+/// driver calls this; earlier generations ignore the keyword exactly as they
+/// ignore every doctype-level keyword they predate (their meta-schemas still
+/// reject it under `full_validation`).
+///
+/// A declaration must price at least one action, every priced action must
+/// charge something, and no amount (nor the sum of an action's two parts) may
+/// exceed `MAX_CREDITS`. A contract entering the chain (`full_validation`) is
+/// refused when its declaration breaks any of that.
+///
+/// A stored contract is different. The frozen v0 meta-schema, which admitted
+/// every contract created before protocol version 12, does not forbid unknown
+/// top-level keys, so such a contract may carry a stray `actionFees` key of
+/// any shape that no validator ever looked at. Refusing it here would make the
+/// contract impossible to load from the block that activates this parser, so
+/// on the stored path a malformed declaration is read as no declaration.
+pub(super) fn parse_action_fees_keyword(
+    schema: &Value,
+    name: &str,
+    full_validation: bool,
+) -> Result<Option<DocumentActionFees>, ProtocolError> {
+    match parse_action_fees_declaration(schema, name) {
+        Err(_) if !full_validation => Ok(None),
+        result => result,
+    }
+}
+
+fn parse_action_fees_declaration(
+    schema: &Value,
+    name: &str,
+) -> Result<Option<DocumentActionFees>, ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(None);
+    };
+    let Some(action_fees) = Value::get_optional_from_map(schema_map, ACTION_FEES) else {
+        return Ok(None);
+    };
+    if !action_fees.is_map() {
+        return Err(structure_error(format!(
+            "document type \"{name}\": `{ACTION_FEES}` must be an object"
+        )));
+    }
+
+    let pricing = match action_fees
+        .get_optional_str("pricing")
+        .map_err(consensus_or_protocol_value_error)?
+    {
+        None => ActionFeePricing::default(),
+        Some(value) => ActionFeePricing::from_schema_value(value).ok_or_else(|| {
+            structure_error(format!(
+                "document type \"{name}\": `{ACTION_FEES}.pricing` must be \"{}\" or \"{}\", \
+                 got \"{value}\"",
+                pricing_names::FEE_MULTIPLIER,
+                pricing_names::FIXED,
+            ))
+        })?,
+    };
+
+    let extract_fee = |action: &str| -> Result<Option<DocumentActionFee>, ProtocolError> {
+        let Some(entry) = action_fees
+            .get_optional_value(action)
+            .map_err(consensus_or_protocol_value_error)?
+        else {
+            return Ok(None);
+        };
+        if !entry.is_map() {
+            return Err(structure_error(format!(
+                "document type \"{name}\": `{ACTION_FEES}.{action}` must be an object"
+            )));
+        }
+        let part = |key: &str| -> Result<Credits, ProtocolError> {
+            let amount = entry
+                .get_optional_integer::<Credits>(key)
+                .map_err(consensus_or_protocol_value_error)?
+                .unwrap_or_default();
+            if amount > MAX_CREDITS {
+                return Err(structure_error(format!(
+                    "document type \"{name}\": `{ACTION_FEES}.{action}.{key}` of {amount} \
+                     credits is over the maximum of {MAX_CREDITS}"
+                )));
+            }
+            Ok(amount)
+        };
+        let fee = DocumentActionFee {
+            owner: part("owner")?,
+            moderators: part("moderators")?,
+        };
+        if fee.non_zero().is_none() {
+            return Err(structure_error(format!(
+                "document type \"{name}\": `{ACTION_FEES}.{action}` charges nothing; leave the \
+                 action out instead"
+            )));
+        }
+        if fee.total().is_err() {
+            return Err(structure_error(format!(
+                "document type \"{name}\": the two parts of `{ACTION_FEES}.{action}` add up to \
+                 more than the maximum of {MAX_CREDITS} credits"
+            )));
+        }
+        Ok(Some(fee))
+    };
+
+    let fees = DocumentActionFeesV0 {
+        pricing,
+        create: extract_fee("create")?,
+        replace: extract_fee("replace")?,
+        delete: extract_fee("delete")?,
+        transfer: extract_fee("transfer")?,
+        update_price: extract_fee("update_price")?,
+        purchase: extract_fee("purchase")?,
+    };
+    let fees: DocumentActionFees = fees.into();
+    if fees.all().next().is_none() {
+        return Err(structure_error(format!(
+            "document type \"{name}\": `{ACTION_FEES}` prices no action"
+        )));
+    }
+    Ok(Some(fees))
 }
 
 /// Write the `immutable` and `immutableAllowSetting` property lists onto the

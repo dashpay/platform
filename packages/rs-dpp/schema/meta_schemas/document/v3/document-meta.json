@@ -486,6 +486,25 @@
         "amount"
       ],
       "additionalProperties": false
+    },
+    "documentActionFee": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807,
+          "description": "Credits added to the contract's owner pot, which the contract owner claims."
+        },
+        "moderators": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807,
+          "description": "Credits added to the contract's moderators pot, which the contract's moderation team shares equally. Requires the contract config to declare moderation."
+        }
+      },
+      "minProperties": 1,
+      "additionalProperties": false
     }
   },
   "properties": {
@@ -870,6 +889,39 @@
     "indexOnly": {
       "type": "boolean",
       "description": "When true, documents of this type are never written to primary storage: the index entries are the rows, each terminating in an Item keyed by the index's `terminal` property instead of a Reference keyed by the document id. Only what is in the indexes exists and is recoverable. Requires: every property required and appearing in at least one index (except a `skipIfAbsent` index's optional first property), $ownerId in at least one index (as a property or terminal), documentsMutable: false, no transfers/trading/history/transient properties, and no doctype-level aggregate keywords (use the index-level count flags). Available from protocol version 14."
+    },
+    "actionFees": {
+      "type": "object",
+      "description": "A fixed fee in credits charged, on top of the gas, for actions on documents of this type, split between the contract's owner pot and its moderators pot (each paid out by a ContractFeeClaim state transition). Whoever pays the gas of the action pays its fee. At least one action must be priced and a priced action must charge something. Fixed when the document type is published: a contract update cannot add, change or remove the fees of an existing document type. Available from protocol version 14.",
+      "properties": {
+        "pricing": {
+          "type": "string",
+          "enum": [
+            "feeMultiplier",
+            "fixed"
+          ],
+          "description": "feeMultiplier (default): the declared amounts are scaled by the fee multiplier of the epoch the action executes in. fixed: the declared amounts are charged as written."
+        },
+        "create": {
+          "$ref": "#/$defs/documentActionFee"
+        },
+        "replace": {
+          "$ref": "#/$defs/documentActionFee"
+        },
+        "delete": {
+          "$ref": "#/$defs/documentActionFee"
+        },
+        "transfer": {
+          "$ref": "#/$defs/documentActionFee"
+        },
+        "update_price": {
+          "$ref": "#/$defs/documentActionFee"
+        },
+        "purchase": {
+          "$ref": "#/$defs/documentActionFee"
+        }
+      },
+      "additionalProperties": false
     },
     "tokenCost": {
       "type": "object",

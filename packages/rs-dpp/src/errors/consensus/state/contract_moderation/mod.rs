@@ -1,3 +1,6 @@
+mod contract_fee_claim_not_allowed_error;
+mod contract_fees_already_claimed_this_epoch_error;
+mod contract_fees_nothing_to_claim_error;
 mod contract_moderation_counterparty_barred_error;
 mod contract_moderation_not_enabled_error;
 mod contract_moderation_target_not_allowed_error;
@@ -11,6 +14,9 @@ mod contract_user_not_suspended_error;
 mod contract_user_suspended_error;
 mod identity_not_contract_moderator_error;
 
+pub use contract_fee_claim_not_allowed_error::*;
+pub use contract_fees_already_claimed_this_epoch_error::*;
+pub use contract_fees_nothing_to_claim_error::*;
 pub use contract_moderation_counterparty_barred_error::*;
 pub use contract_moderation_not_enabled_error::*;
 pub use contract_moderation_target_not_allowed_error::*;

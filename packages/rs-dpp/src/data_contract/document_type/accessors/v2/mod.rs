@@ -1,3 +1,4 @@
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use std::collections::BTreeSet;
 
 /// Trait providing getters for DocumentTypeV2-specific fields.
@@ -48,6 +49,11 @@ pub trait DocumentTypeV2Getters {
     /// [`Self::immutable_fields`]; empty on document types that predate the
     /// keyword.
     fn immutable_fields_allow_setting(&self) -> &BTreeSet<String>;
+
+    /// The fixed fees in credits this document type charges for actions on its documents
+    /// (the `actionFees` keyword, protocol version 14). `None` on document types that
+    /// declare none and on those that predate the keyword.
+    fn action_fees(&self) -> Option<&DocumentActionFees>;
 }
 
 /// Trait providing setters for DocumentTypeV2-specific fields.

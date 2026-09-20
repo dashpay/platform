@@ -250,6 +250,7 @@ fn try_from_schema_generation_3(
     // consumes `schema`.
     let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
     let index_only = common::parse_index_only_keyword(&schema)?;
+    let action_fees = common::parse_action_fees_keyword(&schema, name, full_validation)?;
     let immutable_fields =
         common::parse_property_name_list_keyword(&schema, name, property_names::IMMUTABLE)?;
     let immutable_fields_allow_setting = common::parse_property_name_list_keyword(
@@ -320,6 +321,7 @@ fn try_from_schema_generation_3(
     )?;
 
     let mut v2: DocumentTypeV2 = v1.into();
+    v2.action_fees = action_fees;
     common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
     // After the aggregates: `apply_index_only` rejects the doctype-level
     // aggregate flags (they describe the primary-key tree, which an
