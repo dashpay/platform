@@ -127,6 +127,7 @@ mod tests {
             data_contract: data_contract_fetch_info,
             token_cost: None,
             gas_fees_paid_by: GasFeesPaidBy::default(),
+            contract_gas_fees_paid_by: GasFeesPaidBy::default(),
         });
 
         let data = BTreeMap::from([(

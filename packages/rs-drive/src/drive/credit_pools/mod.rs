@@ -30,6 +30,8 @@ use itertools::Itertools;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Epochs module
 pub mod epochs;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) mod paths;

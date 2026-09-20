@@ -16,6 +16,8 @@ use dpp::identity::Purpose;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::identity::SecurityLevel;
 
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 #[cfg(feature = "server")]
 /// Everything related to withdrawals
 pub mod withdrawals;

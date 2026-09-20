@@ -252,6 +252,7 @@ mod tests {
                 data_contract: contract_fetch_info,
                 token_cost: None,
                 gas_fees_paid_by: GasFeesPaidBy::default(),
+                contract_gas_fees_paid_by: GasFeesPaidBy::default(),
             }),
             block_info: BlockInfo::default(),
             data,

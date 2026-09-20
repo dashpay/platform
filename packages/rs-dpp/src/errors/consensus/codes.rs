@@ -121,6 +121,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(_) => 10274,
             Self::RedundantDocumentPaidForByTokenWithContractId(_) => 10275,
             Self::DataContractInvalidRequiredFieldsUpdateError { .. } => 10276,
+            Self::PreProgrammedDistributionAmountOverLimitError(_) => 10277,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -261,6 +262,7 @@ impl ErrorWithCode for BasicError {
             Self::ShieldedImplicitFeeCapExceededError(_) => 10826,
             Self::ShieldedInvalidDenominationError(_) => 10827,
             Self::InvalidTokenDistributionEpochIntervalTooShortError(_) => 10828,
+            Self::InvalidTokenOncePerIdentityDistributionAmountError(_) => 10829,
         }
     }
 }
@@ -343,6 +345,8 @@ impl ErrorWithCode for StateError {
             Self::ReferencedDocumentPropertyAgreementInvalidError(_) => 40126,
             Self::ReferencedDocumentPropertyMismatchError(_) => 40127,
             Self::DocumentImmutablePropertyChangedError(_) => 40128,
+            Self::GasFeesPaidByNotAllowedError(_) => 40129,
+            Self::InconsistentGasFeesPaidByInBatchError(_) => 40130,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -366,6 +370,7 @@ impl ErrorWithCode for StateError {
             Self::IdentityPublicKeyAlreadyExpiredError(_) => 40219,
             Self::IdentityPublicKeyLimitNotSetError(_) => 40220,
             Self::IdentityPublicKeyLimitNotRaisedError(_) => 40221,
+            Self::GasSponsorInsufficientBalanceError(_) => 40222,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,
@@ -412,6 +417,7 @@ impl ErrorWithCode for StateError {
             Self::TokenDirectPurchaseUserPriceTooLow(_) => 40719,
             Self::TokenAmountUnderMinimumSaleAmount(_) => 40720,
             Self::TokenNotForDirectSale(_) => 40721,
+            Self::TokenOncePerIdentityDistributionAlreadyClaimedError(_) => 40722,
 
             // Group errors: 40800-40899
             Self::IdentityNotMemberOfGroupError(_) => 40800,

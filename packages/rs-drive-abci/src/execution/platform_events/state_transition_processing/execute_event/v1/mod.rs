@@ -27,24 +27,29 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// v1 keeps the budget of the key that signed a state transition up to date.
+    /// v1 executes a `Paid` event whose signing key carries a budget or whose batch names a gas
+    /// sponsor, both recorded on the event from protocol version 14. Every other event, including
+    /// one signed by a key that only expires, is executed by v0.
     ///
-    /// An event paid by an identity whose signing key is budgeted is executed like the v0 `Paid`
-    /// event, and then what the transition took from the identity is deducted from what is left
-    /// of the key's budget: the balance it moved out (`removed_balance`) plus the fee the identity
-    /// owes, net of the storage refunds the same transition returned to it. Fee validation let
-    /// everything but the metered processing fee through only if it fit, so the deduction can
-    /// take the budget past zero by that processing fee at most; it stops at zero, and a key at
-    /// zero no longer signs. A failed state transition that is still paid for spends from the
-    /// budget like a successful one. The deduction is applied outside of the fee, like the
-    /// balance change, and never changes what is stored.
+    /// The fee is charged to the gas sponsor when their balance covers the estimated fee, the
+    /// same question fee validation asked, and to the identity otherwise. Storage refunds still
+    /// go to whoever paid the storage originally, so a sponsored document refunds its owner when
+    /// it is deleted. A failed batch (`consensus_errors`) is never sponsored: its signer pays for
+    /// the work that ran.
     ///
-    /// Every other event, including one signed by a key that only expires, is executed by v0.
+    /// A budgeted signing key is then charged with what the transition took from its identity:
+    /// the balance it moved out (`removed_balance`) plus the fee the identity owes, net of the
+    /// storage refunds the same transition returned to it, and nothing of a fee the sponsor paid.
+    /// Fee validation let everything but the metered processing fee through only if it fit, so
+    /// the deduction can take the budget past zero by that processing fee at most; it stops at
+    /// zero, and a key at zero no longer signs. A failed state transition that is still paid for
+    /// spends from the budget like a successful one. The deduction is applied outside of the fee,
+    /// like the balance change, and never changes what is stored.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn execute_event_v1(
         &self,
-        event: ExecutionEvent,
+        mut event: ExecutionEvent,
         mut consensus_errors: Vec<ConsensusError>,
         block_info: &BlockInfo,
         transaction: &Transaction,
@@ -53,17 +58,31 @@ where
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
-        let signed_by_budgeted_key = matches!(
-            &event,
-            ExecutionEvent::Paid {
-                signing_key_limits: Some(SigningKeyLimits {
-                    remaining_budget: Some(_),
-                    ..
-                }),
-                ..
+        // The sponsor pays for a valid batch only; fee validation below must judge the same
+        // event execution charges, so the sponsor leaves the event before either sees it.
+        if let ExecutionEvent::Paid { gas_sponsor, .. } = &mut event {
+            if !consensus_errors.is_empty() {
+                *gas_sponsor = None;
             }
-        );
-        if !signed_by_budgeted_key {
+        }
+        let (signed_by_budgeted_key, has_gas_sponsor) = match &event {
+            ExecutionEvent::Paid {
+                signing_key_limits,
+                gas_sponsor,
+                ..
+            } => (
+                matches!(
+                    signing_key_limits,
+                    Some(SigningKeyLimits {
+                        remaining_budget: Some(_),
+                        ..
+                    })
+                ),
+                gas_sponsor.is_some(),
+            ),
+            _ => (false, false),
+        };
+        if !signed_by_budgeted_key && !has_gas_sponsor {
             return self.execute_event_v0(
                 event,
                 consensus_errors,
@@ -92,15 +111,32 @@ where
             execution_operations,
             additional_fixed_fee_cost,
             user_fee_increase,
-            signing_key_limits: Some(signing_key_limits),
+            signing_key_limits,
+            gas_sponsor,
         } = event
         else {
             return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "the event was matched above as paid and signed by a budgeted key",
+                "the event was matched above as paid by an identity",
             )));
         };
 
         let result = if fee_validation_result.is_valid_with_data() {
+            // Fee validation admitted the sponsor on this estimate; charging follows the same
+            // answer, so validation and execution never name different payers.
+            let estimated_required_balance = fee_validation_result
+                .data
+                .as_ref()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "a valid fee validation result carries the estimated fee",
+                )))?
+                .total_base_fee()
+                .saturating_add(additional_fixed_fee_cost.unwrap_or_default());
+            let paying_sponsor =
+                gas_sponsor.filter(|gas_sponsor| gas_sponsor.covers(estimated_required_balance));
+            let payer_id = paying_sponsor
+                .map(|gas_sponsor| gas_sponsor.identity_id)
+                .unwrap_or(identity.id);
+
             let credit_mints = DriveOperation::credit_mints(&operations);
             let mut individual_fee_result = self
                 .drive
@@ -130,14 +166,18 @@ where
                     .saturating_add(additional_fixed_fee_cost);
             }
 
-            let balance_change = individual_fee_result.into_balance_change(identity.id);
+            let balance_change = individual_fee_result.into_balance_change(payer_id);
 
-            let fee_owed_by_identity = match balance_change.change() {
-                BalanceChange::RemoveFromBalance {
-                    desired_removed_balance,
-                    ..
-                } => *desired_removed_balance,
-                BalanceChange::AddToBalance(_) | BalanceChange::NoBalanceChange => 0,
+            let fee_owed_by_identity = if paying_sponsor.is_some() {
+                0
+            } else {
+                match balance_change.change() {
+                    BalanceChange::RemoveFromBalance {
+                        desired_removed_balance,
+                        ..
+                    } => *desired_removed_balance,
+                    BalanceChange::AddToBalance(_) | BalanceChange::NoBalanceChange => 0,
+                }
             };
             let spent_from_key_budget = removed_balance
                 .unwrap_or_default()
@@ -149,13 +189,17 @@ where
                 platform_version,
             )?;
 
-            self.drive.deduct_from_identity_key_budget(
-                identity.id.to_buffer(),
-                signing_key_limits.key_id,
-                spent_from_key_budget,
-                Some(transaction),
-                platform_version,
-            )?;
+            if let Some(signing_key_limits) =
+                signing_key_limits.filter(|limits| limits.remaining_budget.is_some())
+            {
+                self.drive.deduct_from_identity_key_budget(
+                    identity.id.to_buffer(),
+                    signing_key_limits.key_id,
+                    spent_from_key_budget,
+                    Some(transaction),
+                    platform_version,
+                )?;
+            }
 
             // Only an executed event moved anything. No transition a limited key may sign has
             // address outputs today, so this records nothing; it must not start to for an event

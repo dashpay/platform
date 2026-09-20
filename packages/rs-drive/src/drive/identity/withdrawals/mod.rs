@@ -1,5 +1,7 @@
 /// Functions related to withdrawal documents
 pub mod document;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 mod calculate_current_withdrawal_limit;
 

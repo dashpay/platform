@@ -2176,6 +2176,7 @@ dependencies = [
  "grovedb-bincode",
  "grovedb-costs",
  "grovedb-epoch-based-storage-flags",
+ "grovedb-merk",
  "grovedb-path",
  "grovedb-query",
  "grovedb-storage",

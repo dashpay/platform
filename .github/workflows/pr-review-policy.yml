@@ -11,6 +11,12 @@ on:
   pull_request_review:
     types: [submitted, edited, dismissed]
   workflow_dispatch:
+    inputs:
+      scope:
+        description: 'all reconciles every governed pull request now; batch is the sweep'
+        type: choice
+        options: [batch, all]
+        default: batch
   schedule:
     - cron: '17 * * * *'
     # A build turning green raises no event this controller hears. This one
@@ -45,4 +51,6 @@ jobs:
       (contains(fromJSON('["coderabbitai", "coderabbitai[bot]"]'), github.event.comment.user.login) &&
       (contains(github.event.comment.body, 'final_review_risk_coverage') ||
       contains(github.event.comment.body, 'rate limited by coderabbit.ai')))
-    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@6636e320352dfafaa8187eb73b2d51c9975f2a48
+    uses: dashpay/stale_prs_are_bad/.github/workflows/pr-review-reusable.yml@2a9705fbefd4294f490baa36f46f2b880a592502
+    with:
+      scope: ${{ inputs.scope || 'batch' }}

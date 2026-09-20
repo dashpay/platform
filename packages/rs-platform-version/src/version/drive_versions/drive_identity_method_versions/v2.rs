@@ -190,6 +190,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
             for_update_revision: 0,
             for_token_identity_infos: 0,
             for_token_perpetual_distribution: 0,
+            for_token_once_per_identity_distribution: 0,
             for_token_pre_programmed_distribution: 0,
             for_root_token_ms_interval_distribution: 0,
             for_token_selling_prices: 0,

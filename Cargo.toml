@@ -56,6 +56,7 @@ members = [
 bincode = { package = "grovedb-bincode", version = "=2.1.0" }
 grovedb = { git = "https://github.com/dashpay/grovedb", rev = "74818ceb95805f56f141d24ca41f58b75c031a7f", default-features = false }
 grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "74818ceb95805f56f141d24ca41f58b75c031a7f" }
+grovedb-merk = { git = "https://github.com/dashpay/grovedb", rev = "74818ceb95805f56f141d24ca41f58b75c031a7f", default-features = false }
 grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "74818ceb95805f56f141d24ca41f58b75c031a7f" }
 grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "74818ceb95805f56f141d24ca41f58b75c031a7f" }
 grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "74818ceb95805f56f141d24ca41f58b75c031a7f" }
