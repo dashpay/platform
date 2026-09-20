@@ -19,7 +19,7 @@ use crate::consensus::state::contract_moderation::{
     ContractModeratorIdentityNotFoundError,
     ContractSuspensionNotInFutureError, ContractUserAlreadyBannedError, ContractUserBannedError,
     ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserSuspendedError,
-    IdentityNotContractModeratorError,
+    DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
 };
 use crate::consensus::state::contract_group::{
     ContractGroupAlreadyExistsError, ContractGroupNotFoundError,
@@ -532,6 +532,10 @@ pub enum StateError {
     #[error(transparent)]
     ReferencedDocumentTypeNotDeletableError(ReferencedDocumentTypeNotDeletableError),
 
+    // Document deletion by moderators (protocol version 14).
+    #[error(transparent)]
+    DocumentTypeNotDeletableByModeratorsError(DocumentTypeNotDeletableByModeratorsError),
+
     // Document action fee agreements (protocol version 14).
     #[error(transparent)]
     DocumentActionFeeAgreementNotSetError(DocumentActionFeeAgreementNotSetError),
@@ -876,7 +880,7 @@ mod tests {
             )),
             125
         );
-        // Contract fee claims (protocol version 14): the tail of the enum.
+        // Contract fee claims (protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ContractFeesAlreadyClaimedThisEpochError(
                 ContractFeesAlreadyClaimedThisEpochError::new(
@@ -910,6 +914,13 @@ mod tests {
             )),
             129
         );
+        // Document deletion by moderators (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::DocumentTypeNotDeletableByModeratorsError(
+                DocumentTypeNotDeletableByModeratorsError::new(group_id, "post".to_string())
+            )),
+            130
+        );
         // Document action fee agreements (protocol version 14): the tail of the enum.
         let declared_fee = DocumentActionFee {
             owner: 1,
@@ -928,7 +939,7 @@ mod tests {
                     declared_fee,
                 )
             )),
-            130
+            131
         );
         assert_eq!(
             discriminant_of(StateError::DocumentActionFeeAgreementMismatchError(
@@ -944,7 +955,7 @@ mod tests {
                     ),
                 )
             )),
-            131
+            132
         );
         assert_eq!(
             discriminant_of(StateError::DocumentActionFeeMultiplierNotToleratedError(
@@ -955,7 +966,7 @@ mod tests {
                     1500,
                 )
             )),
-            132
+            133
         );
     }
 }

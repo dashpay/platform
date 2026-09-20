@@ -288,6 +288,7 @@ fn try_from_schema_generation_3(
     let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
     let index_only = common::parse_index_only_keyword(&schema)?;
     let action_fees = DocumentActionFees::try_from_document_schema(&schema, name)?;
+    let can_be_deleted_by_moderators = common::parse_can_be_deleted_by_moderators_keyword(&schema)?;
     let immutable_fields =
         common::parse_property_name_list_keyword(&schema, name, property_names::IMMUTABLE)?;
     let immutable_fields_allow_setting = common::parse_property_name_list_keyword(
@@ -374,6 +375,15 @@ fn try_from_schema_generation_3(
         full_validation,
     )?;
 
+    // After `apply_index_only`: the flag is refused on an indexOnly type, so it
+    // has to see that one already applied.
+    common::apply_can_be_deleted_by_moderators(
+        &mut v2,
+        can_be_deleted_by_moderators,
+        data_contact_config,
+        name,
+    )?;
+
     // The flags are read from the parsed result (not the raw schema) so
     // the check sees `canBeDeleted` resolved against the contract config
     // default (`true` when the key is omitted).
@@ -434,6 +444,8 @@ mod index_only_tests;
 mod keep_history_tests;
 #[cfg(test)]
 mod meta_schema_v0_stray_keyword_tests;
+#[cfg(test)]
+mod moderators_delete_tests;
 
 #[cfg(test)]
 mod tests {

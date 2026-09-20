@@ -1,4 +1,6 @@
-use crate::state_transition_action::contract::contract_user_moderation::v0::ContractUserModerationTransitionActionV0;
+use crate::state_transition_action::contract::contract_user_moderation::v0::{
+    ContractDocumentDeletionContext, ContractUserModerationTransitionActionV0,
+};
 use crate::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use dpp::data_contract::config::moderation::ContractModerationStatus;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
@@ -15,6 +17,23 @@ impl ContractUserModerationTransitionAction {
                 ContractUserModerationTransitionActionV0::from_borrowed_transition_with_status(
                     v0,
                     current_status,
+                )
+                .into()
+            }
+        }
+    }
+
+    /// The action of a borrowed transition that deletes a document, carrying what the
+    /// validation read about the contract, the document and its removal record
+    pub fn from_borrowed_transition_with_document_deletion(
+        value: &ContractUserModerationTransition,
+        document_deletion: ContractDocumentDeletionContext,
+    ) -> Self {
+        match value {
+            ContractUserModerationTransition::V0(v0) => {
+                ContractUserModerationTransitionActionV0::from_borrowed_transition_with_document_deletion(
+                    v0,
+                    document_deletion,
                 )
                 .into()
             }

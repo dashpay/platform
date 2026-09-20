@@ -197,6 +197,15 @@ pub const CONTRACT_BANLIST_KEY: u8 = 128;
 /// suspension list.
 pub const CONTRACT_SUSPENSIONS_KEY: u8 = 192;
 
+/// The key under a contract's other tree (`[64, id, 2]`) of the records of the documents the
+/// contract's moderators deleted (protocol version 14): `document type name -> document id ->
+/// Item(document owner id, moderator id, removed at, reason)`. Present when the contract has a
+/// document type that sets `canBeDeletedByModerators`, with one subtree per such type,
+/// created with the type. Written by a moderator's document deletion and read by clients,
+/// never by a document transition, so it sorts below `128`: created together with both lists
+/// it leaves the banlist on top.
+pub const CONTRACT_DOCUMENT_REMOVALS_KEY: u8 = 16;
+
 /// `[64, contract id, 2]`: the contract's other tree.
 pub fn contract_other_path(contract_id: &[u8]) -> [&[u8]; 3] {
     [
@@ -302,4 +311,54 @@ pub fn contract_last_fee_claim_key(pot: ContractFeePot) -> &'static [u8; 1] {
         ContractFeePot::Owner => &[CONTRACT_LAST_OWNER_FEE_CLAIM_KEY],
         ContractFeePot::Moderators => &[CONTRACT_LAST_MODERATORS_FEE_CLAIM_KEY],
     }
+}
+
+/// `[64, contract id, 2, 16]`: the tree of the contract's document removal records, one subtree
+/// per document type moderators may delete documents of.
+pub fn contract_document_removals_path(contract_id: &[u8]) -> [&[u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        contract_id,
+        &[CONTRACT_OTHER_KEY],
+        &[CONTRACT_DOCUMENT_REMOVALS_KEY],
+    ]
+}
+
+/// `[64, contract id, 2, 16]`: the tree of the contract's document removal records.
+pub fn contract_document_removals_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
+        contract_id.to_vec(),
+        vec![CONTRACT_OTHER_KEY],
+        vec![CONTRACT_DOCUMENT_REMOVALS_KEY],
+    ]
+}
+
+/// `[64, contract id, 2, 16, document type name]`: the removal records of one document type,
+/// keyed by document id.
+pub fn contract_document_type_removals_path<'a>(
+    contract_id: &'a [u8],
+    document_type_name: &'a str,
+) -> [&'a [u8]; 5] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        contract_id,
+        &[CONTRACT_OTHER_KEY],
+        &[CONTRACT_DOCUMENT_REMOVALS_KEY],
+        document_type_name.as_bytes(),
+    ]
+}
+
+/// `[64, contract id, 2, 16, document type name]`: the removal records of one document type.
+pub fn contract_document_type_removals_path_vec(
+    contract_id: &[u8],
+    document_type_name: &str,
+) -> Vec<Vec<u8>> {
+    vec![
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
+        contract_id.to_vec(),
+        vec![CONTRACT_OTHER_KEY],
+        vec![CONTRACT_DOCUMENT_REMOVALS_KEY],
+        document_type_name.as_bytes().to_vec(),
+    ]
 }

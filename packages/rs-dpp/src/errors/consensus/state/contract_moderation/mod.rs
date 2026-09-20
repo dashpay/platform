@@ -12,6 +12,7 @@ mod contract_user_banned_error;
 mod contract_user_not_banned_error;
 mod contract_user_not_suspended_error;
 mod contract_user_suspended_error;
+mod document_type_not_deletable_by_moderators_error;
 mod identity_not_contract_moderator_error;
 
 pub use contract_fee_claim_not_allowed_error::*;
@@ -28,4 +29,5 @@ pub use contract_user_banned_error::*;
 pub use contract_user_not_banned_error::*;
 pub use contract_user_not_suspended_error::*;
 pub use contract_user_suspended_error::*;
+pub use document_type_not_deletable_by_moderators_error::*;
 pub use identity_not_contract_moderator_error::*;

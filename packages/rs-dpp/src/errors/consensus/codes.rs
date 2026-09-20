@@ -465,6 +465,7 @@ impl ErrorWithCode for StateError {
             Self::ContractFeesNothingToClaimError(_) => 41112,
             Self::ContractFeeClaimNotAllowedError(_) => 41113,
             Self::ContractModerationCounterpartyBarredError(_) => 41114,
+            Self::DocumentTypeNotDeletableByModeratorsError(_) => 41115,
         }
     }
 }

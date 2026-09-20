@@ -125,6 +125,14 @@ pub struct DocumentTypeV2 {
     /// (`actionFees` keyword, protocol version 14), `None` when it declares none. Fixed when
     /// the document type is published: a contract update cannot add, change or remove them.
     pub(in crate::data_contract) action_fees: Option<DocumentActionFees>,
+    /// When true, the contract's moderators may delete documents of this type
+    /// with a `ContractUserModeration` transition (`canBeDeletedByModerators`
+    /// keyword, protocol version 14), whatever `documents_can_be_deleted` says
+    /// about the documents' own owners. The parser
+    /// (`apply_can_be_deleted_by_moderators`) only admits it on a contract that
+    /// declares moderation, and refuses it on a type that keeps history, is
+    /// indexOnly or restricts document creation.
+    pub(in crate::data_contract) documents_can_be_deleted_by_moderators: bool,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -196,6 +204,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             range_summable: false,
             index_only: false,
             action_fees: None,
+            documents_can_be_deleted_by_moderators: false,
         }
     }
 }
@@ -239,6 +248,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             range_summable: false,
             index_only: false,
             action_fees: None,
+            documents_can_be_deleted_by_moderators: false,
         }
     }
 }

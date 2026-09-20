@@ -96,6 +96,7 @@ pub struct DriveAbciQueryGroupVersions {
 pub struct DriveAbciQueryContractModerationVersions {
     pub contract_moderation_status: FeatureVersionBounds,
     pub contract_moderation_entries: FeatureVersionBounds,
+    pub contract_document_removals: FeatureVersionBounds,
     /// The two fee pots a contract's document action fees collect in
     pub contract_fee_pots: FeatureVersionBounds,
 }

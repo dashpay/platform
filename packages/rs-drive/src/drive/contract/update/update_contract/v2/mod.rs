@@ -6,6 +6,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
@@ -219,7 +220,9 @@ impl Drive {
     ///
     /// The moderation list trees need nothing here: which lists a contract keeps is fixed when
     /// it is created (`DataContractConfig::validate_update` v2), so `insert_contract` made
-    /// them and an update leaves them, and their entries, alone.
+    /// them and an update leaves them, and their entries, alone. A document type the update
+    /// adds may be one moderators can delete documents of, and then gets the tree its removal
+    /// records go in.
     #[allow(clippy::too_many_arguments)]
     fn update_contract_operations_v2(
         &self,
@@ -324,6 +327,42 @@ impl Drive {
                     platform_version,
                 )?;
             }
+        }
+
+        // The removal records tree of every document type the update adds that moderators may
+        // delete documents of, as `insert_contract` creates it for the types of a new
+        // contract. A document type the contract already had keeps the keyword it had, so its
+        // tree, if any, exists: a document type is new exactly once. The tree they all go
+        // under exists exactly when the stored contract already had such a document type,
+        // which the original contract says without a read: the first one creates it.
+        let added_document_type_names: Vec<&str> = contract
+            .document_types()
+            .iter()
+            .filter(|(name, document_type)| {
+                document_type.documents_can_be_deleted_by_moderators()
+                    && !original_contract.document_types().contains_key(*name)
+            })
+            .map(|(name, _)| name.as_str())
+            .collect();
+        if !added_document_type_names.is_empty() {
+            let has_removals_tree = original_contract
+                .document_types()
+                .values()
+                .any(|document_type| document_type.documents_can_be_deleted_by_moderators());
+            let storage_flags = StorageFlags::new_single_epoch(
+                block_info.epoch.index,
+                Some(contract.owner_id().to_buffer()),
+            );
+            self.insert_contract_document_removal_trees_operations(
+                contract.id().to_buffer(),
+                !has_removals_tree,
+                &added_document_type_names,
+                Some(&storage_flags),
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
         }
 
         Ok(batch_operations)

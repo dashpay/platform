@@ -1,6 +1,7 @@
 //! Contract moderation queries: one identity's status on a moderated contract
-//! (`getContractModerationStatus`) and one page of a contract's banlist or suspension list
-//! (`getContractModerationEntries`).
+//! (`getContractModerationStatus`), one page of a contract's banlist or suspension list
+//! (`getContractModerationEntries`) and the records of the documents its moderators deleted
+//! (`getContractDocumentRemovals`).
 //!
 //! A moderated contract declares in its config which lists it keeps
 //! (`DataContractConfig::moderation`). A status query names the lists to read, and each must be
@@ -13,15 +14,25 @@
 //! * [`ContractModerationEntries::fetch`] with a [`ContractModerationEntriesPageQuery`] returns
 //!   one page of a list in identity id order; the page's
 //!   [`next_query`](ContractModerationEntries::next_query) is the cursor of the next page.
+//! * [`ContractDocumentRemovals::fetch`] with a [`ContractDocumentRemovalsPageQuery`] returns
+//!   the records of the documents the moderators deleted within one document type, either one
+//!   page in document id order or the records of the ids named. The document type must be one
+//!   that sets `canBeDeletedByModerators`: no other keeps records, and the node refuses a query
+//!   over a tree that does not exist.
 //!
-//! Both types also implement [`FetchUnproved`] for the unverified fast path.
+//! Every type also implements [`FetchUnproved`] for the unverified fast path.
 
 use crate::platform::{Fetch, FetchUnproved, Identifier, Query, QuerySettings};
 use crate::Error;
+use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contract_document_removals_request_v0::Selection;
+use dapi_grpc::platform::v0::get_contract_document_removals_request::{
+    DocumentIds, GetContractDocumentRemovalsRequestV0, Page,
+};
 use dapi_grpc::platform::v0::get_contract_moderation_entries_request::GetContractModerationEntriesRequestV0;
 use dapi_grpc::platform::v0::get_contract_moderation_status_request::GetContractModerationStatusRequestV0;
 use dapi_grpc::platform::v0::{
-    get_contract_moderation_entries_request, get_contract_moderation_status_request,
+    get_contract_document_removals_request, get_contract_moderation_entries_request,
+    get_contract_moderation_status_request, GetContractDocumentRemovalsRequest,
     GetContractModerationEntriesRequest, GetContractModerationStatusRequest,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -29,9 +40,11 @@ use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
 pub use drive_proof_verifier::types::contract_moderation::{
-    default_contract_moderation_entries_limit, list_to_request, ContractModerationEntries,
-    ContractModerationEntriesQuery, ContractModerationEntry, ContractModerationList,
-    ContractModerationListStatus, ContractModerationListStatuses,
+    default_contract_document_removals_limit, default_contract_moderation_entries_limit,
+    list_to_request, ContractDocumentRemoval, ContractDocumentRemovalEntry,
+    ContractDocumentRemovals, ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+    ContractModerationEntries, ContractModerationEntriesQuery, ContractModerationEntry,
+    ContractModerationList, ContractModerationListStatus, ContractModerationListStatuses,
 };
 
 /// Query for one identity's status on a moderated contract.
@@ -158,4 +171,113 @@ impl Fetch for ContractModerationEntries {
 
 impl FetchUnproved for ContractModerationEntries {
     type Request = GetContractModerationEntriesRequest;
+}
+
+/// Query for the removal records a moderated contract keeps for one of its document types:
+/// one page of them, or the records of the document ids named.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractDocumentRemovalsPageQuery {
+    /// The moderated contract.
+    pub contract_id: Identifier,
+    /// The document type, and which of its records to read.
+    pub query: ContractDocumentRemovalsQuery,
+}
+
+impl ContractDocumentRemovalsPageQuery {
+    /// The first page of the records of `document_type_name`, up to the page cap of
+    /// `platform_version`: the version of the network queried (`Sdk::version`), whose cap is
+    /// the one the node enforces.
+    pub fn new(
+        contract_id: Identifier,
+        document_type_name: String,
+        platform_version: &PlatformVersion,
+    ) -> Self {
+        Self {
+            contract_id,
+            query: ContractDocumentRemovalsQuery {
+                document_type_name,
+                selection: ContractDocumentRemovalsSelection::Page {
+                    start_after: None,
+                    limit: default_contract_document_removals_limit(platform_version),
+                },
+            },
+        }
+    }
+
+    /// The records of `document_ids` alone, from one to the page cap of the network queried.
+    /// A document with no record is left out of the answer rather than refused.
+    pub fn for_document_ids(
+        contract_id: Identifier,
+        document_type_name: String,
+        document_ids: Vec<Identifier>,
+    ) -> Self {
+        Self {
+            contract_id,
+            query: ContractDocumentRemovalsQuery {
+                document_type_name,
+                selection: ContractDocumentRemovalsSelection::DocumentIds(document_ids),
+            },
+        }
+    }
+
+    /// Bounds the page to `limit` records, leaving a read by ids as it is: it is already
+    /// bounded by the ids it names.
+    pub fn with_limit(mut self, limit: u16) -> Self {
+        if let ContractDocumentRemovalsSelection::Page { start_after, .. } = &self.query.selection {
+            self.query.selection = ContractDocumentRemovalsSelection::Page {
+                start_after: *start_after,
+                limit,
+            };
+        }
+        self
+    }
+
+    /// The query for the page after `page`, or `None` when `page` holds fewer records than the
+    /// limit and so was the last. A read by ids has no page after it.
+    pub fn after(&self, page: &ContractDocumentRemovals) -> Option<Self> {
+        page.next_query(&self.query).map(|query| Self {
+            contract_id: self.contract_id,
+            query,
+        })
+    }
+}
+
+impl Query<GetContractDocumentRemovalsRequest> for ContractDocumentRemovalsPageQuery {
+    fn query(
+        &self,
+        settings: &QuerySettings<'_>,
+    ) -> Result<GetContractDocumentRemovalsRequest, Error> {
+        let selection = match &self.query.selection {
+            ContractDocumentRemovalsSelection::DocumentIds(document_ids) => {
+                Selection::DocumentIds(DocumentIds {
+                    document_ids: document_ids.iter().map(|id| id.to_vec()).collect(),
+                })
+            }
+            ContractDocumentRemovalsSelection::Page { start_after, limit } => {
+                Selection::Page(Page {
+                    start_after: start_after.map(|id| id.to_vec()),
+                    limit: Some(u32::from(*limit)),
+                })
+            }
+        };
+        Ok(GetContractDocumentRemovalsRequest {
+            version: Some(get_contract_document_removals_request::Version::V0(
+                GetContractDocumentRemovalsRequestV0 {
+                    contract_id: self.contract_id.to_vec(),
+                    document_type_name: self.query.document_type_name.clone(),
+                    selection: Some(selection),
+                    prove: settings.prove,
+                },
+            )),
+        })
+    }
+}
+
+impl Fetch for ContractDocumentRemovals {
+    type Query = GetContractDocumentRemovalsRequest;
+    type Request = GetContractDocumentRemovalsRequest;
+}
+
+impl FetchUnproved for ContractDocumentRemovals {
+    type Request = GetContractDocumentRemovalsRequest;
 }

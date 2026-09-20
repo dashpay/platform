@@ -325,6 +325,89 @@ describe('ContractsFacade', () => {
       expect(stub).to.be.calledOnceWithExactly(query);
       expect(result).to.equal(response);
     });
+
+    // A deletion names a document, not an identity, and resolves to the record it left.
+    const documentTypeName = 'post';
+    const documentId = '2QjL594djCH2NyDsn45vd6yQjEDHupMKo7CEGVTHtQxU';
+    const removal = {
+      documentOwnerId: identityId,
+      moderatorId: contractId,
+      reason: { code: 2, text: 'spam' },
+      removedAt: BigInt(1800000000000),
+    };
+
+    it('should forward moderatorDeleteDocument() to contractDeleteDocument() and return the removal record', async function run() {
+      const record = {
+        contractId, documentTypeName, documentId, ...removal,
+      };
+      const stub = this.sinon.stub(wasmSdk, 'contractDeleteDocument').resolves(record);
+      const options = {
+        identity: Object.create(wasmSDKPackage.Identity.prototype),
+        contractId,
+        documentTypeName,
+        documentId,
+        reason: { code: 2, text: 'spam' },
+        signer,
+      };
+
+      const result = await client.contracts.moderatorDeleteDocument(options);
+
+      expect(stub).to.be.calledOnceWithExactly(options);
+      expect(result).to.equal(record);
+    });
+
+    it('should delete a document without a reason', async function run() {
+      const record = {
+        contractId, documentTypeName, documentId, ...removal, reason: { text: '' },
+      };
+      const stub = this.sinon.stub(wasmSdk, 'contractDeleteDocument').resolves(record);
+      const options = {
+        identity: Object.create(wasmSDKPackage.Identity.prototype),
+        contractId,
+        documentTypeName,
+        documentId,
+        signer,
+      };
+
+      const result = await client.contracts.moderatorDeleteDocument(options);
+
+      expect(stub).to.be.calledOnceWithExactly(options);
+      expect(result.reason).to.deep.equal({ text: '' });
+    });
+
+    it('should fetch the removal records of the documents named, which carry no cursor', async function run() {
+      const page = { removals: [{ documentId, ...removal }] };
+      const stub = this.sinon.stub(wasmSdk, 'getContractDocumentRemovals').resolves(page);
+      const query = { contractId, documentTypeName, documentIds: [documentId] };
+
+      const result = await client.contracts.documentRemovals(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result.removals).to.deep.equal(page.removals);
+      expect(result.nextStartAfter).to.equal(undefined);
+    });
+
+    it('should fetch a page of removal records and its cursor', async function run() {
+      const page = { removals: [{ documentId, ...removal }], nextStartAfter: documentId };
+      const stub = this.sinon.stub(wasmSdk, 'getContractDocumentRemovals').resolves(page);
+      const query = { contractId, documentTypeName, limit: 1 };
+
+      const result = await client.contracts.documentRemovals(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result.nextStartAfter).to.equal(documentId);
+    });
+
+    it('should fetch removal records with proof', async function run() {
+      const response = { data: { removals: [] }, proof: {}, metadata: {} };
+      const stub = this.sinon.stub(wasmSdk, 'getContractDocumentRemovalsWithProofInfo').resolves(response);
+      const query = { contractId, documentTypeName, startAfter: documentId };
+
+      const result = await client.contracts.documentRemovalsWithProof(query);
+
+      expect(stub).to.be.calledOnceWithExactly(query);
+      expect(result).to.equal(response);
+    });
   });
 
   describe('contract fee pots', () => {

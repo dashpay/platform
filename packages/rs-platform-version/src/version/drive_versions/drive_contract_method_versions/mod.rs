@@ -32,6 +32,11 @@ pub struct DriveContractModerationMethodVersions {
     pub insert_contract_moderation_trees: FeatureVersion,
     pub add_estimation_costs_for_contract_moderation_trees: FeatureVersion,
     pub add_estimation_costs_for_contract_moderation_entry: FeatureVersion,
+    pub add_contract_document_removal: FeatureVersion,
+    pub fetch_contract_document_removals: FeatureVersion,
+    pub prove_contract_document_removals: FeatureVersion,
+    pub insert_contract_document_removal_trees: FeatureVersion,
+    pub add_estimation_costs_for_contract_document_removal: FeatureVersion,
 }
 
 /// Drive methods for the two fee pots a contract's document action fees accumulate in

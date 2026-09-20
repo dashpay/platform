@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::config::moderation::ContractModerationReason;
+use dpp::data_contract::config::moderation::{ContractDocumentRemoval, ContractModerationReason};
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use grovedb::batch::KeyInfoPath;
@@ -11,7 +11,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
-/// Operations on a moderated contract's banlist and suspension list.
+/// Operations on a moderated contract's banlist, suspension list and document removal records.
 #[derive(Clone, Debug)]
 pub enum ContractModerationOperationType {
     /// Puts an identity on the banlist.
@@ -55,6 +55,23 @@ pub enum ContractModerationOperationType {
         /// The identity to unsuspend.
         identity_id: Identifier,
     },
+    /// Records that a moderator deleted a document. The deletion itself is a document
+    /// operation of the same batch. A document id is produced at most once, so a record is
+    /// written once and never replaced.
+    AddDocumentRemoval {
+        /// The moderated contract.
+        contract_id: Identifier,
+        /// The document type the document belonged to.
+        document_type_name: String,
+        /// The id the document had.
+        document_id: Identifier,
+        /// Whose it was, who removed it (and pays for the record), why and when.
+        removal: ContractDocumentRemoval,
+    },
+    /// Writes nothing: marks the batch it is in as one whose storage removals refund nobody
+    /// (`Drive::apply_drive_operations` generation 1). A moderator's document deletion carries
+    /// it, so the deleted document's owner gets no storage refund.
+    ForfeitStorageRefunds,
 }
 
 impl DriveLowLevelOperationConverter for ContractModerationOperationType {
@@ -125,6 +142,22 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
                 transaction,
                 platform_version,
             ),
+            ContractModerationOperationType::AddDocumentRemoval {
+                contract_id,
+                document_type_name,
+                document_id,
+                removal,
+            } => drive.add_contract_document_removal_operations(
+                contract_id,
+                &document_type_name,
+                document_id,
+                &removal,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            ContractModerationOperationType::ForfeitStorageRefunds => Ok(vec![]),
         }
     }
 }

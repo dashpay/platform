@@ -34,6 +34,12 @@ pub trait DocumentTypeV2Getters {
     /// property. Only what is in the indexes exists and is recoverable.
     fn index_only(&self) -> bool;
 
+    /// Returns whether the contract's moderators may delete documents of this
+    /// type (the `canBeDeletedByModerators` keyword, protocol version 14).
+    /// Independent of `documents_can_be_deleted`, which rules what a document's
+    /// own owner may do. False on document types that predate the keyword.
+    fn documents_can_be_deleted_by_moderators(&self) -> bool;
+
     /// The top-level properties frozen at document creation on a mutable
     /// document type (the `immutable` keyword, protocol version 14). A
     /// replace that changes, adds or removes any of them is rejected with

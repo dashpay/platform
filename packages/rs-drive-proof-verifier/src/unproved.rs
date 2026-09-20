@@ -5,9 +5,9 @@ use crate::types::contract_groups::{
 };
 use crate::types::contract_moderation::{
     entries_from_response, fee_pots_from_response, list_from_request, lists_from_request,
-    reason_from_response, ContractBan, ContractFeePots, ContractModerationEntries,
-    ContractModerationList, ContractModerationListStatuses, ContractModerationStatus,
-    ContractSuspension,
+    reason_from_response, removals_from_response, removals_query_from_request, ContractBan,
+    ContractDocumentRemovals, ContractFeePots, ContractModerationEntries, ContractModerationList,
+    ContractModerationListStatuses, ContractModerationStatus, ContractSuspension,
 };
 use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
@@ -1002,6 +1002,54 @@ impl FromUnproved<platform::GetContractModerationEntriesRequest> for ContractMod
     }
 }
 
+impl FromUnproved<platform::GetContractDocumentRemovalsRequest> for ContractDocumentRemovals {
+    type Request = platform::GetContractDocumentRemovalsRequest;
+    type Response = platform::GetContractDocumentRemovalsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_document_removals_response::get_contract_document_removals_response_v0::Result as V0Result;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // The request bounds what the response may hold, so it is read back here too, under
+        // the same rules the node applied.
+        let platform::get_contract_document_removals_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let query = removals_query_from_request(
+            request_v0.document_type_name,
+            request_v0.selection,
+            platform_version,
+        )?;
+
+        let platform::get_contract_document_removals_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let removals = match v0.result {
+            Some(V0Result::Removals(removals)) => {
+                Some(removals_from_response(removals.removals, &query)?)
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract document removals, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((removals, metadata))
+    }
+}
+
 impl FromUnproved<platform::GetContractFeePotsRequest> for ContractFeePots {
     type Request = platform::GetContractFeePotsRequest;
     type Response = platform::GetContractFeePotsResponse;
@@ -1442,6 +1490,17 @@ mod contract_groups_tests {
 mod contract_moderation_tests {
     use super::*;
     use crate::types::contract_moderation::ContractModerationReason;
+    use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contract_document_removals_request_v0::Selection as RemovalsSelection;
+    use dapi_grpc::platform::v0::get_contract_document_removals_request::{
+        DocumentIds as RemovalsDocumentIds, GetContractDocumentRemovalsRequestV0,
+        Page as RemovalsPage, Version as RemovalsRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_document_removals_response::{
+        get_contract_document_removals_response_v0::Result as RemovalsResult,
+        ContractDocumentRemoval as ContractDocumentRemovalProto,
+        ContractDocumentRemovals as ContractDocumentRemovalsProto,
+        GetContractDocumentRemovalsResponseV0, Version as RemovalsResponseVersion,
+    };
     use dapi_grpc::platform::v0::get_contract_moderation_status_request::{
         GetContractModerationStatusRequestV0, Version as StatusRequestVersion,
     };
@@ -1590,5 +1649,116 @@ mod contract_moderation_tests {
             covered_but_unset,
             Err(Error::ResponseDecodeError { .. })
         ));
+    }
+
+    fn removals(
+        selection: Option<RemovalsSelection>,
+        result: Option<RemovalsResult>,
+    ) -> Result<Option<ContractDocumentRemovals>, Error> {
+        let request = platform::GetContractDocumentRemovalsRequest {
+            version: Some(RemovalsRequestVersion::V0(
+                GetContractDocumentRemovalsRequestV0 {
+                    contract_id: vec![1; 32],
+                    document_type_name: "post".to_string(),
+                    selection,
+                    prove: false,
+                },
+            )),
+        };
+        let response = platform::GetContractDocumentRemovalsResponse {
+            version: Some(RemovalsResponseVersion::V0(
+                GetContractDocumentRemovalsResponseV0 {
+                    result,
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+        ContractDocumentRemovals::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .map(|(removals, _)| removals)
+    }
+
+    fn removal_proto(seed: u8) -> ContractDocumentRemovalProto {
+        ContractDocumentRemovalProto {
+            document_id: vec![seed; 32],
+            document_owner_id: vec![seed + 0x10; 32],
+            moderator_id: vec![0x77; 32],
+            removed_at: 1_000 + u64::from(seed),
+            reason: Some(ContractModerationReasonProto {
+                code: None,
+                text: "spam".to_string(),
+            }),
+        }
+    }
+
+    #[test]
+    fn should_read_the_removals_the_request_asked_for() {
+        let page = Some(RemovalsSelection::Page(RemovalsPage {
+            start_after: None,
+            limit: Some(2),
+        }));
+        let read = removals(
+            page.clone(),
+            Some(RemovalsResult::Removals(ContractDocumentRemovalsProto {
+                removals: vec![removal_proto(1), removal_proto(2)],
+            })),
+        )
+        .expect("expected the removals to convert")
+        .expect("expected removals");
+        assert_eq!(read.removals().len(), 2);
+        assert_eq!(read.removals()[0].document_id, Identifier::from([1; 32]));
+        assert_eq!(
+            read.removals()[1].removal.moderator_id,
+            Identifier::from([0x77; 32])
+        );
+
+        // A page of more records than the request allowed, and a request that selects nothing.
+        let over_limit = removals(
+            Some(RemovalsSelection::Page(RemovalsPage {
+                start_after: None,
+                limit: Some(1),
+            })),
+            Some(RemovalsResult::Removals(ContractDocumentRemovalsProto {
+                removals: vec![removal_proto(1), removal_proto(2)],
+            })),
+        );
+        assert!(matches!(over_limit, Err(Error::ResponseDecodeError { .. })));
+        assert!(matches!(
+            removals(None, None),
+            Err(Error::RequestError { .. })
+        ));
+
+        // The unproved path never reads a proof.
+        let proved = removals(page, Some(RemovalsResult::Proof(Default::default())));
+        assert!(matches!(proved, Err(Error::ResponseDecodeError { .. })));
+    }
+
+    #[test]
+    fn should_refuse_a_removal_of_a_document_the_request_did_not_name() {
+        let by_ids = Some(RemovalsSelection::DocumentIds(RemovalsDocumentIds {
+            document_ids: vec![vec![1; 32], vec![3; 32]],
+        }));
+        let unasked = removals(
+            by_ids.clone(),
+            Some(RemovalsResult::Removals(ContractDocumentRemovalsProto {
+                removals: vec![removal_proto(2)],
+            })),
+        );
+        assert!(matches!(unasked, Err(Error::ResponseDecodeError { .. })));
+
+        // An id with no record is simply left out, which is an answer.
+        let partial = removals(
+            by_ids,
+            Some(RemovalsResult::Removals(ContractDocumentRemovalsProto {
+                removals: vec![removal_proto(1)],
+            })),
+        )
+        .expect("expected the removals to convert")
+        .expect("expected removals");
+        assert_eq!(partial.removals().len(), 1);
     }
 }

@@ -21,8 +21,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
 
 impl DataContractUpdateStateTransitionBasicStructureValidationV2 for DataContractUpdateTransition {
     /// Generation 2 (protocol version 14): generation 1, and a config that declares
-    /// moderation must be well formed (at least one list, a non-empty moderator set within
-    /// the limit). Whether a list may be turned off is judged against the stored contract by
+    /// moderation must be well formed (a list or a document type moderators can delete, a
+    /// non-empty moderator set within the limit). Whether a list may be turned off is judged against the stored contract by
     /// the state validation's config update rules, and that a newly named moderator exists
     /// by the state validation too.
     fn validate_basic_structure_v2(
@@ -36,7 +36,11 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV2 for DataContrac
         }
 
         if let Some(moderation) = self.data_contract().config().moderation() {
-            let result = moderation.validate(platform_version)?;
+            let result = moderation.validate(
+                self.data_contract()
+                    .has_document_type_deletable_by_moderators(),
+                platform_version,
+            )?;
             if !result.is_valid() {
                 return Ok(result);
             }

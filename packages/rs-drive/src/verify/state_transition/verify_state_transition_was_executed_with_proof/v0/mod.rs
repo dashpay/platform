@@ -32,11 +32,16 @@ use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
+use crate::drive::contract::moderation::types::{
+    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+};
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionWitnessSigned};
+use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_create_transition::DocumentFromCreateTransition;
 use dpp::state_transition::batch_transition::document_replace_transition::DocumentFromReplaceTransition;
@@ -55,7 +60,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractDocumentRemoval, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1149,12 +1154,21 @@ impl Drive {
                 }
                 Ok((root_hash, VerifiedPartialIdentity(identity)))
             }
+            StateTransition::ContractUserModeration(transition)
+                if transition.action().document().is_some() =>
+            {
+                verify_contract_document_deletion_execution(proof, transition, platform_version)
+            }
             StateTransition::ContractUserModeration(transition) => {
                 // The proof holds the entries of the lists the moderation touched, present or
                 // absent, and nothing more. A ban touched both lists the contract keeps (it
                 // removes a suspension too), so the contract's config says which to expect.
                 let contract_id = transition.data_contract_id();
-                let identity_id = transition.target_identity_id();
+                let identity_id = transition.target_identity_id().ok_or(Error::Proof(
+                    ProofError::CorruptedProof(
+                        "a moderation that names no document names an identity".to_string(),
+                    ),
+                ))?;
                 let lists = match transition.action() {
                     ContractUserModerationAction::Ban { .. } => {
                         let contract = known_contracts_provider_fn(&contract_id)?.ok_or(
@@ -1175,6 +1189,11 @@ impl Drive {
                     ContractUserModerationAction::Suspend { .. }
                     | ContractUserModerationAction::Unsuspend { .. } => {
                         vec![ContractModerationList::Suspensions]
+                    }
+                    ContractUserModerationAction::DeleteDocument { .. } => {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "a document deletion is verified above".to_string(),
+                        )))
                     }
                 };
                 // Only `lists` are proved: the verifier says nothing about the rest.
@@ -1205,6 +1224,7 @@ impl Drive {
                     ContractUserModerationAction::Unsuspend { .. } => {
                         statuses.suspended_until() == Some(None)
                     }
+                    ContractUserModerationAction::DeleteDocument { .. } => false,
                 };
                 if !as_expected {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!(
@@ -2692,7 +2712,60 @@ impl Drive {
     }
 }
 
-#[cfg(feature = "server")]
+/// A moderator's document deletion is proved by the record it left: the one of the document
+/// named, saying that the transition's signer removed it for the transition's reason. When is
+/// the block's to say, and whose the document was only the record knows. A document id is
+/// produced at most once, so the record is of that document and of no other.
+fn verify_contract_document_deletion_execution(
+    proof: &[u8],
+    transition: &ContractUserModerationTransition,
+    platform_version: &PlatformVersion,
+) -> Result<(RootHash, StateTransitionProofResult), Error> {
+    let contract_id = transition.data_contract_id();
+    let ContractUserModerationAction::DeleteDocument {
+        document_type_name,
+        document_id,
+        reason,
+    } = transition.action()
+    else {
+        return Err(Error::Proof(ProofError::CorruptedProof(
+            "only a document deletion is verified by its removal record".to_string(),
+        )));
+    };
+    let (root_hash, mut entries) = Drive::verify_contract_document_removals(
+        proof,
+        contract_id,
+        &ContractDocumentRemovalsQuery {
+            document_type_name: document_type_name.clone(),
+            selection: ContractDocumentRemovalsSelection::DocumentIds(vec![*document_id]),
+        },
+        platform_version,
+    )?;
+    match (entries.pop(), entries.is_empty()) {
+        (Some(entry), true)
+            if entry.document_id == *document_id
+                && entry.removal.moderator_id == transition.owner_id()
+                && entry.removal.reason == *reason =>
+        {
+            Ok((
+                root_hash,
+                VerifiedContractDocumentRemoval(
+                    contract_id,
+                    document_type_name.clone(),
+                    *document_id,
+                    entry.removal,
+                ),
+            ))
+        }
+        _ => Err(Error::Proof(ProofError::IncorrectProof(format!(
+            "proof of state transition execution does not show the {} on contract {} by {}",
+            transition.action(),
+            contract_id,
+            transition.owner_id()
+        )))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
