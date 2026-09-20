@@ -24,17 +24,35 @@ existing stored values and relationship rows survived, and reopen it through
 the ordinary migration plan before installing it. The backup is retained for
 recovery. Corruption, removed fields/entities, changed stored data, and newer
 unknown schema versions are errors; this is not a general retry for any
-container failure and never resets the store.
+container failure and never resets the store. Preservation is deliberately
+strict: existing SQLite primary keys, foreign keys and join rows must survive
+unchanged (entity ordinals are normalized by name). Even a semantically equivalent
+Core Data migration that renumbers primary keys is rejected; such a layout
+requires an explicit, separately validated migration rather than relaxing this
+bridge's data-loss checks.
+
+Before making full-size copies, the bridge checks free space on the store's
+volume. Its conservative estimate is four times the combined main-file and WAL
+size, plus the larger of 64 MiB or half that combined size. This budgets the two
+copies, inferred-migration/promotion journals and schema/index growth. It is a
+preflight estimate, not a reservation: other processes or larger-than-estimated
+growth can still exhaust space, and SQLite errors remain fatal without replacing
+the original. Insufficient headroom reports the needed and available space and
+asks the user to free device storage and retry; it does not delete wallet data.
 
 Applications with their own database paths must use
-`DashModelContainer.create(url:)` before opening the store elsewhere. Direct
+`DashModelContainer.create(url:)` or its async twin before opening the store
+elsewhere. Both synchronous `create` overloads may block for seconds while
+opening or migrating a large database and should not run on a UI actor. Direct
 `ModelContainer` construction bypasses this compatibility bridge. The iOS host
 uses `DashModelContainer.createAsync(url:)` while retaining its existing store
 path and lifecycle. This async variant opens/migrates on a dedicated serial
 queue and returns only the Sendable container; callers create and use contexts
 on their owning actor. Coalesce concurrent opens of the same URL in the app.
-The bridge is for local stores; CloudKit and in-memory containers continue to
-use their ordinary migration plan.
+The bridge is intentionally local-only: copying
+and replacing SQLite does not establish preservation of CloudKit's synchronization
+state. CloudKit and in-memory containers use their ordinary migration plan;
+unknown CloudKit schemas require a separately supported migration.
 
 Recovery files live beside the original store under
 `<store filename>.legacy-v2-backups/`. A successful bridge retains an
@@ -48,6 +66,16 @@ their candidate when validating a committed installation. These
 are local wallet data, protected like the original store and excluded from
 device backup. Do not upload them as release fixtures or edit the recovery
 journal to bypass a failure.
+
+A missing primary database with a pending journal requires deliberate recovery.
+The bridge never deletes or renames that primary file, so its absence is not a
+normal interrupted-install state; it may be an intentional external reset. The
+SDK preserves the journal and any copies and reports their location. It does
+not silently restore `original.store` (which could be older than a committed
+installation) or clear the marker and create an empty database. With the app
+closed, restore the authoritative original from a verified backup, or use support
+to identify an appropriate recovery source. If no source can be verified, retain
+the evidence and stop; do not edit the journal to force startup.
 
 The historical regression fixture reconstructs Platform
 `fd8d8d13e5d7cea17b00df5974934ab1910e8039` from the same checkout pair as iOS

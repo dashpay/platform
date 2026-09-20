@@ -137,6 +137,68 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         }
     }
 
+    func testDiskPreflightIncludesWALAndRejectsBeforeCopying() throws {
+        try withStore { url in
+            let writer = try DashLegacyStoreSQLite.Connection(url, writable: true)
+            try writer.execute("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0")
+            try writer.execute("UPDATE ZPERSISTENTWALLET SET ZNAME='committed WAL data'")
+            let main = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber).int64Value
+            let wal = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path + "-wal")[.size] as? NSNumber).int64Value
+            XCTAssertGreaterThan(wal, 0)
+            let required = try DashLegacySchemaBridge.requiredFreeSpace(at: url)
+            XCTAssertEqual(required, 4 * (main + wal) + max(64 * 1024 * 1024, (main + wal) / 2))
+            let original = try DashLegacyStoreSQLite.rawDigest(url)
+            XCTAssertThrowsError(try open(url, hooks: .init(
+                visit: { _, _ in XCTFail("Insufficient space must reject before snapshotting") },
+                availableCapacity: { directory in
+                    XCTAssertEqual(directory, url.deletingLastPathComponent())
+                    return required - 1
+                }))) { error in
+                guard case DashLegacyStoreSQLite.Failure.insufficientDiskSpace(let needed, let available) = error else {
+                    return XCTFail("Expected an actionable storage error, got \(error)")
+                }
+                XCTAssertEqual(needed, required)
+                XCTAssertEqual(available, required - 1)
+                XCTAssertTrue(error.localizedDescription.contains("Free device storage and retry"))
+            }
+            XCTAssertEqual(try DashLegacyStoreSQLite.rawDigest(url), original)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: DashLegacySchemaBridge.backupDirectory(for: url).path))
+            withExtendedLifetime(writer) {}
+        }
+        try withStore(baseline: true) { url in
+            _ = try open(url, hooks: .init(availableCapacity: { _ in
+                XCTFail("Registered stores must not require bridge copy headroom")
+                return 0
+            }))
+        }
+    }
+
+    func testSufficientDiskHeadroomPermitsMigration() throws {
+        try withStore { url in
+            let required = try DashLegacySchemaBridge.requiredFreeSpace(at: url)
+            let container = try open(url, hooks: .init(availableCapacity: { _ in required }))
+            try verifyRows(container.mainContext)
+        }
+    }
+
+    func testCopyReportsNonContentionSQLiteFailureWithoutReplacingDestination() throws {
+        try withStore { destination in
+            let source = destination.deletingLastPathComponent().appendingPathComponent("invalid.store")
+            try Data(repeating: 0x61, count: 4096).write(to: source)
+            let original = try DashLegacyStoreSQLite.rawDigest(destination)
+            XCTAssertThrowsError(try DashLegacyStoreSQLite.copy(from: source, to: destination)) { error in
+                guard case DashLegacyStoreSQLite.Failure.sqlite(let operation, let code, let reason) = error else {
+                    return XCTFail("Expected an actual SQLite status, got \(error)")
+                }
+                XCTAssertEqual(code & 0xff, SQLITE_NOTADB)
+                XCTAssertFalse(reason.lowercased().contains("busy"))
+                XCTAssertTrue(error.localizedDescription.contains("SQLite \(code)"))
+                XCTAssertFalse(operation.isEmpty)
+            }
+            XCTAssertEqual(try DashLegacyStoreSQLite.rawDigest(destination), original)
+        }
+    }
+
     func testHistoricalStorePreservesDataDefaultsBackupAndDoesNotBridgeAgain() throws {
         try withStore { url in
             try autoreleasepool {
@@ -267,16 +329,33 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
         }
     }
 
-    func testPendingRecoveryWithMissingOriginalNeverCreatesEmptyDatabase() throws {
-        try withStore { url in
-            XCTAssertThrowsError(try open(url, hooks: .init(visit: { phase, _ in
-                if phase == .beforeInstall { throw Injected.stop }
-            })))
-            let displaced = url.deletingLastPathComponent().appendingPathComponent("displaced.store")
-            try FileManager.default.moveItem(at: url, to: displaced)
-            XCTAssertThrowsError(try open(url))
-            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
-            XCTAssertTrue(FileManager.default.fileExists(atPath: displaced.path))
+    func testPendingRecoveryWithMissingOriginalRequiresDeliberateRecovery() throws {
+        for removeBackup in [false, true] {
+            try withStore { url in
+                XCTAssertThrowsError(try open(url, hooks: .init(visit: { phase, _ in
+                    if phase == .beforeInstall { throw Injected.stop }
+                })))
+                let root = DashLegacySchemaBridge.backupDirectory(for: url)
+                let marker = root.appendingPathComponent("active.json")
+                let journal = try Data(contentsOf: marker)
+                let displaced = url.deletingLastPathComponent().appendingPathComponent("displaced.store")
+                try FileManager.default.moveItem(at: url, to: displaced)
+                if removeBackup {
+                    for directory in try operationDirectories(url) { try FileManager.default.removeItem(at: directory) }
+                }
+                XCTAssertThrowsError(try open(url)) { error in
+                    XCTAssertTrue(error.localizedDescription.contains("Restore the original database from a verified backup"))
+                    XCTAssertTrue(error.localizedDescription.contains(root.path))
+                }
+                XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "Never resurrect a possibly intentional reset")
+                XCTAssertEqual(try Data(contentsOf: marker), journal, "Preserve recovery evidence even when copies are absent")
+                XCTAssertTrue(FileManager.default.fileExists(atPath: displaced.path))
+                // Deliberate restoration of the authoritative source unblocks
+                // normal recovery; the bridge can recreate missing scratch files.
+                try FileManager.default.moveItem(at: displaced, to: url)
+                let recovered = try open(url)
+                try verifyRows(recovered.mainContext)
+            }
         }
     }
 

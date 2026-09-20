@@ -101,7 +101,12 @@ public enum DashModelContainer {
         Schema(versionedSchema: DashSchemaV2.self)
     }
 
-    /// Create a persistent model container for storing data
+    /// Create a persistent model container for storing data.
+    /// This synchronous call can copy and migrate a full database and block for
+    /// seconds. Do not call it on a UI actor. Apps with an explicit local URL
+    /// can use `createAsync(url:)` to open on the SDK's dedicated queue.
+    /// The legacy compatibility bridge is local-only; CloudKit uses the normal
+    /// migration plan because copying SQLite cannot preserve its sync state.
     /// - Parameters:
     ///   - cloudKit: Whether to enable CloudKit sync (default: disabled)
     ///   - groupContainer: App group container configuration
@@ -123,7 +128,8 @@ public enum DashModelContainer {
     /// Open (or create) the store at an explicit file URL through the same
     /// schema and migration plan as `create(cloudKit:groupContainer:)`. The
     /// migration tests use it to open stores written by older builds exactly
-    /// the way the app would.
+    /// the way the app would. This synchronous call can block for seconds;
+    /// use `createAsync(url:)` on startup or from a UI actor.
     public static func create(url: URL) throws -> ModelContainer {
         let modelConfiguration = ModelConfiguration(
             schema: schema,

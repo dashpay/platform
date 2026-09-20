@@ -12,6 +12,7 @@ enum DashLegacySchemaBridge {
     enum Phase { case afterSnapshot, afterMigration, beforeInstall, writeLocked, afterCommit }
     struct Hooks {
         var visit: (Phase, URL) throws -> Void = { _, _ in }
+        var availableCapacity: (URL) throws -> Int64 = DashLegacySchemaBridge.availableCapacity(at:)
     }
     struct Identity: Codable, Equatable {
         let versions: [String]
@@ -33,14 +34,10 @@ enum DashLegacySchemaBridge {
             try ModelContainer(for: schema, migrationPlan: plan, configurations: [configuration])
         }
         guard !configuration.isStoredInMemoryOnly else { return try ordinary() }
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            if FileManager.default.fileExists(atPath: backupDirectory(for: url).appendingPathComponent("active.json").path) {
-                throw SQLite.Failure.unsupported("Original database is missing while migration recovery is pending")
-            }
-            return try ordinary()
-        }
         let root = backupDirectory(for: url)
         let marker = root.appendingPathComponent("active.json")
+        if !FileManager.default.fileExists(atPath: url.path),
+           !FileManager.default.fileExists(atPath: marker.path) { return try ordinary() }
         if !FileManager.default.fileExists(atPath: marker.path) {
             // Detection must not impose bridge-specific metadata or locking
             // requirements on stores handled by SwiftData's ordinary path.
@@ -55,6 +52,13 @@ enum DashLegacySchemaBridge {
         }
         let lock = try StoreLock(url: url)
         defer { lock.close() }
+        // Recheck under the recovery lock. Our transactional installation never
+        // removes the primary file, so absence may be an intentional external
+        // reset. Neither resurrect an older backup nor create an empty store.
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw SQLite.Failure.unsupported(
+                "The original database is missing while migration recovery is pending. Recovery files remain at \(root.path). Restore the original database from a verified backup with the app closed, or contact support for deliberate recovery. Do not delete the journal or create an empty database.")
+        }
         try SQLite.recoverRollbackJournal(at: url)
         try recoverIfNeeded(at: url, root: root)
         // Another opener may have finished migration before this lock was
@@ -69,6 +73,11 @@ enum DashLegacySchemaBridge {
             throw SQLite.Failure.unsupported("The old model contains unsupported or missing entities")
         }
         try rejectExternalStorage(at: url)
+        let requiredSpace = try requiredFreeSpace(at: url)
+        let availableSpace = max(0, try hooks.availableCapacity(url.deletingLastPathComponent()))
+        guard availableSpace >= requiredSpace else {
+            throw SQLite.Failure.insufficientDiskSpace(required: requiredSpace, available: availableSpace)
+        }
         let operation = UUID()
         let directory = root.appendingPathComponent(operation.uuidString, isDirectory: true)
         var directoryAttributes = try protectionAttributes(like: url)
@@ -153,6 +162,39 @@ enum DashLegacySchemaBridge {
 
     static func backupDirectory(for url: URL) -> URL {
         url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + ".legacy-v2-backups", isDirectory: true)
+    }
+
+    /// Conservative estimate, not a reservation: two complete copies plus
+    /// inferred-migration and promotion journals, with room for new columns and
+    /// indexes. Include WAL bytes because the backup incorporates committed WAL.
+    static func requiredFreeSpace(at url: URL) throws -> Int64 {
+        var sourceBytes: Int64 = 0
+        for suffix in ["", "-wal"] {
+            let path = url.path + suffix
+            if suffix.isEmpty || FileManager.default.fileExists(atPath: path) {
+                let attributes = try FileManager.default.attributesOfItem(atPath: path)
+                guard let size = (attributes[.size] as? NSNumber)?.int64Value, size >= 0 else {
+                    throw SQLite.Failure.database("Cannot estimate migration storage requirements")
+                }
+                let sum = sourceBytes.addingReportingOverflow(size)
+                guard !sum.overflow else { return Int64.max }
+                sourceBytes = sum.partialValue
+            }
+        }
+        let copiesAndJournals = sourceBytes.multipliedReportingOverflow(by: 4)
+        let margin = max(64 * 1024 * 1024, sourceBytes / 2)
+        let total = copiesAndJournals.partialValue.addingReportingOverflow(margin)
+        return copiesAndJournals.overflow || total.overflow ? Int64.max : total.partialValue
+    }
+
+    private static func availableCapacity(at directory: URL) throws -> Int64 {
+        let values = try directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        if let capacity = values.volumeAvailableCapacityForImportantUsage { return capacity }
+        let attributes = try FileManager.default.attributesOfFileSystem(forPath: directory.path)
+        guard let capacity = (attributes[.systemFreeSize] as? NSNumber)?.int64Value else {
+            throw SQLite.Failure.database("Cannot determine available storage; check device storage and retry")
+        }
+        return capacity
     }
 
     private static func needsBridge(_ source: Identity, plan: any SchemaMigrationPlan.Type) throws -> Bool {

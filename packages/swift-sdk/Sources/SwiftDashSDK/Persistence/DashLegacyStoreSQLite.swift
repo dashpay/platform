@@ -8,12 +8,20 @@ import SQLite3
 enum DashLegacyStoreSQLite {
     enum Failure: Error, LocalizedError {
         case database(String)
+        case sqlite(operation: String, code: Int32, reason: String)
+        case insufficientDiskSpace(required: Int64, available: Int64)
         case unsupported(String)
         case sourceChanged
 
         var errorDescription: String? {
             switch self {
             case .database(let reason): return "Legacy database migration failed: \(reason)"
+            case .sqlite(let operation, let code, let reason):
+                return "Legacy database migration failed during \(operation) (SQLite \(code)): \(reason)"
+            case .insufficientDiskSpace(let required, let available):
+                let needed = ByteCountFormatter.string(fromByteCount: required, countStyle: .file)
+                let free = ByteCountFormatter.string(fromByteCount: available, countStyle: .file)
+                return "Legacy database migration needs approximately \(needed) of free space; \(free) is available. Free device storage and retry. The original database has not been replaced."
             case .unsupported(let reason): return "Legacy database migration is not safe: \(reason)"
             case .sourceChanged: return "The database changed during migration. Close other users of the store and retry."
             }
@@ -27,9 +35,9 @@ enum DashLegacyStoreSQLite {
             let flags = writable ? SQLITE_OPEN_READWRITE | (create ? SQLITE_OPEN_CREATE : 0) : SQLITE_OPEN_READONLY
             let status = sqlite3_open_v2(url.path, &result, flags | SQLITE_OPEN_FULLMUTEX, nil)
             guard status == SQLITE_OK, let result else {
-                let reason = result.map { String(cString: sqlite3_errmsg($0)) } ?? "Cannot open SQLite store"
+                let failure = sqliteFailure(handle: result, operation: "opening a database", status: status)
                 sqlite3_close(result)
-                throw Failure.database(reason)
+                throw failure
             }
             handle = result
             sqlite3_busy_timeout(handle, 0)
@@ -77,23 +85,46 @@ enum DashLegacyStoreSQLite {
         // C backup handles borrow both Swift connection owners, including on errors.
         try withExtendedLifetime((input, output)) {
             guard let backup = sqlite3_backup_init(output.handle, "main", input.handle, "main") else {
-                throw Failure.database(String(cString: sqlite3_errmsg(output.handle)))
+                throw sqliteFailure(handle: output.handle, operation: "initializing the database copy",
+                                    status: sqlite3_errcode(output.handle))
             }
             var finished = false
             defer { if !finished { sqlite3_backup_finish(backup) } }
             // Zero pages still acquires the destination write lock. No destination
             // connection APIs may run until backup_finish; raw file reads are safe.
-            guard sqlite3_backup_step(backup, 0) == SQLITE_OK else {
-                throw Failure.database("Database is busy; cannot acquire migration write lock")
+            let lockStatus = sqlite3_backup_step(backup, 0)
+            guard lockStatus == SQLITE_OK else {
+                // The destination cannot be queried until backup_finish. It
+                // propagates the backup error to the destination connection.
+                sqlite3_backup_finish(backup)
+                finished = true
+                throw sqliteFailure(handle: output.handle, operation: "acquiring the migration write lock",
+                                    status: lockStatus)
             }
             try lockedDestinationCheck?()
-            guard sqlite3_backup_step(backup, -1) == SQLITE_DONE else {
-                throw Failure.database("SQLite could not complete the transactional database copy")
+            let copyStatus = sqlite3_backup_step(backup, -1)
+            guard copyStatus == SQLITE_DONE else {
+                sqlite3_backup_finish(backup)
+                finished = true
+                throw sqliteFailure(handle: output.handle, operation: "copying the database",
+                                    status: copyStatus)
             }
             let status = sqlite3_backup_finish(backup)
             finished = true
-            guard status == SQLITE_OK else { throw Failure.database("SQLite could not commit the database copy") }
+            guard status == SQLITE_OK else {
+                throw sqliteFailure(handle: output.handle, operation: "committing the database copy", status: status)
+            }
         }
+    }
+
+    private static func sqliteFailure(handle: OpaquePointer?, operation: String, status: Int32) -> Failure {
+        let extended = handle.map { sqlite3_extended_errcode($0) } ?? status
+        // Use the connection's extended code only if it describes this error.
+        // For example, SQLITE_BUSY from backup_step may leave no connection error.
+        let matches = (extended & 0xff) == (status & 0xff) && extended != SQLITE_OK
+        let code = matches ? extended : status
+        let reason = matches ? String(cString: sqlite3_errmsg(handle)) : String(cString: sqlite3_errstr(status))
+        return .sqlite(operation: operation, code: code, reason: reason)
     }
 
     static func recoverRollbackJournal(at url: URL) throws {
