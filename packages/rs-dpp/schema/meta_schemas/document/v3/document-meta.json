@@ -100,7 +100,8 @@
                 "contract",
                 "token",
                 "permanentDocument",
-                "identityPublicKey"
+                "identityPublicKey",
+                "deletableDocument"
               ]
             },
             "contractId": {
@@ -125,7 +126,7 @@
               ]
             },
             "documentType": {
-              "description": "The name of the referenced document type; it must forbid deletion (canBeDeleted: false)",
+              "description": "The name of the referenced document type; for permanentDocument it must forbid deletion (canBeDeleted: false), for deletableDocument it must allow it; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared",
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
@@ -139,7 +140,7 @@
               "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
             },
             "propertyAgreement": {
-              "description": "permanentDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId and $creatorId system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId never changes; either is checked when the referring document is written, not when the referenced document later moves",
+              "description": "permanentDocument and deletableDocument references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId and $creatorId system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId never changes; either is checked when the referring document is written, not when the referenced document later moves",
               "type": "object",
               "minProperties": 1,
               "maxProperties": 10,
@@ -178,7 +179,9 @@
           "allOf": [
             {
               "if": {
-                "properties": { "type": { "const": "permanentDocument" } },
+                "properties": {
+                  "type": { "enum": ["permanentDocument", "deletableDocument"] }
+                },
                 "required": ["type"]
               },
               "then": {
@@ -721,7 +724,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 256,
-            "description": "Only on indexOnly document types: names the property whose value is this index entry's member key — the docId-analog terminal key under the index's storage marker, stored as an Item instead of a Reference because there is no primary-storage row. Either \"$ownerId\" (the default when omitted) or an identifier property carrying a refersTo declaration (identity, contract, token, or permanentDocument). Must not repeat one of the index's listed properties. Available from protocol version 14."
+            "description": "Only on indexOnly document types: names the property whose value is this index entry's member key — the docId-analog terminal key under the index's storage marker, stored as an Item instead of a Reference because there is no primary-storage row. Either \"$ownerId\" (the default when omitted) or an identifier property carrying a refersTo declaration (identity, contract, token, permanentDocument, or deletableDocument). Must not repeat one of the index's listed properties. Available from protocol version 14."
           },
           "preallocated": {
             "type": "boolean",
@@ -1012,7 +1015,7 @@
         "type": "string"
       },
       "uniqueItems": true,
-      "description": "Names of top-level properties whose values are frozen at document creation on a mutable document type: a replace that changes, adds or removes any of them is rejected (DocumentImmutablePropertyChangedError, code 40128), unless the property is listed under immutableAllowSetting and the stored document has no value for it yet. Only allowed when documentsMutable is true (the default), where the other properties stay replaceable; on an immutable document type every property is already frozen. Every entry must name a declared top-level property that is not transient: system properties ($-prefixed) are excluded because the platform manages them, nested paths are not accepted (list the containing object to freeze it whole), and a transient property is never stored so it could never be written once frozen. On contract update the list may gain entries but never lose one. Available from protocol version 14."
+      "description": "Names of top-level properties whose values are frozen at document creation on a mutable document type: a replace that changes, adds or removes any of them is rejected (DocumentImmutablePropertyChangedError, code 40128), unless the property is listed under immutableAllowSetting and the stored document has no value for it yet, or the replace removes a refersTo deletableDocument reference whose referenced document has been deleted. Only allowed when documentsMutable is true (the default), where the other properties stay replaceable; on an immutable document type every property is already frozen. Every entry must name a declared top-level property that is not transient: system properties ($-prefixed) are excluded because the platform manages them, nested paths are not accepted (list the containing object to freeze it whole), and a transient property is never stored so it could never be written once frozen. On contract update the list may gain entries but never lose one. Available from protocol version 14."
     },
     "immutableAllowSetting": {
       "type": "array",

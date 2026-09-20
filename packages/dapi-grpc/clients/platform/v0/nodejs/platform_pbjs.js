@@ -42642,6 +42642,7 @@ $root.org = (function() {
                                  * @interface IChainedDocuments
                                  * @property {Array.<Uint8Array>|null} [innerDocuments] ChainedDocuments innerDocuments
                                  * @property {Array.<Uint8Array>|null} [outerDocuments] ChainedDocuments outerDocuments
+                                 * @property {Array.<Uint8Array>|null} [missingOuterIds] ChainedDocuments missingOuterIds
                                  */
 
                                 /**
@@ -42655,6 +42656,7 @@ $root.org = (function() {
                                 function ChainedDocuments(properties) {
                                     this.innerDocuments = [];
                                     this.outerDocuments = [];
+                                    this.missingOuterIds = [];
                                     if (properties)
                                         for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                             if (properties[keys[i]] != null)
@@ -42676,6 +42678,14 @@ $root.org = (function() {
                                  * @instance
                                  */
                                 ChainedDocuments.prototype.outerDocuments = $util.emptyArray;
+
+                                /**
+                                 * ChainedDocuments missingOuterIds.
+                                 * @member {Array.<Uint8Array>} missingOuterIds
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments
+                                 * @instance
+                                 */
+                                ChainedDocuments.prototype.missingOuterIds = $util.emptyArray;
 
                                 /**
                                  * Creates a new ChainedDocuments instance using the specified properties.
@@ -42707,6 +42717,9 @@ $root.org = (function() {
                                     if (message.outerDocuments != null && message.outerDocuments.length)
                                         for (var i = 0; i < message.outerDocuments.length; ++i)
                                             writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.outerDocuments[i]);
+                                    if (message.missingOuterIds != null && message.missingOuterIds.length)
+                                        for (var i = 0; i < message.missingOuterIds.length; ++i)
+                                            writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.missingOuterIds[i]);
                                     return writer;
                                 };
 
@@ -42750,6 +42763,11 @@ $root.org = (function() {
                                             if (!(message.outerDocuments && message.outerDocuments.length))
                                                 message.outerDocuments = [];
                                             message.outerDocuments.push(reader.bytes());
+                                            break;
+                                        case 3:
+                                            if (!(message.missingOuterIds && message.missingOuterIds.length))
+                                                message.missingOuterIds = [];
+                                            message.missingOuterIds.push(reader.bytes());
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -42800,6 +42818,13 @@ $root.org = (function() {
                                             if (!(message.outerDocuments[i] && typeof message.outerDocuments[i].length === "number" || $util.isString(message.outerDocuments[i])))
                                                 return "outerDocuments: buffer[] expected";
                                     }
+                                    if (message.missingOuterIds != null && message.hasOwnProperty("missingOuterIds")) {
+                                        if (!Array.isArray(message.missingOuterIds))
+                                            return "missingOuterIds: array expected";
+                                        for (var i = 0; i < message.missingOuterIds.length; ++i)
+                                            if (!(message.missingOuterIds[i] && typeof message.missingOuterIds[i].length === "number" || $util.isString(message.missingOuterIds[i])))
+                                                return "missingOuterIds: buffer[] expected";
+                                    }
                                     return null;
                                 };
 
@@ -42835,6 +42860,16 @@ $root.org = (function() {
                                             else if (object.outerDocuments[i].length >= 0)
                                                 message.outerDocuments[i] = object.outerDocuments[i];
                                     }
+                                    if (object.missingOuterIds) {
+                                        if (!Array.isArray(object.missingOuterIds))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.missingOuterIds: array expected");
+                                        message.missingOuterIds = [];
+                                        for (var i = 0; i < object.missingOuterIds.length; ++i)
+                                            if (typeof object.missingOuterIds[i] === "string")
+                                                $util.base64.decode(object.missingOuterIds[i], message.missingOuterIds[i] = $util.newBuffer($util.base64.length(object.missingOuterIds[i])), 0);
+                                            else if (object.missingOuterIds[i].length >= 0)
+                                                message.missingOuterIds[i] = object.missingOuterIds[i];
+                                    }
                                     return message;
                                 };
 
@@ -42854,6 +42889,7 @@ $root.org = (function() {
                                     if (options.arrays || options.defaults) {
                                         object.innerDocuments = [];
                                         object.outerDocuments = [];
+                                        object.missingOuterIds = [];
                                     }
                                     if (message.innerDocuments && message.innerDocuments.length) {
                                         object.innerDocuments = [];
@@ -42864,6 +42900,11 @@ $root.org = (function() {
                                         object.outerDocuments = [];
                                         for (var j = 0; j < message.outerDocuments.length; ++j)
                                             object.outerDocuments[j] = options.bytes === String ? $util.base64.encode(message.outerDocuments[j], 0, message.outerDocuments[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.outerDocuments[j]) : message.outerDocuments[j];
+                                    }
+                                    if (message.missingOuterIds && message.missingOuterIds.length) {
+                                        object.missingOuterIds = [];
+                                        for (var j = 0; j < message.missingOuterIds.length; ++j)
+                                            object.missingOuterIds[j] = options.bytes === String ? $util.base64.encode(message.missingOuterIds[j], 0, message.missingOuterIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.missingOuterIds[j]) : message.missingOuterIds[j];
                                     }
                                     return object;
                                 };
@@ -43137,6 +43178,7 @@ $root.org = (function() {
                                      * @interface ISubQueryResult
                                      * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IDocuments|null} [documents] SubQueryResult documents
                                      * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntries|null} [counts] SubQueryResult counts
+                                     * @property {Array.<Uint8Array>|null} [missingIds] SubQueryResult missingIds
                                      */
 
                                     /**
@@ -43148,6 +43190,7 @@ $root.org = (function() {
                                      * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.ISubQueryResult=} [properties] Properties to set
                                      */
                                     function SubQueryResult(properties) {
+                                        this.missingIds = [];
                                         if (properties)
                                             for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                                 if (properties[keys[i]] != null)
@@ -43169,6 +43212,14 @@ $root.org = (function() {
                                      * @instance
                                      */
                                     SubQueryResult.prototype.counts = null;
+
+                                    /**
+                                     * SubQueryResult missingIds.
+                                     * @member {Array.<Uint8Array>} missingIds
+                                     * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult
+                                     * @instance
+                                     */
+                                    SubQueryResult.prototype.missingIds = $util.emptyArray;
 
                                     // OneOf field names bound to virtual getters and setters
                                     var $oneOfFields;
@@ -43212,6 +43263,9 @@ $root.org = (function() {
                                             $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.encode(message.documents, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                                         if (message.counts != null && Object.hasOwnProperty.call(message, "counts"))
                                             $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.encode(message.counts, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                        if (message.missingIds != null && message.missingIds.length)
+                                            for (var i = 0; i < message.missingIds.length; ++i)
+                                                writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.missingIds[i]);
                                         return writer;
                                     };
 
@@ -43251,6 +43305,11 @@ $root.org = (function() {
                                                 break;
                                             case 2:
                                                 message.counts = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.decode(reader, reader.uint32());
+                                                break;
+                                            case 3:
+                                                if (!(message.missingIds && message.missingIds.length))
+                                                    message.missingIds = [];
+                                                message.missingIds.push(reader.bytes());
                                                 break;
                                             default:
                                                 reader.skipType(tag & 7);
@@ -43306,6 +43365,13 @@ $root.org = (function() {
                                                     return "counts." + error;
                                             }
                                         }
+                                        if (message.missingIds != null && message.hasOwnProperty("missingIds")) {
+                                            if (!Array.isArray(message.missingIds))
+                                                return "missingIds: array expected";
+                                            for (var i = 0; i < message.missingIds.length; ++i)
+                                                if (!(message.missingIds[i] && typeof message.missingIds[i].length === "number" || $util.isString(message.missingIds[i])))
+                                                    return "missingIds: buffer[] expected";
+                                        }
                                         return null;
                                     };
 
@@ -43331,6 +43397,16 @@ $root.org = (function() {
                                                 throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult.counts: object expected");
                                             message.counts = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.fromObject(object.counts);
                                         }
+                                        if (object.missingIds) {
+                                            if (!Array.isArray(object.missingIds))
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CompositeDocuments.SubQueryResult.missingIds: array expected");
+                                            message.missingIds = [];
+                                            for (var i = 0; i < object.missingIds.length; ++i)
+                                                if (typeof object.missingIds[i] === "string")
+                                                    $util.base64.decode(object.missingIds[i], message.missingIds[i] = $util.newBuffer($util.base64.length(object.missingIds[i])), 0);
+                                                else if (object.missingIds[i].length >= 0)
+                                                    message.missingIds[i] = object.missingIds[i];
+                                        }
                                         return message;
                                     };
 
@@ -43347,6 +43423,8 @@ $root.org = (function() {
                                         if (!options)
                                             options = {};
                                         var object = {};
+                                        if (options.arrays || options.defaults)
+                                            object.missingIds = [];
                                         if (message.documents != null && message.hasOwnProperty("documents")) {
                                             object.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.toObject(message.documents, options);
                                             if (options.oneofs)
@@ -43356,6 +43434,11 @@ $root.org = (function() {
                                             object.counts = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.toObject(message.counts, options);
                                             if (options.oneofs)
                                                 object.result = "counts";
+                                        }
+                                        if (message.missingIds && message.missingIds.length) {
+                                            object.missingIds = [];
+                                            for (var j = 0; j < message.missingIds.length; ++j)
+                                                object.missingIds[j] = options.bytes === String ? $util.base64.encode(message.missingIds[j], 0, message.missingIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.missingIds[j]) : message.missingIds[j];
                                         }
                                         return object;
                                     };

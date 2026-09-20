@@ -5919,6 +5919,7 @@ void GetDocumentsResponse_GetDocumentsResponseV1_ResultData_ClearVariantOneOfCas
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber) {
   GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_InnerDocumentsArray = 1,
   GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_OuterDocumentsArray = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_MissingOuterIdsArray = 3,
 };
 
 /**
@@ -5934,6 +5935,18 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocument
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *outerDocumentsArray;
 /** The number of items in @c outerDocumentsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger outerDocumentsArray_Count;
+
+/**
+ * The join values that have NO outer document, in first
+ * appearance order: referenced documents deleted after the
+ * inner document was written. Only a join property declaring
+ * `refersTo: deletableDocument` can report any; under
+ * `refersTo: permanentDocument` a missing document fails the
+ * query instead.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *missingOuterIdsArray;
+/** The number of items in @c missingOuterIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger missingOuterIdsArray_Count;
 
 @end
 
@@ -5966,6 +5979,7 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocume
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber) {
   GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber_Documents = 1,
   GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber_Counts = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber_MissingIdsArray = 3,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_Result_OneOfCase) {
@@ -5990,6 +6004,16 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocume
  * value's index-key bytes.
  **/
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_CountEntries *counts;
+
+/**
+ * DOCUMENTS by-id join only: the derived ids that have NO
+ * document, in first appearance order (referenced documents
+ * deleted since). Only a source property declaring
+ * `refersTo: deletableDocument` can report any.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *missingIdsArray;
+/** The number of items in @c missingIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger missingIdsArray_Count;
 
 @end
 

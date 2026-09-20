@@ -8,9 +8,14 @@
 //! verifier ([`DriveDocumentQuery::verify_chained_documents_proof`])
 //! reconstructs the merged query from the response's UNTRUSTED
 //! join-value hint, verifies in one pass, and requires the proven
-//! outer documents to match the PROVEN inner join values exactly — a
-//! missing referenced document is an invalid proof (`refersTo:
-//! permanentDocument` targets cannot dangle) — and this module's
+//! outer documents to match the PROVEN inner join values. For a
+//! `refersTo: permanentDocument` join property the match is exact: a
+//! missing referenced document is an invalid proof, since such a target
+//! cannot dangle. For a `refersTo: deletableDocument` join property a
+//! join value whose document is proven absent (deleted after the inner
+//! document was written) has no outer document; the proof must still
+//! show every derived `$id` present or absent, so an existing document
+//! cannot be passed off as deleted. This module's
 //! [`FromProof`] impl composes that with the tenderdash signature
 //! binding of the single root.
 //!
@@ -41,8 +46,16 @@ pub struct ChainedDocuments {
     /// property carries the pagination cursor.
     pub inner_documents: Vec<Document>,
     /// The joined outer documents, ordered by first appearance of their
-    /// id among the inner projections (deduplicated).
+    /// id among the inner projections (deduplicated). Under a
+    /// `deletableDocument` join property a deleted target has no entry
+    /// here, so this can be shorter than the distinct join values; match
+    /// the halves by id, not by position.
     pub outer_documents: Vec<Document>,
+    /// The join values that have NO outer document, in first-appearance
+    /// order: each one a PROVEN absence (the merged proof covers every
+    /// derived `$id`). Always empty under a `permanentDocument` join
+    /// property, where a missing document is an invalid proof.
+    pub missing_outer_ids: Vec<dpp::identifier::Identifier>,
 }
 
 /// Verify a chained query's single merged proof and bind its root hash
@@ -81,6 +94,7 @@ pub fn verify_chained_documents_proof(
         ChainedDocuments {
             inner_documents: result.inner_documents,
             outer_documents: result.outer_documents,
+            missing_outer_ids: result.missing_outer_ids,
         },
     ))
 }

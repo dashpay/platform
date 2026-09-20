@@ -15,12 +15,15 @@ use crate::error::Error;
 use crate::query::{DriveDocumentQuery, OrderClause, WhereClause, WhereOperator};
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::util::storage_flags::StorageFlags;
+use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DataContract;
+use dpp::tests::json_document::json_document_to_contract;
 use grovedb::{GroveDb, PathQuery};
 
 const POST_A: [u8; 32] = [0xA1; 32];
@@ -222,6 +225,8 @@ fn should_return_liked_posts_with_proof_parity() {
         proved_inner.iter().map(|d| d.id()).collect::<Vec<_>>(),
         "verifier and server agree on the inner half"
     );
+    assert!(outcome.result.missing_outer_ids.is_empty());
+    assert!(verified.missing_outer_ids.is_empty());
 }
 
 /// An empty inner page proves alone: the bootstrap pass finds no join
@@ -534,4 +539,178 @@ fn should_reject_a_proof_withholding_an_existing_referenced_post() {
             withheld.iter().map(|id| id[0]).collect::<Vec<_>>()
         );
     }
+}
+
+/// The likes contract with `post` deletable and `like.postId` a
+/// `refersTo: deletableDocument` reference to it.
+const DELETABLE_POSTS_CONTRACT: &str =
+    "tests/supporting_files/contract/yappr-likes/yappr-likes-deletable-posts-contract.json";
+
+fn setup_likes_with_deletable_posts() -> (crate::drive::Drive, DataContract) {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = json_document_to_contract(DELETABLE_POSTS_CONTRACT, false, pv)
+        .expect("expected to parse the deletable posts contract");
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the deletable posts contract");
+    (drive, contract)
+}
+
+fn delete_post(drive: &crate::drive::Drive, contract: &DataContract, id: [u8; 32]) {
+    drive
+        .delete_document_for_contract(
+            Identifier::from(id),
+            contract,
+            "post",
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version(),
+            None,
+        )
+        .expect("expected to delete the post");
+}
+
+/// A `deletableDocument` join leaves a deleted post out instead of
+/// failing the page: the like stays in the inner half, the outer half is
+/// one post short, and the server and the verifier agree. The same state
+/// under a `permanentDocument` join is refused
+/// (`should_refuse_a_dangling_reference`).
+#[test]
+fn should_leave_out_a_deleted_post_of_a_deletable_document_join() {
+    let pv = platform_version();
+    // Each post deleted in turn, two neighbours together, and all of them.
+    let mut cases: Vec<Vec<[u8; 32]>> = POSTS.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![POSTS[2], POSTS[3]]);
+    cases.push(POSTS.to_vec());
+
+    for deleted in cases {
+        let (drive, contract) = setup_likes_with_deletable_posts();
+        for (i, post) in POSTS.iter().enumerate() {
+            insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
+            let like = build_like(&contract, "dash", *post, OWNER_1, 1 + i as u64);
+            insert_like(&drive, &contract, &like, true).expect("insert like");
+        }
+        for post in &deleted {
+            delete_post(&drive, &contract, *post);
+        }
+        let expected: Vec<[u8; 32]> = POSTS
+            .iter()
+            .filter(|post| !deleted.contains(post))
+            .copied()
+            .collect();
+
+        let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
+        let outcome = drive
+            .query_chained_documents(&chained, None, None, pv)
+            .expect("a deleted post does not fail a deletableDocument join");
+        assert_eq!(outcome.result.inner_documents.len(), POSTS.len());
+        assert_eq!(
+            outcome
+                .result
+                .outer_documents
+                .iter()
+                .map(|d| d.id().to_buffer())
+                .collect::<Vec<_>>(),
+            expected,
+            "deleted {deleted:?}"
+        );
+        assert_eq!(
+            outcome
+                .result
+                .missing_outer_ids
+                .iter()
+                .map(|id| id.to_buffer())
+                .collect::<Vec<_>>(),
+            deleted,
+            "the deleted posts are reported, in first-appearance order"
+        );
+
+        let (proof, _) = drive
+            .query_chained_documents_with_proof(&chained, pv)
+            .expect("chained proof generates");
+        let (_root, verified) = chained
+            .verify_chained_documents_proof(proof.as_slice(), pv)
+            .expect("the proof verifies with the deleted posts proven absent");
+        assert_eq!(verified.inner_documents.len(), POSTS.len());
+        assert_eq!(verified.outer_documents, outcome.result.outer_documents);
+        assert_eq!(verified.missing_outer_ids, outcome.result.missing_outer_ids);
+    }
+}
+
+/// What makes leaving a deleted post out safe: on the very surface that
+/// tolerates an absent post, a prover still cannot pass an EXISTING one
+/// off as deleted. Withholding its `$id` leaves the proof without
+/// coverage for a key the verifier's re-derived query demands, and
+/// grovedb refuses it. No assembly rule stands behind this one.
+#[test]
+fn should_reject_a_proof_withholding_an_existing_post_of_a_deletable_document_join() {
+    let pv = platform_version();
+    let (drive, contract) = setup_likes_with_deletable_posts();
+    for (i, post) in POSTS.iter().enumerate() {
+        insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
+        let like = build_like(&contract, "dash", *post, OWNER_1, 1 + i as u64);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+    // One post really is deleted, so honest holes and withheld posts mix.
+    delete_post(&drive, &contract, POSTS[4]);
+    let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
+
+    let existing: Vec<[u8; 32]> = POSTS
+        .iter()
+        .filter(|post| **post != POSTS[4])
+        .copied()
+        .collect();
+    let mut cases: Vec<Vec<[u8; 32]>> = existing.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![POSTS[3], POSTS[5]]);
+    cases.push(vec![POSTS[0], POSTS[6]]);
+
+    for withheld in cases {
+        let served: Vec<Identifier> = POSTS
+            .iter()
+            .filter(|post| !withheld.contains(post))
+            .map(|post| Identifier::from(*post))
+            .collect();
+        let path_queries = chained
+            .chained_proof_path_queries(&served, pv)
+            .expect("path queries");
+        let path_query_refs: Vec<&PathQuery> = path_queries.iter().collect();
+        let dishonest_proof = drive
+            .grove
+            .prove_query_many(path_query_refs, None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("the dishonest proof generates");
+
+        let refused = chained.verify_chained_documents_proof(dishonest_proof.as_slice(), pv);
+        assert!(
+            matches!(refused, Err(Error::GroveDB(_))),
+            "withholding {:?} must be refused by grovedb, got {refused:?}",
+            withheld.iter().map(|id| id[0]).collect::<Vec<_>>()
+        );
+    }
+
+    // The honest proof of the same state verifies, one post short.
+    let (proof, _) = drive
+        .query_chained_documents_with_proof(&chained, pv)
+        .expect("chained proof generates");
+    let (_root, verified) = chained
+        .verify_chained_documents_proof(proof.as_slice(), pv)
+        .expect("the honest proof verifies");
+    assert_eq!(
+        verified
+            .outer_documents
+            .iter()
+            .map(|d| d.id().to_buffer())
+            .collect::<Vec<_>>(),
+        existing
+    );
+    assert_eq!(verified.missing_outer_ids, vec![Identifier::from(POSTS[4])]);
 }
