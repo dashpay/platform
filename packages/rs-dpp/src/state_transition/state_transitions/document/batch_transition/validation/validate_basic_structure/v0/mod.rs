@@ -105,6 +105,27 @@ impl BatchTransition {
                     ));
                 }
 
+                // Version 2 of the document base (the action fee agreement) joined the wire at
+                // PV14. Old software cannot decode it, so no historical block holds one; the
+                // check makes new software agree with old software while an earlier protocol
+                // version is active. Versions 0 and 1 predate any reading of these bounds,
+                // which the shipped tables cap at 0 beside a default of 1, so they are not
+                // judged.
+                let base_version = transition.base().feature_version();
+                let base_bounds = &platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .document_base_state_transition;
+                if base_version >= 2 && !base_bounds.check_version(base_version) {
+                    result.add_error(BasicError::UnsupportedVersionError(
+                        UnsupportedVersionError::new(
+                            base_version,
+                            base_bounds.min_version,
+                            base_bounds.max_version,
+                        ),
+                    ));
+                }
+
                 // The indexOnlyDelete kind joined the wire at PV14. Old
                 // software cannot decode it at all, so no historical block
                 // can contain one — this check exists so that NEW software
@@ -377,6 +398,69 @@ mod tests {
             "PV14 must admit an indexOnly delete, got {:?}",
             result.errors
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // document base version 2 (the action fee agreement) wire gate
+    // -----------------------------------------------------------------------
+
+    /// A version 2 base cannot decode on pre-4.2 software, so new software must refuse it
+    /// while an earlier protocol version is active. Version 1, which the shipped tables cap
+    /// out of their own bounds, keeps passing everywhere.
+    #[test]
+    fn should_gate_the_version_2_document_base_by_protocol_version() {
+        use crate::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
+        use crate::state_transition::batch_transition::document_base_transition::v2::DocumentBaseTransitionV2;
+
+        let create_with_base = |base: DocumentBaseTransition| {
+            DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base,
+                entropy: [0u8; 32],
+                data: BTreeMap::new(),
+                prefunded_voting_balance: None,
+            }))
+        };
+        let unsupported = |batch: &BatchTransition, platform_version: &PlatformVersion| {
+            batch
+                .validate_base_structure_v0(platform_version)
+                .expect("no protocol err")
+                .errors
+                .iter()
+                .any(|error| {
+                    matches!(
+                        error,
+                        ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+                    )
+                })
+        };
+
+        let version_2 = make_batch_v0(vec![create_with_base(DocumentBaseTransition::V2(
+            DocumentBaseTransitionV2 {
+                id: Identifier::new([1u8; 32]),
+                identity_contract_nonce: 1,
+                document_type_name: "test_doc".to_string(),
+                data_contract_id: Identifier::new([0xAA; 32]),
+                token_payment_info: None,
+                action_fee_agreement: None,
+            },
+        ))]);
+        let version_1 = make_batch_v0(vec![create_with_base(DocumentBaseTransition::V1(
+            DocumentBaseTransitionV1 {
+                id: Identifier::new([1u8; 32]),
+                identity_contract_nonce: 1,
+                document_type_name: "test_doc".to_string(),
+                data_contract_id: Identifier::new([0xAA; 32]),
+                token_payment_info: None,
+            },
+        ))]);
+
+        let pv13 = PlatformVersion::get(13).expect("PV13 exists");
+        assert!(unsupported(&version_2, pv13));
+        assert!(!unsupported(&version_1, pv13));
+
+        let latest = PlatformVersion::latest();
+        assert!(!unsupported(&version_2, latest));
+        assert!(!unsupported(&version_1, latest));
     }
 
     // -----------------------------------------------------------------------

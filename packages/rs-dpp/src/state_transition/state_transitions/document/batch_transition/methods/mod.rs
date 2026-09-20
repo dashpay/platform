@@ -4,6 +4,7 @@ use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+use crate::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "state-transition-signing")]
@@ -20,6 +21,9 @@ use crate::identity::IdentityPublicKey;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
+use crate::state_transition::batch_transition::batched_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
+};
 use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
@@ -54,6 +58,27 @@ pub struct StateTransitionCreationOptions {
     pub batch_feature_version: Option<FeatureVersion>,
     pub method_feature_version: Option<FeatureVersion>,
     pub base_feature_version: Option<FeatureVersion>,
+    /// The action fees the document transition agrees to pay. Required when the document type
+    /// charges a fee for the action (protocol version 14).
+    pub action_fee_agreement: Option<DocumentActionFeeAgreement>,
+}
+
+impl StateTransitionCreationOptions {
+    /// `transition` carrying the options' action fee agreement, if they name one. A base too
+    /// old to carry it is an error: the transition must not go out without what its signer
+    /// agreed to.
+    pub fn apply_action_fee_agreement(
+        &self,
+        transition: impl Into<DocumentTransition>,
+    ) -> Result<DocumentTransition, ProtocolError> {
+        let mut transition = transition.into();
+        if let Some(action_fee_agreement) = self.action_fee_agreement {
+            transition
+                .base_mut()
+                .try_set_action_fee_agreement(action_fee_agreement)?;
+        }
+        Ok(transition)
+    }
 }
 
 impl DocumentsBatchTransitionMethodsV0 for BatchTransition {

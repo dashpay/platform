@@ -351,6 +351,19 @@ impl BatchTransitionAction {
             .collect()
     }
 
+    /// Whether every document transition that owes an action fee agreed to it: the transition
+    /// names the amounts and the pricing its document type declares, and, for a fee priced by
+    /// the fee multiplier, accepts the multiplier of the epoch the batch executes in. The
+    /// inner error is the consensus error of the first transition that did not. Both sides
+    /// travel on the action, so this reads no state.
+    pub fn validate_action_fee_agreements(
+        &self,
+    ) -> Result<Result<(), ConsensusError>, ProtocolError> {
+        match self {
+            BatchTransitionAction::V0(v0) => v0.validate_action_fee_agreements(),
+        }
+    }
+
     /// Records the contract owner who sponsors the batch's gas, with their balance
     pub fn set_gas_sponsor(&mut self, gas_sponsor: Option<ResolvedGasSponsor>) {
         match self {

@@ -15,6 +15,9 @@ use dpp::block::epoch::{Epoch, EpochIndex};
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+use dpp::data_contract::document_type::action_fees::agreement::{
+    AgreedFeeMultiplier, DocumentActionFeeAgreement,
+};
 use dpp::data_contract::document_type::action_fees::ContractFeePot;
 use dpp::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
@@ -25,7 +28,9 @@ use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::{platform_value, Bytes32, Identifier, Value};
 use dpp::serialization::PlatformSerializable;
+use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::contract_fee_claim_transition::methods::ContractFeeClaimTransitionMethodsV0;
 use dpp::state_transition::contract_fee_claim_transition::ContractFeeClaimTransition;
@@ -779,7 +784,19 @@ async fn should_let_a_live_contract_gain_fees_through_a_new_document_type() {
         None,
         &setup.stranger.signer,
         platform_version,
-        None,
+        // The stranger agrees to the fee the new document type declares: it is fixed, so the
+        // agreement names no fee multiplier whatever is known.
+        Some(StateTransitionCreationOptions {
+            action_fee_agreement: DocumentActionFeeAgreement::for_document_type_action(
+                paid_note,
+                DocumentTransitionActionType::Create,
+                AgreedFeeMultiplier {
+                    known_permille: 1_000,
+                    increase_tolerance_percent: 0,
+                },
+            ),
+            ..Default::default()
+        }),
     )
     .await
     .expect("expected to build the paid note creation");

@@ -274,12 +274,59 @@ nobody can pay refuses the action for an insufficient balance, a consensus
 error, where an overflow would have failed every transition on the action with
 an internal one.
 
-**The amounts never change.** Nobody signs the fee on a transition, so what a
-contract showed when it was published is the only thing its users agreed to.
-A contract update may not add, change or remove the `actionFees` of an
-existing document type, nor switch their pricing (`DocumentTypeUpdateError`).
-A document type *added* by an update may declare its own, so a live contract
-gets fees through new document types only.
+**The transition agrees to the fee.** The contract is read when the action
+executes, not when the transition was signed, so a transition that said
+nothing would pay whatever the contract declares by then. Every transition on
+an action that charges a fee therefore carries an *action fee agreement*
+(`$actionFeeAgreement`, on version 2 of the document base transition, the
+default from protocol version 14):
+
+```json
+"$actionFeeAgreement": {
+  "$formatVersion": "0",
+  "owner": 10000000,
+  "moderators": 100000000,
+  "feeMultiplier": { "knownPermille": 1000, "increaseTolerancePercent": 20 }
+}
+```
+
+- `owner` and `moderators` are the amounts the document type declares for the
+  action, before any multiplier. They must **match exactly**, each pot on its
+  own: a fee that was raised, lowered, or moved between the pots since the
+  signer read the contract refuses the action
+  (`DocumentActionFeeAgreementMismatchError`, 40132), and the signer reads the
+  contract again.
+- `feeMultiplier` says how the fee is priced. It is named for a
+  `feeMultiplier` fee and left out for a `fixed` one, and an agreement to the
+  other pricing is the same mismatch. `knownPermille` is the fee multiplier the
+  signer priced the fee with, and `increaseTolerancePercent` how far above it
+  the multiplier of the executing epoch may be, in percent of the known one:
+  20 accepts up to 1.2 times. A transition signed just before an epoch
+  boundary is then not refused for a small move; one the multiplier outran is
+  (`DocumentActionFeeMultiplierNotToleratedError`, 40133). A multiplier that
+  fell is always accepted. What is charged follows the epoch's multiplier,
+  never the known one.
+- A transition without an agreement on an action that charges a fee is
+  refused (`DocumentActionFeeAgreementNotSetError`, 40131), whoever pays: a
+  sponsored action says what it agrees to as well, since a preferred sponsor
+  can hand the fee back to the signer. An agreement on an action that charges
+  nothing is ignored.
+
+All three are paid refusals that bump the nonce and charge no fee. They are
+judged in the batch's advanced structure validation
+(`BatchTransitionAction::validate_action_fee_agreements`), off the action
+alone: the base action carries the declaration beside the agreement, and the
+batch action the multiplier its transformer read. The mempool runs the same
+check. A client builds the agreement from the contract it showed its user
+with `DocumentActionFeeAgreement::for_document_type_action`, never from a
+contract fetched behind their back at signing time.
+
+**The amounts do not change yet.** A contract update may not add, change or
+remove the `actionFees` of an existing document type, nor switch their pricing
+(`DocumentTypeUpdateError`). A document type *added* by an update may declare
+its own, so a live contract gets fees through new document types only. The
+agreement is what makes lifting this safe later: an owner who changes a fee
+cannot make a transition signed against the old one pay the new one.
 
 **Who pays.** Whoever pays the gas pays the action fee: the signer, or the
 contract owner when they sponsor the gas. A sponsor's balance has to cover the

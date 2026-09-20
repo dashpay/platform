@@ -3,6 +3,7 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
@@ -160,6 +161,31 @@ impl DocumentSetPriceTransitionBuilder {
         creation_options: StateTransitionCreationOptions,
     ) -> Self {
         self.state_transition_creation_options = Some(creation_options);
+        self
+    }
+
+    /// Adds what the document set price transition agrees to pay in action fees. Required when
+    /// the document type charges a fee for the action: build it from the contract the user was
+    /// shown with `DocumentActionFeeAgreement::for_document_type_action`, so that a fee changed
+    /// since is refused instead of paid.
+    ///
+    /// Call it after `with_state_transition_creation_options`, which replaces the options this
+    /// is kept in.
+    ///
+    /// # Arguments
+    ///
+    /// * `action_fee_agreement` - The action fee agreement to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_action_fee_agreement(
+        mut self,
+        action_fee_agreement: DocumentActionFeeAgreement,
+    ) -> Self {
+        self.state_transition_creation_options
+            .get_or_insert_with(Default::default)
+            .action_fee_agreement = Some(action_fee_agreement);
         self
     }
 

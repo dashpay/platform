@@ -377,6 +377,20 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     staying in the pot. `DRIVE_ABCI_VALIDATION_VERSIONS_V10` turns its gates
 ///     on, `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` adds its converter, and
 ///     the verify table gains `verify_contract_fee_pots`.
+/// 18. **Document transitions agree to their action fee**: version 2 of the
+///     document base transition, the default from this version
+///     (`STATE_TRANSITION_SERIALIZATION_VERSIONS_V3`, whose
+///     `document_base_state_transition` bounds the batch's basic structure
+///     validation enforces from version 2 on), carries an action fee
+///     agreement: the owner and moderators amounts the signer saw declared,
+///     which must match the document type's exactly, and for a fee priced by
+///     the fee multiplier the multiplier they knew with the increase, in
+///     percent, they accept. Batch advanced structure 1
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`) refuses, as a paid nonce bump
+///     that charges no fee, an action that charges a fee without an agreement
+///     (40131), with one to other amounts or another pricing (40132), or
+///     whose epoch's multiplier rose beyond the tolerance (40133), so a
+///     contract whose fees change cannot make a signed transition pay them.
 ///
 /// * `ShieldFromIdentity` (state transition type 21) activates:
 ///   `SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION = 14` gates it in

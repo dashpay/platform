@@ -26,12 +26,17 @@ pub(crate) mod gas_sponsorship_tests {
     use dpp::data_contract::document_type::accessors::{
         DocumentTypeV0MutGetters, DocumentTypeV1Getters, DocumentTypeV1Setters,
     };
+    use dpp::data_contract::document_type::action_fees::agreement::{
+        AgreedFeeMultiplier, DocumentActionFeeAgreement,
+    };
     use dpp::data_contract::DataContract;
     use dpp::document::Document;
     use dpp::identity::accessors::IdentitySettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::prelude::{Identifier, Revision};
+    use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+    use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
     use dpp::state_transition::StateTransition;
     use dpp::tokens::calculate_token_id;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -375,6 +380,68 @@ pub(crate) mod gas_sponsorship_tests {
             signer: &SimpleSigner,
             requested: Option<GasFeesPaidBy>,
         ) -> StateTransition {
+            let agreement = self.card_action_fee_agreement(
+                DocumentTransitionActionType::Create,
+                self.fee_schedule_multiplier(),
+            );
+            self.card_creation_agreeing_by(creator, key, signer, requested, agreement)
+                .await
+        }
+
+        /// The fee multiplier of the fee schedule, with no tolerance: what a signer knows on a
+        /// chain whose epochs all carry the schedule's multiplier
+        pub(crate) fn fee_schedule_multiplier(&self) -> AgreedFeeMultiplier {
+            AgreedFeeMultiplier {
+                known_permille: self
+                    .platform_version
+                    .fee_version
+                    .uses_version_fee_multiplier_permille
+                    .expect("expected the fee schedule to set a multiplier"),
+                increase_tolerance_percent: 0,
+            }
+        }
+
+        /// What `action` on a card must agree to pay in action fees, read off the contract the
+        /// harness holds; `None` when the card type charges nothing for it
+        pub(crate) fn card_action_fee_agreement(
+            &self,
+            action: DocumentTransitionActionType,
+            fee_multiplier: AgreedFeeMultiplier,
+        ) -> Option<DocumentActionFeeAgreement> {
+            DocumentActionFeeAgreement::for_document_type_action(
+                self.contract
+                    .document_type_for_name("card")
+                    .expect("expected the card document type"),
+                action,
+                fee_multiplier,
+            )
+        }
+
+        /// The user's card creation asking `requested` for the gas and carrying `agreement`
+        pub(crate) async fn card_creation_agreeing(
+            &self,
+            requested: GasFeesPaidBy,
+            agreement: Option<DocumentActionFeeAgreement>,
+        ) -> StateTransition {
+            self.card_creation_agreeing_by(
+                &self.user,
+                &self.user_key,
+                &self.user_signer,
+                Some(requested),
+                agreement,
+            )
+            .await
+        }
+
+        /// `creator`'s card creation carrying `agreement` as its action fee agreement
+        pub(crate) async fn card_creation_agreeing_by(
+            &self,
+            creator: &Identity,
+            key: &IdentityPublicKey,
+            signer: &SimpleSigner,
+            requested: Option<GasFeesPaidBy>,
+            agreement: Option<DocumentActionFeeAgreement>,
+        ) -> StateTransition {
             let (document, entropy) = self.card_of(creator);
 
             BatchTransition::new_document_creation_transition_from_document(
@@ -397,7 +464,10 @@ pub(crate) mod gas_sponsorship_tests {
                 }),
                 signer,
                 self.platform_version,
-                None,
+                Some(StateTransitionCreationOptions {
+                    action_fee_agreement: agreement,
+                    ..Default::default()
+                }),
             )
             .await
             .expect("expected a batch transition")

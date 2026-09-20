@@ -92,10 +92,13 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             max_version: 1,
             default_current_version: 1,
         },
+        // Version 2 of the base carries the action fee agreement. The earlier tables say
+        // `max_version: 0` beside a default of 1 because nothing ever read these bounds; from
+        // version 2 on the batch's basic structure validation does.
         document_base_state_transition: FeatureVersionBounds {
             min_version: 0,
-            max_version: 0,
-            default_current_version: 1,
+            max_version: 2,
+            default_current_version: 2,
         },
         document_create_state_transition: DocumentFeatureVersionBounds {
             bounds: FeatureVersionBounds {
