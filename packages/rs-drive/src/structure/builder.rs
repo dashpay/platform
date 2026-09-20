@@ -1,5 +1,5 @@
 use crate::structure::{
-    ElementKind, FlagsKind, KeyEncoding, KeyMatcher, KeySpec, Presence, StructureNode,
+    ElementKind, FlagsKind, KeyEncoding, KeyMatcher, KeySpec, LayerState, Presence, StructureNode,
 };
 use dpp::util::deserializer::ProtocolVersion;
 
@@ -23,6 +23,7 @@ impl StructureNode {
             description: String::new(),
             recurse: None,
             opaque: None,
+            states: vec![],
             children: vec![],
         }
     }
@@ -173,6 +174,19 @@ impl StructureNode {
     /// The layer below is not a Merk of elements; says what it holds
     pub fn opaque(mut self, contents: &str) -> Self {
         self.opaque = Some(contents.to_string());
+        self
+    }
+
+    /// Adds a state the layer below goes through. States are listed in the
+    /// order the layer goes through them; `keys` are the segments of the
+    /// children the layer holds in that state.
+    pub fn state(mut self, name: &str, title: &str, description: &str, keys: &[&str]) -> Self {
+        self.states.push(LayerState {
+            name: name.to_string(),
+            title: title.to_string(),
+            description: description.to_string(),
+            keys: keys.iter().map(|key| key.to_string()).collect(),
+        });
         self
     }
 

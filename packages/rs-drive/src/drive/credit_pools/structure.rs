@@ -105,6 +105,46 @@ pub(crate) fn structure() -> StructureNode {
             "One epoch. Trees for 50 eras of epochs are created at genesis so storage fees can \
              be spread forward.",
         )
+        .state(
+            "future",
+            "Future",
+            "Created at genesis with every epoch of the next 50 eras, so that storage fees \
+             can be spread forward to it. It holds only its share of those fees.",
+            &["storage_fees"],
+        )
+        .state(
+            "running",
+            "Running, or ended and not paid yet",
+            "Started by its first block, which in one batch writes the start fields, the \
+             protocol version, the fee multiplier and the proposers tree, and pays the \
+             block's processing fees in. The epoch stays like this after it ends, until \
+             its proposers are paid.",
+            &[
+                "start_block_core_height",
+                "start_block_height",
+                "proposers",
+                "processing_fees",
+                "storage_fees",
+                "start_time",
+                "protocol_version",
+                "fee_multiplier",
+            ],
+        )
+        .state(
+            "paid",
+            "Paid out",
+            "One batch pays the proposers, deletes the proposers tree and both fee items, \
+             and writes the finished epoch info. The summary exists since protocol \
+             version 9; before that a paid epoch kept its start fields only.",
+            &[
+                "start_block_core_height",
+                "finished_epoch_info",
+                "start_block_height",
+                "start_time",
+                "protocol_version",
+                "fee_multiplier",
+            ],
+        )
         .children(vec![
             StructureNode::fixed(
                 "start_block_core_height",
@@ -128,9 +168,13 @@ pub(crate) fn structure() -> StructureNode {
             )
             .ascii()
             .kind(ElementKind::Item)
+            .since(9)
             .lazy()
             .value("serialized FinalizedEpochInfo")
-            .describe("A summary written when the epoch is paid out."),
+            .describe(
+                "A summary of the epoch, written by the batch that pays it out \
+                 and deletes its proposers and fee items.",
+            ),
             StructureNode::fixed(
                 "start_block_height",
                 KEY_START_BLOCK_HEIGHT,

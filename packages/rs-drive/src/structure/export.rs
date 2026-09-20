@@ -64,6 +64,22 @@ pub struct LayerShape {
     pub origin: String,
     /// The root of the binary tree
     pub tree: ShapeNode,
+    /// For a layer that goes through states: its shape in each of them, in
+    /// the order of the node's `states`. `origin` and `tree` above are those
+    /// of the state holding the most keys.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub states: Vec<StateShape>,
+}
+
+/// The exact Merk binary tree of one layer in one of its states.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct StateShape {
+    /// The name of the state, as the node lists it
+    pub state: String,
+    /// How the layer was brought into this state
+    pub origin: String,
+    /// The root of the binary tree
+    pub tree: ShapeNode,
 }
 
 /// One node of a Merk binary tree.

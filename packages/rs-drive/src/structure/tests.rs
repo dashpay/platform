@@ -275,7 +275,7 @@ mod fixtures {
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
-    use crate::structure::export::LayerShape;
+    use crate::structure::export::{LayerShape, ShapeNode, StateShape};
     use crate::structure::shape::shape_at;
     use crate::structure::{KeySpec, NodeId};
     use crate::util::batch::drive_op_batch::AddressFundsOperationType;
@@ -291,7 +291,9 @@ mod fixtures {
     use crate::util::test_helpers::setup_contract;
     use dpp::address_funds::PlatformAddress;
     use dpp::block::block_info::BlockInfo;
+    use crate::drive::credit_pools::epochs::paths::EpochProposers;
     use dpp::block::epoch::Epoch;
+    use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
     use dpp::contract_group::{
         generate_contract_group_id, ContractGroupMember, ContractGroupMembership,
         ContractGroupRegistration,
@@ -357,7 +359,6 @@ mod fixtures {
         "saved_block_transactions.compacted_expiration.expiration",
         "saved_block_transactions.address_balances.block",
         "pools.pending_epoch_refunds.epoch",
-        "pools.epoch.finished_epoch_info",
         "misc.genesis_core_height",
         "spent_asset_locks.outpoint",
         "withdrawals.queue.transaction",
@@ -386,14 +387,105 @@ mod fixtures {
     pub(super) struct FixtureRun {
         visited: BTreeSet<NodeId>,
         fullest: BTreeMap<NodeId, (usize, LayerShape)>,
+        states: BTreeMap<NodeId, BTreeMap<String, StateShape>>,
+    }
+
+    fn keys_of(tree: &ShapeNode, keys: &mut BTreeSet<Vec<u8>>) {
+        keys.insert(tree.key.clone());
+        for child in [&tree.left, &tree.right].into_iter().flatten() {
+            keys_of(child, keys);
+        }
     }
 
     impl FixtureRun {
-        pub(super) fn shapes(self) -> BTreeMap<NodeId, LayerShape> {
-            self.fullest
+        /// The shapes of the layers below a template. A layer that goes
+        /// through states gets one shape per state, which must have been
+        /// recorded from an instance holding exactly the keys the state
+        /// declares; the state with the most keys is the layer's main shape.
+        pub(super) fn shapes(mut self) -> BTreeMap<NodeId, LayerShape> {
+            let structure = drive_structure();
+            let mut shapes: BTreeMap<NodeId, LayerShape> = self
+                .fullest
                 .into_iter()
                 .map(|(id, (_, shape))| (id, shape))
-                .collect()
+                .collect();
+
+            structure.walk(&mut |node| {
+                if node.states.is_empty() {
+                    return;
+                }
+                let mut recorded = self.states.remove(&node.id).unwrap_or_default();
+                let states: Vec<StateShape> = node
+                    .states
+                    .iter()
+                    .map(|state| {
+                        let shape = recorded.remove(&state.name).unwrap_or_else(|| {
+                            panic!(
+                                "no fixture records `{}` in its `{}` state",
+                                node.id, state.name
+                            )
+                        });
+                        let declared: BTreeSet<Vec<u8>> = state
+                            .keys
+                            .iter()
+                            .map(|segment| {
+                                node.children
+                                    .iter()
+                                    .find(|child| child.segment == *segment)
+                                    .and_then(|child| child.fixed_key_bytes())
+                                    .expect("the lint checks that state keys are fixed children")
+                                    .to_vec()
+                            })
+                            .collect();
+                        let mut found = BTreeSet::new();
+                        keys_of(&shape.tree, &mut found);
+                        assert_eq!(
+                            found, declared,
+                            "`{}` in its `{}` state holds other keys than the state declares",
+                            node.id, state.name
+                        );
+                        shape
+                    })
+                    .collect();
+                let main = states
+                    .iter()
+                    .zip(&node.states)
+                    .max_by_key(|(_, state)| state.keys.len())
+                    .map(|(shape, _)| shape.clone())
+                    .expect("a node with states has at least two");
+                shapes.insert(
+                    node.id.clone(),
+                    LayerShape {
+                        origin: main.origin,
+                        tree: main.tree,
+                        states,
+                    },
+                );
+            });
+            shapes
+        }
+
+        /// Records the shape of one instance of a node's layer as the shape
+        /// of one of the states the node declares
+        fn record_state(
+            &mut self,
+            drive: &Drive,
+            node: &str,
+            state: &str,
+            path: Vec<Vec<u8>>,
+            fixture: &str,
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let tree =
+                shape_at(drive, &path, platform_version).expect("expected the shape of the layer");
+            self.states.entry(node.to_string()).or_default().insert(
+                state.to_string(),
+                StateShape {
+                    state: state.to_string(),
+                    origin: format!("fixture {fixture}@{}", platform_version.protocol_version),
+                    tree,
+                },
+            );
         }
     }
 
@@ -441,8 +533,17 @@ mod fixtures {
             let tree = shape_at(drive, path, platform_version)
                 .expect("expected the shape of a layer the walker just read");
             let origin = format!("fixture {fixture}@{}", platform_version.protocol_version);
-            run.fullest
-                .insert(id.clone(), (*count, LayerShape { origin, tree }));
+            run.fullest.insert(
+                id.clone(),
+                (
+                    *count,
+                    LayerShape {
+                        origin,
+                        tree,
+                        states: vec![],
+                    },
+                ),
+            );
         }
         run.visited.extend(report.visited);
     }
@@ -464,6 +565,16 @@ mod fixtures {
                     platform_version,
                 )
                 .expect("expected to add the identity");
+            let layer = vec![vec![RootTree::Identities as u8], identity_id.to_vec()];
+            if seed == 1 {
+                run.record_state(
+                    &drive,
+                    "identities.identity",
+                    "created",
+                    layer.clone(),
+                    "identities",
+                );
+            }
             drive
                 .merge_identity_contract_nonce(
                     identity_id,
@@ -476,6 +587,15 @@ mod fixtures {
                     platform_version,
                 )
                 .expect("expected to set a contract nonce");
+            if seed == 1 {
+                run.record_state(
+                    &drive,
+                    "identities.identity",
+                    "used_with_a_contract",
+                    layer,
+                    "identities",
+                );
+            }
         }
         drive
             .add_prefunded_specialized_balance(
@@ -780,13 +900,60 @@ mod fixtures {
             .grove_apply_batch(batch, false, None, &platform_version.drive)
             .expect("expected to start the epoch");
         conformance_of(&drive, "current_epoch", run);
+        run.record_state(
+            &drive,
+            "pools.epoch",
+            "future",
+            Epoch::new(1)
+                .expect("expected the next epoch")
+                .get_path_vec(),
+            "current_epoch",
+        );
+        run.record_state(
+            &drive,
+            "pools.epoch",
+            "running",
+            epoch.get_path_vec(),
+            "current_epoch",
+        );
 
+        // Payout deletes and writes in one batch
         let mut batch = GroveDbOpBatch::new();
         epoch.add_mark_as_paid_operations(&mut batch);
+        batch.push(
+            drive
+                .add_epoch_final_info_operation(
+                    &epoch,
+                    FinalizedEpochInfoV0 {
+                        first_block_time: 3,
+                        first_block_height: 2,
+                        total_blocks_in_epoch: 3,
+                        first_core_block_height: 5,
+                        next_epoch_start_core_block_height: 6,
+                        total_processing_fees: 1000,
+                        total_distributed_storage_fees: 0,
+                        total_created_storage_fees: 0,
+                        core_block_rewards: 0,
+                        block_proposers: BTreeMap::from([(Identifier::from([7; 32]), 3)]),
+                        fee_multiplier_permille: 1000,
+                        protocol_version: platform_version.protocol_version,
+                    }
+                    .into(),
+                    platform_version,
+                )
+                .expect("expected the finished epoch info operation"),
+        );
         drive
             .grove_apply_batch(batch, false, None, &platform_version.drive)
             .expect("expected to mark the epoch as paid");
         conformance_of(&drive, "paid_epoch", run);
+        run.record_state(
+            &drive,
+            "pools.epoch",
+            "paid",
+            epoch.get_path_vec(),
+            "paid_epoch",
+        );
     }
 
     /// Two contests on the DPNS index of parent domain name and label. In the
@@ -1145,6 +1312,13 @@ mod fixtures {
                 platform_version,
             )
             .expect("expected to set a contract nonce");
+        run.record_state(
+            &drive,
+            "identities.identity",
+            "budgeted_key_and_contract",
+            vec![vec![RootTree::Identities as u8], identity_id.to_vec()],
+            "contract_groups_and_bound_keys",
+        );
         conformance_of(&drive, "contract_groups_and_bound_keys", run);
     }
 

@@ -33,6 +33,7 @@ pub(super) fn layer_shapes(
                     LayerShape {
                         origin: origin.to_string(),
                         tree: shape_of(&tree),
+                        states: vec![],
                     },
                 );
             }
