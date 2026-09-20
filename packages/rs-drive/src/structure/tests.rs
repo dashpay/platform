@@ -62,13 +62,16 @@ fn should_match_initial_structure_for_every_protocol_version() {
     }
 }
 
-/// The description as the viewer reads it, with the shapes of a fresh chain
+/// The description as the viewer reads it. Layers reached through fixed keys
+/// only get the shape of a fresh chain; layers below a template, such as an
+/// identity's, get the shape of the fullest instance the fixtures build.
 fn structure_json() -> String {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
     let structure = drive_structure();
     let origin = format!("genesis@{}", platform_version.protocol_version);
-    let shapes = layer_shapes(&drive, &structure, &origin, platform_version);
+    let mut shapes = layer_shapes(&drive, &structure, &origin, platform_version);
+    shapes.extend(fixtures::run_all().shapes());
     let document = StructureDocument::new(structure, platform_version.protocol_version, shapes);
 
     let mut json =
@@ -105,6 +108,26 @@ fn should_record_the_root_layer_as_the_root_tree_diagram_draws_it() {
     assert_eq!(root["hex"], "40");
     assert_eq!(root["left"]["hex"], "20");
     assert_eq!(root["right"]["hex"], "60");
+}
+
+#[test]
+fn should_record_a_contract_layer_with_its_documents_on_top() {
+    let json: serde_json::Value =
+        serde_json::from_str(&structure_json()).expect("expected valid json");
+
+    // A contract's layer is one layer per contract, so its shape comes from a
+    // fixture. Documents are read most and sit at the root of the layer; the
+    // contract itself and everything else hang below.
+    let contract = &json["layer_shapes"]["contracts.contract"];
+    assert_eq!(contract["origin"], "fixture contracts_with_documents@14");
+    assert_eq!(contract["tree"]["hex"], "01");
+    assert_eq!(contract["tree"]["left"]["hex"], "00");
+    assert_eq!(contract["tree"]["right"]["hex"], "02");
+
+    // Inside `other` the banlist, read on every document transition of a
+    // moderated contract, is in the middle
+    let other = &json["layer_shapes"]["contracts.contract.other"]["tree"];
+    assert_eq!(other["hex"], "80");
 }
 
 mod walker {
@@ -252,7 +275,9 @@ mod fixtures {
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
-    use crate::structure::conformance::ConformanceReport;
+    use crate::structure::export::LayerShape;
+    use crate::structure::shape::shape_at;
+    use crate::structure::{KeySpec, NodeId};
     use crate::util::batch::drive_op_batch::AddressFundsOperationType;
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::util::batch::DriveOperation;
@@ -282,6 +307,12 @@ mod fixtures {
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Setters;
     use dpp::data_contract::associated_token::token_once_per_identity_distribution::v0::TokenOncePerIdentityDistributionV0;
     use dpp::data_contract::associated_token::token_once_per_identity_distribution::TokenOncePerIdentityDistribution;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
@@ -320,10 +351,6 @@ mod fixtures {
     /// (`assert_state_conforms_to_structure` in their `execution.rs`), and
     /// between them they write these.
     const REACHED_BY_STRATEGY_TESTS: &[&str] = &[
-        "tokens.distributions.perpetual.token",
-        "tokens.distributions.perpetual.token.info",
-        "tokens.distributions.perpetual.token.last_claim",
-        "tokens.distributions.perpetual.token.last_claim.identity",
         "identities.identity.key_references.transfer.key",
         "identities.identity.key_references.voting.key",
         "saved_block_transactions.compacted.range",
@@ -354,9 +381,46 @@ mod fixtures {
     /// fails when a listed node does get reached.
     const UNVERIFIED: &[&str] = &[];
 
-    fn conformance_of(drive: &Drive, fixture: &str) -> ConformanceReport {
+    /// What the fixtures found: every node they reached, and for each layer
+    /// below a template the shape of its fullest instance.
+    #[derive(Default)]
+    pub(super) struct FixtureRun {
+        visited: BTreeSet<NodeId>,
+        fullest: BTreeMap<NodeId, (usize, LayerShape)>,
+    }
+
+    impl FixtureRun {
+        pub(super) fn shapes(self) -> BTreeMap<NodeId, LayerShape> {
+            self.fullest
+                .into_iter()
+                .map(|(id, (_, shape))| (id, shape))
+                .collect()
+        }
+    }
+
+    /// The nodes whose layer sits below a template, so that there is one
+    /// instance of it per identity, contract, epoch and so on
+    fn layers_below_a_template(structure: &StructureNode) -> BTreeSet<NodeId> {
+        fn visit(node: &StructureNode, below_template: bool, found: &mut BTreeSet<NodeId>) {
+            let below_template = below_template || matches!(node.key, KeySpec::Dynamic { .. });
+            if below_template {
+                found.insert(node.id.clone());
+            }
+            for child in &node.children {
+                visit(child, below_template, found);
+            }
+        }
+        let mut found = BTreeSet::new();
+        visit(structure, false, &mut found);
+        found
+    }
+
+    /// Checks the state against the description, and records the shape of
+    /// every layer below a template that is fuller here than seen so far
+    fn conformance_of(drive: &Drive, fixture: &str, run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
-        let report = check_conformance(drive, &drive_structure(), None, platform_version)
+        let structure = drive_structure();
+        let report = check_conformance(drive, &structure, None, platform_version)
             .expect("expected to walk the state");
         assert!(
             report.violations.is_empty(),
@@ -368,10 +432,23 @@ mod fixtures {
                 .collect::<Vec<_>>()
                 .join("\n"),
         );
-        report
+
+        let templated = layers_below_a_template(&structure);
+        for (id, (count, path)) in &report.fullest_layers {
+            let fuller = run.fullest.get(id).is_none_or(|(best, _)| count > best);
+            if !templated.contains(id) || *count < 2 || !fuller {
+                continue;
+            }
+            let tree = shape_at(drive, path, platform_version)
+                .expect("expected the shape of a layer the walker just read");
+            let origin = format!("fixture {fixture}@{}", platform_version.protocol_version);
+            run.fullest
+                .insert(id.clone(), (*count, LayerShape { origin, tree }));
+        }
+        run.visited.extend(report.visited);
     }
 
-    fn identities() -> ConformanceReport {
+    fn identities(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         for seed in 1..4 {
@@ -417,10 +494,10 @@ mod fixtures {
                 &platform_version.drive,
             )
             .expect("expected to record a proposed version");
-        conformance_of(&drive, "identities")
+        conformance_of(&drive, "identities", run);
     }
 
-    fn contracts_with_documents() -> ConformanceReport {
+    fn contracts_with_documents(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         for (index, path) in [
@@ -454,11 +531,11 @@ mod fixtures {
                 }
             }
         }
-        conformance_of(&drive, "contracts_with_documents")
+        conformance_of(&drive, "contracts_with_documents", run);
     }
 
     /// A contract that keeps both moderation lists, with one ban and one suspension
-    fn moderated_contract() -> ConformanceReport {
+    fn moderated_contract(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = setup_contract(
@@ -502,10 +579,10 @@ mod fixtures {
                 platform_version,
             )
             .expect("expected to suspend");
-        conformance_of(&drive, "moderated_contract")
+        conformance_of(&drive, "moderated_contract", run);
     }
 
-    fn tokens_and_group_actions() -> ConformanceReport {
+    fn tokens_and_group_actions(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let member_1 = Identifier::from([1; 32]);
@@ -643,10 +720,10 @@ mod fixtures {
                     .expect("expected to close the action");
             }
         }
-        conformance_of(&drive, "tokens_and_group_actions")
+        conformance_of(&drive, "tokens_and_group_actions", run);
     }
 
-    fn address_balances() -> ConformanceReport {
+    fn address_balances(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let operations = vec![
@@ -671,12 +748,12 @@ mod fixtures {
                 None,
             )
             .expect("expected to set address balances");
-        conformance_of(&drive, "address_balances")
+        conformance_of(&drive, "address_balances", run);
     }
 
     /// An epoch while it runs, then after it was paid out: payout deletes the
     /// proposers and both fee items and keeps the epoch tree.
-    fn current_then_paid_epoch() -> ConformanceReport {
+    fn current_then_paid_epoch(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let epoch = Epoch::new(0).expect("expected the genesis epoch");
@@ -694,17 +771,14 @@ mod fixtures {
         drive
             .grove_apply_batch(batch, false, None, &platform_version.drive)
             .expect("expected to start the epoch");
-        let mut report = conformance_of(&drive, "current_epoch");
+        conformance_of(&drive, "current_epoch", run);
 
         let mut batch = GroveDbOpBatch::new();
         epoch.add_mark_as_paid_operations(&mut batch);
         drive
             .grove_apply_batch(batch, false, None, &platform_version.drive)
             .expect("expected to mark the epoch as paid");
-        report
-            .visited
-            .extend(conformance_of(&drive, "paid_epoch").visited);
-        report
+        conformance_of(&drive, "paid_epoch", run);
     }
 
     /// Two contests on the DPNS index of parent domain name and label. In the
@@ -713,7 +787,7 @@ mod fixtures {
     /// the key tells the two apart. (DPNS only contests shorter labels, but
     /// that rule lives in dpp, and any contested index over identifiers has
     /// 32 byte values.)
-    fn contested_documents() -> ConformanceReport {
+    fn contested_documents(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = setup_contract(
@@ -778,7 +852,7 @@ mod fixtures {
                 )
                 .expect("expected to add the contested document");
         }
-        conformance_of(&drive, "contested_documents")
+        conformance_of(&drive, "contested_documents", run);
     }
 
     fn apply_operations(drive: &Drive, operations: Vec<LowLevelDriveOperation>) {
@@ -793,9 +867,9 @@ mod fixtures {
             .expect("expected to apply the operations");
     }
 
-    /// A token with a pre-programmed release and a once per identity rule,
-    /// before and after each is claimed. The second release stays queued.
-    fn token_distributions() -> ConformanceReport {
+    /// A token with a perpetual distribution, a pre-programmed release and a
+    /// once per identity rule, before and after each is claimed. The second release stays queued.
+    fn token_distributions(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let recipient = [7; 32];
@@ -811,6 +885,17 @@ mod fixtures {
                         (100, BTreeMap::from([(Identifier::from(recipient), 445)])),
                         (200, BTreeMap::from([(Identifier::from(recipient), 5)])),
                     ]),
+                },
+            )));
+        configuration
+            .distribution_rules_mut()
+            .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                TokenPerpetualDistributionV0 {
+                    distribution_type: RewardDistributionType::BlockBasedDistribution {
+                        interval: 10,
+                        function: DistributionFunction::FixedAmount { amount: 50 },
+                    },
+                    distribution_recipient: TokenDistributionRecipient::ContractOwner,
                 },
             )));
         configuration
@@ -831,7 +916,7 @@ mod fixtures {
                 platform_version,
             )
             .expect("expected to insert the token contract");
-        let mut report = conformance_of(&drive, "token_distributions_unclaimed");
+        conformance_of(&drive, "token_distributions_unclaimed", run);
 
         let token_id = contract.token_id(0).expect("expected a token").to_buffer();
         apply_operations(
@@ -851,6 +936,18 @@ mod fixtures {
         apply_operations(
             &drive,
             drive
+                .mark_perpetual_release_as_distributed_operations(
+                    token_id,
+                    recipient,
+                    RewardDistributionMoment::BlockBasedMoment(20),
+                    &mut None,
+                    platform_version,
+                )
+                .expect("expected the perpetual claim operations"),
+        );
+        apply_operations(
+            &drive,
+            drive
                 .mark_once_per_identity_release_as_distributed_operations(
                     token_id,
                     recipient,
@@ -861,10 +958,7 @@ mod fixtures {
                 )
                 .expect("expected the once per identity claim operations"),
         );
-        report
-            .visited
-            .extend(conformance_of(&drive, "token_distributions_claimed").visited);
-        report
+        conformance_of(&drive, "token_distributions_claimed", run);
     }
 
     /// A key bound to a contract, a document type or a contract group. A key
@@ -904,7 +998,7 @@ mod fixtures {
     /// that keeps a reference to the latest key of each purpose, to a document
     /// type of that contract, and to a contract group; one of its keys has a
     /// budget.
-    fn contract_groups_and_bound_keys() -> ConformanceReport {
+    fn contract_groups_and_bound_keys(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let owner = Identifier::from([1; 32]);
@@ -1019,6 +1113,7 @@ mod fixtures {
         ] {
             identity.add_public_key(key);
         }
+        let identity_id = identity.id().to_buffer();
         drive
             .add_new_identity(
                 identity,
@@ -1029,10 +1124,23 @@ mod fixtures {
                 platform_version,
             )
             .expect("expected to add the identity");
-        conformance_of(&drive, "contract_groups_and_bound_keys")
+        // A nonce beside the bound keys, so one entry holds both
+        drive
+            .merge_identity_contract_nonce(
+                identity_id,
+                contracts[0].id().to_buffer(),
+                1,
+                &BlockInfo::default(),
+                true,
+                None,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected to set a contract nonce");
+        conformance_of(&drive, "contract_groups_and_bound_keys", run);
     }
 
-    fn spent_nullifiers() -> ConformanceReport {
+    fn spent_nullifiers(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         apply_operations(
@@ -1041,26 +1149,28 @@ mod fixtures {
                 .insert_nullifiers(&[[3; 32], [4; 32]], platform_version)
                 .expect("expected the nullifier operations"),
         );
-        conformance_of(&drive, "spent_nullifiers")
+        conformance_of(&drive, "spent_nullifiers", run);
+    }
+
+    /// Runs every fixture
+    pub(super) fn run_all() -> FixtureRun {
+        let mut run = FixtureRun::default();
+        identities(&mut run);
+        contracts_with_documents(&mut run);
+        moderated_contract(&mut run);
+        tokens_and_group_actions(&mut run);
+        address_balances(&mut run);
+        current_then_paid_epoch(&mut run);
+        contested_documents(&mut run);
+        token_distributions(&mut run);
+        contract_groups_and_bound_keys(&mut run);
+        spent_nullifiers(&mut run);
+        run
     }
 
     #[test]
     fn should_match_populated_state_and_reach_every_described_node() {
-        let mut visited = BTreeSet::new();
-        for report in [
-            identities(),
-            contracts_with_documents(),
-            moderated_contract(),
-            tokens_and_group_actions(),
-            address_balances(),
-            current_then_paid_epoch(),
-            contested_documents(),
-            token_distributions(),
-            contract_groups_and_bound_keys(),
-            spent_nullifiers(),
-        ] {
-            visited.extend(report.visited);
-        }
+        let visited = run_all().visited;
 
         let mut unreached = vec![];
         let mut wrongly_listed = vec![];

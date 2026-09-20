@@ -52,6 +52,15 @@ pub(super) fn layer_shapes(
     shapes
 }
 
+/// The exact Merk binary tree of the layer at `path`
+pub(super) fn shape_at(
+    drive: &Drive,
+    path: &[Vec<u8>],
+    platform_version: &PlatformVersion,
+) -> Option<ShapeNode> {
+    layer_tree(drive, path, platform_version).map(|tree| shape_of(&tree))
+}
+
 /// The Merk of the layer at `path`, rebuilt from a proof of everything in it
 fn layer_tree(drive: &Drive, path: &[Vec<u8>], platform_version: &PlatformVersion) -> Option<Tree> {
     let path_query = PathQuery::new(

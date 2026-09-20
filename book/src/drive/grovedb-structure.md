@@ -140,10 +140,20 @@ nodes of a Merk, but a proof does: the proof of a query for everything in a
 layer lists every node and how they connect, so replaying its operations
 rebuilds the tree. The viewer draws it when you switch a layer to *Merk tree*.
 
-The shape depends on the order of insertion, not only on the keys. The
-recorded shapes are those of a fresh chain at the latest protocol version
-(`"origin": "genesis@14"`). A chain that upgraded through earlier versions
-inserted the same keys in another order and can differ.
+The shape depends on the order of insertion, not only on the keys. For a
+layer reached through fixed keys only, the recorded shape is that of a fresh
+chain at the latest protocol version (`"origin": "genesis@14"`). A chain that
+upgraded through earlier versions inserted the same keys in another order and
+can differ.
+
+A layer below a template exists once per identity, contract, epoch and so on.
+Its shape is recorded from one instance: the fullest one the test fixtures
+build (`"origin": "fixture contracts_with_documents@14"`). That is where
+layouts designed around the Merk show: a contract's layer keeps its documents
+on top with the contract and everything else below, the `other` tree keeps
+the banlist in the middle, and an identity's seven keys form a full tree with
+the keys at the root. Another instance can differ when it holds fewer keys or
+got them in another order.
 
 ## Pull requests that change the structure
 

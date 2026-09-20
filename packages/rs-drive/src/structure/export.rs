@@ -24,7 +24,8 @@ pub struct StructureDocument {
     /// The structure
     pub root: StructureNode,
     /// The exact Merk binary tree of layers whose keys are all fixed, by the
-    /// identifier of the node holding the layer
+    /// identifier of the node holding the layer. A layer below a template,
+    /// such as an identity's, is recorded from one instance.
     pub layer_shapes: BTreeMap<NodeId, LayerShape>,
 }
 
@@ -55,8 +56,11 @@ pub struct FlagsKindInfo {
 /// The exact Merk binary tree of one layer.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LayerShape {
-    /// How the layer was built, since the shape depends on the order of
-    /// insertion: `genesis@<protocol version>` for a fresh chain.
+    /// How the layer was built, since the shape depends on the keys that
+    /// exist and the order they were inserted in: `genesis@<protocol version>`
+    /// for a layer of a fresh chain, `fixture <name>@<protocol version>` for
+    /// one instance of a layer below a template, the fullest a test fixture
+    /// builds.
     pub origin: String,
     /// The root of the binary tree
     pub tree: ShapeNode,

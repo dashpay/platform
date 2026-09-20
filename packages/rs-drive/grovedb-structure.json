@@ -4742,12 +4742,177 @@
         }
       }
     },
+    "contract_groups.groups.group": {
+      "origin": "fixture contract_groups_and_bound_keys@14",
+      "tree": {
+        "hex": "02",
+        "left": {
+          "hex": "01",
+          "left": {
+            "hex": "00"
+          }
+        },
+        "right": {
+          "hex": "03"
+        }
+      }
+    },
+    "contract_groups.members.contract": {
+      "origin": "fixture contract_groups_and_bound_keys@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        },
+        "right": {
+          "hex": "02"
+        }
+      }
+    },
+    "contracts.contract": {
+      "origin": "fixture contracts_with_documents@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        },
+        "right": {
+          "hex": "02"
+        }
+      }
+    },
+    "contracts.contract.other": {
+      "origin": "fixture moderated_contract@14",
+      "tree": {
+        "hex": "80",
+        "left": {
+          "hex": "40"
+        },
+        "right": {
+          "hex": "c0"
+        }
+      }
+    },
+    "group_actions.contract.group": {
+      "origin": "fixture tokens_and_group_actions@14",
+      "tree": {
+        "hex": "4d",
+        "left": {
+          "hex": "49"
+        },
+        "right": {
+          "hex": "58"
+        }
+      }
+    },
+    "group_actions.contract.group.active.action": {
+      "origin": "fixture tokens_and_group_actions@14",
+      "tree": {
+        "hex": "53",
+        "left": {
+          "hex": "49"
+        }
+      }
+    },
+    "group_actions.contract.group.closed.action": {
+      "origin": "fixture tokens_and_group_actions@14",
+      "tree": {
+        "hex": "53",
+        "left": {
+          "hex": "49"
+        }
+      }
+    },
+    "identities.identity": {
+      "origin": "fixture contract_groups_and_bound_keys@14",
+      "tree": {
+        "hex": "80",
+        "left": {
+          "hex": "40",
+          "left": {
+            "hex": "20"
+          },
+          "right": {
+            "hex": "60"
+          }
+        },
+        "right": {
+          "hex": "c0",
+          "left": {
+            "hex": "a0"
+          },
+          "right": {
+            "hex": "e0"
+          }
+        }
+      }
+    },
+    "identities.identity.contract_info.bound": {
+      "origin": "fixture contract_groups_and_bound_keys@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        }
+      }
+    },
+    "identities.identity.key_references": {
+      "origin": "fixture identities@14",
+      "tree": {
+        "hex": "03",
+        "left": {
+          "hex": "00"
+        },
+        "right": {
+          "hex": "05"
+        }
+      }
+    },
+    "identities.identity.key_references.authentication": {
+      "origin": "fixture identities@14",
+      "tree": {
+        "hex": "02",
+        "left": {
+          "hex": "01",
+          "left": {
+            "hex": "00"
+          }
+        },
+        "right": {
+          "hex": "03"
+        }
+      }
+    },
     "misc": {
       "origin": "genesis@14",
       "tree": {
         "hex": "54",
         "left": {
           "hex": "44"
+        }
+      }
+    },
+    "pools.epoch": {
+      "origin": "fixture current_epoch@14",
+      "tree": {
+        "hex": "73",
+        "left": {
+          "hex": "68",
+          "left": {
+            "hex": "63"
+          },
+          "right": {
+            "hex": "6d"
+          }
+        },
+        "right": {
+          "hex": "76",
+          "left": {
+            "hex": "74"
+          },
+          "right": {
+            "hex": "78"
+          }
         }
       }
     },
@@ -4874,6 +5039,15 @@
         }
       }
     },
+    "tokens.distributions.perpetual.token": {
+      "origin": "fixture token_distributions_unclaimed@14",
+      "tree": {
+        "hex": "c0",
+        "left": {
+          "hex": "80"
+        }
+      }
+    },
     "tokens.distributions.timed": {
       "origin": "genesis@14",
       "tree": {
@@ -4913,6 +5087,24 @@
         "hex": "70",
         "left": {
           "hex": "69"
+        }
+      }
+    },
+    "votes.contested_resource.active_polls.contract.document_type": {
+      "origin": "fixture contested_documents@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
+        }
+      }
+    },
+    "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender": {
+      "origin": "fixture contested_documents@14",
+      "tree": {
+        "hex": "01",
+        "left": {
+          "hex": "00"
         }
       }
     },
