@@ -435,7 +435,7 @@ impl InternalClauses {
             {
                 roles.index_property = true;
             }
-            if index.terminal.as_deref() == Some(field) {
+            if index.terminal_contains(field) {
                 roles.terminal = true;
             }
             if roles.index_property && roles.terminal {
@@ -1936,7 +1936,10 @@ impl<'a> DriveDocumentQuery<'a> {
         // addressed by document id, so a by-id query has no tree to land on.
         {
             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-            if self.document_type.index_only() && self.is_for_primary_key() {
+            if self.document_type.index_only()
+                && self.is_for_primary_key()
+                && !self.index_only_flat_scan_applies()
+            {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(
                     "indexOnly documents cannot be fetched by id: there is no primary-key \
                      tree; query through one of the type's indexes"
@@ -2153,7 +2156,10 @@ impl<'a> DriveDocumentQuery<'a> {
         // addressed by document id, so a by-id query has no tree to land on.
         {
             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-            if self.document_type.index_only() && self.is_for_primary_key() {
+            if self.document_type.index_only()
+                && self.is_for_primary_key()
+                && !self.index_only_flat_scan_applies()
+            {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(
                     "indexOnly documents cannot be fetched by id: there is no primary-key \
                      tree; query through one of the type's indexes"
@@ -2971,7 +2977,8 @@ impl<'a> DriveDocumentQuery<'a> {
                             !matches!(property.property_type, DocumentPropertyType::Object(_))
                         })
                         .all(|(name, _)| {
-                            index.terminal.as_deref() == Some(name.as_str())
+                            index.terminal_contains(name)
+                                || self.document_type.entry_payload().contains(name.as_str())
                                 || index
                                     .properties
                                     .iter()

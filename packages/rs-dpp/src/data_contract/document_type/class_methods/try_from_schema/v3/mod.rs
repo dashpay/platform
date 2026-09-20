@@ -287,6 +287,8 @@ fn try_from_schema_generation_3(
     // above.
     let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
     let index_only = common::parse_index_only_keyword(&schema)?;
+    let entry_payload =
+        common::parse_property_name_list_keyword(&schema, name, property_names::ENTRY_PAYLOAD)?;
     let action_fees = DocumentActionFees::try_from_document_schema(&schema, name)?;
     let can_be_deleted_by_moderators = common::parse_can_be_deleted_by_moderators_keyword(&schema)?;
     let can_be_deleted_by_moderators_for =
@@ -362,11 +364,12 @@ fn try_from_schema_generation_3(
 
     let mut v2: DocumentTypeV2 = v1.into();
     v2.action_fees = action_fees;
+    v2.entry_payload = entry_payload;
     common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
     // After the aggregates: `apply_index_only` rejects the doctype-level
     // aggregate flags (they describe the primary-key tree, which an
     // indexOnly type does not have), so it has to see them already applied.
-    common::apply_index_only(&mut v2, index_only, name)?;
+    common::apply_index_only(&mut v2, index_only, name, platform_version)?;
     // After the core parse: the lints read the resolved `documentsMutable`
     // flag (contract default applied) and the parsed top-level properties.
     common::apply_immutable_fields(

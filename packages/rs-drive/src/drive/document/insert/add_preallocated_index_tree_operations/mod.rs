@@ -41,9 +41,9 @@ use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, terminal_member_tree_type,
     terminal_value_tree_type,
 };
+use crate::drive::document::index_only_item_estimated_value_size;
 use crate::drive::document::paths::contract_document_type_path_vec;
 use crate::drive::document::unique_event_id;
-use crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
@@ -467,10 +467,15 @@ impl Drive {
             // Same per-entry padding (and sum-item worst case) the
             // entry-insert terminal claims for this layer — see
             // `add_index_only_terminal_item_operations`.
+            let referring_type = contract
+                .document_type_for_name(referring_type_name)
+                .map_err(|e| Error::Protocol(Box::new(dpp::ProtocolError::DataContractError(e))))?;
+            let estimated_item_value_size =
+                index_only_item_estimated_value_size(referring_type, platform_version)?;
             let estimated_value_size = if level_info.summable.is_some() {
-                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE + 10
+                estimated_item_value_size + 10
             } else {
-                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE
+                estimated_item_value_size
             };
             estimated_costs_only_with_layer_info.insert(
                 path_info.convert_to_key_info_path(),

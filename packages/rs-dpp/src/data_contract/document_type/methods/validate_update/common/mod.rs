@@ -390,6 +390,22 @@ impl DocumentTypeRef<'_> {
             );
         }
 
+        // The entry payload is part of every stored entry's value layout:
+        // adding, dropping or renaming a payload property would leave the
+        // existing entries undecodable (and their commitments unrecomputable).
+        if new_document_type.entry_payload() != self.entry_payload() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    "document type can not change its entryPayload: the listed properties are \
+                     the value layout of every stored entry"
+                        .to_string(),
+                )
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 

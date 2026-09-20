@@ -14,6 +14,15 @@
 //! | `vote`   | `byPoll`    | `[pollId, $ownerId]`    | `choice`   | string ≤ 16    |
 //! | `vote`   | `byChoice`  | `[pollId, choice]`      | `$ownerId` | ranked count   |
 //! | `rating` | `byPost`    | `[postId, $ownerId]`    | `stars`    | integer 1 to 5 |
+//! | `reaction` | `byPostKind` | `[postId]`          | `kind ‖ $ownerId` | composite, prefixed |
+//! | `loginKeyResponse` | `byRequest` | (none: flat) | `appEphemeralPubKeyHash ‖ $ownerId` | composite, flat; `entryPayload` |
+//!
+//! The last two exercise **composite terminals** (the member key is the
+//! concatenation of several components' encodings) — one below a prefix
+//! level, one FLAT (no prefix at all, entries directly under a level keyed
+//! by the terminal's names) — and the flat one also carries an
+//! **entry payload**: the wallet key and the ciphertext ride in every
+//! entry's item after the row commitment, the type's value slot.
 //!
 //! Pinned: the entry layout (member key = encoded terminal value, element
 //! = row-commitment `Item`), structural uniqueness spanning the terminal
@@ -30,7 +39,7 @@ use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
@@ -691,5 +700,604 @@ fn scalar_terminal_estimated_fees_upper_bound_actual_fees() {
             actual_delete.processing_fee
         );
     }
+    assert_grovedb_is_consistent(&drive);
+}
+
+// ---------------------------------------------------------------------------
+// Composite terminals and the entry payload
+// ---------------------------------------------------------------------------
+
+const REQUEST_HASH: [u8; 20] = [0x7A; 20];
+const OTHER_REQUEST_HASH: [u8; 20] = [0x7B; 20];
+const WALLET_KEY_1: [u8; 33] = [0xA1; 33];
+const WALLET_KEY_2: [u8; 33] = [0xA2; 33];
+const WALLET_KEY_3: [u8; 33] = [0xA3; 33];
+/// The flat level of `loginKeyResponse.byRequest`: a zero byte, then each
+/// terminal component name preceded by a zero byte.
+const LOGIN_FLAT_LEVEL: &[u8] = b"\0appEphemeralPubKeyHash\0$ownerId";
+
+fn cipher(byte: u8, len: usize) -> Vec<u8> {
+    vec![byte; len]
+}
+
+fn build_login_response(
+    contract: &DataContract,
+    request: [u8; 20],
+    wallet_key: [u8; 33],
+    ciphertext: Vec<u8>,
+    owner: [u8; 32],
+    seed: u64,
+) -> Document {
+    build(
+        contract,
+        "loginKeyResponse",
+        vec![
+            ("appEphemeralPubKeyHash", Value::Bytes(request.to_vec())),
+            ("walletEphemeralPubKey", Value::Bytes(wallet_key.to_vec())),
+            ("encryptedPayload", Value::Bytes(ciphertext)),
+        ],
+        owner,
+        seed,
+    )
+}
+
+fn build_reaction(contract: &DataContract, kind: u64, owner: [u8; 32], seed: u64) -> Document {
+    build(
+        contract,
+        "reaction",
+        vec![
+            ("postId", Value::Identifier(POST)),
+            ("kind", Value::U64(kind)),
+        ],
+        owner,
+        seed,
+    )
+}
+
+fn query_ordered<'a>(
+    contract: &'a DataContract,
+    doctype: &str,
+    clauses: Vec<WhereClause>,
+    order_by: Vec<(&str, bool)>,
+    limit: Option<u16>,
+) -> DriveDocumentQuery<'a> {
+    let mut query = query(contract, doctype, clauses, limit);
+    query.order_by = order_by
+        .into_iter()
+        .map(|(field, ascending)| {
+            (
+                field.to_string(),
+                OrderClause {
+                    field: field.to_string(),
+                    ascending,
+                },
+            )
+        })
+        .collect();
+    query
+}
+
+fn login_member_key(request: [u8; 20], owner: [u8; 32]) -> Vec<u8> {
+    let mut key = request.to_vec();
+    key.extend(owner);
+    key
+}
+
+fn login_entry(
+    drive: &Drive,
+    contract: &DataContract,
+    request: [u8; 20],
+    owner: [u8; 32],
+) -> Option<Element> {
+    let mut path = doctype_path(contract, "loginKeyResponse");
+    path.push(LOGIN_FLAT_LEVEL.to_vec());
+    path.push(vec![0]);
+    read_grove_element(drive, &path, &login_member_key(request, owner))
+}
+
+fn payload_bytes(document: &Document, name: &str) -> Vec<u8> {
+    document
+        .properties()
+        .get(name)
+        .unwrap_or_else(|| panic!("{name} present"))
+        .to_binary_bytes()
+        .expect("bytes")
+}
+
+/// A flat composite index writes its entry directly under its own level:
+/// `[…, "\0appEphemeralPubKeyHash\0$ownerId", 0, hash ‖ owner]`, no
+/// property-name tree and no value tree for either component. The item is
+/// the row commitment followed by the entry payload — each payload property
+/// in name order, length-framed: the ciphertext first, then the wallet key.
+#[test]
+fn flat_composite_entries_carry_the_payload_in_the_item() {
+    let (drive, contract) = setup();
+    let ciphertext = cipher(0xC1, 60);
+    let response = build_login_response(
+        &contract,
+        REQUEST_HASH,
+        WALLET_KEY_1,
+        ciphertext.clone(),
+        OWNER_1,
+        1,
+    );
+    insert(&drive, &contract, "loginKeyResponse", &response, true).expect("insert response");
+
+    match login_entry(&drive, &contract, REQUEST_HASH, OWNER_1) {
+        Some(Element::Item(bytes, _)) => {
+            let commitment_size = INDEX_ONLY_ROW_COMMITMENT_SIZE as usize;
+            assert_eq!(bytes.len(), commitment_size + 2 + 60 + 2 + 33);
+            let mut cursor = commitment_size;
+            assert_eq!(&bytes[cursor..cursor + 2], &60u16.to_be_bytes());
+            cursor += 2;
+            assert_eq!(&bytes[cursor..cursor + 60], ciphertext.as_slice());
+            cursor += 60;
+            assert_eq!(&bytes[cursor..cursor + 2], &33u16.to_be_bytes());
+            cursor += 2;
+            assert_eq!(&bytes[cursor..], &WALLET_KEY_1);
+        }
+        other => panic!("expected the payload-bearing Item, got {other:?}"),
+    }
+    let base = doctype_path(&contract, "loginKeyResponse");
+    assert!(
+        read_grove_element(&drive, &base, b"appEphemeralPubKeyHash").is_none()
+            && read_grove_element(&drive, &base, b"$ownerId").is_none(),
+        "a flat index owns no property-name trees"
+    );
+    assert!(
+        read_grove_element(&drive, &base, LOGIN_FLAT_LEVEL).is_some(),
+        "the flat level tree sits directly under the doctype"
+    );
+
+    // The same values by the same owner are a duplicate; another owner is
+    // a second entry under the same request hash.
+    assert!(insert(&drive, &contract, "loginKeyResponse", &response, true).is_err());
+    insert(
+        &drive,
+        &contract,
+        "loginKeyResponse",
+        &build_login_response(
+            &contract,
+            REQUEST_HASH,
+            WALLET_KEY_2,
+            cipher(0xC2, 92),
+            OWNER_2,
+            2,
+        ),
+        true,
+    )
+    .expect("a second responder");
+    assert!(login_entry(&drive, &contract, REQUEST_HASH, OWNER_2).is_some());
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// The app's read: equality on the request hash (the leading component)
+/// returns every responder's owner id with the wallet key and ciphertext
+/// decoded off the item, as one proof; a point lookup on hash and owner
+/// answers with existence or absence; a clause-free query scans the flat
+/// level.
+#[test]
+fn flat_composite_lookup_by_request_hash_synthesizes_the_payload_and_proves() {
+    let (drive, contract) = setup();
+    let cipher_1 = cipher(0xC1, 60);
+    let cipher_2 = cipher(0xC2, 572);
+    for (request, key, ciphertext, owner, seed) in [
+        (REQUEST_HASH, WALLET_KEY_1, cipher_1.clone(), OWNER_1, 1u64),
+        (REQUEST_HASH, WALLET_KEY_2, cipher_2.clone(), OWNER_2, 2),
+        (
+            OTHER_REQUEST_HASH,
+            WALLET_KEY_3,
+            cipher(0xC3, 100),
+            OWNER_3,
+            3,
+        ),
+    ] {
+        insert(
+            &drive,
+            &contract,
+            "loginKeyResponse",
+            &build_login_response(&contract, request, key, ciphertext, owner, seed),
+            true,
+        )
+        .expect("insert response");
+    }
+
+    // ── every answer to the request ──
+    let by_request = query(
+        &contract,
+        "loginKeyResponse",
+        vec![equal(
+            "appEphemeralPubKeyHash",
+            Value::Bytes(REQUEST_HASH.to_vec()),
+        )],
+        Some(10),
+    );
+    let outcome = drive
+        .query_documents(by_request.clone(), None, false, None, None)
+        .expect("lookup by request hash executes");
+    let documents = outcome.documents();
+    assert_eq!(documents.len(), 2, "two responders to the request");
+    let mut seen: Vec<([u8; 32], Vec<u8>, Vec<u8>)> = documents
+        .iter()
+        .map(|document| {
+            assert_eq!(
+                payload_bytes(document, "appEphemeralPubKeyHash"),
+                REQUEST_HASH.to_vec()
+            );
+            (
+                document.owner_id().to_buffer(),
+                payload_bytes(document, "walletEphemeralPubKey"),
+                payload_bytes(document, "encryptedPayload"),
+            )
+        })
+        .collect();
+    seen.sort();
+    assert_eq!(
+        seen,
+        vec![
+            (OWNER_1, WALLET_KEY_1.to_vec(), cipher_1.clone()),
+            (OWNER_2, WALLET_KEY_2.to_vec(), cipher_2.clone()),
+        ],
+        "the owner comes off the member key, the wallet key and ciphertext off the item"
+    );
+    let (proof, _) = by_request
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("proof generation");
+    let (_root, verified) = by_request
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("proof verification synthesizes");
+    let mut verified_ids: Vec<_> = verified.iter().map(|d| d.id()).collect();
+    let mut queried_ids: Vec<_> = documents.iter().map(|d| d.id()).collect();
+    verified_ids.sort();
+    queried_ids.sort();
+    assert_eq!(
+        verified_ids, queried_ids,
+        "proved and unproved synthesis agree"
+    );
+    let verified_ciphers: Vec<Vec<u8>> = verified
+        .iter()
+        .map(|d| payload_bytes(d, "encryptedPayload"))
+        .collect();
+    assert!(verified_ciphers.contains(&cipher_1) && verified_ciphers.contains(&cipher_2));
+
+    // ── point lookup: did OWNER_1 / OWNER_3 answer this request ──
+    let answered = query(
+        &contract,
+        "loginKeyResponse",
+        vec![
+            equal(
+                "appEphemeralPubKeyHash",
+                Value::Bytes(REQUEST_HASH.to_vec()),
+            ),
+            equal("$ownerId", Value::Identifier(OWNER_1)),
+        ],
+        Some(1),
+    );
+    let outcome = drive
+        .query_documents(answered.clone(), None, false, None, None)
+        .expect("point lookup executes");
+    assert_eq!(outcome.documents().len(), 1);
+    assert_eq!(
+        payload_bytes(&outcome.documents()[0], "walletEphemeralPubKey"),
+        WALLET_KEY_1.to_vec()
+    );
+    let (proof, _) = answered
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("existence proof generation");
+    let (_root, verified) = answered
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("existence proof verification");
+    assert_eq!(verified.len(), 1);
+
+    let not_answered = query(
+        &contract,
+        "loginKeyResponse",
+        vec![
+            equal(
+                "appEphemeralPubKeyHash",
+                Value::Bytes(REQUEST_HASH.to_vec()),
+            ),
+            equal("$ownerId", Value::Identifier(OWNER_3)),
+        ],
+        Some(1),
+    );
+    assert!(drive
+        .query_documents(not_answered.clone(), None, false, None, None)
+        .expect("negative point lookup executes")
+        .documents()
+        .is_empty());
+    let (proof, _) = not_answered
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("absence proof generation");
+    let (_root, verified) = not_answered
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("absence proof verification");
+    assert!(verified.is_empty(), "absence must verify as absence");
+
+    // ── everything: a clause-free query scans the flat level ──
+    let everything = query(&contract, "loginKeyResponse", vec![], Some(10));
+    let outcome = drive
+        .query_documents(everything.clone(), None, false, None, None)
+        .expect("flat scan executes");
+    assert_eq!(outcome.documents().len(), 3);
+    let (proof, _) = everything
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("flat scan proof generation");
+    let (_root, verified) = everything
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("flat scan proof verification");
+    assert_eq!(verified.len(), 3);
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Keyset pagination over the second component: with the request hash
+/// bound, `$ownerId > <last seen>` ordered by `$ownerId` walks the
+/// responders page by page, each page agreeing with its proof.
+#[test]
+fn flat_composite_keyset_pagination_over_the_second_component() {
+    let (drive, contract) = setup();
+    for (key, owner, seed) in [
+        (WALLET_KEY_1, OWNER_1, 1u64),
+        (WALLET_KEY_2, OWNER_2, 2),
+        (WALLET_KEY_3, OWNER_3, 3),
+    ] {
+        insert(
+            &drive,
+            &contract,
+            "loginKeyResponse",
+            &build_login_response(
+                &contract,
+                REQUEST_HASH,
+                key,
+                cipher(seed as u8, 60),
+                owner,
+                seed,
+            ),
+            true,
+        )
+        .expect("insert response");
+    }
+
+    let page_1 = query_ordered(
+        &contract,
+        "loginKeyResponse",
+        vec![equal(
+            "appEphemeralPubKeyHash",
+            Value::Bytes(REQUEST_HASH.to_vec()),
+        )],
+        vec![("$ownerId", true)],
+        Some(2),
+    );
+    let outcome = drive
+        .query_documents(page_1.clone(), None, false, None, None)
+        .expect("page 1 executes");
+    let owners: Vec<[u8; 32]> = outcome
+        .documents()
+        .iter()
+        .map(|d| d.owner_id().to_buffer())
+        .collect();
+    assert_eq!(owners, vec![OWNER_1, OWNER_2]);
+    let (proof, _) = page_1
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("page 1 proof");
+    let (_root, verified) = page_1
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("page 1 verifies");
+    assert_eq!(verified.len(), 2);
+
+    let page_2 = query_ordered(
+        &contract,
+        "loginKeyResponse",
+        vec![
+            equal(
+                "appEphemeralPubKeyHash",
+                Value::Bytes(REQUEST_HASH.to_vec()),
+            ),
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Identifier(OWNER_2),
+            },
+        ],
+        vec![("$ownerId", true)],
+        Some(2),
+    );
+    let outcome = drive
+        .query_documents(page_2.clone(), None, false, None, None)
+        .expect("page 2 executes");
+    let owners: Vec<[u8; 32]> = outcome
+        .documents()
+        .iter()
+        .map(|d| d.owner_id().to_buffer())
+        .collect();
+    assert_eq!(owners, vec![OWNER_3]);
+    assert_eq!(
+        payload_bytes(&outcome.documents()[0], "walletEphemeralPubKey"),
+        WALLET_KEY_3.to_vec()
+    );
+    let (proof, _) = page_2
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("page 2 proof");
+    let (_root, verified) = page_2
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("page 2 verifies");
+    assert_eq!(verified.len(), 1);
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Delete-by-values on a flat composite entry with a payload: a delete
+/// carrying a different ciphertext recomputes a different commitment and
+/// is refused, the right one removes the entry, and the dry run
+/// upper-bounds the applied fee on insert and delete (the item is sized by
+/// the payload bound, the key by the components' widths).
+#[test]
+fn flat_composite_delete_and_fees() {
+    let (drive, contract) = setup();
+    let stored = build_login_response(
+        &contract,
+        REQUEST_HASH,
+        WALLET_KEY_1,
+        cipher(0xC1, 572),
+        OWNER_1,
+        1,
+    );
+    let estimated_insert =
+        insert(&drive, &contract, "loginKeyResponse", &stored, false).expect("estimated insert");
+    let actual_insert =
+        insert(&drive, &contract, "loginKeyResponse", &stored, true).expect("actual insert");
+    assert!(
+        estimated_insert.storage_fee >= actual_insert.storage_fee,
+        "estimated insert storage fee {} must upper-bound actual {}",
+        estimated_insert.storage_fee,
+        actual_insert.storage_fee
+    );
+
+    let wrong = build_login_response(
+        &contract,
+        REQUEST_HASH,
+        WALLET_KEY_1,
+        cipher(0xC9, 572),
+        OWNER_1,
+        2,
+    );
+    assert!(
+        delete(&drive, &contract, "loginKeyResponse", wrong, true).is_err(),
+        "a delete whose payload disagrees with the stored entry fails the commitment probe"
+    );
+    assert!(login_entry(&drive, &contract, REQUEST_HASH, OWNER_1).is_some());
+
+    let estimated_delete = delete(&drive, &contract, "loginKeyResponse", stored.clone(), false)
+        .expect("estimated delete");
+    let actual_delete =
+        delete(&drive, &contract, "loginKeyResponse", stored, true).expect("actual delete");
+    assert!(actual_delete.processing_fee > 0);
+    assert!(
+        estimated_delete.processing_fee >= actual_delete.processing_fee,
+        "estimated delete processing fee {} must upper-bound actual {}",
+        estimated_delete.processing_fee,
+        actual_delete.processing_fee
+    );
+    assert!(login_entry(&drive, &contract, REQUEST_HASH, OWNER_1).is_none());
+    // The flat level survives the last entry's removal: it is registration
+    // structure, and the next insert lands under it again.
+    assert!(read_grove_element(
+        &drive,
+        &doctype_path(&contract, "loginKeyResponse"),
+        LOGIN_FLAT_LEVEL
+    )
+    .is_some());
+    insert(
+        &drive,
+        &contract,
+        "loginKeyResponse",
+        &build_login_response(
+            &contract,
+            REQUEST_HASH,
+            WALLET_KEY_2,
+            cipher(0xC2, 60),
+            OWNER_2,
+            3,
+        ),
+        true,
+    )
+    .expect("insert after the level was drained");
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// A composite terminal BELOW a prefix level: `[postId] → kind ‖ $ownerId`.
+/// The entry sits in the post's `0` bucket keyed by the integer's tree-key
+/// encoding followed by the owner; equality on `kind` (the first
+/// component) with the post bound lowers onto a key range and returns the
+/// reacting owners; the hierarchical machinery above is untouched.
+#[test]
+fn prefixed_composite_terminal_ranges_over_the_leading_component() {
+    let (drive, contract) = setup();
+    for (kind, owner, seed) in [(3u64, OWNER_1, 1u64), (3, OWNER_2, 2), (7, OWNER_3, 3)] {
+        insert(
+            &drive,
+            &contract,
+            "reaction",
+            &build_reaction(&contract, kind, owner, seed),
+            true,
+        )
+        .expect("insert reaction");
+    }
+    let reaction_type = contract
+        .document_type_for_name("reaction")
+        .expect("reaction doctype exists");
+    let mut expected_key = reaction_type
+        .serialize_value_for_key("kind", &Value::U64(3), platform_version())
+        .expect("kind encodes");
+    expected_key.extend(OWNER_1);
+    assert_commitment_item(
+        entry(
+            &drive,
+            &contract,
+            "reaction",
+            &[("postId", &POST)],
+            &expected_key,
+        ),
+        "reaction keyed by kind ‖ owner under the post",
+    );
+
+    let thumbs = query(
+        &contract,
+        "reaction",
+        vec![
+            equal("postId", Value::Identifier(POST)),
+            equal("kind", Value::U64(3)),
+        ],
+        Some(10),
+    );
+    let outcome = drive
+        .query_documents(thumbs.clone(), None, false, None, None)
+        .expect("leading-component equality executes");
+    let mut owners: Vec<[u8; 32]> = outcome
+        .documents()
+        .iter()
+        .map(|d| d.owner_id().to_buffer())
+        .collect();
+    owners.sort();
+    assert_eq!(owners, vec![OWNER_1, OWNER_2]);
+    for document in outcome.documents() {
+        assert_eq!(
+            document
+                .properties()
+                .get("kind")
+                .and_then(|v| v.to_integer::<u64>().ok()),
+            Some(3),
+            "the leading component is decoded off the member key"
+        );
+    }
+    let (proof, _) = thumbs
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("proof generation");
+    let (_root, verified) = thumbs
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("proof verification");
+    assert_eq!(verified.len(), 2);
+
+    let all_reactions = query(
+        &contract,
+        "reaction",
+        vec![equal("postId", Value::Identifier(POST))],
+        Some(10),
+    );
+    let outcome = drive
+        .query_documents(all_reactions, None, false, None, None)
+        .expect("prefix query executes");
+    assert_eq!(outcome.documents().len(), 3);
+
     assert_grovedb_is_consistent(&drive);
 }

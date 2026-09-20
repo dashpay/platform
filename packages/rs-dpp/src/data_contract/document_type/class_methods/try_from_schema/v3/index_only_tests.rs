@@ -232,15 +232,15 @@ fn terminal_defaults_to_owner_id() {
     // `byPost` omits its terminal; normalization spells it out, so the
     // omitted and explicit forms parse to equal indexes.
     assert_eq!(
-        document_type.indices["byPost"].terminal.as_deref(),
+        document_type.indices["byPost"].single_terminal(),
         Some("$ownerId")
     );
     assert_eq!(
-        document_type.indices["byHashtagPost"].terminal.as_deref(),
+        document_type.indices["byHashtagPost"].single_terminal(),
         Some("$ownerId")
     );
     assert_eq!(
-        document_type.indices["byLiker"].terminal.as_deref(),
+        document_type.indices["byLiker"].single_terminal(),
         Some("postId")
     );
 }
@@ -632,7 +632,7 @@ fn accepts_a_plain_scalar_terminal() {
         let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
             .expect("a string terminal parses");
         assert_eq!(
-            document_type.indices["byLiker"].terminal.as_deref(),
+            document_type.indices["byLiker"].single_terminal(),
             Some("hashtag")
         );
     }
@@ -676,11 +676,11 @@ fn accepts_byte_array_and_integer_terminals() {
         let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
             .expect("byte array and integer terminals parse");
         assert_eq!(
-            document_type.indices["byLiker"].terminal.as_deref(),
+            document_type.indices["byLiker"].single_terminal(),
             Some("pubKey")
         );
         assert_eq!(
-            document_type.indices["byScore"].terminal.as_deref(),
+            document_type.indices["byScore"].single_terminal(),
             Some("score")
         );
     }
@@ -721,7 +721,7 @@ fn object_terminals_are_not_addressable_but_their_leaves_are() {
     let document_type = parse_with(schema, PlatformVersion::latest(), false)
         .expect("a nested leaf terminal parses");
     assert_eq!(
-        document_type.indices["byLiker"].terminal.as_deref(),
+        document_type.indices["byLiker"].single_terminal(),
         Some("profile.nick")
     );
 }
@@ -971,7 +971,7 @@ fn accepts_an_identity_public_key_reference_terminal() {
     let document_type = parse_with(schema, PlatformVersion::latest(), false)
         .expect("an identityPublicKey reference terminal parses");
     assert_eq!(
-        document_type.indices["byLiker"].terminal.as_deref(),
+        document_type.indices["byLiker"].single_terminal(),
         Some("keyRef")
     );
 }
@@ -1044,6 +1044,316 @@ fn rejects_missing_owner_id() {
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
         "must include $ownerId",
+    );
+}
+
+// ── composite and flat terminals ────────────────────────────────────────
+
+/// The likes schema with one extra index appended.
+fn likes_schema_with_extra_index(index: Value) -> Value {
+    let mut schema = likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(index);
+    schema
+}
+
+#[test]
+fn accepts_a_composite_terminal_below_a_prefix() {
+    // byLiker becomes `[$ownerId] → postId ‖ hashtag`: a 32-byte identifier
+    // followed by a string, which may only be the last component.
+    let mut schema =
+        likes_schema_with_index_key(2, "terminal", platform_value!(["postId", "hashtag"]));
+    // The hashtag is bounded to 40 characters here: a string bound counts
+    // characters of up to four bytes, and 32 + 4 × 63 would exceed the
+    // 255-byte member key cap.
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .set_value(
+            "hashtag",
+            platform_value!({ "type": "string", "maxLength": 40, "position": 0 }),
+        )
+        .expect("property applies");
+    for full_validation in [false, true] {
+        let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .expect("a composite terminal parses");
+        let index = &document_type.indices["byLiker"];
+        assert_eq!(
+            index.terminal_components(),
+            &["postId".to_string(), "hashtag".to_string()]
+        );
+        assert!(index.single_terminal().is_none());
+        assert!(!index.is_flat());
+    }
+}
+
+#[test]
+fn accepts_a_flat_composite_terminal() {
+    // An index with no properties at all: a flat index keyed by
+    // `postId ‖ $ownerId`, living under its own zero-byte-prefixed level.
+    let schema = likes_schema_with_extra_index(platform_value!({
+        "name": "byPostOwner",
+        "terminal": ["postId", "$ownerId"]
+    }));
+    for full_validation in [false, true] {
+        let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .expect("a flat composite terminal parses");
+        let index = &document_type.indices["byPostOwner"];
+        assert!(index.is_flat());
+        assert!(index.properties.is_empty());
+        assert_eq!(
+            index.flat_level_key().as_deref(),
+            Some("\0postId\0$ownerId")
+        );
+        assert!(
+            document_type
+                .index_structure
+                .sub_levels()
+                .contains_key("\0postId\0$ownerId"),
+            "the flat level is a top-level entry of the index structure"
+        );
+        assert!(
+            document_type.index_structure.sub_levels()["\0postId\0$ownerId"]
+                .has_index_with_type()
+                .is_some(),
+            "the flat level terminates its index"
+        );
+    }
+}
+
+#[test]
+fn rejects_a_variable_width_leading_component() {
+    // A string is never fixed width, so it cannot be followed by another
+    // component.
+    let schema = likes_schema_with_index_key(2, "terminal", platform_value!(["hashtag", "postId"]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "is not fixed width",
+    );
+}
+
+#[test]
+fn rejects_a_composite_terminal_over_the_key_cap() {
+    // Two 200-byte arrays: 400 bytes, over grovedb's 255-byte key cap.
+    let mut schema =
+        likes_schema_with_index_key(2, "terminal", platform_value!(["blobA", "blobB"]));
+    for (name, position) in [("blobA", 2), ("blobB", 3)] {
+        with_required_property(
+            &mut schema,
+            name,
+            platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 200,
+                "maxItems": 200,
+                "position": position
+            }),
+        );
+    }
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "member key cap",
+    );
+}
+
+#[test]
+fn rejects_a_terminal_naming_a_component_twice() {
+    let schema = likes_schema_with_index_key(2, "terminal", platform_value!(["postId", "postId"]));
+    match parse_with(schema, PlatformVersion::latest(), false) {
+        Ok(_) => panic!("a duplicate terminal component must be refused"),
+        Err(error) => assert!(
+            error.to_string().contains("twice"),
+            "expected the duplicate-component refusal, got {error}"
+        ),
+    }
+}
+
+#[test]
+fn rejects_aggregates_on_a_flat_index() {
+    // No prefix level exists for an aggregate to apply to.
+    let schema = likes_schema_with_extra_index(platform_value!({
+        "name": "byPostOwner",
+        "terminal": ["postId", "$ownerId"],
+        "countable": true
+    }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "has no properties (a flat index",
+    );
+}
+
+#[test]
+fn rejects_a_flat_index_on_a_stored_type() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 }
+        },
+        "indices": [{ "name": "flat" }],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "only allowed on an indexOnly document type",
+    );
+}
+
+// ── entry payload ───────────────────────────────────────────────────────
+
+/// The app-connect login response: a flat index keyed by the request hash
+/// and the responding identity, with the wallet's ephemeral key and the
+/// ciphertext in every entry's value.
+fn login_response_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "canBeDeleted": true,
+        "indices": [
+            { "name": "byRequest", "terminal": ["appEphemeralPubKeyHash", "$ownerId"] }
+        ],
+        "entryPayload": ["walletEphemeralPubKey", "encryptedPayload"],
+        "properties": {
+            "appEphemeralPubKeyHash": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 20,
+                "maxItems": 20,
+                "position": 0
+            },
+            "walletEphemeralPubKey": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 33,
+                "maxItems": 33,
+                "position": 1
+            },
+            "encryptedPayload": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 60,
+                "maxItems": 572,
+                "position": 2
+            }
+        },
+        "required": ["appEphemeralPubKeyHash", "walletEphemeralPubKey", "encryptedPayload"],
+        "additionalProperties": false
+    })
+}
+
+#[test]
+fn accepts_an_entry_payload_on_a_flat_composite_index() {
+    for full_validation in [false, true] {
+        let document_type = parse_with(
+            login_response_schema(),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .expect("the login response schema parses");
+        assert_eq!(
+            document_type
+                .entry_payload
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            vec!["encryptedPayload", "walletEphemeralPubKey"],
+            "payload properties are kept in name order"
+        );
+        assert!(document_type.indices["byRequest"].is_flat());
+    }
+}
+
+#[test]
+fn rejects_an_entry_payload_property_that_is_also_indexed() {
+    let mut schema = login_response_schema();
+    schema
+        .set_value(
+            "entryPayload",
+            platform_value!([
+                "appEphemeralPubKeyHash",
+                "walletEphemeralPubKey",
+                "encryptedPayload"
+            ]),
+        )
+        .expect("entryPayload applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "also appears in index",
+    );
+}
+
+#[test]
+fn rejects_an_unbounded_entry_payload_property() {
+    let mut schema = login_response_schema();
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .set_value(
+            "encryptedPayload",
+            platform_value!({ "type": "array", "byteArray": true, "position": 2 }),
+        )
+        .expect("property applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "must be bounded",
+    );
+}
+
+#[test]
+fn rejects_an_optional_entry_payload_property() {
+    let mut schema = login_response_schema();
+    schema
+        .set_value(
+            "required",
+            platform_value!(["appEphemeralPubKeyHash", "walletEphemeralPubKey"]),
+        )
+        .expect("required applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "must be listed in `required`",
+    );
+}
+
+#[test]
+fn rejects_an_entry_payload_naming_an_unknown_property() {
+    let mut schema = login_response_schema();
+    schema
+        .set_value(
+            "entryPayload",
+            platform_value!(["nonsense", "encryptedPayload"]),
+        )
+        .expect("entryPayload applies");
+    // walletEphemeralPubKey is then in no index and no payload either, but
+    // the unknown name is refused first.
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "is not a top-level property",
+    );
+}
+
+#[test]
+fn rejects_an_entry_payload_on_a_stored_type() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+            "note": { "type": "string", "maxLength": 63, "position": 1 }
+        },
+        "required": ["hashtag", "note"],
+        "indices": [{ "name": "byHashtag", "properties": [{ "hashtag": "asc" }] }],
+        "entryPayload": ["note"],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "declares `entryPayload`",
     );
 }
 
@@ -1317,8 +1627,7 @@ fn accepts_a_deletable_document_reference_as_the_terminal() {
                 .indices
                 .get("byLiker")
                 .unwrap()
-                .terminal
-                .as_deref(),
+                .single_terminal(),
             Some("postId")
         );
     }

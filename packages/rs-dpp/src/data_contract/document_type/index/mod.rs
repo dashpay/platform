@@ -71,13 +71,16 @@ pub const TIME_RANGE: &str = "timeRange";
 /// `range % step == 0`), not a versioned limit: it is part of what makes a
 /// transform well-formed at all.
 pub const MAX_TIME_RANGE_PHASE_SECONDS: u64 = 31_536_000;
-/// Index-level keyword naming the property whose value is the index entry's
-/// **member key** on an `indexOnly` document type — the docId-analog terminal
-/// key stored under the `0` storage marker, where a normal index stores the
-/// document id. `"$ownerId"` (the default) or any schema property a prefix
-/// position could carry (identifiers with or without a `refersTo`, bounded
-/// byte arrays and strings, integers, booleans, dates): the member key is the
-/// value's tree-key encoding. Only allowed on indexOnly document types; the
+/// Index-level keyword naming the property — or the ordered list of
+/// properties, for a composite terminal — whose encoded value(s),
+/// concatenated, are the index entry's **member key** on an `indexOnly`
+/// document type: the docId-analog terminal key stored under the `0` storage
+/// marker, where a normal index stores the document id. Each component is
+/// `"$ownerId"` (the default) or any schema property a prefix position could
+/// carry (identifiers with or without a `refersTo`, bounded byte arrays and
+/// strings, integers, booleans, dates), every component but the last fixed
+/// width. An index with no `properties` is a flat index keyed by its
+/// terminal alone. Only allowed on indexOnly document types; the
 /// doc-type-level validation rejects it elsewhere. Meta-schema v3+ (protocol
 /// version 14).
 pub const TERMINAL: &str = "terminal";
@@ -430,6 +433,54 @@ where
     )
 }
 
+/// Deserializer for [`Index::terminal`] accepting `null`, a bare property
+/// name (the single-component form, and the only spelling the field had
+/// while it was an `Option<String>`) and an array of names (the composite
+/// form). Serialization always emits the array form.
+#[cfg(feature = "serde-conversion")]
+fn deserialize_terminal<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum TerminalCompat {
+        Many(Vec<String>),
+        One(String),
+    }
+    Ok(match Option::<TerminalCompat>::deserialize(deserializer)? {
+        None => None,
+        Some(TerminalCompat::One(name)) => Some(vec![name]),
+        Some(TerminalCompat::Many(names)) => Some(names),
+    })
+}
+
+/// The storage key of a flat indexOnly index's level (an index with no
+/// prefix `properties`): a zero byte followed by each terminal component
+/// name, every name preceded by a zero byte. Property names never contain a
+/// zero byte, so a flat level can never collide with a property-name tree:
+/// a flat `["$ownerId"]` terminal keys `"\0$ownerId"`, beside the
+/// `"$ownerId"` property-name tree a prefixed index may own in the same
+/// document type. Every place that turns a flat index into a GroveDB path
+/// segment — contract setup, the document walkers (via `IndexLevel`), the
+/// uniqueness and delete probes, query path derivation, synthesis and proof
+/// verification — derives it through this function.
+pub fn flat_level_key_for(components: &[String]) -> String {
+    let mut key = String::with_capacity(components.iter().map(|c| c.len() + 1).sum());
+    for component in components {
+        key.push('\0');
+        key.push_str(component);
+    }
+    key
+}
+
+/// Whether an index-structure level key names a flat index's level (see
+/// [`flat_level_key_for`]) rather than a property-name or grid-qualified
+/// tree.
+pub fn is_flat_level_key(level_key: &str) -> bool {
+    level_key.starts_with('\0')
+}
+
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
@@ -626,22 +677,31 @@ pub struct Index {
     // JSON must still deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub time_range: Option<TimeRangeTransform>,
-    /// On an `indexOnly` document type, the property whose value is this
-    /// index's member key: the terminal key under the `0` storage marker,
-    /// sitting exactly where a normal index stores the document id — except
-    /// the element is an `Item` instead of a `Reference`, because there is no
-    /// primary-storage row to reference. `"$ownerId"` or any schema property
-    /// a prefix position could carry, keyed by its tree-key encoding; the
-    /// doc-type-level validation
-    /// (`apply_index_only`) normalizes an omitted value to `"$ownerId"` and
+    /// On an `indexOnly` document type, the property — or the ordered list
+    /// of properties, for a composite terminal — whose encoded value(s),
+    /// concatenated, form this index's member key: the terminal key under
+    /// the `0` storage marker, sitting exactly where a normal index stores
+    /// the document id — except the element is an `Item` instead of a
+    /// `Reference`, because there is no primary-storage row to reference.
+    /// Each component is `"$ownerId"` or any schema property a prefix
+    /// position could carry, keyed by its tree-key encoding; every component
+    /// but the last must be fixed width so equality on the leading ones is a
+    /// clean key range. An index with no `properties` at all is a *flat*
+    /// index: its entries live directly under a level keyed by the terminal's
+    /// names ([`flat_level_key_for`]). The doc-type-level validation
+    /// (`apply_index_only`) normalizes an omitted value to `["$ownerId"]` and
     /// rejects the keyword entirely on non-indexOnly document types, so on a
     /// parsed non-indexOnly type this is always `None`.
     //
     // `serde(default)`: added after the struct's serde shape was in the wild
     // (see the note on `countable` above), so pre-existing JSON must still
-    // deserialize.
-    #[cfg_attr(feature = "serde-conversion", serde(default))]
-    pub terminal: Option<String>,
+    // deserialize. The deserializer also accepts the bare-string spelling
+    // the field had while it was an `Option<String>`.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(default, deserialize_with = "deserialize_terminal")
+    )]
+    pub terminal: Option<Vec<String>>,
     /// On an indexOnly document type whose index path is fully determined by
     /// a same-contract `permanentDocument` reference (see [`PREALLOCATED`]):
     /// when `true`, inserting a referenced document also creates this index's
@@ -803,6 +863,43 @@ impl Index {
         }
     }
 
+    /// The terminal's components: one name for a single-property terminal,
+    /// several for a composite one (the member key is their encoded values
+    /// concatenated in this order), none on a non-indexOnly index.
+    pub fn terminal_components(&self) -> &[String] {
+        self.terminal.as_deref().unwrap_or(&[])
+    }
+
+    /// Whether `name` is one of the terminal's components.
+    pub fn terminal_contains(&self, name: &str) -> bool {
+        self.terminal_components()
+            .iter()
+            .any(|component| component == name)
+    }
+
+    /// The terminal's single component; `None` on a composite terminal or a
+    /// non-indexOnly index.
+    pub fn single_terminal(&self) -> Option<&str> {
+        match self.terminal.as_deref() {
+            Some([component]) => Some(component.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Whether this is a flat index: an indexOnly index with no prefix
+    /// properties, whose entries live directly under the level keyed by
+    /// [`Self::flat_level_key`].
+    pub fn is_flat(&self) -> bool {
+        self.properties.is_empty() && self.terminal.is_some()
+    }
+
+    /// The storage key of a flat index's level (see [`flat_level_key_for`]);
+    /// `None` unless [`Self::is_flat`].
+    pub fn flat_level_key(&self) -> Option<String> {
+        self.is_flat()
+            .then(|| flat_level_key_for(self.terminal_components()))
+    }
+
     /// Get values
     pub fn extract_values(&self, data: &BTreeMap<String, Value>) -> Vec<Value> {
         self.properties
@@ -907,29 +1004,33 @@ impl Index {
         in_field_name: Option<&str>,
         order_by: &[&str],
     ) -> Option<(u16, bool)> {
-        let Some(terminal) = self.terminal.as_deref() else {
+        let Some(components) = self.terminal.as_deref() else {
             return self
                 .matches(index_names, in_field_name, order_by)
                 .map(|difference| (difference, false));
         };
+        let is_component = |field: &str| components.iter().any(|component| component == field);
 
-        let terminal_used = index_names.contains(&terminal);
+        let terminal_used = index_names.iter().any(|field| is_component(field));
         let prefix_fields: Vec<&str> = index_names
             .iter()
             .copied()
-            .filter(|field| *field != terminal)
+            .filter(|field| !is_component(field))
             .collect();
-        let prefix_order_by: &[&str] = match order_by.iter().position(|field| *field == terminal) {
-            // Ordering by the terminal is ordering the deepest level —
-            // admissible only as the ordering's last entry.
-            Some(position) if position + 1 == order_by.len() => &order_by[..position],
+        let prefix_order_by: &[&str] = match order_by.iter().position(|field| is_component(field)) {
+            // Ordering by the terminal (any of its components) is ordering
+            // the deepest level — admissible only as the ordering's
+            // trailing entries.
+            Some(position) if order_by[position..].iter().all(|field| is_component(field)) => {
+                &order_by[..position]
+            }
             Some(_) => return None,
             None => order_by,
         };
         let prefix_in_field = match in_field_name {
             // An `in` on the terminal sits at the deepest position by
             // construction; the prefix keeps no `in` constraint.
-            Some(field) if field == terminal => None,
+            Some(field) if is_component(field) => None,
             other => other,
         };
 
@@ -948,6 +1049,14 @@ impl Index {
         in_field_name: Option<&str>,
         order_by: &[&str],
     ) -> Option<u16> {
+        // A FLAT indexOnly index has no prefix components at all: it
+        // matches exactly the queries that bind none (its terminal
+        // components are matched by the terminal-aware callers, which
+        // strip them before reaching here).
+        if properties.is_empty() {
+            return (index_names.is_empty() && in_field_name.is_none() && order_by.is_empty())
+                .then_some(0);
+        }
         // Here we are trying to figure out if the Index matches the order by
         // To do so we take the index and go backwards as we need the order by clauses to be
         // continuous, but they do not need to be at the end.
@@ -1055,27 +1164,31 @@ impl Index {
         in_field_name: Option<&str>,
         order_by: &[&str],
     ) -> Option<(u16, bool)> {
-        let Some(terminal) = self.terminal.as_deref() else {
+        let Some(components) = self.terminal.as_deref() else {
             return self
                 .matches_contiguous(equality_fields, range_field, in_field_name, order_by)
                 .map(|difference| (difference, false));
         };
+        let is_component = |field: &str| components.iter().any(|component| component == field);
 
-        let terminal_used = equality_fields.contains(&terminal)
-            || range_field == Some(terminal)
-            || in_field_name == Some(terminal)
-            || order_by.contains(&terminal);
+        let terminal_used = equality_fields.iter().any(|field| is_component(field))
+            || range_field.is_some_and(is_component)
+            || in_field_name.is_some_and(is_component)
+            || order_by.iter().any(|field| is_component(field));
         let prefix_equality_fields: Vec<&str> = equality_fields
             .iter()
             .copied()
-            .filter(|field| *field != terminal)
+            .filter(|field| !is_component(field))
             .collect();
-        let prefix_range_field = range_field.filter(|field| *field != terminal);
-        let prefix_in_field = in_field_name.filter(|field| *field != terminal);
-        let prefix_order_by: &[&str] = match order_by.iter().position(|field| *field == terminal) {
-            // Ordering by the terminal is ordering the deepest level —
-            // admissible only as the ordering's last entry.
-            Some(position) if position + 1 == order_by.len() => &order_by[..position],
+        let prefix_range_field = range_field.filter(|field| !is_component(field));
+        let prefix_in_field = in_field_name.filter(|field| !is_component(field));
+        let prefix_order_by: &[&str] = match order_by.iter().position(|field| is_component(field)) {
+            // Ordering by the terminal (any of its components) is ordering
+            // the deepest level — admissible only as the ordering's
+            // trailing entries.
+            Some(position) if order_by[position..].iter().all(|field| is_component(field)) => {
+                &order_by[..position]
+            }
             Some(_) => return None,
             None => order_by,
         };
@@ -1296,7 +1409,7 @@ impl Index {
         let mut ranked_summable = false;
         let mut ranked_averageable = false;
         let mut time_range: Option<TimeRangeTransform> = None;
-        let mut terminal: Option<String> = None;
+        let mut terminal: Option<Vec<String>> = None;
         let mut preallocated = false;
         let mut skip_if_absent = false;
 
@@ -1733,19 +1846,51 @@ impl Index {
                 // fact this parser cannot see; `apply_index_only` in
                 // `try_from_schema::common` enforces it.
                 TERMINAL if terminal_allowed => {
-                    let terminal_name =
-                        value_value
-                            .as_text()
-                            .ok_or(DataContractError::ValueWrongType(
-                                "terminal value must be a string naming a property".to_string(),
-                            ))?;
-                    if terminal_name.is_empty() {
+                    // A bare name is a single-component terminal; an array
+                    // is a composite one, keyed by the concatenation of its
+                    // components' encoded values in the listed order.
+                    let components: Vec<String> = match value_value {
+                        Value::Text(terminal_name) => vec![terminal_name.clone()],
+                        Value::Array(entries) => entries
+                            .iter()
+                            .map(|entry| {
+                                entry.as_text().map(str::to_owned).ok_or(
+                                    DataContractError::ValueWrongType(
+                                        "every terminal component must be a string naming a \
+                                         property"
+                                            .to_string(),
+                                    ),
+                                )
+                            })
+                            .collect::<Result<_, _>>()?,
+                        _ => {
+                            return Err(DataContractError::ValueWrongType(
+                                "terminal value must be a property name or an array of \
+                                 property names"
+                                    .to_string(),
+                            ))
+                        }
+                    };
+                    if components.is_empty() {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "terminal must name at least one property".to_string(),
+                        ));
+                    }
+                    if components.iter().any(|component| component.is_empty()) {
                         return Err(DataContractError::InvalidContractStructure(
                             "terminal must name a property; an empty string names nothing"
                                 .to_string(),
                         ));
                     }
-                    terminal = Some(terminal_name.to_owned());
+                    for (position, component) in components.iter().enumerate() {
+                        if components[..position].contains(component) {
+                            return Err(DataContractError::InvalidContractStructure(format!(
+                                "terminal lists property \"{}\" twice",
+                                component
+                            )));
+                        }
+                    }
+                    terminal = Some(components);
                 }
                 // `preallocated` is guarded the same way as `terminal` above:
                 // it joined the grammar at meta-schema v3, so below that the
@@ -3745,7 +3890,7 @@ mod tests {
     #[test]
     fn test_matches_including_terminal_contiguous() {
         let mut index = make_index("idx", vec![("hashtag", true), ("post", true)], false);
-        index.terminal = Some("owner".to_string());
+        index.terminal = Some(vec!["owner".to_string()]);
 
         // Fully determined prefix + terminal equality.
         assert_eq!(

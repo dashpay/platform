@@ -945,6 +945,7 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
 /// predate the keyword: V0 and V1 have no field to borrow from, and the
 /// getter hands out a reference.
 static NO_IMMUTABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
+static NO_ENTRY_PAYLOAD: BTreeSet<String> = BTreeSet::new();
 
 impl DocumentTypeV2Getters for DocumentType {
     fn documents_countable(&self) -> bool {
@@ -984,6 +985,14 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => false,
             DocumentType::V1(_) => false,
             DocumentType::V2(v2) => v2.index_only(),
+        }
+    }
+
+    fn entry_payload(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_ENTRY_PAYLOAD,
+            DocumentType::V1(_) => &NO_ENTRY_PAYLOAD,
+            DocumentType::V2(v2) => v2.entry_payload(),
         }
     }
 
@@ -1103,6 +1112,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn entry_payload(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_ENTRY_PAYLOAD,
+            DocumentTypeRef::V1(_) => &NO_ENTRY_PAYLOAD,
+            DocumentTypeRef::V2(v2) => v2.entry_payload(),
+        }
+    }
+
     fn documents_can_be_deleted_by_moderators(&self) -> bool {
         match self {
             DocumentTypeRef::V0(_) => false,
@@ -1182,6 +1199,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.index_only(),
+        }
+    }
+
+    fn entry_payload(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_ENTRY_PAYLOAD,
+            DocumentTypeMutRef::V1(_) => &NO_ENTRY_PAYLOAD,
+            DocumentTypeMutRef::V2(v2) => v2.entry_payload(),
         }
     }
 

@@ -71,8 +71,7 @@ use crate::consensus::basic::data_contract::{
 };
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::{
-    DuplicateIndexNameError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
+    DuplicateIndexNameError, SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
 #[cfg(feature = "validation")]
@@ -100,10 +99,7 @@ use jsonschema::JSONSchema;
 use std::collections::HashSet;
 
 #[cfg(feature = "validation")]
-use super::{
-    MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH,
-    NOT_ALLOWED_SYSTEM_PROPERTIES,
-};
+use super::NOT_ALLOWED_SYSTEM_PROPERTIES;
 
 /// RANKED: the extra index-property check a generation runs before the generic
 /// index-key limits.
@@ -1161,7 +1157,7 @@ fn parse_indices(
         use crate::document::property_names::OWNER_ID;
         for index in indices.values_mut() {
             if index.terminal.is_none() {
-                index.terminal = Some(OWNER_ID.to_string());
+                index.terminal = Some(vec![OWNER_ID.to_string()]);
             }
         }
     }
@@ -1319,7 +1315,7 @@ fn check_indexable_property_shape(
         | DocumentPropertyType::Object(_)
         | DocumentPropertyType::VariableTypeArray(_) => {
             Err(ProtocolError::ConsensusError(Box::new(
-                InvalidIndexPropertyTypeError::new(
+                crate::consensus::basic::data_contract::InvalidIndexPropertyTypeError::new(
                     document_type_name.to_owned(),
                     index_name.to_owned(),
                     property_name.to_owned(),
@@ -1330,19 +1326,19 @@ fn check_indexable_property_shape(
         }
         // Indexed byte array size must be limited
         DocumentPropertyType::ByteArray(sizes)
-            if sizes
-                .max_size
-                .is_none_or(|max_size| max_size > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH) =>
+            if sizes.max_size.is_none_or(|max_size| {
+                max_size > super::MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+            }) =>
         {
             Err(ProtocolError::ConsensusError(Box::new(
-                InvalidIndexedPropertyConstraintError::new(
+                crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError::new(
                     document_type_name.to_owned(),
                     index_name.to_owned(),
                     property_name.to_owned(),
                     "maxItems".to_string(),
                     format!(
                         "should be less or equal {}",
-                        MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+                        super::MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
                     ),
                 )
                 .into(),
@@ -1350,19 +1346,19 @@ fn check_indexable_property_shape(
         }
         // Indexed string length must be limited
         DocumentPropertyType::String(sizes)
-            if sizes
-                .max_length
-                .is_none_or(|max_length| max_length > MAX_INDEXED_STRING_PROPERTY_LENGTH) =>
+            if sizes.max_length.is_none_or(|max_length| {
+                max_length > super::MAX_INDEXED_STRING_PROPERTY_LENGTH
+            }) =>
         {
             Err(ProtocolError::ConsensusError(Box::new(
-                InvalidIndexedPropertyConstraintError::new(
+                crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError::new(
                     document_type_name.to_owned(),
                     index_name.to_owned(),
                     property_name.to_owned(),
                     "maxLength".to_string(),
                     format!(
                         "should be less or equal {}",
-                        MAX_INDEXED_STRING_PROPERTY_LENGTH
+                        super::MAX_INDEXED_STRING_PROPERTY_LENGTH
                     ),
                 )
                 .into(),
@@ -2332,6 +2328,7 @@ pub(super) fn apply_index_only(
     document_type: &mut DocumentTypeV2,
     index_only: bool,
     name: &str,
+    platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
     use crate::document::property_names::{CREATED_AT, OWNER_ID};
 
@@ -2353,6 +2350,29 @@ pub(super) fn apply_index_only(
                  allowed on indexOnly document types (set `indexOnly: true` on the document \
                  type, or remove the terminal)",
                 index_name, name,
+            )));
+        }
+        // An index without properties is only meaningful as a flat indexOnly
+        // index (keyed by its terminal alone); on a stored type it would
+        // reach no level at all and index nothing.
+        if let Some((index_name, _)) = document_type
+            .indices
+            .iter()
+            .find(|(_, index)| index.properties.is_empty())
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on document type \"{}\" has no properties: an index keyed by \
+                 a terminal alone (a flat index) is only allowed on an indexOnly document \
+                 type",
+                index_name, name,
+            )));
+        }
+        if !document_type.entry_payload.is_empty() {
+            return Err(structure_error(format!(
+                "document type \"{}\" declares `entryPayload`, which is only allowed on \
+                 indexOnly document types (a stored document type keeps every property in \
+                 its primary row)",
+                name,
             )));
         }
         // Same for `preallocated`: only an indexOnly index's trees are cheap
@@ -2466,15 +2486,109 @@ pub(super) fn apply_index_only(
     // structure's level info and the `Index` values below agree, and every
     // check here reads `Some`.
 
+    // ---- entry payload --------------------------------------------------
+    // `entryPayload` names the type's value slot: top-level scalar
+    // properties stored in every entry's value, after the row commitment,
+    // instead of in a key. They are still committed (the commitment hashes
+    // every present property) and still required, but they sit in no
+    // index, so the every-property-indexed rule below exempts them. Each
+    // must be bounded, since fee estimation sizes the entry value by the
+    // sum of their bounds, and the sum is capped by the field value limit.
+    let mut payload_max_total: u32 = 0;
+    for payload_property in document_type.entry_payload.iter() {
+        let Some(property) = document_type.properties.get(payload_property) else {
+            return Err(structure_error(format!(
+                "entryPayload of indexOnly document type \"{}\" names \"{}\", which is not \
+                 a top-level property of the document type",
+                name, payload_property,
+            )));
+        };
+        if matches!(
+            property.property_type,
+            DocumentPropertyType::Object(_)
+                | DocumentPropertyType::Array(_)
+                | DocumentPropertyType::VariableTypeArray(_)
+        ) {
+            return Err(structure_error(format!(
+                "entryPayload property \"{}\" of indexOnly document type \"{}\" must be a \
+                 scalar (a byte array, string, integer, boolean, date or identifier): the \
+                 entry value is a flat concatenation of length-framed scalars",
+                payload_property, name,
+            )));
+        }
+        let max_width = property
+            .property_type
+            .max_byte_size(platform_version)?
+            .unwrap_or(u16::MAX);
+        if max_width == u16::MAX {
+            return Err(structure_error(format!(
+                "entryPayload property \"{}\" of indexOnly document type \"{}\" must be \
+                 bounded (declare maxItems on a byte array or maxLength on a string): fee \
+                 estimation sizes every entry's value by the payload bounds",
+                payload_property, name,
+            )));
+        }
+        // Two bytes of length frame per property.
+        payload_max_total += u32::from(max_width) + 2;
+        if !document_type.required_fields.contains(payload_property) {
+            return Err(structure_error(format!(
+                "entryPayload property \"{}\" of indexOnly document type \"{}\" must be \
+                 listed in `required`: the entry value has no representation for an absent \
+                 property",
+                payload_property, name,
+            )));
+        }
+        if let Some((index_name, _)) = document_type.indices.iter().find(|(_, index)| {
+            index.terminal_contains(payload_property)
+                || index
+                    .properties
+                    .iter()
+                    .any(|index_property| index_property.name == *payload_property)
+        }) {
+            return Err(structure_error(format!(
+                "entryPayload property \"{}\" of indexOnly document type \"{}\" also \
+                 appears in index \"{}\": a property is either a key (a prefix property or \
+                 a terminal component) or entry payload, never both",
+                payload_property, name, index_name,
+            )));
+        }
+    }
+    if payload_max_total > platform_version.system_limits.max_field_value_size {
+        return Err(structure_error(format!(
+            "entryPayload of indexOnly document type \"{}\" may encode to {} bytes, over \
+             the {}-byte cap on an entry's value",
+            name, payload_max_total, platform_version.system_limits.max_field_value_size,
+        )));
+    }
+
     // ---- per-index rules ------------------------------------------------
     for (index_name, index) in document_type.indices.iter() {
         if index.properties.is_empty() {
-            return Err(structure_error(format!(
-                "index \"{}\" on indexOnly document type \"{}\" has no properties: an \
-                 indexOnly entry is `[…property values, 0, terminal value]`, so at least \
-                 one prefix property is required above the terminal",
-                index_name, name,
-            )));
+            // FLAT index: no prefix levels, the entries live directly under
+            // a level keyed by the terminal's component names. There is no
+            // prefix level for an aggregate, a ranking, a time grid, a skip
+            // trigger or a preallocation to apply to, so none of those
+            // keywords is admitted on it.
+            if index.countable.is_countable()
+                || index.range_countable
+                || index.summable.is_some()
+                || index.range_summable
+                || index.ranked_countable
+                || !index.ranked_countable_at.is_empty()
+                || index.ranked_summable
+                || index.ranked_averageable
+                || index.time_range.is_some()
+                || index.skip_if_absent
+                || index.preallocated
+            {
+                return Err(structure_error(format!(
+                    "index \"{}\" on indexOnly document type \"{}\" has no properties (a \
+                     flat index keyed by its terminal alone), so it admits no countable, \
+                     summable, ranked, timeRange, skipIfAbsent or preallocated keyword: \
+                     there is no prefix level for them to apply to",
+                    index_name, name,
+                )));
+            }
         }
         if index.unique {
             return Err(structure_error(format!(
@@ -2572,55 +2686,120 @@ pub(super) fn apply_index_only(
         // (canonical property, i64-safe integer type, `required`
         // membership) run for every doctype, indexOnly included.
 
-        let terminal = index.terminal.as_deref().expect("normalized to Some above");
-
-        if index
-            .properties
-            .iter()
-            .any(|property| property.name == terminal)
-        {
+        let components = index.terminal_components();
+        if components.is_empty() {
             return Err(structure_error(format!(
-                "index \"{}\" on indexOnly document type \"{}\" repeats its terminal \
-                 (\"{}\") in its properties: the terminal is the member key below the \
-                 listed properties, so listing it again would index the same dimension \
-                 twice",
-                index_name, name, terminal,
+                "index \"{}\" on indexOnly document type \"{}\" has no terminal after \
+                 normalization: internal parser error",
+                index_name, name,
             )));
         }
 
-        // The terminal is the member key. Any property a prefix position
-        // admits may serve: every path derives the member key through the
-        // same tree-key encoding the prefix levels use (the walkers and
-        // probes via `get_raw_for_document_type`, queries and executed
-        // proofs via `serialize_value_for_key`, synthesis via
-        // `decode_value_for_tree_keys`), so the member key needs no
-        // particular width or meaning — only the shape limits every indexed
-        // value carries. Structural uniqueness then spans the terminal's
-        // value: one entry per (prefix values, terminal value).
-        //
-        // System properties other than `$ownerId` are refused here:
-        // `$createdAt` is the one other system value an indexOnly entry can
-        // carry, and the rules that reason about it (the proof-index
-        // selection, `required` membership, bucketing) all walk the prefix
-        // properties, so admitting it as a terminal would need each of them
-        // extended first.
-        if terminal != OWNER_ID {
-            if terminal.starts_with('$') {
+        for component in components {
+            if index
+                .properties
+                .iter()
+                .any(|property| property.name == *component)
+            {
                 return Err(structure_error(format!(
-                    "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
-                     is a system property: only $ownerId may be a terminal (name a schema \
-                     property, or list $createdAt among the index's properties instead)",
-                    terminal, index_name, name,
+                    "index \"{}\" on indexOnly document type \"{}\" repeats its terminal \
+                     component (\"{}\") in its properties: the terminal is the member key \
+                     below the listed properties, so listing it again would index the same \
+                     dimension twice",
+                    index_name, name, component,
                 )));
             }
-            let Some(property) = document_type.flattened_properties.get(terminal) else {
-                return Err(structure_error(format!(
-                    "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
-                     does not name a property of the document type",
-                    terminal, index_name, name,
-                )));
+        }
+
+        // The terminal is the member key: the encoded values of its
+        // components, concatenated in order. Any property a prefix position
+        // admits may serve as a component: every path derives the member
+        // key through the same tree-key encoding the prefix levels use (the
+        // walkers and probes via `get_raw_for_document_type`, queries and
+        // executed proofs via `serialize_value_for_key`, synthesis via
+        // `decode_value_for_tree_keys`), so a component needs no particular
+        // width or meaning — only the shape limits every indexed value
+        // carries. Structural uniqueness spans the whole key: one entry per
+        // (prefix values, terminal values).
+        //
+        // Every component but the last must be fixed width: a leading
+        // component is followed by more key bytes, and only a fixed-width
+        // encoding keeps equality on the leading components a clean key
+        // range (and lets synthesis split the key back). Strings are never
+        // fixed width (their bound counts characters, not bytes), so a
+        // string can only be the last component.
+        //
+        // System properties other than `$ownerId` are refused: `$createdAt`
+        // is the one other system value an indexOnly entry can carry, and
+        // the rules that reason about it (the proof-index selection,
+        // `required` membership, bucketing) all walk the prefix properties,
+        // so admitting it as a component would need each of them extended
+        // first.
+        let mut terminal_max_width: u32 = 0;
+        for (position, component) in components.iter().enumerate() {
+            let is_last = position + 1 == components.len();
+            let max_width: u32 = if component == OWNER_ID {
+                32
+            } else {
+                if component.starts_with('$') {
+                    return Err(structure_error(format!(
+                        "terminal component \"{}\" of index \"{}\" on indexOnly document \
+                         type \"{}\" is a system property: only $ownerId may be a terminal \
+                         component (name a schema property, or list $createdAt among the \
+                         index's properties instead)",
+                        component, index_name, name,
+                    )));
+                }
+                let Some(property) = document_type.flattened_properties.get(component) else {
+                    return Err(structure_error(format!(
+                        "terminal component \"{}\" of index \"{}\" on indexOnly document \
+                         type \"{}\" does not name a property of the document type",
+                        component, index_name, name,
+                    )));
+                };
+                check_indexable_property_shape(
+                    name,
+                    index_name,
+                    component,
+                    &property.property_type,
+                )?;
+                let min_width = property
+                    .property_type
+                    .min_byte_size(platform_version)?
+                    .unwrap_or(0);
+                let max_width = property
+                    .property_type
+                    .max_byte_size(platform_version)?
+                    .unwrap_or(u16::MAX);
+                let fixed_width =
+                    !matches!(property.property_type, DocumentPropertyType::String(_))
+                        && min_width == max_width
+                        && min_width > 0;
+                if !is_last && !fixed_width {
+                    return Err(structure_error(format!(
+                        "terminal component \"{}\" of index \"{}\" on indexOnly document \
+                         type \"{}\" is followed by another component but is not fixed \
+                         width: every component but the last must encode to a fixed number \
+                         of bytes (a byte array with minItems equal to maxItems, an \
+                         identifier, an integer, a boolean or a date); a string or a \
+                         variable-size byte array can only be the last component",
+                        component, index_name, name,
+                    )));
+                }
+                u32::from(max_width)
             };
-            check_indexable_property_shape(name, index_name, terminal, &property.property_type)?;
+            terminal_max_width += max_width;
+        }
+        if terminal_max_width > u32::from(super::MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH) {
+            return Err(structure_error(format!(
+                "the terminal of index \"{}\" on indexOnly document type \"{}\" encodes to \
+                 up to {} bytes, over the {}-byte member key cap: shorten or drop a \
+                 component",
+                index_name,
+                name,
+                terminal_max_width,
+                super::MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH,
+            )));
         }
 
         // Prefix properties: schema properties plus exactly two system
@@ -2652,7 +2831,7 @@ pub(super) fn apply_index_only(
         // row — and remove an entry it never created; binding every entry
         // to its owner closes that, at the cost of the (unneeded) global-
         // uniqueness-without-owner shape.
-        if terminal != OWNER_ID
+        if !index.terminal_contains(OWNER_ID)
             && !index
                 .properties
                 .iter()
@@ -2671,7 +2850,7 @@ pub(super) fn apply_index_only(
         // `created_at` only when `$createdAt` is in `required`. Without
         // this, an indexed `$createdAt` would silently take the missing-
         // value branch instead of storing block time.
-        if (terminal == CREATED_AT
+        if (index.terminal_contains(CREATED_AT)
             || index
                 .properties
                 .iter()
@@ -2747,7 +2926,7 @@ pub(super) fn apply_index_only(
     // index qualifies as the proof index.)
     let has_proof_index = document_type.indices.values().any(|index| {
         !index.skip_if_absent
-            && index.terminal.as_deref() != Some(CREATED_AT)
+            && !index.terminal_contains(CREATED_AT)
             && !index
                 .properties
                 .iter()
@@ -2788,10 +2967,15 @@ pub(super) fn apply_index_only(
             continue;
         }
         let is_trigger = skip_triggers.contains(property_name.as_str());
+        if document_type.entry_payload.contains(property_name.as_str()) {
+            // Stored in every entry's value: validated above (required,
+            // bounded, in no index).
+            continue;
+        }
         let covered = document_type.indices.values().any(|index| {
             // A skip index only counts as coverage for its own trigger.
             (is_trigger || !index.skip_if_absent)
-                && (index.terminal.as_deref() == Some(property_name.as_str())
+                && (index.terminal_contains(property_name)
                     || index
                         .properties
                         .iter()
@@ -2825,7 +3009,7 @@ pub(super) fn apply_index_only(
             // when no non-skip index (and no deeper level of any index)
             // reaches through that branch.
             for (index_name, index) in document_type.indices.iter() {
-                if index.terminal.as_deref() == Some(property_name.as_str()) {
+                if index.terminal_contains(property_name) {
                     return Err(structure_error(format!(
                         "optional property \"{}\" on indexOnly document type \"{}\" is the \
                          terminal of index \"{}\": a terminal is every entry's member key \

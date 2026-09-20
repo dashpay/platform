@@ -116,7 +116,7 @@ impl IndexOnlyBatchEntries {
                                 .properties
                                 .iter()
                                 .map(|property| property.name.clone())
-                                .chain(index.terminal.clone())
+                                .chain(index.terminal_components().iter().cloned())
                                 .collect(),
                         )
                         .into(),

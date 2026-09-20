@@ -143,6 +143,14 @@ pub(crate) mod property_names {
     /// 14). See `apply_index_only` in `try_from_schema::common` for the
     /// structural constraints the flag imposes.
     pub const INDEX_ONLY: &str = "indexOnly";
+    /// Doctype-level list, on an `indexOnly` type, of the top-level properties
+    /// stored in every entry's value (after the row commitment) instead of in
+    /// a key: the type's value slot. Listed properties must be required, must
+    /// not appear in any index (as a property or a terminal component) and
+    /// must be bounded; they are recovered by decoding the proved element.
+    /// Meta-schema v3+ (protocol version 14). See `apply_index_only` in
+    /// `try_from_schema::common`.
+    pub const ENTRY_PAYLOAD: &str = "entryPayload";
     /// Doctype-level flag letting the contract's moderators (its owner and the
     /// identities its moderation config appoints) delete documents of this type
     /// with a `ContractUserModeration` transition, whatever `canBeDeleted` says

@@ -33,6 +33,10 @@ pub trait DocumentTypeV2Getters {
     /// each terminating in an `Item` keyed by the index's `terminal`
     /// property. Only what is in the indexes exists and is recoverable.
     fn index_only(&self) -> bool;
+    /// On an indexOnly type, the top-level properties stored in every entry's
+    /// value after the row commitment (`entryPayload`), in name order; empty
+    /// elsewhere.
+    fn entry_payload(&self) -> &BTreeSet<String>;
 
     /// Returns whether the contract's moderators may delete documents of this
     /// type (the `canBeDeletedByModerators` keyword, protocol version 14).

@@ -140,6 +140,95 @@
         "stars"
       ],
       "additionalProperties": false
+    },
+    "loginKeyResponse": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byRequest",
+          "terminal": [
+            "appEphemeralPubKeyHash",
+            "$ownerId"
+          ]
+        }
+      ],
+      "entryPayload": [
+        "walletEphemeralPubKey",
+        "encryptedPayload"
+      ],
+      "properties": {
+        "appEphemeralPubKeyHash": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 20,
+          "maxItems": 20,
+          "position": 0
+        },
+        "walletEphemeralPubKey": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 33,
+          "maxItems": 33,
+          "position": 1
+        },
+        "encryptedPayload": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 60,
+          "maxItems": 572,
+          "position": 2
+        }
+      },
+      "required": [
+        "appEphemeralPubKeyHash",
+        "walletEphemeralPubKey",
+        "encryptedPayload"
+      ],
+      "additionalProperties": false
+    },
+    "reaction": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPostKind",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": [
+            "kind",
+            "$ownerId"
+          ]
+        }
+      ],
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "kind": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "position": 1
+        }
+      },
+      "required": [
+        "postId",
+        "kind"
+      ],
+      "additionalProperties": false
     }
   }
 }
