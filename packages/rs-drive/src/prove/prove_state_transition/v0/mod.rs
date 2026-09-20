@@ -24,6 +24,7 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
@@ -286,6 +287,39 @@ impl Drive {
                     contract_id.to_buffer(),
                     st.target_identity_id().to_buffer(),
                     &lists,
+                    &platform_version.drive.grove_version,
+                )?
+            }
+            // The pot the claim paid out with the epoch it was last claimed in, and the balance
+            // of every identity a payout of that pot goes to.
+            StateTransition::ContractFeeClaim(st) => {
+                let contract_id = st.data_contract_id();
+                let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
+                    contract_id.to_buffer(),
+                    false,
+                    None,
+                    platform_version,
+                )?
+                else {
+                    return Err(Error::Proof(ProofError::UnknownContract(format!(
+                        "unknown contract with id {} in contract fee claim proving",
+                        contract_id
+                    ))));
+                };
+                let recipients: Vec<[u8; 32]> = st
+                    .pot()
+                    .recipients(&contract_fetch_info.contract)
+                    .into_iter()
+                    .map(|recipient| recipient.to_buffer())
+                    .collect();
+                let pot_query = Drive::contract_fee_pots_query(
+                    contract_id.to_buffer(),
+                    &[st.pot()],
+                    &platform_version.drive.grove_version,
+                )?;
+                let balances_query = Drive::balances_for_identity_ids_query(&recipients);
+                PathQuery::merge(
+                    vec![&pot_query, &balances_query],
                     &platform_version.drive.grove_version,
                 )?
             }

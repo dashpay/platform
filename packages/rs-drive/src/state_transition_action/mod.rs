@@ -18,6 +18,7 @@ use crate::state_transition_action::address_funds::address_credit_withdrawal::Ad
 use crate::state_transition_action::address_funds::address_funding_from_asset_lock::AddressFundingFromAssetLockTransitionAction;
 use crate::state_transition_action::address_funds::address_funds_transfer::AddressFundsTransferTransitionAction;
 use crate::state_transition_action::batch::BatchTransitionAction;
+use crate::state_transition_action::contract::contract_fee_claim::ContractFeeClaimTransitionAction;
 use crate::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use crate::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
@@ -122,6 +123,8 @@ pub enum StateTransitionAction {
     IdentityTopUpFromShieldedPoolAction(IdentityTopUpFromShieldedPoolTransitionAction),
     /// contract user moderation: one edit of a contract's banlist or suspension list
     ContractUserModerationAction(ContractUserModerationTransitionAction),
+    /// contract fee claim: the payout of one of a contract's fee pots
+    ContractFeeClaimAction(ContractFeeClaimTransitionAction),
 }
 
 impl StateTransitionAction {
@@ -133,6 +136,7 @@ impl StateTransitionAction {
             StateTransitionAction::ContractUserModerationAction(action) => {
                 action.user_fee_increase()
             }
+            StateTransitionAction::ContractFeeClaimAction(action) => action.user_fee_increase(),
             StateTransitionAction::BatchAction(action) => action.user_fee_increase(),
             StateTransitionAction::IdentityCreateAction(action) => action.user_fee_increase(),
             StateTransitionAction::IdentityTopUpAction(action) => action.user_fee_increase(),

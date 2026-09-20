@@ -4,6 +4,7 @@ use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
+use dpp::state_transition::contract_fee_claim_transition::ContractFeeClaimTransition;
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
@@ -235,6 +236,15 @@ impl BumpIdentityDataContractNonceAction {
         match value {
             DataContractUpdateTransitionAction::V0(v0) => {
                 BumpIdentityDataContractNonceActionV0::from_data_contract_update_action(v0).into()
+            }
+        }
+    }
+
+    /// from borrowed contract fee claim transition
+    pub fn from_borrowed_contract_fee_claim_transition(value: &ContractFeeClaimTransition) -> Self {
+        match value {
+            ContractFeeClaimTransition::V0(v0) => {
+                BumpIdentityDataContractNonceActionV0::from_borrowed_contract_fee_claim(v0).into()
             }
         }
     }

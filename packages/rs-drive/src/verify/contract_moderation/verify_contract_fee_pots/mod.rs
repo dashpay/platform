@@ -21,6 +21,8 @@ impl Drive {
     /// * `proof`: The proof.
     /// * `contract_id`: The contract the pots belong to.
     /// * `pots`: The pots that were proved, at least one.
+    /// * `verify_subset_of_proof`: Whether the proof may prove more than these pots, as the
+    ///   proof of a contract fee claim's execution does.
     /// * `platform_version`: The platform version.
     ///
     /// # Returns
@@ -31,6 +33,7 @@ impl Drive {
         proof: &[u8],
         contract_id: Identifier,
         pots: &[ContractFeePot],
+        verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, ContractFeePots), Error> {
         match platform_version
@@ -40,7 +43,13 @@ impl Drive {
             .contract_moderation
             .verify_contract_fee_pots
         {
-            0 => Self::verify_contract_fee_pots_v0(proof, contract_id, pots, platform_version),
+            0 => Self::verify_contract_fee_pots_v0(
+                proof,
+                contract_id,
+                pots,
+                verify_subset_of_proof,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_contract_fee_pots".to_string(),
                 known_versions: vec![0],

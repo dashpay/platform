@@ -7,18 +7,22 @@
 //! document type is published and never change.
 
 use crate::balances::credits::{Credits, MAX_CREDITS};
+use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
 };
 use crate::data_contract::document_type::property_names::ACTION_FEES;
 use crate::data_contract::errors::DataContractError;
+use crate::data_contract::DataContract;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonSafeFields;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::fmt;
 
 pub mod v0;
@@ -89,6 +93,23 @@ pub enum ContractFeePot {
     Owner,
     /// The pot the contract's moderation team shares equally
     Moderators,
+}
+
+impl ContractFeePot {
+    /// The identities a payout of this pot of `contract` goes to: the contract owner for the
+    /// owner pot, the contract's moderation team for the moderators pot, which is empty for a
+    /// contract that declares no moderation. Only a recipient may claim the pot.
+    pub fn recipients(&self, contract: &DataContract) -> BTreeSet<Identifier> {
+        let owner_id = contract.owner_id();
+        match self {
+            ContractFeePot::Owner => BTreeSet::from([owner_id]),
+            ContractFeePot::Moderators => contract
+                .config()
+                .moderation()
+                .map(|moderation| moderation.team(&owner_id))
+                .unwrap_or_default(),
+        }
+    }
 }
 
 impl fmt::Display for ContractFeePot {

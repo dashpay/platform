@@ -75,7 +75,7 @@ fn assert_proved(drive: &Drive, contract_id: Identifier, pots: &[ContractFeePot]
         .prove_contract_fee_pots(contract_id, pots, None, platform_version)
         .expect("expected to prove the pots");
     let (root_hash, proved) =
-        Drive::verify_contract_fee_pots(&proof, contract_id, pots, platform_version)
+        Drive::verify_contract_fee_pots(&proof, contract_id, pots, false, platform_version)
             .expect("expected to verify the pots");
     assert_eq!(
         root_hash,
@@ -241,6 +241,7 @@ fn should_prove_the_pots_asked_for_and_nothing_about_the_other() {
         &proof,
         contract.id(),
         &[ContractFeePot::Owner],
+        false,
         platform_version,
     )
     .expect("expected to verify the owner pot");
@@ -260,6 +261,7 @@ fn should_prove_the_pots_asked_for_and_nothing_about_the_other() {
         &proof,
         contract.id(),
         &[ContractFeePot::Moderators],
+        false,
         platform_version,
     )
     .is_err());

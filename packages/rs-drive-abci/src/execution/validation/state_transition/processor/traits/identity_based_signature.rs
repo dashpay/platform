@@ -67,7 +67,8 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::IdentityKeyLimitsUpdate(_)
-            | StateTransition::ContractUserModeration(_) => {
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_) => {
                 //Basic signature verification
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
@@ -197,7 +198,8 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityKeyLimitsUpdate(_)
-            | StateTransition::ContractUserModeration(_) => true,
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_) => true,
         }
     }
 
@@ -228,7 +230,8 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::IdentityKeyLimitsUpdate(_)
-            | StateTransition::ContractUserModeration(_) => true,
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_) => true,
         }
     }
 }

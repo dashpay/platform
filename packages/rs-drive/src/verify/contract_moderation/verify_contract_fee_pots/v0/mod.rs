@@ -16,6 +16,7 @@ impl Drive {
         proof: &[u8],
         contract_id: Identifier,
         pots: &[ContractFeePot],
+        verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, ContractFeePots), Error> {
         if pots.is_empty() {
@@ -28,8 +29,11 @@ impl Drive {
             pots,
             &platform_version.drive.grove_version,
         )?;
-        let (root_hash, proved_key_values) =
-            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
+        let (root_hash, proved_key_values) = if verify_subset_of_proof {
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
+        } else {
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
+        };
 
         let mut fee_pots = ContractFeePots::default();
         for (path, key, element) in proved_key_values {

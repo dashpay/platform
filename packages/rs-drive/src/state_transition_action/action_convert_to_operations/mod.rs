@@ -61,6 +61,10 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
                 contract_user_moderation_transition,
             ) => contract_user_moderation_transition
                 .into_high_level_drive_operations(epoch, platform_version),
+            StateTransitionAction::ContractFeeClaimAction(contract_fee_claim_transition) => {
+                contract_fee_claim_transition
+                    .into_high_level_drive_operations(epoch, platform_version)
+            }
             StateTransitionAction::IdentityKeyLimitsUpdateAction(
                 identity_key_limits_update_transition,
             ) => identity_key_limits_update_transition

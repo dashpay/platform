@@ -94,6 +94,13 @@ impl StateTransitionIdentityNonceValidationV0 for StateTransition {
                 execution_context,
                 platform_version,
             ),
+            StateTransition::ContractFeeClaim(st) => st.validate_identity_nonces(
+                platform,
+                block_info,
+                tx,
+                execution_context,
+                platform_version,
+            ),
             StateTransition::IdentityCreditTransfer(st) => st.validate_identity_nonces(
                 platform,
                 block_info,
@@ -182,6 +189,7 @@ impl StateTransitionHasIdentityNonceValidationV0 for StateTransition {
                     | StateTransition::IdentityUpdate(_)
                     | StateTransition::IdentityKeyLimitsUpdate(_)
                     | StateTransition::ContractUserModeration(_)
+                    | StateTransition::ContractFeeClaim(_)
                     | StateTransition::IdentityCreditTransfer(_)
                     | StateTransition::IdentityCreditWithdrawal(_)
                     | StateTransition::MasternodeVote(_)
