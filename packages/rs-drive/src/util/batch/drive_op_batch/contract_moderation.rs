@@ -72,7 +72,13 @@ pub enum ContractModerationOperationType {
     /// Writes nothing: marks the batch it is in as one whose storage removals refund nobody
     /// (`Drive::apply_drive_operations` generation 1). A moderator's document deletion carries
     /// it, so the deleted document's owner gets no storage refund.
-    ForfeitStorageRefunds,
+    ForfeitStorageRefunds {
+        /// The one identity the batch still refunds: the moderator whose removal record the
+        /// deletion replaces, who paid for that record and is owed what a shorter one frees.
+        /// Whoever the document's storage flags name is not known without reading them (a
+        /// transfer may leave the first owner there), so the rule names who is spared.
+        except: Option<Identifier>,
+    },
 }
 
 impl DriveLowLevelOperationConverter for ContractModerationOperationType {
@@ -160,7 +166,7 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
                 transaction,
                 platform_version,
             ),
-            ContractModerationOperationType::ForfeitStorageRefunds => Ok(vec![]),
+            ContractModerationOperationType::ForfeitStorageRefunds { .. } => Ok(vec![]),
         }
     }
 }

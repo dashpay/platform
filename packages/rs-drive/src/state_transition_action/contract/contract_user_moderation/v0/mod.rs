@@ -39,7 +39,8 @@ pub struct ContractDocumentDeletionContext {
     pub document_owner_id: Identifier,
     /// the time of the block the deletion runs in, recorded as the removal time
     pub removed_at: TimestampMillis,
-    /// whether a removal record of the same document id is already stored, which the new one
-    /// then replaces
-    pub replaces_existing_removal: bool,
+    /// the moderator of the removal record already stored for the same document id, if there
+    /// is one: the new record then replaces it, and that moderator keeps the storage refund a
+    /// shorter record frees
+    pub replaced_removal_moderator_id: Option<Identifier>,
 }

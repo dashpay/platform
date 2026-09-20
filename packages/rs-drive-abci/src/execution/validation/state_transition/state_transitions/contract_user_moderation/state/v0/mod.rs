@@ -217,10 +217,11 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
 /// exists, and it is not the owner's or a moderator's. Every refusal is paid for by
 /// bumping the signer's contract nonce.
 ///
-/// The action carries the contract, the document's owner and whether a removal record of
-/// the same document id is already stored, so Drive deletes the document and writes its
-/// record without reading again. No token is charged: the deletion cost of a document type
-/// is what a document's own owner pays.
+/// The action carries the contract, the document's owner and the moderator of a removal
+/// record already stored for the same document id, so Drive deletes the document and writes
+/// its record without reading again. Nothing the document type prices is charged, neither
+/// its deletion token cost nor its `actionFees` deletion fee: both are what a document's own
+/// owner pays for deleting it, and a moderator removes content on the contract's behalf.
 #[allow(clippy::too_many_arguments)]
 fn transform_document_deletion_v0<C: CoreRPCLike>(
     transition: &ContractUserModerationTransition,
@@ -300,7 +301,10 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
     }
 
     // A document id can be created again by its author; removing it again replaces the
-    // record, which Drive must know to write one operation on that key, not two.
+    // record. The read is not only there to pick a replace over an insert, which an
+    // insert-or-replace would spare: the moderator who paid for the record being replaced is
+    // the one identity this deletion still refunds (a shorter record frees bytes they paid
+    // for), and only the record says who that is.
     let (fee, existing_removal) = platform.drive.fetch_contract_document_removal_with_fee(
         contract_id,
         document_type_name,
@@ -318,7 +322,7 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
                 data_contract_fetch_info: Arc::clone(contract_fetch_info),
                 document_owner_id,
                 removed_at: block_info.time_ms,
-                replaces_existing_removal: existing_removal.is_some(),
+                replaced_removal_moderator_id: existing_removal.map(|removal| removal.moderator_id),
             },
         )
         .into(),

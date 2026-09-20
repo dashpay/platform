@@ -635,7 +635,7 @@ mod tests {
                         document_ids: vec![],
                     })),
                 ),
-                "it must be between 1 and",
+                "must name between 1 and",
             ),
             (
                 removals_request(
@@ -645,7 +645,7 @@ mod tests {
                         document_ids: vec![id.clone(), id.clone()],
                     })),
                 ),
-                "named twice",
+                "name a document id twice",
             ),
             (
                 removals_request(id.clone(), "post", removals_page(Some(vec![1; 5]), None)),
@@ -653,7 +653,7 @@ mod tests {
             ),
             (
                 removals_request(id.clone(), "post", removals_page(None, Some(70_000))),
-                "out of bounds",
+                "limit must be between 1 and",
             ),
         ] {
             let err = removals_error(

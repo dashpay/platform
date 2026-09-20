@@ -114,24 +114,28 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                             data_contract_fetch_info,
                             document_owner_id,
                             removed_at,
-                            replaces_existing_removal,
+                            replaced_removal_moderator_id,
                         } =
                             document_deletion
                                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                                 "a document deletion action must carry what its validation read",
                             )))?;
-                        // The ordinary deletion of the document, which keeps every index and
-                        // aggregate of its type right, then its record. The marker makes the
-                        // batch refund nobody: the document's owner forfeits the storage fee.
-                        operations.push(DocumentOperation(DocumentOperationType::DeleteDocument {
-                            document_id,
-                            contract_info: DataContractInfo::DataContractFetchInfo(
-                                data_contract_fetch_info,
-                            ),
-                            document_type_info: DocumentTypeInfo::DocumentTypeName(
-                                document_type_name.clone(),
-                            ),
-                        }));
+                        // The deletion of the document, which keeps every index and aggregate
+                        // of its type right and does not ask `canBeDeleted` (that is the
+                        // owner's rule, not the moderators'), then its record. The marker makes
+                        // the batch refund nobody: the document's owner forfeits the storage
+                        // fee. Only the moderator of a record this one replaces is still refunded.
+                        operations.push(DocumentOperation(
+                            DocumentOperationType::DeleteDocumentByModerator {
+                                document_id,
+                                contract_info: DataContractInfo::DataContractFetchInfo(
+                                    data_contract_fetch_info,
+                                ),
+                                document_type_info: DocumentTypeInfo::DocumentTypeName(
+                                    document_type_name.clone(),
+                                ),
+                            },
+                        ));
                         operations.push(ContractModerationOperation(
                             ContractModerationOperationType::AddDocumentRemoval {
                                 contract_id,
@@ -143,11 +147,13 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                                     reason,
                                     removed_at,
                                 },
-                                replaces_existing: replaces_existing_removal,
+                                replaces_existing: replaced_removal_moderator_id.is_some(),
                             },
                         ));
                         operations.push(ContractModerationOperation(
-                            ContractModerationOperationType::ForfeitStorageRefunds,
+                            ContractModerationOperationType::ForfeitStorageRefunds {
+                                except: replaced_removal_moderator_id,
+                            },
                         ));
                     }
                 }

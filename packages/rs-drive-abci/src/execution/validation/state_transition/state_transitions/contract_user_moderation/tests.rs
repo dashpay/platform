@@ -14,6 +14,9 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+use dpp::data_contract::accessors::v1::DataContractV1Setters;
+use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::data_contract::config::moderation::{
     ContractBan, ContractDocumentRemoval, ContractModerationConfig, ContractModerationList,
     ContractModerationListStatus, ContractModerationListStatuses, ContractModerationReason,
@@ -2079,4 +2082,216 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
         &setup.process(&update, &transaction),
         REFERENCED_DOCUMENT_TYPE_DELETABLE,
     );
+}
+
+/// `post_schema(true)` with further document type keywords
+fn post_schema_with(extra: Value) -> Value {
+    let mut schema = post_schema(true);
+    if let (Value::Map(schema_map), Value::Map(extra_map)) = (&mut schema, extra) {
+        schema_map.extend(extra_map);
+    }
+    schema
+}
+
+/// The deletion of `document`, of the `post` type, by `actor`, its owner
+async fn own_post_deletion(setup: &Setup, actor: &Actor, document: Document) -> StateTransition {
+    BatchTransition::new_document_deletion_transition_from_document(
+        document,
+        setup
+            .contract
+            .document_type_for_name(POST)
+            .expect("expected the post type"),
+        &actor.key,
+        actor.contract_nonce(),
+        0,
+        None,
+        &actor.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the document deletion")
+}
+
+#[tokio::test]
+async fn should_let_a_moderator_delete_a_post_its_author_can_not_delete() {
+    // `canBeDeleted` is the author's rule: a post nobody can retract that moderation can
+    // remove is what the keyword is for, and Drive's own guard on `canBeDeleted` must not
+    // stand in the moderators' way.
+    let setup = Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({ "canBeDeleted": false })),
+            )
+        },
+    )
+    .await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    assert_success(&setup.process(&create, &transaction));
+
+    let own_delete = own_post_deletion(&setup, &setup.user, post.clone()).await;
+    let execution = setup.process(&own_delete, &transaction);
+    assert!(
+        matches!(
+            &execution,
+            StateTransitionExecutionResult::PaidConsensusError { .. }
+        ),
+        "expected the author's deletion to be refused, got {execution:?}"
+    );
+    assert_eq!(setup.post_removal(post.id(), Some(&transaction)), None);
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+    setup.commit(transaction);
+    // The mempool's fee estimate runs the same deletion: it takes the next one too.
+    let (another, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process(&create, &transaction));
+    setup.commit(transaction);
+    let delete_another = setup
+        .moderate(&setup.moderator, delete_action(POST, another.id()))
+        .await;
+    assert!(setup.check_tx(&delete_another).is_empty());
+
+    let removal = setup
+        .post_removal(post.id(), None)
+        .expect("expected the record");
+    assert_eq!(removal.document_owner_id, setup.user.id());
+}
+
+#[tokio::test]
+async fn should_delete_a_transferred_post_and_record_the_owner_it_had() {
+    let setup = Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({
+                    "transferable": 1,
+                    "documentsMutable": false,
+                })),
+            )
+        },
+    )
+    .await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (mut post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    assert_success(&setup.process(&create, &transaction));
+
+    post.set_revision(Some(2));
+    let transfer = BatchTransition::new_document_transfer_transition_from_document(
+        post.clone(),
+        setup
+            .contract
+            .document_type_for_name(POST)
+            .expect("expected the post type"),
+        setup.stranger.id(),
+        &setup.user.key,
+        setup.user.contract_nonce(),
+        0,
+        None,
+        &setup.user.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected the transfer");
+    assert_success(&setup.process(&transfer, &transaction));
+    setup.commit(transaction);
+
+    let author_before = setup.balance(setup.user.id(), None);
+    let holder_before = setup.balance(setup.stranger.id(), None);
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+    setup.commit(transaction);
+
+    // The record names who held the post when it was removed, and neither that identity nor
+    // the one that first paid for the post is refunded.
+    let removal = setup
+        .post_removal(post.id(), None)
+        .expect("expected the record");
+    assert_eq!(removal.document_owner_id, setup.stranger.id());
+    assert_eq!(setup.balance(setup.user.id(), None), author_before);
+    assert_eq!(setup.balance(setup.stranger.id(), None), holder_before);
+}
+
+#[tokio::test]
+async fn should_charge_a_moderator_no_token_for_a_post_whose_deletion_costs_tokens() {
+    let mut setup = Setup::new(None).await;
+    let platform_version = PlatformVersion::latest();
+
+    // A second contract with a token, whose posts cost their author tokens to delete. It goes
+    // straight into Drive: the token's own declaration is not what is tested here.
+    let mut contract = get_data_contract_fixture(
+        Some(setup.owner.id()),
+        77,
+        platform_version.protocol_version,
+    )
+    .data_contract_owned();
+    contract.set_config(contract.config().clone().with_moderation(Some(moderation(
+        false,
+        false,
+        setup.moderator.id(),
+    ))));
+    contract.add_token(
+        0,
+        TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+    );
+    add_document_type(
+        &mut contract,
+        POST,
+        post_schema_with(platform_value!({
+            "tokenCost": { "delete": { "tokenPosition": 0, "amount": 5 } },
+        })),
+    );
+    setup
+        .platform
+        .drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to store the contract");
+    setup.contract = contract;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, _, create) = setup.create_document_of_type(&setup.user, POST, None).await;
+    assert_success(&setup.process(&create, &transaction));
+
+    // The author holds no token and can not pay for the deletion.
+    let own_delete = own_post_deletion(&setup, &setup.user, post.clone()).await;
+    let execution = setup.process(&own_delete, &transaction);
+    assert!(
+        matches!(
+            &execution,
+            StateTransitionExecutionResult::PaidConsensusError { .. }
+        ),
+        "expected the author's unpaid deletion to be refused, got {execution:?}"
+    );
+
+    // The moderator holds none either, and is asked for none.
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+    assert!(setup.post_removal(post.id(), Some(&transaction)).is_some());
 }

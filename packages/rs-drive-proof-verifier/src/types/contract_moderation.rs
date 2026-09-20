@@ -26,6 +26,7 @@ pub use dpp::data_contract::config::moderation::{
 pub use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
+use drive::drive::Drive;
 pub use drive::drive::contract::fee_pots::types::{ContractFeePotState, ContractFeePots};
 pub use drive::drive::contract::moderation::types::{
     ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery,
@@ -259,58 +260,43 @@ pub fn removals_query_from_request(
     selection: Option<Selection>,
     platform_version: &PlatformVersion,
 ) -> Result<ContractDocumentRemovalsQuery, Error> {
-    let max = default_contract_document_removals_limit(platform_version);
     let selection = selection.ok_or_else(|| Error::RequestError {
         error: "either document_ids or page must be set".to_string(),
     })?;
     let selection = match selection {
         Selection::DocumentIds(DocumentIds { document_ids }) => {
-            if document_ids.is_empty() || document_ids.len() > usize::from(max) {
-                return Err(Error::RequestError {
-                    error: format!(
-                        "{} document ids named, it must be between 1 and {max}",
-                        document_ids.len()
-                    ),
-                });
-            }
-            let ids = document_ids
-                .iter()
-                .map(|bytes| identifier_from_request(bytes, "document_ids"))
-                .collect::<Result<Vec<Identifier>, Error>>()?;
-            let mut distinct = ids.clone();
-            distinct.sort_unstable();
-            distinct.dedup();
-            if distinct.len() != ids.len() {
-                return Err(Error::RequestError {
-                    error: "a document id is named twice".to_string(),
-                });
-            }
-            ContractDocumentRemovalsSelection::DocumentIds(ids)
+            ContractDocumentRemovalsSelection::DocumentIds(
+                document_ids
+                    .iter()
+                    .map(|bytes| identifier_from_request(bytes, "document_ids"))
+                    .collect::<Result<Vec<Identifier>, Error>>()?,
+            )
         }
         Selection::Page(Page { start_after, limit }) => ContractDocumentRemovalsSelection::Page {
             start_after: start_after
                 .as_deref()
                 .map(|bytes| identifier_from_request(bytes, "start_after"))
                 .transpose()?,
-            limit: match limit {
-                // The page size when the request names none: the largest page, the number the
-                // node read and proved.
-                None => max,
-                Some(limit) => u16::try_from(limit)
-                    .ok()
-                    .filter(|limit| (1..=max).contains(limit))
-                    .ok_or_else(|| Error::RequestError {
-                        error: format!(
-                            "limit {limit} is out of bounds, it must be between 1 and {max}"
-                        ),
-                    })?,
-            },
+            // The page size when the request names none: the largest page, the number the node
+            // read and proved. A limit no u16 holds is past every bound, and is refused below
+            // as the largest u16 is.
+            limit: limit.map_or(
+                default_contract_document_removals_limit(platform_version),
+                |limit| u16::try_from(limit).unwrap_or(u16::MAX),
+            ),
         },
     };
-    Ok(ContractDocumentRemovalsQuery {
+    let query = ContractDocumentRemovalsQuery {
         document_type_name,
         selection,
-    })
+    };
+    // The bounds the node enforced, from the one place they are written.
+    Drive::check_contract_document_removals_query(&query, platform_version).map_err(|error| {
+        Error::RequestError {
+            error: error.to_string(),
+        }
+    })?;
+    Ok(query)
 }
 
 /// The records of an unproved response. Every record names three identities and carries a
@@ -753,16 +739,16 @@ mod tests {
 
         for (selection, needle) in [
             (None, "either document_ids or page must be set"),
-            (ids_selection(&[]), "it must be between 1 and"),
-            (ids_selection(&[1, 1]), "named twice"),
-            (page_selection(None, Some(0)), "out of bounds"),
+            (ids_selection(&[]), "must name between 1 and"),
+            (ids_selection(&[1, 1]), "name a document id twice"),
+            (page_selection(None, Some(0)), "limit must be between 1 and"),
             (
                 page_selection(None, Some(u32::from(max) + 1)),
-                "out of bounds",
+                "limit must be between 1 and",
             ),
             (
                 page_selection(None, Some(u16::MAX as u32 + 1)),
-                "out of bounds",
+                "limit must be between 1 and",
             ),
             (
                 Some(Selection::DocumentIds(DocumentIds {
@@ -794,7 +780,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(
-            matches!(&err, Error::RequestError { error } if error.contains("it must be between 1 and")),
+            matches!(&err, Error::RequestError { error } if error.contains("must name between 1 and")),
             "got: {err:?}"
         );
     }

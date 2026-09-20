@@ -23,6 +23,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::contract::moderation::types::{
     ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
 };
+use drive::drive::Drive;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -41,11 +42,8 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetContractDocumentRemovalsResponseV0>, Error> {
-        let max = platform_version.drive_abci.query.max_returned_elements;
         let contract_id =
             check_validation_result_with_data!(identifier_from_request(contract_id, "contract_id"));
-        // Refused here, as invalid arguments: Drive refuses them too, but as errors of its own
-        // that would reach the client as an unknown node failure.
         let selection = match selection {
             None => {
                 return Ok(QueryValidationResult::new_with_error(
@@ -55,49 +53,41 @@ impl<C> Platform<C> {
                 ))
             }
             Some(Selection::DocumentIds(DocumentIds { document_ids })) => {
-                if document_ids.is_empty() || document_ids.len() > max as usize {
-                    return Ok(QueryValidationResult::new_with_error(
-                        QueryError::InvalidArgument(format!(
-                            "{} document ids named, it must be between 1 and {}",
-                            document_ids.len(),
-                            max
-                        )),
-                    ));
-                }
-                let ids: Vec<Identifier> = check_validation_result_with_data!(document_ids
-                    .into_iter()
-                    .map(|bytes| identifier_from_request(bytes, "document_ids"))
-                    .collect::<Result<Vec<_>, _>>());
-                let mut distinct = ids.clone();
-                distinct.sort_unstable();
-                distinct.dedup();
-                if distinct.len() != ids.len() {
-                    return Ok(QueryValidationResult::new_with_error(
-                        QueryError::InvalidArgument("a document id is named twice".to_string()),
-                    ));
-                }
-                ContractDocumentRemovalsSelection::DocumentIds(ids)
+                ContractDocumentRemovalsSelection::DocumentIds(check_validation_result_with_data!(
+                    document_ids
+                        .into_iter()
+                        .map(|bytes| identifier_from_request(bytes, "document_ids"))
+                        .collect::<Result<Vec<Identifier>, _>>()
+                ))
             }
             Some(Selection::Page(Page { start_after, limit })) => {
-                let start_after = check_validation_result_with_data!(start_after
-                    .map(|bytes| identifier_from_request(bytes, "start_after"))
-                    .transpose());
-                let limit = match limit {
+                ContractDocumentRemovalsSelection::Page {
+                    start_after: check_validation_result_with_data!(start_after
+                        .map(|bytes| identifier_from_request(bytes, "start_after"))
+                        .transpose()),
                     // The page size when the request names none: the largest page, the number
-                    // the proof verifier assumes as well.
-                    None => max,
-                    Some(limit) => check_validation_result_with_data!(u16::try_from(limit)
-                        .ok()
-                        .filter(|limit| (1..=max).contains(limit))
-                        .ok_or_else(|| {
-                            QueryError::InvalidArgument(format!(
-                                "limit {limit} is out of bounds, it must be between 1 and {max}"
-                            ))
-                        })),
-                };
-                ContractDocumentRemovalsSelection::Page { start_after, limit }
+                    // the proof verifier assumes as well. A limit no u16 holds is past every
+                    // bound, and is refused below as the largest u16 is.
+                    limit: limit.map_or(
+                        platform_version.drive_abci.query.max_returned_elements,
+                        |limit| u16::try_from(limit).unwrap_or(u16::MAX),
+                    ),
+                }
             }
         };
+        let query = ContractDocumentRemovalsQuery {
+            document_type_name,
+            selection,
+        };
+        // The bounds of a read are Drive's, which the proof verifier calls too. Refused here as
+        // an invalid argument: left to the fetch or the proof below, the same refusal would
+        // reach the client as an unknown node failure.
+        if let Err(error) = Drive::check_contract_document_removals_query(&query, platform_version)
+        {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(error.to_string()),
+            ));
+        }
 
         let Some(contract_fetch_info) = self.drive.get_contract_with_fetch_info(
             contract_id.to_buffer(),
@@ -112,21 +102,16 @@ impl<C> Platform<C> {
         };
         let deletable_by_moderators = contract_fetch_info
             .contract
-            .document_type_optional_for_name(&document_type_name)
+            .document_type_optional_for_name(&query.document_type_name)
             .is_some_and(|document_type| document_type.documents_can_be_deleted_by_moderators());
         if !deletable_by_moderators {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument(format!(
                     "contract {} has no document type {} whose documents moderators can delete",
-                    contract_id, document_type_name
+                    contract_id, query.document_type_name
                 )),
             ));
         }
-
-        let query = ContractDocumentRemovalsQuery {
-            document_type_name,
-            selection,
-        };
 
         let response = if prove {
             let proof = check_validation_result_with_data!(self

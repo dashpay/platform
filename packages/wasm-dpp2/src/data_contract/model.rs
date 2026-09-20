@@ -130,8 +130,9 @@ export type ContractModerators =
   | { $type: "appointedModerators"; identities: string[] };
 
 /**
- * The moderation a data contract declares. At least one list must be kept, and a list that is
- * kept can never be turned off by a contract update.
+ * The moderation a data contract declares. At least one list must be kept, unless a document
+ * type sets `canBeDeletedByModerators`: moderators that only delete documents need no list. A
+ * list that is kept can never be turned off by a contract update.
  */
 export interface ContractModerationConfig {
     banlist: boolean;

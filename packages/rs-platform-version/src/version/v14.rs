@@ -395,7 +395,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     contract's first. The deleted document's
 ///     owner gets no storage refund: `apply_drive_operations = 1`
 ///     (`DRIVE_VERSION_V9`) attributes the removal of a batch that carries
-///     the forfeiture to nobody, so the credits stay in the storage pools.
+///     the forfeiture to nobody, so the credits stay in the storage pools;
+///     only the moderator of a record the deletion replaces is still
+///     refunded. Neither the type's deletion token cost nor its `actionFees`
+///     deletion fee is charged.
 ///     The moderation method table, the verify table and the query table gain
 ///     the document removal methods (`getContractDocumentRemovals`).
 ///

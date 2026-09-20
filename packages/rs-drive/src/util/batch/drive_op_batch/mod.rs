@@ -21,6 +21,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
+use dpp::identifier::Identifier;
 
 pub use address_funds::AddressFundsOperationType;
 pub use contract::DataContractOperationType;
@@ -251,15 +252,16 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
 }
 
 impl DriveOperation<'_> {
-    /// Whether the batch this operation is in refunds nobody for the storage it removes: see
+    /// `Some` when the batch this operation is in refunds nobody for the storage it removes,
+    /// but the identity inside, if any: see
     /// [`ContractModerationOperationType::ForfeitStorageRefunds`].
-    pub fn forfeits_storage_refunds(&self) -> bool {
-        matches!(
-            self,
+    pub fn storage_refund_forfeiture(&self) -> Option<Option<Identifier>> {
+        match self {
             Self::ContractModerationOperation(
-                ContractModerationOperationType::ForfeitStorageRefunds
-            )
-        )
+                ContractModerationOperationType::ForfeitStorageRefunds { except },
+            ) => Some(*except),
+            _ => None,
+        }
     }
 
     /// Convert a member of a batch whose document TTL cleanup is complete.

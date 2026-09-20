@@ -253,6 +253,16 @@ impl ModerateContractUser for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<ModeratedUserStatus, Error> {
+        // A document deletion is proved by its removal record, not by a status. Refused before
+        // the nonce is taken: sent from here it would execute, be paid for, and then fail to
+        // read its own result.
+        if matches!(action, ContractUserModerationAction::DeleteDocument { .. }) {
+            return Err(Error::Generic(
+                "a document deletion names no identity to report a status of: send it with \
+                 `delete_contract_document`, which returns the removal record"
+                    .to_string(),
+            ));
+        }
         broadcast_moderation(
             self,
             sdk,

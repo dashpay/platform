@@ -710,6 +710,21 @@ fn delete_post<'a>(contract: &'a DataContract, document_id: Identifier) -> Drive
     })
 }
 
+fn delete_post_by_moderator<'a>(
+    contract: &'a DataContract,
+    document_id: Identifier,
+) -> DriveOperation<'a> {
+    DocumentOperation(DocumentOperationType::DeleteDocumentByModerator {
+        document_id,
+        contract_info: DataContractInfo::BorrowedDataContract(contract),
+        document_type_info: DocumentTypeInfo::DocumentTypeName(POST.to_string()),
+    })
+}
+
+fn forfeit<'a>(except: Option<Identifier>) -> DriveOperation<'a> {
+    ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds { except })
+}
+
 #[test]
 fn should_refund_nobody_for_a_document_a_moderator_deletes() {
     let platform_version = PlatformVersion::latest();
@@ -721,6 +736,11 @@ fn should_refund_nobody_for_a_document_a_moderator_deletes() {
     let contract = contract_with(true, false, &[POST]);
     insert(&drive, &contract);
     let post = add_post(&drive, &contract, author);
+    // An estimate carries no refund, the owner's own deletion included: refunds are computed
+    // from the flags of what is really removed. The forfeiture therefore only shows once
+    // applied, and the mempool's fee check is the same with or without it.
+    let own_estimate = apply(&drive, vec![delete_post(&contract, post.id())], false);
+    assert!(own_estimate.fee_refunds.0.is_empty());
     let own = apply(&drive, vec![delete_post(&contract, post.id())], true);
     let refunded: u64 = own
         .fee_refunds
@@ -738,7 +758,7 @@ fn should_refund_nobody_for_a_document_a_moderator_deletes() {
     let post = add_post(&drive, &contract, author);
     let operations = || {
         vec![
-            delete_post(&contract, post.id()),
+            delete_post_by_moderator(&contract, post.id()),
             record(
                 contract.id(),
                 post.id(),
@@ -750,10 +770,9 @@ fn should_refund_nobody_for_a_document_a_moderator_deletes() {
                 },
                 false,
             ),
-            ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds),
+            forfeit(None),
         ]
     };
-    // The estimate forfeits too, so the mempool and the block agree on who gets what.
     let estimated = apply(&drive, operations(), false);
     assert!(estimated.fee_refunds.0.is_empty());
 
@@ -795,6 +814,122 @@ fn should_refund_nobody_for_a_document_a_moderator_deletes() {
             },
         }],
     );
+}
+
+#[test]
+fn should_delete_for_a_moderator_a_document_its_owner_can_not_delete() {
+    // `canBeDeleted` rules what a document's own owner may do. A post nobody can retract, but
+    // moderation can remove, is the case the keyword exists for.
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let mut contract = contract_with(true, false, &[]);
+    let mut schema = post_schema(true);
+    schema
+        .insert("canBeDeleted".to_string(), Value::Bool(false))
+        .expect("expected to set canBeDeleted");
+    contract
+        .set_document_schema(POST, schema, true, &mut vec![], platform_version)
+        .expect("expected to add the post type");
+    insert(&drive, &contract);
+    let post = add_post(&drive, &contract, identity(0x41));
+
+    // The owner's deletion is refused by Drive, as it always was.
+    drive
+        .apply_drive_operations(
+            vec![delete_post(&contract, post.id())],
+            true,
+            &BlockInfo::default(),
+            None,
+            platform_version,
+            Some(&FEE_VERSIONS),
+        )
+        .expect_err("expected the owner's deletion to be refused");
+
+    // The moderators' is not, estimated or applied.
+    apply(
+        &drive,
+        vec![
+            delete_post_by_moderator(&contract, post.id()),
+            forfeit(None),
+        ],
+        false,
+    );
+    apply(
+        &drive,
+        vec![
+            delete_post_by_moderator(&contract, post.id()),
+            forfeit(None),
+        ],
+        true,
+    );
+    let post_is_stored = drive
+        .grove_has_raw(
+            (&contract_documents_primary_key_path(contract.id_ref().as_bytes(), POST)).into(),
+            post.id().as_slice(),
+            DirectQueryType::StatefulDirectQuery,
+            None,
+            &mut vec![],
+            &platform_version.drive,
+        )
+        .expect("expected to query the posts");
+    assert!(!post_is_stored);
+}
+
+#[test]
+fn should_still_refund_the_moderator_whose_record_a_deletion_replaces() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_with(true, false, &[POST]);
+    insert(&drive, &contract);
+    let author = identity(0x41);
+    let first_moderator = identity(0x42);
+    let second_moderator = identity(0x43);
+
+    // A first removal with a long reason, which its moderator pays for.
+    let post = add_post(&drive, &contract, author);
+    let record_of = |moderator_id: Identifier, text: &str| ContractDocumentRemoval {
+        document_owner_id: author,
+        moderator_id,
+        reason: ContractModerationReason::from_text(text),
+        removed_at: 10,
+    };
+    apply(
+        &drive,
+        vec![
+            delete_post_by_moderator(&contract, post.id()),
+            record(
+                contract.id(),
+                post.id(),
+                record_of(first_moderator, &"x".repeat(600)),
+                false,
+            ),
+            forfeit(None),
+        ],
+        true,
+    );
+
+    // The author creates the same post again, and another moderator removes it with no reason
+    // at all: the shorter record frees bytes the first moderator paid for.
+    let post = add_post(&drive, &contract, author);
+    let again = apply(
+        &drive,
+        vec![
+            delete_post_by_moderator(&contract, post.id()),
+            record(
+                contract.id(),
+                post.id(),
+                record_of(second_moderator, ""),
+                true,
+            ),
+            forfeit(Some(first_moderator)),
+        ],
+        true,
+    );
+
+    // The first moderator is refunded, and nobody else: not the author for the post.
+    let refunded: Vec<&[u8; 32]> = again.fee_refunds.0.keys().collect();
+    assert_eq!(refunded, vec![first_moderator.as_bytes()]);
+    assert!(again.removed_bytes_from_system > 0);
 }
 
 #[test]

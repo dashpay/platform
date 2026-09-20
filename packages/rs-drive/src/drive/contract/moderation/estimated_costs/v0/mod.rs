@@ -1,4 +1,6 @@
-use crate::drive::constants::ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE;
+use crate::drive::constants::{
+    ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE, ESTIMATED_DOCUMENT_TYPES_DELETABLE_BY_MODERATORS,
+};
 use crate::drive::contract::moderation::types::{
     estimated_document_removal_value_size, estimated_entry_value_size,
 };
@@ -88,7 +90,9 @@ impl Drive {
             KeyInfoPath::from_known_path(contract_document_removals_path(&contract_id)),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                estimated_layer_count: ApproximateElements(16),
+                estimated_layer_count: ApproximateElements(
+                    ESTIMATED_DOCUMENT_TYPES_DELETABLE_BY_MODERATORS,
+                ),
                 estimated_layer_sizes: AllSubtrees(
                     ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE,
                     NoSumTrees,

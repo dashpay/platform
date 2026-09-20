@@ -7,6 +7,8 @@ use crate::error::WasmSdkError;
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::contract_moderation::{
     ContractDocumentRemoval, ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
@@ -242,7 +244,14 @@ impl WasmSdk {
             .await?
             .ok_or_else(|| WasmSdkError::not_found(format!("contract {contract_id} not found")))?;
         ContractModerationStatusQuery::for_contract(&contract, identity_id).ok_or_else(|| {
-            WasmSdkError::invalid_argument(format!("contract {contract_id} is not moderated"))
+            // A moderated contract may keep no list at all, when its moderators only delete
+            // documents: there is then no status to read, which is not the same as no
+            // moderation.
+            let reason = match contract.config().moderation() {
+                Some(_) => "keeps no moderation list, so no identity has a status on it",
+                None => "is not moderated",
+            };
+            WasmSdkError::invalid_argument(format!("contract {contract_id} {reason}"))
         })
     }
 }

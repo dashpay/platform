@@ -1,11 +1,10 @@
 mod v0;
 
 use crate::drive::contract::moderation::types::{
-    ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+    ContractDocumentRemovalEntry, ContractDocumentRemovalsQuery,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
@@ -92,42 +91,5 @@ impl Drive {
                 received: version,
             })),
         }
-    }
-
-    /// A read names at least one and at most `max_returned_elements` records, whether by id or
-    /// as a page, and no id twice: what bounds the proof the verifier accepts.
-    pub(in crate::drive::contract::moderation) fn check_contract_document_removals_query(
-        query: &ContractDocumentRemovalsQuery,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        let max_limit = platform_version.drive_abci.query.max_returned_elements;
-        match &query.selection {
-            ContractDocumentRemovalsSelection::DocumentIds(ids) => {
-                if ids.is_empty() || ids.len() > max_limit as usize {
-                    return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                        "contract document removals must name between 1 and {} document ids, got {}",
-                        max_limit,
-                        ids.len()
-                    ))));
-                }
-                let mut sorted = ids.clone();
-                sorted.sort_unstable();
-                sorted.dedup();
-                if sorted.len() != ids.len() {
-                    return Err(Error::Query(QuerySyntaxError::InvalidParameter(
-                        "contract document removals name a document id twice".to_string(),
-                    )));
-                }
-            }
-            ContractDocumentRemovalsSelection::Page { limit, .. } => {
-                if *limit == 0 || *limit > max_limit {
-                    return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                        "contract document removals limit must be between 1 and {}, got {}",
-                        max_limit, limit
-                    ))));
-                }
-            }
-        }
-        Ok(())
     }
 }
