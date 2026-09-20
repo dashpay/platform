@@ -508,44 +508,46 @@ mod tests {
     }
 
     #[test]
-    fn should_read_malformed_action_fees_of_a_stored_contract_as_none() {
-        // A contract admitted by the frozen v0 meta-schema may carry a stray `actionFees` key
-        // of any shape; it must stay loadable, and charge nothing.
-        for action_fees in [
-            platform_value!("free"),
-            platform_value!({"pricing": "percent", "create": {"owner": 1_u64}}),
-            platform_value!({"create": {"owner": 0_u64}}),
-        ] {
-            let document_type =
-                parse_with_action_fees(action_fees, false, PlatformVersion::latest())
-                    .expect("expected a stored contract to stay loadable");
-            assert!(document_type.action_fees().is_none());
+    fn should_refuse_malformed_action_fees_on_both_paths() {
+        // The shape of a doctype-level keyword is enforced on the stored path as on the
+        // validating one: every declaration a node reads from state was validated, so a
+        // malformed one is a fault to surface, never a contract without fees.
+        for full_validation in [false, true] {
+            for action_fees in [
+                platform_value!("free"),
+                platform_value!({"pricing": "percent", "create": {"owner": 1_u64}}),
+                platform_value!({"create": {"owner": 0_u64}}),
+            ] {
+                assert!(
+                    parse_with_action_fees(
+                        action_fees.clone(),
+                        full_validation,
+                        PlatformVersion::latest()
+                    )
+                    .is_err(),
+                    "expected {action_fees:?} to be refused with full_validation {full_validation}"
+                );
+            }
         }
     }
 
     #[test]
-    fn should_read_a_stored_moderators_fee_without_moderation_as_none() {
-        // No validated contract is in this state: a contract entering the chain is refused for
-        // it and moderation is never turned off. It can only be a stray key of a contract from
-        // before the keyword, and honouring it would fill a pot that has no team.
+    fn should_parse_a_moderators_fee_without_moderation_on_both_paths() {
+        // The document type does not know whether its contract declares moderation. It parses
+        // on both paths, and the contract is what refuses the combination when it enters the
+        // chain (`DocumentActionFeesWithoutModerationError`, 10902). Moderation is never turned
+        // off, so no validated contract is in that state.
         let action_fees = platform_value!({"create": {"owner": 5_u64, "moderators": 10_u64}});
-        let stored = parse_with_action_fees(action_fees.clone(), false, PlatformVersion::latest())
-            .expect("expected a stored contract to stay loadable");
-        assert!(stored.action_fees().is_none());
-
-        // An owner-only fee can be paid out whatever the contract declares, and stands.
-        let stored = parse_with_action_fees(
-            platform_value!({"create": {"owner": 5_u64}}),
-            false,
-            PlatformVersion::latest(),
-        )
-        .expect("expected a stored contract to stay loadable");
-        assert!(stored.action_fees().is_some());
-
-        // Entering the chain, the declaration parses: the contract is what refuses it (10902).
-        let entering = parse_with_action_fees(action_fees, true, PlatformVersion::latest())
+        for full_validation in [false, true] {
+            let document_type = parse_with_action_fees(
+                action_fees.clone(),
+                full_validation,
+                PlatformVersion::latest(),
+            )
             .expect("expected the document type to parse");
-        assert!(entering.action_fees().is_some());
+            let fees = document_type.action_fees().expect("expected action fees");
+            assert!(fees.charges_moderators_part());
+        }
     }
 
     #[test]

@@ -19,9 +19,7 @@
 //! generation 2 (schema 1 and 2).
 
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
-use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -2027,51 +2025,6 @@ pub(super) fn parse_property_name_list_keyword(
             })
         })
         .collect()
-}
-
-/// Reads the doctype-level `actionFees` keyword before the core parse consumes
-/// `schema`, same shape as [`parse_index_only_keyword`]. Only the generation-3
-/// driver calls this; earlier generations ignore the keyword exactly as they
-/// ignore every doctype-level keyword they predate (their meta-schemas still
-/// reject it under `full_validation`).
-///
-/// A declaration must price at least one action, every priced action must
-/// charge something, and no amount (nor the sum of an action's two parts) may
-/// exceed `MAX_CREDITS`. A contract entering the chain (`full_validation`) is
-/// refused when its declaration breaks any of that.
-///
-/// A stored contract is different. The frozen v0 meta-schema, which admitted
-/// every contract created before protocol version 12, does not forbid unknown
-/// top-level keys, so such a contract may carry a stray `actionFees` key of
-/// any shape that no validator ever looked at. On the stored path such a key
-/// is read as no declaration, in the two forms it can be told apart from a
-/// declaration that was validated:
-///
-/// * it is malformed: refusing it would make the contract impossible to load
-///   from the block that activates this parser;
-/// * it charges the moderators on a contract that declares no moderation. A
-///   contract entering the chain is refused for that
-///   (`DocumentActionFeesWithoutModerationError`) and moderation is never
-///   turned off, so no validated contract is in that state. Honouring it would
-///   collect credits into a moderators pot that has no team and can never be
-///   paid out.
-pub(super) fn parse_action_fees_keyword(
-    schema: &Value,
-    name: &str,
-    data_contract_config: &DataContractConfig,
-    full_validation: bool,
-) -> Result<Option<DocumentActionFees>, ProtocolError> {
-    match DocumentActionFees::try_from_document_schema(schema, name) {
-        Err(_) if !full_validation => Ok(None),
-        Ok(Some(fees))
-            if !full_validation
-                && fees.charges_moderators_part()
-                && data_contract_config.moderation().is_none() =>
-        {
-            Ok(None)
-        }
-        result => result,
-    }
 }
 
 /// Write the `immutable` and `immutableAllowSetting` property lists onto the
