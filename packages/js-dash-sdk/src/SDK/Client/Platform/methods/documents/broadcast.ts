@@ -58,16 +58,23 @@ export default async function broadcast(
   // transition is built: the id a document was created with is a placeholder.
   // Hand the final ids back so callers can keep using `document.getId()`.
   if (documents.create) {
-    const createdIds = new Map<string, any>();
+    // Only create transitions carry an entropy. Documents of one type that share an
+    // entropy still get ids of their own (their nonces differ), so keep a queue per
+    // type and entropy: the factory keeps the creates in the order they were given.
+    const createdIds = new Map<string, any[]>();
     documentsBatchTransition.getTransitions().forEach((transition) => {
       const entropy = transition.getEntropy && transition.getEntropy();
-      if (entropy) {
-        createdIds.set(Buffer.from(entropy).toString('hex'), transition.getId());
+      if (!entropy) {
+        return;
       }
+
+      const key = `${transition.getType()}/${Buffer.from(entropy).toString('hex')}`;
+      createdIds.set(key, [...(createdIds.get(key) || []), transition.getId()]);
     });
 
     documents.create.forEach((document) => {
-      const id = createdIds.get(Buffer.from(document.getEntropy()).toString('hex'));
+      const key = `${document.getType()}/${Buffer.from(document.getEntropy()).toString('hex')}`;
+      const id = (createdIds.get(key) || []).shift();
       if (id) {
         document.setId(id);
       }

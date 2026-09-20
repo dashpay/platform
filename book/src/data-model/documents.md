@@ -86,7 +86,7 @@ impl Document {
 
 The ID is a double SHA-256 hash of a domain tag, the contract ID, owner ID, document type name, client-provided entropy and the identity contract nonce of the create transition. `Document::generate_document_id` picks the derivation from the platform version; consensus recomputes it for every create and rejects a mismatch with `InvalidDocumentTransitionIdError`. This means:
 - The ID commits to the owner, so nobody else can take it, and to the contract and document type, preventing cross-contract collisions.
-- The entropy keeps the ID unpredictable: nobody can compute the ID of a document you have not created yet and point other documents at it in advance.
+- The ID is a deterministic function of its inputs: whoever knows the entropy and the nonce, which is the client building the create transition, can compute it before the document exists (see below). The entropy is the one input other parties can not guess, so as long as the client generates it unpredictably, nobody else can compute the ID of a document that has not been sent yet and point other documents at it in advance.
 - The nonce makes the ID single use. An identity contract nonce is consumed at most once, so an ID can be produced at most once.
 
 ### Why the nonce is part of the ID

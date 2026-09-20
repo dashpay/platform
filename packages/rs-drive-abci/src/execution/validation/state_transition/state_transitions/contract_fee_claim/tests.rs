@@ -785,20 +785,16 @@ async fn should_let_a_live_contract_gain_fees_through_a_new_document_type() {
             platform_version,
         )
         .expect("expected a random paid note");
+    let creation_nonce = setup.stranger.contract_nonce();
     document
-        .set_id_for_creation(
-            paid_note,
-            &entropy.0,
-            setup.stranger.contract_nonce(),
-            platform_version,
-        )
+        .set_id_for_creation(paid_note, &entropy.0, creation_nonce, platform_version)
         .expect("expected to set the document id");
     let creation = BatchTransition::new_document_creation_transition_from_document(
         document,
         paid_note,
         entropy.0,
         &setup.stranger.key,
-        setup.stranger.contract_nonce(),
+        creation_nonce,
         0,
         None,
         &setup.stranger.signer,

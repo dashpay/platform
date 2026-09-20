@@ -2307,11 +2307,14 @@ mod creation_tests {
         assert!(!documents.is_empty());
     }
 
-    /// Up to protocol version 13 a contested and a non-contested create of one
-    /// owner that reused an entropy derived the same id, and state validation
-    /// v2 refuses the second one so it can not occupy the id of a live
-    /// contested document. With the id committing to the identity contract
-    /// nonce the two can no longer collide: every create gets an id of its own.
+    /// A contested and a non-contested create of one owner that reuse an
+    /// entropy. While the id derived from the entropy alone the two shared an
+    /// id: state validation v1 (up to protocol version 13) accepts both,
+    /// because it only probes contested storage for contested creates, and the
+    /// one id ends up in primary and in contested storage; state validation v2
+    /// was added to refuse the second create. With the id committing to the
+    /// identity contract nonce the two no longer collide at all: every create
+    /// gets an id of its own and both are accepted.
     #[tokio::test]
     async fn should_give_contested_and_non_contested_creates_reusing_entropy_their_own_ids() {
         let platform_version = PlatformVersion::latest();

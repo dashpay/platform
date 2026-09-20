@@ -111,9 +111,9 @@ let transition = if self.revision().is_some()
     )
 } else {
     // This is a new document -- generate entropy and create
-    let (document, entropy) = document_state_transition_entropy
-        .map(|e| (self.clone(), e))
-        .unwrap_or_else(|| {
+    let (document, entropy) = match document_state_transition_entropy {
+        Some(entropy) => (self.clone(), entropy),
+        None => {
             let mut rng = StdRng::from_entropy();
             let mut document = self.clone();
             let entropy = rng.gen::<[u8; 32]>();
@@ -126,7 +126,8 @@ let transition = if self.revision().is_some()
                 sdk.version(),
             )?);
             (document, entropy)
-        });
+        }
+    };
 
     BatchTransition::new_document_creation_transition_from_document(
         document,
