@@ -4,7 +4,7 @@ use dpp::block::epoch::EpochIndex;
 use dpp::data_contract::document_type::action_fees::ContractFeePot;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
-use dpp::prelude::{IdentityNonce, UserFeeIncrease};
+use dpp::prelude::{IdentityNonce, TimestampMillis, UserFeeIncrease};
 use std::collections::BTreeMap;
 
 /// action v0
@@ -18,8 +18,10 @@ pub struct ContractFeeClaimTransitionActionV0 {
     pub identity_contract_nonce: IdentityNonce,
     /// the pot that is paid out
     pub pot: ContractFeePot,
-    /// the epoch of the claim, recorded as the pot's last claim epoch
+    /// the epoch of the claim, recorded with the pot's last claim
     pub epoch_index: EpochIndex,
+    /// the time of the block the claim executes in, recorded with the pot's last claim
+    pub time_ms: TimestampMillis,
     /// what each recipient is paid, as settled when the transition was validated: the whole
     /// owner pot to the contract owner, or an equal share of the moderators pot to every
     /// member of the moderation team. Never empty, and every amount is above zero.

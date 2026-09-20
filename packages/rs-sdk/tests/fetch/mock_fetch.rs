@@ -155,3 +155,48 @@ async fn test_mock_fetch_document() {
 
     assert_eq!(retrieved, expected);
 }
+
+#[tokio::test]
+/// Given the fee pots of a contract, when I fetch them by the contract id using mock API, then
+/// I get the same pots, a pot paid out in epoch 0 apart from one that never was
+async fn should_fetch_mocked_contract_fee_pots_by_contract_id() {
+    use dash_sdk::platform::contract_fee_pots::{
+        ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractFeePotsQuery,
+    };
+
+    let mut sdk = Sdk::new_mock();
+
+    let contract_id = Identifier::from([7u8; 32]);
+    let expected = ContractFeePots {
+        owner: ContractFeePotState {
+            credits: 10_000_000,
+            last_claim: None,
+        },
+        moderators: ContractFeePotState {
+            credits: u64::MAX,
+            last_claim: Some(ContractFeePotLastClaim {
+                epoch_index: 0,
+                time_ms: 1_700_000_000_000,
+                claimant_id: Identifier::from([9u8; 32]),
+            }),
+        },
+    };
+
+    sdk.mock()
+        .expect_fetch(contract_id, Some(expected))
+        .await
+        .unwrap();
+
+    // The contract id and the named query build the same request, so either finds the pots.
+    let by_id = ContractFeePots::fetch(&sdk, contract_id)
+        .await
+        .unwrap()
+        .expect("pots should exist");
+    let by_query = ContractFeePots::fetch(&sdk, ContractFeePotsQuery { contract_id })
+        .await
+        .unwrap()
+        .expect("pots should exist");
+
+    assert_eq!(by_id, expected);
+    assert_eq!(by_query, expected);
+}

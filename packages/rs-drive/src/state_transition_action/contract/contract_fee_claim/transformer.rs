@@ -3,15 +3,17 @@ use crate::state_transition_action::contract::contract_fee_claim::ContractFeeCla
 use dpp::block::epoch::EpochIndex;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
+use dpp::prelude::TimestampMillis;
 use dpp::state_transition::contract_fee_claim_transition::ContractFeeClaimTransition;
 use std::collections::BTreeMap;
 
 impl ContractFeeClaimTransitionAction {
-    /// The action of a borrowed transition, carrying the epoch of the claim and what each
-    /// recipient is paid
+    /// The action of a borrowed transition, carrying the epoch and the block time of the claim
+    /// and what each recipient is paid
     pub fn from_borrowed_transition_with_payouts(
         value: &ContractFeeClaimTransition,
         epoch_index: EpochIndex,
+        time_ms: TimestampMillis,
         payouts: BTreeMap<Identifier, Credits>,
     ) -> Self {
         match value {
@@ -19,6 +21,7 @@ impl ContractFeeClaimTransitionAction {
                 ContractFeeClaimTransitionActionV0::from_borrowed_transition_with_payouts(
                     v0,
                     epoch_index,
+                    time_ms,
                     payouts,
                 )
                 .into()

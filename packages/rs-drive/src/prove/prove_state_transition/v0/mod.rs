@@ -290,7 +290,7 @@ impl Drive {
                     &platform_version.drive.grove_version,
                 )?
             }
-            // The pot the claim paid out with the epoch it was last claimed in, and the balance
+            // The pot the claim paid out with its last claim (epoch, time, claimant), and the balance
             // of every identity a payout of that pot goes to.
             StateTransition::ContractFeeClaim(st) => {
                 let contract_id = st.data_contract_id();

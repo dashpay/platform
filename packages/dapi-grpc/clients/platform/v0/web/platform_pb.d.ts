@@ -3172,6 +3172,213 @@ export namespace GetContractModerationEntriesResponse {
   }
 }
 
+export class GetContractFeePotsRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContractFeePotsRequest.GetContractFeePotsRequestV0 | undefined;
+  setV0(value?: GetContractFeePotsRequest.GetContractFeePotsRequestV0): void;
+
+  getVersionCase(): GetContractFeePotsRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContractFeePotsRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContractFeePotsRequest): GetContractFeePotsRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContractFeePotsRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContractFeePotsRequest;
+  static deserializeBinaryFromReader(message: GetContractFeePotsRequest, reader: jspb.BinaryReader): GetContractFeePotsRequest;
+}
+
+export namespace GetContractFeePotsRequest {
+  export type AsObject = {
+    v0?: GetContractFeePotsRequest.GetContractFeePotsRequestV0.AsObject,
+  }
+
+  export class GetContractFeePotsRequestV0 extends jspb.Message {
+    getContractId(): Uint8Array | string;
+    getContractId_asU8(): Uint8Array;
+    getContractId_asB64(): string;
+    setContractId(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContractFeePotsRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContractFeePotsRequestV0): GetContractFeePotsRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContractFeePotsRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContractFeePotsRequestV0;
+    static deserializeBinaryFromReader(message: GetContractFeePotsRequestV0, reader: jspb.BinaryReader): GetContractFeePotsRequestV0;
+  }
+
+  export namespace GetContractFeePotsRequestV0 {
+    export type AsObject = {
+      contractId: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContractFeePotsResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContractFeePotsResponse.GetContractFeePotsResponseV0 | undefined;
+  setV0(value?: GetContractFeePotsResponse.GetContractFeePotsResponseV0): void;
+
+  getVersionCase(): GetContractFeePotsResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContractFeePotsResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContractFeePotsResponse): GetContractFeePotsResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContractFeePotsResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContractFeePotsResponse;
+  static deserializeBinaryFromReader(message: GetContractFeePotsResponse, reader: jspb.BinaryReader): GetContractFeePotsResponse;
+}
+
+export namespace GetContractFeePotsResponse {
+  export type AsObject = {
+    v0?: GetContractFeePotsResponse.GetContractFeePotsResponseV0.AsObject,
+  }
+
+  export class ContractFeePotLastClaim extends jspb.Message {
+    getEpoch(): number;
+    setEpoch(value: number): void;
+
+    getTimeMs(): string;
+    setTimeMs(value: string): void;
+
+    getClaimantId(): Uint8Array | string;
+    getClaimantId_asU8(): Uint8Array;
+    getClaimantId_asB64(): string;
+    setClaimantId(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractFeePotLastClaim.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractFeePotLastClaim): ContractFeePotLastClaim.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractFeePotLastClaim, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractFeePotLastClaim;
+    static deserializeBinaryFromReader(message: ContractFeePotLastClaim, reader: jspb.BinaryReader): ContractFeePotLastClaim;
+  }
+
+  export namespace ContractFeePotLastClaim {
+    export type AsObject = {
+      epoch: number,
+      timeMs: string,
+      claimantId: Uint8Array | string,
+    }
+  }
+
+  export class ContractFeePot extends jspb.Message {
+    getCredits(): string;
+    setCredits(value: string): void;
+
+    hasLastClaim(): boolean;
+    clearLastClaim(): void;
+    getLastClaim(): GetContractFeePotsResponse.ContractFeePotLastClaim | undefined;
+    setLastClaim(value?: GetContractFeePotsResponse.ContractFeePotLastClaim): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractFeePot.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractFeePot): ContractFeePot.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractFeePot, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractFeePot;
+    static deserializeBinaryFromReader(message: ContractFeePot, reader: jspb.BinaryReader): ContractFeePot;
+  }
+
+  export namespace ContractFeePot {
+    export type AsObject = {
+      credits: string,
+      lastClaim?: GetContractFeePotsResponse.ContractFeePotLastClaim.AsObject,
+    }
+  }
+
+  export class ContractFeePots extends jspb.Message {
+    hasOwner(): boolean;
+    clearOwner(): void;
+    getOwner(): GetContractFeePotsResponse.ContractFeePot | undefined;
+    setOwner(value?: GetContractFeePotsResponse.ContractFeePot): void;
+
+    hasModerators(): boolean;
+    clearModerators(): void;
+    getModerators(): GetContractFeePotsResponse.ContractFeePot | undefined;
+    setModerators(value?: GetContractFeePotsResponse.ContractFeePot): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractFeePots.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractFeePots): ContractFeePots.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractFeePots, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractFeePots;
+    static deserializeBinaryFromReader(message: ContractFeePots, reader: jspb.BinaryReader): ContractFeePots;
+  }
+
+  export namespace ContractFeePots {
+    export type AsObject = {
+      owner?: GetContractFeePotsResponse.ContractFeePot.AsObject,
+      moderators?: GetContractFeePotsResponse.ContractFeePot.AsObject,
+    }
+  }
+
+  export class GetContractFeePotsResponseV0 extends jspb.Message {
+    hasPots(): boolean;
+    clearPots(): void;
+    getPots(): GetContractFeePotsResponse.ContractFeePots | undefined;
+    setPots(value?: GetContractFeePotsResponse.ContractFeePots): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetContractFeePotsResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContractFeePotsResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContractFeePotsResponseV0): GetContractFeePotsResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContractFeePotsResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContractFeePotsResponseV0;
+    static deserializeBinaryFromReader(message: GetContractFeePotsResponseV0, reader: jspb.BinaryReader): GetContractFeePotsResponseV0;
+  }
+
+  export namespace GetContractFeePotsResponseV0 {
+    export type AsObject = {
+      pots?: GetContractFeePotsResponse.ContractFeePots.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      POTS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetContractGroupsForContractRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;

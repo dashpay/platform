@@ -180,6 +180,9 @@ impl MockDashPlatformSdk {
                 "GetContractModerationEntriesRequest" => load_expectation::<
                     proto::GetContractModerationEntriesRequest,
                 >(&mut dapi, filename)?,
+                "GetContractFeePotsRequest" => {
+                    load_expectation::<proto::GetContractFeePotsRequest>(&mut dapi, filename)?
+                }
                 "GetDocumentHistoryRequest" => {
                     load_expectation::<proto::GetDocumentHistoryRequest>(&mut dapi, filename)?
                 }

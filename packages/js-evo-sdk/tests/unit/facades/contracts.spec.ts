@@ -326,4 +326,71 @@ describe('ContractsFacade', () => {
       expect(result).to.equal(response);
     });
   });
+
+  describe('contract fee pots', () => {
+    const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
+    const moderatorId = 'H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1';
+
+    it('should fetch the pots, and a pot never paid out carries no last claim', async function run() {
+      const pots = {
+        owner: { credits: BigInt(10000000) },
+        moderators: {
+          credits: BigInt(100000000),
+          lastClaimEpoch: 0,
+          lastClaimTimeMs: BigInt(1700000000000),
+          lastClaimantId: moderatorId,
+        },
+      };
+      const stub = this.sinon.stub(wasmSdk, 'getContractFeePots').resolves(pots);
+
+      const result = await client.contracts.feePots(contractId);
+
+      expect(stub).to.be.calledOnceWithExactly(contractId);
+      expect(result.owner.lastClaimEpoch).to.equal(undefined);
+      expect(result.owner.lastClaimantId).to.equal(undefined);
+      expect(result.moderators.lastClaimEpoch).to.equal(0);
+      expect(result.moderators.lastClaimTimeMs).to.equal(BigInt(1700000000000));
+      expect(result.moderators.lastClaimantId).to.equal(moderatorId);
+    });
+
+    it('should fetch the pots with proof', async function run() {
+      const response = {
+        data: { owner: { credits: BigInt(0) }, moderators: { credits: BigInt(0) } },
+        proof: {},
+        metadata: {},
+      };
+      const stub = this.sinon.stub(wasmSdk, 'getContractFeePotsWithProofInfo').resolves(response);
+
+      const result = await client.contracts.feePotsWithProof(contractId);
+
+      expect(stub).to.be.calledOnceWithExactly(contractId);
+      expect(result).to.equal(response);
+    });
+
+    it('should forward claimFees() to contractClaimFees() and return the pot it paid out', async function run() {
+      const claimed = {
+        contractId,
+        pot: 'moderators' as const,
+        lastClaimEpoch: 12,
+        lastClaimTimeMs: BigInt(1700000000000),
+        lastClaimantId: Object.create(wasmSDKPackage.Identifier.prototype),
+        remainingCredits: BigInt(1),
+        balances: new Map([[moderatorId, BigInt(50000000)]]),
+      };
+      const stub = this.sinon.stub(wasmSdk, 'contractClaimFees').resolves(claimed);
+      const options = {
+        identity: Object.create(wasmSDKPackage.Identity.prototype),
+        contractId,
+        pot: 'moderators' as const,
+        signer,
+      };
+
+      const result = await client.contracts.claimFees(options);
+
+      expect(stub).to.be.calledOnceWithExactly(options);
+      expect(result.pot).to.equal('moderators');
+      expect(result.lastClaimTimeMs).to.equal(BigInt(1700000000000));
+      expect(result.balances.get(moderatorId)).to.equal(BigInt(50000000));
+    });
+  });
 });

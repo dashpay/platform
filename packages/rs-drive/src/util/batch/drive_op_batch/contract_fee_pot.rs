@@ -4,8 +4,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::balances::credits::Credits;
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::EpochIndex;
-use dpp::data_contract::document_type::action_fees::ContractFeePot;
+use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::identifier::Identifier;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -37,14 +36,14 @@ pub enum ContractFeePotOperationType {
         /// The credits to take out.
         amount: Credits,
     },
-    /// Records the epoch a pot was claimed in.
-    SetLastClaimEpoch {
+    /// Records the claim that paid a pot out.
+    SetLastClaim {
         /// The contract the pot belongs to.
         contract_id: Identifier,
         /// The pot.
         pot: ContractFeePot,
-        /// The epoch of the claim.
-        epoch_index: EpochIndex,
+        /// The claim: its epoch, its block time and who claimed.
+        last_claim: ContractFeePotLastClaim,
     },
 }
 
@@ -84,14 +83,14 @@ impl DriveLowLevelOperationConverter for ContractFeePotOperationType {
                 transaction,
                 platform_version,
             ),
-            ContractFeePotOperationType::SetLastClaimEpoch {
+            ContractFeePotOperationType::SetLastClaim {
                 contract_id,
                 pot,
-                epoch_index,
-            } => drive.set_contract_last_fee_claim_epoch_operations(
+                last_claim,
+            } => drive.set_contract_last_fee_claim_operations(
                 contract_id,
                 pot,
-                epoch_index,
+                &last_claim,
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),

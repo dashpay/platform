@@ -1,6 +1,6 @@
-use crate::drive::contract::fee_pots::types::{decode_epoch_index, ContractFeePots};
+use crate::drive::contract::fee_pots::types::{decode_last_claim, ContractFeePots};
 use crate::drive::contract::paths::{
-    contract_fee_pots_key, contract_last_fee_claim_epoch_key, CONTRACT_OTHER_KEY,
+    contract_fee_pots_key, contract_last_fee_claim_key, CONTRACT_OTHER_KEY,
 };
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
@@ -42,10 +42,10 @@ impl Drive {
             };
             let in_other_tree = path.last().map(Vec::as_slice) == Some(&[CONTRACT_OTHER_KEY]);
             if in_other_tree {
-                // A last claim epoch: `[64, contract id, 2] -> 32 | 96`
+                // A last claim: `[64, contract id, 2] -> 32 | 96`
                 let Some(pot) = pots
                     .iter()
-                    .find(|pot| key.as_slice() == contract_last_fee_claim_epoch_key(**pot))
+                    .find(|pot| key.as_slice() == contract_last_fee_claim_key(**pot))
                 else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
                         "contract fee pots proof holds an entry outside the pots asked for"
@@ -54,13 +54,13 @@ impl Drive {
                 };
                 let Element::Item(value, _) = element else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "contract fee pot last claim epoch is not an item".to_string(),
+                        "contract fee pot last claim is not an item".to_string(),
                     )));
                 };
-                fee_pots.pot_mut(*pot).last_claim_epoch =
-                    Some(decode_epoch_index(&value).map_err(|description| {
+                fee_pots.pot_mut(*pot).last_claim =
+                    Some(decode_last_claim(&value).map_err(|description| {
                         Error::Proof(ProofError::CorruptedProof(format!(
-                            "contract fee pot last claim epoch is malformed: {}",
+                            "contract fee pot last claim is malformed: {}",
                             description
                         )))
                     })?);

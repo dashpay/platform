@@ -51,6 +51,8 @@ service Platform {
       returns (GetContractModerationStatusResponse);
   rpc getContractModerationEntries(GetContractModerationEntriesRequest)
       returns (GetContractModerationEntriesResponse);
+  rpc getContractFeePots(GetContractFeePotsRequest)
+      returns (GetContractFeePotsResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
       returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
@@ -793,6 +795,48 @@ message GetContractModerationEntriesResponse {
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetContractModerationEntriesResponseV0 v0 = 1; }
+}
+
+message GetContractFeePotsRequest {
+  message GetContractFeePotsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the data contract
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractFeePotsRequestV0 v0 = 1; }
+}
+
+message GetContractFeePotsResponse {
+  // The last payout of a pot, which the claim that made it left in state
+  message ContractFeePotLastClaim {
+    uint32 epoch = 1; // The epoch (u16) the pot was paid out in; a pot is paid
+                      // out at most once per epoch
+    uint64 time_ms = 2
+        [ jstype = JS_STRING ]; // The time of the block that paid the pot out
+    bytes claimant_id = 3; // The identity that signed the claim: the contract
+                           // owner for the owner pot, the member of the
+                           // moderation team that claimed for the moderators pot
+  }
+
+  // One of the two pots a contract's document action fees collect in
+  message ContractFeePot {
+    uint64 credits = 1 [ jstype = JS_STRING ]; // What the pot holds
+    ContractFeePotLastClaim last_claim =
+        2; // Unset when the pot was never paid out
+  }
+
+  message ContractFeePots {
+    ContractFeePot owner = 1;      // The pot the contract owner claims
+    ContractFeePot moderators = 2; // The pot the moderation team shares
+  }
+
+  message GetContractFeePotsResponseV0 {
+    oneof result {
+      ContractFeePots pots = 1; // Both pots of the contract
+      Proof proof = 2;          // Cryptographic proof of the pots, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractFeePotsResponseV0 v0 = 1; }
 }
 
 message GetContractGroupsForContractRequest {

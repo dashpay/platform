@@ -8,6 +8,7 @@
 //! [`agreement`]).
 
 use crate::balances::credits::{Credits, MAX_CREDITS};
+use crate::block::epoch::EpochIndex;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::document_type::class_methods::{
@@ -16,6 +17,9 @@ use crate::data_contract::document_type::class_methods::{
 use crate::data_contract::document_type::property_names::ACTION_FEES;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
+use crate::prelude::TimestampMillis;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonSafeFields;
 use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
@@ -132,6 +136,24 @@ impl fmt::Display for ContractFeePot {
 
 #[cfg(feature = "json-conversion")]
 impl JsonSafeFields for ContractFeePot {}
+
+/// The last payout of a contract fee pot, which the claim that made it leaves in state. The
+/// next claim is judged against its epoch, and the rest tells the recipients of the pot who
+/// paid them and when.
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ContractFeePotLastClaim {
+    /// The epoch the pot was paid out in. A pot is paid out at most once per epoch.
+    pub epoch_index: EpochIndex,
+    /// The time of the block that paid the pot out, in milliseconds.
+    pub time_ms: TimestampMillis,
+    /// The identity that signed the claim: the contract owner for the owner pot, and for the
+    /// moderators pot the member of the team that claimed it for all of them.
+    pub claimant_id: Identifier,
+}
 
 /// The fee of one document action, in credits.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Hash)]

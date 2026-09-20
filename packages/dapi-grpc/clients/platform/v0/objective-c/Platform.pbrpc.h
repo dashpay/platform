@@ -34,6 +34,8 @@
 @class GetContestedResourceVotersForIdentityResponse;
 @class GetContestedResourcesRequest;
 @class GetContestedResourcesResponse;
+@class GetContractFeePotsRequest;
+@class GetContractFeePotsResponse;
 @class GetContractGroupInfoRequest;
 @class GetContractGroupInfoResponse;
 @class GetContractGroupMembersRequest;
@@ -268,6 +270,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getContractModerationEntries(GetContractModerationEntriesRequest) returns (GetContractModerationEntriesResponse)
 
 - (GRPCUnaryProtoCall *)getContractModerationEntriesWithMessage:(GetContractModerationEntriesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
+
+- (GRPCUnaryProtoCall *)getContractFeePotsWithMessage:(GetContractFeePotsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)
 
@@ -641,6 +647,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getContractModerationEntriesWithRequest:(GetContractModerationEntriesRequest *)request handler:(void(^)(GetContractModerationEntriesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetContractModerationEntriesWithRequest:(GetContractModerationEntriesRequest *)request handler:(void(^)(GetContractModerationEntriesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
+
+- (void)getContractFeePotsWithRequest:(GetContractFeePotsRequest *)request handler:(void(^)(GetContractFeePotsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractFeePotsWithRequest:(GetContractFeePotsRequest *)request handler:(void(^)(GetContractFeePotsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)

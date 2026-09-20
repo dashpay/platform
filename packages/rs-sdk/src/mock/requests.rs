@@ -27,7 +27,7 @@ use dpp::{
 use drive::grovedb::Element;
 use drive_proof_verifier::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use drive_proof_verifier::types::contract_moderation::{
-    ContractModerationEntries, ContractModerationEntry, ContractModerationListStatus,
+    ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationEntries, ContractModerationEntry, ContractModerationListStatus,
     ContractModerationListStatuses, ContractModerationReason,
 };
 use drive_proof_verifier::types::contract_groups::{
@@ -406,6 +406,32 @@ impl MockResponse for ContractModerationListStatuses {
             bincode::decode_from_slice(buf, BINCODE_CONFIG)
                 .expect("decode ContractModerationListStatuses");
         ContractModerationListStatuses(statuses)
+    }
+}
+
+impl MockResponse for ContractFeePots {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let pots: [(u64, Option<ContractFeePotLastClaim>); 2] = [
+            (self.owner.credits, self.owner.last_claim),
+            (self.moderators.credits, self.moderators.last_claim),
+        ];
+        bincode::encode_to_vec(pots, BINCODE_CONFIG).expect("encode ContractFeePots")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let ([owner, moderators], _): ([(u64, Option<ContractFeePotLastClaim>); 2], usize) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode ContractFeePots");
+        let pot = |(credits, last_claim)| ContractFeePotState {
+            credits,
+            last_claim,
+        };
+        ContractFeePots {
+            owner: pot(owner),
+            moderators: pot(moderators),
+        }
     }
 }
 

@@ -18,7 +18,7 @@ use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractM
 use dpp::data_contract::document_type::action_fees::agreement::{
     AgreedFeeMultiplier, DocumentActionFeeAgreement,
 };
-use dpp::data_contract::document_type::action_fees::ContractFeePot;
+use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
 };
@@ -247,6 +247,7 @@ impl Setup {
                     .expect("expected to serialize")],
                 &state,
                 &BlockInfo {
+                    time_ms: block_time_of(epoch_index),
                     epoch: Epoch::new(epoch_index).expect("expected an epoch"),
                     ..Default::default()
                 },
@@ -339,6 +340,20 @@ async fn claim_of(actor: &Actor, contract_id: Identifier, pot: ContractFeePot) -
     .expect("expected to build the claim")
 }
 
+/// The time of the block `Setup::process` executes a transition in, one per epoch.
+fn block_time_of(epoch_index: EpochIndex) -> u64 {
+    1_700_000_000_000 + u64::from(epoch_index) * 1_000
+}
+
+/// What a claim by `claimant`, processed in `epoch_index`, leaves as the pot's last claim.
+fn claim_by(claimant: &Actor, epoch_index: EpochIndex) -> Option<ContractFeePotLastClaim> {
+    Some(ContractFeePotLastClaim {
+        epoch_index,
+        time_ms: block_time_of(epoch_index),
+        claimant_id: claimant.identity.id(),
+    })
+}
+
 fn gas(execution: &StateTransitionExecutionResult) -> Credits {
     match execution {
         StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
@@ -384,7 +399,7 @@ async fn should_split_the_moderators_pot_equally_and_leave_the_remainder() {
         setup.pot(ContractFeePot::Moderators, Some(&transaction)),
         ContractFeePotState {
             credits: 1,
-            last_claim_epoch: Some(3),
+            last_claim: claim_by(&setup.moderator_a, 3),
         }
     );
     // The pot only moved into balances: what left the trees is the gas of the claim.
@@ -439,7 +454,7 @@ async fn should_let_only_a_member_of_the_team_claim_the_moderators_pot() {
             setup.pot(ContractFeePot::Moderators, Some(&transaction)),
             ContractFeePotState {
                 credits: 1_000,
-                last_claim_epoch: None,
+                last_claim: None,
             },
             "a refused claim pays nothing out and does not use up the epoch"
         );
@@ -512,7 +527,8 @@ async fn should_pay_out_a_pot_at_most_once_per_epoch() {
         setup.pot(ContractFeePot::Moderators, Some(&transaction)),
         ContractFeePotState {
             credits: 0,
-            last_claim_epoch: Some(6),
+            // The last claim names the member that made it, not the one of the epoch before.
+            last_claim: claim_by(&setup.moderator_b, 6),
         }
     );
 }
@@ -539,7 +555,7 @@ async fn should_refuse_a_pot_that_holds_less_than_a_credit_for_each_recipient() 
         setup.pot(ContractFeePot::Moderators, Some(&transaction)),
         ContractFeePotState {
             credits: 1,
-            last_claim_epoch: None,
+            last_claim: None,
         }
     );
 }
@@ -570,7 +586,7 @@ async fn should_pay_the_owner_pot_to_the_owner_alone_and_on_its_own_epoch_clock(
         setup.pot(ContractFeePot::Owner, Some(&transaction)),
         ContractFeePotState {
             credits: 0,
-            last_claim_epoch: Some(4),
+            last_claim: claim_by(&setup.owner, 4),
         }
     );
 
@@ -578,7 +594,7 @@ async fn should_pay_the_owner_pot_to_the_owner_alone_and_on_its_own_epoch_clock(
     assert_eq!(
         setup
             .pot(ContractFeePot::Moderators, Some(&transaction))
-            .last_claim_epoch,
+            .last_claim,
         None
     );
     let by_the_team = setup
@@ -669,7 +685,7 @@ async fn should_prove_the_pot_and_the_balances_of_everyone_it_paid() {
         StateTransitionProofResult::VerifiedContractFeeClaim(
             contract_id,
             pot,
-            last_claim_epoch,
+            last_claim,
             remaining,
             balances,
         ),
@@ -679,7 +695,7 @@ async fn should_prove_the_pot_and_the_balances_of_everyone_it_paid() {
     };
     assert_eq!(contract_id, setup.contract.id());
     assert_eq!(pot, ContractFeePot::Moderators);
-    assert_eq!(last_claim_epoch, 9);
+    assert_eq!(Some(last_claim), claim_by(&setup.moderator_a, 9));
     assert_eq!(remaining, 1);
     assert_eq!(
         balances,
